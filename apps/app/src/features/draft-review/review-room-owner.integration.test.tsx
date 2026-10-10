@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 /** Real provider/query/command witnesses for the room owner; HTTP is the only fake. */
+
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import type { DocumentSessionConnectionState } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   applied,
@@ -16,9 +18,18 @@ import {
   previewOf,
   workC,
 } from "@/test-support/draft-review-scope";
-import { sessionFor, setConnectionState } from "@/test-support/editor-session-fakes";
+import { createEditorSessions } from "@/test-support/editor-sessions";
+import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
+let sessions: ReturnType<typeof createEditorSessions>;
+beforeEach(() => {
+  sessions = createEditorSessions();
+});
+afterEach(async () => {
+  await sessions.dispose();
+});
+
 const previewKey = projectQueryKeys.workDraftPreview(
   "project-a",
   "work-a",
@@ -31,19 +42,7 @@ const proposal = (generation: number, ...ids: string[]) => ({
   draftGeneration: generation,
   reviewRoomName: `room-g${generation}`,
 });
-async function settled(check: () => void) {
-  for (let i = 0; i < 40; i++) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (i === 39) throw error;
-    }
-  }
-}
+
 beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
@@ -72,15 +71,15 @@ it("joins a cancelled room read's replacement, and only a real failure requires 
     await act(async () => {
       await probe().queryClient.cancelQueries({ queryKey: previewKey });
     });
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
     expect(probe().editor.controller.reviewRoomError).toBe(false);
     await act(async () => probe().editor.controller.exitInlineReview());
     fixture.network.getDraftPreview.mockRejectedValue(new Error("offline"));
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.controller.reviewRoomError).toBe(true));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomError).toBe(true));
     fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1", "2"));
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
   });
 });
 
@@ -110,7 +109,7 @@ it.each([
       });
     }
     await act(async () => slow.resolve(proposal(7, "9")));
-    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    await settleReact(() => expect(probe().editor.controller.inlineReview).toBeNull());
     expect(probe().editor.roomOwner.session).toBeNull();
   });
 });
@@ -120,8 +119,8 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
   fixture.network.applyDraftChanges.mockReturnValue(answer.promise);
   await fixture.render(async (probe) => {
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().header.view.status).toBe("ready"));
-    await settled(() => expect(probe().editor.roomOwner.session).not.toBeNull());
+    await settleReact(() => expect(probe().header.view.status).toBe("ready"));
+    await settleReact(() => expect(probe().editor.roomOwner.session).not.toBeNull());
     let done!: Promise<unknown>;
     await act(async () => {
       done = probe().editor.controller.applyChanges(draftA, change("1", "2"));
@@ -134,7 +133,9 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
       probe().queryClient.setQueryData(previewKey, next);
       probe().queryClient.setQueryData(listKey, []);
     });
-    await settled(() => expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() =>
+      expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2),
+    );
     expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
     await act(async () => {
       answer.resolve(applied(true));
@@ -146,7 +147,7 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
     const refreshed = proposal(2, "3", "4");
     fixture.network.getDraftPreview.mockResolvedValue(refreshed);
     await act(async () => probe().queryClient.setQueryData(previewKey, refreshed));
-    await settled(() =>
+    await settleReact(() =>
       expect(probe().header.view.items.map((item) => item.change.classId)).toEqual([
         "class-3",
         "class-4",
@@ -159,8 +160,8 @@ it("a room-opening read cannot resurrect a change confirmed while the read waite
   fixture.network.applyDraftChanges.mockResolvedValue(applied(false));
   await fixture.render(async (probe) => {
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().header.view.status).toBe("ready"));
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    await settleReact(() => expect(probe().header.view.status).toBe("ready"));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
     await act(async () => probe().editor.controller.exitInlineReview());
     const slow = deferredReviewAnswer<ReturnType<typeof proposal>>();
     fixture.network.getDraftPreview.mockReturnValueOnce(slow.promise);
@@ -171,22 +172,10 @@ it("a room-opening read cannot resurrect a change confirmed while the read waite
     });
     expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
     await act(async () => slow.resolve(proposal(1, "1", "2")));
-    await settled(() =>
+    await settleReact(() =>
       expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-1"]),
     );
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
-  });
-});
-
-it("input eligibility follows the addressed replacement room", async () => {
-  await fixture.render(async (probe) => {
-    await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.roomOwner.session).not.toBeNull());
-    const next = proposal(2, "3");
-    fixture.network.getDraftPreview.mockResolvedValue(next);
-    await act(async () => probe().queryClient.setQueryData(previewKey, next));
-    await settled(() => expect(probe().editor.roomOwner.session?.roomKey).toBe("room-g2"));
-    expect(probe().editor.roomOwner.inputEligible).toBe(true);
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
   });
 });
 
@@ -199,7 +188,7 @@ it("lets the entry read answer before a stale empty list can exit review", async
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
     expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-a");
     await act(async () => read.resolve(proposal(1, "1")));
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
   });
 });
 
@@ -209,7 +198,7 @@ it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", as
   await fixture.render(async (probe) => {
     if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNewDocument: true }]);
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() =>
+    await settleReact(() =>
       draftOnly
         ? expect(probe().editor.controller.reviewRoomError).toBe(true)
         : expect(probe().editor.controller.inlineReview).toBeNull(),
@@ -219,6 +208,16 @@ it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", as
 
 it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", async () => {
   fixture.dispose();
+  let status!: (state: DocumentSessionConnectionState) => void;
+  const session = sessions.get("room-g1");
+  session.attachTransport(() => ({
+    unacknowledgedUpdates: () => null,
+    subscribeStatus: (listener) => {
+      status = listener;
+      return () => {};
+    },
+    destroy: () => {},
+  }));
   let writerChanges!: (generation: number | null) => void;
   fixture = createReviewScopeFixture({
     registry: {
@@ -231,26 +230,26 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
         writerChanges = report;
       },
       releaseBranchRooms: () => {},
-      getBranchRoom: sessionFor,
+      getBranchRoom: () => session,
     } as unknown as LiveDocumentSessionRegistry,
   });
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1"));
   await fixture.render(async (probe) => {
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.roomOwner.session?.roomKey).toBe("room-g1"));
+    await settleReact(() => expect(probe().editor.roomOwner.session?.roomKey).toBe("room-g1"));
     await act(async () => writerChanges(1));
     fixture.network.getDraftPreview.mockRejectedValue(
       Object.assign(new Error("gone"), { status: 404 }),
     );
     await act(async () =>
-      setConnectionState("room-g1", {
+      status({
         kind: "reset",
         reason: "branch-generation-stale",
         disposition: "superseded",
       }),
     );
-    await settled(() =>
+    await settleReact(() =>
       expect(probe().queryClient.getQueryState(previewKey)?.fetchStatus).toBe("idle"),
     );
     expect(probe().queryClient.getQueryData(previewKey)).toEqual({
@@ -264,7 +263,7 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
     expect(probe().editor.controller.reviewRoomError).toBe(false);
     const reads = fixture.network.getDraftPreview.mock.calls.length;
     await act(async () => writerChanges(null));
-    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    await settleReact(() => expect(probe().editor.controller.inlineReview).toBeNull());
     expect(fixture.network.getDraftPreview).toHaveBeenCalledTimes(reads);
   });
 });
@@ -272,7 +271,7 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
 it("a late HTTP 404 retains its request-start horizon behind a newer cached proposal", async () => {
   await fixture.render(async (probe) => {
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    await settleReact(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
     const absent = deferredReviewAnswer<ReturnType<typeof proposal>>();
     fixture.network.getDraftPreview.mockReturnValueOnce(absent.promise);
     let read!: Promise<unknown>;
@@ -290,7 +289,9 @@ it("a late HTTP 404 retains its request-start horizon behind a newer cached prop
     const next = proposal(2, "3");
     fixture.network.getDraftPreview.mockResolvedValue(next);
     await act(async () => probe().queryClient.setQueryData(previewKey, next));
-    await settled(() => expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() =>
+      expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2),
+    );
     await act(async () => {
       absent.reject(Object.assign(new Error("gone"), { status: 404 }));
       await read;

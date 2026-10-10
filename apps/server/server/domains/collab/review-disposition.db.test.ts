@@ -1,6 +1,7 @@
 /** Durable regressions for complete-effect settlement and preview-scoped Discard. */
+
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -12,7 +13,8 @@ import {
   resetSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
-import { THREAD_ID, TURN_ID, WORK_ID } from "./test-support/change-trail-postgres-harness.js";
+import { THREAD_ID, WORK_ID } from "./test-support/change-trail-postgres-harness.js";
+import { commitBranchEdit, fencedRequest } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetSettlementFixture(db));
@@ -28,7 +30,7 @@ it.each([
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     for (const source of ["agent", "writer"] as const) {
-      await stageEdit(f, branch.branchId, source, (doc) => {
+      await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
         if (source === "agent") {
           const b = f.model.getBlocks(toDocHandle(doc))[0];
           f.model.applyTextEdit(toDocHandle(doc), b, { from: 11, to: 11 }, " Agent");
@@ -49,12 +51,13 @@ it.each([
     expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     const result = await (action === "apply"
       ? f.collab.draftReview.applyWorkDraftChanges
-      : f.collab.draftReview.discardWorkDraft)({
-      ...cmd,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+      : f.collab.draftReview.discardWorkDraft)(
+      fencedRequest(
+        cmd,
+        preview,
+        preview.operations.map((op) => op.operationId),
+      ),
+    );
     const after = await f.collab.draftReview.preview(cmd);
     if (after.status !== "active") throw Error("missing after");
     expect(result).toMatchObject({
@@ -80,7 +83,7 @@ it.each([
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     async function stage(source: "agent" | "writer") {
-      await stageEdit(f, branch.branchId, source, (doc) => {
+      await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
         const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
         if (shape === "created-parent" && source === "agent") {
           const paragraph = new Y.XmlElement("paragraph");
@@ -111,12 +114,11 @@ it.each([
     await stage("writer");
     const arrived = await f.collab.draftReview.preview(command);
     if (arrived.status !== "active") throw new Error("missing arrival preview");
-    const request = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(
+      command,
+      preview,
+      preview.operations.map((op) => op.operationId),
+    );
     expect(await f.collab.draftReview.discardWorkDraft(request)).toEqual({
       status: "stale",
       draftId: branch.branchId,
@@ -127,12 +129,11 @@ it.each([
       draftRevisionToken: arrived.draftRevisionToken,
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base.\n");
-    const refreshed = {
-      ...command,
-      operationIds: arrived.operations.map((op) => op.operationId),
-      liveRevisionToken: arrived.liveRevisionToken,
-      draftRevisionToken: arrived.draftRevisionToken,
-    };
+    const refreshed = fencedRequest(
+      command,
+      arrived,
+      arrived.operations.map((op) => op.operationId),
+    );
     expect(await f.collab.draftReview.discardWorkDraft(refreshed)).toMatchObject({
       status: "discarded",
       draftClosed: true,
@@ -150,7 +151,7 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     for (const edit of ["insert", "remove"] as const) {
-      await stageEdit(f, branch.branchId, "agent", (doc) => {
+      await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
         const block = f.model.getBlocks(toDocHandle(doc))[0];
         f.model.applyTextEdit(
           toDocHandle(doc),
@@ -181,12 +182,11 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
       deletedSpans: [],
     });
     expect(preview.operations[0]).toMatchObject({ canApplyOrDiscard: false });
-    const request = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(
+      command,
+      preview,
+      preview.operations.map((op) => op.operationId),
+    );
     expect(await f.collab.draftReview.applyWorkDraftChanges(request)).toMatchObject({
       status: "incomplete_class",
     });
@@ -200,35 +200,3 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     harness.destroyWarmState();
   }
 });
-
-type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
-
-/** Admit the scenario's explicit mutation with its author over a real branch snapshot. */
-async function stageEdit(
-  f: Fixture,
-  branchId: string,
-  source: "agent" | "writer",
-  mutate: (doc: Y.Doc) => void,
-) {
-  const staged = await f.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
-    const clone = createCollabYDoc({ gc: false });
-    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    return { clone, generation: snapshot.generation };
-  });
-  try {
-    mutate(staged.clone);
-    await f.branchCoordinator.commitSyncFromDoc({
-      branchId,
-      sourceDoc: staged.clone,
-      expectedGeneration: staged.generation,
-      source,
-      actorUserId: source === "writer" ? USER_ID : null,
-      threadId: THREAD_ID,
-      turnId: source === "agent" ? TURN_ID : null,
-      wId: null,
-      updateMeta: null,
-    });
-  } finally {
-    staged.clone.destroy();
-  }
-}

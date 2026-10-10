@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** S-chat: shared-class batch authority, queued disappearance and independently refused recovery. */
+
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
@@ -17,6 +18,7 @@ import {
   operation,
   preview,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 import { DraftDock } from "./DraftDock";
 import { useDraftDock } from "./useDraftDock";
 
@@ -68,19 +70,6 @@ const click = (name: string) =>
   });
 
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
-async function settled(check: () => void) {
-  for (let attempt = 0; ; attempt += 1) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (attempt === 19) throw error;
-    }
-  }
-}
 
 it("hides the queued chat batch, restores only the refused file, then discards its shared selection", async () => {
   const network = fixture.network;
@@ -115,7 +104,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
   network.discardDraft.mockResolvedValue({ ...discarded(false), draftId: "draft-chapter-12" });
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(text()).toContain("3 changes"));
+      await settleReact(() => expect(text()).toContain("3 changes"));
       expect(text()).toContain("Lore pass");
       await click("Apply");
       expect(strip()).toBeNull();
@@ -133,7 +122,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
         ],
       ]);
       await act(async () => first.resolve({ status: "stale", draftId: "draft-chapter-12" }));
-      await settled(() => expect(network.applyDraftChanges).toHaveBeenCalledTimes(2));
+      await settleReact(() => expect(network.applyDraftChanges).toHaveBeenCalledTimes(2));
       expect(network.applyDraftChanges.mock.calls[1]).toEqual([
         "project-a",
         "work-a",
@@ -145,7 +134,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
           draftRevisionToken: "draft-14",
         },
       ]);
-      await settled(() =>
+      await settleReact(() =>
         expect(text()).toContain(
           "This chat's changes in chapter-12 were updated. Check them and apply again.",
         ),
@@ -156,14 +145,14 @@ it("hides the queued chat batch, restores only the refused file, then discards i
       await act(async () =>
         second.resolve({ ...applied(false, "7"), draftId: "draft-chapter-14" }),
       );
-      await settled(() => expect(probe().chat.commands.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().chat.commands.isDisposing).toBe(false));
       const remaining = await probe().mountDraftChanges({
         projectId: "project-a",
         workId: "work-a",
         documentId: "chapter-14",
         draftId: "draft-chapter-14",
       });
-      await settled(() =>
+      await settleReact(() =>
         expect(remaining().items.map((item) => item.change.operationIds)).toEqual([["8"]]),
       );
       await click("Discard");
@@ -180,14 +169,14 @@ it("hides the queued chat batch, restores only the refused file, then discards i
           },
         ],
       ]);
-      await settled(() => expect(strip()).toBeNull());
+      await settleReact(() => expect(strip()).toBeNull());
       const writer = await probe().mountDraftChanges({
         projectId: "project-a",
         workId: "work-a",
         documentId: "chapter-12",
         draftId: "draft-chapter-12",
       });
-      await settled(() =>
+      await settleReact(() =>
         expect(writer().items.map((item) => item.change.operationIds)).toEqual([["4"]]),
       );
       expect(navigate).not.toHaveBeenCalled();

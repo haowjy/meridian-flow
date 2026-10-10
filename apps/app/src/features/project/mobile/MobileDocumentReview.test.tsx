@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** S-phone: the real sheet's document authority and commands over a surviving mounted manuscript. */
+
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { EditorContent } from "@tiptap/react";
@@ -8,8 +9,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DocumentSession } from "@/core/editor/document-session";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
@@ -21,12 +20,12 @@ import {
   operation,
   preview,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 import { createStandaloneEditor } from "@/test-support/standalone-editor";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let manuscript: ReturnType<typeof createStandaloneEditor>;
-let room: DocumentSession;
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
   vi.useFakeTimers();
@@ -34,21 +33,13 @@ beforeEach(() => {
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
   manuscript = createStandaloneEditor({ content: "<p>The writer's manuscript survives.</p>" });
-  room = new DocumentSession({ roomKey: "review-room-a", persistence: { kind: "none" } });
-  // Refresh subscription only. This journey does not certify transport or review paint (#731).
-  const registry = {
-    retainBranchRooms: () => {},
-    releaseBranchRooms: () => {},
-    getBranchRoom: () => room,
-  } as unknown as LiveDocumentSessionRegistry;
-  fixture = createReviewScopeFixture({ registry });
+  fixture = createReviewScopeFixture();
   vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
 });
 afterEach(() => {
   fixture.dispose();
   manuscript.destroy();
-  room.destroy();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -64,19 +55,6 @@ const click = (label: string, within: ParentNode = document) =>
   });
 
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
-async function settled(check: () => void) {
-  for (let attempt = 0; ; attempt += 1) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (attempt === 19) throw error;
-    }
-  }
-}
 
 it("focuses and discards through this document's sheet, keeping its editor through whole Discard", async () => {
   const network = fixture.network;
@@ -104,9 +82,9 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       const editor = manuscript.editor;
       const dom = editor.view.dom;
       expect(document.querySelector(".ProseMirror")).toBe(dom);
-      await settled(() => expect(probe().editor.files).toHaveLength(2));
+      await settleReact(() => expect(probe().editor.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(2));
+      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       // Chrome's painted-review admission is a real controller operation, not invented controller state.
       await act(async () =>
         probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
@@ -142,7 +120,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         ],
       ]);
       await act(async () => selective.resolve(discarded(false)));
-      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(sheet()?.querySelector("[data-review-toast]")?.textContent).toContain("Discarded");
       expect(document.querySelectorAll("[data-review-toast]")).toHaveLength(1);
       expect(probe().header.view.focused?.classId).toBe("class-2");
@@ -162,7 +140,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         { draftId: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
-      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(document.querySelector(".ProseMirror")).toBe(dom);
       expect(editor.isDestroyed).toBe(false);
       await act(async () => editor.commands.insertContent(" Still writing."));
@@ -199,9 +177,9 @@ it("keeps last-change feedback in the sheet flow and gives chat links phone targ
   fixture.network.discardDraft.mockResolvedValue(discarded(true));
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().editor.files).toHaveLength(1));
+      await settleReact(() => expect(probe().editor.files).toHaveLength(1));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(1));
+      await settleReact(() => expect(probe().header.view.items).toHaveLength(1));
       await act(async () =>
         probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
       );
@@ -212,7 +190,7 @@ it("keeps last-change feedback in the sheet flow and gives chat links phone targ
       expect(chatLink).not.toBeNull();
       expect.soft(chatLink?.classList.contains("min-h-11")).toBe(true);
       await click("Discard", sheet() as ParentNode);
-      await settled(() => expect(probe().header.finished).toBe(true));
+      await settleReact(() => expect(probe().header.finished).toBe(true));
       const toast = sheet()?.querySelector<HTMLElement>("[data-review-toast]");
       expect(toast?.textContent).toBe("Discarded");
       expect(toast?.classList.contains("static")).toBe(true);

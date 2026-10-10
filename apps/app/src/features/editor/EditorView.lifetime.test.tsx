@@ -1,31 +1,33 @@
 // @vitest-environment jsdom
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 
-import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
-import {
-  raiseSchemaFence,
-  registry,
-  sessionFor,
-  sessionHorizons,
-} from "@/test-support/editor-session-fakes";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as threads from "@/client/query/useProjectThreads";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { createEditorSessions } from "@/test-support/editor-sessions";
+import { installEditorShell } from "@/test-support/editor-shell";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
 
-const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
-const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
-const holderScheme = "manuscript";
-const holderProjectionReady = true;
-vi.mock("./references/useReferenceBrowserCatalog", () => ({
-  useReferenceBrowserCatalog: () => null,
-}));
-vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
-vi.mock("@/client/query/useWorks", () => ({
-  useWorks: () => ({ noWork, works: [namedWork] }),
-}));
+let shell: ReturnType<typeof installEditorShell>;
+let sessions: ReturnType<typeof createEditorSessions>;
+beforeEach(() => {
+  sessions = createEditorSessions();
+  shell = installEditorShell(sessions.registry as unknown as LiveDocumentSessionRegistry);
+  vi.spyOn(threads, "useProjectThreads").mockImplementation(() => ({
+    threads: threadList.current as ReturnType<typeof threads.useProjectThreads>["threads"],
+    isError: false,
+    isFetching: false,
+    refetch: () => {},
+  }));
+});
+afterEach(async () => {
+  shell.dispose();
+  await sessions.dispose();
+});
 
 type ThreadListItem = { id: string; title: string | null };
 
@@ -45,69 +47,21 @@ const controller = {
   reviewRoomError: false,
 };
 
-vi.mock("@/client/query/useProjectThreads", () => ({
-  useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
-}));
-vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: () => ({
-    catalog: null,
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
-}));
-vi.mock("@/features/change-trail/trail-detail-query", () => ({
-  usePrefetchTrailDetails: () => {},
-}));
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
     roomOwner: { session: null },
   }),
 }));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useLiveDocumentSessionRegistry: () => registry,
-  useOptionalAccountResourceReplica: () => null,
-  useAccountResourceProjection: () => ({
-    snapshot: null,
-    records: holderProjectionReady
-      ? [
-          {
-            resource: {
-              identity: { documentId: "holder" },
-              aliases: {},
-              lifecycle: { kind: "acknowledged" },
-              obligations: {},
-              canonical: {
-                scheme: holderScheme,
-                path: "/holder.md",
-                name: "holder.md",
-                workId: null,
-                workSlug: "named",
-              },
-            },
-            intents: [],
-          },
-        ]
-      : [],
-    error: null,
-  }),
-}));
+
 const reviewHooks = vi.hoisted(() => ({ sync: vi.fn(), focus: vi.fn() }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: reviewHooks.sync }));
 vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.focus }));
-vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
+
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => openDocument,
 }));
-vi.mock("@/features/links", async () => ({
-  useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
-  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
-}));
-// Lifetime is about which editor exists, not what hangs off it. An empty
-// registry keeps every lane's own dependencies out of this suite.
-vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
 
 const queryClient = new QueryClient();
 const { EditorView } = await import("./EditorView");
@@ -125,17 +79,13 @@ let applyProps: (next: Partial<SurfaceProps>) => void = () => {};
 function Harness({ initial }: { initial: SurfaceProps }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
-  return (
-    <QueryClientProvider client={queryClient}>
-      <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />
-    </QueryClientProvider>
-  );
+  return <ExactLiveEditor {...props} />;
 }
 
 function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />
+      <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
     </QueryClientProvider>
   );
 }
@@ -145,14 +95,18 @@ describe("editor lifetime", () => {
     const documentId = "horizon-controlled";
     let resolvePersistence!: () => void;
     let resolveServer!: () => void;
-    sessionHorizons.set(documentId, {
-      localPersistence: new Promise((resolve) => {
+    const horizons = {
+      localPersistence: new Promise<void>((resolve) => {
         resolvePersistence = resolve;
       }),
-      firstServerSync: new Promise((resolve) => {
+      firstServerSync: new Promise<void>((resolve) => {
         resolveServer = resolve;
       }),
-    });
+    };
+    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
+      horizons.localPersistence,
+    );
+    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
 
     await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
@@ -176,12 +130,16 @@ describe("editor lifetime", () => {
   it("binds verified local content without waiting for an offline server sync", async () => {
     const documentId = "local-horizon-controlled";
     let resolvePersistence!: () => void;
-    sessionHorizons.set(documentId, {
-      localPersistence: new Promise((resolve) => {
+    const horizons = {
+      localPersistence: new Promise<void>((resolve) => {
         resolvePersistence = resolve;
       }),
-      firstServerSync: new Promise(() => undefined),
-    });
+      firstServerSync: new Promise<void>(() => undefined),
+    };
+    vi.spyOn(sessions.get(documentId), "whenLocalPersistenceSynced").mockReturnValue(
+      horizons.localPersistence,
+    );
+    vi.spyOn(sessions.get(documentId), "whenSynced").mockReturnValue(horizons.firstServerSync);
 
     await withReactRoot(<ExactLiveEditor documentId={documentId} localContentReady />, async () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
@@ -195,7 +153,7 @@ describe("editor lifetime", () => {
   });
 
   it("preserves content and undo through query churn and surface changes without leaking into a new room", async () => {
-    const initial = { documentId: "document-1", projectId: "project-1" };
+    const initial = { documentId: "document-1", projectId: "project-1", localContentReady: true };
     await withReactRoot(<Harness initial={initial} />, async () => {
       await act(async () => {
         mountedEditor().commands.insertContent("words the writer typed");
@@ -244,7 +202,11 @@ describe("editor lifetime", () => {
   });
 
   it("preserves typed content and becomes read-only when its session is fenced", async () => {
-    const initial = { documentId: "document-fenced", projectId: "project-1" };
+    const initial = {
+      documentId: "document-fenced",
+      projectId: "project-1",
+      localContentReady: true,
+    };
     await withReactRoot(<Harness initial={initial} />, async () => {
       expect(mountedEditor().isEditable).toBe(true);
       await act(async () => {
@@ -252,7 +214,7 @@ describe("editor lifetime", () => {
       });
 
       await act(async () => {
-        raiseSchemaFence("document-fenced", { reason: "client-superseded" });
+        sessions.get("document-fenced").raiseSchemaFence({ reason: "client-superseded" });
       });
 
       expect(mountedEditor().getText()).toBe("Fenced words");

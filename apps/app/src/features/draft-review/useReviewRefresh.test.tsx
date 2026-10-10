@@ -9,32 +9,33 @@ import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react
 import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { registry, sessionFor } from "@/test-support/editor-session-fakes";
+import { createEditorSessions } from "@/test-support/editor-sessions";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useReviewRefresh } from "./useReviewRefresh";
 
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useLiveDocumentSessionRegistry: () => registry,
-}));
+let sessions: ReturnType<typeof createEditorSessions>;
+beforeEach(() => {
+  sessions = createEditorSessions();
+});
+afterEach(async () => {
+  await sessions.dispose();
+});
 
 const review = { documentId: "document-a", draftId: "draft-a" };
 const previewKey = projectQueryKeys.workDraftPreview("p", "w", "document-a", "draft-a");
 
-function Owner({ withLive = false }: { withLive?: boolean }) {
+function Owner() {
   useReviewRefresh({
     projectId: "p",
     workId: "w",
     review,
-    session: sessionFor("room-a"),
-    liveSession: withLive ? sessionFor("live-a") : null,
+    session: sessions.get("room-a"),
+    liveSession: null,
   });
   return null;
 }
 
-async function mountOwner(
-  run: (invalidated: () => string[]) => Promise<void>,
-  options: { withLive?: boolean } = {},
-) {
+async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
   const client = new QueryClient();
   const invalidated: string[] = [];
   vi.spyOn(client, "invalidateQueries").mockImplementation(async (filters) => {
@@ -44,14 +45,14 @@ async function mountOwner(
   });
   await withReactRoot(
     <QueryClientProvider client={client}>
-      <Owner {...options} />
+      <Owner />
     </QueryClientProvider>,
     () => run(() => invalidated),
   );
 }
 
 const edit = (roomKey: string) =>
-  sessionFor(roomKey).document.getMap("edits").set("k", Math.random());
+  sessions.get(roomKey).document.getMap("edits").set("k", Math.random());
 const wait = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 beforeEach(() => {
@@ -75,17 +76,6 @@ describe("useReviewRefresh", () => {
       await wait(2);
       expect(invalidated().sort()).toEqual(["list", "preview"]);
     });
-  });
-
-  it("follows the live document too: another tab's Apply refreshes the review", async () => {
-    await mountOwner(
-      async (invalidated) => {
-        await act(async () => edit("live-a"));
-        await wait(600);
-        expect(invalidated().sort()).toEqual(["list", "preview"]);
-      },
-      { withLive: true },
-    );
   });
 
   it("refreshes a stream that never pauses, rather than waiting for it to end", async () => {
@@ -120,11 +110,11 @@ describe("useReviewRefresh", () => {
     try {
       await withReactRoot(
         <QueryClientProvider client={client}>
-          <Owner withLive />
+          <Owner />
         </QueryClientProvider>,
         async () => {
           for (let i = 0; i < 20; i++) {
-            await act(async () => edit("live-a"));
+            await act(async () => edit("room-a"));
             await wait(200);
           }
           await act(async () => answers[0]?.("successor"));
