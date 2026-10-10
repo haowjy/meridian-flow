@@ -45,7 +45,7 @@ export function deleteRanges(decoded: DecodedUpdateLike): ClockRange[] {
   return ranges;
 }
 
-function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
+export function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
   const refs: ClockRange[] = [];
   for (const struct of decoded.structs ?? []) {
     if (struct.origin) refs.push({ ...struct.origin, length: 1 });

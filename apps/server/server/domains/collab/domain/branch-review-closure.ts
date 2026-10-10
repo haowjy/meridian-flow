@@ -6,6 +6,7 @@ import {
   decodeUpdateForDependencies,
   deleteRanges,
   rangesOverlap,
+  structDependencies,
   suppliedRanges,
 } from "@meridian/agent-edit/integration";
 import type { ReviewHunk } from "@meridian/contracts/drafts";
@@ -28,70 +29,43 @@ export function assignReviewClasses(input: {
   updates?: readonly DependencyUpdate[];
   baseDeletedRanges?: readonly ClockRange[];
 }): DraftReviewOperationInternal[] {
-  const unionFind = new UnionFind();
-  for (const operation of input.operations) unionFind.add(operation.operationId);
-
-  for (const hunk of input.hunks) unionFind.unionAll(hunk.operationIds);
-
-  const operationIdsByUpdateId = new Map<number, string[]>();
+  const graph = new UnionFind();
+  const suppliedRowIds = new Set((input.updates ?? []).map((row) => row.id));
   for (const operation of input.operations) {
-    for (const updateId of operation.closureUpdateIds) {
-      const operationIds = operationIdsByUpdateId.get(updateId) ?? [];
-      operationIds.push(operation.operationId);
-      operationIdsByUpdateId.set(updateId, operationIds);
+    const node: Node = `operation:${operation.operationId}`;
+    graph.add(node);
+    for (const id of new Set([
+      ...operation.closureUpdateIds,
+      ...operation.sourceUpdateIds.filter((id) => suppliedRowIds.has(id)),
+    ])) {
+      const row: Node = `row:${id}`;
+      graph.add(row);
+      graph.unionAll([node, row]);
     }
   }
-  for (const operationIds of operationIdsByUpdateId.values()) {
-    unionFind.unionAll(operationIds);
-  }
+  for (const hunk of input.hunks)
+    graph.unionAll(hunk.operationIds.map((id): Node => `operation:${id}`));
+  unionYjsDependencies(graph, input.updates ?? [], input.baseDeletedRanges ?? []);
 
-  const dependencyUpdateIdsByOperationId = unionYjsDependencies(
-    unionFind,
-    input.operations,
-    input.updates ?? [],
-    input.baseDeletedRanges ?? [],
-  );
-
-  const operationsByRoot = new Map<
-    string,
-    Omit<DraftReviewOperationInternal, "closureClassId">[]
-  >();
-  for (const operation of input.operations) {
-    const root = unionFind.find(operation.operationId);
-    const bucket = operationsByRoot.get(root) ?? [];
-    bucket.push(operation);
-    operationsByRoot.set(root, bucket);
-  }
-
+  const components = graph.components();
   const classByOperationId = new Map<
     string,
     { closureClassId: string; closureUpdateIds: PhysicalSourceUpdateIds }
   >();
-  for (const operations of operationsByRoot.values()) {
-    const operationIds = operations.map((operation) => operation.operationId).sort(operationSort);
-    const closureUpdateIds = asPhysicalSourceUpdateIds(
-      [
-        ...new Set(
-          operations.flatMap((operation) => [
-            ...operation.closureUpdateIds,
-            ...(dependencyUpdateIdsByOperationId.get(operation.operationId) ?? []),
-          ]),
-        ),
-      ].sort((left, right) => left - right),
-    );
-    const closureClassId = classId(operationIds);
-    for (const operationId of operationIds) {
-      classByOperationId.set(operationId, { closureClassId, closureUpdateIds });
-    }
+  for (const { operationIds, journalIds } of components) {
+    if (operationIds.length === 0) continue;
+    operationIds.sort(operationSort);
+    const membership = {
+      closureClassId: classId(operationIds),
+      closureUpdateIds: asPhysicalSourceUpdateIds(journalIds.sort((a, b) => a - b)),
+    };
+    for (const id of operationIds) classByOperationId.set(id, membership);
   }
-
-  return input.operations.map((operation) => ({
-    ...operation,
-    ...(classByOperationId.get(operation.operationId) ?? {
-      closureClassId: classId([operation.operationId]),
-      closureUpdateIds: operation.closureUpdateIds,
-    }),
-  }));
+  return input.operations.map((operation) => {
+    const membership = classByOperationId.get(operation.operationId);
+    if (!membership) throw new Error("Visible operation has no review component");
+    return { ...operation, ...membership };
+  });
 }
 
 /**
@@ -101,39 +75,28 @@ export function assignReviewClasses(input: {
  * omitted, even if no Item field points at it directly.
  */
 function unionYjsDependencies(
-  unionFind: UnionFind,
-  operations: readonly Omit<DraftReviewOperationInternal, "closureClassId">[],
+  graph: UnionFind,
   updates: readonly DependencyUpdate[],
   baseDeletedRanges: readonly ClockRange[],
-): Map<string, Set<number>> {
-  const ownersByUpdateId = new Map<number, string[]>();
-  for (const operation of operations) {
-    for (const updateId of new Set([...operation.sourceUpdateIds, ...operation.closureUpdateIds])) {
-      const owners = ownersByUpdateId.get(updateId) ?? [];
-      owners.push(operation.operationId);
-      ownersByUpdateId.set(updateId, owners);
-    }
-  }
-
+): void {
   const decoded = updates.map((update) => {
     const decoded = decodeUpdateForDependencies(update.updateData);
     return {
       update,
       supplied: suppliedRanges(decoded),
-      references: referenceRanges(decoded),
+      references: [...deleteRanges(decoded), ...structDependencies(decoded)],
       branchDeletes: subtractRanges(deleteRanges(decoded), baseDeletedRanges),
     };
   });
-  const rowUnionFind = new UnionFind();
-  for (const { update } of decoded) rowUnionFind.add(String(update.id));
+  for (const { update } of decoded) graph.add(`row:${update.id}`);
   const supplied = rangeBuckets(
     decoded.flatMap((row) =>
-      row.supplied.map((range) => ({ ...range, rowId: String(row.update.id) })),
+      row.supplied.map((range) => ({ ...range, rowId: `row:${row.update.id}` })),
     ),
   );
   const deleted = rangeBuckets(
     decoded.flatMap((row) =>
-      row.branchDeletes.map((range) => ({ ...range, rowId: String(row.update.id) })),
+      row.branchDeletes.map((range) => ({ ...range, rowId: `row:${row.update.id}` })),
     ),
   );
   for (const ranges of supplied.values()) {
@@ -141,14 +104,14 @@ function unionYjsDependencies(
     // same-client prefix edges, even when cumulative supplied ranges overlap.
     for (const range of ranges) {
       const next = lowerBound(ranges, range.clock + range.length);
-      if (next < ranges.length) rowUnionFind.unionAll([range.rowId, ranges[next].rowId]);
+      if (next < ranges.length) graph.unionAll([range.rowId, ranges[next].rowId]);
     }
   }
   for (const ranges of deleted.values()) {
     let furthest: IndexedRange | undefined;
     for (const range of ranges) {
       if (furthest && range.clock < furthest.clock + furthest.length) {
-        rowUnionFind.unionAll([range.rowId, furthest.rowId]);
+        graph.unionAll([range.rowId, furthest.rowId]);
       }
       if (!furthest || range.clock + range.length > furthest.clock + furthest.length)
         furthest = range;
@@ -160,31 +123,10 @@ function unionYjsDependencies(
   for (const row of decoded) {
     for (const ref of row.references) {
       visitOverlaps(indexes.get(ref.client), ref, (supplier) => {
-        rowUnionFind.unionAll([String(row.update.id), supplier.rowId]);
+        graph.unionAll([`row:${row.update.id}`, supplier.rowId]);
       });
     }
   }
-
-  const updateIdsByRoot = new Map<string, number[]>();
-  for (const { update } of decoded) {
-    const root = rowUnionFind.find(String(update.id));
-    const bucket = updateIdsByRoot.get(root) ?? [];
-    bucket.push(update.id);
-    updateIdsByRoot.set(root, bucket);
-  }
-  const dependencyUpdateIdsByOperationId = new Map<string, Set<number>>();
-  for (const updateIds of updateIdsByRoot.values()) {
-    const operationIds = [
-      ...new Set(updateIds.flatMap((updateId) => ownersByUpdateId.get(updateId) ?? [])),
-    ];
-    unionFind.unionAll(operationIds);
-    for (const operationId of operationIds) {
-      const dependencyUpdateIds = dependencyUpdateIdsByOperationId.get(operationId) ?? new Set();
-      for (const updateId of updateIds) dependencyUpdateIds.add(updateId);
-      dependencyUpdateIdsByOperationId.set(operationId, dependencyUpdateIds);
-    }
-  }
-  return dependencyUpdateIdsByOperationId;
 }
 
 function subtractRanges(
@@ -208,14 +150,17 @@ function subtractRanges(
   });
 }
 
-class UnionFind {
-  private readonly parent = new Map<string, string>();
+type Node = `operation:${string}` | `row:${number}`;
+type Component = { operationIds: string[]; journalIds: number[] };
 
-  add(id: string): void {
+class UnionFind {
+  private readonly parent = new Map<Node, Node>();
+
+  add(id: Node): void {
     if (!this.parent.has(id)) this.parent.set(id, id);
   }
 
-  find(id: string): string {
+  find(id: Node): Node {
     const parent = this.parent.get(id);
     if (!parent || parent === id) return id;
     const root = this.find(parent);
@@ -223,7 +168,19 @@ class UnionFind {
     return root;
   }
 
-  unionAll(ids: readonly string[]): void {
+  components(): Component[] {
+    const components = new Map<Node, Component>();
+    for (const node of this.parent.keys()) {
+      const root = this.find(node);
+      const component = components.get(root) ?? { operationIds: [], journalIds: [] };
+      if (node.startsWith("operation:")) component.operationIds.push(node.slice(10));
+      else component.journalIds.push(Number(node.slice(4)));
+      components.set(root, component);
+    }
+    return [...components.values()];
+  }
+
+  unionAll(ids: readonly Node[]): void {
     const present = ids.filter((id) => this.parent.has(id));
     const first = present[0];
     if (!first) return;
@@ -239,18 +196,7 @@ function operationSort(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true }) || left.localeCompare(right);
 }
 
-// Match #712's decoded-update shape; dependencies() is not part of that API.
-function referenceRanges(decoded: ReturnType<typeof decodeUpdateForDependencies>): ClockRange[] {
-  const refs = deleteRanges(decoded);
-  for (const struct of decoded.structs ?? []) {
-    for (const id of [struct.origin, struct.rightOrigin, struct.parent]) {
-      if (id && typeof id === "object") refs.push({ ...id, length: 1 });
-    }
-  }
-  return refs;
-}
-
-type IndexedRange = ClockRange & { rowId: string };
+type IndexedRange = ClockRange & { rowId: Node };
 type IntervalNode = {
   range: IndexedRange;
   maxEnd: number;
