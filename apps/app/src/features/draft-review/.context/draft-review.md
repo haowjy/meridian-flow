@@ -265,7 +265,9 @@ cannot enumerate or settle presentations. Hidden restore candidates are not life
   older pre-Apply read): membership promotes; absence means remote Discard and
   closes. Failed catalog reads leave presentations intact. Active local commands suppress
   remote classification; disposal aborts settlement. Settlement creates no tab.
-- A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
+- List omission and empty active/reset previews leave a draft-only review selected
+  while lifecycle classifies it. The room owner cannot release that intrinsic
+  address before promotion/removal. A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
   destination with Retry/Close. Remote confirmed-Discard omission plus fresh
   catalog absence closes it.
 - Editor overlay tabs are never persisted and are skipped by durable route

@@ -342,13 +342,15 @@ export function reviewRoomObservations(
     (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
       ? { draftGeneration: pendingWriterGeneration, proposal: true }
       : evidence;
-  if ((rows && !row) || preview?.status === "gone")
+  // A draft-only address belongs to lifecycle until catalog settlement. List
+  // omission and an empty active/reset preview cannot close or fail it.
+  if (preview?.status === "gone" || (!draftOnly && rows && !row))
     actions.push({
       type: "reviewAbsent",
       ...draft,
       draftGeneration: preview?.draftGeneration,
       evidence: changesEvidence,
-      draftOnly: draftOnly && preview?.status === "gone",
+      draftOnly,
     });
   return actions;
 }
