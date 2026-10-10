@@ -82,3 +82,22 @@ export async function interleave<A, B>(
     release();
   }
 }
+
+/**
+ * Two named runs: `runs[first]` to the hook point `at`, then the other. Each run's
+ * outcome by its name, so a table of orders reads the same outcome whichever ran first.
+ */
+export async function race<K extends string>(
+  db: Database,
+  runs: Record<K, () => Promise<unknown>>,
+  first: K,
+  at: TreeHookPoint,
+): Promise<{ bWaited: boolean; by: Record<K, Settled<unknown>> }> {
+  const [second] = (Object.keys(runs) as K[]).filter((name) => name !== first);
+  if (second === undefined) throw new Error("A race needs two runs");
+  const settled = await interleave(db, runs[first], at, runs[second]);
+  return {
+    bWaited: settled.bWaited,
+    by: { [first]: settled.a, [second]: settled.b } as Record<K, Settled<unknown>>,
+  };
+}
