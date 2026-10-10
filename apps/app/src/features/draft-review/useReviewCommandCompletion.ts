@@ -96,7 +96,7 @@ export function completionAction(
     if (before?.completion?.phase === "closed") return null;
   } else {
     if (current === prior) return null;
-    if (!claim?.completion && before?.completion?.phase !== "pending") return null;
+    if (!claim?.completion && (!prior?.completesDraft || !before)) return null;
   }
   const generation = claim?.completion ? claim.draftGeneration : before?.draftGeneration;
   if (generation === undefined) return null;

@@ -168,9 +168,8 @@ row's name launches review through the same `useAiDraftLauncher` handoff as the
 other review launchers, not a plain document open, and the row expands in place
 to that draft's changes (`useDraftChanges`, previewed only once expanded). Its
 menu says "Apply all changes" and "Discard all changes", without draft counts,
-and runs across every draft of the Work through the
-scope that covers it (`useWorkReviewScope`: the Editor's, else the chat's, else
-a third scope `ProjectView` mounts for a Work neither has). No Work has no Work
+and runs across every draft through creation-bound `useWorkDraftCommands`,
+independently of the open Editor review. No Work has no Work
 page and so no Work-wide list. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
@@ -223,7 +222,7 @@ Dock selection does not write the URL. Behind the index the chat surface keeps
 the current chat mounted and hidden — its persistent thread id always tracks
 the display's underlying chat, warm or not. **What is displayed, though, goes
 to nothing on the index**: the context rail (`ContextSidebar`) and the draft
-review scope both key off the *displayed* chat, which is null while the index
+command scope both key off the *displayed* chat, which is null while the index
 is showing, even though the surface stays warm behind it. Only the index's
 reopen chip (`ChatIndexController`'s `CurrentChatChip`) reads the remembered
 current chat directly. A confirmed snapshot 404 clears the current chat; a chat
@@ -247,15 +246,15 @@ membership is unchanged. No feed owns read/unread state. Lifecycle projection up
 `actionRequired` in cached rows when a subscribed thread emits; unsubscribed
 threads are only refreshed by ordinary query reads, not a background signal.
 
-Draft review follows the same persistent-shell rule with sibling scope owners.
-The hydrated project owns one Chat review value (Chat Work plus thread) and one
+Draft review follows the persistent-shell rule. The hydrated project owns one
 Editor review value (Editor Work, no thread authority) above desktop/phone
-selection. Boundaries only re-provide those values: ChatSurface and the Chat
-context dock share the Chat value, while viewer/editor surfaces receive the
-Editor value. `HydratedReviewControllers` also mounts a third scope for a Work
-page whose Work neither the Editor nor the chat has, and wraps both shells in
-`EditorReviewScope`; `useWorkReviewScope` picks Editor, then chat, then third.
-An explicit latest-wins route handoff carries review commands into
+selection. Editor boundaries re-provide it; `EditorReviewScope` offers its
+presentation to outside lists. Chat and Work lists compose the existing Work
+drafts query with creation-bound `useWorkDraftCommands`, without review state
+or executor arbitration. Commands publish addressed records for the open
+review to observe. `DraftOnlyTabSettlement` is the project lifecycle owner
+for remote settlement across the Works represented by draft-only tabs.
+An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
 destinations claim after navigation. Claims require Work, manuscript path,
 mounted document, and draft membership to agree. The document address persists

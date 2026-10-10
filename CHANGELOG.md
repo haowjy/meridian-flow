@@ -4,7 +4,7 @@
 
 - Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending. Offline batches refuse every file in the same admission turn.
 
-- Consolidate draft command admission and typed settlement; Work and chat lists use Work-bound commands without extra review controllers or editor-executor routing.
+- Consolidate draft command admission and typed settlement; Work and chat lists use Work-bound commands without extra review controllers or editor-executor routing. Completion observation preserves covering-claim withdrawal notifications.
 
 - Development: drive native review handoff setup and carry resolution inside awaited React act boundaries, keeping the transport-ordering witness quiet.
 
