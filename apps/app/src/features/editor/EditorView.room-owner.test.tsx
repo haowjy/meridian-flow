@@ -73,7 +73,14 @@ vi.mock("@/features/links", async () => ({
 vi.mock("./references/useReferenceBrowserCatalog", () => ({
   useReferenceBrowserCatalog: () => null,
 }));
-vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
+vi.mock("./useInlineReviewSync", () => ({
+  useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
+    useEffect(() => {
+      if (supplyMarks && options.editor)
+        options.onInlineModelAvailable?.("preview-1", options.documentId, options.draftId);
+    }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
+  },
+}));
 vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
@@ -127,12 +134,7 @@ let supplyMarks = true;
 function Host() {
   const value = useDraftReview();
   review = value;
-  const { inlineReview, reviewRoomName, inlineReviewModelAvailable } = value.controller;
-  useEffect(() => {
-    if (supplyMarks && inlineReview && reviewRoomName) {
-      inlineReviewModelAvailable("preview-1", inlineReview.documentId, inlineReview.draftId);
-    }
-  }, [inlineReview, reviewRoomName, inlineReviewModelAvailable]);
+  const { inlineReview } = value.controller;
   return (
     <EditorView
       draftOnly={draftOnly}
