@@ -139,7 +139,8 @@ review land in the draft branch rather than live. The phone mounts it
 read-only (`features/project/mobile`).
 `setInlineReviewMarksVisible(false)` hides every mark and removal without
 remounting; the full projection (including typing while hidden), model,
-selection and open folds survive.
+selection and open folds survive. Review decoration styles live in
+`inline-review.css`, imported by `editor.css` before common node styles.
 
 ## Component API
 
