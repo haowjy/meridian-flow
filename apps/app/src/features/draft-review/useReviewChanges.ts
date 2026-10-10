@@ -169,7 +169,7 @@ export function useReviewChanges(
     : active
       ? adoptsGeneration(inline, {
           draftGeneration: active.draftGeneration,
-          proposal: active.inlineModelPresent && reviewChangesOfPreview(active).length > 0,
+          proposal: reviewChangesOfPreview(active).length > 0,
         })
         ? "loading"
         : "ready"

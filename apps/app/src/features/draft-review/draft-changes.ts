@@ -49,14 +49,11 @@ export type DraftChangesView = {
 
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
-export type ActivePreview = Extract<
-  DraftPreviewResponse,
-  { status: "active"; inlineModelPresent: true }
->;
+export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
 /** The preview when it can be listed: active, with its inline model. */
 export function listablePreview(preview: DraftPreviewResponse | null): ActivePreview | null {
-  return preview?.status === "active" && preview.inlineModelPresent ? preview : null;
+  return preview?.status === "active" ? preview : null;
 }
 
 /**

@@ -229,9 +229,6 @@ export function ContextEditorMountHost({
                       reviewWorkId={reviewDraftId ? controller.workId : null}
                       // Leaving review would strand a draft-only tab on an empty
                       // editor; the writer closes it from the tab bar instead.
-                      onReviewSessionUnavailable={
-                        branchOnly ? undefined : controller.exitInlineReview
-                      }
                       // A room the server has moved past is not the end of the review,
                       // a draft-only one included: the review reads the current room.
                     />

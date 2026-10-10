@@ -100,7 +100,6 @@ function Host() {
       reviewWorkId="work-a"
       reviewDraftId={inlineReview?.draftId}
       reviewRoomName={reviewRoomName ?? undefined}
-      onReviewSessionUnavailable={value.controller.exitInlineReview}
     />
   );
 }
