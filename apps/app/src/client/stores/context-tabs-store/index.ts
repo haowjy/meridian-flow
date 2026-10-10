@@ -25,3 +25,5 @@ export {
   useContextTabsActions,
   useContextTabsStore,
 } from "./context-tabs-store";
+
+export { durableContextTab, parseContextTab } from "./editor-workspace-state";

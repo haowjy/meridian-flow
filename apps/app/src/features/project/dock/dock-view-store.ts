@@ -1,10 +1,14 @@
-/** Session-only view choices and the transient document slot for the project dock. */
+/** Browser-tab-local view choices and the document slot for the project dock. */
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
-
-/** Dock destinations the writer switches between. */
-export type DockView = "chat" | "context" | "changes";
+import {
+  browserDockStorage,
+  type DockStorage,
+  readDockSnapshot,
+  writeDockSnapshot,
+} from "./dock-persistence";
+import { type DockView, type ResolvedDockView, resolveDockView } from "./dock-views";
 
 /**
  * The one document the dock shows in place of its views, until the writer
@@ -18,28 +22,33 @@ export type DockDocument = {
   tab: ContextTab;
 };
 
-type DockViewSet = {
-  /** Ordered segments for the switch. */
-  views: readonly DockView[];
-  /** Shown when the writer has made no explicit choice this session. */
-  default: DockView;
-  /** The occupant's native (non-Changes) view — its content stays mounted. */
-  primary: DockView;
-};
+type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
 
-/**
- * The view set is a function of the dock occupant, which the screen fixes:
- * the Chat screen docks the context rail; Work/Editor dock the chat surface.
- */
-const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
-  work: { views: ["chat", "changes"], default: "chat", primary: "chat" },
-  chat: { views: ["context", "changes"], default: "context", primary: "context" },
-  context: { views: ["chat", "changes"], default: "chat", primary: "chat" },
-};
+/** Chat documents can stay parked; a Work's note belongs only to that Work's screen. */
+export function dockDocumentFitsScope(
+  document: DockDocument | null,
+  scope: DockScope | null,
+): boolean {
+  if (!document) return false;
+  if (!scope) return true;
+  return (
+    document.projectId === scope.projectId &&
+    (document.screen !== "work" ||
+      (scope.screen === "work" &&
+        document.tab.kind !== "new" &&
+        document.tab.workId === scope.workId))
+  );
+}
 
 type DockViewState = {
+  accountId: string | null;
+  /** Restore once per authenticated account; a foreign account's layout is never admitted. */
+  rehydrate: (accountId: string) => void;
   byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
+  /** Hidden until resource validation finishes; every writer intent cancels restoration. */
+  restoring: DockDocument | null;
+  restore: (expected: DockDocument, tab: ContextTab | null) => void;
   /**
    * Bumps on every new intent: an open requested or made, a close, a view
    * choice, and a move to another project, screen or Work. A slow open claims
@@ -47,7 +56,7 @@ type DockViewState = {
    */
   revision: number;
   /** Where the writer is, as last synced; only a real change counts as an intent. */
-  scope: string | null;
+  scope: DockScope | null;
   /** The Work on the Work screen (null elsewhere): the Work whose Scratch the dock menu browses. */
   workId: string | null;
   /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
@@ -63,78 +72,103 @@ type DockViewState = {
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export const useDockViewStore = create<DockViewState>((set, get) => {
-  const setOccupant = (occupant: DockDocument | null) =>
-    set((state) => ({ occupant, revision: state.revision + 1 }));
-  return {
-    byScreen: {},
-    occupant: null,
-    revision: 0,
-    scope: null,
-    workId: null,
-    setDockView: (screen, view) =>
-      set((state) => ({
-        byScreen: { ...state.byScreen, [screen]: view },
-        occupant: state.occupant?.screen === screen ? null : state.occupant,
-        revision: state.revision + 1,
-      })),
-    isCurrent: (claim) => get().revision === claim,
-    commit: (claim, document) => {
-      if (get().revision !== claim) return false;
-      setOccupant(document);
-      return true;
-    },
-    claim: () => {
-      set((state) => ({ revision: state.revision + 1 }));
-      return get().revision;
-    },
-    closeDocument: () => setOccupant(null),
-    syncOccupantScope: (projectId, screen, workId) =>
-      set((state) => {
-        const scope = `${projectId}\u0000${screen}\u0000${workId ?? ""}`;
-        if (scope === state.scope) return state;
-        const { occupant } = state;
-        // A Work's note belongs to that Work's screen.
-        const stays =
-          occupant != null &&
-          occupant.projectId === projectId &&
-          (occupant.screen !== "work" ||
-            (screen === "work" && occupant.tab.kind !== "new" && occupant.tab.workId === workId));
-        return {
-          scope,
-          workId: screen === "work" ? workId : null,
-          occupant: stays ? occupant : null,
+export function createDockViewStore(
+  storage: () => DockStorage | null = browserDockStorage,
+  accountId: string | null = null,
+) {
+  const snapshot = readDockSnapshot(storage, accountId);
+  const store = create<DockViewState>((set, get) => {
+    const setOccupant = (occupant: DockDocument | null) =>
+      set((state) => ({ occupant, restoring: null, revision: state.revision + 1 }));
+    return {
+      accountId,
+      rehydrate: (accountId) => {
+        const state = get();
+        if (state.accountId === accountId) return;
+        const snapshot = readDockSnapshot(storage, accountId);
+        set({
+          accountId,
+          byScreen: snapshot?.byScreen ?? {},
+          occupant: null,
+          restoring: dockDocumentFitsScope(snapshot?.occupant ?? null, state.scope)
+            ? (snapshot?.occupant ?? null)
+            : null,
+          // Account changes invalidate outstanding claims, not just the restore candidate.
+          revision: state.revision + (state.accountId === null ? 0 : 1),
+        });
+      },
+      byScreen: snapshot?.byScreen ?? {},
+      occupant: null,
+      restoring: snapshot?.occupant ?? null,
+      restore: (expected, tab) => {
+        if (get().restoring !== expected) return;
+        // A restore is not a new intent and must never supersede a writer's claim.
+        const document = tab ? { ...expected, tab } : null;
+        set({
+          restoring: null,
+          occupant: dockDocumentFitsScope(document, get().scope) ? document : null,
+        });
+      },
+      revision: 0,
+      scope: null,
+      workId: null,
+      setDockView: (screen, view) =>
+        set((state) => ({
+          byScreen: { ...state.byScreen, [screen]: view },
+          restoring: null,
+          occupant: state.occupant?.screen === screen ? null : state.occupant,
           revision: state.revision + 1,
-        };
-      }),
-  };
-});
-
-export type ResolvedDockView = {
-  view: DockView;
-  views: readonly DockView[];
-  primaryView: DockView;
-};
-
-/** Resolve the explicit choice or the screen's default. */
-export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
-  const set = DOCK_VIEW_SETS[screen];
-  const view = stored && set.views.includes(stored) ? stored : set.default;
-  return { view, views: set.views, primaryView: set.primary };
+        })),
+      isCurrent: (claim) => get().revision === claim,
+      commit: (claim, document) => {
+        if (get().revision !== claim) return false;
+        setOccupant(document);
+        return true;
+      },
+      claim: () => {
+        set((state) => ({ restoring: null, revision: state.revision + 1 }));
+        return get().revision;
+      },
+      closeDocument: () => setOccupant(null),
+      syncOccupantScope: (projectId, screen, workId) =>
+        set((state) => {
+          const scope = { projectId, screen, workId };
+          if (
+            state.scope?.projectId === projectId &&
+            state.scope.screen === screen &&
+            state.scope.workId === workId
+          )
+            return state;
+          const stays = dockDocumentFitsScope(state.occupant ?? state.restoring, scope);
+          return {
+            scope,
+            workId: screen === "work" ? workId : null,
+            occupant: stays ? state.occupant : null,
+            restoring: stays ? state.restoring : null,
+            revision: state.revision + 1,
+          };
+        }),
+    };
+  });
+  store.subscribe((state, previous) => {
+    if (!state.accountId) return;
+    if (
+      state.accountId === previous.accountId &&
+      state.occupant === previous.occupant &&
+      state.restoring === previous.restoring &&
+      state.byScreen === previous.byScreen
+    )
+      return;
+    writeDockSnapshot(storage, {
+      accountId: state.accountId,
+      byScreen: state.byScreen,
+      occupant: state.occupant ?? state.restoring,
+    });
+  });
+  return store;
 }
 
-/** Remove the Changes destination when its model is empty. */
-export function withoutEmptyChanges(
-  resolved: ResolvedDockView,
-  hasChanges: boolean,
-): ResolvedDockView {
-  if (hasChanges) return resolved;
-  return {
-    ...resolved,
-    view: resolved.view === "changes" ? resolved.primaryView : resolved.view,
-    views: resolved.views.filter((view) => view !== "changes"),
-  };
-}
+export const useDockViewStore = createDockViewStore();
 
 /** Resolve the active dock view for a screen and bind the switch action. */
 export function useDockView(

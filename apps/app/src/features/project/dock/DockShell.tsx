@@ -22,7 +22,7 @@
  * nothing reflows.
  */
 
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { hasDockChanges } from "@/features/chat/docked-drafts";
@@ -33,7 +33,8 @@ import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { useDockView, withoutEmptyChanges } from "./dock-view-store";
+import { useDockView } from "./dock-view-store";
+import { withoutEmptyChanges } from "./dock-views";
 
 export type DockShellProps = {
   projectId: string;
@@ -57,7 +58,7 @@ export function DockShell({
   const dockView = useDockView(screen, projectId);
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
-  const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
+  const { view, views } = withoutEmptyChanges(dockView, hasChanges);
   const { setView } = dockView;
   const presentedDocument = usePresentedDockDocument(screen);
   const dockDocument = presentedDocument === undefined ? dockView.document : presentedDocument;
@@ -70,12 +71,6 @@ export function DockShell({
         ? "changes"
         : null;
   const showPrimary = overlay === null;
-
-  useEffect(() => {
-    if (!hasChanges && !dockDocument && dockView.view === "changes") {
-      setView(primaryView);
-    }
-  }, [dockView.view, dockDocument, hasChanges, primaryView, setView]);
 
   return (
     <>

@@ -74,7 +74,7 @@ function availableTab(
   return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), owner);
 }
 
-async function validateServerRoute(
+export async function validateServerRoute(
   projectId: string,
   route: WorkingSetRoute,
 ): Promise<ValidatedRoute> {
