@@ -1,6 +1,5 @@
 /** Best-effort browser records with one version and ownership envelope. */
-export type RecordStorage = Pick<Storage, "getItem" | "setItem"> &
-  Partial<Pick<Storage, "removeItem">>;
+export type RecordStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type StorageSource = "session" | "local" | (() => RecordStorage | null);
 
 export function browserStorage(tier: "session" | "local"): RecordStorage | null {
@@ -54,7 +53,6 @@ export function browserRecord<T>(
         const target = storage();
         if (!target) return false;
         if (payload === undefined) {
-          if (!target.removeItem) return false;
           target.removeItem(key);
         } else target.setItem(key, JSON.stringify({ ...stamp, payload }));
         return true;

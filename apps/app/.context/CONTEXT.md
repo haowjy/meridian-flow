@@ -320,13 +320,13 @@ dropped `ThreadStoreProvider` during transitions.
 
 The account-lifetime `AccountSettingsProvider` owns language, theme, Stats for
 nerds and working-set sync. Serialized partial PATCH commands keep per-setting
-revisions, pending state and retryable errors. Rejections retain the displayed
-choice; only server-confirmed sync values drive `configureWorkingSetSync`.
-Loader echoes cannot overwrite locally revised fields; account epoch changes
-remount the owner and fence abandoned writes.
+revisions, pending state and retryable errors. Pending or failed intents own
+the displayed choice; confirmed values drive `configureWorkingSetSync` and
+are the only values relayed or cached. Newer ordered reads may replace settled
+choices. Account epoch changes remount the owner and fence abandoned writes.
 
 `meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
-cache, not a pending-write journal. The active-account pointer lets the theme
+cache using the shared browser-record versioned envelope, not a pending-write journal. The active-account pointer lets the theme
 boot script read it before hydration; SSR supplies the current account and a
 server theme seed that wins over cached appearance. The cache is used only
 when that seed is unavailable and contains confirmed snapshots only. Pending

@@ -510,3 +510,38 @@ it("renders the known server seed without first rendering a conflicting cached t
     expect(renders.every((value) => value.theme === "ink-jade")).toBe(true),
   );
 });
+
+it("keeps newer language confirmation when an older recovery read witnesses theme", async () => {
+  const { readAccountSettingsCache } = await import("@/lib/account-settings-cache");
+  const recovery = deferred<AccountSettings>();
+  const language = deferred<AccountSettings>();
+  mocks.updateAccountSettings
+    .mockRejectedValueOnce(new Error("response lost"))
+    .mockReturnValueOnce(language.promise);
+  mocks.getAccountSettings.mockReturnValueOnce(recovery.promise);
+  await mount(false, async ({ readAll }) => {
+    await act(async () => readAll().preference("theme").change("dark"));
+    await waitFor(() => expect(mocks.getAccountSettings).toHaveBeenCalledTimes(1));
+    await act(async () => readAll().preference("language").change("zh"));
+    await act(async () =>
+      language.resolve({
+        ...DEFAULT_ACCOUNT_APPEARANCE,
+        theme: "dark",
+        language: "zh",
+        workingSetSyncEnabled: false,
+      }),
+    );
+    await waitFor(() => expect(readAll().preference("language").pending).toBe(false));
+    await act(async () =>
+      recovery.resolve({
+        ...DEFAULT_ACCOUNT_APPEARANCE,
+        theme: "dark",
+        workingSetSyncEnabled: false,
+      }),
+    );
+    expect(readAll().preference("theme").error).toBeNull();
+    expect(readAll().preference("language").confirmed).toBe("zh");
+    expect(readAll().value.language).toBe("zh");
+    expect(readAccountSettingsCache("account-a")?.language).toBe("zh");
+  });
+});
