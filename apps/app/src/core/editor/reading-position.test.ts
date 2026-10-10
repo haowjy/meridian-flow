@@ -181,8 +181,22 @@ it("bounds device memory, rejects foreign/malformed accounts, and preserves the 
     JSON.stringify({ version: 1, accountId: "b", entries: [] }),
   );
   expect(store.load("new")).toBeNull();
-  localStorage.setItem(`${READING_POSITION_STORAGE_KEY}:a`, "{");
-  expect(store.load("new")).toBeNull();
+  for (const raw of [
+    "{",
+    "null",
+    "42",
+    '"snapshot"',
+    "[]",
+    JSON.stringify({ version: 1, accountId: "a", entries: [null] }),
+    JSON.stringify({
+      version: 1,
+      accountId: "a",
+      entries: [{ documentId: "new", place: { viewport: 42, selection: [] } }],
+    }),
+  ]) {
+    localStorage.setItem(`${READING_POSITION_STORAGE_KEY}:a`, raw);
+    expect(store.load("new")).toBeNull();
+  }
   const unavailable = new ReadingPositionStore("a", () => {
     throw new Error("denied");
   });

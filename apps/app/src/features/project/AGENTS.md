@@ -9,6 +9,8 @@ screens. Chat, editor, and context domain behavior stays with those features.
   URLs.
 - Preserve persistent desktop surfaces across destination changes; do not
   reparent, portal, or conditionally remove them to change layout.
+- Editor scroll memory belongs to the mounted reading-position hook. Project
+  navigation never captures or repairs an editor's pixel scroll on warm reveal.
 - Treat Work as catalog and chat binding as explicit composer-owned state;
   navigation and Work management never rebind a chat implicitly.
 - One tab-local current chat (a thread identity or none) is shared by center
