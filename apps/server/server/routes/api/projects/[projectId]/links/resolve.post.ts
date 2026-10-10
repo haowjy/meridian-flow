@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
       linkScopes: app.linkScopes,
       workAuthorityResolver: app.workAuthorityResolver,
       fileAccess: app.fileAccess,
+      drafts: app.documentSync.drafts,
     },
     { projectId: getRouterParam(event, "projectId") ?? "", userId: user.userId, request },
   );

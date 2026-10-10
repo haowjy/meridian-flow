@@ -47,7 +47,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", workId: crypto.randomUUID() };
+const DRAFT_ID = crypto.randomUUID();
+const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
 const TARGET_URI = "user://target.md";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -379,7 +380,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -700,7 +701,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`) },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
       };
     },
   },
@@ -791,7 +792,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT.workId}`) },
+        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
       };
     },
   },

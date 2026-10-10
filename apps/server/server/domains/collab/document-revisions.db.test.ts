@@ -83,6 +83,10 @@ async function fixture(
   });
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
+  const drafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const effective = scopeBranchPeer(
     createEffectiveDocumentReader({
       branches: f.branchStore,
@@ -96,6 +100,7 @@ async function fixture(
       links,
       closeBranchRoom: () => {},
       deferUntilCommit: () => false,
+      drafts,
     }),
     links,
   );
@@ -106,10 +111,7 @@ async function fixture(
     }),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
-    drafts: createDrafts({
-      store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db),
-    }),
+    drafts,
     works: createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,

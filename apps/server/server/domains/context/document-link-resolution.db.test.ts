@@ -97,14 +97,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         linkScopes: createDrizzleDocumentLinkScopes({
           db,
           fileAccess,
-          drafts: {
-            viewForWork: async (workId) => {
-              viewed.push(workId);
-              return { kind: "live" };
-            },
-          },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
+        drafts: {
+          viewForWork: async (workId) => {
+            viewed.push(workId);
+            return { kind: "live" };
+          },
+        },
       };
       for (const baseUri of [null, "scratch://@/c1/holder.md"]) {
         viewed.length = 0;
@@ -310,9 +310,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         linkScopes: createDrizzleDocumentLinkScopes({
           db,
           fileAccess,
-          drafts: { viewForWork: async () => ({ kind: "live" }) },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
+        drafts: { viewForWork: async () => ({ kind: "live" }) },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -342,6 +342,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.insert(documents).values({ id, contextSourceId, name, extension: "md" });
         return id;
       };
+      // The holder the request's base names: pinned, so its ahead answers read its bindings.
+      await sibling("holder");
       const deleted = await sibling("deleted");
       const discarded = await sibling("discarded");
       const secret = await sibling("secret");
@@ -401,14 +403,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
             },
           },
-          drafts: {
-            viewForWork: async (workId) => {
-              provisioned.push(workId);
-              return { kind: "live" };
-            },
-          },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
+        drafts: {
+          viewForWork: async (workId) => {
+            provisioned.push(workId);
+            return { kind: "live" };
+          },
+        },
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         fileAccess: {
           async listAccess(_principal, ids) {

@@ -326,6 +326,7 @@ function fresh(
       ref: assigned.ref,
       address: assigned.address,
       holderProjectId: scope.holder.projectId,
+      view: scope.holder.view,
     });
   return { ref: assigned.ref, title, href: assigned.href };
 }

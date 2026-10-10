@@ -93,8 +93,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
   });
+  const drafts = createDrafts({
+    store: createInMemoryDraftStore(),
+    boundary: createInMemoryDraftWriteBoundary(),
+  });
   // No Work drafts exist in memory, so the pool routes both destinations to the live core.
   const agentEdit = createThreadPeerCorePool({
+    drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     liveHistory: journal,
@@ -250,12 +255,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       links,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
-    draftResolver: {
-      drafts: createDrafts({
-        store: createInMemoryDraftStore(),
-        boundary: createInMemoryDraftWriteBoundary(),
-      }),
-    },
+    draftResolver: { drafts },
     documentCreation,
   });
 }

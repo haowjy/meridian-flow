@@ -1,9 +1,15 @@
-/** PostgreSQL proof for ahead registration, the namespace race with arrival, and settlement CAS. */
+/**
+ * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS,
+ * and registration in a draft: idempotent per (ref, draft) (L-2).
+ */
+
+import type { DraftId } from "@meridian/contracts";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
   documents,
+  linkAheadDraftSettlements,
   linkAheadRefs,
   projects,
   threads,
@@ -13,14 +19,20 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
+import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
+import {
+  createTestDocumentLinkScopes,
+  createTestLinkAheadRegistry,
+} from "../../collab/test-support/document-link-scopes.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
 import {
   contextNamespaceKey,
   lockContextSources,
   lockNamespaceKeys,
 } from "./context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "./drizzle-link-ahead-registry.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -90,7 +102,7 @@ if (!RUN) {
       (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
         (row) => row.id,
       );
-    const newRegistry = (db: Database) => createDrizzleLinkAheadRegistry(db);
+    const newRegistry = (db: Database) => createTestLinkAheadRegistry(db);
 
     /** The exact key real arrivals take for this scheme's source (Work: the persisted row id). */
     const arrivalKey = (scheme: Scheme) =>
@@ -397,6 +409,77 @@ if (!RUN) {
           ).map((row) => [`manuscript://${row.path}`, row.settled]),
         )
         .toEqual([[long, null]]);
+    });
+
+    describe("in a draft", () => {
+      // Commands publish after commit and registration opens root transactions: commit for real.
+      const db = createDb(DATABASE_URL, { max: 12 });
+      afterAll(() => db.close());
+      const runtimes = useComposedRuntimes(() => db);
+      const KAEL = "manuscript://lore/kael.md";
+
+      async function start() {
+        const runtime = await runtimes.compose();
+        const scenario = await draftTreeScenario(db, { runtime, runtimes });
+        const work = await scenario.work("Ascension", "draft");
+        // The model's create is a hidden row in the Work's draft.
+        const kael = await scenario.model(work).create("lore/kael.md", "Kael, the smith.");
+        const draft = await scenario.draftOf(work);
+        return { runtime, scenario, work, kael, draft };
+      }
+
+      /** The ref's registry row, its live settlement, and every draft meaning it has. */
+      async function meanings(aheadId: string) {
+        const [ref] = await db
+          .select({ settled: linkAheadRefs.settledDocumentId })
+          .from(linkAheadRefs)
+          .where(eq(linkAheadRefs.aheadId, aheadId));
+        const drafted = await db
+          .select({
+            draftId: linkAheadDraftSettlements.draftId,
+            documentId: linkAheadDraftSettlements.documentId,
+          })
+          .from(linkAheadDraftSettlements)
+          .where(eq(linkAheadDraftSettlements.aheadId, aheadId));
+        return { registered: ref !== undefined, live: ref?.settled ?? null, drafted };
+      }
+      const inDraft = (draftId: DraftId, documentId: string) => [{ draftId, documentId }];
+
+      it("registers per (ref, draft): a ref already registered live still settles on the draft's occupant, never live; an agent mint keeps its view (L-2)", async () => {
+        const { scenario, kael, draft } = await start();
+        const registry = createTestLinkAheadRegistry(db);
+        const at = { holderProjectId: scenario.project.id, address: KAEL };
+        // A live editor's mint at the path, before it ever reached the draft's text.
+        const pasted = crypto.randomUUID();
+        await registry.register([{ ...at, aheadId: pasted }]);
+        expect
+          .soft(await meanings(pasted), "live mint: nothing live there, no draft named")
+          .toEqual({ registered: true, live: null, drafted: [] });
+        // Pasted into the draft's text: its existing row doesn't skip the draft, twice over.
+        await registry.register([{ ...at, aheadId: pasted, draftId: draft.id }]);
+        await registry.register([{ ...at, aheadId: pasted, draftId: draft.id }]);
+        expect
+          .soft(await meanings(pasted), "the draft's occupant, once; live untouched")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+
+        // A model's mint carries its holder's view to the registry (B7).
+        const links = createScopedDocumentLinks({
+          scopes: createTestDocumentLinkScopes(db),
+          registrar: registry,
+          viewFor: () => ({ kind: "draft", draftId: draft.id }),
+        });
+        const [minted, liveMinted] = [crypto.randomUUID(), crypto.randomUUID()];
+        await links.registerAhead([
+          { ref: `ahead:${minted}`, ...at, view: { kind: "draft", draftId: draft.id } },
+          { ref: `ahead:${liveMinted}`, ...at, view: { kind: "live" } },
+        ]);
+        expect
+          .soft(await meanings(minted), "minted in the draft's view")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+        expect
+          .soft(await meanings(liveMinted), "minted live")
+          .toEqual({ registered: true, live: null, drafted: [] });
+      });
     });
   });
 }

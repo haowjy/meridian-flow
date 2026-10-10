@@ -1,4 +1,5 @@
 /** Port for durable ahead-ref identities (contract §9.2). */
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 export type AheadRegistration = {
@@ -7,6 +8,11 @@ export type AheadRegistration = {
   holderProjectId: ProjectId;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
+  /**
+   * The draft whose text holds the ref (an agent mint in its view, an editor mint in its
+   * branch, Apply's cut): the draft's occupant at the address settles it in that view.
+   */
+  draftId?: DraftId;
 };
 
 /** Which holders' index rows a registration recovery reads. */
@@ -33,9 +39,13 @@ export class RegistrationInsideTransactionError extends Error {
 
 export interface LinkAheadRegistry {
   /**
-   * Independent root transaction. Takes the targets' namespace keys sorted (no Work or holder
-   * lock), inserts idempotently by id (re-registering an id for another address throws), then
-   * settles any row whose address already holds a live document.
+   * Independent root transaction. Shares each named draft (`FOR SHARE`, before any namespace
+   * key; a closed draft skips its part), takes the targets' namespace keys sorted (no Work or
+   * holder lock), inserts idempotently by id (re-registering an id for another address
+   * throws), then settles any row whose address already holds a live document. With a
+   * `draftId` it is idempotent per (ahead id, draft), not per row: a ref with no live
+   * settlement whose address holds exactly one document in that draft's view is settled
+   * there, whether or not the id was registered before.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   /**

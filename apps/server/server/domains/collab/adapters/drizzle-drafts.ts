@@ -5,12 +5,13 @@
  */
 import type { DraftId, WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { drafts, linkAheadDraftSettlements } from "@meridian/database/schema";
+import { drafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
+import { dropDraftSettlements } from "../../context/adapters/link-ahead-draft-settlements.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { Draft, DraftStore, DraftWriteBoundary } from "../domain/ports/draft-store.js";
 
@@ -72,9 +73,7 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
         .update(drafts)
         .set({ status: "closed", closedAt: at })
         .where(and(eq(drafts.id, draftId), eq(drafts.status, "active")));
-      await tx()
-        .delete(linkAheadDraftSettlements)
-        .where(eq(linkAheadDraftSettlements.draftId, draftId));
+      await dropDraftSettlements(db, { draftId });
     },
     async byIds(draftIds) {
       const ids = [...new Set(draftIds)].filter(isUuid);

@@ -299,6 +299,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.workProjectionMutation,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(deps.db),
+    boundary: createDrizzleDraftWriteBoundary(deps.db),
+  });
   const pushCommits = createDrizzlePushCommitStore(
     deps.db,
     stageSettlementBatchWithinTx,
@@ -344,6 +348,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
+      drafts: workDrafts,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {
@@ -445,10 +450,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     deps.links,
   );
-  const workDrafts = createDrafts({
-    store: createDrizzleDraftStore(deps.db),
-    boundary: createDrizzleDraftWriteBoundary(deps.db),
-  });
   const drafts = createWorkDraftReviewService({
     links: deps.links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
@@ -489,6 +490,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       links: deps.links,
       closeBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
       deferUntilCommit: deferUntilDrizzleCommit,
+      drafts: workDrafts,
     }),
     deps.links,
   );

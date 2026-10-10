@@ -39,6 +39,7 @@ export type LinkScopeKey = (
 };
 
 export interface ScopePrepareRequest {
+  /** Each holder's own ahead bindings load with it (an ahead ref's meaning in that holder). */
   holders: readonly { documentId: string; view: LinkView }[];
   refs?: readonly string[];
   addresses?: readonly string[];
@@ -51,7 +52,7 @@ export interface ScopePrepareRequest {
    * against the first holder, so they load after it.
    */
   written?: readonly PMNode[];
-  /** Views a `reader` will resolve in, beside the holders' (their draft membership loads too). */
+  /** Views a `reader` will resolve in, beside the holders' (their drafts' settlements load too). */
   views?: readonly LinkView[];
 }
 
@@ -70,13 +71,37 @@ export interface DocumentLinkScopes {
    * `uri` null). Resolution never reads the holder; only spelling would.
    */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
+  /**
+   * The document the holder's own binding names for this ahead ref (a published ref,
+   * contract §10.4 step 1): null when it has none, undefined when not loaded. A copy out
+   * of the holder carries `doc:<id>` for it, since the binding stays with the holder.
+   */
+  holderBinding(input: { holderDocumentId: string; aheadId: string }): string | null | undefined;
+  /**
+   * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
+   * document is visible there (wherever it now sits), else the one document at `uri`.
+   * Null when neither names exactly one document. The answer carries its current URI.
+   */
+  pinHolder(input: {
+    view: LinkView;
+    documentId?: string;
+    uri: string | null;
+  }): Promise<{ documentId: string; uri: string } | null>;
 }
 
 export const LIVE_VIEW: LinkView = { kind: "live" };
 
-/** Durable ahead-ref registration (context's `LinkAheadRegistry.register`). */
+/**
+ * Durable ahead-ref registration (context's `LinkAheadRegistry.register`). A `draftId`
+ * also settles the ref in that draft's view when the draft has its occupant.
+ */
 export interface AheadRefRegistrar {
   register(
-    registrations: readonly { aheadId: string; holderProjectId: string; address: string }[],
+    registrations: readonly {
+      aheadId: string;
+      holderProjectId: string;
+      address: string;
+      draftId?: string;
+    }[],
   ): Promise<void>;
 }

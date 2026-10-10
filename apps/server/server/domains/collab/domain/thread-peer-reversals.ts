@@ -14,7 +14,7 @@ import {
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   type FileAccess,
   type FileAccessDenied,
@@ -29,6 +29,7 @@ import {
   buildBranchReversalState,
   resolveBranchReversalScope,
 } from "./branch-reversal-history.js";
+import type { Drafts } from "./drafts.js";
 import {
   mergeReversals,
   type ReversalHistory,
@@ -42,10 +43,16 @@ export function isReversalCommand(command: WriteCommand): command is ReversalCom
   return command.command === "undo" || command.command === "redo";
 }
 
-/** Both journals' reversible writes, and the Work whose draft holds the drafted ones. */
-type Histories = { live: ReversalHistory; draft: ReversalHistory | null; draftWorkId: string };
+/** Both journals' reversible writes, and the view of the Work draft holding the drafted ones. */
+type Histories = {
+  live: ReversalHistory;
+  draft: ReversalHistory | null;
+  draftView: LinkView;
+};
 
 export function createThreadPeerReversals(input: {
+  /** The drafted side spells in the Work's active draft's view (live when it has none). */
+  drafts: Pick<Drafts, "viewForWork">;
   liveUtilityCore: LiveAgentEditCore;
   coreFor(threadId: string | undefined): Promise<AgentEditCore>;
   /** The thread's Work-draft history: its undo and redo reverse drafted writes there. */
@@ -85,7 +92,7 @@ export function createThreadPeerReversals(input: {
     return {
       live: { active, reversals },
       draft: { active: drafted.activeWrites, reversals: drafted.reversals },
-      draftWorkId: scope.workId,
+      draftView: await input.drafts.viewForWork(scope.workId as WorkId),
     };
   }
 
@@ -104,11 +111,8 @@ export function createThreadPeerReversals(input: {
   }
 
   /** The view a side's reversal spells in: the Work draft its history was read from, or live. */
-  function viewAt(side: ReversalSide, histories: Histories | null, responseId?: string): LinkView {
-    const reply = responseId ? { responseId } : {};
-    return side === "draft" && histories
-      ? { kind: "draft", workId: histories.draftWorkId, ...reply }
-      : { kind: "live", ...reply };
+  function viewAt(side: ReversalSide, histories: Histories | null): LinkView {
+    return side === "draft" && histories ? histories.draftView : { kind: "live" };
   }
 
   /** The side and core holding the write a plain undo or redo would reverse. */
@@ -163,7 +167,7 @@ export function createThreadPeerReversals(input: {
           const sideCommand =
             route.selection.kind === "last" ? { ...command, last: route.selection.count } : command;
           const core = await coreAt(side, context.threadId);
-          const sideContext = { ...context, linkView: viewAt(side, histories, context.responseId) };
+          const sideContext = { ...context, linkView: viewAt(side, histories) };
           outcomes.push(
             await input.reverseIn(core, sideCommand, documentId, sideContext, sideGrant),
           );

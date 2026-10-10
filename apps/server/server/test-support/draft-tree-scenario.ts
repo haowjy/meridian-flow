@@ -11,8 +11,10 @@ import { randomUUID } from "node:crypto";
 import type {
   ContextSourceId,
   DocumentId,
+  DocumentLinkAnswer,
   FolderId,
   ProjectId,
+  ResolveDocumentLinksResponse,
   ThreadId,
   UserId,
   WorkId,
@@ -25,6 +27,9 @@ import {
   documents,
   draftTreeChanges,
   folders,
+  linkAheadDraftSettlements,
+  linkAheadHolderBindings,
+  linkAheadRefs,
   projects,
   threads,
   threadWorks,
@@ -39,17 +44,28 @@ import {
 } from "../domains/collab/adapters/drizzle-drafts.js";
 import { createDrafts, type Drafts } from "../domains/collab/domain/drafts.js";
 import type { Draft } from "../domains/collab/domain/ports/draft-store.js";
+import { createLinkScopeObserver } from "../domains/collab/index.js";
+import { createDrizzleContextCatalog } from "../domains/context/adapters/context-catalog.js";
 import { ContextFS } from "../domains/context/adapters/context-fs/context-fs.js";
 import { createDrizzleDraftCreates } from "../domains/context/adapters/context-fs/drizzle-draft-creates.js";
 import { DrizzleContextTreeMutationStore } from "../domains/context/adapters/context-fs/drizzle-tree-mutation-store.js";
+import { createDrizzleDocumentLinkHistory } from "../domains/context/adapters/document-link-history.js";
+import { createDrizzleDocumentLinkScopes } from "../domains/context/adapters/document-link-scope.js";
 import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import { createProjectContextDocumentStore } from "../domains/context/context-source-provisioning.js";
+import { createDocumentLinkResolver } from "../domains/context/document-link-resolution.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import { setTreeHook, type TreeHookPoint } from "../domains/context/tree/test-hooks.js";
+import { createAllowAllFileAccess } from "../domains/file-policy/index.js";
+import {
+  createDrizzleProjectRepository,
+  createDrizzleProjectWorkAuthorityResolver,
+} from "../domains/projects/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
+import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import {
   createContextEntry,
   parseCreateContextEntryBody,
@@ -128,9 +144,31 @@ export interface DraftTreeScenario {
   /**
    * A document the Work's draft created: hidden folders made (or joined) as needed, a
    * hidden document at the path, and the draft's `created` row at that location. Makes
-   * the Work's draft if it has none. Always a new document; joining is a command's job.
+   * the Work's draft if it has none. A new document, unless `join` names a hidden one this
+   * draft then uses at `path` too (the row a create's join leaves, at a location of its own).
    */
-  seedHidden(work: ScenarioWork, path: string): Promise<DocumentId>;
+  seedHidden(
+    work: ScenarioWork,
+    path: string,
+    options?: { join?: DocumentId },
+  ): Promise<DocumentId>;
+  /** A registry row for an ahead ref at `path`, settled live to `settledTo` if given. */
+  seedAhead(path: string, options?: { settledTo?: DocumentId }): Promise<string>;
+  /** What the ahead ref means in the Work's draft. */
+  seedDraftSettlement(work: ScenarioWork, aheadId: string, documentId: DocumentId): Promise<void>;
+  /** What the ahead ref means in this holder (an Apply's binding). */
+  seedHolderBinding(aheadId: string, holder: DocumentId, documentId: DocumentId): Promise<void>;
+  /**
+   * The resolve route's answer for one stored link, read in a Work's view or live, from
+   * `baseUri` (null for chat) and, when given, the holder pinned by id.
+   */
+  linkAnswer(input: {
+    view: ScenarioWork | "live";
+    ref: string;
+    href: string;
+    baseUri: string | null;
+    holderDocumentId?: DocumentId;
+  }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }>;
   /** The Work's active draft, made at the write boundary if absent. */
   draftOf(work: ScenarioWork): Promise<Draft>;
   /** Another thread whose primary Work is `work`. */
@@ -579,6 +617,57 @@ export async function draftTreeScenario(
     }
   }
 
+  async function linkAnswer(input: {
+    view: ScenarioWork | "live";
+    ref: string;
+    href: string;
+    baseUri: string | null;
+    holderDocumentId?: DocumentId;
+  }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }> {
+    const catalog = createDrizzleContextCatalog(db);
+    const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
+    const response: ResolveDocumentLinksResponse = await handleDocumentLinkResolveRequest(
+      {
+        projectRepo: createDrizzleProjectRepository({
+          db,
+          catalogLifecycle: catalog,
+          ensureNoWork: async () => {
+            throw new Error("The scenario's project already has its No Work row");
+          },
+        }),
+        documentLinks: createDocumentLinkResolver({
+          catalog,
+          workAuthorityResolver,
+          history: createDrizzleDocumentLinkHistory(db),
+        }),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess: createAllowAllFileAccess(),
+          observer: createLinkScopeObserver(),
+        }),
+        workAuthorityResolver,
+        fileAccess: createAllowAllFileAccess(),
+        drafts,
+      },
+      {
+        projectId,
+        userId,
+        request: {
+          workId: input.view === "live" ? null : input.view.id,
+          baseUri: input.baseUri,
+          ...(input.holderDocumentId ? { holderDocumentId: input.holderDocumentId } : {}),
+          links: [{ ref: input.ref, href: input.href }],
+        },
+      },
+    );
+    const [answer] = response.answers;
+    if (!answer) throw new Error("The resolve route answered nothing");
+    return {
+      answer,
+      ...(response.holderUri !== undefined ? { holderUri: response.holderUri } : {}),
+    };
+  }
+
   function draftOf(work: ScenarioWork): Promise<Draft> {
     return drafts.ensureActiveForWrite({
       workId: work.id,
@@ -626,11 +715,36 @@ export async function draftTreeScenario(
       return leaf;
     },
     draftOf,
-    async seedHidden(work, path) {
+    linkAnswer,
+    async seedAhead(path, aheadOptions = {}) {
+      const { scheme, rel } = sourceOf(path);
+      const aheadId = randomUUID();
+      await db.insert(linkAheadRefs).values({
+        aheadId,
+        projectId,
+        scheme,
+        path: rel,
+        ...(aheadOptions.settledTo
+          ? { settledDocumentId: aheadOptions.settledTo, settledAt: new Date() }
+          : {}),
+      });
+      return aheadId;
+    },
+    async seedDraftSettlement(work, aheadId, documentId) {
+      const draft = await draftOf(work);
+      await db.insert(linkAheadDraftSettlements).values({ aheadId, draftId: draft.id, documentId });
+    },
+    async seedHolderBinding(aheadId, holder, documentId) {
+      await db
+        .insert(linkAheadHolderBindings)
+        .values({ aheadId, holderDocumentId: holder, documentId });
+    },
+    async seedHidden(work, path, hiddenOptions = {}) {
       const draft = await draftOf(work);
       const { sourceId, dir, filename } = locate(path);
       const folderId = await folderChain(sourceId, dir, true);
-      const documentId = await insertDocument(sourceId, folderId, filename, true);
+      const documentId =
+        hiddenOptions.join ?? (await insertDocument(sourceId, folderId, filename, true));
       const { name, extension } = splitFilename(filename);
       await db.insert(draftTreeChanges).values({
         draftId: draft.id,

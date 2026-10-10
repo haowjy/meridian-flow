@@ -31,6 +31,7 @@ import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js"
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
 import { createInMemoryCollabDomain, createLinkScopeObserver } from "../../collab/index.js";
+import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
 import { createOwnerFileGrants } from "../../file-policy/adapters/owner-file-grants.js";
 import { createFileAccess } from "../../file-policy/file-access.js";
@@ -45,7 +46,6 @@ import { createInMemoryObjectStore } from "../../storage/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../../threads/adapters/drizzle/thread-works-repository.js";
 import { createDrizzleDocumentLinkScopes } from "../adapters/document-link-scope.js";
-import { createDrizzleLinkAheadRegistry } from "../adapters/drizzle-link-ahead-registry.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 import { createDrizzleLineageScratchLifecycle } from "../adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../adapters/project-context-availability.js";
@@ -213,7 +213,6 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const scopes = createDrizzleDocumentLinkScopes({
         db,
         fileAccess,
-        drafts: scenario.drafts,
         observer: createLinkScopeObserver(),
       });
       const revisions = createDocumentRevisions({
@@ -235,14 +234,17 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
             }) as never,
         },
       });
-      async function link(view: LinkView) {
-        const aheadId = randomUUID();
-        await db.insert(linkAheadRefs).values({
-          aheadId,
-          projectId: scenario.project.id,
-          scheme: "manuscript",
-          path: "lore/kael.md",
-        });
+      /** The hidden document by id, and an ahead ref at its path (registered, or given). */
+      async function link(view: LinkView, aheadId: string = randomUUID()) {
+        await db
+          .insert(linkAheadRefs)
+          .values({
+            aheadId,
+            projectId: scenario.project.id,
+            scheme: "manuscript",
+            path: "lore/kael.md",
+          })
+          .onConflictDoNothing();
         return scopes.within(
           { projectId: scenario.project.id, viewer: { accountId: scenario.project.userId } },
           async () => {
@@ -288,7 +290,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         occurrences: 1,
       });
       const aheadId = randomUUID();
-      const registry = createDrizzleLinkAheadRegistry(db);
+      const registry = createTestLinkAheadRegistry(db);
       const m = await modelHarbor();
       const liveFs = m.scenario.view("live");
       const rows = [
@@ -578,9 +580,15 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           surface: "link scope by id",
           run: async () => {
             const { identity } = await f.link({ kind: "live" });
-            return identity.kind === "document" && identity.inDraft;
+            return identity.kind === "document"
+              ? [identity.inDraft, identity.document.draft, identity.document.uri]
+              : identity.kind;
           },
-          expected: true,
+          expected: [
+            true,
+            { draftId: (await f.scenario.draftOf(f.work)).id, workId: f.work.id },
+            "manuscript://lore/kael.md",
+          ],
         },
         {
           surface: "hidden address occupancy",
@@ -746,10 +754,39 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "draft link scope",
           run: async () => {
-            const { identity } = await f.link({ kind: "draft", workId: f.work.id });
-            return identity.kind === "document" && identity.inDraft;
+            const { identity } = await f.link({ kind: "draft", draftId: draft.id });
+            return identity.kind === "document"
+              ? [identity.inDraft, identity.document.draft, identity.document.uri]
+              : identity.kind;
           },
-          expected: true,
+          expected: [true, { draftId: draft.id, workId: f.work.id }, "manuscript://lore/kael.md"],
+        },
+        {
+          surface: "ahead ref in D's text at the path",
+          run: async () => {
+            // An editor's mint in D's text, registered in D (the eager path's call).
+            const aheadId = randomUUID();
+            await createTestLinkAheadRegistry(db).register([
+              {
+                aheadId,
+                holderProjectId: f.scenario.project.id,
+                address: "manuscript://lore/kael.md",
+                draftId: draft.id,
+              },
+            ]);
+            const [inDraft, live] = await Promise.all([
+              f.link({ kind: "draft", draftId: draft.id }, aheadId),
+              f.link({ kind: "live" }, aheadId),
+            ]);
+            return [
+              inDraft.occupant.kind === "document" && [
+                inDraft.occupant.document.documentId,
+                inDraft.occupant.settled,
+              ],
+              live.occupant.kind,
+            ];
+          },
+          expected: [[f.hidden, true], "ahead"],
         },
         {
           surface: "draft revision",

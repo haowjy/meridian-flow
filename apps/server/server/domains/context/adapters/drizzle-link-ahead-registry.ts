@@ -1,8 +1,10 @@
 /**
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
- * arrives at the exact address (or at registration, if one is already there).
+ * arrives at the exact address (or at registration, if one is already there), and,
+ * for a ref written in a draft, by that draft's occupant in its own view (§10.5).
  */
+import type { DraftId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
@@ -10,6 +12,7 @@ import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentLinks,
+  linkAheadDraftSettlements,
   linkAheadRefs,
   projects,
   works,
@@ -21,6 +24,7 @@ import {
   runInRootDrizzleTransaction,
   runOutsideWrite,
 } from "../../../shared/drizzle-transaction.js";
+import type { Drafts } from "../../collab/domain/drafts.js";
 import {
   createNoopEventSink,
   type EventSink,
@@ -36,22 +40,37 @@ import {
   RegistrationInsideTransactionError,
 } from "../ports/link-ahead-registry.js";
 import type { DocumentCoordinates } from "../tree/tree-addresses.js";
-import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
+import {
+  coordinatesKey,
+  createTreeReader,
+  LIVE_TREE,
+  visibleDocuments,
+} from "../tree/tree-view.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   currentDocumentAddress,
   resolveCanonicalAddress,
   sameCoordinates,
 } from "./document-address.js";
+import { atAddress } from "./link-ahead-draft-settlements.js";
 
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
+export type LinkAheadRegistryDeps = {
+  /** Registration relies on a named draft staying active while it settles there. */
+  drafts: Pick<Drafts, "shareActive">;
+  eventSink?: EventSink;
+};
 
 export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
+  private readonly eventSink: EventSink;
+
   constructor(
     private readonly db: Database,
-    private readonly eventSink: EventSink = createNoopEventSink(),
-  ) {}
+    private readonly deps: LinkAheadRegistryDeps,
+  ) {
+    this.eventSink = deps.eventSink ?? createNoopEventSink();
+  }
 
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
@@ -59,6 +78,14 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     await runOutsideWrite(() =>
       runInRootDrizzleTransaction(this.db, async () => {
         const tx = currentDrizzleDb(this.db);
+        // Each draft before any namespace key (lock order rule 4). FOR SHARE waits out a
+        // close in progress, so no settlement can outlive the draft it names (O-12).
+        const active = new Set<DraftId>();
+        for (const draftId of [
+          ...new Set(registrations.flatMap((each) => (each.draftId ? [each.draftId] : []))),
+        ].sort()) {
+          if (await this.deps.drafts.shareActive(draftId)) active.add(draftId);
+        }
         const resolved = [];
         for (const registration of registrations) {
           const aheadId = parseRequestId(registration.aheadId);
@@ -66,6 +93,10 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           resolved.push({
             aheadId,
             address: await resolveCanonicalAddress(this.db, registration),
+            draftId:
+              registration.draftId && active.has(registration.draftId)
+                ? registration.draftId
+                : null,
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
@@ -109,8 +140,59 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           const documentId = await this.liveDocumentAt(address);
           if (documentId) await this.settle(address, documentId, aheadId);
         }
+        await this.settleInDrafts(resolved);
       }),
     );
+  }
+
+  /**
+   * Settles each drafted ref in its draft's view (12a rule 1): only one with no live
+   * settlement, onto the single document the draft has at its address. A ref the draft
+   * already settled keeps its first meaning.
+   */
+  private async settleInDrafts(
+    resolved: readonly { aheadId: string; address: Address; draftId: DraftId | null }[],
+  ): Promise<void> {
+    const drafted = resolved.filter(
+      (each): each is (typeof resolved)[number] & { draftId: DraftId } => each.draftId !== null,
+    );
+    if (drafted.length === 0) return;
+    const tx = currentDrizzleDb(this.db);
+    const liveSettled = new Set(
+      (
+        await tx
+          .select({ aheadId: linkAheadRefs.aheadId })
+          .from(linkAheadRefs)
+          .where(
+            and(
+              inArray(
+                linkAheadRefs.aheadId,
+                drafted.map((each) => each.aheadId),
+              ),
+              isNotNull(linkAheadRefs.settledDocumentId),
+            ),
+          )
+      ).map((row) => row.aheadId),
+    );
+    const tree = createTreeReader(this.db);
+    const settlements: { aheadId: string; draftId: DraftId; documentId: DocumentId }[] = [];
+    for (const draftId of new Set(drafted.map((each) => each.draftId))) {
+      const refs = drafted.filter(
+        (each) => each.draftId === draftId && !liveSettled.has(each.aheadId),
+      );
+      if (refs.length === 0) continue;
+      const occupants = await tree.occupantsAt(
+        { kind: "draft", draftId },
+        refs.map((each) => each.address),
+      );
+      for (const { aheadId, address } of refs) {
+        const ids = occupants.get(coordinatesKey(address)) ?? [];
+        const [only] = ids;
+        if (only && ids.length === 1) settlements.push({ aheadId, draftId, documentId: only });
+      }
+    }
+    if (settlements.length === 0) return;
+    await tx.insert(linkAheadDraftSettlements).values(settlements).onConflictDoNothing();
   }
 
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
@@ -204,25 +286,9 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     const [row] = await currentDrizzleDb(this.db)
       .select({ id: linkAheadRefs.aheadId })
       .from(linkAheadRefs)
-      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .where(and(atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
       .limit(1);
     return Boolean(row);
-  }
-
-  private atAddress(address: Address) {
-    return and(
-      eq(linkAheadRefs.projectId, address.projectId),
-      eq(linkAheadRefs.scheme, address.scheme),
-      address.workId === null
-        ? isNull(linkAheadRefs.workId)
-        : eq(linkAheadRefs.workId, address.workId),
-      address.rootThreadId
-        ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
-        : isNull(linkAheadRefs.rootThreadId),
-      // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
-      sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
-      eq(linkAheadRefs.path, address.path),
-    );
   }
 
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
@@ -232,7 +298,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       .set({ settledDocumentId: documentId, settledAt: new Date() })
       .where(
         and(
-          this.atAddress(address),
+          atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
@@ -244,7 +310,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
 export function createDrizzleLinkAheadRegistry(
   db: Database,
-  eventSink?: EventSink,
+  deps: LinkAheadRegistryDeps,
 ): LinkAheadRegistry {
-  return new DrizzleLinkAheadRegistry(db, eventSink);
+  return new DrizzleLinkAheadRegistry(db, deps);
 }

@@ -18,6 +18,8 @@ const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, wor
 function createPool() {
   const { history, liveCore, threadCore } = createFakeThreadPeerCores();
   const pool = createThreadPeerCorePool({
+    // No Work here has an active draft: a drafted call reads the live tree (F7).
+    drafts: { viewForWork: async () => ({ kind: "live" }) },
     liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
     createThreadCore: () => threadCore.asCore(),
     reversalHistory: history.reader,
