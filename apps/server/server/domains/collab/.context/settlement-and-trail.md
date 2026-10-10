@@ -193,11 +193,14 @@
   still binds and reads gone. All under Work → draft → namespace → document
   locks taken once by `planAndLock`.
 - **Writer Apply is item-scoped and token-fenced**: a request names items
-  (`${draftId}:${documentId}`) with the tokens their review rendered; the
-  server pushes each item's complete current branch, including writer rows
-  created after preview, when the tokens still match, else answers `stale`.
-  The legacy numeric revision tokens on the preview are presentation evidence
-  only.
+  (`${draftId}:${documentId}`) with the tokens their review rendered; a token
+  the request lacks (the legacy per-document Apply, D40) is filled from the read
+  `applyItems` makes, and such a selection reads again once when it turns out
+  stale. The server pushes each item's complete current branch, including
+  writer rows created after preview, when the tokens still match, else answers
+  `stale`. Receipt notes come out of completion with the batch's result
+  (`PublicationItemOutcome`), so they say what was done. The legacy numeric
+  revision tokens on the preview are presentation evidence only.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;

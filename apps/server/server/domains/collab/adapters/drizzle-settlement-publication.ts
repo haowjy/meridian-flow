@@ -16,6 +16,7 @@ import type { PublicationCheckResult } from "../domain/ports/pending-settlement-
 import type {
   PublicationAdmission,
   PublicationItemHold,
+  PublicationItemOutcome,
   SettlementBatchScope,
   SettlementNamespaceLocks,
   SettlementPublicationPlan,
@@ -82,6 +83,7 @@ export async function decideAdmission(
   decide: (plan: SettlementPublicationPlan) => Promise<PublicationAdmission> | undefined,
 ): Promise<PublicationAdmission> {
   const hold = new Map<string, PublicationItemHold>();
+  const outcomes: PublicationItemOutcome[] = [];
   for (const { plan } of plans) {
     const admission = await decide(plan);
     if (!admission) continue;
@@ -89,8 +91,9 @@ export async function decideAdmission(
     for (const held of admission.hold ?? []) {
       if (!hold.has(held.itemKey)) hold.set(held.itemKey, held);
     }
+    outcomes.push(...(admission.outcomes ?? []));
   }
-  return { kind: "proceed", hold: [...hold.values()] };
+  return { kind: "proceed", hold: [...hold.values()], outcomes };
 }
 
 /**

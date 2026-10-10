@@ -25,9 +25,14 @@ const PayloadItemSchema = z.object({
   /** The text member's branch; null for a branchless item (a created image). */
   draftBranchId: z.string().nullable(),
   origin: z.enum(["created", "edited"]),
-  locationToken: z.string().optional(),
-  liveTextToken: z.string().optional(),
-  branchGenerationToken: z.string().optional(),
+  /**
+   * The tokens the item is published against (§11.3): the writer's render, or the read
+   * `applyItems` made when the request carried none. Null: the item has no live text
+   * (hidden, deleted, binary) or no branch.
+   */
+  locationToken: z.string(),
+  liveTextToken: z.string().nullable(),
+  branchGenerationToken: z.string().nullable(),
 });
 
 const PayloadSchema = z.object({
@@ -116,4 +121,27 @@ export function readDraftTreeHold(reason: PublicationRefusal): HeldReason | null
   return reason.code === "path_taken"
     ? { code: "path_taken", path: HoldDetail.parse(reason.detail).path }
     : null;
+}
+
+/** A receipt note: what completion did to an item beyond publishing its text (§11.2). */
+export type ApplyNote =
+  | { code: "rename_replaced"; replacedPath: string; path: string }
+  | { code: "restored"; path: string };
+
+const NotesDetail = z.object({
+  notes: z.array(
+    z.discriminatedUnion("code", [
+      z.object({ code: z.literal("rename_replaced"), replacedPath: z.string(), path: z.string() }),
+      z.object({ code: z.literal("restored"), path: z.string() }),
+    ]),
+  ),
+});
+
+/** An item's notes as the step reports them out of completion. */
+export function draftTreeNotes(notes: readonly ApplyNote[]): JsonValue {
+  return { notes: notes.map((note) => ({ ...note })) };
+}
+
+export function readDraftTreeNotes(detail: JsonValue): ApplyNote[] {
+  return NotesDetail.parse(detail).notes;
 }

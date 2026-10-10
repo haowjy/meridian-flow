@@ -20,7 +20,11 @@ import { stablePushIdempotencyKey, wholeBranchPushUpdate } from "./branch-push-p
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
-import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
+import type {
+  PublicationItemHold,
+  PublicationItemOutcome,
+  PublicationRefusal,
+} from "./ports/settlement-publication.js";
 
 type ComputedCandidate = {
   candidate: PushCandidate;
@@ -40,6 +44,8 @@ type BatchPipelineResult =
       held: ReadonlyMap<DocumentId, PublicationRefusal>;
       /** Every held item, branchless ones included. */
       heldItems: readonly PublicationItemHold[];
+      /** What the steps did per published item, decided in completion. */
+      outcomes: readonly PublicationItemOutcome[];
       phases: readonly ComputedCandidate[];
       liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
       /** One entry per drained branch the auto reset rebased onto live. */
@@ -193,6 +199,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
                     ),
                   ),
                   heldItems: outcome.held,
+                  outcomes: outcome.outcomes,
                   phases,
                   liveAfterPush: new Map(
                     phases.map((phase) => [
@@ -380,6 +387,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         const items = new Map<string, PushToLiveResult>();
         let refused: PublicationRefusal | undefined;
         let heldItems: readonly PublicationItemHold[] = [];
+        let outcomes: readonly PublicationItemOutcome[] = [];
         for (const source of sources) {
           if (source.rows.length > 0) continue;
           items.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
@@ -407,12 +415,14 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             for (const item of mapRefused(result)) items.set(item.branchId, item);
           } else {
             heldItems = result.heldItems;
+            outcomes = result.outcomes;
             for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
           }
         }
         return {
           items: sources.map((source) => items.get(source.branch.branchId) as PushToLiveResult),
           heldItems,
+          outcomes,
           ...(refused ? { refused } : {}),
         };
       },

@@ -16,7 +16,11 @@ import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
-import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
+import type {
+  PublicationItemHold,
+  PublicationItemOutcome,
+  PublicationRefusal,
+} from "./ports/settlement-publication.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -296,6 +300,8 @@ export type BranchPushService = {
     refused?: PublicationRefusal;
     /** Every item a publication step held, branchless ones included. */
     heldItems: readonly PublicationItemHold[];
+    /** What the publication steps did per published item, decided in completion. */
+    outcomes: readonly PublicationItemOutcome[];
   }>;
 };
 

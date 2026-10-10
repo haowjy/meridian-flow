@@ -50,8 +50,20 @@ export type PublicationItemHold = {
   reason: PublicationRefusal;
 };
 
+/**
+ * What completion did to one item that publishes, in the step's own terms (lane E: the
+ * receipt notes, a rename named back or a restore), decided under the completion's locks
+ * and returned with the batch's result.
+ */
+export type PublicationItemOutcome = { itemKey: string; detail: JsonValue };
+
 export type PublicationAdmission =
-  | { kind: "proceed"; hold?: readonly PublicationItemHold[] }
+  | {
+      kind: "proceed";
+      hold?: readonly PublicationItemHold[];
+      /** Completion only: what it did per item, reported with the batch's result. */
+      outcomes?: readonly PublicationItemOutcome[];
+    }
   | { kind: "refuse"; reason: PublicationRefusal };
 
 /**

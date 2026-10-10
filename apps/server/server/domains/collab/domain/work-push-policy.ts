@@ -8,7 +8,7 @@ import type {
   SetWorkPushPolicyResult,
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
-import type { DraftPublication } from "./draft-publication.js";
+import { DraftApplyStaleError, type DraftPublication } from "./draft-publication.js";
 import type { DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
 
@@ -39,13 +39,16 @@ export function createWorkPushPolicy(input: {
           };
         }
         if (draft && pending.length > 0 && policyInput.pending !== "keep") {
-          await input.publication.applyItems({
+          const applied = await input.publication.applyItems({
             workId: policyInput.workId,
             draftId: draft.id,
             selection: { kind: "all_pending" },
             closeWhenEmpty: true,
             ...(policyInput.pushedByUserId ? { userId: policyInput.pushedByUserId } : {}),
           });
+          // Held items stay as kept changes and a draft that closed meanwhile had nothing
+          // left; a draft still changing under a second read must not switch over it.
+          if (applied.status === "stale") throw new DraftApplyStaleError(draft.id);
         }
       }
       await input.workPushPolicyStore.setWorkWriteMode(policyInput.workId, policyInput.policy);

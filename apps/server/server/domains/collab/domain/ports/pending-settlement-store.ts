@@ -13,6 +13,7 @@ import type {
 } from "./change-trail-persistence.js";
 import type {
   PublicationItemHold,
+  PublicationItemOutcome,
   PublicationMember,
   PublicationRefusal,
 } from "./settlement-publication.js";
@@ -79,6 +80,8 @@ export type BatchCompletionResult =
       projections: readonly CommittedChangeTrailProjection[];
       /** Every item held for the batch, at the check or in completion, as staged durably. */
       held: readonly PublicationItemHold[];
+      /** What the steps did per item, decided under the completion's locks. */
+      outcomes: readonly PublicationItemOutcome[];
     }
   /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
   | { status: "refused"; reason: PublicationRefusal }

@@ -36,10 +36,12 @@ import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchSnapshot, BranchStore } from "../domain/branch-coordinator.js";
 import { branchCutOf } from "../domain/draft-branch-ahead-registration.js";
 import {
+  type ApplyNote,
   DRAFT_TREE_STEP,
   type DraftTreePayload,
   type DraftTreePayloadItem,
   draftTreeHold,
+  draftTreeNotes,
   draftTreeRefusal,
   encodeDraftTreePayload,
   parseDraftTreePayload,
@@ -153,17 +155,14 @@ export function createDrizzleDraftTreeStep(
         ) {
           return true;
         }
-        if (
-          item.locationToken !== undefined &&
-          node.locationVersion.toString() !== item.locationToken
-        ) {
-          return true;
-        }
+        if (node.locationVersion.toString() !== item.locationToken) return true;
+        // A member's live text under its coordinator lease; an item with no text member
+        // publishes no text, so its live text can't be stale.
         const live = scope.liveTextFingerprints.get(item.documentId);
-        if (item.liveTextToken !== undefined && live !== undefined && live !== item.liveTextToken) {
+        if (item.liveTextToken !== null && live !== undefined && live !== item.liveTextToken) {
           return true;
         }
-        if (item.branchGenerationToken !== undefined && item.draftBranchId) {
+        if (item.branchGenerationToken !== null) {
           return !branch || String(branch.generation) !== item.branchGenerationToken;
         }
         return false;
@@ -272,7 +271,17 @@ export function createDrizzleDraftTreeStep(
               ...(moves ? movedDocumentIds(moves) : []),
             ],
           };
-          return { kind: "proceed", hold: decided.holds };
+          return {
+            kind: "proceed",
+            hold: decided.holds,
+            // The receipt says what this decision did (§11.2), not what a review saw.
+            outcomes: decided.apply.flatMap(({ item, node }) => {
+              const notes = notesOf(node);
+              return notes.length > 0
+                ? [{ itemKey: item.itemKey, detail: draftTreeNotes(notes) }]
+                : [];
+            }),
+          };
         },
 
         async afterAdmission(admitted) {
@@ -301,6 +310,16 @@ export function createDrizzleDraftTreeStep(
       };
     },
   };
+}
+
+/** What placing or moving this node does, as the writer's receipt says it. */
+function notesOf(node: TreeStateNode): ApplyNote[] {
+  const path = node.target.uri ?? node.target.path;
+  if (node.conflict.kind === "deleted_live") return [{ code: "restored", path }];
+  if (node.conflict.kind === "relocated") {
+    return [{ code: "rename_replaced", replacedPath: node.live.uri ?? node.live.path, path }];
+  }
+  return [];
 }
 
 /** A branch's link cut as it stands: its text loaded once and read the registration's way. */

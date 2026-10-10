@@ -54,6 +54,7 @@ import type {
 } from "../domain/ports/pending-settlement-store.js";
 import type {
   PublicationItemHold,
+  PublicationItemOutcome,
   PublicationRefusal,
   StagedPublicationMember,
 } from "../domain/ports/settlement-publication.js";
@@ -240,6 +241,7 @@ export function createDrizzlePendingSettlementStore(
       assertRootOwnedSettlement("Batch settlement completion");
       let plans: PlannedStep[] = [];
       let held: PublicationItemHold[] = [];
+      let outcomes: readonly PublicationItemOutcome[] = [];
       let admitted: DocumentId[] = [];
       let outcome:
         | { kind: "completed"; projections: CommittedChangeTrailProjection[] }
@@ -305,6 +307,7 @@ export function createDrizzlePendingSettlementStore(
               const publicationDb = currentDrizzleDb(db);
               const admission = await decideAdmission(plans, (plan) => plan.beforeAdmission?.());
               if (admission.kind === "refuse") throw new CompletionRefusal(admission.reason);
+              outcomes = admission.outcomes ?? [];
               const completionHolds = admission.hold ?? [];
               const heldDocuments = new Set(
                 completionHolds.flatMap(({ documentId }) => documentId ?? []),
@@ -432,7 +435,7 @@ export function createDrizzlePendingSettlementStore(
         input.batchId,
         eventSink,
       );
-      return { status: "completed" as const, projections: outcome.projections, held };
+      return { status: "completed" as const, projections: outcome.projections, held, outcomes };
     },
 
     async checkPublication(input) {
