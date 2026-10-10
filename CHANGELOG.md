@@ -4,8 +4,6 @@
 
 ### Changed
 
-- Navigation error labels clear when you leave their source view or replace the side panel document.
-
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
 - Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
