@@ -1,4 +1,4 @@
-import { i18n } from "@lingui/core";
+import { i18n, type Messages } from "@lingui/core";
 import { ACCOUNT_LANGUAGES, type AccountLanguage } from "@meridian/contracts/preferences";
 import { messages as enMessages } from "@/locales/en/messages";
 import { messages as zhMessages } from "@/locales/zh/messages";
@@ -8,17 +8,17 @@ import { readAccountSettingsCache } from "./account-settings-cache";
 const CATALOGS = {
   en: enMessages,
   zh: zhMessages,
-} as const;
+} satisfies Record<AccountLanguage, Messages>;
 
 export type SupportedLocale = AccountLanguage;
 
 export const DEFAULT_LOCALE: SupportedLocale = "en";
 
-i18n.load({ en: enMessages, zh: zhMessages });
+i18n.load(CATALOGS);
 i18n.activate(DEFAULT_LOCALE);
 
 function isSupportedLocale(val: string): val is SupportedLocale {
-  return val in CATALOGS;
+  return ACCOUNT_LANGUAGES.some((locale) => locale === val);
 }
 
 function readNavigatorLocale(): SupportedLocale | null {

@@ -33,6 +33,8 @@ describe("account settings", () => {
       { statsForNerds: 1 },
       { workingSetSyncEnabled: "true" },
       { theme: "dark", unknown: true },
+      { constructor: true },
+      { toString: "en" },
     ])
       expect(() => parseAccountSettingsPatch(body)).toThrow();
   });

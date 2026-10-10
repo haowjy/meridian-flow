@@ -8,6 +8,7 @@ import {
   readAccountSettingsCache,
   writeAccountSettingsCache,
 } from "./account-settings-cache";
+import { resolveQueryLocale } from "./i18n";
 import { TEXT_SIZE_BOOT_SCRIPT, TEXT_SIZE_STORAGE_KEY } from "./text-size";
 import { createUiThemeBootScript } from "./ui-theme";
 
@@ -77,4 +78,19 @@ it("falls back to the account theme when the cache theme is invalid", () => {
   });
   runBootScript(createUiThemeBootScript({ accountId: "a", theme: "ink-jade" }));
   expect(document.documentElement.hasAttribute("data-ui-theme")).toBe(false);
+});
+
+it("accepts only supported query locales without overwriting the account cache", () => {
+  writeAccountSettingsCache("a", settings);
+  try {
+    window.history.replaceState(null, "", "?locale=zh");
+    expect(resolveQueryLocale()).toBe("zh");
+    expect(readAccountSettingsCache("a")?.language).toBe("en");
+    for (const value of ["constructor", "toString", "fr"]) {
+      window.history.replaceState(null, "", `?locale=${value}`);
+      expect(resolveQueryLocale()).toBeNull();
+    }
+  } finally {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
 });
