@@ -12,7 +12,7 @@ import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { dropDraftSettlements } from "../adapters/link-ahead-draft-settlements.js";
 import { dropDocumentRows } from "./draft-tree-store.js";
-import { lockDocuments, tombstoneDocuments, tombstoneFolder } from "./node-rows.js";
+import { lockDocuments, tombstoneDocuments, tombstoneFolders } from "./node-rows.js";
 import { treeHook } from "./test-hooks.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
@@ -66,7 +66,7 @@ export async function endUse(
   const deepestFirst = [...depthOf.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
   for (const folderId of deepestFirst) {
     if (!(await isUnusedHiddenFolder(tx, folderId))) continue;
-    await tombstoneFolder(db, folderId);
+    await tombstoneFolders(db, [folderId]);
     tombstoned.push({ kind: "folder", id: folderId });
   }
   return {

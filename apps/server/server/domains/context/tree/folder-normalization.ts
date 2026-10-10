@@ -12,8 +12,9 @@
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents, draftTreeChanges, folders } from "@meridian/database/schema";
-import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { insertFolder, tombstoneFolders } from "./node-rows.js";
 import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
@@ -113,14 +114,7 @@ async function fold(
     .update(draftTreeChanges)
     .set({ parentFolderId: into, updatedAt: now })
     .where(eq(draftTreeChanges.parentFolderId, hidden));
-  await tx
-    .update(folders)
-    .set({
-      deletedAt: now,
-      locationVersion: sql`${folders.locationVersion} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(folders.id, hidden));
+  await tombstoneFolders(db, [hidden]);
   tombstoned.push(hidden);
 }
 
@@ -225,11 +219,13 @@ export async function applySplit(db: Database, plan: SplitPlan): Promise<SplitRe
       "twinOf" in twin.parent ? (twins.get(twin.parent.twinOf) as FolderId) : twin.parent.folder;
     twins.set(
       twin.original,
-      await insertHiddenTwin(db, {
-        contextSourceId: twin.contextSourceId,
-        parentId,
-        name: twin.name,
-      }),
+      // TM invariant 5: the original leaves its path in this transaction, so the twin
+      // shares it with nothing visible.
+      await insertFolder(
+        db,
+        { contextSourceId: twin.contextSourceId, parentId, name: twin.name },
+        { hidden: true },
+      ),
     );
   }
   const now = new Date();
@@ -302,17 +298,4 @@ export function hiddenBoundaries(
         ]
       : [],
   );
-}
-
-/** TM invariant 5: `root` leaves its path in this transaction, so the twin shares it with nothing visible. */
-async function insertHiddenTwin(
-  db: Database,
-  at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
-): Promise<FolderId> {
-  const [row] = await currentDrizzleDb(db)
-    .insert(folders)
-    .values({ ...at, hidden: true })
-    .returning({ id: folders.id });
-  if (!row) throw new Error(`Hidden twin ${at.name} was not inserted`);
-  return row.id;
 }

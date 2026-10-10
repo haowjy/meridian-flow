@@ -12,10 +12,13 @@
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { claimDocumentLocation } from "../adapters/context-fs/document-locations.js";
+import {
+  bumpLocationVersions,
+  claimDocumentLocation,
+} from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
@@ -190,10 +193,10 @@ export async function place(
           name: target.at.name,
           extension: target.at.extension ?? "",
           ...(clear === "hidden" ? { hidden: false } : { deletedAt: null }),
-          locationVersion: sql`${documents.locationVersion} + 1`,
           updatedAt: new Date(),
         })
         .where(eq(documents.id, target.node.id));
+      await bumpLocationVersions(db, { documentIds: [target.node.id] });
     } else {
       await updatePlacedFolder(db, target.node.id, {
         parentId,
@@ -334,8 +337,8 @@ async function updatePlacedFolder(
       ...(change.name ? { name: change.name } : {}),
       ...(change.clear === "hidden" ? { hidden: false } : {}),
       ...(change.clear === "deleted" ? { deletedAt: null } : {}),
-      locationVersion: sql`${folders.locationVersion} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(folders.id, folderId));
+  await bumpLocationVersions(db, { folderIds: [folderId] });
 }
