@@ -1,22 +1,32 @@
-/** Lane R's rows of the live and draft chokepoint matrices (C-1a, C-1b). */
+/** Combined R and C-b live and draft reader chokepoints (C-1a, C-1b). */
+
+import { randomUUID } from "node:crypto";
+import type { LinkView } from "@meridian/contracts";
+import { createDb } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  documentLinks,
   documents,
   draftTreeChanges,
+  linkAheadRefs,
   projects,
   userRecentDocuments,
   users,
 } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { createApp, toWebHandler } from "nitro/h3";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { downloadDocument } from "../../../lib/document-download-route.js";
+import { hasLiveDocument } from "../../../lib/yjs-ws-handler.js";
 import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[projectId]/documents/[documentId]/figure/signed-url.get.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
-import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
-import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { createInMemoryCollabDomain, createLinkScopeObserver } from "../../collab/index.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
+import { createOwnerFileGrants } from "../../file-policy/adapters/owner-file-grants.js";
+import { createFileAccess } from "../../file-policy/file-access.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import {
   createProjectBootstrapRepositoryForTest,
@@ -25,11 +35,18 @@ import {
 import { createDrizzleRecentDocumentsRepository } from "../../recent-documents/adapters/drizzle/recent-documents-repository.js";
 import { RecentDocumentUnavailableError } from "../../recent-documents/ports/recent-documents-repository.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
+import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
+import { createDrizzleThreadWorksRepository } from "../../threads/adapters/drizzle/thread-works-repository.js";
+import { createDrizzleDocumentLinkScopes } from "../adapters/document-link-scope.js";
+import { createDrizzleLinkAheadRegistry } from "../adapters/drizzle-link-ahead-registry.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 import { createDrizzleProjectContextAvailability } from "../adapters/project-context-availability.js";
+import { createDocumentRevisions } from "../document-revisions.js";
 import { createFigureAssetService } from "../figures/figure-assets.js";
+import { countIncomingLinks } from "../links/move-link-count.js";
 import { createDrizzleUploadIntakeRepository } from "../uploads/drizzle-upload-intake.js";
 import { createDrizzleUploadIdentityPort } from "../uploads/upload-identity.js";
+import { createTreeReader, LIVE_TREE } from "./tree-view.js";
 
 const url = process.env.DATABASE_URL;
 if (process.env.RUN_DB_TESTS !== "1" || !url) {
@@ -37,11 +54,14 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
 } else {
   assertThrowawayDatabaseForRunDbTests(url);
   describe("independent reader chokepoints", () => {
-    const database = useRollbackTestDatabase(url, {
-      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
+    // Registry registration owns a root transaction, so scenarios must be committed.
+    const db = createDb(url, { max: 3 });
+    beforeEach(() => deleteDrizzleRows(db, [users]));
+    afterAll(async () => {
+      await deleteDrizzleRows(db, [users]);
+      await db.close();
     });
     async function setup() {
-      const db = database.current;
       const scenario = await draftTreeScenario(db);
       const work = await scenario.work("Ascension", "draft");
       const id = await scenario.seedHidden(work, "secret/harbor.md");
@@ -156,11 +176,95 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       };
     }
 
+    async function fixture() {
+      const scenario = await draftTreeScenario(db);
+      const work = await scenario.work("Draft", "draft");
+      const direct = await scenario.work("Direct", "direct");
+      const hidden = await scenario.seedHidden(work, "lore/kael.md");
+      const target = await scenario.seedLive("chapter.md");
+      const tree = createTreeReader(db);
+      const fileAccess = createFileAccess({
+        facts: createDrizzleFileFacts(db),
+        grants: createOwnerFileGrants(),
+        readAgentChain: async () => [],
+      });
+      const scopes = createDrizzleDocumentLinkScopes({
+        db,
+        fileAccess,
+        drafts: scenario.drafts,
+        observer: createLinkScopeObserver(),
+      });
+      const revisions = createDocumentRevisions({
+        links: scopes,
+        documents: { readEffectiveRevision: async () => "draft-revision" },
+        drafts: scenario.drafts,
+        availability: createDrizzleProjectContextAvailability(db),
+        threads: createDrizzleThreadRepository(db),
+        threadWorks: createDrizzleThreadWorksRepository(db),
+        works: {
+          findById: async (id) =>
+            ({
+              ...[work, direct].find((w) => w.id === id),
+              aiWriteMode: id === work.id ? "draft" : "direct",
+              deletedAt: null,
+              isNoWork: false,
+            }) as never,
+        },
+      });
+      async function link(view: LinkView) {
+        const aheadId = randomUUID();
+        await db.insert(linkAheadRefs).values({
+          aheadId,
+          projectId: scenario.project.id,
+          scheme: "manuscript",
+          path: "lore/kael.md",
+        });
+        return scopes.within(
+          { projectId: scenario.project.id, viewer: { accountId: scenario.project.userId } },
+          async () => {
+            await scopes.prepare({
+              holders: [],
+              views: [view],
+              refs: [`doc:${hidden}`, `ahead:${aheadId}`],
+              addresses: ["manuscript://lore/kael.md"],
+            });
+            const scope = scopes.reader({ uri: null, view });
+            return {
+              identity: scope.resolve({ ref: `doc:${hidden}`, href: "lore/kael.md" }),
+              occupant: scope.resolve({
+                ref: `ahead:${aheadId}`,
+                href: "manuscript://lore/kael.md",
+              }),
+            };
+          },
+        );
+      }
+      return { scenario, work, direct, hidden, target, tree, scopes, revisions, link, fileAccess };
+    }
+
     it("keeps hidden documents out of independent live readers (C-1a)", async () => {
       const s = await setup();
       // A stale recent is pruned when a different live document is recorded.
       await s.db.insert(userRecentDocuments).values({ userId: s.actor.userId, documentId: s.id });
       const live = await s.scenario.seedLive("chapter.md");
+      const f = await fixture();
+      await db.insert(documentLinks).values({
+        sourceDocumentId: f.hidden,
+        targetDocumentId: f.target,
+        linkKey: `doc:${f.target}`,
+        address: "manuscript://chapter.md",
+        occurrences: 2,
+      });
+      const pending = randomUUID();
+      await db.insert(documentLinks).values({
+        sourceDocumentId: f.hidden,
+        aheadId: pending,
+        linkKey: `ahead:${pending}`,
+        address: "manuscript://future.md",
+        occurrences: 1,
+      });
+      const aheadId = randomUUID();
+      const registry = createDrizzleLinkAheadRegistry(db);
       const rows = [
         {
           surface: "hidden tombstone facts",
@@ -305,6 +409,88 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           },
           expected: false,
         },
+        {
+          surface: "live room admission",
+          run: () => hasLiveDocument(f.tree, f.hidden),
+          expected: false,
+        },
+        {
+          surface: "download",
+          run: async () => {
+            try {
+              await downloadDocument(
+                {
+                  liveDocuments: f.tree,
+                  uploadIdentity: {} as never,
+                  objectStore: {} as never,
+                  documentSync: {} as never,
+                },
+                f.hidden,
+                {} as never,
+              );
+              return null;
+            } catch (cause) {
+              return (cause as { statusCode?: number }).statusCode;
+            }
+          },
+          expected: 404,
+        },
+        {
+          surface: "live revision",
+          run: async () =>
+            (
+              await f.revisions.current({ threadId: f.direct.threadId, documentIds: [f.hidden] })
+            ).get(f.hidden),
+          expected: null,
+        },
+        {
+          surface: "move link holder",
+          run: () =>
+            countIncomingLinks(db, {
+              projectId: f.scenario.project.id,
+              movedDocumentIds: [f.target],
+            }),
+          expected: { links: 0, documents: 0 },
+        },
+        {
+          surface: "ahead-ref live settlement",
+          run: async () => {
+            await registry.register([
+              {
+                aheadId,
+                holderProjectId: f.scenario.project.id,
+                address: "manuscript://lore/kael.md",
+              },
+            ]);
+            await registry.settleArrivals([f.hidden]);
+            const [ahead] = await db
+              .select()
+              .from(linkAheadRefs)
+              .where(eq(linkAheadRefs.aheadId, aheadId));
+            return ahead?.settledDocumentId;
+          },
+          expected: null,
+        },
+        {
+          surface: "ahead-ref recovery ignores hidden holders",
+          run: async () =>
+            (await registry.registerUnregistered({ documentId: f.hidden }, { limit: 10 }))
+              .registered,
+          expected: 0,
+        },
+        {
+          surface: "link scope by id",
+          run: async () => {
+            const { identity } = await f.link({ kind: "live" });
+            return identity.kind === "document" && identity.inDraft;
+          },
+          expected: true,
+        },
+        {
+          surface: "hidden address occupancy",
+          run: async () => (await f.link({ kind: "live" })).occupant.kind === "document",
+          expected: false,
+        },
       ];
       for (const row of rows) expect.soft(await row.run(), row.surface).toEqual(row.expected);
     });
@@ -323,6 +509,8 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .where(
           and(eq(draftTreeChanges.draftId, s.view.draftId), eq(draftTreeChanges.nodeId, s.id)),
         );
+      const f = await fixture();
+      const draft = await f.scenario.draftOf(f.work);
       const rows = [
         {
           surface: "hidden tombstone facts in D",
@@ -413,6 +601,52 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
             },
             signedObjects: ["/memory-object-store/map.png"],
           },
+        },
+        {
+          surface: "draft link scope",
+          run: async () => {
+            const { identity } = await f.link({ kind: "draft", workId: f.work.id });
+            return identity.kind === "document" && identity.inDraft;
+          },
+          expected: true,
+        },
+        {
+          surface: "draft revision",
+          run: async () =>
+            (await f.revisions.current({ threadId: f.work.threadId, documentIds: [f.hidden] })).get(
+              f.hidden,
+            ),
+          expected: "draft-revision",
+        },
+        {
+          surface: "draft-view file access",
+          run: async () =>
+            (
+              await f.fileAccess.listAccess({ accountId: f.scenario.project.userId }, [f.hidden], {
+                draftViews: new Map([[f.hidden, { kind: "draft", draftId: draft.id }]]),
+              })
+            ).has(f.hidden),
+          expected: true,
+        },
+        {
+          surface: "still hidden live",
+          run: async () => (await f.tree.findById(LIVE_TREE, f.hidden)).kind,
+          expected: "not_found",
+        },
+        {
+          surface: "discarded draft create revision",
+          run: async () => {
+            // The Discard kernel's persisted end state: a tombstone, no draft use.
+            await db
+              .update(documents)
+              .set({ deletedAt: new Date() })
+              .where(eq(documents.id, f.hidden));
+            await db.delete(draftTreeChanges).where(eq(draftTreeChanges.nodeId, f.hidden));
+            return (
+              await f.revisions.current({ threadId: f.work.threadId, documentIds: [f.hidden] })
+            ).get(f.hidden);
+          },
+          expected: null,
         },
       ];
       for (const row of rows) expect.soft(await row.run(), row.surface).toEqual(row.expected);
