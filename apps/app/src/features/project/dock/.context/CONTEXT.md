@@ -192,7 +192,7 @@ container requests the selected review; a pending address holds paint.
 The dock’s launch adapter (`ReviewLaunchContext`) keeps chip, Next draft and
 auto-advance inside the dock; the composer strip and Work list still launch into
 Editor. Both are writer-unconfirmed defaults; flipping the first changes only that
-adapter ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/review-follows-presented-document.md)).
+adapter ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/documents/review-follows-presented-document.md)).
 
 ### Dock document store
 
