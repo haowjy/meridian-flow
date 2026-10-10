@@ -1,4 +1,4 @@
-/** Account-stamped first-paint cache. The server remains the preference authority. */
+/** Account-stamped confirmed-snapshot cache. The server remains the preference authority. */
 import { ACCOUNT_LANGUAGES, ACCOUNT_THEMES } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 export const ACCOUNT_SETTINGS_ACTIVE_KEY = "meridian:account-settings-active:v1";

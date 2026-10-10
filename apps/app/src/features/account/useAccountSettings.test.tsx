@@ -471,7 +471,7 @@ it("reconciles all unowned fields from a cross-tab server read", async () => {
     });
     await act(async () =>
       window.dispatchEvent(
-        new StorageEvent("storage", { key: ACCOUNT_SETTINGS_CACHE_PREFIX + "account-a" }),
+        new StorageEvent("storage", { key: `${ACCOUNT_SETTINGS_CACHE_PREFIX}account-a` }),
       ),
     );
     await flush();

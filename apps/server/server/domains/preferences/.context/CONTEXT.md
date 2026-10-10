@@ -12,5 +12,7 @@ Owns account display preferences and the per-project runtime auto-resume policy.
   The runtime orchestrator consumes it. GET/PUT project preference routes have
   no current client reader; they remain available for this runtime policy.
   Thread grouping and pinned thread IDs are retired, not compatibility fields.
+  Migration 0036 transfers visible, project-owned pins to canonical Favorites
+  without clearing existing favorites; invalid/orphaned IDs are discarded.
 - Production uses Drizzle adapters; in-memory adapters implement the same ports.
   Domain copy/merge helpers keep auto-resume defaults independent.
