@@ -3,6 +3,17 @@
 How the frontend is structured and why its seams exist. Visual implementation
 conventions live in [visual-conventions.md](visual-conventions.md).
 
+## Browser records
+
+`src/client/storage/browser-record.ts` owns best-effort JSON storage and the
+`{ version, accountId, scope?, payload }` envelope for workspace tabs, dock,
+reading places, composer drafts, remembered selections, and tree expansion.
+Domain parsers accept unknown payloads; `undefined` means absent/invalid on read
+and deletion on write, while `null` can mean explicitly empty. Scope stamps bind
+selections to project/kind and drafts to destination; features still own their
+state transitions and LRU. Old formats are absent, never migrated. The settings
+first-paint cache and raw boot-script preferences remain separate.
+
 ## Frontend performance
 
 Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor

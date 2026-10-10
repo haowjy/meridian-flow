@@ -318,7 +318,7 @@ it.each([
   const disk = storage();
   disk.setItem(
     DOCK_STORAGE_KEY,
-    JSON.stringify({ version: 1, accountId: "account", byScreen, occupant: document }),
+    JSON.stringify({ version: 1, accountId: "account", payload: { byScreen, occupant: document } }),
   );
   expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
 });
@@ -329,8 +329,7 @@ it("rejects a non-string occupant screen even if it coerces to a valid policy ke
     JSON.stringify({
       version: 1,
       accountId: "account",
-      byScreen: {},
-      occupant: { ...document, screen: ["work"] },
+      payload: { byScreen: {}, occupant: { ...document, screen: ["work"] } },
     }),
   );
   expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
