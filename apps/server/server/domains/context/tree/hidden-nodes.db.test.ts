@@ -31,10 +31,9 @@ import {
   type ScenarioWork,
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { interleave, type Settled } from "../../../test-support/lock-interleave.js";
+import { race } from "../../../test-support/lock-interleave.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
 import { endUse } from "./end-use.js";
-import type { TreeHookPoint } from "./test-hooks.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -119,21 +118,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             inArray(folders.contextSourceId, Object.values(scenario.project.sources)),
           ),
         );
-    }
-
-    /** `runs[first]` to `at`, then the other run; each run's outcome by its name. */
-    async function race<K extends string>(
-      runs: Record<K, () => Promise<unknown>>,
-      first: K,
-      point: TreeHookPoint,
-    ): Promise<{ bWaited: boolean; by: Record<K, Settled<unknown>> }> {
-      const [second] = (Object.keys(runs) as K[]).filter((name) => name !== first);
-      if (!second) throw new Error("A race needs two runs");
-      const settled = await interleave(db, runs[first], point, runs[second]);
-      return {
-        bWaited: settled.bWaited,
-        by: { [first]: settled.a, [second]: settled.b } as Record<K, Settled<unknown>>,
-      };
     }
 
     it("makes a draft's create an empty hidden row its drafts share (C-2)", async () => {
@@ -398,6 +382,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const second = await scenario.work("Second", "draft");
       const x = await scenario.model(firstWork).create("lore/x.md", "First's x.");
       const { bWaited, by } = await race(
+        db,
         {
           join: () => scenario.model(second).create("lore/x.md", "Second's x."),
           discard: () => scenario.discard(firstWork, [x]),
@@ -432,6 +417,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafting = await scenario.work("Drafting", "draft");
       const y = await scenario.model(drafting).create("lore/y.md", "Drafted y.");
       const { bWaited, by } = await race(
+        db,
         {
           reveal: () => scenario.writer.create("lore/y.md"),
           discard: () => scenario.discard(drafting, [y]),
@@ -461,6 +447,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
       const { bWaited, by } = await race(
+        db,
         {
           draft: () => scenario.model(drafting).create("lore/z.md", "Drafted z."),
           live: () => scenario.writer.create("lore/z.md"),
@@ -492,6 +479,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await scenario.seedLive("kb://atlas/coast.md");
       const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
       const { bWaited, by } = await race(
+        db,
         {
           reveal: () => scenario.writer.create("isle.md", { documentId: isle }),
           live: () =>
