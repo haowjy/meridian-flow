@@ -10,6 +10,7 @@ import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { BranchPushService } from "./branch-push-contracts.js";
+import { collabHook } from "./collab-test-hooks.js";
 import type {
   DraftBranchAheadRegistration,
   DraftLinkCut,
@@ -167,6 +168,7 @@ export function createDraftPublication(deps: {
         if (prepared.status === "registration_failed") {
           throw new DraftLinkRegistrationFailedError(draftId, prepared.failed);
         }
+        await collabHook("applyItems.afterLinkCut");
         const payload: DraftTreePayload = {
           draftId,
           closeWhenEmpty: input.closeWhenEmpty,
