@@ -10,8 +10,8 @@ import type { DraftId, TurnId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
 import { type DraftItemKey, draftItemKey } from "./draft-publication.js";
+import type { WorkDraftPendingEvidence } from "./ports/work-draft-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
-import type { DraftBranchEvidence } from "./work-draft-pending.js";
 
 export type DraftReviewItem = {
   draftId: DraftId;
@@ -72,7 +72,7 @@ export function createDraftReviewItems(deps: {
   branches(
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
-  ): Promise<readonly DraftBranchEvidence[]>;
+  ): Promise<readonly WorkDraftPendingEvidence[]>;
   /** The live document's full-state fingerprint, read under its coordinator lease. */
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
@@ -115,7 +115,7 @@ export function createDraftReviewItems(deps: {
 function toItem(
   draftId: DraftId,
   node: TreeStateNode,
-  evidence: DraftBranchEvidence | undefined,
+  evidence: WorkDraftPendingEvidence | undefined,
 ): DraftReviewItem {
   const path = node.target.uri;
   const livePath = node.live.uri !== path && !node.hidden ? node.live.uri : null;

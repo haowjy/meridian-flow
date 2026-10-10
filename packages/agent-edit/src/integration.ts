@@ -127,14 +127,7 @@ export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/writ
 export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
-export {
-  decodeUpdateForDependencies,
-  deleteRanges,
-  dependsOnRows,
-  hasDependentLaterRows,
-  rangeCovers,
-  suppliedRanges,
-} from "./undo/journal-dependencies.js";
+export { dependsOnRows, hasDependentLaterRows } from "./undo/journal-dependencies.js";
 export type {
   PersistUndoWatermarkRecord,
   PersistUndoWatermarkUpdate,

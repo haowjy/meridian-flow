@@ -134,7 +134,6 @@ import {
   createTurnReversalService,
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
-import { createWorkDraftPending } from "./domain/work-draft-pending.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createWorkPushPolicy } from "./domain/work-push-policy.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
@@ -303,7 +302,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
-  const workDraftPending = createWorkDraftPending(workDraftPendingStore);
   const pendingSettlements = createDrizzlePendingSettlementStore(
     deps.db,
     runtime.markdownDocuments,
@@ -490,7 +488,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const reviewItems = createDraftReviewItems({
     tree: createTreeReader(deps.db),
-    branches: workDraftPending.branches,
+    branches: (draftId, documentIds) =>
+      workDraftPendingStore.listDraftBranchEvidence(draftId, documentIds),
     liveFingerprint: (documentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });
@@ -644,7 +643,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,
-      countPendingByWorkIds: workDraftPending.countPendingByWorkIds,
+      countPendingByWorkIds: workDraftPendingStore.countPendingByWorkIds,
       setWorkPushPolicy: workPushPolicy.setWorkPushPolicy,
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },

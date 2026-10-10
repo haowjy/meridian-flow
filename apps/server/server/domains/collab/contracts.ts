@@ -435,7 +435,7 @@ export type BranchPeerShadowAccess = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread: its peer, manifest peer and reply's staged creates count. */
+      /** The reading thread: its peer and its reply's staged writes count. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
