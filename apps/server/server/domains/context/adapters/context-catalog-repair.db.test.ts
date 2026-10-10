@@ -78,14 +78,16 @@ if (!enabled || !url) {
       });
       await catalog.snapshot(scope);
       hold = true;
+      /** Each rename commits in order; its project refresh joins the queue. */
       async function rename(name: string) {
         await db.update(documents).set({ name }).where(eq(documents.id, documentId));
-        return catalog.refreshProjectDocuments(projectId);
+        refreshes.push(catalog.refreshProjectDocuments(projectId));
       }
-      const refreshes = [rename("first")];
+      const refreshes: Promise<void>[] = [];
+      await rename("first");
       await started;
       try {
-        for (let i = 0; i < 20; i++) refreshes.push(rename(`newest-${i}`));
+        for (let i = 0; i < 20; i++) await rename(`newest-${i}`);
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(delay).toHaveBeenCalledTimes(1);
       } finally {
