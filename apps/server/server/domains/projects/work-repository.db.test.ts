@@ -468,7 +468,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("deletes content and restores only rows hidden by the Work deletion", async () => {
+    it("deletes content and restores only rows cascade-deleted by the Work deletion", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await db.insert(schema.contextSources).values({
         workId: empty.id,
@@ -486,7 +486,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
-      await db
+      const [document] = await db
         .insert(schema.documents)
         .values({
           contextSourceId: source.id,
@@ -513,11 +513,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
-      if (!folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
+      if (!document || !folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
         throw new Error("Expected context children");
       }
 
+      async function versions() {
+        const documentRows = await db
+          .select({ id: schema.documents.id, version: schema.documents.locationVersion })
+          .from(schema.documents)
+          .where(eq(schema.documents.contextSourceId, source.id));
+        const folderRows = await db
+          .select({ id: schema.folders.id, version: schema.folders.locationVersion })
+          .from(schema.folders)
+          .where(eq(schema.folders.contextSourceId, source.id));
+        return Object.fromEntries(
+          [...documentRows, ...folderRows].map((row) => [row.id, row.version]),
+        );
+      }
+      const expectedVersions = (changed: bigint) => ({
+        [document.id]: changed,
+        [folder.id]: changed,
+        [alreadyDeletedDocument.id]: 0n,
+        [alreadyDeletedFolder.id]: 0n,
+      });
+      expect(await versions()).toEqual(expectedVersions(0n));
       const deletion = await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
+      await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
       expect(deletion.after?.deletedAt).toBeTruthy();
       await expect(
         db
@@ -531,6 +554,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         after: { deletedAt: null },
         changed: true,
       });
+      expect(await versions()).toEqual(expectedVersions(2n));
+      await works.restore(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(2n));
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);

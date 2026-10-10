@@ -9,13 +9,19 @@ import {
   users,
 } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
+import { createApp, toWebHandler } from "nitro/h3";
 import { describe, expect, it } from "vitest";
+import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[projectId]/documents/[documentId]/figure/signed-url.get.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { drizzleFileAccess } from "../../../test-support/file-grants.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
 import { createNoopEventSink } from "../../observability/index.js";
-import { createProjectBootstrapRepositoryForTest } from "../../projects/test-support/project-repository.js";
+import {
+  createProjectBootstrapRepositoryForTest,
+  createProjectRepositoryForTest,
+} from "../../projects/test-support/project-repository.js";
 import { createDrizzleRecentDocumentsRepository } from "../../recent-documents/adapters/drizzle/recent-documents-repository.js";
 import { RecentDocumentUnavailableError } from "../../recent-documents/ports/recent-documents-repository.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
@@ -62,11 +68,27 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const facts = createDrizzleFileFacts(db);
       const availability = createDrizzleProjectContextAvailability(db);
       const figures = createDrizzleFigureDocumentRepository({ db });
+      const rival = await scenario.work("Rival", "draft");
+      await scenario.seedHidden(rival, "rival.md");
+      const foreign = await draftTreeScenario(db);
+      const foreignWork = await foreign.work("Foreign", "draft");
+      await foreign.seedHidden(foreignWork, "foreign.md");
+      const signedObjects: string[] = [];
       const objectStore = createInMemoryObjectStore();
       await objectStore.put("map.png", new Uint8Array([1, 2, 3]), "image/png");
       const figureAssets = createFigureAssetService({
         documents: figures,
-        objectStore,
+        objectStore: {
+          put: objectStore.put.bind(objectStore),
+          get: objectStore.get.bind(objectStore),
+          list: objectStore.list.bind(objectStore),
+          delete: objectStore.delete.bind(objectStore),
+          async getSignedUrl(key) {
+            const result = await objectStore.getSignedUrl(key);
+            if (result.ok) signedObjects.push(result.value);
+            return result;
+          },
+        },
         contextPorts: {
           forProject() {
             throw new Error("Read-only matrix never uploads");
@@ -74,6 +96,39 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         },
         eventSink: createNoopEventSink(),
         signedUrlExpiresAt: () => "2030-01-01T00:00:00Z",
+      });
+      const services = {
+        fileAccess: drizzleFileAccess(db),
+        figureAssets,
+        projectRepo: createProjectRepositoryForTest({ db }),
+        documentSync: { drafts: scenario.drafts },
+      };
+      async function figureRequest(workId?: string, principal = scenario.project.userId) {
+        const app = createApp();
+        app.get(
+          "/api/projects/:projectId/documents/:documentId/figure/signed-url",
+          createFigureSignedUrlHandler(async () => ({
+            app: services,
+            user: { userId: principal },
+          })),
+        );
+        const query = workId === undefined ? "" : `?workId=${workId}`;
+        const before = signedObjects.length;
+        const response = await toWebHandler(app)(
+          new Request(
+            `https://server.local/api/projects/${scenario.project.id}/documents/${image}/figure/signed-url${query}`,
+          ),
+        );
+        return {
+          status: response.status,
+          body: await response.json(),
+          signedObjects: signedObjects.slice(before),
+        };
+      }
+      const deniedFigure = (message = "Document not found") => ({
+        status: 404,
+        body: { status: 404, message },
+        signedObjects: [],
       });
       const recent = createDrizzleRecentDocumentsRepository({ db });
       const input = { projectId: scenario.project.id, documentIds: [id] };
@@ -90,6 +145,11 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         availability,
         figures,
         figureAssets,
+        figureRequest,
+        deniedFigure,
+        rival,
+        foreign,
+        foreignWork,
         recent,
         input,
         actor,
@@ -151,19 +211,17 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         },
         {
           surface: "availability",
-          run: async () => (await s.availability.lookup(s.input, s.actor)).resolutions[0]?.kind,
-          expected: "not-visible",
+          run: async () => (await s.availability.lookup(s.input, s.actor)).resolutions[0],
+          expected: {
+            kind: "not-visible",
+            documentId: s.id,
+            checkedGeneration: expect.any(String),
+          },
         },
         {
           surface: "figure signed URL without workId",
-          run: async () => {
-            const result = await s.figureAssets.getSignedFigureUrl({
-              projectId: s.input.projectId,
-              assetDocumentId: s.image,
-            });
-            return result.ok ? "signed" : result.error.code;
-          },
-          expected: "document_not_found",
+          run: () => s.figureRequest(),
+          expected: s.deniedFigure(),
         },
         {
           surface: "upload identity",
@@ -318,16 +376,43 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           expected: "manuscript://draft-location/harbor.md",
         },
         {
+          surface: "figure other same-project Work's active draft",
+          run: () => s.figureRequest(s.rival.id),
+          expected: s.deniedFigure(),
+        },
+        {
+          surface: "figure another project's Work",
+          run: () => s.figureRequest(s.foreignWork.id),
+          expected: s.deniedFigure(),
+        },
+        {
+          surface: "figure guessed Work",
+          run: () => s.figureRequest("00000000-0000-4000-8000-000000009999"),
+          expected: s.deniedFigure(),
+        },
+        {
+          surface: "figure foreign principal with creating Work",
+          run: () => s.figureRequest(s.work.id, s.foreign.project.userId),
+          expected: s.deniedFigure("Project not found"),
+        },
+        {
           surface: "figure signed URL with workId",
-          run: async () => {
-            const result = await s.figureAssets.getSignedFigureUrl({
-              projectId: s.input.projectId,
-              assetDocumentId: s.image,
-              view: await s.scenario.drafts.viewForWork(s.work.id),
-            });
-            return result.ok ? result.value.signedUrl : result.error.code;
+          run: () => s.figureRequest(s.work.id),
+          expected: {
+            status: 200,
+            body: {
+              __meridianTransport: true,
+              value: {
+                assetDocumentId: s.image,
+                storageUrl: "object://meridian/map.png",
+                mimeType: "image/png",
+                fileType: "image",
+                signedUrl: "/memory-object-store/map.png",
+                signedUrlExpiresAt: "2030-01-01T00:00:00Z",
+              },
+            },
+            signedObjects: ["/memory-object-store/map.png"],
           },
-          expected: "/memory-object-store/map.png",
         },
       ];
       for (const row of rows) expect.soft(await row.run(), row.surface).toEqual(row.expected);
