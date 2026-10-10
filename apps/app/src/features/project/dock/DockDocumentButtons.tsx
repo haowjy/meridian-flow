@@ -34,10 +34,11 @@ export function DockOpenInEditor({
   const { tab } = useDockDocumentTab(projectId, document);
   const open = useOpenContextRoute();
   const runSwitch = useRunDocumentSwitch();
-  const [failedDocument, setFailedDocument] = useState<string | null>(null);
+  const revision = useDockViewStore((state) => state.revision);
+  const [failedClaim, setFailedClaim] = useState<number | null>(null);
   return (
     <div className="flex items-center gap-2">
-      {failedDocument === tab.documentId && (
+      {failedClaim === revision && (
         <span role="alert" className="text-xs text-destructive">
           <Trans>This view couldn’t open.</Trans>
         </span>
@@ -47,7 +48,7 @@ export function DockOpenInEditor({
         tooltip={t`Open in Editor`}
         onClick={() => {
           if (!open || !runSwitch) return;
-          setFailedDocument(null);
+          setFailedClaim(null);
           const store = useDockViewStore.getState();
           const claim = store.claim();
           void runSwitch(
@@ -60,7 +61,7 @@ export function DockOpenInEditor({
                 },
                 onAccepted,
               ),
-            () => setFailedDocument(tab.documentId),
+            () => setFailedClaim(claim),
           );
         }}
       >
