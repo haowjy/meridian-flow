@@ -5,6 +5,8 @@ import {
   documents,
   linkAheadRefs,
   projects,
+  threads,
+  threadWorks,
   users,
   works,
 } from "@meridian/database/schema";
@@ -58,6 +60,78 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: a, projectId: p, createdByUserId: u, name: "A", slug: "work-a" },
         { id: b, projectId: p, createdByUserId: u, name: "B", slug: "work-b" },
       ]);
+    });
+    it("reads No Work's manifest when its lineage root has rebound to another Work", async () => {
+      const db = database.current;
+      const root = crypto.randomUUID();
+      const fork = crypto.randomUUID();
+      await db.insert(threads).values([
+        { id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" },
+        { id: fork, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c2" },
+      ]);
+      await db.insert(threadWorks).values([
+        { threadId: root, projectId: p, workId: a, isPrimary: true },
+        { threadId: fork, projectId: p, workId: noWork, isPrimary: true },
+      ]);
+      const source = crypto.randomUUID();
+      const namedOnly = crypto.randomUUID();
+      const noWorkOnly = crypto.randomUUID();
+      await db.insert(contextSources).values({
+        id: source,
+        projectId: p,
+        scope: "project",
+        slug: "manuscript",
+        name: "Manuscript",
+      });
+      await db.insert(documents).values([
+        { id: namedOnly, contextSourceId: source, name: "named", extension: "md" },
+        { id: noWorkOnly, contextSourceId: source, name: "no-work", extension: "md" },
+      ]);
+      const { createHarness } = await import(
+        "../collab/test-support/change-trail-postgres-harness.js"
+      );
+      const { createTestDocumentLinkScopes } = await import(
+        "../collab/test-support/document-link-scopes.js"
+      );
+      const harness = createHarness(db, { links: createTestDocumentLinkScopes(db) });
+      try {
+        const branches = harness.crossWorkProbeFixture().branchStore;
+        await branches.recordManifestDocumentCreated(namedOnly, { projectId: p, workId: a });
+        await branches.recordManifestDocumentCreated(noWorkOnly, { projectId: p, workId: noWork });
+        const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+          listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+        };
+        const deps: DocumentLinkRouteDeps = {
+          projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+          documentLinks: resolver(),
+          fileAccess,
+          workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+          linkScopes: createDrizzleDocumentLinkScopes({
+            db,
+            fileAccess,
+            membership: (view) => branches.resolveManifestMembership(view),
+            observer: createLinkScopeObserver(createNoopEventSink()),
+          }),
+        };
+        const links = [
+          { ref: `doc:${namedOnly}`, href: "manuscript://named.md" },
+          { ref: `doc:${noWorkOnly}`, href: "manuscript://no-work.md" },
+        ];
+        for (const baseUri of [null, "scratch://@/c1/holder.md"]) {
+          const response = await handleDocumentLinkResolveRequest(deps, {
+            projectId: p,
+            userId: u as never,
+            request: { rootThreadId: root, baseUri, links },
+          });
+          expect(response.answers).toMatchObject([
+            { state: "gone" },
+            { state: "document", document: { id: noWorkOnly }, inDraft: true },
+          ]);
+        }
+      } finally {
+        harness.cancelScheduledPulls();
+        harness.destroyWarmState();
+      }
     });
     function resolver() {
       const db = database.current;
@@ -199,6 +273,74 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
 
+    it("transports the prepared owners of a mixed catalog without resolving Work slugs again", async () => {
+      const db = database.current;
+      const root = crypto.randomUUID();
+      await db.insert(threads).values({
+        id: root,
+        projectId: p,
+        rootThreadId: root,
+        createdByUserId: u,
+        ref: "c1",
+      });
+      const lineageSource = crypto.randomUUID();
+      const note = crypto.randomUUID();
+      await db.insert(contextSources).values({
+        id: lineageSource,
+        projectId: p,
+        rootThreadId: root,
+        scope: "lineage",
+        slug: "scratch",
+        name: "Scratch",
+      });
+      await db.insert(documents).values({
+        id: note,
+        contextSourceId: lineageSource,
+        name: "note",
+        extension: "md",
+      });
+      const rows = [
+        { id: note, uri: "scratch://@/c1/note.md", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named.md", workId: b },
+        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal.md", workId: noWork },
+        { id: await add("manuscript", "chapter"), uri: "manuscript://chapter.md", workId: null },
+        { id: await add("user", "personal"), uri: "user://personal.md", workId: null },
+      ];
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const works = createDrizzleProjectWorkAuthorityResolver(db);
+      const unexpectedLookup = async () => {
+        throw new Error("Prepared document ownership was discarded");
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        fileAccess,
+        workAuthorityResolver: { ...works, bySlug: unexpectedLookup, noWork: unexpectedLookup },
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          membership: async () => ({ members: rows.map(({ id }) => id) }),
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+      };
+      const result = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u,
+        request: {
+          baseUri: null,
+          links: rows.map(({ id, uri }) => ({ ref: `doc:${id}`, href: uri })),
+        },
+      });
+      expect(result.answers).toHaveLength(rows.length);
+      for (const [index, row] of rows.entries()) {
+        expect(result.answers[index]).toMatchObject({ state: "document", document: row });
+        if (!("rootThreadId" in row))
+          expect(result.answers[index]).not.toHaveProperty("document.rootThreadId");
+      }
+    });
+
     it("answers ref links through the route core: gone never carries a location", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
@@ -269,7 +411,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           membership: async (view) => {
             provisioned.push(view);
-            return { members: liveMembers };
+            return { members: view.workId === noWork ? [...liveMembers, discarded] : liveMembers };
           },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
@@ -338,6 +480,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
+      // A chat's lineage Scratch owner must not erase its No Work draft view.
+      const root = crypto.randomUUID();
+      await db
+        .insert(threads)
+        .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
+      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u as never,
+        request: {
+          rootThreadId: root,
+          baseUri: null,
+          links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded.md" }],
+        },
+      });
+      expect(noWorkDraft.answers).toMatchObject([
+        { state: "document", document: { id: discarded }, inDraft: true },
+      ]);
       // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({

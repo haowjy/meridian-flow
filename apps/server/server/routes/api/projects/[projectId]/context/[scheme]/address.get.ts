@@ -14,6 +14,10 @@ export default defineEventHandler(async (event) => {
     userId,
     scheme,
     workId,
+    rootThreadId:
+      typeof getQuery(event).rootThreadId === "string"
+        ? (getQuery(event).rootThreadId as string)
+        : null,
     path,
   });
   if (resolved.kind === "unavailable") return resolved;

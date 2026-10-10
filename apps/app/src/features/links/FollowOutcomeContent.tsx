@@ -17,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
-
+import { type LineageKey, useLineageTitle } from "@/client/query/useLineageTitle";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
@@ -55,17 +55,44 @@ function targetName(outcome: LinkFollowOutcome): string {
  * menu words it, with the full address on hover. A target that names no area
  * is its plain label.
  */
-function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
+function TargetLocation({
+  outcome,
+  projectId,
+  scratchRootThreadId,
+}: {
+  outcome: LinkFollowOutcome;
+  projectId: string | null;
+  scratchRootThreadId: string | null;
+}) {
   const { address, target } = outcome;
   const parsed = address ? parseContextUri(address) : null;
+  // A canonical address names its chat by handle; a bare one means the chat the follow was asked in.
+  const lineageKey: LineageKey | null =
+    parsed?.ok && parsed.value.authority.kind === "lineage"
+      ? { rootThreadRef: parsed.value.authority.rootThreadRef }
+      : parsed?.ok &&
+          parsed.value.scheme === "scratch" &&
+          parsed.value.authority.kind === "contextual" &&
+          scratchRootThreadId
+        ? { rootThreadId: scratchRootThreadId }
+        : null;
+  const lineageRef = lineageKey !== null;
+  const chatTitle = useLineageTitle(projectId, lineageKey);
   if (!address || !parsed?.ok)
     return <p className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</p>;
   const { scheme, path } = parsed.value;
-  const location = documentLocation(scheme, path.split("/").slice(0, -1).join("/"));
+  const folder = path.split("/").slice(0, -1).join("/");
+  // A chat's Scratch is named by its chat, never by the first chat's handle.
+  const location = lineageRef
+    ? [chatTitle ? t`Scratch for ${chatTitle}` : t`Scratch`, folder].filter(Boolean).join("/")
+    : documentLocation(scheme, folder);
   if (!location) return null;
   const Icon = schemeIcon(scheme);
   return (
-    <p title={address} className="flex items-center gap-1.5 text-ink-muted text-xs">
+    <p
+      title={lineageRef ? undefined : address}
+      className="flex items-center gap-1.5 text-ink-muted text-xs"
+    >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">{location}</span>
     </p>
@@ -75,12 +102,15 @@ function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
 export function FollowOutcomeContent({
   outcome,
   projectId,
+  scratchRootThreadId = null,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
+  /** The lineage a bare `scratch://` means where the follow was asked, for naming it. */
+  scratchRootThreadId?: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
@@ -103,7 +133,11 @@ export function FollowOutcomeContent({
         )}
       </DialogDescription>
 
-      <TargetLocation outcome={outcome} />
+      <TargetLocation
+        outcome={outcome}
+        projectId={projectId}
+        scratchRootThreadId={scratchRootThreadId}
+      />
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">

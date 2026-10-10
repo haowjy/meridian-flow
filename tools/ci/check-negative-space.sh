@@ -151,6 +151,7 @@ done < <(
     'apps/app/src/**/*.ts' \
     'apps/app/src/**/*.tsx' \
     ':!apps/app/src/core/editor/local-presence.ts' \
+    ':!apps/app/src/core/editor/local-presence.test.ts' \
     2>/dev/null || true
 )
 

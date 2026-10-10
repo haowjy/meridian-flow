@@ -27,7 +27,7 @@ import { requireRequestId } from "./request-id.js";
 import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
 
 export interface ThreadWorkRebindRouteDeps {
-  threads: Pick<ThreadRepository, "findById">;
+  threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
@@ -88,7 +88,14 @@ export async function handleRebindThreadWorkRequest(
           threadId: thread.id,
           workId,
         });
-        await recordWriterWorkSwitchNotice(deps.notices, rebound);
+        const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
+        if (rebound.before.slug === null && !root?.ref)
+          throw new Error("Scratch requires the first chat's assigned handle");
+        const previousScratchUri =
+          rebound.before.slug === null
+            ? `scratch://@/${root?.ref}/`
+            : `scratch://@${rebound.before.slug}/`;
+        await recordWriterWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
         return rebound;
       }),
     );

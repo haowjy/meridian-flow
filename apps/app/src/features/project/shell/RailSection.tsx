@@ -1,108 +1,121 @@
 /**
- * RailSection — shared building blocks for the collapsible list rails (context
- * sidebar, results rail). `ContextSidebar` and `ResultsRailSection` had
- * byte-identical local copies of the disclosure header, empty hint, error/retry
- * row, and kind-icon chip; this module owns that contract once so the rail
- * rhythm (padding, radius, count treatment, hover) can't drift between them.
+ * RailSection — building blocks for the lists drawn beside the left file tree:
+ * the right context rail's Recent and the left rail's Scratch. They are the
+ * tree's own parts: section heads are
+ * `RailPaneHeader`, file rows wear `contextTreeFileRowClassName` with the
+ * tree's `RowIcon` and `Twistie`, and the empty hint takes the tree's. They
+ * therefore read as the same surface as the tree.
  */
-import { Trans } from "@lingui/react/macro";
-import { ChevronDown } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { cn } from "@/lib/utils";
+import { RowIcon, rowPaddingLeft, Twistie } from "../context/ContextTreeRows";
+import { contextTreeFileRowClassName } from "../context/context-row-geometry";
+import { RailPaneHeader } from "../context/RailPaneHeader";
 
-/** Collapsible rail section with a disclosure header, optional count, and body. */
+/** A collapsible section under a tree-style head. The tree's heads show no counts, so neither does this. */
 export function CollapsibleRailSection({
   title,
   icon,
-  count,
   defaultOpen = false,
-  open,
-  onOpenChange,
-  trailingAction,
-  bodyClassName = "flex flex-col gap-0.5 pb-1 pl-2",
   children,
 }: {
   title: string;
-  icon?: ReactNode;
-  count: number | null;
+  icon: LucideIcon;
   defaultOpen?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  trailingAction?: ReactNode;
-  bodyClassName?: string;
   children: ReactNode;
 }) {
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
-  const resolvedOpen = open ?? uncontrolledOpen;
-
-  function toggleOpen() {
-    const nextOpen = !resolvedOpen;
-    setUncontrolledOpen(nextOpen);
-    onOpenChange?.(nextOpen);
-  }
-
-  const headerButton = (
-    <button
-      type="button"
-      aria-expanded={resolvedOpen}
-      onClick={toggleOpen}
-      className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
-    >
-      <ChevronDown
-        className={cn(
-          "size-3.5 shrink-0 text-muted-foreground transition-transform",
-          !resolvedOpen && "-rotate-90",
-        )}
-        aria-hidden
-      />
-      {icon ? <span className="text-muted-foreground">{icon}</span> : null}
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      {count != null ? (
-        <span className="shrink-0 text-meta tabular-nums text-muted-foreground">{count}</span>
-      ) : null}
-    </button>
-  );
-
+  const [expanded, setExpanded] = useState(defaultOpen);
   return (
     <section>
-      {trailingAction ? (
-        <div className="flex items-center gap-1 pr-2">
-          {headerButton}
-          {trailingAction}
-        </div>
-      ) : (
-        headerButton
-      )}
-      {resolvedOpen ? <div className={bodyClassName}>{children}</div> : null}
+      <RailPaneHeader
+        label={title}
+        icon={icon}
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+      />
+      {expanded ? <div>{children}</div> : null}
     </section>
   );
 }
 
-/** Muted placeholder row shown when a rail section is empty. */
+/** One file row, as the tree draws it. */
+export function RailFileRow({
+  icon,
+  name,
+  title,
+  onOpen,
+  active = false,
+  depth = 1,
+}: {
+  icon: LucideIcon;
+  name: string;
+  title?: string;
+  onOpen: () => void;
+  /** The document is open beside the writer; the row keeps the tree's selected fill. */
+  active?: boolean;
+  depth?: number;
+}) {
+  return (
+    <div
+      className={contextTreeFileRowClassName(active)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+      title={title}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-current={active ? "true" : undefined}
+        className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
+      >
+        <span className="h-7 w-4 shrink-0" aria-hidden />
+        <RowIcon icon={icon} />
+        <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
+      </button>
+    </div>
+  );
+}
+
+/** One folder row, as the tree draws it: a twistie, the folder glyph and its name. */
+export function RailFolderRow({
+  icon,
+  name,
+  expanded,
+  onToggle,
+  depth = 1,
+}: {
+  icon: LucideIcon;
+  name: string;
+  expanded: boolean;
+  onToggle: () => void;
+  depth?: number;
+}) {
+  return (
+    <div
+      className={contextTreeFileRowClassName(false)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
+      >
+        <Twistie expanded={expanded} />
+        <RowIcon icon={icon} />
+        <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
+      </button>
+    </div>
+  );
+}
+
+/** Muted placeholder shown when a rail section is empty, indented like a tree row. */
 export function RailEmptyHint({ children }: { children: ReactNode }) {
-  return <p className="px-2 py-1.5 text-xs leading-snug text-ink-subtle">{children}</p>;
+  return <p className="py-1.5 pr-2 pl-6 text-xs leading-snug text-ink-subtle">{children}</p>;
 }
 
 /** Error row with a retry link, shown when a rail section fails to load. */
-export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label?: ReactNode }) {
-  return (
-    <InlineErrorRow message={label ?? <Trans>Couldn't load results.</Trans>} onRetry={onRetry} />
-  );
-}
-
-/** Square kind-icon chip (file/result type). `tone` sets the icon color. */
-export function RailKindIcon({ tone, children }: { tone?: string; children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md border border-border-subtle bg-muted",
-        tone,
-      )}
-      aria-hidden
-    >
-      {children}
-    </span>
-  );
+export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label: ReactNode }) {
+  return <InlineErrorRow message={label} onRetry={onRetry} />;
 }

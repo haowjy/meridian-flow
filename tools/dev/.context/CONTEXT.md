@@ -63,6 +63,7 @@ tools/dev/
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
 │   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
 │   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
+│   ├── migration-sql.ts       Shared marker/encoding, identifier and chunk parsing for runner + lint
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
@@ -228,15 +229,34 @@ Two consumers compare it:
 - `planDatabaseMigrations` classifies applied `__drizzle_migrations` rows as
   `edited`, `retimestamped`, `missing-timestamp`, or `unknown`, and pending
   entries not newer than the newest applied row as `out-of-order`. Any issue
-  is a full refusal. `runMigrations` takes `pg_advisory_xact_lock` before it
-  reads applied rows or creates the Drizzle schema, so concurrent runners
-  cannot double-apply; the `pnpm dev` preflight in `dev-infra.ts` uses the
-  same plan.
+  is a full refusal. `runMigrations` takes a session `pg_advisory_lock` on a
+  reserved connection before it reads applied rows or creates the Drizzle
+  schema, and holds it for the whole run, so concurrent runners cannot
+  double-apply; the `pnpm dev` preflight in `dev-infra.ts` uses the same plan.
 
-`migration-lint.ts` scans generated Drizzle SQL for risky production patterns
-(renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, indexes
-without `CONCURRENTLY`, table-wide deletes/updates). A line can opt out with
-`-- migration-lint: skip <RULE_ID>` when the migration is intentionally safe.
+`runMigrations` executes each pending file on that one connection:
+
+- **Ordinary file:** explicit `BEGIN`, its statements and history row, then
+  `COMMIT`. A failure rolls back only that file; earlier files stay applied.
+  postgres.js reserved sessions expose no `begin()`, which is why transaction
+  control is plain SQL on the lock-owning connection.
+- **`-- migration: no-transaction` file** (`lib/migration-sql.ts` normalizes BOM
+  and CRLF before detection): first, for each `CREATE INDEX CONCURRENTLY IF NOT
+  EXISTS` it names, drop that index concurrently if it exists and is INVALID;
+  then autocommit each breakpoint chunk; record history last. A failure leaves
+  partial effects and no history row, so the retry reruns the whole file.
+- **Lost backend:** cleanup never sends `ROLLBACK` or unlock to a dead session
+  (termination already released the lock), and cleanup errors never replace the
+  file-aware failure that `formatMigrationFailure` prints.
+
+`migration-lint.ts` scans migration SQL for risky production patterns: renames,
+drops, unsafe `SET NOT NULL`, CHECKs and FKs without `NOT VALID`, index builds
+and drops without `CONCURRENTLY`, table-wide deletes/updates, `CONCURRENTLY`
+outside a no-transaction file, a concurrent build without `IF NOT EXISTS`, and a
+concurrent statement sharing its breakpoint chunk. All rules live in one `RULES`
+list, evaluated per executable chunk and per `ALTER TABLE` clause. A line can
+opt out with `-- migration-lint: skip <RULE_ID>` only when the statement is
+safe on populated tables; an empty-table reason is not accepted.
 
 Supported modes:
 

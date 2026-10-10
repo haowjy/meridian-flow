@@ -19,6 +19,7 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import type { LineageScratchLifecycle } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
@@ -79,12 +80,14 @@ export interface DrizzleWorkRepositoryDeps {
   projectionMutation: WorkProjectionMutation;
   /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
+  lineageScratch: LineageScratchLifecycle;
   /** Restored documents arrive at their addresses (contract §9.3). */
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   now?: () => Date;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db } = deps;
+  const lineageScratch = deps.lineageScratch;
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
 
@@ -340,6 +343,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         await projectionMutation.publishWorks([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
+        await lineageScratch.reconcile(lockedTree.threadIds);
         return { before, after, threadIds: deletedThreadIds };
       });
     },
@@ -373,6 +377,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             liveThreadIds: lockedTree.liveThreadIds,
             at: restoredAt,
           });
+          await lineageScratch.reconcile(lockedTree.threadIds);
           if (arriving.length > 0) await deps.arrivals?.settle(arriving);
           await projectionMutation.publishWorks([row.id]);
           await deps.fileAccessChanges.publish({ workId: id });

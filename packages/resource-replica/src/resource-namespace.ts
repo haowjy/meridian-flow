@@ -15,10 +15,12 @@ import type {
   ResourceMetadataStore,
   ResourceNamespaceLock,
   ResourceNamespaceTransport,
+  ResourceOwnerKey,
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { resourceContextAuthority } from "./resource-work-authority";
+import { sameOwner } from "./resource-records";
+import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
@@ -66,11 +68,21 @@ function sameSource(location: ResourceLocation | null, request: NamespaceRequest
   return (
     location.scheme === request.scheme &&
     normalizedPath(location.path) === normalizedPath(request.body.path) &&
-    location.workId ===
-      (request.kind === "move" ? (request.body.sourceWorkId ?? null) : request.workId) &&
-    (location.workSlug ?? null) ===
-      (request.kind === "move" ? request.sourceWorkSlug : request.workSlug)
+    sameOwner(location, requestSourceOwner(request))
   );
+}
+
+/** The owner a move or delete request names for its source. */
+function requestSourceOwner(
+  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
+): ResourceOwnerKey {
+  return request.kind === "delete"
+    ? { workId: request.workId, workSlug: request.workSlug, rootThreadId: request.rootThreadId }
+    : {
+        workId: request.body.sourceWorkId ?? null,
+        workSlug: request.sourceWorkSlug,
+        rootThreadId: request.body.sourceRootThreadId,
+      };
 }
 
 function requestFor(
@@ -106,6 +118,8 @@ function requestFor(
       scheme: source.scheme,
       workId: source.workId,
       workSlug: source.workSlug ?? null,
+      rootThreadId: source.rootThreadId ?? null,
+      rootThreadRef: source.rootThreadRef ?? null,
       body: {
         operationId,
         path: normalizedPath(source.path),
@@ -114,19 +128,18 @@ function requestFor(
     };
   }
   const destination = intent.desired.destination;
+  const owners = moveOwnerFields(source, destination);
   return {
     kind: "move",
     scheme: source.scheme,
-    sourceWorkSlug: source.workSlug ?? null,
-    destinationWorkSlug: destination.workSlug ?? null,
+    ...owners,
     body: {
       operationId,
       path: normalizedPath(source.path),
       expected: { kind: "file", nodeId: resource.identity.documentId },
       destinationScheme: destination.scheme,
       destinationFolderPath: normalizedPath(destination.folderPath),
-      sourceWorkId: source.workId,
-      destinationWorkId: destination.workId,
+      ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },
   };
@@ -209,12 +222,7 @@ export function namespaceOutcomeMatches(
       source.ok &&
       source.value.scheme === attempt.request.scheme &&
       source.value.path === normalizedPath(attempt.request.body.path) &&
-      authorityMatches(
-        attempt.request.scheme,
-        source.value.authority,
-        attempt.request.workId,
-        attempt.request.workSlug,
-      ) &&
+      authorityMatches(attempt.request.scheme, source.value.authority, attempt.request) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
@@ -233,20 +241,20 @@ export function namespaceOutcomeMatches(
       destination.ok &&
       source.value.scheme === attempt.request.scheme &&
       source.value.path === normalizedPath(attempt.request.body.path) &&
-      authorityMatches(
-        attempt.request.scheme,
-        source.value.authority,
-        attempt.request.body.sourceWorkId ?? null,
-        attempt.request.sourceWorkSlug,
-      ) &&
+      authorityMatches(attempt.request.scheme, source.value.authority, {
+        workId: attempt.request.body.sourceWorkId ?? null,
+        workSlug: attempt.request.sourceWorkSlug,
+        rootThreadId: attempt.request.body.sourceRootThreadId,
+        rootThreadRef: attempt.request.sourceRootThreadRef,
+      }) &&
       destination.value.scheme === attempt.request.body.destinationScheme &&
       destination.value.path === destinationPath &&
-      authorityMatches(
-        attempt.request.body.destinationScheme,
-        destination.value.authority,
-        attempt.request.body.destinationWorkId ?? null,
-        attempt.request.destinationWorkSlug,
-      ) &&
+      authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
+        workId: attempt.request.body.destinationWorkId ?? null,
+        workSlug: attempt.request.destinationWorkSlug,
+        rootThreadId: attempt.request.body.destinationRootThreadId,
+        rootThreadRef: attempt.request.destinationRootThreadRef,
+      }) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
@@ -256,14 +264,15 @@ export function namespaceOutcomeMatches(
 function authorityMatches(
   scheme: ProjectContextTreeScheme,
   authority: ParsedContextAuthority,
-  workId: string | null,
-  workSlug: string | null,
+  owner: Parameters<typeof resourceContextAuthority>[1],
 ): boolean {
-  const expected = resourceContextAuthority(scheme, { workId, workSlug });
+  const expected = resourceContextAuthority(scheme, owner);
   return (
     authority.kind === expected.kind &&
     (authority.kind !== "work" ||
-      (expected.kind === "work" && authority.workSlug === expected.workSlug))
+      (expected.kind === "work" && authority.workSlug === expected.workSlug)) &&
+    (authority.kind !== "lineage" ||
+      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef))
   );
 }
 
@@ -466,10 +475,12 @@ export function installCanonicalRefresh(input: {
   const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
   // A catalog observation names its Work by id with its slug, null for No Work
   // (`@/`), exactly as catalog installation derives it from the entry's URI.
-  // Only a Work-scoped location with no Work id at all is incomplete.
+  // A lineage's Scratch names its first chat instead. Only a Work-scoped
+  // location with neither owner is incomplete.
+  const owned = input.location.workId != null || input.location.rootThreadId !== undefined;
   if (
-    (workScoped && input.location.workId == null) ||
-    (!workScoped && (input.location.workId !== null || input.location.workSlug != null))
+    (workScoped && !owned) ||
+    (!workScoped && (owned || input.location.workId !== null || input.location.workSlug != null))
   )
     throw new Error("Canonical observation has incomplete Work authority");
   const { canonicalRefresh: _completed, ...obligations } = input.record.resource.obligations;

@@ -22,7 +22,9 @@ export const MAX_REFERENCE_QUERY_LENGTH = 80;
 export type StableReferenceAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
 
 export type AuthoritativeReference = {
   documentId: DocumentId;
@@ -104,7 +106,7 @@ export function authoritativeReferenceForFile(
   entry: CatalogFileEntry,
   authorities: ReferenceAuthorityIndex,
 ): AuthoritativeReference | null {
-  const authority = stableAuthority(entry.scope, authorities);
+  const authority = stableAuthority(entry.scope, authorities, entry.uri);
   if (!authority) return null;
   const uri = referenceUriForAuthority(entry.uri, authority);
   if (!uri) return null;
@@ -124,7 +126,7 @@ export function canonicalReferenceUri(
   uri: CanonicalContextUri,
   authorities: ReferenceAuthorityIndex,
 ): CanonicalContextUri | null {
-  const authority = stableAuthority(scope, authorities);
+  const authority = stableAuthority(scope, authorities, uri);
   return authority ? referenceUriForAuthority(uri, authority) : null;
 }
 
@@ -200,8 +202,21 @@ export function normalizeReferenceName(value: string): string {
 function stableAuthority(
   scope: CatalogScope,
   authorities: ReferenceAuthorityIndex,
+  uri: CanonicalContextUri,
 ): StableReferenceAuthority | null {
   switch (scope.kind) {
+    case "lineage": {
+      // The scope names the lineage by id; the handle is only in the URI it spells.
+      const parsed = parseContextUri(uri);
+      return parsed.ok && parsed.value.authority.kind === "lineage"
+        ? {
+            kind: "lineage",
+            projectId: scope.projectId,
+            rootThreadId: scope.rootThreadId,
+            rootThreadRef: parsed.value.authority.rootThreadRef,
+          }
+        : null;
+    }
     case "project":
       return { kind: "project", projectId: scope.projectId };
     case "user":
@@ -225,6 +240,12 @@ export function referenceUriForAuthority(
 ): CanonicalContextUri | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok) return null;
+  if (authority.kind === "lineage")
+    return parsed.value.scheme === "scratch" &&
+      parsed.value.authority.kind === "lineage" &&
+      parsed.value.authority.rootThreadRef === authority.rootThreadRef
+      ? parsed.value.normalized
+      : null;
   if (authority.kind === "work") {
     if (authority.workSlug === null) {
       return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;

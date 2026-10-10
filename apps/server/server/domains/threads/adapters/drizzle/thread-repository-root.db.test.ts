@@ -49,7 +49,7 @@ else
       expect(await persistedRoot(created.id)).toBe(created.id);
     });
 
-    it("persists a derived primary with the source's sibling lineage", async () => {
+    it("persists a fork in the source's lineage and a handoff in its own", async () => {
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
@@ -77,5 +77,18 @@ else
       expect(fork.parentThreadId).toBe(subagent.parentThreadId);
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
       expect(await persistedRoot(fork.id)).toBe(ids.threadId);
+
+      // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
+      const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
+        userId: ids.userId,
+        projectId: ids.projectId,
+        workId: ids.noWorkId,
+        source: subagent,
+        originType: "handoff",
+        originTurnId: sourceTurn.id,
+      });
+      expect(handoff.parentThreadId).toBe(subagent.parentThreadId);
+      expect(await persistedRoot(handoff.id)).toBe(handoff.id);
     });
   });

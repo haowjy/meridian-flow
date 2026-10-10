@@ -1,12 +1,19 @@
 /** Connected history authority is shared by every inspection tool. */
-import type { Thread } from "@meridian/contracts/threads";
+import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 
 const rows = [
   { id: "root", ref: "c1" },
   { id: "fork", ref: "c2", originType: "fork" },
-  { id: "handoff", ref: "c3", originType: "handoff" },
+  // A handoff starts its own lineage; it reads only the thread its origin turn came from.
+  {
+    id: "handoff",
+    ref: "c3",
+    originType: "handoff",
+    rootThreadId: "handoff",
+    originTurnId: "source-turn",
+  },
   { id: "child", ref: "p1", parentThreadId: "root" },
   { id: "grandchild", ref: "p2", parentThreadId: "child" },
   { id: "forkChild", ref: "p3", parentThreadId: "fork" },
@@ -31,6 +38,11 @@ const threads = {
     );
   },
 };
+const turns = {
+  async findById(id: string) {
+    return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
+  },
+};
 describe("resolveReadableThread", () => {
   it.each([
     ["c3", "c1"],
@@ -41,8 +53,14 @@ describe("resolveReadableThread", () => {
         caller: rows.find((row) => row.ref === from) as Thread,
         ref,
         threads,
+        turns,
       }),
     ).toMatchObject({ ok: true, target: { ref } });
+  });
+  it("does not extend a handoff's connection to its source's other threads", async () => {
+    expect(
+      await resolveReadableThread({ caller: rows[2] as Thread, ref: "c2", threads, turns }),
+    ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
   });
   it.each([
     ["c4", "thread_not_connected"],
@@ -51,7 +69,9 @@ describe("resolveReadableThread", () => {
     ["c7", "thread_not_found"],
     ["bogus", "thread_not_found"],
   ])("denies %s as %s", async (ref, code) => {
-    expect(await resolveReadableThread({ caller: rows[0] as Thread, ref, threads })).toMatchObject({
+    expect(
+      await resolveReadableThread({ caller: rows[0] as Thread, ref, threads, turns }),
+    ).toMatchObject({
       ok: false,
       error: { code },
     });

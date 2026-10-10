@@ -45,6 +45,7 @@ export * from "./billing.js";
 export * from "./context-availability.js";
 export * from "./context-catalog.js";
 export * from "./context-operation.js";
+export * from "./context-owner.js";
 export * from "./document-links.js";
 export * from "./document-revision.js";
 export * from "./event-seq.js";

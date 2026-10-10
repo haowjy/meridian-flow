@@ -1,7 +1,7 @@
 /** Pure selection and represented-removal obligation protocol. */
 
 import type { ContextTab } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
@@ -65,9 +65,7 @@ export type SelectionTransition = {
   retireReentryGuard: boolean;
 };
 
-export function sameLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
-  return a.scheme === b.scheme && a.path === b.path && a.workId === b.workId;
-}
+export const sameLocator = sameContextTarget;
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
   return selection.status === "bound"
@@ -287,12 +285,7 @@ function representedTab(
       if (tab.kind === "new") {
         return selection.locator.scheme === "unfiled" && selection.locator.path === "";
       }
-      return contextTabMatchesRoute(
-        tab,
-        selection.locator.scheme,
-        selection.locator.path,
-        selection.locator.workId,
-      );
+      return contextTabMatchesRoute(tab, selection.locator);
     }) ??
     tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ??
     null

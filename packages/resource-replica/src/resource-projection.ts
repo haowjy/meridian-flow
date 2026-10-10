@@ -2,10 +2,10 @@
 import { namespaceRepairDestination } from "./namespace-journal-policy";
 import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
 import {
+  ownerOf,
   type ResourceCatalogCheckpoint,
   type ResourceLocation,
   type ResourceRecord,
-  workAuthorityOf,
 } from "./resource-records";
 
 export type ProjectResourceLocation = ResourceLocation & { provisional: boolean };
@@ -64,7 +64,7 @@ export function projectResourceLocation(
       scheme: placement.destination.scheme,
       path: `/${[folder, placement.destination.name].filter(Boolean).join("/")}`,
       name: placement.destination.name,
-      ...workAuthorityOf(placement.destination),
+      ...ownerOf(placement.destination),
       provisional: false,
     };
   }

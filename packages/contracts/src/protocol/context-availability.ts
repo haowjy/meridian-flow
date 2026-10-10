@@ -68,7 +68,8 @@ export type ProjectContextIdentityLookupRequest = {
 export type ProjectContextAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
 
 export type ProjectContextIdentityResolution =
   | {

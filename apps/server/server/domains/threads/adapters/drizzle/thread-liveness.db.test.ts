@@ -1,3 +1,4 @@
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
  * PostgreSQL coverage for R2: the project list and the live state read the
@@ -135,7 +136,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reads the running turn from the lease in both the list and live state", async () => {
       const authority = createDrizzleRunClaim(db);
-      const repo = createDrizzleThreadRepository(db, { statusReader: authority });
+      const repo = createDrizzleThreadRepository(db, {
+        statusReader: authority,
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const repos = createDrizzleRepositoriesForTest(db);
       const runtime = createThreadRuntimeService({
         db,

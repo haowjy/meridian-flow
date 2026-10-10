@@ -46,6 +46,11 @@
       "reason": "Work-owned sources (scratch, uploads) only, never drafted, so never hidden: cascade soft-delete and restore, bumping location_version"
     },
     {
+      "path": "apps/server/server/domains/projects/adapters/drizzle-work-purge.ts",
+      "forms": ["read"],
+      "reason": "Work purge: collects the stored objects of every row (live, hidden and deleted) in the sources it hard-deletes, for object-store cleanup; answers no visibility question"
+    },
+    {
       "path": "apps/server/server/domains/projects/adapters/work-repository/drizzle.ts",
       "forms": ["read"],
       "reason": "Rows the Work cascade deleted, by deleted_by_work_id: history of Work-owned sources"

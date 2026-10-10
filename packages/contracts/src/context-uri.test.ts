@@ -61,11 +61,24 @@ describe("parseContextUri", () => {
       ok: true,
       value: { authority: { kind: "none" }, normalized: "uploads://@/draft.png" },
     });
+    // A chat's Scratch is named by its first chat's handle: `@/` plus the handle, never `@/` alone.
+    expect(parseContextUri("scratch://@/c12/notes/a.md")).toMatchObject({
+      ok: true,
+      value: {
+        authority: { kind: "lineage", rootThreadRef: "c12" },
+        normalized: "scratch://@/c12/notes/a.md",
+      },
+    });
+    expect(
+      canonicalContextUri("scratch", "./notes//a.md", { kind: "lineage", rootThreadRef: "c12" }),
+    ).toBe("scratch://@/c12/notes/a.md");
+    expect(() => canonicalContextUri("scratch", "a.md", { kind: "none" })).toThrow();
   });
 
   it.each([
     "scratch://@revision-pass/folder/@reserved/file.md",
     "scratch://@bad_slug/file.md",
+    "scratch://@other/@/c12/file.md",
   ])("rejects reserved path segments and invalid authorities: %s", (uri) => {
     expect(parseContextUri(uri)).toMatchObject({ ok: false });
   });

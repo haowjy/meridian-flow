@@ -5,6 +5,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";
 
@@ -38,6 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const workRepository = () =>
       createDrizzleWorkRepository({
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation,
@@ -162,7 +164,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const repo = createDrizzleProjectRepository({ db });
       const project = await repo.create({ userId, title: "Chat handles" });
       const another = await repo.create({ userId, title: "Another" });
-      const chats = createDrizzleThreadRepository(db);
+      const chats = createDrizzleThreadRepository(db, {
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const first = await chats.create({ projectId: project.id, userId });
       const second = await chats.create({ projectId: project.id, userId });
       expect(first.ref).toBe("c1");

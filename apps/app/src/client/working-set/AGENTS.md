@@ -28,7 +28,9 @@ Key rules:
   adopt during render or repeat adoption for same-project loader echoes.
 - Build routes with `buildWorkingSetRoute`: every server route requires its
   stable document ID, and Work-capable schemes require explicit real-Work or
-  no-Work authority. Never hand-assemble the union.
+  no-Work authority; a No Work chat's Scratch names its lineage
+  (`rootThreadId`, the first chat's id) instead of a Work. Never hand-assemble
+  the union.
 - Do not grow this into a general sync engine. The narrowness is the
   design. A new state kind gets its own record and policy instead of
   widening this one. Account recently-opened documents are a separate

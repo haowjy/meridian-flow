@@ -1,5 +1,5 @@
 /** Project-route composition for document doors: what happens to passage state every time the writer opens one. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useRef } from "react";
 
 import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
@@ -7,21 +7,30 @@ import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 
 export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
+  /** A chat's Scratch is held by its lineage instead of a Work. */
+  rootThreadId?: string;
   uri: string;
 };
 
 /** Tell passage navigation that a door was opened. The passage is optional. */
-export type PassageDoorOpened = (target: PassageDoorTarget, passage?: ContextPassageAnchor) => void;
+/** What the door already resolved, so passage handling does not look the same URI up again. */
+export type PassageDoorResolved = { documentId: string; editable: boolean; claim?: number };
+
+export type PassageDoorOpened = (
+  target: PassageDoorTarget,
+  passage?: ContextPassageAnchor,
+  resolved?: PassageDoorResolved,
+) => void;
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoorOpened {
   const coordinator = useRef(new LatestNavigationCoordinator());
-  const openDocument = useOpenProjectDocument(projectId);
+  const openDocument = useOpenChatDocument(projectId);
 
   // A resolution belongs to the scope it began in. Changing project or work
   // retires it exactly as a newer door would: the transcript it came from is
@@ -32,7 +41,7 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
   }, [projectId, activeWorkId]);
 
   return useCallback(
-    (target, passage) => {
+    (target, passage, resolved) => {
       const resolving = coordinator.current.run(async (signal) => {
         // The previous door's answer stops being true the moment this one is
         // used, and that includes its notice. Clearing at the start also means
@@ -40,9 +49,14 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         dismissPassageNotice();
         if (!passage) return;
 
-        const file = await lookupContextCatalogFile(projectId, target.scheme, target.workId, {
-          uri: target.uri,
-        });
+        const file =
+          resolved ??
+          (await lookupContextCatalogFile(
+            projectId,
+            target.scheme,
+            contextOwner(target.workId, target.rootThreadId),
+            { uri: target.uri },
+          ));
         if (signal.aborted) return;
         // A binary or missing file has no Yjs document to land in; the door's
         // own destination already explains both.
@@ -53,7 +67,12 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
           anchor: passage,
           signal,
           openDocument: (documentId) =>
-            openDocument({ documentId, workId: target.workId ?? undefined, signal }),
+            openDocument({
+              documentId,
+              workId: target.workId ?? undefined,
+              signal,
+              claim: resolved?.claim,
+            }),
         });
         // Report only while this door is still the writer's latest: a stale
         // verdict about somewhere they have already left is worse than silence.

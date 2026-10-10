@@ -40,9 +40,19 @@ the locked No Work row uses a null slug and URI authority `@/`.
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
-single durable URI authority rule (`@/` or `@slug`) used by catalog projection,
+single durable URI authority rule (`@/`, `@slug`, or a lineage's `@/c12/`) used by catalog projection,
 receipt matching and folder re-basing. Tab ownership does not use it: app tabs
-carry the location's Work row id, No Work's included.
+carry the location's Work row id, No Work's included, or a chat's lineage.
+
+A location's owner is `ResourceOwner`: a Work (`workId` and `workSlug`, null for
+No Work), a lineage (`rootThreadId` and the handle `rootThreadRef` its URI
+spells, `workId` null), or neither for project schemes. A Work owner is checked
+against the Works snapshot (`resourceWorkAuthorityFor`); a lineage owner is what
+a lineage-scoped server catalog asserts (`resourceLineageOwner`). `sameOwner` compares
+only the Work or lineage id. Move and delete requests carry the lineage id and
+its handle (`moveOwnerFields`), and receipt matching spells the handle back
+(`resourceContextAuthority`), so a receipt under another chat's notes never
+settles this one's intent.
 
 The journal type and structural validator cannot prove that a row id is the
 project's locked row: they have no Works registry. Server catalog acquisition
@@ -50,7 +60,10 @@ asserts that relationship through its Work-qualified scope and canonical URI;
 commands must use the checked snapshot constructor, not manufacture a nullable
 slug. This is a trusted-input boundary, not a type-only identity guarantee.
 No Work link Create and Editor identity rename use the same namespace journal
-as named Works. No Work has no exposed Scratch tree.
+as named Works. The server's No Work row owns no Scratch: a No Work chat's
+Scratch belongs to its lineage (`scratch://@/c12/`), and a lineage catalog scope
+installs locations owned by that lineage. Never map a lineage location onto the
+No Work row.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted

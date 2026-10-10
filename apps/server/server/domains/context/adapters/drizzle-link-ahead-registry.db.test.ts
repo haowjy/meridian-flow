@@ -6,6 +6,7 @@ import {
   documents,
   linkAheadRefs,
   projects,
+  threads,
   users,
   works,
 } from "@meridian/database/schema";
@@ -42,7 +43,7 @@ if (!RUN) {
     } as const;
     type Scheme = keyof typeof SOURCES;
     const addressFor = (scheme: Scheme) =>
-      scheme === "manuscript" ? "manuscript://chapter.md" : `${scheme}://@/chapter.md`;
+      scheme === "manuscript" ? "manuscript://chapter.md" : `${scheme}://@notes/chapter.md`;
     const registrationFor = (scheme: Scheme, aheadId = AHEAD) => ({
       aheadId,
       holderProjectId: PROJECT as never,
@@ -68,9 +69,9 @@ if (!RUN) {
         id: NO_WORK,
         projectId: PROJECT,
         createdByUserId: USER,
-        name: "No Work",
-        slug: null,
-        isNoWork: true,
+        name: "Notes",
+        slug: "notes",
+        isNoWork: false,
       });
       await database
         .insert(contextSources)
@@ -95,7 +96,7 @@ if (!RUN) {
       );
     const newRegistry = (db: Database) => createDrizzleLinkAheadRegistry(db, membership);
 
-    /** The exact key real arrivals take for this scheme's source (No Work: the persisted row id). */
+    /** The exact key real arrivals take for this scheme's source (Work: the persisted row id). */
     const arrivalKey = (scheme: Scheme) =>
       contextNamespaceKey({
         projectId: PROJECT,
@@ -265,9 +266,9 @@ if (!RUN) {
       await raceRegistrationFirst("manuscript");
     });
 
-    // Only the namespace key differs by scheme: scratch and uploads take the same No Work key
+    // Only the namespace key differs by scheme: scratch and uploads take the same Work key
     // shape and neither is drafted, so one scratch arrival proves registration locks that key.
-    it("scratch registration queues on the No Work key its arrival holds", async () => {
+    it("scratch registration queues on the Work key its arrival holds", async () => {
       await raceArrivalFirst("scratch");
     });
 
@@ -310,6 +311,52 @@ if (!RUN) {
         runInDrizzleTransaction(database, () => registry.register([inside])),
       ).rejects.toBeInstanceOf(RegistrationInsideTransactionError);
       expect(await database.select().from(linkAheadRefs)).toHaveLength(2);
+    });
+
+    it("keeps same-path ahead refs separate for two chat lineages", async () => {
+      const ROOTS = [
+        "00000000-0000-4000-8000-000000000c01",
+        "00000000-0000-4000-8000-000000000c02",
+      ];
+      const SOURCES = [
+        "00000000-0000-4000-8000-000000000c03",
+        "00000000-0000-4000-8000-000000000c04",
+      ];
+      for (const [i, root] of ROOTS.entries()) {
+        await database.insert(threads).values({
+          id: root,
+          projectId: PROJECT,
+          createdByUserId: USER,
+          rootThreadId: root,
+          ref: `c${i + 1}`,
+        });
+        await database.insert(contextSources).values({
+          id: SOURCES[i],
+          projectId: PROJECT,
+          rootThreadId: root,
+          scope: "lineage",
+          name: "Scratch",
+          slug: "scratch",
+        });
+      }
+      const registry = newRegistry(database);
+      await registry.register([
+        { ...registration, address: "scratch://@/c1/note.md" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.md" },
+      ]);
+      await database
+        .insert(documents)
+        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "md" });
+      await runInDrizzleTransaction(database, async () => {
+        await lockContextSources(database, [SOURCES[0]]);
+        expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);
+      });
+      expect(
+        await database.select().from(linkAheadRefs).orderBy(linkAheadRefs.aheadId),
+      ).toMatchObject([
+        { aheadId: AHEAD, rootThreadId: ROOTS[0], settledDocumentId: DOCUMENT },
+        { aheadId: DOCUMENT_2, rootThreadId: ROOTS[1], settledDocumentId: null },
+      ]);
     });
 
     it("normalizes ahead ids and requires an exact qualified address", async () => {

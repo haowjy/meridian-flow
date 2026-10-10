@@ -86,3 +86,10 @@
   non-text blocks, so the transcript shows a link, not the picture. Pre-existing
   composer/UserTurn gap, outside the #558 render model.
   (Noted during the #558 image probe, 2026-09-18.)
+
+- Reload audit: `useChatFollowScroll.ts` resets transcript reading position and
+  follow mode; `subagent/DisclosureStore.tsx` resets process/subagent expansion;
+  `DraftDock.tsx` resets the expanded draft list. Consider retaining these
+  writer choices per browser tab, without persisting open menus or confirmations.
+  Unsent existing-chat draft loss is tracked separately in
+  https://github.com/haowjy/meridian-flow/issues/746.

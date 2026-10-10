@@ -51,6 +51,7 @@ export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {
  * Not-found on read is modelled as `Ok(null)`, not a fault.
  */
 export type AdapterFault =
+  | { code: "not_found" }
   | { code: "permission_denied" }
   | { code: "conflict" }
   | { code: "stale_source" }

@@ -13,10 +13,12 @@ is [`core/editor/links/`](../../core/editor/links/AGENTS.md); what a writer
 
 A surface supplies three things, and everything between is here:
 
-- **Scope** (`LinkResolutionScope`): project, Work, and the holder's base URI.
-  In the Editor, Work comes from the holder's replica location for Scratch
-  and Uploads, and the No Work row for project documents. It never comes from
-  the Editor route or remembered Work. Chat uses the thread's Work.
+- **Scope** (`LinkResolutionScope`): project, Work, lineage, and the holder's
+  base URI. In the Editor, Work comes from the holder's replica location for
+  Scratch and Uploads, and the No Work row for project documents; a note in a
+  chat's Scratch also names its lineage (`rootThreadId`). It never comes from
+  the Editor route or remembered Work. Chat uses the thread's Work, and its
+  lineage while it is on No Work.
   Together with the index's revision, it is what an answer is true of. A
   surface that does not know its Work yet passes `"pending"`; a click waits for
   the real scope and is never answered from a guessed one.

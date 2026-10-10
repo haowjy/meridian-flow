@@ -70,6 +70,17 @@ const NOTEBOOK_PEN: IconNode = [
   ],
 ];
 
+const INBOX: IconNode = [
+  ["polyline", { points: "22 12 16 12 14 15 10 15 8 12 2 12", key: "o97t9d" }],
+  [
+    "path",
+    {
+      d: "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z",
+      key: "oot6mr",
+    },
+  ],
+];
+
 const UPLOAD: IconNode = [
   ["path", { d: "M12 3v12", key: "1x0j5s" }],
   ["path", { d: "m17 8-5-5-5 5", key: "7q97r8" }],
@@ -87,12 +98,12 @@ const FILE: IconNode = [
   ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5", key: "wfsgrz" }],
 ];
 
-/** Scratch and Unfiled share NotebookPen: both are loose writing, told apart by place. */
+/** Scratch is NotebookPen (loose writing); Unfiled is Inbox (not filed yet). */
 const FAMILY_ICON_NODES: Record<LinkChipIcon, { name: string; node: IconNode }> = {
   manuscript: { name: "ScrollQuill", node: SCROLL_QUILL },
   kb: { name: "Library", node: LIBRARY },
   user: { name: "User", node: USER },
-  unfiled: { name: "NotebookPen", node: NOTEBOOK_PEN },
+  unfiled: { name: "Inbox", node: INBOX },
   scratch: { name: "NotebookPen", node: NOTEBOOK_PEN },
   uploads: { name: "Upload", node: UPLOAD },
   file: { name: "File", node: FILE },

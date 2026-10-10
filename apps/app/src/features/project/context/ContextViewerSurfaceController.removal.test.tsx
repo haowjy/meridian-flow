@@ -14,7 +14,25 @@ import {
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { ContextViewerSurfaceController } from "../ContextPaneController";
+import {
+  type ContextViewerSurfaceControllerProps,
+  ContextViewerSurfaceController as ResolvedController,
+} from "../ContextPaneController";
+import { useDesktopEditorPresentation } from "../DesktopProjectController";
+
+function ContextViewerSurfaceController(
+  props: Omit<ContextViewerSurfaceControllerProps, "resolvedEditor">,
+) {
+  const presentation = useDesktopEditorPresentation({
+    projectId: props.projectId,
+    current: props,
+    requestedWorkId: props.editorWorkId,
+    screen: "context",
+    contextLive: props.active,
+  });
+  return <ResolvedController {...props} resolvedEditor={presentation.resolved} />;
+}
+
 import type { ProjectSearch } from "../routing/project-route";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";

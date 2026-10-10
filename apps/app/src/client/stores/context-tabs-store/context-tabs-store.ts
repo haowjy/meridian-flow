@@ -6,6 +6,7 @@ import {
   type ContextTab,
   isEditorContextTab,
   type ProjectTabsSlice,
+  type TabOwner,
 } from "./editor-workspace-model";
 import {
   EDITOR_WORKSPACE_STORAGE_KEY,
@@ -14,14 +15,22 @@ import {
   reduceEditorWorkspace,
 } from "./editor-workspace-state";
 
+/** A tracked tab's changed metadata; an owner in it replaces the old one whole. */
+export type TrackedTabPatch = Partial<
+  Omit<Extract<ContextTab, { kind: "tracked" }>, keyof TabOwner>
+> &
+  TabOwner;
+
 export {
   type ContextTab,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
   type ProjectTabsSlice,
+  replaceOwner,
   type ServerContextTab,
-  viewerTabForCatalogFile,
+  type TabOwner,
+  tabContextOwner,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
@@ -47,7 +56,7 @@ type ContextTabsActions = {
   updateTrackedTab: (
     projectId: string,
     documentId: string,
-    metadata: Partial<Extract<ContextTab, { kind: "tracked" }>>,
+    metadata: TrackedTabPatch,
   ) => Promise<void>;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => Promise<void>;
   selectTab: (projectId: string, workId: string, documentId: string | null) => Promise<void>;
@@ -277,7 +286,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
                 candidate.kind === "tracked" && candidate.documentId === documentId,
             );
-            return tab ? { kind: "open", projectId, tab: { ...tab, ...metadata } } : null;
+            // A patch's owner replaces the old one whole (`replaceOwner`).
+            return tab
+              ? { kind: "open", projectId, tab: { ...tab, ...metadata } as typeof tab }
+              : null;
           }),
 
         reorderTabs: (projectId, fromIndex, toIndex) =>

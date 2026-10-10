@@ -29,6 +29,7 @@ export function catalogDocument(
 ): StaticCatalogDocument {
   return {
     documentId: id,
+    owner: { workId: null },
     projectId: PROJECT,
     uri,
     presence: "live",

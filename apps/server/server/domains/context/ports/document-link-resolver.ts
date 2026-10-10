@@ -14,6 +14,7 @@ export interface ResolveDocumentLinkInput {
   projectId: string;
   userId: string;
   workId?: string | null;
+  rootThreadId?: string | null;
   target: DocumentLinkTarget;
   /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
   previousLocations?: boolean;

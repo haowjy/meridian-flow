@@ -12,6 +12,7 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -105,6 +106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
+          lineageScratch: createDrizzleLineageScratchLifecycle(db),
           db,
           fileAccessChanges: createLocalFileAccessChanges(),
           projectionMutation: createTestWorkProjectionMutation(db),

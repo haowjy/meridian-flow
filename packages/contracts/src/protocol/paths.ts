@@ -2,21 +2,31 @@
  * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread, context, and Yjs endpoints.
  * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
  */
+import type { ContextOwner } from "./context-owner.js";
 import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from "./http-types.js";
 
-export type ProjectContextRequestOptions = {
-  workId?: string | null;
-};
+/** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
+export type ProjectContextRequestOptions = ContextOwner;
+
+/** Names a Work-capable document's owner in a query; exactly one owner is sent. */
+function setOwnerQuery(
+  query: URLSearchParams,
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): void {
+  if (!isWorkScopedProjectContextScheme(scheme)) return;
+  if (scheme === "scratch" && opts?.rootThreadId) query.set("rootThreadId", opts.rootThreadId);
+  else if (opts?.workId) query.set("workId", opts.workId);
+}
 
 function projectContextQuery(
   scheme: ProjectContextTreeScheme,
   opts?: ProjectContextRequestOptions,
 ): string {
-  const workId = opts?.workId;
-  if (isWorkScopedProjectContextScheme(scheme) && workId) {
-    return `?workId=${encodeURIComponent(workId)}`;
-  }
-  return "";
+  const query = new URLSearchParams();
+  setOwnerQuery(query, scheme, opts);
+  const search = query.toString();
+  return search ? `?${search}` : "";
 }
 export const API_PROJECTS_PATH = "/api/projects";
 
@@ -44,7 +54,7 @@ export function apiProjectDocumentAddressPath(
   opts?: ProjectContextRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
-  if (isWorkScopedProjectContextScheme(scheme) && opts?.workId) query.set("workId", opts.workId);
+  setOwnerQuery(query, scheme, opts);
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 
@@ -126,6 +136,11 @@ export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;
 }
 
+/** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
+export function apiProjectContextLineagePath(projectId: string, rootThreadId: string): string {
+  return `${apiProjectPath(projectId)}/context/lineages/${encodeURIComponent(rootThreadId)}`;
+}
+
 export function apiProjectContextCatalogPath(
   projectId: string,
   operation: "snapshot" | "changes" | "children" | "lookup",
@@ -156,10 +171,7 @@ export function apiProjectContextReadPath(
   opts?: ProjectContextRequestOptions,
 ): string {
   const search = new URLSearchParams({ path });
-  const workId = opts?.workId;
-  if (isWorkScopedProjectContextScheme(scheme) && workId) {
-    search.set("workId", workId);
-  }
+  setOwnerQuery(search, scheme, opts);
   return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
 }
 

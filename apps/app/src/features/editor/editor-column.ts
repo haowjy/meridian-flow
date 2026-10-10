@@ -21,7 +21,9 @@
  * `editor-column.test.ts` fails if one stops.
  *
  * The ramp is in the wrapper alone — 48/56/64 — and the prose keeps one
- * padding at every width. A narrow window gives up 16px of line length for a
+ * padding at every width. It follows the viewport; a pane narrower than `@md`
+ * (the dock's document) falls back to the 48 that still clears the gutter,
+ * whatever the viewport, because its width is not the viewport's. A narrow window gives up 16px of line length for a
  * usable margin, which is the trade, and the reward is that crossing 768px no
  * longer moves the text edge by 24px per side.
  *
@@ -31,11 +33,15 @@
 
 import { cn } from "@/lib/utils";
 
-/** Chrome rows aligned to the prose edge (the document toolbar row). */
-export const editorColumnChrome = "mx-auto w-full max-w-3xl px-12 sm:px-14 md:px-16";
+/**
+ * Chrome rows aligned to the prose edge (the document toolbar row). In a pane
+ * narrower than `@md` (the dock) the row stops aligning to the prose and
+ * takes the identity bar's 16px inset, which is all the width a toolbar has.
+ */
+export const editorColumnChrome = "mx-auto w-full max-w-3xl px-12 sm:px-14 md:px-16 @max-md:px-4";
 
 /** The scrolling canvas wrapper around `EditorContent`. */
-export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6";
+export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6 @max-md:px-2";
 
 /**
  * Fill chain for the canvas wrapper AND `EditorContent`, so the ProseMirror

@@ -1,21 +1,42 @@
 /** Editor view identity and membership, independent of React and persistence. */
 import type {
+  ContextOwner,
   DocumentFileType,
   Filetype,
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
+/**
+ * A tab's owner, exclusive by type: a Work row id (Scratch, Uploads), or a No
+ * Work chat's lineage with the handle its URI spells. Project schemes have none.
+ */
+export type TabOwner =
+  | { workId?: string; rootThreadId?: undefined; rootThreadRef?: undefined }
+  | { workId?: undefined; rootThreadId: string; rootThreadRef: string };
+
+/** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
+export function replaceOwner(owner: TabOwner): TabOwner {
+  return owner.rootThreadId !== undefined
+    ? { workId: undefined, rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
+    : { workId: owner.workId, rootThreadId: undefined, rootThreadRef: undefined };
+}
+
+/** The owner a tab names, for catalog and request lookups. */
+export function tabContextOwner(owner: TabOwner): ContextOwner {
+  return owner.rootThreadId !== undefined
+    ? { rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
+    : { workId: owner.workId ?? null };
+}
+
 export type ContextTab =
-  | {
+  | ({
       tabInstanceId?: string;
       kind: "tracked";
       documentId: string;
       scheme: ProjectContextTreeScheme;
       path: string;
       name: string;
-      workId?: string;
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
@@ -30,15 +51,14 @@ export type ContextTab =
       resourceHandle?: string;
       /** Device provenance retained after a local document materializes. */
       origin?: "local-resource";
-    }
-  | {
+    } & TabOwner)
+  | ({
       tabInstanceId?: string;
       kind: "viewer";
       documentId: string;
       scheme: ProjectContextTreeScheme;
       path: string;
       name: string;
-      workId?: string;
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
@@ -49,7 +69,7 @@ export type ContextTab =
       mimeType?: string;
       /** Stable resource identity for namespace operations and local cache lookup. */
       resourceHandle?: string;
-    }
+    } & TabOwner)
   | {
       tabInstanceId?: string;
       kind: "new";
@@ -60,26 +80,6 @@ export type ContextTab =
     };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
-
-/** Build the read-only viewer tab used by Work's Scratch and Uploads dock. */
-export function viewerTabForCatalogFile(
-  file: CatalogFile,
-  scheme: ProjectContextTreeScheme,
-  workId: string,
-): Extract<ContextTab, { kind: "viewer" }> {
-  const scratch = scheme === "scratch";
-  return {
-    kind: "viewer",
-    documentId: file.documentId,
-    scheme,
-    path: file.path,
-    name: file.name,
-    workId,
-    editable: false,
-    fileType: scratch || file.editable ? "binary" : file.fileType,
-    mimeType: scratch ? "text/markdown" : file.editable ? undefined : file.mimeType,
-  };
-}
 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
@@ -97,15 +97,22 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
 /** What `isEditorTab` reads: an open tab, or a recent route to one. */
 export type EditorTabCandidate =
   | Pick<Extract<ContextTab, { kind: "new" }>, "kind">
-  | { kind?: "tracked" | "viewer"; scheme: ProjectContextTreeScheme; workId?: string | null };
+  | {
+      kind?: "tracked" | "viewer";
+      scheme: ProjectContextTreeScheme;
+      workId?: string | null;
+      rootThreadId?: string | null;
+    };
 
 /**
  * Whether the Editor of `workId` (null: unresolved) shows this tab: any Editor
- * scheme, and a Work's scratch only in that Work's Editor.
+ * scheme, a Work's scratch only in that Work's Editor, and a chat's scratch in
+ * every Editor (a lineage belongs to no Work).
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
   if (!isEditorScheme(tab.scheme)) return false;
+  if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
 }
 

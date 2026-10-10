@@ -11,6 +11,7 @@
  */
 
 import type { CatalogDocument } from "@meridian/contracts";
+import { contextOwner } from "@meridian/contracts/protocol";
 import type { HolderCatalog } from "@meridian/markup/links";
 
 import { indexedDocumentAt } from "@/core/editor/links";
@@ -31,6 +32,7 @@ export function createProjectLinkCatalog(
   const byId = new Map(index.documents.map((document) => [document.documentId, document]));
   const catalogDocument = (document: LinkableDocument): CatalogDocument => ({
     documentId: document.documentId,
+    owner: contextOwner(document.workId, document.rootThreadId),
     projectId,
     uri: document.uri,
     presence: "live",

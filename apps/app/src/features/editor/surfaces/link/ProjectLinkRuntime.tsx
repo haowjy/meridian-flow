@@ -79,7 +79,7 @@ export function ProjectLinkRuntime({
   index: LinkableDocumentIndex;
   active: boolean;
 }) {
-  const { projectId, workId } = useEditorScope();
+  const { projectId, workId, rootThreadId } = useEditorScope();
   const resolution = useMemo(() => getLinkAnswerCache(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
@@ -91,9 +91,15 @@ export function ProjectLinkRuntime({
       !active || !projectId
         ? null
         : workId
-          ? { projectId, workId, baseUri, holderDocumentId: documentId }
+          ? {
+              projectId,
+              workId,
+              rootThreadId,
+              baseUri,
+              holderDocumentId: documentId,
+            }
           : "pending",
-    [active, baseUri, documentId, projectId, workId],
+    [active, baseUri, documentId, projectId, rootThreadId, workId],
   );
   const reporter = useMemo<FollowReporter>(
     () => ({
@@ -103,7 +109,8 @@ export function ProjectLinkRuntime({
     [surface],
   );
   // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
-  const follower = useLinkFollower({ scope, index, resolution, open, reporter });
+  // `active` also clears a follow still pending when its editor goes to the back.
+  const follower = useLinkFollower({ scope, index, resolution, open, reporter, active });
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;

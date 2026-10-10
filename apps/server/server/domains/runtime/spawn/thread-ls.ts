@@ -61,6 +61,7 @@ export async function listReadableThreads({
       caller,
       ref: input.ref,
       threads: repos.threads,
+      turns: repos.turns,
     });
     if (!resolved.ok) return resolved;
     const target = resolved.target;

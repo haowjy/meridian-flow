@@ -4,6 +4,7 @@ import { parseProjectAddress, projectAddressHref, projectAddressState } from "./
 
 const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
+const ROOT = "323e4567-e89b-42d3-a456-426614174000";
 
 function parse(href: string) {
   const cut = href.indexOf("?");
@@ -15,6 +16,9 @@ function parse(href: string) {
 describe("readable project addresses", () => {
   it.each([
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
+    // A chat's Scratch is named by its lineage in `?chat=`, never a Work.
+    [`${P}/editor/scratch/notes.md?chat=${ROOT}`, { kind: "document", scheme: "scratch" }],
+    [`${P}/editor/browse/scratch/duel?chat=${ROOT}`, { kind: "browse", scheme: "scratch" }],
   ])("round trips %s", (href, destination) => {
     const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -27,6 +31,8 @@ describe("readable project addresses", () => {
     `${P}/editor/nope/leaf.md`,
     `${P}/editor/manuscript/a%2Fb.md`,
     `${P}/editor/manuscript/..`,
+    `${P}/editor/scratch/notes.md?chat=fight-scene`,
+    `${P}/editor/scratch/notes.md?work=${WORK}&chat=${ROOT}`,
   ])("rejects %s", (href) => {
     expect(parse(href).kind).toBe("invalid");
   });

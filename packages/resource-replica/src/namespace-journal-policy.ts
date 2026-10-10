@@ -86,10 +86,14 @@ export function validateNamespaceJournal(input: {
         (attempt.request.kind === "move" &&
           ((attempt.request.body.sourceWorkId == null && attempt.request.sourceWorkSlug != null) ||
             (attempt.request.body.destinationWorkId == null &&
-              attempt.request.destinationWorkSlug != null))) ||
+              attempt.request.destinationWorkSlug != null) ||
+            (attempt.request.body.sourceRootThreadId != null &&
+              !attempt.request.sourceRootThreadRef) ||
+            (attempt.request.body.destinationRootThreadId != null &&
+              !attempt.request.destinationRootThreadRef))) ||
         (attempt.request.kind === "delete" &&
-          attempt.request.workId == null &&
-          attempt.request.workSlug != null)
+          ((attempt.request.workId == null && attempt.request.workSlug != null) ||
+            (attempt.request.rootThreadId != null && !attempt.request.rootThreadRef)))
       )
         throw new Error("Namespace request Work authority is incomplete");
       if (

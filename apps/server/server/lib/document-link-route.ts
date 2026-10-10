@@ -41,7 +41,11 @@ export async function handleDocumentLinkResolveRequest(
 ): Promise<ResolveDocumentLinksResponse> {
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
-  const workId = request.workId ?? null;
+  // Lineage is Scratch's owner, not a replacement for the chat's No Work
+  // draft view. Project-document refs still read that Work's manifest.
+  const workId = request.rootThreadId
+    ? ((await deps.workAuthorityResolver.noWork(projectId as ProjectId))?.workId ?? null)
+    : (request.workId ?? null);
   // The selected Work must be this project's; a draft view is never provisioned for any other.
   if (
     workId &&
@@ -54,56 +58,49 @@ export async function handleDocumentLinkResolveRequest(
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
 
   // A ref is not a capability: the scope answers readability for this account.
-  await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
-    const refLinks = request.links.flatMap((link, index) =>
-      link.ref === null ? [] : [{ link, index }],
-    );
-    if (refLinks.length === 0) return;
-    await deps.linkScopes.prepare({
-      holders: [],
-      views: [view],
-      refs: refLinks.map(({ link }) => link.ref as string),
-      // An unsettled ahead ref resolves by its exact stored address.
-      addresses: refLinks.flatMap(({ link }) =>
-        parseLinkRef(link.ref)?.kind === "ahead"
-          ? (resolveDocumentHref(link.href, null)?.uri ?? [])
-          : [],
-      ),
-    });
-    const reader = deps.linkScopes.reader({ uri: request.baseUri, view });
-    const documents: Array<{
-      index: number;
-      document: CatalogDocument;
-      inDraft: boolean;
-      settled: boolean;
-    }> = [];
-    for (const { link, index } of refLinks) {
-      const resolution = reader.resolve(link);
-      // Rule 3: the client keeps the settlement and never answers this ref by address again.
-      const settled = "settled" in resolution;
-      if (resolution.kind === "document") {
-        const { document, inDraft } = resolution;
-        documents.push({ index, document, inDraft, settled });
-      } else if (resolution.kind === "ahead") {
-        answers[index] = { state: "missing", uri: resolution.uri };
-      } else {
-        // gone, and a snapshot miss: never a location the reader was not shown.
-        answers[index] = settled ? { state: "gone", settled: true } : { state: "gone" };
-      }
-    }
-    const described = await describeDocuments(
-      deps.workAuthorityResolver,
+  await deps.linkScopes.within(
+    {
       projectId,
-      documents.map(({ document }) => document),
-    );
-    for (const [position, { index, inDraft, settled }] of documents.entries()) {
-      const document = described[position];
-      const marked = settled ? { settled: true as const } : {};
-      answers[index] = document
-        ? { state: "document", document, inDraft, ...marked }
-        : { state: "gone", ...marked };
-    }
-  });
+      // Scratch ownership does not select a reader thread or its primary Work.
+      viewer: { accountId: userId },
+    },
+    async () => {
+      const refLinks = request.links.flatMap((link, index) =>
+        link.ref === null ? [] : [{ link, index }],
+      );
+      if (refLinks.length === 0) return;
+      await deps.linkScopes.prepare({
+        holders: [],
+        views: [view],
+        refs: refLinks.map(({ link }) => link.ref as string),
+        // An unsettled ahead ref resolves by its exact stored address.
+        addresses: refLinks.flatMap(({ link }) =>
+          parseLinkRef(link.ref)?.kind === "ahead"
+            ? (resolveDocumentHref(link.href, null)?.uri ?? [])
+            : [],
+        ),
+      });
+      const reader = deps.linkScopes.reader({ uri: request.baseUri, view });
+      for (const { link, index } of refLinks) {
+        const resolution = reader.resolve(link);
+        // Rule 3: the client keeps the settlement and never answers this ref by address again.
+        const settled = "settled" in resolution;
+        if (resolution.kind === "document") {
+          const { document, inDraft } = resolution;
+          const described = describeDocument(document);
+          const marked = settled ? { settled: true as const } : {};
+          answers[index] = described
+            ? { state: "document", document: described, inDraft, ...marked }
+            : { state: "gone", ...marked };
+        } else if (resolution.kind === "ahead") {
+          answers[index] = { state: "missing", uri: resolution.uri };
+        } else {
+          // gone, and a snapshot miss: never a location the reader was not shown.
+          answers[index] = settled ? { state: "gone", settled: true } : { state: "gone" };
+        }
+      }
+    },
+  );
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
@@ -120,6 +117,7 @@ export async function handleDocumentLinkResolveRequest(
         projectId,
         userId,
         workId,
+        rootThreadId: request.rootThreadId,
         target: target.target,
         // Chat alone may follow a vacated path to the document that left it.
         previousLocations: request.baseUri === null,
@@ -137,6 +135,7 @@ export async function handleDocumentLinkResolveRequest(
           path: resolved.path,
           uri: resolved.uri,
           workId: resolved.workId,
+          rootThreadId: resolved.rootThreadId,
         },
       });
     }
@@ -174,44 +173,20 @@ function addressTarget(
   };
 }
 
-/** Wire shape for resolved documents; the Work id comes from the URI's authority. */
-async function describeDocuments(
-  works: ProjectWorkAuthorityResolver,
-  projectId: string,
-  documents: readonly CatalogDocument[],
-): Promise<Array<DocumentAnswer | null>> {
-  const workIds = new Map<string, Promise<string | null>>();
-  const workIdFor = (key: string, lookup: () => Promise<{ workId: string } | null>) => {
-    let pending = workIds.get(key);
-    if (!pending) {
-      pending = lookup().then((work) => work?.workId ?? null);
-      workIds.set(key, pending);
-    }
-    return pending;
+/** Flatten the prepared document's resolved owner at the transport boundary. */
+function describeDocument(document: CatalogDocument): DocumentAnswer | null {
+  const parsed = parseContextUri(document.uri);
+  if (!parsed.ok) return null;
+  const { scheme, path } = parsed.value;
+  return {
+    id: document.documentId,
+    workId: document.owner.workId ?? null,
+    ...(document.owner.rootThreadId ? { rootThreadId: document.owner.rootThreadId } : {}),
+    title: documentTitleFromUri(document.uri) ?? path,
+    scheme,
+    path,
+    uri: document.uri,
   };
-  return Promise.all(
-    documents.map(async (document) => {
-      const parsed = parseContextUri(document.uri);
-      if (!parsed.ok) return null;
-      const { scheme, path, authority } = parsed.value;
-      const workId =
-        authority.kind === "none"
-          ? await workIdFor("@/", () => works.noWork(projectId as ProjectId))
-          : authority.kind === "work"
-            ? await workIdFor(authority.workSlug, () =>
-                works.bySlug(projectId as ProjectId, authority.workSlug as never),
-              )
-            : null;
-      return {
-        id: document.documentId,
-        title: documentTitleFromUri(document.uri) ?? path,
-        scheme,
-        path,
-        uri: document.uri,
-        workId,
-      };
-    }),
-  );
 }
 
 export function parseDocumentLinkResolveBody(body: unknown): ResolveDocumentLinksRequest {

@@ -120,16 +120,25 @@ export function renderWorkContext(input: {
   >;
   /** Whether the thread's agent chain may unarchive (D39). */
   mayUnarchive: boolean;
+  rootThreadRef?: string;
 }): string {
   return [
     "<work_context>",
     ...currentLines(input.current, input.mayUnarchive),
+    ...(input.rootThreadRef
+      ? [
+          input.current.isNoWork
+            ? `  scratch: bare scratch:// is this chat's notes at scratch://@/${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
+            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@/${input.rootThreadRef}/.`,
+          "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
+        ]
+      : []),
     "</work_context>",
   ].join("\n");
 }
 
 export function createWorkContextReader(deps: {
-  threads: Pick<ThreadRepository, "findById">;
+  threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
   works: Pick<WorkRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
@@ -144,10 +153,12 @@ export function createWorkContextReader(deps: {
       if (!current || workLifecycleState(current) === "deleted") {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
+      const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
       const execution: ThreadExecutionContext = threadExecutionContext(current);
       return {
         text: renderWorkContext({
           current,
+          rootThreadRef: root?.ref ?? undefined,
           mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
         }),
         current: { projectId: thread.projectId, execution },

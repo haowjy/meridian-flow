@@ -1,5 +1,6 @@
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
+import { randomUUID } from "node:crypto";
 import { ReadToolInputSchema, WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
@@ -195,6 +196,21 @@ export function defineThreadHistoryContract(
         { turnId: second.id, toolCallId: "reused" },
       ]);
       batches.mockRestore();
+
+      // A handoff starts its own lineage but may still read its direct source.
+      const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        id: randomUUID() as ThreadId,
+        userId: f.thread.userId,
+        projectId: f.thread.projectId,
+        workId: f.thread.workId,
+        source: f.thread,
+        originType: "handoff",
+        originTurnId: second.id,
+      });
+      expect(handoff.rootThreadId).not.toBe(f.thread.rootThreadId);
+      expect(output(await f.read({ ref: f.thread.ref ?? "" }, handoff))).toContain(
+        "Conversation c1",
+      );
     });
 
     it("renders a thread-reference component as its model text without internal ids", async () => {

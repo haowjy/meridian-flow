@@ -8,7 +8,8 @@ import type { DocumentFileType } from "./http-types.js";
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId }
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string };
 
 export type CatalogAuthorityEntry = {
   kind: "authority";
@@ -157,6 +158,8 @@ export function catalogScopeKey(scope: CatalogScope): string {
       return `project:${scope.projectId}`;
     case "user":
       return `user:${scope.userId}`;
+    case "lineage":
+      return `lineage:${scope.projectId}:${scope.rootThreadId}`;
     case "work":
       return `work:${scope.projectId}:${scope.workId}`;
   }

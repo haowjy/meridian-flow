@@ -47,7 +47,10 @@ export async function containerTarget(
  */
 export async function threadContainerTarget(
   works: Pick<WorkRepository, "findNoWork">,
-  resolution: Pick<ThreadContextResolution, "thread" | "primaryWorkId" | "workAuthorities">,
+  resolution: Pick<
+    ThreadContextResolution,
+    "thread" | "primaryWorkId" | "workAuthorities" | "scratchOwner" | "scratchLineages"
+  >,
   path: string,
 ): Promise<FileTarget | null> {
   const parsed = parseUnifiedContextUri(splitDocumentFile(path).filePath);
@@ -60,6 +63,30 @@ export async function threadContainerTarget(
       scheme,
       owner: { scope: "project", projectId: thread.projectId as ProjectId },
     };
+  }
+  if (scheme === "scratch" && authority.kind === "lineage") {
+    const lineage = await resolution.scratchLineages?.byRef(
+      thread.projectId,
+      authority.rootThreadRef,
+    );
+    return lineage
+      ? {
+          kind: "container",
+          scheme,
+          owner: {
+            scope: "lineage",
+            projectId: thread.projectId,
+            rootThreadId: lineage.rootThreadId,
+          },
+        }
+      : null;
+  }
+  if (
+    scheme === "scratch" &&
+    authority.kind === "contextual" &&
+    resolution.scratchOwner?.scope === "lineage"
+  ) {
+    return { kind: "container", scheme, owner: resolution.scratchOwner };
   }
   const workId =
     authority.kind === "work"

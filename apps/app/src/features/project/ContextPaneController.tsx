@@ -1,10 +1,15 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import {
+  contextOwner,
+  type ProjectContextTreeScheme,
+  type Work,
+} from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
   isEditorTab,
+  replaceOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -15,12 +20,11 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
-import { activeEditorDocumentId } from "./context/active-editor-document";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
+import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
@@ -32,6 +36,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
+  resolvedEditor: ReturnType<typeof resolveVisibleEditorTab>;
   editorWorkId: string;
   /** The Editor's Work; its archived state makes its files read-only. */
   editorWork: Work | null;
@@ -39,6 +44,8 @@ export type ContextViewerSurfaceControllerProps = {
   addressOwnsDocumentAdmission?: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
+  /** A chat's Scratch route names its lineage here, in place of a Work. */
+  activeContextChat?: string | null;
   onSelectContextPath: (
     path: string,
     scheme?: ProjectContextTreeScheme,
@@ -59,12 +66,13 @@ export type ContextViewerSurfaceControllerProps = {
 
 export function ContextViewerSurfaceController({
   projectId,
+  resolvedEditor,
   editorWorkId,
   editorWork,
-  localDocumentId,
   addressOwnsDocumentAdmission = false,
   activeContextScheme,
   activeContextPath,
+  activeContextChat,
   active,
   onShowEditorRecents,
   sidebarToggle,
@@ -79,37 +87,13 @@ export function ContextViewerSurfaceController({
   const resources = useAccountResourceReplica();
   const resourceProjection = useAccountResourceProjection(projectId);
 
-  const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = activeEditorDocumentId(
-    localDocumentId,
-    selectedTabIdByWork[routeWorkId],
-  );
+  const { tabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
-  const locator =
-    activeContextScheme !== null && activeContextPath !== null
-      ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
-      : null;
   const removalState = useContextRemovalProject(projectId);
-  const routeSelection = removalState.selection;
-  const boundDocumentId =
-    locator !== null &&
-    routeSelection.status === "bound" &&
-    routeSelection.identity.kind === "server" &&
-    routeSelection.locator.scheme === locator.scheme &&
-    routeSelection.locator.path === locator.path &&
-    routeSelection.locator.workId === locator.workId
-      ? routeSelection.identity.documentId
-      : null;
-  const workspaceRoute = resolveWorkspaceRoute({
-    tabs,
-    selectedDocumentId,
-    locator,
-    boundDocumentId,
-  });
-  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
+  const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
   const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;
@@ -121,7 +105,7 @@ export function ContextViewerSurfaceController({
     isFetching: routeTreeIsFetching,
   } = useContextCatalogView(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
-    workId: routeWorkId,
+    ...contextOwner(routeWorkId, activeContextChat),
   });
 
   useLayoutEffect(() => {
@@ -131,7 +115,8 @@ export function ContextViewerSurfaceController({
     if (
       selection.locator.scheme !== activeContextScheme ||
       selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== routeWorkId
+      selection.locator.workId !== routeWorkId ||
+      selection.locator.rootThreadId !== (activeContextChat ?? undefined)
     )
       return;
     const routed = routeCatalog?.findPath(activeContextPath);
@@ -175,6 +160,7 @@ export function ContextViewerSurfaceController({
     }
   }, [
     active,
+    activeContextChat,
     activeContextPath,
     activeContextScheme,
     contextRemoval,
@@ -196,13 +182,19 @@ export function ContextViewerSurfaceController({
   // file later re-opens it instead of being permanently blocked.
   const openTabKey =
     activeContextScheme !== null && activeContextPath !== null
-      ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, routeWorkId)
+      ? contextTabRouteKey(projectId, {
+          scheme: activeContextScheme,
+          path: activeContextPath,
+          workId: routeWorkId,
+          rootThreadId: activeContextChat ?? undefined,
+        })
       : null;
   const routeMaterializationFenced =
     removalState.removalFence?.selectionRevision === removalState.selection.revision &&
     removalState.removalFence?.locator?.scheme === activeContextScheme &&
     removalState.removalFence.locator.path === activeContextPath &&
-    removalState.removalFence.locator.workId === routeWorkId;
+    removalState.removalFence.locator.workId === routeWorkId &&
+    removalState.removalFence.locator.rootThreadId === (activeContextChat ?? undefined);
   // Remember the last-opened file (device-local) once its tab actually
   // resolves — a tree-validated open or a launcher-synthesized draft tab
   // (context-tab-from-draft), never for a dead deep link. Draft-only tabs
@@ -266,10 +258,14 @@ export function ContextViewerSurfaceController({
     const found = routeCatalog.findPath(activeContextPath);
     const file = found?.kind === "file" ? found : null;
     if (!file) return;
-    openTab(projectId, contextTabFromFile(activeContextScheme, file, routeWorkId));
+    openTab(
+      projectId,
+      contextTabFromFile(activeContextScheme, file, contextOwner(routeWorkId, activeContextChat)),
+    );
   }, [
     active,
     addressOwnsDocumentAdmission,
+    activeContextChat,
     activeContextPath,
     activeContextScheme,
     needsRouteTab,
@@ -286,6 +282,16 @@ export function ContextViewerSurfaceController({
     if (!tab) return;
     if (tab.kind === "new") {
       onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
+      return;
+    }
+    if (tab.rootThreadId) {
+      void onOpenContextTarget({
+        scheme: tab.scheme,
+        path: tab.path,
+        workId: routeWorkId,
+        rootThreadId: tab.rootThreadId,
+        documentId,
+      });
       return;
     }
     onSelectContextPath(tab.path, tab.scheme);
@@ -391,7 +397,8 @@ export function ContextViewerSurfaceController({
         activeContextPath === tab.path &&
         (projection.tab.scheme !== tab.scheme ||
           projection.tab.path !== tab.path ||
-          projection.tab.workId !== tab.workId);
+          projection.tab.workId !== tab.workId ||
+          projection.tab.rootThreadId !== tab.rootThreadId);
       void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
         (error: unknown) => reportError(error),
       );
@@ -401,6 +408,7 @@ export function ContextViewerSurfaceController({
             scheme: projection.tab.scheme,
             path: projection.tab.path,
             workId: projection.tab.workId ?? routeWorkId,
+            ...(projection.tab.rootThreadId ? { rootThreadId: projection.tab.rootThreadId } : {}),
             documentId: projection.tab.documentId,
           },
           { replace: true, tab: projection.tab },
@@ -478,8 +486,8 @@ export function ContextViewerSurfaceController({
             scheme: next.scheme,
             path: next.path,
             name: next.name,
-            workId: next.workId,
-          });
+            ...replaceOwner(next),
+          } as typeof target);
         } else if (ownership.isLatest) {
           // Any commit through the identity bar is an explicit writer save:
           // the document graduates out of provisional naming (D8).
@@ -487,7 +495,7 @@ export function ContextViewerSurfaceController({
             scheme: next.scheme,
             path: next.path,
             name: next.name,
-            workId: next.workId,
+            ...replaceOwner(next),
             provisionalName: false,
           });
         }
@@ -507,7 +515,17 @@ export function ContextViewerSurfaceController({
           );
         }
       }}
-      onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
+      onOpenExisting={(scheme, path, owner) => {
+        // A chat's Scratch note is addressed by its lineage; anything else inherits the Editor's Work.
+        if (owner.rootThreadId)
+          void onOpenContextTarget({
+            scheme,
+            path,
+            workId: routeWorkId,
+            rootThreadId: owner.rootThreadId,
+          });
+        else onSelectContextPath(path, scheme);
+      }}
     />
   );
 }

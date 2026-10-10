@@ -473,6 +473,94 @@ describe("namespace record transitions", () => {
   });
 });
 
+describe("a chat's Scratch owner", () => {
+  function lineageNote(): ResourceRecord {
+    const record = local();
+    record.resource.canonical = {
+      scheme: "scratch",
+      path: "/duel/beats.md",
+      name: "beats.md",
+      workId: null,
+      rootThreadId: "root-c12",
+      rootThreadRef: "c12",
+    };
+    record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    return record;
+  }
+
+  it("names the lineage and its handle on the source side of a move out", () => {
+    const record = lineageNote();
+    record.intents = [
+      {
+        ...(record.intents[0] as ResourceRecord["intents"][number]),
+        intentId: "move-out",
+        desired: {
+          kind: "set-location",
+          destination: { scheme: "manuscript", folderPath: "", name: "beats.md", workId: null },
+        },
+      },
+    ];
+    const submitted = prepareNamespaceAttempt(record, {
+      attemptId: "attempt",
+      operationId: "operation",
+    });
+    const request = submitted?.next.intents[0]?.attempts[0]?.request;
+    expect(request).toMatchObject({
+      kind: "move",
+      sourceRootThreadRef: "c12",
+      destinationRootThreadRef: null,
+      body: { sourceRootThreadId: "root-c12", destinationRootThreadId: null, sourceWorkId: null },
+    });
+  });
+
+  it("accepts a delete receipt under its own lineage handle and rejects another chat's", () => {
+    const record = lineageNote();
+    record.intents = [
+      {
+        ...(record.intents[0] as ResourceRecord["intents"][number]),
+        intentId: "delete",
+        desired: { kind: "delete" },
+      },
+    ];
+    const submitted = prepareNamespaceAttempt(record, {
+      attemptId: "attempt",
+      operationId: "operation",
+    });
+    if (!submitted) throw new Error("missing submitted write");
+    const receipt = (uri: string): NamespaceOutcome => ({
+      kind: "operation",
+      receipt: {
+        operationId: "operation",
+        command: { kind: "delete", uri, expected: { kind: "file", documentId: "document" } },
+        result: {
+          ok: true,
+          value: {
+            status: "deleted",
+            deletedDocumentIds: ["document"],
+            availabilityGeneration: "2",
+          },
+        },
+      },
+    });
+    expect(() =>
+      recordNamespaceOutcome(
+        submitted.next,
+        "delete",
+        "attempt",
+        receipt("scratch://@/c12/duel/beats.md"),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      recordNamespaceOutcome(
+        submitted.next,
+        "delete",
+        "attempt",
+        receipt("scratch://@/c40/duel/beats.md"),
+      ),
+    ).toThrow("does not match current attempt");
+  });
+});
+
 describe("namespace reconciliation", () => {
   it("makes the submitted request observable before transport dispatch", async () => {
     const store = new MemoryStore();
@@ -585,8 +673,8 @@ it.each([
     scheme: "scratch",
     path: "/before.md",
     name: "before.md",
-    workId: "no-work",
-    workSlug: null,
+    workId: "work",
+    workSlug: "notes",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [
@@ -599,8 +687,8 @@ it.each([
           scheme: "scratch",
           folderPath: "",
           name: "after.md",
-          workId: "no-work",
-          workSlug: null,
+          workId: "work",
+          workSlug: "notes",
         },
       },
     },
@@ -630,8 +718,8 @@ it.each([
                 operationId: "operation",
                 command: {
                   kind: "move",
-                  sourceUri: "scratch://@/before.md",
-                  destinationUri: "scratch://@/after.md",
+                  sourceUri: "scratch://@notes/before.md",
+                  destinationUri: "scratch://@notes/after.md",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -639,8 +727,8 @@ it.each([
                   error: {
                     code: "context_unavailable",
                     reason,
-                    workSlug: null,
-                    uri: "scratch://@/after.md",
+                    workSlug: "notes",
+                    uri: "scratch://@notes/after.md",
                   },
                 },
               },
@@ -696,10 +784,10 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@/before.md",
+              uri: "scratch://@notes/before.md",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@/before.md" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before.md" } },
           },
         }),
       }),

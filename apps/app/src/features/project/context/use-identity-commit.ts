@@ -3,13 +3,13 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
   type DesiredIdentity,
-  destinationWorkAuthority,
+  destinationOwner,
   identityDestination,
   tabLocation,
 } from "./identity-location";
@@ -27,10 +27,9 @@ export type IdentityCommitted = {
   /** Tree-style path with a leading slash. */
   path: string;
   name: string;
-  workId?: string;
   /** Editor route ownership captured when this command began. */
   routeWorkId: string | null;
-};
+} & TabOwner;
 
 export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
@@ -52,13 +51,14 @@ export function identityCommitMayNavigate(
  */
 export function identityCommitRoute(
   documentId: string,
-  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId">,
+  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId" | "rootThreadId">,
 ): { request: ContextRouteRequest; options: OpenContextOptions } {
   return {
     request: {
       scheme: next.scheme,
       path: next.path,
       workId: next.routeWorkId ?? undefined,
+      ...(next.rootThreadId ? { rootThreadId: next.rootThreadId } : {}),
       documentId,
     },
     options: { replace: true },
@@ -86,7 +86,8 @@ export function deriveIdentityCommitPlan(
   const sameDestination =
     desired.destination.scheme === current.scheme &&
     desired.destination.folderPath === current.folderPath &&
-    desired.destination.workId === current.workId;
+    desired.destination.workId === current.workId &&
+    desired.destination.rootThreadId === current.rootThreadId;
   const sameName = desired.name === location.leaf;
   if (sameDestination && sameName) {
     return location.provisional ? { kind: "commit", desired } : { kind: "no-op" };
@@ -121,7 +122,7 @@ export function useIdentityCommit({
         : await resources.keyForDocument(projectId, tab.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
-      const authority = destinationWorkAuthority(destination, works, noWork);
+      const authority = destinationOwner(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
         scheme: destination.scheme,
@@ -136,7 +137,7 @@ export function useIdentityCommit({
           scheme: destination.scheme,
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
-          ...(destination.workId ? { workId: destination.workId } : {}),
+          ...replaceOwner(destination),
           routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,

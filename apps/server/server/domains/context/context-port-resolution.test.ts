@@ -68,6 +68,20 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
+      lineages: {
+        async byId() {
+          return null;
+        },
+        async rootForThreadRef() {
+          return null;
+        },
+        async byRef() {
+          return null;
+        },
+        async list() {
+          return [];
+        },
+      },
       forWork: (authority, projectId, _userId, _workMemberships, thread) => {
         calls.push({
           workId: authority.workId,

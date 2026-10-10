@@ -62,6 +62,9 @@ export async function resolveContextRoute(
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   const query = getQuery(event);
+  const rootThreadId = typeof query.rootThreadId === "string" ? query.rootThreadId : null;
+  if (rootThreadId && (scheme !== "scratch" || query.workId))
+    throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
   const workId = typeof query.workId === "string" ? query.workId : null;
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const deps = {
@@ -76,10 +79,20 @@ export async function resolveContextRoute(
         userId: user.userId,
         requestedWorkId: workId,
       })
-    : await contextPortForProjectBrowse({ deps, projectId, userId: user.userId, workId });
+    : await contextPortForProjectBrowse({
+        deps,
+        projectId,
+        userId: user.userId,
+        workId,
+        rootThreadId,
+      });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   let authority: CanonicalContextAuthority = { kind: "contextual" };
-  if (isWorkScopedBrowseScheme(scheme)) {
+  if (rootThreadId) {
+    const lineage = await app.contextPorts.lineages.byId(projectId, rootThreadId);
+    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+  } else if (isWorkScopedBrowseScheme(scheme)) {
     if (!workId) authority = { kind: "none" };
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, workId);
@@ -89,7 +102,15 @@ export async function resolveContextRoute(
       authority = resolved;
     }
   }
-  const container = await containerTarget(app.workRepo, { projectId, scheme, workId });
+  if (
+    scheme === "scratch" &&
+    !rootThreadId &&
+    !("workSlug" in authority && authority.workSlug !== null)
+  )
+    throw createError({ statusCode: 400, message: "Scratch requires a chat or named Work" });
+  const container: FileTarget = rootThreadId
+    ? { kind: "container", scheme, owner: { scope: "lineage", projectId, rootThreadId } }
+    : await containerTarget(app.workRepo, { projectId, scheme, workId });
   const edit = async <T>(targets: readonly FileTarget[], operation: () => Promise<T>) => {
     const grants = [];
     for (const target of targets) {

@@ -27,8 +27,8 @@ import type {
   ResourceNamespaceLock,
   ResourceNamespaceTransport,
 } from "./resource-records";
-import { workAuthorityOf } from "./resource-records";
-import { resourceContextAuthority } from "./resource-work-authority";
+import { ownerOf, sameOwner } from "./resource-records";
+import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
 export interface FolderNamespaceStore {
@@ -47,7 +47,7 @@ export function namespaceDestinationLocation(destination: ResourceDestination): 
     scheme: destination.scheme,
     path: `/${[...pathParts(destination.folderPath), destination.name].join("/")}`,
     name: destination.name,
-    ...workAuthorityOf(destination),
+    ...ownerOf(destination),
   };
 }
 
@@ -122,7 +122,7 @@ export function planFolderLocation(input: {
   const destination = namespaceDestinationLocation(input.destination);
   if (
     source.scheme === destination.scheme &&
-    source.workId === destination.workId &&
+    sameOwner(source, destination) &&
     (destination.path === source.path || destination.path.startsWith(`${source.path}/`))
   ) {
     if (destination.path === source.path && !superseded.repaired) return null;
@@ -235,19 +235,18 @@ export function prepareFolderNamespaceAttempt(
     return null;
   const source = record.canonical;
   const destination = intent.desired.destination;
+  const owners = moveOwnerFields(source, destination);
   const request: Extract<NamespaceRequest, { kind: "move" }> = {
     kind: "move",
     scheme: source.scheme,
-    sourceWorkSlug: source.workSlug ?? null,
-    destinationWorkSlug: destination.workSlug ?? null,
+    ...owners,
     body: {
       operationId: intent.operationId ?? ids.operationId,
       path: pathParts(source.path).join("/"),
       expected: { kind: "folder", nodeId: record.folderId },
       destinationScheme: destination.scheme,
       destinationFolderPath: pathParts(destination.folderPath).join("/"),
-      sourceWorkId: source.workId,
-      destinationWorkId: destination.workId,
+      ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },
   };

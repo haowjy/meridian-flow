@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getProjectContextRead } from "@/client/api/projects-api";
 
-import { contextRequestOptionsForScheme } from "./context-request-options";
+import { type ContextOwner, contextRequestOptionsForScheme } from "./context-request-options";
 
 export type ContextReadStatus = {
   data: ContextReadResponse | null;
@@ -33,10 +33,14 @@ export function contextReadQueryKey(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  workId?: string | null,
+  owner: ContextOwner = {},
 ) {
-  return isWorkScopedProjectContextScheme(scheme) && workId
-    ? (["projects", projectId, "context", scheme, workId, "read", path] as const)
+  if (!isWorkScopedProjectContextScheme(scheme)) {
+    return ["projects", projectId, "context", scheme, "read", path] as const;
+  }
+  const ownerId = (scheme === "scratch" && owner.rootThreadId) || owner.workId;
+  return ownerId
+    ? (["projects", projectId, "context", scheme, ownerId, "read", path] as const)
     : (["projects", projectId, "context", scheme, "read", path] as const);
 }
 
@@ -44,15 +48,14 @@ export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options: { enabled?: boolean; workId: string | null | undefined },
+  options: { enabled?: boolean } & ContextOwner,
 ): ContextReadStatus {
-  const workId = options.workId;
   const callerEnabled = options.enabled ?? true;
   const resolvedScheme = scheme ?? "kb";
   const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
-  const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, workId) : undefined;
+  const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, options) : undefined;
   const result = useQuery({
-    queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", workId),
+    queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", options),
     queryFn: () =>
       getProjectContextRead(
         projectId,

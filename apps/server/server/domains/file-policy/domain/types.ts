@@ -49,6 +49,7 @@ export interface AgentLink {
   permission: AgentPermission;
   /** The thread's current primary Work; follows `work switch`. */
   threadWorkId: WorkId;
+  scratchOwner: import("../../context/scratch-owner.js").ScratchOwner;
 }
 
 /** `[calling thread, its parent, …, root]`. Each link caps the result (D8). */
@@ -93,7 +94,8 @@ export interface SkillFacts {
 
 export type FileOwnerRef =
   | { scope: "project"; projectId: ProjectId }
-  | { scope: "work"; workId: WorkId };
+  | { scope: "work"; workId: WorkId }
+  | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId };
 
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
@@ -128,6 +130,7 @@ export interface FileFacts {
   projectDeleted: boolean;
   /** The Work owning the file's source; null when the project owns it. */
   ownerWork: FileWorkFacts | null;
+  ownerRootThreadId?: ThreadId | null;
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
   scheme: ContextUriScheme;

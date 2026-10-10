@@ -26,7 +26,9 @@ the formatting menu open it by calling `openLinkForm` from
 
 - **Fixed geometry** (ruling 15). Ten controls, always, in one order. A
   control that cannot apply greys and says why in its tooltip; it never
-  disappears, moves, or gains a neighbor as the caret travels. Contextual
+  disappears, moves, or gains a neighbor as the caret travels. A pane too narrow
+  for the row (the dock's document) scrolls it horizontally
+  (`EditorSurfaceFrame`) rather than dropping controls into a menu. Contextual
   verbs belong to surfaces anchored to the block that owns them, never here.
 - **Greying is not `disabled`.** A disabled button leaves the hover and focus
   path, so the reason never reaches the writer. Blocked controls keep

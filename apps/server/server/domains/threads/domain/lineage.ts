@@ -1,12 +1,13 @@
 /**
  * Pure thread-lineage predicates backing `thread_message` authorization.
  * `rootThreadId` is authoritative on every create path: self for an organic
- * root, the spawn parent's root for a subagent, and the SOURCE's root for a
- * fork/handoff derivation. A fork/handoff is a sibling of its source, not the
- * source's child: it takes the source's `parentThreadId` too (null when the
+ * root and a handoff, the spawn parent's root for a subagent, and the SOURCE's
+ * root for a fork. A fork/handoff is a sibling of its source, not the
+ * source's child: it takes the source's `parentThreadId` (null when the
  * source is itself a root), so `sameLineage` holds between a fork and its
- * source but `isInSubtree` does not — siblings share background authority,
- * never foreground authority over each other's subtree. The fork-source edge
+ * source but `isInSubtree` does not — forks share background authority,
+ * never foreground authority over each other's subtree. A handoff shares
+ * neither. The fork-source edge
  * itself is not a lineage fact; it is covered by `originTurnId` (the source's
  * anchor turn), not by this module.
  */

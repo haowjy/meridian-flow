@@ -11,7 +11,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -72,7 +72,7 @@ export function CreationComposer({
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
-  const openDocument = useOpenProjectDocument(projectId);
+  const openDocument = useOpenChatDocument(projectId);
   const context = agent && workId ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;

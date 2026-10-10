@@ -1,8 +1,8 @@
-/** One owner/project/lineage authority for model-facing conversation reads. */
+/** Shared connection authority for conversation reads and background messages. */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
 import { sameLineage } from "../../threads/domain/lineage.js";
-import type { ThreadRepository } from "../../threads/index.js";
+import type { ThreadRepository, TurnRepository } from "../../threads/index.js";
 
 export type ReadableThreadOutcome =
   | { ok: true; target: Thread }
@@ -17,6 +17,7 @@ export async function resolveReadableThread(input: {
   caller: Thread;
   ref?: string;
   threads: Pick<ThreadRepository, "findLiveByProjectRef">;
+  turns: Pick<TurnRepository, "findById">;
 }): Promise<ReadableThreadOutcome> {
   const ref = input.ref === undefined || input.ref === "current" ? input.caller.ref : input.ref;
   if (!ref || !parseThreadRef(ref)) return threadReadError("thread_not_found", "Thread not found");
@@ -27,7 +28,26 @@ export async function resolveReadableThread(input: {
     target.projectId !== input.caller.projectId
   )
     return threadReadError("thread_not_found", "Thread not found");
-  if (!sameLineage(input.caller, target))
-    return threadReadError("thread_not_connected", "Thread is not in your connected lineage");
+  if (!(await areThreadsConnected(input.caller, target, input.turns)))
+    return threadReadError("thread_not_connected", "Thread is not connected to this conversation");
   return { ok: true, target };
+}
+
+/** Handoff provenance connects only its direct cutoff owner, not either lineage. */
+export async function areThreadsConnected(
+  caller: Thread,
+  target: Thread,
+  turns: Pick<TurnRepository, "findById">,
+): Promise<boolean> {
+  if (caller.projectId !== target.projectId || caller.userId !== target.userId) return false;
+  if (sameLineage(caller, target)) return true;
+  if (caller.originType === "handoff" && caller.originTurnId) {
+    const origin = await turns.findById(caller.originTurnId);
+    if (origin?.threadId === target.id) return true;
+  }
+  if (target.originType === "handoff" && target.originTurnId) {
+    const origin = await turns.findById(target.originTurnId);
+    if (origin?.threadId === caller.id) return true;
+  }
+  return false;
 }

@@ -13,14 +13,26 @@ export type ContextUri = Omit<ParsedContextUri, "path"> & {
   path: string;
 };
 
-/** Parsed URI destination before the route owner supplies command ownership. */
+/**
+ * Parsed URI destination before the route owner supplies command ownership. A
+ * chat's Scratch names its lineage in `rootThreadId` and has no Work.
+ */
 export type ParsedContextUriTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
+  rootThreadId?: string;
 };
 
 export type ActiveWorkHandle = { id: string; slug: string | null };
+
+/** The lineages a chat's URIs can name: its own, and any other by its first chat's handle. */
+export type ChatLineages = {
+  /** The chat's own lineage: what a bare `scratch://` means in a No Work chat. */
+  own: string | null;
+  /** The first chat's id for a handle such as `c12`, or null when the app does not know it. */
+  idForRef(rootThreadRef: string): string | null;
+};
 
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
@@ -45,6 +57,7 @@ export function contextRouteTargetFromUri(
   activeWork: ActiveWorkHandle,
   availableWorks: readonly ActiveWorkHandle[],
   noWorkId: string,
+  lineages?: ChatLineages,
 ): ParsedContextUriTarget | null {
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
@@ -53,6 +66,16 @@ export function contextRouteTargetFromUri(
     return { scheme: parsed.scheme, path: parsed.path, workId: null };
   }
 
+  const inLineage = (rootThreadId: string | null | undefined): ParsedContextUriTarget | null =>
+    rootThreadId ? { scheme: parsed.scheme, path: parsed.path, workId: null, rootThreadId } : null;
+  if (parsed.authority.kind === "lineage")
+    return inLineage(lineages?.idForRef(parsed.authority.rootThreadRef));
+  // No Work has no Scratch of its own: its chats' notes belong to their lineage.
+  if (parsed.scheme === "scratch") {
+    if (parsed.authority.kind === "none") return null;
+    if (parsed.authority.kind === "contextual" && activeWork.id === noWorkId)
+      return inLineage(lineages?.own);
+  }
   if (parsed.authority.kind === "none") {
     return { scheme: parsed.scheme, path: parsed.path, workId: noWorkId };
   }
@@ -69,8 +92,9 @@ export function canOpenContextUri(
   activeWork: ActiveWorkHandle,
   availableWorks: readonly ActiveWorkHandle[],
   noWorkId: string,
+  lineages?: ChatLineages,
 ): boolean {
-  return contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId) !== null;
+  return contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages) !== null;
 }
 
 function formatContextPath(value: string): string {

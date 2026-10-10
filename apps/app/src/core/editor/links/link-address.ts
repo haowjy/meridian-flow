@@ -51,9 +51,9 @@ export function isCreatableLinkScheme(scheme: string): scheme is CreatableLinkSc
   return (CREATABLE_LINK_SCHEMES as readonly string[]).includes(scheme);
 }
 
-/** The areas a link can name an existing document in: the creatable ones and Scratch. */
+/** The areas a link can name an existing document in: the creatable ones, Scratch and Unfiled. */
 export function isLinkDocumentScheme(scheme: string): boolean {
-  return scheme === "scratch" || isCreatableLinkScheme(scheme);
+  return scheme === "scratch" || scheme === "unfiled" || isCreatableLinkScheme(scheme);
 }
 
 /**

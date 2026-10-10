@@ -40,7 +40,15 @@ const documents = new Map<string, CatalogDocument>(
     [id.fig, "manuscript://assets/fig.png"],
   ].map(([documentId = "", uri = ""]) => [
     documentId,
-    { documentId, projectId: "p1", uri, presence: "live", readable: true, nameable: true },
+    {
+      documentId,
+      owner: { workId: null },
+      projectId: "p1",
+      uri,
+      presence: "live",
+      readable: true,
+      nameable: true,
+    },
   ]),
 );
 const catalog = {

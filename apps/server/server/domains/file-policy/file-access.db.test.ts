@@ -46,7 +46,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
-    const chain: AgentChain = [{ threadId: "thread", permission: "edit", threadWorkId: w }];
+    const chain: AgentChain = [
+      {
+        threadId: "thread",
+        permission: "edit",
+        threadWorkId: w,
+        scratchOwner: { scope: "work", workId: w },
+      },
+    ];
     const agent: Principal = { accountId: u, agent: { chain, draftWork: null } };
 
     beforeEach(async () => {

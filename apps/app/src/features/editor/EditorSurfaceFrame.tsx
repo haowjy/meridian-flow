@@ -53,10 +53,20 @@ export function EditorSurfaceFrame({
   onScroll,
 }: EditorSurfaceFrameProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // The container the column insets answer to: the pane, not the viewport.
+    <div className="@container flex min-h-0 flex-1 flex-col">
       {toolbar ? (
         <div className="flex h-9 shrink-0 items-center">
-          <div className={editorColumnChrome}>{toolbar}</div>
+          {/* The toolbar's geometry is fixed (ten controls, one order), so a
+              pane too narrow for it scrolls the row rather than dropping controls. */}
+          <div
+            className={cn(
+              editorColumnChrome,
+              "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            )}
+          >
+            {toolbar}
+          </div>
         </div>
       ) : null}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the mousedown is

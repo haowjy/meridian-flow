@@ -17,3 +17,9 @@
   C9's dedicated `thread-reference` projection exposes all props, but handoff
   cards still need `--full` for complete frozen text. Reproduce with a handoff
   seed and compare `thread view --json` against `thread view --full --json`.
+
+- Let `./mf doc read|put` and `./mf thread send --ref` name a chat lineage's
+  Scratch note (`scratch://@/c12/x`). They send no `rootThreadId`, so a lineage
+  note is reachable only through `./mf api ... rootThreadId=<first chat id>`.
+  Fix in `cli/commands/doc/` and the thread send reference path when a probe
+  needs it.

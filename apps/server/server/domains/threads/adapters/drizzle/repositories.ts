@@ -13,6 +13,10 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
+import {
+  createDrizzleLineageScratchLifecycle,
+  type LineageScratchLifecycle,
+} from "../../../context/index.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories, ThreadStatusReader } from "../../ports/repositories.js";
@@ -34,10 +38,11 @@ export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTra
 function composeDrizzleRepositories(
   db: DrizzleDatabase,
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+  lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
   return {
-    threads: createDrizzleThreadRepository(db, { statusReader }),
+    threads: createDrizzleThreadRepository(db, { statusReader, lineageScratch }),
     chatFeed: createDrizzleProjectChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),
@@ -70,12 +75,13 @@ function composeDrizzleRepositories(
 export function createDrizzleRepositories(
   db: DrizzleDatabase,
   workActivity: Pick<WorkProjectionMutation, "touchWorks">,
+  lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
-  return composeDrizzleRepositories(db, workActivity, statusReader);
+  return composeDrizzleRepositories(db, workActivity, lineageScratch, statusReader);
 }
 
 /** Isolated adapter tests that do not compose cross-domain projection owners. */
 export function createDrizzleRepositoriesForTest(db: DrizzleDatabase): InternalThreadRepositories {
-  return composeDrizzleRepositories(db, null);
+  return composeDrizzleRepositories(db, null, createDrizzleLineageScratchLifecycle(db));
 }
