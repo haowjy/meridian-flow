@@ -61,6 +61,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       };
       const before =
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`;
+      const retiredManifestRows =
+        await target`SELECT id FROM documents WHERE kind = 'manifest' ORDER BY id`;
+      const retiredManifestIds = new Set(retiredManifestRows.map((row) => row.id));
       const yjs = await target`SELECT * FROM document_yjs_heads`;
       expect(yjs.every((head) => head.schema_version === 1_000_000)).toBe(true);
       const checkpoints = await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`;
@@ -193,7 +196,20 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       expect(
         await target`SELECT document_id AS id, markdown FROM document_markdown_projections ORDER BY document_id`,
-      ).toEqual(before.map((row) => ({ id: row.id, markdown: row.markdown_projection })));
+      ).toEqual(
+        before
+          .filter((row) => !retiredManifestIds.has(row.id))
+          .map((row) => ({ id: row.id, markdown: row.markdown_projection })),
+      );
+      // Scratch archival preserves content; the later retirement removes only manifest storage.
+      expect(retiredManifestIds.size).toBe(2);
+      expect(
+        (await target`SELECT id FROM documents`).filter((row) => retiredManifestIds.has(row.id)),
+      ).toEqual([]);
+      expect(
+        await target`SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'documents' AND column_name = 'kind'`,
+      ).toEqual([]);
       const chapter = await readChapter();
       expect(chapter).toMatchObject({ ok: true });
       if (!chapter.ok)

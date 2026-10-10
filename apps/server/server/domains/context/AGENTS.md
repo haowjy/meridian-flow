@@ -16,7 +16,7 @@ trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
 it rather than adding another guard. A hidden-to-live lineage transition settles
 waiting ahead refs under its namespace lock in the same transaction. A lineage
 root names Scratch ownership, never a reader: draft visibility for link answers
-comes from the selected Work's manifest (No Work when a request names a
+comes from the selected Work's draft tree view (No Work when a request names a
 lineage), so never pass `rootThreadId` as the viewing thread.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is

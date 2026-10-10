@@ -48,6 +48,8 @@
 
 - Development: preserve recursive deletion's outer-command rollback proof after manifest retirement, including tree visibility, tombstones and catalog/availability publication.
 
+- Development: carry manifest retirement across chat-lineage Scratch and regenerate its schema migration after the foundation squash.
+
 - Development: retire the live Yjs manifest and its document-kind column. Project visibility, moves, bootstrap and room admission use the SQL tree without membership registration or reconciliation.
 
 - Development: settlement regression pins cover tentative publication rollback, retained retirement locks, staged thread-peer replies and another owner recovering held text without admitting or resetting it.

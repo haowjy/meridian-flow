@@ -617,7 +617,7 @@ export async function loadRevealIdentityRow(
     FROM documents d
     JOIN context_sources cs ON cs.id = d.context_source_id
     LEFT JOIN works w ON w.id = cs.work_id
-    WHERE d.id = ${documentId}::uuid AND d.kind = 'content'`);
+    WHERE d.id = ${documentId}::uuid`);
   return row
     ? {
         id: documentId,

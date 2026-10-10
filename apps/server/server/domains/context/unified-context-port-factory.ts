@@ -303,7 +303,7 @@ function buildUnifiedContextPort(input: {
   const lineageSource = (lineage: ScratchLineage): ContextSourceBinding => ({
     adapter: contextFsAdapter(assembly, {
       store: storeResolvers.resolveLineageStore(scope.projectId, lineage.rootThreadId),
-      mutationStore: storeResolvers.resolveMutationStore(scope.projectId),
+      mutationStore: storeResolvers.resolveMutationStore(),
       commandTransaction: input.commandTransaction,
       scheme: "scratch",
       holder: {
