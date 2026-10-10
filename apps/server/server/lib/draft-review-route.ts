@@ -26,15 +26,11 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import { PublicationLeasesChangedError } from "../domains/collab/domain/branch-push-transition.js";
-import {
-  DraftLinkRegistrationFailedError,
-  DuplicateApplyItemError,
-} from "../domains/collab/domain/draft-publication.js";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
+import { throwDraftPublicationHttpError } from "./draft-publication-http.js";
 import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
@@ -394,20 +390,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
-    if (cause instanceof DraftLinkRegistrationFailedError) {
-      throw createError({ statusCode: 503, message: cause.message });
-    }
-    if (cause instanceof DuplicateApplyItemError) {
-      throw createError({ statusCode: 400, message: cause.message });
-    }
-    // The draft kept growing past the call's bounded retries: the staged batch is with
-    // recovery, which finishes it; nothing failed, so this is no 500 (F22).
-    if (cause instanceof PublicationLeasesChangedError) {
-      throw createError({
-        statusCode: 503,
-        message: "The draft kept changing while it was applied; it finishes in the background.",
-      });
-    }
+    throwDraftPublicationHttpError(cause);
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }

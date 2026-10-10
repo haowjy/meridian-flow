@@ -24,6 +24,7 @@ import {
   type PublicationOutcome,
 } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
+import { collabHook } from "./collab-test-hooks.js";
 import type {
   PublicationItemHold,
   PublicationItemOutcome,
@@ -479,6 +480,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     signal: AbortSignal | undefined,
   ): Promise<PushBranchesResult> {
     const { phases, resetPolicy } = resume.batch;
+    // The grown set is leased, the batch not yet continued: where a test grows it again.
+    await collabHook("applyItems.beforeContinue");
     const locked = await transition
       .continueStaged<BatchPipelineResult>({
         staged: resume.handoff.staged,
