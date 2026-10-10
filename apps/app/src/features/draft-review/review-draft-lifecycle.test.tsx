@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Real mutation settlement, draft-only tabs, route coordination and unopened-list refresh. */
-import { notifyManager, onlineManager } from "@tanstack/react-query";
+import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -82,10 +82,6 @@ async function open(p: () => ScopeProbe) {
   await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
-  // Keep real query notification timing, but flush each scheduled React update under act.
-  notifyManager.setNotifyFunction((notify) => {
-    act(notify);
-  });
   resetDraftCommandRecords();
   useContextTabsStore.setState({
     byProject: {},
@@ -122,7 +118,6 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
-  notifyManager.setNotifyFunction((notify) => notify());
   onlineManager.setOnline(true);
   fixture.dispose();
   removal.dispose();

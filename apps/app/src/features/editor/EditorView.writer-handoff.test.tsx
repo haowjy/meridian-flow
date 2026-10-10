@@ -6,20 +6,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import * as encoding from "lib0/encoding";
 import { act, useEffect, useState } from "react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import { DocumentSocketHarness } from "@/core/transport/test-support/DocumentSocketHarness";
 import {
   DraftReviewBoundary,
-  useDraftReview,
+  type useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { listed, previewOf, work } from "@/test-support/draft-review-scope";
-import { sessionFor } from "@/test-support/editor-session-fakes";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { createEditorSessions } from "@/test-support/editor-sessions";
+import { installEditorShell, ReviewEditorHost } from "@/test-support/editor-shell";
+import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 
 vi.mock("@/core/transport/dev-transport", () => ({
   buildSameOriginWsUrl: (path: string) => `ws://test${path}`,
@@ -31,6 +33,17 @@ vi.mock("@/core/transport/tapped-websocket", async () => {
   return { notifyYjsRoomAttached: () => {}, TappedWebSocket: DocumentSocketHarness };
 });
 
+let shell: ReturnType<typeof installEditorShell>;
+let sessions: ReturnType<typeof createEditorSessions>;
+beforeEach(() => {
+  sessions = createEditorSessions();
+  shell = installEditorShell(realRegistry as unknown as LiveDocumentSessionRegistry);
+});
+afterEach(async () => {
+  shell.dispose();
+  await sessions.dispose();
+});
+
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
   getDraftPreview: vi.fn(),
@@ -39,38 +52,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/client/api/drafts-api", () => mocks);
-vi.mock("@/client/query/useContextCatalog", () => ({
-  contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
-  useContextCatalogView: () => ({
-    catalog: null,
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
-  projectCatalogView: () => ({ findDocument: () => null }),
-}));
-vi.mock("@/client/query/useProjectThreads", () => ({
-  useProjectThreads: () => ({ threads: [], isError: false, isFetching: false }),
-}));
-vi.mock("@/client/query/useWorks", () => ({
-  useWorks: () => ({ noWork: { id: "no-work", slug: null, archivedAt: null }, works: [] }),
-}));
-vi.mock("@/features/change-trail/trail-detail-query", () => ({
-  usePrefetchTrailDetails: () => {},
-}));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
-  useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => realRegistry,
-  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
-}));
-vi.mock("@/features/links", async () => ({
-  useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
-  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
-}));
-vi.mock("@/features/editor/references/useReferenceBrowserCatalog", () => ({
-  useReferenceBrowserCatalog: () => null,
-}));
+
 vi.mock("@/features/editor/useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
     useEffect(() => {
@@ -79,29 +61,11 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
     }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
   },
 }));
-vi.mock("@/features/editor/useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
-vi.mock("@/features/editor/SyncStatus", () => ({ SyncStatus: () => null }));
-vi.mock("@/features/editor/chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
-
-const { EditorView } = await import("@/features/editor/EditorView");
 
 const documentId = "document-a";
 let review: ReturnType<typeof useDraftReview> | null = null;
 
 /** The editor host's part: hand `EditorView` the requested review; its runtime reports marks. */
-function Host() {
-  const value = useDraftReview();
-  review = value;
-  const { inlineReview } = value.controller;
-  return (
-    <EditorView
-      documentId={documentId}
-      projectId="project-a"
-      session={sessionFor(documentId)}
-      reviewDraftId={inlineReview?.draftId}
-    />
-  );
-}
 
 let unmountReview!: () => void;
 function WorkList() {
@@ -116,7 +80,16 @@ function Scope() {
   return (
     <DraftReviewBoundary value={value}>
       <WorkList />
-      {mounted && <Host />}
+      {mounted && (
+        <ReviewEditorHost
+          documentId={documentId}
+          projectId="project-a"
+          session={sessions.get(documentId)}
+          observe={(value) => {
+            review = value;
+          }}
+        />
+      )}
     </DraftReviewBoundary>
   );
 }
@@ -139,14 +112,7 @@ function renderEditor(run: () => Promise<void>) {
 
 async function reviewOpened() {
   await act(async () => review?.controller.enterInlineReview(documentId, "draft-a"));
-  // Drive setup and the native room handshake under React's flush boundary.
-  for (let step = 0; step < 40; step++) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    if (surfaces().join(",") === "review") break;
-  }
-  expect(surfaces()).toEqual(["review"]);
+  await settleReact(() => expect(surfaces()).toEqual(["review"]));
 }
 
 beforeEach(() => {
@@ -208,18 +174,22 @@ const branchEditor = (): Editor => {
   if (!dom?.editor) throw new Error("no review editor");
   return dom.editor;
 };
-it.each([
-  "branch-generation-stale",
-  "branch-stale-doc",
-  "list",
-  "successor typing",
-  "remote whole Discard",
-])("writer edit survives reentry after %s", async (reason) => {
+async function withWriterReview(
+  options: { sameRoom?: boolean; native?: boolean; currentRoom?: () => Promise<string | null> },
+  run: (
+    oldRoom: string,
+    newRoom: string,
+    old: import("@/core/editor/document-session").DocumentSession,
+  ) => Promise<void>,
+) {
   vi.useFakeTimers();
-  nativeRoom = reason === "remote whole Discard" ? branchRoomName("writer-loss", 1) : null;
+  const oldRoom = branchRoomName("writer-loss", 1);
+  const newRoom = options.sameRoom ? oldRoom : branchRoomName("writer-loss", 2);
+  nativeRoom = options.native ? oldRoom : null;
+  heldCarryLookup = options.currentRoom ?? null;
   DocumentSocketHarness.instances.length = 0;
   runtime = branchHandoffHarness(
-    nativeRoom
+    options.native
       ? (context) =>
           createHocuspocusDocumentTransport({
             roomName: context.roomKey,
@@ -228,17 +198,6 @@ it.each([
           })
       : undefined,
   );
-  const oldRoom = branchRoomName("writer-loss", 1);
-  const newRoom = reason === "branch-stale-doc" ? oldRoom : branchRoomName("writer-loss", 2);
-  let releaseCarry!: (room: string) => void;
-  if (reason === "remote whole Discard") {
-    // Native sends precede outbox bookkeeping. Empty G2 reads arrive over HTTP
-    // before the held native reset, while the handoff lookup stays pending.
-    const successorRead = new Promise<string>((resolve) => {
-      releaseCarry = resolve;
-    });
-    heldCarryLookup = () => successorRead;
-  }
   mocks.getDraftPreview.mockResolvedValue({ ...previewOf("2"), reviewRoomName: oldRoom });
   try {
     await renderEditor(async () => {
@@ -249,166 +208,192 @@ it.each([
       const old = runtime.pool.peek(oldRoom);
       if (!old) throw new Error("No source review session");
       expect(old.getSnapshot().serverHasLocalChanges).toBe(false);
-      let locate!: (room: string) => void;
-
-      mocks.getDraftPreview.mockResolvedValue({
-        ...previewOf(...(reason === "remote whole Discard" ? [] : ["5"])),
-        draftGeneration: 2,
-        reviewRoomName: newRoom,
-      });
-      mocks.listWorkDrafts.mockResolvedValue({
-        drafts: reason === "remote whole Discard" ? [] : [{ ...listed, draftGeneration: 2 }],
-      });
-      if (reason === "remote whole Discard") {
-        mocks.getDraftPreview.mockResolvedValue({
-          ...previewOf(),
-          draftGeneration: 2,
-          reviewRoomName: newRoom,
-        });
-        await act(async () => {
-          await testQueryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDraftPreview(
-              "project-a",
-              "work-a",
-              documentId,
-              "draft-a",
-            ),
-          });
-        });
-        await act(async () => {
-          await testQueryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
-          });
-          await vi.advanceTimersByTimeAsync(0);
-        });
-        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
-        expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-      }
-      await act(async () => {
-        if (reason === "list" || reason === "successor typing") {
-          await testQueryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
-          });
-          if (reason === "list") {
-            review?.controller.exitInlineReview();
-            unmountReview();
-            mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
-            mocks.getDraftPreview.mockResolvedValue({
-              ...previewOf(),
-              draftGeneration: 2,
-              reviewRoomName: newRoom,
-            });
-            await testQueryClient.invalidateQueries({
-              queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
-            });
-            await vi.advanceTimersByTimeAsync(0);
-            expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-            expect(surfaces()).toEqual([]);
-          }
-          await vi.advanceTimersByTimeAsync(10);
-          expect(runtime.pool.peek(oldRoom)).toBe(old);
-        }
-        if (reason === "successor typing")
-          mocks.getDraftPreview.mockImplementationOnce(
-            () =>
-              new Promise((resolve) => {
-                locate = (room) =>
-                  resolve({ ...previewOf("5"), draftGeneration: 2, reviewRoomName: room });
-              }),
-          );
-        if (reason === "remote whole Discard") {
-          const socket = DocumentSocketHarness.instances.at(-1);
-          if (!socket) throw new Error("Missing native socket");
-          socket.receive(oldRoom, MessageType.CLOSE, (encoder) =>
-            encoding.writeVarString(encoder, "branch-generation-stale"),
-          );
-        } else
-          runtime.wire(oldRoom).emit({
-            kind: "reset",
-            reason: reason === "branch-stale-doc" ? "branch-stale-doc" : "branch-generation-stale",
-            disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
-          });
-      });
-      if (reason === "remote whole Discard") {
-        await act(async () => {
-          await testQueryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
-          });
-        });
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(0);
-        });
-        expect(
-          testQueryClient.getQueryData(
-            projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a"),
-          ),
-        ).toMatchObject({ draftGeneration: 2, operations: [] });
-        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
-        expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-        mocks.getDraftPreview.mockResolvedValue({
-          ...previewOf(),
-          draftGeneration: 2,
-          reviewRoomName: newRoom,
-        });
-      }
-      await act(async () => {
-        if (reason === "remote whole Discard") releaseCarry(newRoom);
-        await vi.advanceTimersByTimeAsync(20);
-      });
-      if (reason === "successor typing") {
-        await act(async () => {
-          branchEditor().commands.insertContent("SUCCESSOR WORDS");
-          locate(newRoom);
-        });
-      }
-      await act(async () => {
-        runtime.wire(newRoom).sync();
-        await vi.advanceTimersByTimeAsync(20);
-      });
-      if (reason !== "remote whole Discard")
-        expect(surfaces()).toEqual(reason === "list" ? [] : ["review"]);
-      expect(old.document.isDestroyed).toBe(true);
-      if (reason !== "list" && reason !== "remote whole Discard")
-        expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
-      if (reason === "successor typing")
-        expect(branchEditor().getText()).toContain("SUCCESSOR WORDS");
-      await act(async () => {
-        if (reason === "list") {
-          expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
-          expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-          mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
-        }
-        if (reason === "remote whole Discard") {
-          mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
-          mocks.getDraftPreview.mockResolvedValue({
-            ...previewOf("writer"),
-            operations: [{ ...previewOf("writer").operations[0], kind: "writer" }],
-            draftGeneration: 2,
-            reviewRoomName: newRoom,
-          });
-        }
-        runtime.wire(newRoom).ack();
-        await vi.advanceTimersByTimeAsync(10);
-      });
-      if (reason === "remote whole Discard") {
-        expect(surfaces()).toEqual(["review"]);
-        expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
-        expect(
-          testQueryClient.getQueryData(
-            projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a"),
-          ),
-        ).toMatchObject({ operations: [expect.objectContaining({ kind: "writer" })] });
-        expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
-        expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
-      }
-      if (reason === "list") {
-        expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
-        expect(runtime.pool.peek(newRoom)).toBeUndefined();
-      }
+      await run(oldRoom, newRoom, old);
     });
   } finally {
     await runtime.dispose();
     testQueryClient.clear();
     vi.useRealTimers();
   }
+}
+
+function successor(room: string, ids: string[], listedDraft: boolean) {
+  mocks.getDraftPreview.mockResolvedValue({
+    ...previewOf(...ids),
+    draftGeneration: 2,
+    reviewRoomName: room,
+  });
+  mocks.listWorkDrafts.mockResolvedValue({
+    drafts: listedDraft ? [{ ...listed, draftGeneration: 2 }] : [],
+  });
+}
+const previewKey = projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a");
+const listKey = projectQueryKeys.workDrafts("project-a", "work-a");
+async function deliver(room: string) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(20);
+  });
+  await act(async () => {
+    runtime.wire(room).sync();
+    await vi.advanceTimersByTimeAsync(20);
+  });
+}
+async function acknowledge(room: string) {
+  await act(async () => {
+    runtime.wire(room).ack();
+    await vi.advanceTimersByTimeAsync(10);
+  });
+}
+
+it.each([
+  "branch-generation-stale",
+  "branch-stale-doc",
+] as const)("writer edit survives reentry after %s", async (reason) => {
+  await withWriterReview(
+    { sameRoom: reason === "branch-stale-doc" },
+    async (oldRoom, newRoom, old) => {
+      successor(newRoom, ["5"], true);
+      await act(async () =>
+        runtime.wire(oldRoom).emit({
+          kind: "reset",
+          reason,
+          disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
+        }),
+      );
+      await deliver(newRoom);
+      expect(surfaces()).toEqual(["review"]);
+      expect(old.document.isDestroyed).toBe(true);
+      expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+      await acknowledge(newRoom);
+    },
+  );
+});
+
+it("delivers unmounted writing before publishing the draft list after acknowledgement", async () => {
+  await withWriterReview({}, async (oldRoom, newRoom, old) => {
+    successor(newRoom, ["5"], true);
+    await act(async () => {
+      await testQueryClient.invalidateQueries({ queryKey: listKey });
+      review?.controller.exitInlineReview();
+      unmountReview();
+      successor(newRoom, [], false);
+      await testQueryClient.invalidateQueries({ queryKey: listKey });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+      expect(surfaces()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(runtime.pool.peek(oldRoom)).toBe(old);
+      runtime
+        .wire(oldRoom)
+        .emit({ kind: "reset", reason: "branch-generation-stale", disposition: "superseded" });
+    });
+    await deliver(newRoom);
+    expect(surfaces()).toEqual([]);
+    expect(old.document.isDestroyed).toBe(true);
+    expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
+    expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+    await acknowledge(newRoom);
+    expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
+    expect(runtime.pool.peek(newRoom)).toBeUndefined();
+  });
+});
+
+it("preserves successor typing made before writer carry resolution", async () => {
+  await withWriterReview({}, async (oldRoom, newRoom, old) => {
+    successor(newRoom, ["5"], true);
+    let locate!: (room: string) => void;
+    await act(async () => {
+      await testQueryClient.invalidateQueries({ queryKey: listKey });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(runtime.pool.peek(oldRoom)).toBe(old);
+      mocks.getDraftPreview.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            locate = (room) =>
+              resolve({ ...previewOf("5"), draftGeneration: 2, reviewRoomName: room });
+          }),
+      );
+      runtime
+        .wire(oldRoom)
+        .emit({ kind: "reset", reason: "branch-generation-stale", disposition: "superseded" });
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    await act(async () => {
+      branchEditor().commands.insertContent("SUCCESSOR WORDS");
+      locate(newRoom);
+    });
+    await act(async () => {
+      runtime.wire(newRoom).sync();
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(surfaces()).toEqual(["review"]);
+    expect(old.document.isDestroyed).toBe(true);
+    expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+    expect(branchEditor().getText()).toContain("SUCCESSOR WORDS");
+    await acknowledge(newRoom);
+  });
+});
+
+it("keeps native unacknowledged writing through HTTP-before-reset remote whole Discard", async () => {
+  let releaseCarry!: (room: string) => void;
+  const successorRead = new Promise<string>((resolve) => {
+    releaseCarry = resolve;
+  });
+  await withWriterReview(
+    { native: true, currentRoom: () => successorRead },
+    async (oldRoom, newRoom, old) => {
+      // Native sends precede outbox bookkeeping. Empty G2 HTTP reads precede
+      // the native reset, while the handoff lookup remains held.
+      successor(newRoom, [], false);
+      await act(async () => {
+        await testQueryClient.invalidateQueries({ queryKey: previewKey });
+      });
+      await act(async () => {
+        await testQueryClient.invalidateQueries({ queryKey: listKey });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+      await act(async () => {
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("Missing native socket");
+        socket.receive(oldRoom, MessageType.CLOSE, (encoder) =>
+          encoding.writeVarString(encoder, "branch-generation-stale"),
+        );
+      });
+      await act(async () => {
+        await testQueryClient.invalidateQueries({ queryKey: listKey });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
+        draftGeneration: 2,
+        operations: [],
+      });
+      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+      await act(async () => {
+        releaseCarry(newRoom);
+      });
+      await deliver(newRoom);
+      expect(old.document.isDestroyed).toBe(true);
+      successor(newRoom, ["writer"], true);
+      mocks.getDraftPreview.mockResolvedValue({
+        ...previewOf("writer"),
+        operations: [{ ...previewOf("writer").operations[0], kind: "writer" }],
+        draftGeneration: 2,
+        reviewRoomName: newRoom,
+      });
+      await acknowledge(newRoom);
+      expect(surfaces()).toEqual(["review"]);
+      expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+      expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
+        operations: [expect.objectContaining({ kind: "writer" })],
+      });
+      expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+      expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
+    },
+  );
 });

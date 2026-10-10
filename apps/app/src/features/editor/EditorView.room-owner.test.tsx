@@ -13,6 +13,7 @@ import {
   DocumentSession,
   type DocumentSessionConnectionState,
 } from "@/core/editor/document-session";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DocumentSessionTeardownOwner } from "@/core/editor/document-session-teardown-owner";
 import {
   DraftReviewBoundary,
@@ -30,8 +31,20 @@ import {
   previewOf,
   work,
 } from "@/test-support/draft-review-scope";
-import { sessionFor } from "@/test-support/editor-session-fakes";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { createEditorSessions } from "@/test-support/editor-sessions";
+import { installEditorShell, ReviewEditorHost } from "@/test-support/editor-shell";
+import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
+
+let shell: ReturnType<typeof installEditorShell>;
+let sessions: ReturnType<typeof createEditorSessions>;
+beforeEach(() => {
+  sessions = createEditorSessions();
+  shell = installEditorShell(poolRegistry as unknown as LiveDocumentSessionRegistry);
+});
+afterEach(async () => {
+  shell.dispose();
+  await sessions.dispose();
+});
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -41,38 +54,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/client/api/drafts-api", () => mocks);
-vi.mock("@/client/query/useContextCatalog", () => ({
-  contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
-  useContextCatalogView: () => ({
-    catalog: null,
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
-  projectCatalogView: () => ({ findDocument: () => null }),
-}));
-vi.mock("@/client/query/useProjectThreads", () => ({
-  useProjectThreads: () => ({ threads: [], isError: false, isFetching: false }),
-}));
-vi.mock("@/client/query/useWorks", () => ({
-  useWorks: () => ({ noWork: { id: "no-work", slug: null, archivedAt: null }, works: [] }),
-}));
-vi.mock("@/features/change-trail/trail-detail-query", () => ({
-  usePrefetchTrailDetails: () => {},
-}));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
-  useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => poolRegistry,
-  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
-}));
-vi.mock("@/features/links", async () => ({
-  useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
-  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
-}));
-vi.mock("./references/useReferenceBrowserCatalog", () => ({
-  useReferenceBrowserCatalog: () => null,
-}));
+
 vi.mock("./useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
     useEffect(() => {
@@ -81,11 +63,6 @@ vi.mock("./useInlineReviewSync", () => ({
     }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
   },
 }));
-vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
-vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
-vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
-
-const { EditorView } = await import("./EditorView");
 
 const documentId = "document-a";
 const transportStatus = new Map<string, (state: DocumentSessionConnectionState) => void>();
@@ -131,28 +108,21 @@ let review: ReturnType<typeof useDraftReview> | null = null;
 let draftOnly = false;
 let supplyMarks = true;
 
-function Host() {
-  const value = useDraftReview();
-  review = value;
-  const { inlineReview } = value.controller;
-  return (
-    <EditorView
-      draftOnly={draftOnly}
-      documentId={documentId}
-      projectId="project-a"
-      session={draftOnly ? undefined : sessionFor(documentId)}
-      reviewDraftId={inlineReview?.draftId}
-    />
-  );
-}
-
 function Scope() {
   const value = useDraftReviewScopeValue({ projectId: "project-a", work });
   return (
     <DraftReviewBoundary value={value}>
       <PaintHold status="Opening review">
         <ReviewChromeWitness />
-        <Host />
+        <ReviewEditorHost
+          documentId={documentId}
+          projectId="project-a"
+          session={draftOnly ? undefined : sessions.get(documentId)}
+          draftOnly={draftOnly}
+          observe={(value) => {
+            review = value;
+          }}
+        />
       </PaintHold>
     </DraftReviewBoundary>
   );
@@ -182,19 +152,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function settled(check: () => void) {
-  for (let i = 0; i < 40; i++) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (i === 39) throw error;
-    }
-  }
-}
 const mounted = () => {
   const wrapper = [...document.querySelectorAll<HTMLElement>("[data-editor-surface]")].find(
     (node) => !node.classList.contains("hidden") && !node.closest("[data-paint-hold]"),
@@ -216,8 +173,8 @@ async function run(run: (client: QueryClient, room: string) => Promise<void>, en
     async () => {
       if (enter) {
         await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
-        await settled(() => expect(surfaces()).toEqual(["review"]));
-      } else if (!draftOnly) await settled(() => expect(mounted()).toBeTruthy());
+        await settleReact(() => expect(surfaces()).toEqual(["review"]));
+      } else if (!draftOnly) await settleReact(() => expect(mounted()).toBeTruthy());
       await run(client, room);
     },
     { drainMacrotask: false },
@@ -233,7 +190,7 @@ it.each([
   await run(async (_client, oldRoom) => {
     const oldEditor = mounted();
     await act(async () => oldEditor.commands.insertContent("The held review."));
-    const live = sessionFor(documentId).document;
+    const live = sessions.get(documentId).document;
     const room = disposition === "superseded" ? branchRoomName("review-owner", 2) : oldRoom;
     const sync = deferredReviewAnswer<void>();
     syncs.set(room, sync);
@@ -268,18 +225,18 @@ it.each([
         }),
       );
     }
-    await settled(() => expect(review?.roomOwner.session).not.toBeNull());
+    await settleReact(() => expect(review?.roomOwner.session).not.toBeNull());
     const frozen = document.querySelector<HTMLElement>("[data-paint-hold]");
     expect(frozen?.hasAttribute("inert")).toBe(true);
     expect(frozen?.textContent).toContain("The held review.");
     expect(frozen?.querySelector("[contenteditable=true]")).toBeTruthy(); // Copied DOM is inert, not another editor.
     expect(surfaces()).toEqual([]);
     await act(async () => sync.resolve());
-    await settled(() => expect(surfaces()).toEqual(["review"]));
+    await settleReact(() => expect(surfaces()).toEqual(["review"]));
     expect(document.querySelector("[data-paint-hold]")).toBeNull();
     expect(mounted()).not.toBe(oldEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
-    expect(sessionFor(documentId).document).toBe(live);
+    expect(sessions.get(documentId).document).toBe(live);
   });
 });
 
@@ -341,7 +298,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     });
     expect(document.querySelector("[data-paint-hold]")?.textContent).toContain("Warm live edit.");
     await act(async () => refusalSync.resolve());
-    await settled(() => expect(surfaces()).toEqual(["review"]));
+    await settleReact(() => expect(surfaces()).toEqual(["review"]));
     const apply = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(apply.promise);
     await act(async () => {
@@ -357,7 +314,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
       apply.resolve(applied(true));
       await done;
     });
-    await settled(() => expect(surfaces()).toEqual(["live"]));
+    await settleReact(() => expect(surfaces()).toEqual(["live"]));
     expect(mounted()).toBe(live);
     expect(live.isEditable).toBe(true);
     await act(async () => live.commands.undo());
@@ -390,11 +347,11 @@ it("a retired rebuild answer cannot replace a later review", async () => {
       client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), rows);
       review?.controller.enterInlineReview(documentId, "draft-b");
     });
-    await settled(() => expect(review?.roomOwner.session?.roomKey).toBe(nextRoom));
-    await settled(() => expect(surfaces()).toEqual(["review"]));
+    await settleReact(() => expect(review?.roomOwner.session?.roomKey).toBe(nextRoom));
+    await settleReact(() => expect(surfaces()).toEqual(["review"]));
     const currentEditor = mounted();
     await act(async () => release.resolve());
-    await settled(() => expect(old?.getSnapshot().status).toBe("destroyed"));
+    await settleReact(() => expect(old?.getSnapshot().status).toBe("destroyed"));
     expect(review?.controller.inlineReview?.draftId).toBe("draft-b");
     expect(review?.roomOwner.session?.roomKey).toBe(nextRoom);
     expect(mounted()).toBe(currentEditor);
@@ -413,7 +370,7 @@ it("entering review holds the live frame until review paints", async () => {
     );
     expect(surfaces()).toEqual([]);
     await act(async () => sync.resolve());
-    await settled(() => expect(surfaces()).toEqual(["review"]));
+    await settleReact(() => expect(surfaces()).toEqual(["review"]));
     expect(document.querySelector("[data-paint-hold]")).toBeNull();
   }, false);
 });
@@ -465,7 +422,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
         { ...previewOf("3"), draftGeneration: 2, reviewRoomName: room },
       ),
     );
-    await settled(() => expect(document.querySelector("[data-paint-hold]")).not.toBeNull());
+    await settleReact(() => expect(document.querySelector("[data-paint-hold]")).not.toBeNull());
     expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
       "Painted generation one.",
     );
@@ -473,7 +430,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
       "No listed changes",
     );
     await act(async () => sync.resolve());
-    await settled(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
+    await settleReact(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
     await act(async () =>
       client.setQueryData(
         projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
@@ -482,7 +439,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     );
     expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
     expect(document.querySelector("[data-paint-hold]")).toBeNull();
-    await settled(() =>
+    await settleReact(() =>
       expect(document.querySelector("[data-review-state]")?.textContent).toBe("No listed changes"),
     );
   });
@@ -492,7 +449,7 @@ it("schema-stale is terminal before marks or the marks wait", async () => {
   supplyMarks = false;
   await run(async (_client, room) => {
     await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
-    await settled(() => expect(review?.roomOwner.session).not.toBeNull());
+    await settleReact(() => expect(review?.roomOwner.session).not.toBeNull());
     expect(surfaces()).toEqual([]);
     await act(async () =>
       transportStatus.get(room)?.({

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: consolidate review session, shell and scheduling fixtures, keeping native writer-handoff histories explicit and retiring weaker duplicate traces.
+
 - Development: isolate review launch fixtures so their focus witnesses do not depend on test order.
 
 - Use one phone review header model for header, change bar and sheet without reparenting the manuscript.

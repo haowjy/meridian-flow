@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Network answers projected through real review scopes, mutations and header models. */
 import type { DraftDiscardResponse } from "@meridian/contracts/drafts";
-import { notifyManager, onlineManager } from "@tanstack/react-query";
+import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -32,17 +32,12 @@ async function open(p: () => ScopeProbe) {
   await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
-  // Keep real query notification timing, but flush each scheduled React update under act.
-  notifyManager.setNotifyFunction((notify) => {
-    act(notify);
-  });
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
 });
 afterEach(() => {
-  notifyManager.setNotifyFunction((notify) => notify());
   onlineManager.setOnline(true);
   vi.useRealTimers();
   fixture.dispose();

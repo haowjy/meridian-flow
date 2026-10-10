@@ -53,8 +53,13 @@ visible is a browser question and belongs in a probe.
   over `core/transport/test-support/DocumentSocketHarness` through its
   `transportFactory` (it replaces the wire for generation-1 rooms only). The
   fake's order hid a live review failure through two fixes.
-- **`editor-session-fakes.ts`** — fake document sessions and a branch-room
-  registry for suites about which editor exists and when (`EditorView`).
+- **`editor-sessions.ts`** — instance-owned real detached document sessions;
+  await `dispose()` after unmount. Tests may hold public horizons locally.
+- **`editor-shell.tsx`** — explicitly installed/disposed neutral EditorView shell
+  dependencies. Supply the registry; paint readiness and transport faults stay
+  local, and the live-change suite keeps real inline synchronization.
+- **`react-dom-harness.tsx`** — root teardown and bounded `settleReact` assertions
+  under real or fake timers. Review-scope fixtures own query notification `act`.
 - **`inline-review-editor.ts`** — a real collaborative editor with the
   inline-review extension, for claims about marks, removal widgets, folds, focus
   and the bar slot.

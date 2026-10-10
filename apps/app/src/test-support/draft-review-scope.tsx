@@ -1,7 +1,7 @@
 /** Real review scopes and instance-owned network/account seams for composed app tests. */
 
 import type { Work } from "@meridian/contracts/works";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as draftsApi from "@/client/api/drafts-api";
@@ -275,6 +275,9 @@ export function createReviewScopeFixture(
     resources?: ReturnType<typeof account.useOptionalAccountResourceReplica>;
   } = {},
 ) {
+  notifyManager.setNotifyFunction((notify) => {
+    act(notify);
+  });
   const network = {
     listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
     getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
@@ -314,6 +317,7 @@ export function createReviewScopeFixture(
     removal,
     render: renderReviewScopes,
     dispose() {
+      notifyManager.setNotifyFunction((notify) => notify());
       for (const spy of [...Object.values(network), ...seams]) spy.mockRestore();
       if (!options.removal) removal.dispose();
       for (const room of rooms.values()) room.destroy();

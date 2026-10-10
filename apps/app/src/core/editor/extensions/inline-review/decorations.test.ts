@@ -475,6 +475,7 @@ describe("clicking a removal", () => {
 
   it("selects its change and opens the fold on one mouse click", () => {
     const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    editor.commands.setTextSelection(2);
     setModel(editor, foldedModel(editor));
     const toggle = removals(editor)[0]?.querySelector("button");
     // A real click is press, then release: the press must not rebuild the
@@ -485,6 +486,9 @@ describe("clicking a removal", () => {
 
     expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
     expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
+    expect(editor.state.selection.from).toBe(2);
+    setModel(editor, foldedModel(editor));
+    expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
   });
 
   it("keeps keyboard focus on the fold after Enter rebuilds it", async () => {
@@ -561,23 +565,6 @@ describe("clicking a removal puts the caret where it stands", () => {
     boxed(rebuilt);
     pressAndRelease(rebuilt, 110, 25);
     expect(editor.state.selection.from).toBe(posOf(editor, "Keep two"));
-  });
-
-  it("does not move the caret when the click opens a fold", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    editor.commands.setTextSelection(2);
-    paintText(
-      editor,
-      [operation("a1", "agent")],
-      ["a1"],
-      { from: between, to: between },
-      { deletedText: "z".repeat(REMOVAL_COLLAPSE_CHARS + 20) },
-    );
-    const toggle = removals(editor)[0]?.querySelector("button");
-    toggle?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
-    expect(editor.state.selection.from).toBe(2);
   });
 });
 
