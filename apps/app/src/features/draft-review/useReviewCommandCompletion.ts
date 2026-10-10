@@ -23,6 +23,7 @@
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect } from "react";
+import { listedDocumentName } from "@/client/query/draft-command-executor";
 import {
   changedDrafts,
   currentDraftCommandRecords,
@@ -37,7 +38,6 @@ import type {
   DraftReviewState,
   ReviewClaim,
 } from "./draft-review-session";
-import { listedDocumentName } from "./useSelectionCommands";
 
 type Scope = { projectId: string; workId: string };
 
@@ -88,41 +88,25 @@ export function completionAction(
   draft: Scope & DraftReviewSelection,
   queryClient: QueryClient,
 ): DraftReviewAction | null {
-  const { documentId, draftId } = draft;
   const current = pendingDraftCommand(records, draft);
   const prior = pendingDraftCommand(previous, draft);
-  const claim =
-    current?.draftGeneration !== undefined
-      ? { ...current, draftGeneration: current.draftGeneration }
-      : null;
-  const before =
-    prior?.draftGeneration !== undefined
-      ? { ...prior, draftGeneration: prior.draftGeneration }
-      : null;
-  if (claim?.draftClosed)
-    return before?.draftClosed
-      ? null
-      : {
-          type: "reviewClosed",
-          documentId,
-          draftId,
-          draftGeneration: claim.draftGeneration,
-          documentName: claim.draftClosed.documentName,
-        };
-  if (current === prior) return null;
-  if (claim?.completesDraft)
-    return {
-      type: "reviewCompleting",
-      documentId,
-      draftId,
-      draftGeneration: claim.draftGeneration,
-      mode: claim.mode,
-      documentName: listedDocumentName(queryClient, draft.projectId, draft.workId, draftId),
-    };
-  // Only a prediction is withdrawn (the reducer keeps what the server closed).
-  return before?.completesDraft
-    ? { type: "reviewReopened", documentId, draftId, draftGeneration: before.draftGeneration }
-    : null;
+  const claim = draftClaim(queryClient, draft, records);
+  const before = draftClaim(queryClient, draft, previous);
+  if (claim?.completion?.phase === "closed") {
+    if (before?.completion?.phase === "closed") return null;
+  } else {
+    if (current === prior) return null;
+    if (!claim?.completion && (!prior?.completesDraft || !before)) return null;
+  }
+  const generation = claim?.completion ? claim.draftGeneration : before?.draftGeneration;
+  if (generation === undefined) return null;
+  return {
+    type: "completionObserved",
+    documentId: draft.documentId,
+    draftId: draft.draftId,
+    draftGeneration: generation,
+    completion: claim?.completion ?? null,
+  };
 }
 
 export function useReviewCommandCompletion({

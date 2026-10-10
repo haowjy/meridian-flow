@@ -156,7 +156,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
       await act(async () =>
         second.resolve({ ...applied(false, "7"), draftId: "draft-chapter-14" }),
       );
-      await settled(() => expect(probe().chat.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().chat.commands.isDisposing).toBe(false));
       const remaining = await probe().mountDraftChanges({
         projectId: "project-a",
         workId: "work-a",

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Real mutation settlement, draft-only tabs, route coordination and unopened-list refresh. */
-import { notifyManager } from "@tanstack/react-query";
+import { notifyManager, onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -123,9 +123,41 @@ beforeEach(() => {
 });
 afterEach(() => {
   notifyManager.setNotifyFunction((notify) => notify());
+  onlineManager.setOnline(true);
   fixture.dispose();
   removal.dispose();
   vi.restoreAllMocks();
+});
+
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+])("header refuses offline Discard without removal or navigation (browser=%s, manager=%s)", async (browser, manager) => {
+  const navigate = vi.fn();
+  await fixture.render(
+    async (p) => {
+      await open(p);
+      const before = tabs();
+      const routeBefore = search;
+      vi.spyOn(navigator, "onLine", "get").mockReturnValue(browser);
+      onlineManager.setOnline(manager);
+      await act(async () => p().header.discardDraft());
+      expect(tabs()).toEqual(before);
+      expect(search).toEqual(routeBefore);
+      expect(writes).toBe(0);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+      expect(p().header.commandError).toEqual({ code: "discard-offline" });
+      await act(async () => {
+        vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+        onlineManager.setOnline(true);
+      });
+      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+      expect(tabs()).toEqual(before);
+    },
+    { onOpenDraft: navigate },
+  );
 });
 
 it("draft-only Discard closes its tab and repairs the route immediately; refusal never resurrects it", async () => {
@@ -324,8 +356,6 @@ it("an unopened list follows a remote write and disposition through updated list
     await vi.waitFor(() =>
       expect(view().items.map(({ change }) => change.classId)).toEqual(["class-4"]),
     );
-    expect(p().chat.controller.inlineReview).toBeNull();
-    expect(p().chat.controller.reviewRoomName).toBeNull();
     expect(p().editor.controller.inlineReview?.draftId).toBe("draft-a");
   });
 });

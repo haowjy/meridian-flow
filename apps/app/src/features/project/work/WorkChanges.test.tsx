@@ -2,7 +2,6 @@
 /** S-work: unopened selective commands and filtered whole-Work authority, independent of Editor A. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { act, type ReactNode, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
@@ -81,7 +80,7 @@ function Page() {
       </button>
       <WorkChanges
         projectId="project-a"
-        workId={workC.id as ParsedRequestId}
+        work={workC}
         matchesSearch={(name) => !filter || name === "Chapter 13"}
       />
     </>
@@ -160,10 +159,9 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
         ],
       ]);
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
-      expect(probe().third.controller.inlineReview).toBeNull();
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
-      await settled(() => expect(probe().third.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().third.commands.isDisposing).toBe(false));
       await click("Filter files");
       expect(button("Changes in Filtered chapter")).toBeUndefined();
       await act(async () =>
@@ -181,7 +179,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
           ["project-a", "work-c", "document-c", { draftId: "draft-c" }],
         ]),
       );
-      await settled(() => expect(probe().third.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().third.commands.isDisposing).toBe(false));
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
         ["1"],

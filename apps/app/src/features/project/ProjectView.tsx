@@ -43,6 +43,7 @@ import {
 import { PaintScope } from "@/components/app/PaintHold";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
+import { DraftOnlyTabSettlement } from "@/features/draft-review/DraftOnlyTabSettlement";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -53,6 +54,11 @@ import {
   type DraftReviewStateOwner,
   useDraftReviewStateOwner,
 } from "@/features/draft-review/useDraftReviewController";
+import {
+  useWorkDraftCommands,
+  type WorkDraftCommands,
+  WorkDraftCommandsBoundary,
+} from "@/features/draft-review/useWorkDraftCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -109,7 +115,6 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { WorkPaneController } from "./WorkPaneController";
-import { WorkReviewScopesProvider } from "./work/useWorkReviewScope";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -384,7 +389,7 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
-    chatReview: DraftReviewContextValue;
+    chatCommands: WorkDraftCommands;
     editorReview: DraftReviewContextValue;
     mobileDocumentRoute: MobileDocumentRoute;
     retainEditorWhileLoading?: boolean;
@@ -410,7 +415,6 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
 }
 
 function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const chatReviewState = useDraftReviewStateOwner();
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
   const requestedMobileDocumentRoute = useMobileDocumentRoute({
@@ -471,7 +475,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     <HydratedReviewControllers
       {...displayedProps}
       retainEditorWhileLoading={retainEditorWhileLoading}
-      chatReviewState={chatReviewState}
       editorReviewState={editorReviewState}
       mobileDocumentRoute={mobileDocumentRoute}
       usePhone={usePhone}
@@ -480,7 +483,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
 }
 
 function HydratedReviewControllers({
-  chatReviewState,
   editorReviewState,
   usePhone,
   mobileDocumentRoute,
@@ -488,16 +490,14 @@ function HydratedReviewControllers({
 }: ResolvedProjectViewProps & {
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  chatReviewState: DraftReviewStateOwner;
   editorReviewState: DraftReviewStateOwner;
   usePhone: boolean;
   mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
 }) {
-  const chatReview = useDraftReviewScopeValue({
+  const chatCommands = useWorkDraftCommands({
     projectId: props.projectId,
     work: props.chatWork,
-    stateOwner: chatReviewState,
     threadId: props.chatThreadId,
   });
   const editorReview = useDraftReviewScopeValue({
@@ -506,35 +506,20 @@ function HydratedReviewControllers({
     stateOwner: editorReviewState,
     threadId: null,
   });
-  // The Work page's Work when neither the Editor nor the chat has it. Mounted
-  // always, so a Work page never mounts or unmounts a controller; with no Work
-  // it scopes nothing, and it never enters an inline review.
-  const routeWork =
-    props.activeScreen === "work" && props.routeWork.status === "present"
-      ? props.routeWork.work
-      : null;
-  const workReview = useDraftReviewScopeValue({
-    projectId: props.projectId,
-    work:
-      routeWork && routeWork.id !== props.editorWork?.id && routeWork.id !== props.chatWork?.id
-        ? routeWork
-        : null,
-  });
-  const scopedProps = { ...props, chatReview, editorReview, mobileDocumentRoute };
+  const scopedProps = { ...props, chatCommands, editorReview, mobileDocumentRoute };
   return (
     <EditorReviewScope value={editorReview}>
-      <WorkReviewScopesProvider chat={chatReview} third={workReview}>
-        <EditorReviewAddressOwner
-          review={editorReview}
-          requestedDraftId={props.reviewDraftId}
-          activeScreen={props.activeScreen}
-          activeScheme={props.activeContextScheme}
-          activePath={props.activeContextPath}
-          activeDocumentId={props.reviewAddressDocumentId}
-          onSetDraftId={props.onSetEditorReviewDraftId}
-        />
-        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-      </WorkReviewScopesProvider>
+      <DraftOnlyTabSettlement projectId={props.projectId} />
+      <EditorReviewAddressOwner
+        review={editorReview}
+        requestedDraftId={props.reviewDraftId}
+        activeScreen={props.activeScreen}
+        activeScheme={props.activeContextScheme}
+        activePath={props.activeContextPath}
+        activeDocumentId={props.reviewAddressDocumentId}
+        onSetDraftId={props.onSetEditorReviewDraftId}
+      />
+      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
     </EditorReviewScope>
   );
 }
@@ -648,13 +633,13 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-rail",
       children: (
-        <DraftReviewBoundary value={props.chatReview}>
+        <WorkDraftCommandsBoundary value={props.chatCommands}>
           <ContextSidebar
             threadId={displayedChatThreadId(props.chatDisplay)}
             projectId={props.projectId}
             onClose={close("context-rail")}
           />
-        </DraftReviewBoundary>
+        </WorkDraftCommandsBoundary>
       ),
     },
     {
@@ -740,7 +725,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 inert={chatIndexShowing}
                 aria-hidden={chatIndexShowing}
               >
-                <DraftReviewBoundary value={props.chatReview}>
+                <WorkDraftCommandsBoundary value={props.chatCommands}>
                   <ChatSurface
                     key="chat-surface"
                     projectId={props.projectId}
@@ -755,7 +740,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
                   />
-                </DraftReviewBoundary>
+                </WorkDraftCommandsBoundary>
               </div>
             )}
             {chatIndexShowing ? (
@@ -772,27 +757,25 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   ];
 
   return (
-    <>
-      <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-        <ProjectShell
-          layout={layout}
-          surfaces={stableSurfaces}
-          onSetWidth={setSurfaceWidth}
-          onSetCollapsed={setCollapsedFor}
-          onSetDockWidth={setDockWidth}
-          onSetDockCollapsed={setDockCollapsed}
-          bounds={SURFACE_WIDTH_BOUNDS}
-          mainMinWidth={MAIN_MIN_WIDTH}
+    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+      <ProjectShell
+        layout={layout}
+        surfaces={stableSurfaces}
+        onSetWidth={setSurfaceWidth}
+        onSetCollapsed={setCollapsedFor}
+        onSetDockWidth={setDockWidth}
+        onSetDockCollapsed={setDockCollapsed}
+        bounds={SURFACE_WIDTH_BOUNDS}
+        mainMinWidth={MAIN_MIN_WIDTH}
+      >
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.main}
+          destinationKey={props.routeLocationKey}
         >
-          <ProjectRouteBoundary
-            issue={props.routeIssues?.main}
-            destinationKey={props.routeLocationKey}
-          >
-            {renderDesktopPane(props, surfaceToggle)}
-          </ProjectRouteBoundary>
-        </ProjectShell>
-      </TreeCreationProvider>
-    </>
+          {renderDesktopPane(props, surfaceToggle)}
+        </ProjectRouteBoundary>
+      </ProjectShell>
+    </TreeCreationProvider>
   );
 }
 
