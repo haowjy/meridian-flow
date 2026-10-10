@@ -124,7 +124,6 @@ import {
   createPostDurabilityNoticeService,
   createReversalNoticePort,
 } from "./domain/reversal-notices.js";
-import { createBranchThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
@@ -133,6 +132,7 @@ import {
 import { createWorkDraftPending } from "./domain/work-draft-pending.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import { createBranchThreadPeerAgentEditCore } from "./thread-peer-composition.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 

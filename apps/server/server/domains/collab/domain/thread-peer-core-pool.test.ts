@@ -19,11 +19,12 @@ const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, wor
 function createPool() {
   const { history, liveCore, threadCore } = createFakeThreadPeerCores();
   // No Work here starts with an active draft: a drafted read reads live (F7) until a write ensures one.
-  const { drafts, pinFences } = createFakeDrafts();
+  const liveUtilityCore = asLiveAgentEditCore(liveCore.asCore());
+  const { drafts, fences } = createFakeDrafts(liveUtilityCore);
   const pool = createThreadPeerCorePool({
     drafts,
-    pinFences,
-    liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
+    fences,
+    liveUtilityCore,
     createThreadCore: () => threadCore.asCore(),
     reversalHistory: history.reader,
     liveHistory: history.liveHistory,
@@ -33,8 +34,6 @@ function createPool() {
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
     fileAccess: createAllowAllFileAccess(),
-    lockWorks: async () => {},
-    lockLiveDocuments: async () => {},
   });
   return { pool, liveCore, threadCore, pullThreadPeer: history.pullThreadPeer };
 }
