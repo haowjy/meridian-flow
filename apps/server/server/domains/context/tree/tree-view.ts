@@ -15,7 +15,7 @@ import type {
 } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { type AnyColumn, and, eq, inArray, isNull, ne, or, type SQL, sql } from "drizzle-orm";
+import { eq, inArray, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
@@ -239,15 +239,6 @@ function folderPath(chain: readonly FolderLink[] | undefined, filename: string):
 export function createTreeReader(db: Database): TreeReader {
   const tx = (): DrizzleDb => currentDrizzleDb(db);
 
-  function under(column: AnyColumn, parents: readonly (FolderId | null)[]): SQL {
-    const ids = parents.filter((parent): parent is FolderId => parent !== null);
-    const conditions = [
-      ...(parents.includes(null) ? [isNull(column)] : []),
-      ...(ids.length > 0 ? [inArray(column, ids)] : []),
-    ];
-    return (conditions.length === 1 ? conditions[0] : or(...conditions)) ?? sql`false`;
-  }
-
   async function documentRows(
     view: TreeView,
     where: (vd: VisibleDocumentsSubquery) => SQL | undefined,
@@ -296,88 +287,132 @@ export function createTreeReader(db: Database): TreeReader {
     };
   }
 
-  /** Every visible node at a source-relative path in this view. */
-  async function nodesAt(
+  /**
+   * The one meaning of "same path": every node visible at each rendered source-relative
+   * path in this view, walked through the view's visible folders by name (every folder of
+   * a name, so absorbed twins are all followed) and matched by every filename split. One
+   * query per folder depth for the whole batch, then one per kind.
+   */
+  async function pathOccupants(
     view: TreeView,
-    contextSourceId: ContextSourceId,
-    path: string,
-  ): Promise<{ documents: VisibleDocumentRow[]; folders: VisibleFolderRow[]; path: string }> {
-    const segments = path.split("/").filter(Boolean);
-    const normalized = segments.join("/");
-    const filename = segments.pop();
-    if (filename === undefined || !isUuid(contextSourceId)) {
-      return { documents: [], folders: [], path: normalized };
-    }
-    // A path can pass through more than one visible folder of one name only when a live
-    // absorb brought hidden twins together; follow every one.
-    let parents: (FolderId | null)[] = [null];
-    for (const name of segments) {
-      const rows = await folderRows(view, (vf) =>
-        and(
-          eq(vf.contextSourceId, contextSourceId),
-          under(vf.parentId, parents),
-          eq(vf.name, name),
-        ),
+    queries: readonly { contextSourceId: ContextSourceId; path: string }[],
+  ): Promise<PathOccupancy[]> {
+    const walks = queries.map((query) => {
+      const segments = query.path.split("/").filter(Boolean);
+      const filename = segments.pop();
+      const walkable = filename !== undefined && isUuid(query.contextSourceId);
+      return {
+        sourceId: query.contextSourceId,
+        path: [...segments, ...(filename === undefined ? [] : [filename])].join("/"),
+        dirs: segments,
+        filename: filename ?? "",
+        parents: walkable ? [null] : ([] as (FolderId | null)[]),
+      };
+    });
+    const depth = Math.max(0, ...walks.map((walk) => walk.dirs.length));
+    for (let level = 0; level < depth; level += 1) {
+      const slots = walks.flatMap((walk, key) =>
+        level < walk.dirs.length
+          ? walk.parents.map((parentId) => ({
+              key,
+              sourceId: walk.sourceId,
+              parentId,
+              name: walk.dirs[level] as string,
+            }))
+          : [],
       );
-      parents = rows.map((row) => row.id);
-      if (parents.length === 0) return { documents: [], folders: [], path: normalized };
+      const hits = await folderIdsNamed(view, slots);
+      walks.forEach((walk, key) => {
+        if (level < walk.dirs.length) {
+          walk.parents = [...new Set(hits.filter((hit) => hit.key === key).map((hit) => hit.id))];
+        }
+      });
     }
-    const documents = await documentRows(view, (vd) =>
-      and(
-        eq(vd.contextSourceId, contextSourceId),
-        under(vd.folderId, parents),
-        or(
-          ...filenameSplits(filename).map((split) =>
-            and(eq(vd.name, split.name), eq(vd.extension, split.extension)),
-          ),
-        ),
+    const leaves = walks.flatMap((walk, key) =>
+      walk.parents.map((parentId) => ({
+        key,
+        sourceId: walk.sourceId,
+        parentId,
+        name: walk.filename,
+      })),
+    );
+    const documentHits = await documentIdsNamed(view, leaves);
+    const folderHits = await folderIdsNamed(view, leaves);
+    const documentIds = [...new Set(documentHits.map((hit) => hit.id))];
+    const folderIds = [...new Set(folderHits.map((hit) => hit.id))];
+    const documents = new Map(
+      (documentIds.length === 0
+        ? []
+        : await documentRows(view, (vd) => inArray(vd.id, documentIds))
+      ).map((row) => [row.id, row]),
+    );
+    const folders = new Map(
+      (folderIds.length === 0 ? [] : await folderRows(view, (vf) => inArray(vf.id, folderIds))).map(
+        (row) => [row.id, row],
       ),
     );
-    const folders = await folderRows(view, (vf) =>
-      and(
-        eq(vf.contextSourceId, contextSourceId),
-        under(vf.parentId, parents),
-        eq(vf.name, filename),
-      ),
-    );
-    return { documents, folders, path: normalized };
+    return walks.map((walk, key) => ({
+      path: walk.path,
+      documents: documentHits.flatMap((hit) => {
+        const row = hit.key === key ? documents.get(hit.id) : undefined;
+        return row ? [row] : [];
+      }),
+      folders: folderHits.flatMap((hit) => {
+        const row = hit.key === key ? folders.get(hit.id) : undefined;
+        return row ? [row] : [];
+      }),
+    }));
   }
 
-  /** Visible documents at each position in this view, by the position's key. */
-  async function documentsAtPositions(
+  /** Visible folders named `name` under each slot's parent, by slot key. */
+  async function folderIdsNamed(
     view: TreeView,
-    positions: readonly Position[],
-  ): Promise<{ key: number; id: DocumentId }[]> {
-    if (positions.length === 0) return [];
-    const rows = await tx().execute<{ key: number; id: string }>(sql`
-      SELECT p.key, vd.id::text AS id
-      FROM (VALUES ${positionValues(positions)}) AS p(key, source_id, folder_id, filename)
-      JOIN ${visibleDocumentsSql(view)} vd ON vd.context_source_id = p.source_id
-        AND (vd.folder_id = p.folder_id OR (vd.folder_id IS NULL AND p.folder_id IS NULL))
-        AND vd.name || CASE WHEN vd.extension = '' THEN '' ELSE '.' || vd.extension END
-          = p.filename`);
-    return rows.map((row) => ({ key: Number(row.key), id: row.id as DocumentId }));
-  }
-
-  async function foldersAtPositions(
-    view: TreeView,
-    positions: readonly Position[],
+    slots: readonly Slot[],
   ): Promise<{ key: number; id: FolderId }[]> {
-    if (positions.length === 0) return [];
-    const rows = await tx().execute<{ key: number; id: string }>(sql`
-      SELECT p.key, vf.id::text AS id
-      FROM (VALUES ${positionValues(positions)}) AS p(key, source_id, folder_id, filename)
-      JOIN ${visibleFoldersSql(view)} vf ON vf.context_source_id = p.source_id
-        AND (vf.parent_id = p.folder_id OR (vf.parent_id IS NULL AND p.folder_id IS NULL))
-        AND vf.name = p.filename`);
+    if (slots.length === 0) return [];
+    const rows = await tx().execute<{ key: number; id: string }>(
+      bySlotParent(
+        slots,
+        (values, parent) => sql`
+        SELECT p.key, vf.id::text AS id
+        FROM (VALUES ${values}) AS p(key, source_id, parent_id, name)
+        JOIN ${visibleFoldersSql(view)} vf ON vf.context_source_id = p.source_id
+          AND vf.name = p.name AND ${parent(sql`vf.parent_id`)}`,
+      ),
+    );
     return rows.map((row) => ({ key: Number(row.key), id: row.id as FolderId }));
+  }
+
+  /** Visible documents whose rendered filename is the slot's name, by slot key. */
+  async function documentIdsNamed(
+    view: TreeView,
+    slots: readonly Slot[],
+  ): Promise<{ key: number; id: DocumentId }[]> {
+    const splits = slots.flatMap((slot) =>
+      filenameSplits(slot.name).map((split) => ({ ...slot, ...split })),
+    );
+    if (splits.length === 0) return [];
+    const rows = await tx().execute<{ key: number; id: string }>(
+      bySlotParent(
+        splits,
+        (values, parent) => sql`
+        SELECT p.key, vd.id::text AS id
+        FROM (VALUES ${values}) AS p(key, source_id, parent_id, name, extension)
+        JOIN ${visibleDocumentsSql(view)} vd ON vd.context_source_id = p.source_id
+          AND vd.name = p.name AND vd.extension = p.extension
+          AND ${parent(sql`vd.folder_id`)}`,
+        (split) => sql`, ${split.extension}::text`,
+      ),
+    );
+    return rows.map((row) => ({ key: Number(row.key), id: row.id as DocumentId }));
   }
 
   async function resolvePath(
     view: TreeView,
     at: { contextSourceId: ContextSourceId; path: string },
   ): Promise<PathResolution<TreeNode>> {
-    const found = await nodesAt(view, at.contextSourceId, at.path);
+    const [found] = await pathOccupants(view, [at]);
+    if (!found) return { kind: "not_found" };
     const nodes: TreeNode[] = [
       ...found.documents.map((row) => ({
         kind: "document" as const,
@@ -403,15 +438,8 @@ export function createTreeReader(db: Database): TreeReader {
       row.folderId === null ? [] : chains.get(row.folderId),
       renderFilename(row.name, row.extension),
     );
-    const clashes = await documentRows(view, (vd) =>
-      and(
-        eq(vd.contextSourceId, row.contextSourceId),
-        under(vd.folderId, [row.folderId]),
-        eq(vd.name, row.name),
-        eq(vd.extension, row.extension),
-        ne(vd.id, id),
-      ),
-    );
+    const [occupancy] = await pathOccupants(view, [{ contextSourceId: row.contextSourceId, path }]);
+    const clashes = (occupancy?.documents ?? []).filter((other) => other.id !== id);
     return {
       kind: "found",
       document: toDocument(row, path),
@@ -519,21 +547,37 @@ export function createTreeReader(db: Database): TreeReader {
     view: TreeView,
     addresses: readonly DocumentCoordinates[],
   ): Promise<ReadonlyMap<string, DocumentId[]>> {
-    const out = new Map<string, DocumentId[]>();
-    for (const at of addresses) {
-      const key = coordinatesKey(at);
-      if (out.has(key)) continue;
-      const sourceId = await presentSourceId(tx(), {
-        scheme: at.scheme,
-        workId: at.workId,
-        project: { id: at.projectId },
-      });
-      const found = sourceId ? await nodesAt(view, sourceId, at.path) : null;
-      out.set(
-        key,
-        found && found.path === at.path ? found.documents.map((document) => document.id) : [],
-      );
-    }
+    const sources = new Map<string, Promise<ContextSourceId | null>>();
+    const sourceOf = (at: DocumentCoordinates) => {
+      const key = JSON.stringify([at.projectId, at.scheme, at.workId]);
+      const known =
+        sources.get(key) ??
+        presentSourceId(tx(), {
+          scheme: at.scheme,
+          workId: at.workId,
+          project: { id: at.projectId },
+        });
+      sources.set(key, known);
+      return known;
+    };
+    const unique = [...new Map(addresses.map((at) => [coordinatesKey(at), at])).values()];
+    const located = await Promise.all(
+      unique.map(async (at) => ({ at, sourceId: await sourceOf(at) })),
+    );
+    const queries = located.flatMap(({ at, sourceId }) =>
+      sourceId ? [{ at, contextSourceId: sourceId, path: at.path }] : [],
+    );
+    const found = await pathOccupants(view, queries);
+    const out = new Map<string, DocumentId[]>(unique.map((at) => [coordinatesKey(at), []]));
+    queries.forEach((query, index) => {
+      const occupancy = found[index];
+      if (occupancy && occupancy.path === query.at.path) {
+        out.set(
+          coordinatesKey(query.at),
+          occupancy.documents.map((document) => document.id),
+        );
+      }
+    });
     return out;
   }
 
@@ -579,44 +623,32 @@ export function createTreeReader(db: Database): TreeReader {
     const chainOf = (folderId: FolderId | null) =>
       folderId === null ? [] : (chains.get(folderId) ?? []);
 
-    // Every path a target needs: its own, then each folder of its chain, nearest first.
-    const positions: (Position & { item: number; at: string; target: boolean })[] = [];
-    targets.forEach((target, item) => {
-      const chain = chainOf(target.parentFolderId);
-      const filename = renderFilename(target.name, target.extension);
-      positions.push({
-        key: positions.length,
+    // Every path a target needs, in the draft's view: its own, then each ancestor folder's,
+    // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
+    const needs = targets.flatMap((target, item) => {
+      const path = folderPath(
+        chainOf(target.parentFolderId),
+        renderFilename(target.name, target.extension),
+      );
+      const segments = path.split("/");
+      return segments.map((_, drop) => ({
         item,
-        target: true,
+        target: drop === 0,
         contextSourceId: target.contextSourceId,
-        folderId: target.parentFolderId,
-        filename,
-        at: folderPath(chain, filename),
-      });
-      chain.forEach((folder, depth) => {
-        positions.push({
-          key: positions.length,
-          item,
-          target: false,
-          contextSourceId: target.contextSourceId,
-          folderId: folder.parentId,
-          filename: folder.name,
-          at: chainPrefix(chain.slice(depth)).slice(0, -1),
-        });
-      });
+        path: segments.slice(0, segments.length - drop).join("/"),
+      }));
     });
-    const documentHits = await documentsAtPositions(view, positions);
-    const folderHits = await foldersAtPositions(
-      view,
-      positions.filter((position) => position.target),
-    );
+    const occupied = await pathOccupants(view, needs);
     const clashOf = (item: number): { withNode: NodeRef; at: string } | null => {
       const nodeId = items[item]?.row.id;
-      for (const position of positions.filter((each) => each.item === item)) {
-        const document = documentHits.find((hit) => hit.key === position.key && hit.id !== nodeId);
-        if (document) return { withNode: { kind: "document", id: document.id }, at: position.at };
-        const folder = position.target && folderHits.find((hit) => hit.key === position.key);
-        if (folder) return { withNode: { kind: "folder", id: folder.id }, at: position.at };
+      for (const [index, need] of needs.entries()) {
+        if (need.item !== item) continue;
+        const occupancy = occupied[index];
+        const document = occupancy?.documents.find((other) => other.id !== nodeId);
+        if (document) return { withNode: { kind: "document", id: document.id }, at: need.path };
+        // A folder at an ancestor's path is the folder the target needs.
+        const folder = need.target ? occupancy?.folders[0] : undefined;
+        if (folder) return { withNode: { kind: "folder", id: folder.id }, at: need.path };
       }
       return null;
     };
@@ -693,21 +725,40 @@ export function createTreeReader(db: Database): TreeReader {
   };
 }
 
-type Position = {
-  key: number;
-  contextSourceId: ContextSourceId;
-  folderId: FolderId | null;
-  filename: string;
+/** One lookup position: a name under a parent folder (null: the source root). */
+type Slot = { key: number; sourceId: ContextSourceId; parentId: FolderId | null; name: string };
+
+type PathOccupancy = {
+  /** The normalized source-relative path. */
+  path: string;
+  documents: VisibleDocumentRow[];
+  folders: VisibleFolderRow[];
 };
 
-function positionValues(positions: readonly Position[]): SQL {
-  return sql.join(
-    positions.map(
-      (position) =>
-        sql`(${position.key}::int, ${position.contextSourceId}::uuid, ${position.folderId}::uuid, ${position.filename}::text)`,
-    ),
-    sql`, `,
-  );
+/**
+ * One statement over slot VALUES, split by parent kind so root slots match `IS NULL` and
+ * the rest match by equality (each keeps its index).
+ */
+function bySlotParent<S extends Slot>(
+  slots: readonly S[],
+  query: (values: SQL, parent: (column: SQL) => SQL) => SQL,
+  extra: (slot: S) => SQL = () => sql``,
+): SQL {
+  const values = (group: readonly S[]) =>
+    sql.join(
+      group.map(
+        (slot) =>
+          sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${slot.parentId}::uuid, ${slot.name}::text${extra(slot)})`,
+      ),
+      sql`, `,
+    );
+  const root = slots.filter((slot) => slot.parentId === null);
+  const nested = slots.filter((slot) => slot.parentId !== null);
+  const parts = [
+    ...(root.length > 0 ? [query(values(root), (column) => sql`${column} IS NULL`)] : []),
+    ...(nested.length > 0 ? [query(values(nested), (column) => sql`${column} = p.parent_id`)] : []),
+  ];
+  return sql.join(parts, sql` UNION ALL `);
 }
 
 function nodeId(node: TreeNode): string {
