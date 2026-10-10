@@ -8,8 +8,10 @@ Model reads and writes go through `agentEdit()`, the thread-peer core pool,
 with a destination per document (below). A `live` destination selects the
 live core and creates no Work draft or thread-peer branch: Auto-apply,
 Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
-`draft` destination selects the thread-peer core; Draft on No Work owns a Work
-draft keyed `(documentId, workId)`.
+`draft` destination selects the thread-peer core once the Work has an active
+draft: branches key by `(documentId, draftId)`, and only a write makes the draft
+(a read with none reads live through the live core, contract §2.5). Draft on No
+Work owns a draft like any Work.
 
 ## Document revision identity
 
@@ -122,8 +124,9 @@ that safe:
   `BranchPullDiagnostics.backgroundFailed`.
 - **Provisioning splits authority from infrastructure.**
   `ensureThreadPeerBranch` takes the canonical thread row lock in the caller's
-  (or its own enclosing) transaction, then commits the Work draft and thread
-  peer in a root transaction. The root must not relock the thread row, since
+  (or its own enclosing) transaction, then commits the draft's branch and thread
+  peer in a root transaction under the draft `FOR SHARE` (closed is stale); it
+  is given the draft and never ensures one. The root must not relock the thread row, since
   the caller may already hold it. It resolves committed Work membership, not a
   caller's uncommitted rebind. Callers release live/branch access before taking
   the thread lock (they pass detached snapshots); pull callbacks never take it.
