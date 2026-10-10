@@ -173,8 +173,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
+    /** The writer's document: people write live (D20), so it seeds through a live port. */
     async function seedExisting(fixture: Fixture, path: string) {
-      const port = await threadPort(fixture);
+      const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
+      if (!resolution) throw new Error("thread did not resolve");
+      const port = contextPortForThread(fixture.contextPorts, resolution, { liveWrites: true });
       const created = await settlesWithin(
         `seed ${path}`,
         port.write(`manuscript://${path}`, `Existing ${path}.\n`),

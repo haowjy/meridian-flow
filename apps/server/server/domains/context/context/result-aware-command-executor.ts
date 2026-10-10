@@ -13,6 +13,11 @@ export interface ResultAwareCommandExecutor<TError> {
     scopes?: readonly ContextCommandScope[],
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
+  /**
+   * A read that must hold nothing (a live create's discovery, contract §6.3 step 1), in
+   * the same order as this owner's commands but outside any transaction.
+   */
+  exclusive<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 class ResultRollback<TError> extends Error {
@@ -60,6 +65,15 @@ export function createResultAwareCommandExecutor<TError>(input: {
       if (!input.serializeThroughCallbacks) return execute(operation, scopes, options);
 
       const result = tail.then(() => execute(operation, scopes, options));
+      tail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+    exclusive<T>(operation: () => Promise<T>): Promise<T> {
+      if (!input.serializeThroughCallbacks) return operation();
+      const result = tail.then(operation);
       tail = result.then(
         () => undefined,
         () => undefined,

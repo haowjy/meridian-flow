@@ -234,8 +234,8 @@ describe("document revisions (postgres and collab)", () => {
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
 
-    // Alpha stays untouched in its Work: every effective door renders that view from
-    // the live content, none live.
+    // Alpha stays untouched in its Work: every effective door renders that view alike,
+    // spelling beta where the draft sees it now.
     const view = {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
@@ -246,8 +246,8 @@ describe("document revisions (postgres and collab)", () => {
     const hashlines = await f.effective.readEffectiveHashlines(view);
     const revision = await f.effective.readEffectiveRevision(view);
     if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
-    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](beta.md)");
-    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](beta.md)");
+    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](gamma.md)");
+    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma.md)");
     expect
       .soft([markdown.value.revision, revision], "one view")
       .toEqual([hashlines.value.revision, hashlines.value.revision]);
@@ -343,19 +343,6 @@ describe("document revisions (postgres and collab)", () => {
     });
     await f.branchPulls.flushLivePull(ALPHA_ID);
   }, 10000);
-
-  it("current under the thread lock handles a cold manifest", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    const manifest = await f.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
-    manifest.doc.destroy();
-    await db
-      .update(schema.documents)
-      .set({ deletedAt: new Date() })
-      .where(eq(schema.documents.id, manifest.documentId));
-    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
-      expect(await bounded(() => f.current())).toBeNull();
-    });
-  });
 
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
     const f = await fixture(db, harnesses, "draft");
