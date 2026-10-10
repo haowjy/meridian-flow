@@ -329,12 +329,22 @@ export type DocumentCheckpoints = {
 export type DraftReviewApi = {
   /** The legacy list: branch items with reviewable rows (`draftId` is the branch id). */
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
-  /** One read of the Work's active draft: its items (§13.1) and the legacy list from them. */
-  listItems(input: { workId: WorkId; liveTextTokens?: boolean }): Promise<{
+  /**
+   * The review list route's one read of the Work's active draft: its items (§13.1) with
+   * their live text tokens, and the legacy list from them.
+   */
+  listItems(input: { workId: WorkId }): Promise<{
     draftId: DraftId | null;
     drafts: ReviewableDraft[];
     items: DraftReviewItem[];
   }>;
+  /** The Work's active draft's items, live text tokens unread: what Apply authorizes. */
+  items(input: { workId: WorkId }): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }>;
+  /** One document's item in the Work's active draft, or null. */
+  item(input: {
+    workId: WorkId;
+    documentId: DocumentId;
+  }): Promise<{ draftId: DraftId; item: DraftReviewItem } | null>;
   preview(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -343,12 +353,13 @@ export type DraftReviewApi = {
   }): Promise<
     ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
   >;
-  /** The legacy per-document Apply (`draftId` is the branch id), optionally with tokens. */
+  /**
+   * The legacy per-document Apply of the item the route authorized, optionally with
+   * tokens; the answer's `draftId` is the item's branch.
+   */
   applyWorkDraft(input: {
-    projectId?: ProjectId;
     workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
+    item: DraftReviewItem;
     userId: UserId;
     tokens?: Omit<ApplyItemRef, "itemKey">;
     signal?: AbortSignal;

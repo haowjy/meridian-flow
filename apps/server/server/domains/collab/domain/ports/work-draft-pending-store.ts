@@ -16,8 +16,14 @@ export type WorkDraftPendingEvidence = {
 };
 
 export type WorkDraftPendingStore = {
-  /** Every active `work_draft` branch of the draft, each with its reviewable rows (maybe none). */
-  listDraftBranchEvidence(draftId: DraftId): Promise<WorkDraftPendingEvidence[]>;
+  /**
+   * Every active `work_draft` branch of the draft (only these documents' when given), each
+   * with its reviewable rows (maybe none).
+   */
+  listDraftBranchEvidence(
+    draftId: DraftId,
+    documentIds?: readonly DocumentId[],
+  ): Promise<WorkDraftPendingEvidence[]>;
   /**
    * Distinct pending documents per Work, by the canonical branch → draft → Work mapping:
    * its active draft's branches with reviewable rows, plus that draft's change rows.

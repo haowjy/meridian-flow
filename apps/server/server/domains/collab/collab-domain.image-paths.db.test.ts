@@ -20,6 +20,7 @@ import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
+import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
@@ -257,11 +258,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await seedChapterWithMap(collab);
 
       await expect(
-        collab.draftReview.applyWorkDraft({
-          projectId: PROJECT_ID as never,
+        applyDraftDocument(collab.draftReview, {
           workId: WORK_ID as never,
           documentId: DOC_ID as never,
-          draftId: await currentDraftId(collab, DOC_ID),
           userId: USER_ID as never,
         }),
       ).resolves.toMatchObject({ status: "applied" });

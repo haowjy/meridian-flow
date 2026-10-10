@@ -46,11 +46,20 @@ export function createWorkDraftReviewService(input: {
   /** The Work's active draft and its items; none when the Work has no active draft. */
   async function workItems(
     workId: WorkId,
-    options: { liveTextTokens?: boolean } = {},
   ): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }> {
     const draft = await input.drafts.activeForWork(workId);
     if (!draft) return { draftId: null, items: [] };
-    return { draftId: draft.id, items: await input.reviewItems.list(draft.id, options) };
+    return { draftId: draft.id, items: await input.reviewItems.list(draft.id) };
+  }
+
+  /** One document's item in the Work's active draft. */
+  async function workItem(
+    workId: WorkId,
+    documentId: DocumentId,
+  ): Promise<{ draftId: DraftId; item: DraftReviewItem } | null> {
+    const draft = await input.drafts.activeForWork(workId);
+    const item = draft ? await input.reviewItems.item(draft.id, documentId) : null;
+    return draft && item ? { draftId: draft.id, item } : null;
   }
 
   /** The legacy list: branch items with reviewable rows, hidden creates included. */
@@ -76,14 +85,6 @@ export function createWorkDraftReviewService(input: {
     );
   }
 
-  async function itemOf(workId: WorkId, documentId: DocumentId) {
-    return (
-      (await workItems(workId, { liveTextTokens: false })).items.find(
-        (item) => item.documentId === documentId,
-      ) ?? null
-    );
-  }
-
   async function previewWorkDraftBranch(command: {
     documentId: DocumentId;
     workId: WorkId;
@@ -105,9 +106,7 @@ export function createWorkDraftReviewService(input: {
       if (!activeDraft) throw new Error("draft_not_found");
       const activeDraftId = activeDraft.id;
       const draftView: LinkView = { kind: "draft", draftId: activeDraftId };
-      const item = (await input.reviewItems.list(activeDraftId, { liveTextTokens: false })).find(
-        (candidate) => candidate.documentId === command.documentId,
-      );
+      const item = await input.reviewItems.item(activeDraftId, command.documentId);
       const liveDoc = createCollabYDoc({ gc: false });
       Y.applyUpdate(liveDoc, liveState.state);
       let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
@@ -212,39 +211,37 @@ export function createWorkDraftReviewService(input: {
       : null;
   }
 
-  /** The legacy per-document Apply: one rendered item through the one publication (§11.4). */
+  /**
+   * The legacy per-document Apply: the item the route authorized, as one rendered item
+   * through the one publication (§11.4). `draftId` in the answer is the item's branch.
+   */
   async function applyWorkDraft(command: {
     workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
+    item: DraftReviewItem;
     userId: UserId;
     tokens?: Omit<ApplyItemRef, "itemKey">;
     signal?: AbortSignal;
   }) {
-    const notFound = { status: "not_found" as const, draftId: command.draftId };
-    const active = await resolveActiveWorkDraft(command);
-    if (!active) return notFound;
-    const item = (await input.reviewItems.list(active.draftId, { liveTextTokens: false })).find(
-      (candidate) =>
-        candidate.documentId === command.documentId &&
-        candidate.draftBranchId === active.branch.branchId,
-    );
-    if (!item) return notFound;
+    const draftId = command.item.draftBranchId ?? command.item.itemKey;
+    const notFound = { status: "not_found" as const, draftId };
     const result = await input.publication.applyItems({
       workId: command.workId,
-      draftId: active.draftId,
-      selection: { kind: "rendered", items: [{ ...command.tokens, itemKey: item.itemKey }] },
+      draftId: command.item.draftId,
+      selection: {
+        kind: "rendered",
+        items: [{ ...command.tokens, itemKey: command.item.itemKey }],
+      },
       userId: command.userId,
       closeWhenEmpty: false,
       ...(command.signal ? { signal: command.signal } : {}),
     });
     if (result.status === "gone") return notFound;
-    if (result.status === "stale") return { status: "stale" as const, draftId: command.draftId };
+    if (result.status === "stale") return { status: "stale" as const, draftId };
     const [applied] = result.items;
     if (!applied) return notFound;
     return applied.status === "held"
-      ? { status: "held" as const, draftId: command.draftId, reason: applied.reason }
-      : { status: "applied" as const, draftId: command.draftId, item: applied };
+      ? { status: "held" as const, draftId, reason: applied.reason }
+      : { status: "applied" as const, draftId, item: applied };
   }
 
   async function discardWorkDraft(command: {
@@ -278,7 +275,7 @@ export function createWorkDraftReviewService(input: {
       });
     } else {
       // Until lane D's discardItems: a created document still hidden ends the draft's use.
-      const createdBy = (await itemOf(command.workId, command.documentId))?.isNew
+      const createdBy = (await input.reviewItems.item(active.draftId, command.documentId))?.isNew
         ? active.draftId
         : null;
       await input.discardWorkDraft({
@@ -295,15 +292,15 @@ export function createWorkDraftReviewService(input: {
   return {
     draftReview: {
       async list(command) {
-        const { items } = await workItems(command.workId, { liveTextTokens: false });
-        return legacyDrafts(command.workId, items);
+        return legacyDrafts(command.workId, (await workItems(command.workId)).items);
       },
       async listItems(command) {
-        const { draftId, items } = await workItems(command.workId, {
-          liveTextTokens: command.liveTextTokens !== false,
-        });
-        return { draftId, drafts: legacyDrafts(command.workId, items), items };
+        const { draftId, items } = await workItems(command.workId);
+        const rendered = await input.reviewItems.withLiveTextTokens(items);
+        return { draftId, drafts: legacyDrafts(command.workId, rendered), items: rendered };
       },
+      items: (command) => workItems(command.workId),
+      item: (command) => workItem(command.workId, command.documentId),
       async preview(command) {
         return previewWorkDraftBranch(command);
       },
@@ -326,8 +323,7 @@ export function createWorkDraftReviewService(input: {
     },
     draftSessionStats: {
       async listActiveDraftsByWork(command) {
-        const { items } = await workItems(command.workId, { liveTextTokens: false });
-        return legacyDrafts(command.workId, items);
+        return legacyDrafts(command.workId, (await workItems(command.workId)).items);
       },
     },
   };

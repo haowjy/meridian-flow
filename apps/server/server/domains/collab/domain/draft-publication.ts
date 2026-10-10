@@ -11,7 +11,6 @@ import type { BranchPushService } from "./branch-push-contracts.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type {
   DraftBranchAheadRegistration,
-  DraftLinkCut,
   DraftLinkRegistrationFailure,
 } from "./draft-branch-ahead-registration.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
@@ -119,7 +118,7 @@ export function createDraftPublication(deps: {
         if (twice.length > 0) throw new DuplicateApplyItemError([...new Set(twice)]);
       }
       if (!(await activeDraft(draftId, input.workId))) return { status: "gone", draftId };
-      const current = await deps.reviewItems.list(draftId, { liveTextTokens: false });
+      const current = await deps.reviewItems.list(draftId);
       const byKey = new Map(current.map((item) => [item.itemKey, item]));
       const refs: ApplyItemRef[] =
         input.selection.kind === "all_pending"

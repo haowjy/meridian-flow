@@ -51,45 +51,64 @@ export type DraftReviewItem = {
 };
 
 export interface DraftReviewItems {
+  /** The draft's items, live text tokens unread (null). */
+  list(draftId: DraftId): Promise<DraftReviewItem[]>;
+  /** One document's item in the draft, or null when it isn't one. */
+  item(draftId: DraftId, documentId: DocumentId): Promise<DraftReviewItem | null>;
   /**
-   * The draft's items. `liveTextTokens` (the review list) reads each live document's
-   * fingerprint under its lease; Apply and authorization lists skip it (null tokens).
+   * The review list's enrichment: each live document's full-state fingerprint read under
+   * its lease, for an item with text that live readers see. Apply compares the tokens a
+   * request carries; it never needs these.
    */
-  list(draftId: DraftId, options?: { liveTextTokens?: boolean }): Promise<DraftReviewItem[]>;
+  withLiveTextTokens(items: readonly DraftReviewItem[]): Promise<DraftReviewItem[]>;
 }
 
 export function createDraftReviewItems(deps: {
   tree: Pick<TreeReader, "treeState">;
-  /** Every active `work_draft` branch of the draft with its reviewable rows (maybe none). */
-  branches(draftId: DraftId): Promise<readonly DraftBranchEvidence[]>;
+  /**
+   * The draft's active `work_draft` branches (only these documents' when given), each
+   * with its reviewable rows (maybe none).
+   */
+  branches(
+    draftId: DraftId,
+    documentIds?: readonly DocumentId[],
+  ): Promise<readonly DraftBranchEvidence[]>;
   /** The live document's full-state fingerprint, read under its coordinator lease. */
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
+  async function items(draftId: DraftId, documentIds?: readonly DocumentId[]) {
+    const branches = await deps.branches(draftId, documentIds);
+    const branchOf = new Map(branches.map((evidence) => [evidence.branch.documentId, evidence]));
+    const edited = branches
+      .filter((evidence) => evidence.rows.length > 0)
+      .map((evidence) => evidence.branch.documentId);
+    const nodes = await deps.tree.treeState(draftId, edited);
+    return nodes
+      .filter((node) => !documentIds || documentIds.includes(node.nodeId))
+      .map((node) => toItem(draftId, node, branchOf.get(node.nodeId)))
+      .sort((a, b) => (a.path ?? "").localeCompare(b.path ?? ""));
+  }
+
   return {
-    async list(draftId, options = {}) {
-      const branches = await deps.branches(draftId);
-      const branchOf = new Map(branches.map((evidence) => [evidence.branch.documentId, evidence]));
-      const edited = branches
-        .filter((evidence) => evidence.rows.length > 0)
-        .map((evidence) => evidence.branch.documentId);
-      const nodes = await deps.tree.treeState(draftId, edited);
-      const items = await Promise.all(
-        nodes.map(async (node) => {
-          const evidence = branchOf.get(node.nodeId);
-          // Live text exists only for a document live readers see.
-          const liveText =
-            options.liveTextTokens !== false &&
-            evidence &&
-            !node.hidden &&
-            !node.live.deleted &&
-            !node.binary;
-          return toItem(draftId, node, evidence, {
-            liveTextToken: liveText ? await deps.liveFingerprint(node.nodeId) : null,
-          });
-        }),
-      );
-      return items.sort((a, b) => (a.path ?? "").localeCompare(b.path ?? ""));
+    list: (draftId) => items(draftId),
+    async item(draftId, documentId) {
+      return (await items(draftId, [documentId]))[0] ?? null;
     },
+    withLiveTextTokens: (listed) =>
+      Promise.all(
+        listed.map(async (item) =>
+          // Live text exists only for a document live readers see.
+          item.draftBranchId && !item.isNew && !item.deletedLive && !item.binary
+            ? {
+                ...item,
+                tokens: {
+                  ...item.tokens,
+                  liveTextToken: await deps.liveFingerprint(item.documentId),
+                },
+              }
+            : item,
+        ),
+      ),
   };
 }
 
@@ -97,7 +116,6 @@ function toItem(
   draftId: DraftId,
   node: TreeStateNode,
   evidence: DraftBranchEvidence | undefined,
-  live: { liveTextToken: string | null },
 ): DraftReviewItem {
   const path = node.target.uri;
   const livePath = node.live.uri !== path && !node.hidden ? node.live.uri : null;
@@ -116,7 +134,7 @@ function toItem(
     deletedLive: !node.hidden && node.live.deleted,
     tokens: {
       locationToken: node.locationVersion.toString(),
-      liveTextToken: live.liveTextToken,
+      liveTextToken: null,
       branchGenerationToken: evidence ? String(evidence.branch.generation) : null,
     },
     pendingRows: evidence?.rows.length ?? 0,
