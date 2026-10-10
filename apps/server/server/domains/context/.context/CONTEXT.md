@@ -38,18 +38,29 @@ makes one), so a draft's hidden create appears in `stat`, `read`, `ls`,
 and live text, and never touches a draft. `read`, `search` and `ls` build their
 port with the version the model named.
 
-**Creates by placement (contract §6).** A draft placement's `ensureTrackedDocument`
-and `writeBinary` make (or, for text, join) a hidden row through
-`tree/hidden-nodes.ts` in a command transaction that locks the drafting Work,
-ensures and locks its draft, then takes namespace keys. Whole-file writes,
-creates with text, untitled creates and `mkdir` refuse in a draft placement: a
-draft never seeds live Yjs. A live create at a hidden document's or folder's
-path reveals it instead of inserting a twin; with content it discovers the
-candidate holding nothing, takes its live lease, and admits the content on a
-clone inside the reveal's transaction (`writeCollabMarkdownHeld`), applied to
-the warm room after commit. `retractCreate` reverses a create for a rolled-back
-reply or a failed create write: delete when live, end the draft's use when
-drafted, unless another thread's committed text makes it stand.
+**Creates by placement (contract §6).** The port factory decides each adapter's
+placement once (`placementFor`); ContextFS delegates to that strategy
+(`adapters/context-fs/create-placement.ts`). A draft placement's
+`ensureTrackedDocument` and `writeBinary` make (or, for text, join) a hidden row
+through the `DraftCreatePort` (`drizzle-draft-creates.ts` over
+`tree/hidden-nodes.ts`, with collab's branch half injected) in a command
+transaction that locks the drafting Work, ensures and locks its draft
+(`runInDraft`), then takes namespace keys. Whole-file writes, creates with text,
+untitled creates and `mkdir` refuse in a draft placement: a draft never seeds
+live Yjs. The in-memory port is explicitly live-only.
+
+The live create pipeline is `adapters/context-fs/live-create.ts`. A live create
+at a hidden document's or folder's path reveals it instead of inserting a twin;
+with content it discovers the candidate holding nothing, takes its live lease,
+and admits the content on a clone inside the reveal's transaction
+(`writeCollabMarkdownHeld`), applied to the warm room after commit. Create by id
+(`revealDocumentId`, link Create on an "in a draft" link) reveals only a hidden
+document of this project, locking its physical source; any other id conflicts
+and never mints. `documentId` is a mint (an upload's reservation, an untitled
+create's client id). `retractCreate` reverses a create for a rolled-back reply
+or a failed create write: the router deletes a live create; a draft placement
+ends the draft's use unless another thread's committed text makes it stand, and
+collab retracts the draft's branch and retires its rooms and caches.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 

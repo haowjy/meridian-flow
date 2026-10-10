@@ -15,14 +15,20 @@ module decides what each view shows and spells where nodes are.
   selections, which cannot select a Subquery as a whole.
 - `tree-addresses.ts`: identity rows by id or name and their addresses, hidden and
   deleted included; the folder-chain walk.
+- `hidden-node-types.ts`: the lifecycle's vocabulary (claims, reveal expectations,
+  create results), with no database import, so ports can name it.
 - `hidden-nodes.ts`: the hidden-node lifecycle. `createInDraft` makes or joins a
-  draft's hidden row (binaries are never joined); `createLive` reveals a hidden
-  document at a live create's path, or the one a create names by id;
+  draft's hidden row (binaries are never joined); `createLive` claims what a live
+  create planned: it reveals the hidden document at the path, or exactly the one a
+  create named by id, which must be hidden, used by a draft and in the caller's
+  project (`findRevealIdentity` reads it by its physical row);
   `ensureLiveFolderPath` reveals a hidden folder instead of making a twin;
   `place` is the one placement step (reveal, restore) with ancestors; `endUse`
-  tombstones what no draft uses any more; `retractCreate` reverses a draft create
-  for a rolled-back reply. Test-only hook points (`setHiddenNodeHook`) let the DB
-  suites interleave these fences.
+  tombstones what no draft uses any more and prunes every emptied hidden ancestor,
+  deepest first; `retractCreate` reverses a draft create for a rolled-back reply,
+  asking collab (`retractBranch`) whether the create stands. Collab owns the
+  draft's branch: tree never deletes branch rows. Test-only hook points
+  (`setHiddenNodeHook`) let the DB suites interleave these fences.
 - `draft-tree-store.ts`: writes of `draft_tree_changes` (a draft's `created` rows).
 
 **The one rule: the hidden predicate lives here only.** Only `tree-view-sql.ts` reads
