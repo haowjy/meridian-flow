@@ -538,7 +538,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
   });
   // A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
-  const releasedObjects = createObjectRelease({
+  const objectRelease = createObjectRelease({
     objectStore,
     onFailure(key, error) {
       emitEvent(eventSink, {
@@ -553,7 +553,7 @@ export async function createProductionAppPorts(input: {
     db,
     fileAccess,
     observer: createLinkScopeObserver(eventSink),
-    repair: createHiddenNodeRepair({ db, eventSink, objects: releasedObjects }),
+    repair: createHiddenNodeRepair({ db, eventSink, objects: objectRelease }),
   });
   const documentSync = createCollabDomain({
     db,
@@ -566,7 +566,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
-    objects: releasedObjects,
+    objects: objectRelease,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
