@@ -38,7 +38,9 @@ draft-control changes can be understood independently.
   `useThreadHandoff` using current-chat identity; it never becomes lost-message
   recovery copy. For later sends, a proved rejection returns words to an empty
   per-tab composer or remains in the device journal as rejected when newer writing
-  exists. Failed rows reconstruct from rejected entries across tabs and reloads;
+  exists. A retired rejection's transient failed row is removed on remount
+  because its words already belong to the composer. Failed rows reconstruct
+  from rejected entries across tabs and reloads;
   rejected entries never trigger lookup or replay. Retry remints the submission
   identity and dispatches the exact fingerprint without replacing newer drafts.
   Edit transfers reference-preserving rejected paragraphs ahead of current writing

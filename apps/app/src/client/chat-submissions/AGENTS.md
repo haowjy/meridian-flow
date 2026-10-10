@@ -24,7 +24,8 @@ It is not a thread replica: no assistant turns or rendered rows.
   live or recovered row keeps each reference's document like the snapshot does.
 - Lifecycle: record before dispatch and hand off only the unchanged authoring
   snapshot. On acknowledgement retire the witness. A rejection fills an empty
-  per-tab composer before retirement; otherwise its exact snapshot stays in a
+  per-tab composer before retirement; its transient failed row is removed on
+  remount once the composer owns its words. Otherwise its exact snapshot stays in a
   durable rejected entry. Rejected entries render failed rows in every tab and
   on reload, never trigger lookup or replay, and are resolved only by the writer.
   Retry remints the identity and sends the exact fingerprint, leaving newer

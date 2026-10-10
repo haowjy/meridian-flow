@@ -30,15 +30,14 @@ export class ComposerSessionDraft {
 
   /** Transfer rejection ownership before the journal is retired. Never replace later authoring. */
   restoreRejected(snapshot: ComposerDraftSnapshot): boolean {
-    if (this.current && serializeComposerDraft(this.current.doc).text) {
+    const text = this.current && serializeComposerDraft(this.current.doc).text;
+    if (text) {
       this.flush();
       return false;
     }
-    if (!this.current || !serializeComposerDraft(this.current.doc).text) {
-      this.current = snapshot;
-      this.dirty = true;
-      this.publish();
-    }
+    this.current = snapshot;
+    this.dirty = true;
+    this.publish();
     this.flush();
     return !this.dirty;
   }
@@ -66,9 +65,9 @@ export class ComposerSessionDraft {
   }
 
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
-  handoffSubmitted(snapshot: ComposerDraftSnapshot): void {
+  handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
     if (this.matches(snapshot)) this.handoff();
-  }
+  };
 
   /** Every authoring update after journal hand-off is newer, even with identical words/revision. */
   acceptSubmitted(): boolean {

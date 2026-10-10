@@ -365,6 +365,7 @@ export function ChatView({
         acceptedRevision: envelope.acceptedRevision,
       };
     }
+    draft.handoffSubmitted(envelope.draft);
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
     // Register the live row before the POST awaits admission: a thread remount
