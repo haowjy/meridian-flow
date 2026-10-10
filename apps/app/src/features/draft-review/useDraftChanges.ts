@@ -115,5 +115,6 @@ export function useDraftChanges(
       discard,
     ],
   );
-  return inEditor ? editorView : own;
+  // Reuse the open review's presentation, never its command authority.
+  return inEditor ? { ...editorView, apply, discard, locked: controller.dispositionLocked } : own;
 }
