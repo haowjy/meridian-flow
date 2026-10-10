@@ -69,20 +69,28 @@ else
         .values({ userId: otherUser, name: "Foreign", slug: "foreign" })
         .returning();
       if (!otherProject) throw new Error("Foreign project fixture missing");
-      const [pinned, missingState, alreadyFavorite, unpinned, foreign, deleted] = Array.from(
-        { length: 6 },
-        () => randomUUID() as ThreadId,
-      );
-      if (!pinned || !missingState || !alreadyFavorite || !unpinned || !foreign || !deleted)
+      const [pinned, missingState, alreadyFavorite, unpinned, foreign, deleted, foreignAuthor] =
+        Array.from({ length: 7 }, () => randomUUID() as ThreadId);
+      if (
+        !pinned ||
+        !missingState ||
+        !alreadyFavorite ||
+        !unpinned ||
+        !foreign ||
+        !deleted ||
+        !foreignAuthor
+      )
         throw new Error("Thread fixture missing");
       await db.insert(threads).values(
-        [pinned, missingState, alreadyFavorite, unpinned, foreign, deleted].map((threadId) => ({
-          id: threadId,
-          rootThreadId: threadId,
-          projectId: threadId === foreign ? otherProject.id : project.id,
-          createdByUserId: threadId === foreign ? otherUser : id,
-          deletedAt: threadId === deleted ? new Date() : null,
-        })),
+        [pinned, missingState, alreadyFavorite, unpinned, foreign, deleted, foreignAuthor].map(
+          (threadId) => ({
+            id: threadId,
+            rootThreadId: threadId,
+            projectId: threadId === foreign ? otherProject.id : project.id,
+            createdByUserId: threadId === foreign || threadId === foreignAuthor ? otherUser : id,
+            deletedAt: threadId === deleted ? new Date() : null,
+          }),
+        ),
       );
       await db.insert(threadUserState).values([
         { threadId: pinned, userId: id, isFavorite: false },
@@ -104,6 +112,7 @@ else
             pinned,
             foreign,
             deleted,
+            foreignAuthor,
             randomUUID(),
             "not-a-uuid",
           ].map((pin) => sql`${pin}`),

@@ -13,7 +13,7 @@ JOIN projects p ON p.id = prefs.project_id AND p.user_id = prefs.user_id
   AND p.deleted_at IS NULL
 CROSS JOIN LATERAL unnest(prefs.pinned_thread_ids) AS pin(thread_id)
 JOIN threads t ON t.id::text = lower(pin.thread_id) AND t.project_id = p.id
-  AND t.deleted_at IS NULL
+  AND t.deleted_at IS NULL AND t.created_by_user_id = prefs.user_id
 ON CONFLICT (thread_id, user_id) DO UPDATE SET is_favorite = true;
 --> statement-breakpoint
 ALTER TABLE "project_user_preferences" DROP COLUMN "pinned_thread_ids";
