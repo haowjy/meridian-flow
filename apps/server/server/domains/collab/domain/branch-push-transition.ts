@@ -26,6 +26,7 @@ import {
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
+import { collabHook } from "./collab-test-hooks.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
@@ -162,6 +163,8 @@ export function createBranchPushTransition(input: {
         });
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
         await prepared.afterDurableCommit?.(pushes.map((push) => push.branch.documentId));
+        // Staged and durable, not yet settled: where a test races a change with the batch.
+        await collabHook("applyItems.afterStaging");
         // The committer holds the batch's first claim; it never adopts a later one.
         const batch = await input.settlementStore.loadSettlementBatch({
           batchId: settlement.batchId,
@@ -302,11 +305,11 @@ export function createBranchPushTransition(input: {
           })),
           payloads,
           leasedBranchIds: settlement.leasedBranchIds,
+          // The live text the batch publishes over: its lock cut plus every admission that
+          // joined it since staging, so a writer's change after the cut (a deletion too)
+          // moves the rendered-text token.
           liveTextFingerprints: new Map(
-            members.map((member) => [
-              member.push.documentId,
-              fullStateUpdateFingerprint(member.lockCutUpdate),
-            ]),
+            members.map((member) => [member.push.documentId, liveTextFingerprint(member)]),
           ),
           recheck: (cuts) => recheckWarmState(cuts, settlement.docs, ingress),
           afterCommit: (admitted) =>
@@ -465,6 +468,19 @@ export function materializeFinalPrePush(
   Y.applyUpdate(doc, row.lockCutUpdate);
   for (const update of row.postCutUpdates) Y.applyUpdate(doc, update);
   return doc;
+}
+
+/** The fingerprint of a staged member's live document now: lock cut plus joined admissions. */
+function liveTextFingerprint(
+  member: Pick<PendingLiveSettlement, "lockCutUpdate" | "postCutUpdates">,
+): string {
+  if (member.postCutUpdates.length === 0) return fullStateUpdateFingerprint(member.lockCutUpdate);
+  const doc = materializeFinalPrePush(member);
+  try {
+    return fullStateFingerprint(doc);
+  } finally {
+    doc.destroy();
+  }
 }
 
 export function fullStateFingerprint(doc: Y.Doc): string {

@@ -1,12 +1,13 @@
 /**
  * Test-only injection points on collab's production code (contract §16.1), so the DB
- * suites can interleave a reply's save with a draft's close. Production never installs
- * one; every point is a no-op then.
+ * suites can interleave a reply's save with a draft's close, or a change with a staged
+ * Apply. Production never installs one; every point is a no-op then.
  */
 const COLLAB_HOOK_POINTS = [
   "save.afterWorkLock",
   "discard.afterLeases",
   "access.afterLeases",
+  "applyItems.afterStaging",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
 
