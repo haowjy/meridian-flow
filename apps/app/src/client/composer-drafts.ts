@@ -42,9 +42,9 @@ export class ComposerSessionDraft {
     if (this.matches(snapshot)) this.handoff();
   }
 
-  /** Clear a journal-owned live draft or its unchanged retained copy, never later writing. */
-  clearSubmitted(snapshot: ComposerDraftSnapshot): boolean {
-    if (!this.current || this.matches(snapshot)) {
+  /** Every authoring update after journal hand-off is newer, even with identical words/revision. */
+  acceptSubmitted(): boolean {
+    if (!this.current) {
       this.handoff();
       this.publish();
     } else this.flush();
