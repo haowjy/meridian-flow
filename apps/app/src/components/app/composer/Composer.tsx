@@ -400,17 +400,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       );
       setLocked(false);
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
+        // Admission already settled authoring ownership. This presentation clear
+        // must not publish an empty draft over another pane's newer writing.
+        suppressDraftChangeRef.current = true;
         editor.commands.clearContent(true);
-      }
-      // Send never removed the live document. A rejection leaves the writer's
-      // edits intact; prepending the submitted snapshot would duplicate words.
-      if (outcome.kind === "rejected") {
-        const retained = snapshot();
-        onDraftChange?.({ text: serializeComposerDraft(retained.doc).text, snapshot: retained });
+        suppressDraftChangeRef.current = false;
       }
       editor.commands.focus(undefined, { scrollIntoView: false });
     },
-    [editor, onDraftChange, snapshot],
+    [editor],
   );
 
   async function submit() {

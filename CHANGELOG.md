@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Rejected chat messages return to this tab’s draft even after leaving the chat. Retry clears the unchanged sent draft without removing newer writing. Reload safely restores the caret when pending uploads are removed.
+
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Theme, language and Stats for nerds now follow your account across devices. Settings separates these preferences from this device’s text size.
 - Reloading keeps the document and view you had open in the side panel.

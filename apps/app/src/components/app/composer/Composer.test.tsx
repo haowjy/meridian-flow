@@ -132,7 +132,29 @@ describe("Composer chat verbs", () => {
   });
 });
 
-it("returns an unchanged rejected draft to its persistence owner exactly once", async () => {
+it("clears accepted presentation without publishing an empty draft over another pane's writing", async () => {
+  let persistedWords = "New writing in another pane";
+  await act(() =>
+    root.render(
+      <Composer
+        initialDraft={draft("Submitted words")}
+        onDraftChange={(change) => {
+          persistedWords = change.text;
+        }}
+        onSubmit={(envelope) => ({
+          kind: "accepted",
+          submissionId: envelope.submissionId,
+          acceptedRevision: envelope.acceptedRevision,
+        })}
+      />,
+    ),
+  );
+  await pressEnter();
+  expect(editorElement()?.textContent).toBe("");
+  expect(persistedWords).toBe("New writing in another pane");
+});
+
+it("leaves rejected words visible without owning the lifecycle transfer", async () => {
   const onDraftChange = vi.fn();
   await act(() =>
     root.render(
@@ -149,8 +171,7 @@ it("returns an unchanged rejected draft to its persistence owner exactly once", 
   );
   await pressEnter();
   expect(editorElement()?.textContent).toBe("Keep these words");
-  expect(onDraftChange).toHaveBeenCalledTimes(1);
-  expect(onDraftChange.mock.calls[0]?.[0].text).toBe("Keep these words");
+  expect(onDraftChange).not.toHaveBeenCalled();
 });
 
 it("does not prepend a rejected submission to the live draft edited during admission", async () => {
