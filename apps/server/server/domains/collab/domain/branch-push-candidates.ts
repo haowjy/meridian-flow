@@ -11,19 +11,17 @@ type CandidateSource = {
 };
 
 export function buildWholeBranchCandidates(input: {
-  source: CandidateSource;
+  sources: readonly CandidateSource[];
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 }): CandidateBatch {
   return {
-    candidates: [
-      {
-        branchId: input.source.branch.branchId,
-        documentId: input.source.branch.documentId,
-        rows: input.source.rows,
-        kind: "content",
-      },
-    ],
+    candidates: input.sources.map((source) => ({
+      branchId: source.branch.branchId,
+      documentId: source.branch.documentId,
+      rows: source.rows,
+      kind: "content" as const,
+    })),
     receiptId: randomUUID(),
     ...(input.resetPolicy ? { resetPolicy: input.resetPolicy } : {}),
     ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
