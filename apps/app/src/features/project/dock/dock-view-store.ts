@@ -43,6 +43,24 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
   context: { views: ["chat", "changes"], default: "chat", primary: "chat" },
 };
 
+type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
+
+/** Chat documents can stay parked; a Work's note belongs only to that Work's screen. */
+export function dockDocumentFitsScope(
+  document: DockDocument | null,
+  scope: DockScope | null,
+): boolean {
+  if (!document) return false;
+  if (!scope) return true;
+  return (
+    document.projectId === scope.projectId &&
+    (document.screen !== "work" ||
+      (scope.screen === "work" &&
+        document.tab.kind !== "new" &&
+        document.tab.workId === scope.workId))
+  );
+}
+
 type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
@@ -56,7 +74,7 @@ type DockViewState = {
    */
   revision: number;
   /** Where the writer is, as last synced; only a real change counts as an intent. */
-  scope: string | null;
+  scope: DockScope | null;
   /** The Work on the Work screen (null elsewhere): the Work whose Scratch the dock menu browses. */
   workId: string | null;
   /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
@@ -84,11 +102,11 @@ export function createDockViewStore(storage: () => DockStorage | null = browserD
       restore: (expected, tab) => {
         if (get().restoring !== expected) return;
         // A restore is not a new intent and must never supersede a writer's claim.
-        const sameWork =
-          get().scope === null ||
-          expected.screen !== "work" ||
-          (tab?.kind !== "new" && tab?.workId === get().workId);
-        set({ restoring: null, occupant: tab && sameWork ? { ...expected, tab } : null });
+        const document = tab ? { ...expected, tab } : null;
+        set({
+          restoring: null,
+          occupant: dockDocumentFitsScope(document, get().scope) ? document : null,
+        });
       },
       revision: 0,
       scope: null,
@@ -113,15 +131,14 @@ export function createDockViewStore(storage: () => DockStorage | null = browserD
       closeDocument: () => setOccupant(null),
       syncOccupantScope: (projectId, screen, workId) =>
         set((state) => {
-          const scope = `${projectId}\u0000${screen}\u0000${workId ?? ""}`;
-          if (scope === state.scope) return state;
-          const occupant = state.occupant ?? state.restoring;
-          // A Work's note belongs to that Work's screen.
-          const stays =
-            occupant != null &&
-            occupant.projectId === projectId &&
-            (occupant.screen !== "work" ||
-              (screen === "work" && occupant.tab.kind !== "new" && occupant.tab.workId === workId));
+          const scope = { projectId, screen, workId };
+          if (
+            state.scope?.projectId === projectId &&
+            state.scope.screen === screen &&
+            state.scope.workId === workId
+          )
+            return state;
+          const stays = dockDocumentFitsScope(state.occupant ?? state.restoring, scope);
           return {
             scope,
             workId: screen === "work" ? workId : null,
