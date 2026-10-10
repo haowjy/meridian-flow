@@ -1,7 +1,7 @@
 /** The review's acquisition, generation observations and retained session binding. */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type Dispatch, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type Dispatch, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
@@ -87,12 +87,6 @@ export function useReviewRoomOwner({
     session: null,
     key: "",
   });
-  const [painted, setPainted] = useState<DocumentSession | null>(null);
-  const paintTarget = useRef<DocumentSession | null>(null);
-  const reportPaint = useCallback((session: DocumentSession) => {
-    if (paintTarget.current === session) setPainted(session);
-  }, []);
-
   // One adapter weighs both caches together; list silence never precedes the
   // newer preview observation in this dispatch batch.
   useLayoutEffect(() => {
@@ -175,7 +169,7 @@ export function useReviewRoomOwner({
           documentId,
           draftId,
           draftGeneration: answer.draftGeneration,
-          proposal: answer.inlineModelPresent && reviewChangesOfPreview(answer).length > 0,
+          proposal: reviewChangesOfPreview(answer).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
         });
@@ -291,17 +285,14 @@ export function useReviewRoomOwner({
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
-  paintTarget.current = session;
   return {
     session,
     inputEligible:
       session !== null &&
-      painted === session &&
       session.getSnapshot().connectionState?.kind !== "reset" &&
       review !== null &&
       !review.roomError &&
       review.completion?.phase !== "closed",
-    reportPaint,
   } as const;
 }
 
@@ -328,7 +319,7 @@ export function reviewRoomObservations(
     preview?.status === "active"
       ? {
           draftGeneration: preview.draftGeneration,
-          proposal: preview.inlineModelPresent && reviewChangesOfPreview(preview).length > 0,
+          proposal: reviewChangesOfPreview(preview).length > 0,
         }
       : null;
   if (evidence) actions.push({ type: "generationObserved", ...draft, ...evidence });

@@ -73,7 +73,14 @@ vi.mock("@/features/links", async () => ({
 vi.mock("./references/useReferenceBrowserCatalog", () => ({
   useReferenceBrowserCatalog: () => null,
 }));
-vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
+vi.mock("./useInlineReviewSync", () => ({
+  useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
+    useEffect(() => {
+      if (supplyMarks && options.editor)
+        options.onInlineModelAvailable?.("preview-1", options.documentId, options.draftId);
+    }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
+  },
+}));
 vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
@@ -127,22 +134,14 @@ let supplyMarks = true;
 function Host() {
   const value = useDraftReview();
   review = value;
-  const { inlineReview, reviewRoomName, inlineReviewModelAvailable } = value.controller;
-  useEffect(() => {
-    if (supplyMarks && inlineReview && reviewRoomName) {
-      inlineReviewModelAvailable("preview-1", inlineReview.documentId, inlineReview.draftId);
-    }
-  }, [inlineReview, reviewRoomName, inlineReviewModelAvailable]);
+  const { inlineReview } = value.controller;
   return (
     <EditorView
       draftOnly={draftOnly}
       documentId={documentId}
       projectId="project-a"
       session={draftOnly ? undefined : sessionFor(documentId)}
-      reviewWorkId="work-a"
       reviewDraftId={inlineReview?.draftId}
-      reviewRoomName={reviewRoomName ?? undefined}
-      onReviewSessionUnavailable={value.controller.exitInlineReview}
     />
   );
 }
@@ -232,7 +231,6 @@ it.each([
   "refused",
 ] as const)("%s keeps painted prose inert until its replacement paints", async (disposition) => {
   await run(async (_client, oldRoom) => {
-    const oldSession = review?.roomOwner.session;
     const oldEditor = mounted();
     await act(async () => oldEditor.commands.insertContent("The held review."));
     const live = sessionFor(documentId).document;
@@ -282,8 +280,6 @@ it.each([
     expect(mounted()).not.toBe(oldEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
     expect(sessionFor(documentId).document).toBe(live);
-    if (oldSession) await act(async () => review?.roomOwner.reportPaint(oldSession));
-    expect(review?.roomOwner.inputEligible).toBe(true);
   });
 });
 

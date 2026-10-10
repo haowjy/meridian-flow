@@ -15,12 +15,7 @@ import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import * as account from "@/features/project/context/account-feature-context";
-import {
-  createReviewScopeFixture,
-  listed,
-  previewOf,
-  work,
-} from "@/test-support/draft-review-scope";
+import { createReviewScopeFixture, listed, previewOf } from "@/test-support/draft-review-scope";
 import { registry, sessionFor } from "@/test-support/editor-session-fakes";
 import { posOf, rel } from "@/test-support/inline-review-editor";
 
@@ -69,9 +64,7 @@ function Host() {
       documentId={documentId}
       projectId="project-a"
       session={sessionFor(documentId)}
-      reviewWorkId={work.id}
       reviewDraftId={value.controller.inlineReview?.draftId}
-      reviewRoomName={value.controller.reviewRoomName ?? undefined}
     />
   );
 }

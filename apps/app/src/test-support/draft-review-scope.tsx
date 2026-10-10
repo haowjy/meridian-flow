@@ -67,7 +67,7 @@ export const preview = {
   status: "active" as const,
   draftId: "draft-a",
   draftGeneration: 1,
-  inlineModelPresent: true as const,
+
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",
   draftRevisionToken: "draft-1",

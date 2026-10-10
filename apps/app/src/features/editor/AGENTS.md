@@ -1,6 +1,7 @@
 # features/editor — app-facing editor surface
 
-This directory owns the TipTap host and its writer-facing chrome: shared frame,
+This directory owns the review adapter (`EditorView`), common session binding
+(`SessionEditor`) and TipTap host and its writer-facing chrome: shared frame,
 document toolbar, draft-review controls, and synchronization status. Document
 schemas, session infrastructure, and ProseMirror extensions belong under
 `core/editor`; project context owns pane and tab composition.
@@ -36,11 +37,11 @@ the design, from the primitives.
 - Peer-mark evidence reads delegate to `features/change-trail`; the anchored
   popover and the press it opens on are [`surfaces/peer-marks/`](surfaces/peer-marks/AGENTS.md).
 - A new control surface is a directory under `surfaces/` plus one entry in
-  `chrome/chrome-surfaces.tsx`. `EditorView.tsx` mounts `EditorChromeHost` once
+  `chrome/chrome-surfaces.tsx`. `SessionEditor.tsx` mounts `EditorChromeHost` once
   and takes no further surfaces; a lane that edits it has taken a shared file
   hostage.
 - **A concern the project owns is a runtime, and a runtime renders nothing.**
-  Links and images both need the project, so each has one component `EditorView`
+  Links and images both need the project, so each has one component `SessionEditor`
   mounts — `ProjectLinkRuntime`, `ImageIngressRuntime` — that registers its ports
   and returns null. What the writer SEES from either lane is a chrome surface
   like any other: an outcome dialog, a drop hint. A runtime that rendered its own

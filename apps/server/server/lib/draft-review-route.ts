@@ -131,7 +131,7 @@ export async function handleWorkDraftPreviewRequest(
   };
   return {
     ...base,
-    inlineModelPresent: true,
+
     operations: preview.operations.map(toWireReviewOperation),
     hunks: preview.hunks,
   };

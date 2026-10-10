@@ -196,9 +196,9 @@ supplied session and reports actual paint; refresh watches it without acquiring
 another room. While a replacement session has not painted, `EditorView` shows its
 pending surface and the pane's `PaintHold` keeps the last frame. Room retention
 still supplies `reviewRoomRef` to the pool; writer handoff, draining and teardown
-quarantine are exclusively session-layer operations. The owner exposes the
-session, input eligibility and the paint callback, not a second presentation
-phase snapshot.
+quarantine are exclusively session-layer operations. The owner exposes the session and room input eligibility. `EditorView` owns
+the sole session-addressed construction receipt and combines it with marks
+readiness; the owner keeps no paint state.
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
@@ -253,7 +253,7 @@ through `resolveFocusedChange`) are pure, so a surface mounted later agrees with
 one already showing the change. `focusReviewChange(review, change)` carries the
 review it was meant for and does nothing (state, editor runtime) when another
 review is open, so a command's late answer cannot move focus in a new document.
-`useInlineReviewFocus` (in `EditorView`) syncs it, Show changes (`marksVisible`)
+`useInlineReviewFocus` (in `EditorView`’s review-only runtime) syncs it, Show changes (`marksVisible`)
 and the pulse on arrivals with the editor, and reports a click on a mark back
 (`reportFocusedChange`, which compares the change the active mark belongs to,
 not only the mark). The stepper, the bar and the document's change list read it from
@@ -379,7 +379,7 @@ it stands at, on the clicked side for a removed block, so typing lands there whi
 the removal stays untouchable), and the focused change (all operations sharing a
 closure class) emphasized. Typing paints gold at once; the next model replaces
 it. `setInlineReviewMarksVisible` hides all marks without remounting. An active
-preview without a model is an invariant violation, logged loudly and ignored safely.
+preview always includes its inline model; gone previews have no model.
 
 The server reviewable list emits only current-generation drafts with reviewable
 content. `pendingReviewDrafts` is the shared client presentation seam that

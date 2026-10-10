@@ -16,10 +16,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
@@ -249,8 +249,6 @@ function useMobileRouteBinding({
 
 function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
-  const projectionOwner = useRef({});
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
@@ -263,12 +261,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     activeScheme: activeContextScheme,
     documentId: activeEditorDocumentId,
   });
-  const reviewRoomName =
-    activeEditorDocumentId && selectedReviewDraftId
-      ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
-      : null;
-  const reviewDraftId = selectedReviewDraftId;
-
   const live = useLiveDocumentBinding({
     projectId,
     documentId: activeTab?.editable ? activeTab.documentId : null,
@@ -280,30 +272,16 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     live.retry,
   );
 
-  useEffect(() => {
-    if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
-      setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-      return;
-    }
-    setActiveEditorDocumentId(
-      activeEditorDocumentId,
-      liveState.session,
-      Boolean(reviewDraftId),
-      projectionOwner.current,
-    );
-    return () => setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-  }, [activeEditorDocumentId, liveState, reviewDraftId, setActiveEditorDocumentId]);
-
-  useEffect(() => {
-    if (
-      !selectedReviewDraftId ||
-      liveState.kind !== "opened" ||
-      liveState.documentId !== activeEditorDocumentId
-    )
-      return;
-    liveState.session.suspendPresence();
-    return () => liveState.session.resumePresence();
-  }, [activeEditorDocumentId, liveState, selectedReviewDraftId]);
+  const activeLive =
+    liveState.kind === "opened" && liveState.documentId === activeEditorDocumentId
+      ? liveState.session
+      : null;
+  useActiveReviewBinding({
+    documentId: activeLive ? activeEditorDocumentId : null,
+    liveSession: activeLive,
+    active: true,
+    inReview: Boolean(selectedReviewDraftId),
+  });
 
   const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
   const opening = Boolean(
@@ -404,10 +382,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
-          reviewDraftId={reviewDraftId}
-          reviewRoomName={reviewRoomName}
-          reviewWorkId={reviewDraftId ? controller.workId : null}
-          onReviewSessionUnavailable={controller.exitInlineReview}
+          reviewDraftId={selectedReviewDraftId}
         />
       </div>
     </MobileDocumentReview>
