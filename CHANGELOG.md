@@ -8,9 +8,9 @@
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
-- The path above a document is now a way to get around: click a folder to see what is in it, click the file name to see its neighbours, or click `…` when folders do not fit. Menus mark where you are, including the folder you just left.
+- The path above a document is now a way to get around: click a folder to see what is in it, click the file name to see the files beside it, or click `…` when folders do not fit. Menus mark where you are, including the folder you just left.
 
-- Renaming and moving happen where documents are listed. The path no longer has a Rename button; only an untitled draft keeps its Choose a home button.
+- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker. The path no longer has a Rename button; only an untitled draft keeps its Choose a home button.
 
 - A document open beside the chat shows its path in the panel header instead of a separate title. With nothing open, the panel reads Recent and lists the documents this chat touched.
 
