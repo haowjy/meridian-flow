@@ -55,6 +55,16 @@ vi.mock("@/features/editor/EditorView", () => ({
   ),
 }));
 
+import { PresentedDocumentContext } from "../presented-document";
+
+const presented = {
+  container: "editor" as const,
+  documentId: "document-a",
+  scheme: "manuscript" as const,
+  path: "/chapter.md",
+  review: null,
+  draftOnly: false,
+};
 const queryClient = new QueryClient();
 
 const liveSession = {
@@ -112,16 +122,18 @@ describe("ContextEditorMountHost draft-only review", () => {
           : { ...tab, draftOnly: true, reviewWorkId: "work-a", reviewDraftId: "draft-a" }
       ) as ComponentProps<typeof ContextEditorMountHost>["trackedTabs"][number];
       return (
-        <QueryClientProvider client={queryClient}>
-          <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-            <ContextEditorMountHost
-              projectId="project-a"
-              trackedTabs={[hostedTab]}
-              activeTabId="document-a"
-              active
-            />
-          </ProjectDocumentLiveOpenerContext.Provider>
-        </QueryClientProvider>
+        <PresentedDocumentContext.Provider value={presented}>
+          <QueryClientProvider client={queryClient}>
+            <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+              <ContextEditorMountHost
+                projectId="project-a"
+                trackedTabs={[hostedTab]}
+                activeTabId="document-a"
+                active
+              />
+            </ProjectDocumentLiveOpenerContext.Provider>
+          </QueryClientProvider>
+        </PresentedDocumentContext.Provider>
       );
     }
 
@@ -171,16 +183,18 @@ describe("ContextEditorMountHost draft-only review", () => {
       })),
     };
     await withReactRoot(
-      <QueryClientProvider client={queryClient}>
-        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextEditorMountHost
-            projectId="project-a"
-            trackedTabs={[tab]}
-            activeTabId="document-a"
-            active
-          />
-        </ProjectDocumentLiveOpenerContext.Provider>
-      </QueryClientProvider>,
+      <PresentedDocumentContext.Provider value={presented}>
+        <QueryClientProvider client={queryClient}>
+          <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+            <ContextEditorMountHost
+              projectId="project-a"
+              trackedTabs={[tab]}
+              activeTabId="document-a"
+              active
+            />
+          </ProjectDocumentLiveOpenerContext.Provider>
+        </QueryClientProvider>
+      </PresentedDocumentContext.Provider>,
       async () => {
         await act(async () => undefined);
         const editor = document.querySelector("[data-editor]");

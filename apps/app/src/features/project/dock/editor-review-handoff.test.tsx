@@ -219,6 +219,8 @@ it("a warm destination requests review before passive admission, and an admitted
   const route = deferred();
   let selected: string | null = null;
   let repaint!: () => void;
+  let movePresentation!: () => void;
+  let requestedByHost: string | null = null;
   const exposed: string[] = [];
   function Destination() {
     const requested = useRequestedReview({
@@ -227,6 +229,7 @@ it("a warm destination requests review before passive admission, and an admitted
       activeScheme: "manuscript",
       documentId: draftA.documentId,
     });
+    requestedByHost = requested;
     usePaintPending(Boolean(requested));
     useLayoutEffect(() => {
       if (!requested && selected) exposed.push("live");
@@ -239,6 +242,8 @@ it("a warm destination requests review before passive admission, and an admitted
     );
   }
   function Owner() {
+    const [container, setContainer] = useState<"editor" | "dock">("editor");
+    movePresentation = () => setContainer("dock");
     const [, update] = useState(0);
     repaint = () => update((n) => n + 1);
     const value = reviewValue(
@@ -256,7 +261,7 @@ it("a warm destination requests review before passive admission, and an admitted
     return (
       <PresentedDocumentContext.Provider
         value={{
-          container: "editor",
+          container,
           documentId: draftA.documentId,
           scheme: "manuscript",
           path: draftA.contextPath,
@@ -292,6 +297,8 @@ it("a warm destination requests review before passive admission, and an admitted
       });
       expect(document.querySelector("[data-paint-page]")?.textContent).toBe("pending review");
       expect(exposed).toEqual([]);
+      await act(async () => movePresentation());
+      expect(requestedByHost).toBeNull();
     },
   );
 });
@@ -339,49 +346,6 @@ it("clears a draft-only request when routing fails before admission", async () =
         await done;
       });
       expect(requested).toBeNull();
-    },
-  );
-});
-
-it("a hidden Editor host cannot request the dock's selected review", async () => {
-  const value = reviewValue("work-a");
-  value.controller.inlineReview = {
-    documentId: draftA.documentId,
-    draftId: draftA.draftId,
-  } as NonNullable<typeof value.controller.inlineReview>;
-  const requests: Record<string, string | null> = {};
-  function Hosts() {
-    requests.editor = useRequestedReview({
-      container: "editor",
-      editorWorkId: "work-a",
-      activeScheme: "manuscript",
-      documentId: draftA.documentId,
-    });
-    requests.dock = useRequestedReview({
-      container: "dock",
-      editorWorkId: "work-a",
-      activeScheme: "manuscript",
-      documentId: draftA.documentId,
-    });
-    return null;
-  }
-  await withReactRoot(
-    <PresentedDocumentContext.Provider
-      value={{
-        container: "dock",
-        documentId: draftA.documentId,
-        scheme: "manuscript",
-        path: draftA.contextPath,
-        review: { workId: "work-a", draftId: draftA.draftId },
-        draftOnly: true,
-      }}
-    >
-      <DraftReviewBoundary value={value}>
-        <Hosts />
-      </DraftReviewBoundary>
-    </PresentedDocumentContext.Provider>,
-    () => {
-      expect(requests).toEqual({ editor: null, dock: draftA.draftId });
     },
   );
 });

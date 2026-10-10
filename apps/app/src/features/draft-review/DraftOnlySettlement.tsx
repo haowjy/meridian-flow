@@ -1,22 +1,24 @@
 /** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftCommandPendingIn, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
-import {
-  type DraftOnlyContainer,
-  useDraftOnlyLifecycle,
-  useDraftOnlyPresentations,
-} from "./draft-only-lifecycle";
+import { type DraftOnlyContainer, useDraftOnlyLifecycle } from "./draft-only-lifecycle";
 
 export function DraftOnlySettlement({ projectId }: { projectId: string }) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
-  const presentations = useDraftOnlyPresentations(lifecycle, projectId);
+  // Primitive snapshot: a fresh presentation array is not an external-store change.
+  useSyncExternalStore(
+    lifecycle.subscribe,
+    () => JSON.stringify(lifecycle.presentations(projectId)),
+    () => "",
+  );
+  const presentations = lifecycle.presentations(projectId);
   const works = new Set(presentations.map((draft) => draft.workId));
   return [...works].map((workId) => (
     <WorkSettlement

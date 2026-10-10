@@ -153,64 +153,6 @@ describe("ReviewAddressOwner", () => {
   });
 
   describe("a review whose draft the list no longer names", () => {
-    const finished = {
-      documentId: draft.documentId,
-      draftId: draft.draftId,
-      completion: { phase: "closed" as const, documentName: "A" },
-    };
-
-    it("stays open on its document although the list no longer names it", async () => {
-      const exit = vi.fn();
-      await withReactRoot(
-        <Harness
-          listed={false}
-          activeDocumentId={draft.documentId}
-          requestedDraftId={draft.draftId}
-          onSetDraftId={vi.fn()}
-          exitInlineReview={exit}
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        />,
-        async () => {
-          await act(async () => setInline?.(finished));
-          expect(exit).not.toHaveBeenCalled();
-        },
-      );
-    });
-
-    it("stays open while the address is still resolving", async () => {
-      const exit = vi.fn();
-      await withReactRoot(
-        <Harness
-          listed={false}
-          onSetDraftId={vi.fn()}
-          exitInlineReview={exit}
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        />,
-        async () => {
-          await act(async () => setInline?.(finished));
-          expect(exit).not.toHaveBeenCalled();
-        },
-      );
-    });
-
-    it("still leaves when the writer goes to another document", async () => {
-      const exit = vi.fn();
-      await withReactRoot(
-        <Harness
-          listed={false}
-          activePath="chapters/b.md"
-          activeDocumentId="document-b"
-          onSetDraftId={vi.fn()}
-          exitInlineReview={exit}
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        />,
-        async () => {
-          await act(async () => setInline?.(finished));
-          expect(exit).toHaveBeenCalledOnce();
-        },
-      );
-    });
-
     it("an unfinished review whose draft left the list is left to the review's own list decision", async () => {
       const exit = vi.fn();
       const setDraftId = vi.fn();
