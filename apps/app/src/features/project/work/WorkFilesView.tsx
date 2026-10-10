@@ -164,7 +164,7 @@ export function WorkFilesView({
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
-      <WorkChanges projectId={projectId} workId={work.id} matchesSearch={matchesSearch} />
+      <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
       <WorkFileGroup label={t`Scratch`}>
         {scratch.isError ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />

@@ -9,7 +9,7 @@
  * Work page's Changes to review (`WorkChanges`), not here.
  */
 
-import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
   type DraftCommandFailure,
@@ -139,11 +139,11 @@ export function useReviewHeader({
    * waiting on it. Offline the command is refused before it is sent, so the
    * writer stays on this draft, where the refusal shows.
    */
-  const dispose = (command: () => Promise<unknown>) => {
+  const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
-    const sending = onlineManager.isOnline();
-    void command();
-    if (next && sending) onOpenDraft(next);
+    const start = controller.startDraft(mode, { documentId, draftId });
+    void start.outcome;
+    if (next && start.sent) onOpenDraft(next);
   };
   return {
     controller,
@@ -156,8 +156,8 @@ export function useReviewHeader({
     commandError,
     failedElsewhere,
     showLive,
-    applyDraft: () => dispose(() => controller.apply(documentId, draftId)),
-    discardDraft: () => dispose(() => controller.discard(documentId, draftId)),
+    applyDraft: () => dispose("apply"),
+    discardDraft: () => dispose("discard"),
     draftOnly: Boolean(onCloseDraftOnly),
     openDraft: onOpenDraft,
   };

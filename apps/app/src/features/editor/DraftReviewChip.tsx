@@ -22,7 +22,7 @@ export type DraftReviewChipProps = {
 
 export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipProps) {
   const { controller, fileForDocument } = useDraftReview();
-  const { openAiDraft } = useAiDraftLauncher();
+  const { openReviewFile } = useAiDraftLauncher();
   const commandRecords = useDraftCommandRecords();
 
   const group = fileForDocument(documentId);
@@ -45,17 +45,7 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
       failed={failed}
       touch={touch}
       onShowLive={() => undefined}
-      onShowDraft={() =>
-        group.contextPath &&
-        openAiDraft({
-          workId: controller.workId,
-          documentId: group.documentId,
-          draftId: draft.draftId,
-          contextPath: group.contextPath,
-          documentName: group.documentName ?? undefined,
-          isNewDocument: draft.isNewDocument === true,
-        })
-      }
+      onShowDraft={() => openReviewFile(group, controller.workId)}
     />
   );
 }
