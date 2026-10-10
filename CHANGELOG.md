@@ -5,6 +5,7 @@
 ### Changed
 
 - Reloading keeps the document and view you had open in the side panel.
+- Each browser tab remembers its own chat and Work across reloads, while new tabs start from your last selection.
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
