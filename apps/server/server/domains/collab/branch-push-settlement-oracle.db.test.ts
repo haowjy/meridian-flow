@@ -653,7 +653,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("a payload-only batch hands off when its lease set grows; another owner recovers its refined payload and holds", async () => {
+  it("a payload-only batch hands off when its lease set keeps growing past the call's retries; another owner recovers its refined payload and holds", async () => {
     const seeding = createHarness(db);
     const alphaBranch = await seeding.stagePeerReply(ALPHA_ID, "payload-lease");
     const betaBranch = await seeding.stagePeerReply(BETA_ID, "payload-lease-grown");
@@ -662,15 +662,24 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const posterHeld = { itemKey: "poster", reason: { code: "path_taken" } };
     const payload = { items: ["cover", "poster"], leases: [alphaBranch] };
     const refined = { items: ["cover"], leases: [alphaBranch] };
-    // The step's lease set grows between staging and completion (lane E: a new branch of D).
+    // The step's lease set grows between staging and completion (lane E: a new branch of D),
+    // and keeps growing on every completion of the warm call, so the call continues its
+    // batch under each grown set (F22) until its retries run out and recovery takes it.
     let grown = false;
+    let growing = false;
+    let growth = 0;
     const leased = (harness: ReturnType<typeof createHarness>, branchId: string) =>
       harness.criticalSections.withBranches([branchId], async () => false).catch(() => true);
     const imageStep = (seen: unknown[], harness: () => ReturnType<typeof createHarness>) => ({
       kind: "test_image",
       async prepare(staged: unknown) {
+        if (growing) growth += 1;
         return {
-          branchIds: [...(staged as typeof payload).leases, ...(grown ? [betaBranch] : [])],
+          branchIds: [
+            ...(staged as typeof payload).leases,
+            ...(grown ? [betaBranch] : []),
+            ...(growing ? [`grown-${growth}`] : []),
+          ],
         };
       },
       async plan(scope: SettlementBatchScope) {
@@ -703,6 +712,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       afterDurableCommit: async () => {
         warmLeased = await leased(warm, alphaBranch);
         grown = true;
+        growing = true;
       },
       publicationSteps: [imageStep(seenWarm, () => warm)],
     });
@@ -717,6 +727,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       "needs branch leases its caller doesn't hold",
     );
     expect({ seenWarm, warmLeased }).toEqual({ seenWarm: [], warmLeased: true });
+    growing = false;
     // Handed off: pending, unclaimed, with the refined payload and the check's hold staged.
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "pending", claimToken: null, attemptCount: 1 }),

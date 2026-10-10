@@ -89,7 +89,10 @@
     drafts) and recovery (with the members' branches, read from the staged rows
     before any claim) acquire them before coordinator leases and any
     transaction. Completion asks again under its locks; a grown set answers
-    `rediscover`, hands the batch back, and the next owner discovers again.
+    `rediscover`. The warm call keeps its claim, releases its leases, leases the
+    grown set in global order and continues the same batch (`continueStaged`,
+    at most three times, F22), so the writer gets the real result; past that, or
+    in recovery, it records a failure and the next owner discovers again.
     Leases are never taken from `beforeAdmission`.
   - **Check before staging:** `checkPublication` runs every step's `check()` in
     one short transaction under those leases. `refuse` stages nothing. Holds are

@@ -18,7 +18,11 @@ import {
 } from "./branch-push-contracts.js";
 import { stablePushIdempotencyKey, wholeBranchPushUpdate } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
-import { createBranchPushTransition } from "./branch-push-transition.js";
+import {
+  createBranchPushTransition,
+  PublicationLeasesChangedError,
+  type PublicationOutcome,
+} from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type {
   PublicationItemHold,
@@ -143,78 +147,101 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         return computeCandidate(candidate, branch);
       }),
     );
-    const locked = await transition.execute<BatchPipelineResult>({
-      documentIds: phases.map((phase) => phase.candidate.documentId),
-      signal,
-      prepare: async ({ lockCuts }) => {
-        const prepared = await Promise.all(
-          phases.map((phase) =>
-            prepareCandidate(
-              phase,
-              lockCuts.get(phase.candidate.documentId) as Uint8Array,
-              batch.receiptId,
+    const locked = await transition
+      .execute<BatchPipelineResult>({
+        documentIds: phases.map((phase) => phase.candidate.documentId),
+        signal,
+        prepare: async ({ lockCuts }) => {
+          const prepared = await Promise.all(
+            phases.map((phase) =>
+              prepareCandidate(
+                phase,
+                lockCuts.get(phase.candidate.documentId) as Uint8Array,
+                batch.receiptId,
+              ),
             ),
-          ),
-        );
-        const titles = await Promise.all(
-          phases.map((phase) => resolveDocumentTitle(phase.candidate.documentId)),
-        );
-        const pushes = prepared.map((candidate, index) => {
-          const phase = phases[index] as ComputedCandidate;
-          const documentTitle = titles[index] ?? "Untitled document";
-          const trail = buildDurablePushTrail({
-            prepared: candidate,
-            documentTitle,
+          );
+          const titles = await Promise.all(
+            phases.map((phase) => resolveDocumentTitle(phase.candidate.documentId)),
+          );
+          const pushes = prepared.map((candidate, index) => {
+            const phase = phases[index] as ComputedCandidate;
+            const documentTitle = titles[index] ?? "Untitled document";
+            const trail = buildDurablePushTrail({
+              prepared: candidate,
+              documentTitle,
+            });
+            return {
+              ...candidate.prepared,
+              receiptId: batch.receiptId,
+              pushedByUserId: batch.pushedByUserId,
+              trail,
+              documentTitle,
+              lockCutUpdate: candidate.lockCutUpdate,
+              branch: phase.branch,
+            };
           });
           return {
-            ...candidate.prepared,
-            receiptId: batch.receiptId,
-            pushedByUserId: batch.pushedByUserId,
-            trail,
-            documentTitle,
-            lockCutUpdate: candidate.lockCutUpdate,
-            branch: phase.branch,
+            kind: "push" as const,
+            pushes,
+            ...(batch.payloads ? { payloads: batch.payloads } : {}),
+            leasedBranchIds,
+            afterDurableCommit: input.hooks?.afterDurableCommit,
+            onConflict: (push: PushLineageRow) => ({
+              kind: "conflict" as const,
+              push,
+              phases,
+            }),
+            finish: ({ outcome, docs }): BatchPipelineResult => batchResult(outcome, docs, phases),
           };
-        });
-        return {
-          kind: "push" as const,
-          pushes,
-          ...(batch.payloads ? { payloads: batch.payloads } : {}),
-          leasedBranchIds,
-          afterDurableCommit: input.hooks?.afterDurableCommit,
-          onConflict: (push: PushLineageRow) => ({
-            kind: "conflict" as const,
-            push,
-            phases,
-          }),
-          finish: ({ outcome, docs }): BatchPipelineResult =>
-            outcome.kind === "refused"
-              ? { kind: "refused", reason: outcome.reason, phases }
-              : {
-                  kind: "committed",
-                  pushes: outcome.pushes,
-                  held: new Map(
-                    outcome.held.flatMap((held) =>
-                      held.documentId ? [[held.documentId, held.reason] as const] : [],
-                    ),
-                  ),
-                  heldItems: outcome.held,
-                  outcomes: outcome.outcomes,
-                  phases,
-                  liveAfterPush: new Map(
-                    phases.map((phase) => [
-                      phase.candidate.documentId,
-                      Y.encodeStateAsUpdate(docs.get(phase.candidate.documentId) as Y.Doc),
-                    ]),
-                  ),
-                  branchResets: new Map(),
-                },
-        };
-      },
-    });
+        },
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof PublicationLeasesChangedError) {
+          throw new StagedBatchResume(cause, { phases, resetPolicy: batch.resetPolicy });
+        }
+        throw cause;
+      });
+    return withAutoResets(locked, lease, phases, batch.resetPolicy);
+  }
+
+  /** A settled batch as the pipeline reports it, from the phases it staged. */
+  function batchResult(
+    outcome: PublicationOutcome,
+    docs: ReadonlyMap<DocumentId, Y.Doc>,
+    phases: readonly ComputedCandidate[],
+  ): BatchPipelineResult {
+    if (outcome.kind === "refused") return { kind: "refused", reason: outcome.reason, phases };
+    return {
+      kind: "committed",
+      pushes: outcome.pushes,
+      held: new Map(
+        outcome.held.flatMap((held) =>
+          held.documentId ? [[held.documentId, held.reason] as const] : [],
+        ),
+      ),
+      heldItems: outcome.held,
+      outcomes: outcome.outcomes,
+      phases,
+      liveAfterPush: new Map(
+        phases.map((phase) => [
+          phase.candidate.documentId,
+          Y.encodeStateAsUpdate(docs.get(phase.candidate.documentId) as Y.Doc),
+        ]),
+      ),
+      branchResets: new Map(),
+    };
+  }
+
+  async function withAutoResets(
+    locked: BatchPipelineResult,
+    lease: BranchLockLease,
+    phases: readonly ComputedCandidate[],
+    resetPolicy: "auto" | undefined,
+  ): Promise<BatchPipelineResult> {
     if (locked.kind !== "committed") return locked;
     const branchResets = new Map<string, { branchId: string; fromGeneration: number }>();
-    if (batch.resetPolicy === "auto") {
+    if (resetPolicy === "auto") {
       // Held candidates' rows are reviewable again: their branches stay as they are.
       for (const phase of phases.filter(
         ({ candidate }) => !locked.held.has(candidate.documentId),
@@ -378,59 +405,135 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     }));
   }
 
-  const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = async (pushInput) =>
-    withActiveWorkDraftBranchLock(
-      pushInput.branchIds,
-      async (branches, lease, leasedBranchIds) => {
-        const sources = await Promise.all(branches.map(sourceFor));
-        const drafted = sources.filter((source) => source.rows.length > 0);
-        const items = new Map<string, PushToLiveResult>();
-        let refused: PublicationRefusal | undefined;
-        let heldItems: readonly PublicationItemHold[] = [];
-        let outcomes: readonly PublicationItemOutcome[] = [];
-        for (const source of sources) {
-          if (source.rows.length > 0) continue;
-          items.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
-        }
-        if (drafted.length > 0 || Object.keys(pushInput.payloads ?? {}).length > 0) {
-          const batch = buildWholeBranchCandidates({
-            sources: drafted,
-            ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
-            ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
-            ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-          });
-          const result = await executeCandidateBatch(
-            batch,
-            branchMap(drafted.map((source) => source.branch)),
-            lease,
-            leasedBranchIds,
-            pushInput.signal,
-          );
-          // The retry rereads every branch; the pushed one then reports already_pushed.
-          if (result.kind === "conflict") {
-            throw new BranchPushCommitConflictError(result.push.branchId ?? "");
-          }
-          if (result.kind === "refused") {
-            refused = result.reason;
-            for (const item of mapRefused(result)) items.set(item.branchId, item);
-          } else {
-            heldItems = result.heldItems;
-            outcomes = result.outcomes;
-            for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
-          }
-        }
-        return {
-          items: sources.map((source) => items.get(source.branch.branchId) as PushToLiveResult),
-          heldItems,
-          outcomes,
-          ...(refused ? { refused } : {}),
-        };
-      },
-      // The outer preparation: branches the publication steps declare from their payloads.
-      await input.settlementStore.prepareBranchLeases(
-        new Map(Object.entries(pushInput.payloads ?? {})),
-      ),
+  type PushBranchesInput = Parameters<BranchPushService["pushBranchesToLive"]>[0];
+  type PushBranchesResult = Awaited<ReturnType<BranchPushService["pushBranchesToLive"]>>;
+
+  /** The per-branch answer in request order, from a batch's result and the branches it left out. */
+  function itemsOf(
+    order: readonly string[],
+    unbatched: ReadonlyMap<string, PushToLiveResult>,
+    result: BatchPipelineResult | null,
+  ): PushBranchesResult {
+    const items = new Map(unbatched);
+    let refused: PublicationRefusal | undefined;
+    if (result?.kind === "refused") {
+      refused = result.reason;
+      for (const item of mapRefused(result)) items.set(item.branchId, item);
+    } else if (result?.kind === "committed") {
+      for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
+    }
+    return {
+      items: order.map((branchId) => items.get(branchId) as PushToLiveResult),
+      heldItems: result?.kind === "committed" ? result.heldItems : [],
+      outcomes: result?.kind === "committed" ? result.outcomes : [],
+      ...(refused ? { refused } : {}),
+    };
+  }
+
+  /** Stages the branches with rows and the payloads as one batch, then settles it. */
+  async function stageAndSettle(
+    pushInput: PushBranchesInput,
+    branches: readonly BranchSnapshot[],
+    lease: BranchLockLease,
+    leasedBranchIds: readonly string[],
+  ): Promise<PushBranchesResult> {
+    const sources = await Promise.all(branches.map(sourceFor));
+    const order = sources.map((source) => source.branch.branchId);
+    const drafted = sources.filter((source) => source.rows.length > 0);
+    const unbatched = new Map<string, PushToLiveResult>();
+    for (const source of sources) {
+      if (source.rows.length > 0) continue;
+      unbatched.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
+    }
+    if (drafted.length === 0 && Object.keys(pushInput.payloads ?? {}).length === 0) {
+      return itemsOf(order, unbatched, null);
+    }
+    const batch = buildWholeBranchCandidates({
+      sources: drafted,
+      ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
+      ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
+      ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+    });
+    const result = await executeCandidateBatch(
+      batch,
+      branchMap(drafted.map((source) => source.branch)),
+      lease,
+      leasedBranchIds,
+      pushInput.signal,
+    ).catch((cause: unknown) => {
+      if (cause instanceof StagedBatchResume) cause.answer = { order, unbatched };
+      throw cause;
+    });
+    // The retry rereads every branch; the pushed one then reports already_pushed.
+    if (result.kind === "conflict") {
+      throw new BranchPushCommitConflictError(result.push.branchId ?? "");
+    }
+    return itemsOf(order, unbatched, result);
+  }
+
+  /** Settles the batch this call staged and still owns, under the grown lease set (F22). */
+  async function continueStaged(
+    resume: StagedBatchResume,
+    lease: BranchLockLease,
+    leasedBranchIds: readonly string[],
+    signal: AbortSignal | undefined,
+  ): Promise<PushBranchesResult> {
+    const { phases, resetPolicy } = resume.batch;
+    const locked = await transition
+      .continueStaged<BatchPipelineResult>({
+        staged: resume.handoff.staged,
+        leasedBranchIds,
+        ...(signal ? { signal } : {}),
+        finish: ({ outcome, docs }) => batchResult(outcome, docs, phases),
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof PublicationLeasesChangedError) resume.handoff = cause;
+        throw cause instanceof PublicationLeasesChangedError ? resume : cause;
+      });
+    const result = await withAutoResets(locked, lease, phases, resetPolicy);
+    const answer = resume.answer ?? { order: [], unbatched: new Map() };
+    return itemsOf(answer.order, answer.unbatched, result);
+  }
+
+  /**
+   * Publishes several drafts as one batch. When completion needs leases this call doesn't
+   * hold (a model write grew the draft it may close), the call keeps the batch it staged,
+   * releases its leases, leases the grown set in global order and continues that batch:
+   * the writer gets the real results, and the late item stays in the draft (F22).
+   */
+  const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = async (pushInput) => {
+    // The outer preparation: branches the publication steps declare from their payloads.
+    let extraBranchIds = await input.settlementStore.prepareBranchLeases(
+      new Map(Object.entries(pushInput.payloads ?? {})),
     );
+    let resume: StagedBatchResume | null = null;
+    for (let rediscovered = 0; ; rediscovered += 1) {
+      try {
+        const staged = resume;
+        return await withActiveWorkDraftBranchLock(
+          pushInput.branchIds,
+          (branches, lease, leasedBranchIds) =>
+            staged
+              ? continueStaged(staged, lease, leasedBranchIds, pushInput.signal)
+              : stageAndSettle(pushInput, branches, lease, leasedBranchIds),
+          extraBranchIds,
+        );
+      } catch (cause) {
+        if (!(cause instanceof StagedBatchResume)) throw cause;
+        if (rediscovered >= MAX_LEASE_REDISCOVERIES) {
+          // Hand it to recovery, which discovers its leases on its own.
+          await input.settlementStore.recordFailure({
+            batchId: cause.handoff.staged.batchId,
+            claim: cause.handoff.staged.claim,
+            error: "publication branch leases kept changing",
+          });
+          throw cause.handoff;
+        }
+        resume = cause;
+        extraBranchIds = [...new Set([...extraBranchIds, ...cause.handoff.branchIds])].sort();
+      }
+    }
+  };
 
   const pushToLive: BranchPushService["pushToLive"] = async (pushInput) => {
     const { items } = await pushBranchesToLive({ ...pushInput, branchIds: [pushInput.branchId] });
@@ -488,3 +591,21 @@ function assertActiveWorkDraftBranch(
 }
 
 const maxCasRetries = 3;
+/** How many times one call leases a grown set before handing its batch to recovery. */
+const MAX_LEASE_REDISCOVERIES = 3;
+
+/**
+ * A staged batch the call still owns, carried out of its leases so it can lease the grown
+ * set and continue: the transition's handoff, what the pipeline staged, and once known
+ * the request's branch order and the branches left out of the batch.
+ */
+class StagedBatchResume extends Error {
+  answer?: { order: readonly string[]; unbatched: ReadonlyMap<string, PushToLiveResult> };
+  constructor(
+    public handoff: PublicationLeasesChangedError,
+    readonly batch: { phases: readonly ComputedCandidate[]; resetPolicy: "auto" | undefined },
+  ) {
+    super(handoff.message);
+    this.name = "StagedBatchResume";
+  }
+}
