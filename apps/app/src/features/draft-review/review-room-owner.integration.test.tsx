@@ -104,8 +104,10 @@ it.each([
     } else await act(async () => controller.exitInlineReview());
     if (horizon === "account") {
       // Closing the account destroys its query cache and retires its claims.
-      probe().queryClient.clear();
-      resetDraftCommandRecords();
+      await act(async () => {
+        probe().queryClient.clear();
+        resetDraftCommandRecords();
+      });
     }
     await act(async () => slow.resolve(proposal(7, "9")));
     await settled(() =>
