@@ -5,13 +5,16 @@
  *
  * The check (before staging) and `beforeAdmission` (completion) make the same decision:
  * rendered tokens (#420, S2: location version, the live full-state fingerprint, the
- * branch generation) or `stale`; 5a clashes held per item. The check also fences the
- * link cut (F18) and captures each holder's link meanings into the payload it refines
- * (V2-H4). `beforeAdmission` then vacates and installs: relocations through the batch move
- * primitive, reveals of still-hidden creates and restores of documents deleted live (F9)
- * through placement. `afterAdmission` settles arrivals once against the final tree, binds
- * admitted holders from the staged meanings, records the moves, drops the draft's applied
- * rows and closes the draft when asked and nothing stays pending.
+ * branch generation) or `stale`; 5a holds per item, first the draft's own view, then the
+ * final live tree to a fixed point (an item waits for what only a held item would free).
+ * The check also fences the link cut (F18) and captures each holder's link meanings into
+ * the payload it refines (V2-H4). `beforeAdmission` then vacates and installs: relocations
+ * through the batch move primitive, reveals of still-hidden creates and restores of
+ * documents deleted live (F9) through placement, and reports each item's receipt notes.
+ * `afterAdmission` settles arrivals once against the final tree, binds admitted holders
+ * from the staged meanings, records the moves, reconciles the catalog for every source it
+ * touched (F23), drops the draft's applied rows and closes the draft when asked and
+ * nothing stays pending.
  */
 import type { ContextSourceId, DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
