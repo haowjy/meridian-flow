@@ -61,6 +61,7 @@ afterEach(async () => {
 async function mount(strict = false) {
   root = createRoot(document.createElement("div"));
   const owner = createElement(AccountSettingsProvider, {
+    serverReadGeneration: 0,
     serverValue: {
       theme: "ink-jade",
       language: "en",
