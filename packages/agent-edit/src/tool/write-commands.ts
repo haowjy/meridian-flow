@@ -219,7 +219,7 @@ export function createWriteCommands(deps: {
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const alreadyExists = status(
       "invalid_write",
-      `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+      `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
     );
     const liveCheck = await withLiveDocument(
       options.coordinator,
