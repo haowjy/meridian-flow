@@ -113,15 +113,14 @@ export function createDraftBranchAheadRegistration(input: {
 
   /** The branch's ahead refs and its cut, read together under the branch's lease. */
   async function readCut(branchId: string) {
-    return input.branches.readBranch(branchId, async (doc, snapshot) => ({
-      snapshot,
-      refs: aheadRefsIn(doc),
-      cut: {
-        branchId,
-        documentId: snapshot.documentId,
-        fingerprint: fullStateFingerprint(doc),
-      } satisfies DraftBranchCut,
-    }));
+    return input.branches.readBranch(branchId, async (doc, snapshot) => {
+      const { refs, fingerprint } = branchCutOf(doc);
+      return {
+        snapshot,
+        refs,
+        cut: { branchId, documentId: snapshot.documentId, fingerprint } satisfies DraftBranchCut,
+      };
+    });
   }
 
   /**
@@ -259,6 +258,18 @@ export function createDraftBranchAheadRegistration(input: {
       }
     },
   };
+}
+
+/**
+ * What a branch's text says for its link cut (F18): every ahead ref in it and its
+ * full-state fingerprint. Registration records it; Apply's staging computes it again from
+ * the branch it stages and compares, so both sides must compute it here.
+ */
+export function branchCutOf(doc: Y.Doc): {
+  refs: { aheadId: string; address: string }[];
+  fingerprint: string;
+} {
+  return { refs: aheadRefsIn(doc), fingerprint: fullStateFingerprint(doc) };
 }
 
 /**

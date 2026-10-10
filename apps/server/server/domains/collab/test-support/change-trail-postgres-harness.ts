@@ -455,6 +455,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       steps: [
         createDrizzleDraftTreeStep(db, {
           drafts: workDrafts,
+          // The harness publishes no Work projection; pending changes just run.
+          workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
           branches: branchStore,
           pending: durableWorkDraftPendingStore,
           ...(options.arrivals ? { arrivals: options.arrivals } : {}),

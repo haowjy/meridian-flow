@@ -155,6 +155,8 @@ export type TreeStateNode = {
     name: string;
     extension: string;
     path: string;
+    /** Folder names from the source root to the parent: a move target by path. */
+    dir: readonly string[];
     /** `path` spelled as a canonical URI; null when it can't be spelled. */
     uri: string | null;
   };
@@ -718,7 +720,12 @@ export function createTreeReader(db: Database): TreeReader {
           deleted: row.deleted,
           deletedAncestors: liveChain.filter((folder) => folder.deleted).map((folder) => folder.id),
         },
-        target: { ...target, path: targetPath, uri: targetAddress?.uri ?? null },
+        target: {
+          ...target,
+          path: targetPath,
+          dir: [...chainOf(target.parentFolderId)].reverse().map((folder) => folder.name),
+          uri: targetAddress?.uri ?? null,
+        },
         locationVersion: row.locationVersion,
         conflict: clash
           ? {
