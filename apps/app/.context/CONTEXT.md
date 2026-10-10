@@ -317,9 +317,13 @@ remount the owner and fence abandoned writes.
 `meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
 cache, not a pending-write journal. The active-account pointer lets the theme
 boot script read it before hydration; SSR supplies the current account and a
-server theme fallback on a new device. After load the account value reconciles
-and rewrites the cache. Storage events update this account's other tabs without
-sending duplicate PATCHes. `?locale=` seeds a local language override; an
+server theme seed that wins over cached appearance. The cache is used only
+when that seed is unavailable and contains confirmed snapshots only. Pending
+and failed choices are this tab's overlay, never relayed as saved values. Server
+reads carry a browser request-start generation; command settlements fence older
+reads, while newer reads can replace settled edits. Storage relays confirmed
+snapshots and reconciles unowned fields through a server read, without duplicate
+PATCHes. `?locale=` seeds a local language override; an
 explicit language command takes over for this account session. Settings controls
 show the account record, not that URL override.
 Text size alone stays device-local at `meridian:text-size:v1`. Settings uses

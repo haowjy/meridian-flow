@@ -1,20 +1,21 @@
 # `src/locales/` — Lingui i18n
 
 The app uses [LinguiJS](https://lingui.dev) v6 for runtime i18n. Today the
-only locale is **en-US**; the infrastructure is set up so a new locale is a
-drop-in change.
+supported locales are **English (`en`)** and **Chinese (`zh`)**. New locales
+are registered at the catalog seam and translated in their source catalogs.
 
 ## Layout
 
 ```
 src/locales/
 ├── README.md            ← you are here
-└── en/
-    ├── messages.po      ← source-of-truth catalog (translators edit this)
-    └── messages.ts      ← compiled runtime catalog (loaded by the app)
+├── en/
+│   ├── messages.po      ← source-of-truth catalog (translators edit this)
+│   └── messages.ts      ← compiled runtime catalog (loaded by the app)
+└── zh/                  ← Chinese source and compiled catalogs
 ```
 
-Both files are committed so a fresh clone works without an extra build step.
+Both catalogs and their compiled outputs are committed so a fresh clone works without an extra build step.
 
 ## How extraction works
 
@@ -72,7 +73,7 @@ beyond a regenerated header timestamp.
    ```
    This creates `src/locales/de/messages.po` populated with empty
    translation slots.
-3. Translate `src/locales/de/messages.po` (in-house or via your TMS).
+3. Provide real translations in `src/locales/de/messages.po` (in-house or via your TMS).
 4. Compile the runtime catalog:
    ```bash
    pnpm --filter @meridian/app lingui:compile
