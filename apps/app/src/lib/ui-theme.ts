@@ -29,6 +29,6 @@ export function subscribeUiTheme(listener: () => void): () => void {
   };
 }
 export function createUiThemeBootScript(seed?: { accountId: string; theme?: UiTheme }): string {
-  return `(() => { try { const seed = ${JSON.stringify(seed ?? null)}; const id = seed?.accountId || localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_ACTIVE_KEY)}); const cache = JSON.parse(localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_CACHE_PREFIX)} + id) || "null"); const theme = id && cache?.accountId === id ? cache?.settings?.theme : seed?.theme; const root = document.documentElement; if (theme === "dark") root.setAttribute("data-ui-theme", "dark"); else root.removeAttribute("data-ui-theme"); } catch { ${seed?.theme === "dark" ? 'document.documentElement.setAttribute("data-ui-theme", "dark");' : ""} } })();`;
+  return `(() => { try { const seed = ${JSON.stringify(seed ?? null)}; const id = seed?.accountId || localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_ACTIVE_KEY)}); const cache = JSON.parse(localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_CACHE_PREFIX)} + id) || "null"); const theme = id && cache?.accountId === id && ${JSON.stringify(UI_THEMES)}.includes(cache?.settings?.theme) ? cache.settings.theme : seed?.theme; const root = document.documentElement; if (theme === "dark") root.setAttribute("data-ui-theme", "dark"); else root.removeAttribute("data-ui-theme"); } catch { ${seed?.theme === "dark" ? 'document.documentElement.setAttribute("data-ui-theme", "dark");' : ""} } })();`;
 }
 export const UI_THEME_BOOT_SCRIPT = createUiThemeBootScript();
