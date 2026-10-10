@@ -323,10 +323,17 @@ export function createDrizzleBranchStore(
   async function retractCreatedDraftBranch(input: {
     documentId: DocumentId;
     workId: WorkId;
-  }): Promise<{ outcome: "retracted" | "stands"; branchIds: readonly string[] }> {
+  }): Promise<
+    | { outcome: "stands" }
+    | { outcome: "retracted"; deleted: readonly { branchId: string; threadId: ThreadId | null }[] }
+  > {
     const tx = currentDrizzleDb(db);
     const drafted = await tx
-      .select({ id: documentBranches.id, generation: documentBranches.generation })
+      .select({
+        id: documentBranches.id,
+        generation: documentBranches.generation,
+        threadId: documentBranches.threadId,
+      })
       .from(documentBranches)
       .where(
         and(
@@ -340,7 +347,11 @@ export function createDrizzleBranchStore(
       drafted.length === 0
         ? []
         : await tx
-            .select({ id: documentBranches.id, generation: documentBranches.generation })
+            .select({
+              id: documentBranches.id,
+              generation: documentBranches.generation,
+              threadId: documentBranches.threadId,
+            })
             .from(documentBranches)
             .where(
               inArray(
@@ -361,13 +372,23 @@ export function createDrizzleBranchStore(
           ),
         )
         .limit(1);
-      if (contribution) return { outcome: "stands", branchIds: [] };
+      if (contribution) return { outcome: "stands" };
     }
-    const branchIds = branches.map((branch) => branch.id);
-    if (branchIds.length > 0) {
-      await tx.delete(documentBranches).where(inArray(documentBranches.id, branchIds));
+    if (branches.length > 0) {
+      await tx.delete(documentBranches).where(
+        inArray(
+          documentBranches.id,
+          branches.map((branch) => branch.id),
+        ),
+      );
     }
-    return { outcome: "retracted", branchIds };
+    return {
+      outcome: "retracted",
+      deleted: branches.map((branch) => ({
+        branchId: branch.id,
+        threadId: (branch.threadId as ThreadId | null) ?? null,
+      })),
+    };
   }
 
   async function ensureCreatedDraftBranch(input: {

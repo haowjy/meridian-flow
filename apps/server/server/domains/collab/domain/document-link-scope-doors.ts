@@ -82,6 +82,7 @@ export function scopeAgentEdit(
     responseDestination: core.responseDestination,
     getAvailability: core.getAvailability,
     invalidateThread: core.invalidateThread,
+    retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),

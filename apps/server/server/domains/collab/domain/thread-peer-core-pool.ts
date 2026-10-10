@@ -654,6 +654,23 @@ export function createThreadPeerCorePool(input: {
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
     },
+    async retireThreadPeers(docId, threadIds) {
+      const errors: unknown[] = [];
+      for (const threadId of new Set(threadIds)) {
+        const id = threadId as ThreadId;
+        lastSeen.delete(seenKey(id, docId as DocumentId));
+        // Exact (document, thread) invalidation: the thread's other documents keep their state.
+        for (const core of [cores.get(id), input.liveUtilityCore]) {
+          try {
+            await core?.invalidateThread(docId, threadId);
+          } catch (cause) {
+            errors.push(cause);
+          }
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
+    },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];
       if (docId) {

@@ -69,6 +69,12 @@ export type ThreadPeerAgentEditCore = Omit<
     responseId: string,
     options?: ResponseTransactionOptions,
   ): Promise<ResponseSaveResult>;
+  /**
+   * Retire the process-local state of exactly these threads' peers on `documentId`
+   * (staged buffers, runtimes, pulled baselines) after their branches were deleted.
+   * Durable branch rows are the caller's; other threads and documents are untouched.
+   */
+  retireThreadPeers(documentId: string, threadIds: readonly string[]): Promise<void>;
   readonly [threadPeerAgentEditCoreBrand]: "thread-peer-agent-edit-core";
 };
 
