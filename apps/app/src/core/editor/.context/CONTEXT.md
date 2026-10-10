@@ -126,7 +126,11 @@ lifetime.
   handshake SyncStep2 and every document Update sent on it. It is false on any
   local edit (including same-browser peer and IndexedDB replay, which the
   provider also sends), on disconnect, and in terminal states, and becomes true
-  again after each reconnect. For a live room the server journals each client
+  again after each reconnect. Snapshots emit on edges only: a change of status,
+  of `serverHasLocalChanges`, or of outbox presence (`hasUnacknowledgedEdits()`),
+  never per keystroke. The transport stores local bytes before it sends them,
+  so the first pending snapshot already shows the outbox
+  (`core/transport/.context/CONTEXT.md`). For a live room the server journals each client
   update (unless already contained), then applies it and replies `SyncStatus`,
   so an acknowledgement means applied and journaled; only the debounced
   full-document store is asynchronous, and the next handshake's state-vector
@@ -146,8 +150,13 @@ lifetime.
   either a qualified IndexedDB key or `none`. Admitted live keys include the
   authoritative generation; local resource keys include account and an exact
   persistence identity; branch/review sessions use `none`. A room-derived default
-  key is not permitted. Retiring a branch session therefore loses writer edits the
-  server has not acknowledged ([#731](https://github.com/haowjy/meridian-flow/issues/731)).
+  key is not permitted. Writer edits the server has not acknowledged therefore
+  survive a branch session's retirement only in its transport outbox: the pool
+  drains it on release or carries it on reset, and `BranchWriterHandoff`
+  replays a carry into the successor room
+  ([#731](https://github.com/haowjy/meridian-flow/issues/731)); a tab close or
+  sign-out before acknowledgement loses them
+  ([#739](https://github.com/haowjy/meridian-flow/issues/739)).
 - `local-content-initialization.ts` records exact-cache initialization in the
   existing y-indexeddb `custom` store. Its marker names the database and schema;
   the snapshot and marker append in one `updates` + `custom` transaction whose

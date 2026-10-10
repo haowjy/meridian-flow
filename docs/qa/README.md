@@ -34,7 +34,7 @@ queue. Stop only your stack with `pnpm dev --stop` when finished.
 
 ## Before you call it a defect
 
-Two harness races have produced false defects. Rule them out first.
+Three harness artifacts have produced false defects. Rule them out first.
 
 - **Persistence.** Before judging whether an edit saved, wait until the
   server route's `/readyz` returns 200 and the browser's authenticated
@@ -48,3 +48,13 @@ Two harness races have produced false defects. Rule them out first.
   the editor's copy handler sees an empty selection and Chromium does a native
   copy, which carries none of the app's clipboard data. Assert the holder
   document's URI before testing copy and paste between documents.
+- **Offline emulation.** Attaching and then detaching a temporary CDP session
+  (for example, one opened only for `Page.captureScreenshot`) flips
+  `navigator.onLine` and TanStack's `onlineManager` back to true, while
+  `Network.emulateNetworkConditions` on the owning session keeps the transport
+  offline. The app then sends commands it should have refused, and they fail
+  at the transport. During an offline window, take screenshots through the
+  owning page or session (`page.screenshot()`), never a new target session.
+  Log both `navigator.onLine` and `onlineManager.isOnline()` (from the loaded
+  app module) right before every command, and treat transport reachability as
+  a separate fact.
