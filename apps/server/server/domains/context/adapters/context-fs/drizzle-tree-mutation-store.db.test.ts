@@ -39,6 +39,7 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { interleave } from "../../../../test-support/lock-interleave.js";
 import { createDrizzleCollabPersistence } from "../../../collab/adapters/drizzle-journal.js";
 import { createDocumentAddressResolver } from "../../document-address.js";
 import { moveNodes, type NodeMove } from "../../tree/node-moves.js";
@@ -1143,8 +1144,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const create = () => scenario.model(ascension).create("ideas/second.md", "Second.");
         const settled =
           order === "absorb first"
-            ? await scenario.interleave(rename, "absorb.beforeRepoint", create)
-            : await scenario.interleave(create, "createInDraft.afterCandidateLock", rename);
+            ? await interleave(committed, rename, "absorb.beforeRepoint", create)
+            : await interleave(committed, create, "createInDraft.afterCandidateLock", rename);
         expect.soft(settled.bWaited, `${order}: the second waits`).toBe(true);
         expect.soft(settled.a.ok && settled.b.ok, `${order}: both settle`).toBe(true);
         const [renamed, created] =
@@ -1178,8 +1179,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const create = () => scenario.model(ascension).create("world/places/second.md", "Second.");
         const settled =
           order === "split first"
-            ? await scenario.interleave(remove, "split.beforeRepoint", create)
-            : await scenario.interleave(create, "createInDraft.afterCandidateLock", remove);
+            ? await interleave(committed, remove, "split.beforeRepoint", create)
+            : await interleave(committed, create, "createInDraft.afterCandidateLock", remove);
         expect.soft(settled.bWaited, `${order}: the second waits`).toBe(true);
         expect.soft(settled.a.ok && settled.b.ok, `${order}: both settle`).toBe(true);
         const created = order === "split first" ? settled.b : settled.a;
