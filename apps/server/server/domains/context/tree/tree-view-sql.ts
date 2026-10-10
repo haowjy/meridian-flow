@@ -34,7 +34,7 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
-import type { TreeView } from "./tree-view.js";
+import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
 // below, and every reference to them renders qualified by the subquery's alias.
@@ -694,4 +694,109 @@ export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): P
     ) AS unused
     FROM folders f WHERE f.id = ${folderId}::uuid`);
   return row?.unused === true;
+}
+
+/** One live row of a folder subtree, whatever its visibility: what a split or move plans from. */
+export type SubtreeNode = {
+  kind: "document" | "folder";
+  id: string;
+  parentId: FolderId | null;
+  contextSourceId: ContextSourceId;
+  name: string;
+  /** Documents only. */
+  extension: string | null;
+  hidden: boolean;
+};
+
+/** A hidden node whose parent is a visible folder that leaves its path (§8.3 step 1). */
+export type SplitBoundary = NodeRef & { parentId: FolderId };
+
+/**
+ * Every live folder under these roots (roots included) and every live document in
+ * them, hidden ones included, in one snapshot taken before anything moves.
+ */
+export async function loadSubtreeNodes(
+  db: DrizzleDb,
+  roots: readonly FolderId[],
+): Promise<SubtreeNode[]> {
+  if (roots.length === 0) return [];
+  const rows = await currentDrizzleDb(db).execute<{
+    kind: "document" | "folder";
+    id: string;
+    parent_id: string | null;
+    context_source_id: string;
+    name: string;
+    extension: string | null;
+    hidden: boolean;
+  }>(sql`
+    WITH RECURSIVE tree AS (
+      SELECT f.id FROM folders f WHERE f.id IN (${uuidList(roots)}) AND f.deleted_at IS NULL
+      UNION
+      SELECT f.id FROM folders f JOIN tree t ON f.parent_id = t.id WHERE f.deleted_at IS NULL
+    )
+    SELECT 'folder' AS kind, f.id::text AS id, f.parent_id::text AS parent_id,
+      f.context_source_id::text AS context_source_id, f.name, NULL::text AS extension, f.hidden
+    FROM folders f JOIN tree t ON t.id = f.id
+    UNION ALL
+    SELECT 'document', d.id::text, d.folder_id::text, d.context_source_id::text, d.name,
+      d.extension, d.hidden
+    FROM documents d JOIN tree t ON t.id = d.folder_id
+    WHERE d.deleted_at IS NULL`);
+  return rows.map((row) => ({
+    kind: row.kind,
+    id: row.id,
+    parentId: row.parent_id as FolderId | null,
+    contextSourceId: row.context_source_id as ContextSourceId,
+    name: row.name,
+    extension: row.extension,
+    hidden: row.hidden,
+  }));
+}
+
+/** A hidden node and a node of the other kind under one parent with one rendered name. */
+export type OppositeKindPair = {
+  parentId: FolderId;
+  name: string;
+  hidden: NodeRef;
+  other: NodeRef;
+};
+
+/**
+ * Every rendered name in `root`'s live subtree (any hiddenness) that a folder and a
+ * document both hold, at least one of them hidden (§8.2 step 6, F11).
+ */
+export async function loadOppositeKindPairs(
+  db: DrizzleDb,
+  root: FolderId,
+): Promise<OppositeKindPair[]> {
+  const rows = await currentDrizzleDb(db).execute<{
+    parent_id: string;
+    name: string;
+    folder_id: string;
+    folder_hidden: boolean;
+    document_id: string;
+  }>(sql`
+    WITH RECURSIVE tree AS (
+      SELECT f.id FROM folders f WHERE f.id = ${root}::uuid AND f.deleted_at IS NULL
+      UNION ALL
+      SELECT f.id FROM folders f JOIN tree t ON f.parent_id = t.id WHERE f.deleted_at IS NULL
+    )
+    SELECT f.parent_id::text AS parent_id, f.name, f.id::text AS folder_id,
+      f.hidden AS folder_hidden, d.id::text AS document_id
+    FROM tree t
+    JOIN folders f ON f.parent_id = t.id AND f.deleted_at IS NULL
+    JOIN documents d ON d.folder_id = t.id AND d.deleted_at IS NULL
+      AND CASE WHEN d.extension = '' THEN d.name ELSE d.name || '.' || d.extension END = f.name
+    WHERE f.hidden OR d.hidden
+    ORDER BY f.parent_id, f.name, d.id`);
+  return rows.map((row) => {
+    const folder: NodeRef = { kind: "folder", id: row.folder_id as FolderId };
+    const document: NodeRef = { kind: "document", id: row.document_id as DocumentId };
+    return {
+      parentId: row.parent_id as FolderId,
+      name: row.name,
+      hidden: row.folder_hidden ? folder : document,
+      other: row.folder_hidden ? document : folder,
+    };
+  });
 }

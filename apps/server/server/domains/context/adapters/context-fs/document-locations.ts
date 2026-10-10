@@ -5,6 +5,7 @@ import {
   contextSources,
   documentPreviousLocations,
   documents,
+  folders,
   projects,
   works,
 } from "@meridian/database/schema";
@@ -215,58 +216,92 @@ export async function claimDocumentLocation(
     );
 }
 
-/** Record all vacated files, then consume every destination occupant, including folders. */
-export async function recordDocumentMove(
+/** A visible document's address it left: written as a previous location. */
+export type VacatedLocation = { contextSourceId: string; path: string; documentId: string };
+/** A visible node's final address: previous-location claims there are consumed. */
+export type ClaimedLocation = { contextSourceId: string; path: string };
+
+/**
+ * History for one relocation of a whole set (contract §8.5): every vacated alias first,
+ * then every final claim, so no node's old path survives as an alias where another node
+ * of the set now sits (a swap, a renumber). Hidden nodes never appear in either list: a
+ * hidden location was never a live address. Versions are `bumpLocationVersions`'.
+ */
+export async function recordLocationHistory(
   db: Database,
-  sourceId: string,
-  destinationSourceId: string,
-  previous: readonly NamespaceLocation[],
-  sourcePath: string,
-  destinationPath: string,
+  history: { vacated: readonly VacatedLocation[]; claimed: readonly ClaimedLocation[] },
 ): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const vacated = previous.filter((entry) => entry.kind === "file");
   // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
-  for (let offset = 0; offset < vacated.length; offset += 500) {
-    const batch = vacated.slice(offset, offset + 500);
-    await tx
-      .update(documents)
-      .set({ locationVersion: sql`${documents.locationVersion} + 1` })
-      .where(
-        inArray(
-          documents.id,
-          batch.map((entry) => entry.id),
-        ),
+  for (const [sourceId, entries] of bySource(history.vacated)) {
+    for (let offset = 0; offset < entries.length; offset += 500) {
+      const batch = entries.slice(offset, offset + 500);
+      await consumeClaims(db, sourceId, batch);
+      await tx.insert(documentPreviousLocations).values(
+        batch.map((entry) => ({
+          contextSourceId: sourceId,
+          path: entry.path,
+          documentId: entry.documentId,
+        })),
       );
-    await tx.delete(documentPreviousLocations).where(
+    }
+  }
+  for (const [sourceId, entries] of bySource(history.claimed)) {
+    for (let offset = 0; offset < entries.length; offset += 500) {
+      await consumeClaims(db, sourceId, entries.slice(offset, offset + 500));
+    }
+  }
+}
+
+function bySource<T extends { contextSourceId: string }>(entries: readonly T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const entry of entries) {
+    grouped.set(entry.contextSourceId, [...(grouped.get(entry.contextSourceId) ?? []), entry]);
+  }
+  return grouped;
+}
+
+async function consumeClaims(
+  db: Database,
+  sourceId: string,
+  entries: readonly { path: string }[],
+): Promise<void> {
+  await currentDrizzleDb(db)
+    .delete(documentPreviousLocations)
+    .where(
       and(
         eq(documentPreviousLocations.contextSourceId, sourceId),
         inArray(
           documentPreviousLocations.path,
-          batch.map((entry) => entry.path),
+          entries.map((entry) => entry.path),
         ),
       ),
     );
-    await tx.insert(documentPreviousLocations).values(
-      batch.map((entry) => ({
-        contextSourceId: sourceId,
-        path: entry.path,
-        documentId: entry.id,
-      })),
-    );
-  }
-  const occupiedPaths = previous.map(
-    (entry) => destinationPath + entry.path.slice(sourcePath.length),
-  );
-  for (let offset = 0; offset < occupiedPaths.length; offset += 500) {
+}
+
+/**
+ * Every namespace lifecycle change bumps `location_version` on what it changes (contract
+ * §8.4): moves, deletes, restores, reveals, tombstones. Batched by 500 in the caller's
+ * transaction.
+ */
+export async function bumpLocationVersions(
+  db: Database,
+  ids: { documentIds?: readonly string[]; folderIds?: readonly string[] },
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const documentIds = [...new Set(ids.documentIds ?? [])];
+  const folderIds = [...new Set(ids.folderIds ?? [])];
+  for (let offset = 0; offset < documentIds.length; offset += 500) {
     await tx
-      .delete(documentPreviousLocations)
-      .where(
-        and(
-          eq(documentPreviousLocations.contextSourceId, destinationSourceId),
-          inArray(documentPreviousLocations.path, occupiedPaths.slice(offset, offset + 500)),
-        ),
-      );
+      .update(documents)
+      .set({ locationVersion: sql`${documents.locationVersion} + 1` })
+      .where(inArray(documents.id, documentIds.slice(offset, offset + 500)));
+  }
+  for (let offset = 0; offset < folderIds.length; offset += 500) {
+    await tx
+      .update(folders)
+      .set({ locationVersion: sql`${folders.locationVersion} + 1` })
+      .where(inArray(folders.id, folderIds.slice(offset, offset + 500) as never));
   }
 }
 

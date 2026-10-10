@@ -20,7 +20,10 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
+import {
+  bumpLocationVersions,
+  recordLocationHistory,
+} from "../../context/adapters/context-fs/document-locations.js";
 import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
 import {
   createDocumentLastAddress,
@@ -238,14 +241,11 @@ describe("durable document derivations", () => {
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
     await runInDrizzleTransaction(db, async () => {
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter.md", kind: "file" }],
-        "/chapter.md",
-        "/renamed.md",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter.md", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/renamed.md" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -307,14 +307,11 @@ describe("durable document derivations", () => {
         .update(documents)
         .set({ folderId })
         .where(eq(documents.id, documentId));
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter.md", kind: "file" }],
-        "/chapter.md",
-        "/moved/chapter.md",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter.md", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter.md" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,

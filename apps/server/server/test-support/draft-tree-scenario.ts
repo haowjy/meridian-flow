@@ -5,7 +5,7 @@
  * runtime (the real tool executor, route cores and ports) when one is given.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources.
+ * the other project sources, or `user://` for the writer's personal source (live verbs only).
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -47,10 +47,7 @@ import {
 } from "../domains/context/context-port-resolution.js";
 import { createProjectContextDocumentStore } from "../domains/context/context-source-provisioning.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
-import {
-  type HiddenNodeHookPoint,
-  setHiddenNodeHook,
-} from "../domains/context/tree/hidden-nodes.js";
+import { setTreeHook, type TreeHookPoint } from "../domains/context/tree/test-hooks.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
   createContextEntry,
@@ -101,6 +98,10 @@ export interface ScenarioWriter {
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
   mkdir(path: string): Promise<void>;
+  /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
+  move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
+  /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
+  delete(path: string): ReturnType<ContextPort["delete"]>;
 }
 
 /** What a reader sees through ContextFS: a writer's live port, or a Work thread's. */
@@ -142,13 +143,15 @@ export interface DraftTreeScenario {
    * replaces what it calls with `discardItems`).
    */
   discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
+  /** Apply these documents from the Work's draft through the review command (lane E's seam). */
+  apply(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
   /**
    * Controlled interleaving: run `a` until it reaches the hook point `at`, run `b` to
    * completion or to its first lock wait, then release `a`.
    */
   interleave(
     a: () => Promise<unknown>,
-    at: HiddenNodeHookPoint,
+    at: TreeHookPoint,
     b: () => Promise<unknown>,
   ): Promise<{ a: Settled; b: Settled; bWaited: boolean }>;
 }
@@ -298,6 +301,8 @@ export async function draftTreeScenario(
     return /^[a-z]+:\/\//.test(path) ? path : `manuscript://${path}`;
   }
 
+  const human = () => ({ type: "human" as const, userId });
+
   function sourceOf(path: string): { scheme: "manuscript" | "kb" | "unfiled"; rel: string } {
     const match = /^(kb|unfiled|manuscript):\/\/(.*)$/.exec(path);
     return {
@@ -396,6 +401,20 @@ export async function draftTreeScenario(
         body: parseCreateContextEntryBody({ type: "folder", path: `/${rel}` }),
       });
     },
+    move(from, to) {
+      return livePort().commitWriterLocation(uri(from), uri(to), { origin: human() });
+    },
+    async delete(path) {
+      const port = livePort();
+      // stat answers files only; anything else at the path is the folder being deleted.
+      const stat = await port.stat(uri(path));
+      return port.delete(uri(path), {
+        origin: human(),
+        expected: stat.ok
+          ? { kind: "file", documentId: stat.value.documentId ?? "" }
+          : { kind: "folder" },
+      });
+    },
   };
 
   function view(of: ScenarioWork | "live"): ScenarioView {
@@ -475,6 +494,22 @@ export async function draftTreeScenario(
     }
   }
 
+  async function apply(work: ScenarioWork, documentIds: readonly DocumentId[]) {
+    const review = runtime().runtime.ports.documentSync.draftReview;
+    const items = await review.list({ projectId, workId: work.id });
+    for (const documentId of documentIds) {
+      const item = items.find((candidate) => candidate.documentId === documentId);
+      if (!item) throw new Error(`No draft of ${documentId} to apply`);
+      await review.applyWorkDraft({
+        projectId,
+        workId: work.id,
+        documentId,
+        draftId: item.draftId,
+        userId,
+      });
+    }
+  }
+
   /** Sessions of this database waiting on a lock. */
   async function lockWaiters(): Promise<number> {
     const [row] = await db.execute<{ waiting: number }>(sql`
@@ -485,7 +520,7 @@ export async function draftTreeScenario(
 
   async function interleave(
     a: () => Promise<unknown>,
-    at: HiddenNodeHookPoint,
+    at: TreeHookPoint,
     b: () => Promise<unknown>,
   ): Promise<{ a: Settled; b: Settled; bWaited: boolean }> {
     const settle = (run: () => Promise<unknown>): Promise<Settled> =>
@@ -501,7 +536,7 @@ export async function draftTreeScenario(
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const remove = setHiddenNodeHook(at, async () => {
+    const remove = setTreeHook(at, async () => {
       // Only `a`'s first arrival waits; `b` passes the same point freely.
       remove();
       reached();
@@ -567,6 +602,7 @@ export async function draftTreeScenario(
     writer,
     view,
     discard,
+    apply,
     interleave,
     async seedLive(path) {
       const { sourceId, dir, filename } = locate(path);
