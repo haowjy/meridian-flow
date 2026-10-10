@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: isolate review launch fixtures so their focus witnesses do not depend on test order.
+
 - Use one phone review header model for header, change bar and sheet without reparenting the manuscript.
 
 - Share active review projection and presence leases across desktop and phone while retaining each host's requested-versus-resolved review policy.
