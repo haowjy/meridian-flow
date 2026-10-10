@@ -65,8 +65,9 @@ export function DocumentIdentityBar({
     editorWorkId: editorWorkId,
     onCommitted,
   });
-  // Only a rename made here shows the note here; the tree shows its own. The rename
-  // re-resolves the tab and remounts this bar, so the operation outlives it.
+  // The note is keyed by document, so a rename or move from any list shows here too.
+  // A placement made here re-resolves the tab and remounts this bar, so the
+  // operation is remembered outside it.
   const commit: typeof commitIdentity = async (target) => {
     const outcome = await commitIdentity(target);
     if (outcome.status === "committed" && outcome.operationId)
