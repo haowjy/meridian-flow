@@ -34,7 +34,7 @@ body.
   primary body **stays mounted** — chat survives a view switch the same way it
   survives a collapsed dock.
 
-`useDockView(screen)` resolves the active view from a session-only store. The
+`useDockView(screen)` resolves the active view from a browser-tab-local store. The
 native view is always present; Changes joins it only while `hasDockChanges`
 finds an active draft.
 
@@ -50,14 +50,20 @@ finds an active draft.
    sessions must survive a view switch.
 
 3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored)`
-   is a pure function with no React dependency — testable in isolation. It defaults
+   lives in `dock-views.ts` and is a pure function with no React dependency — testable in isolation. It defaults
    to the occupant's native view when no stored choice exists and falls back when a
    stored choice is invalid for the current screen's set.
 
-4. **Session-only view store.** `useDockViewStore` has no `persist`. A fresh
-   reload starts from defaults — no stale view survives. Placement, width, and
-   collapse are owned by the surface-prefs store; this store only tracks the view
-   choice.
+4. **Browser-tab-local layout.** `dock-persistence.ts` owns the versioned
+   `meridian:dock:v1` sessionStorage boundary, stamped with the authenticated account. Missing or foreign account
+   stamps are rejected. Reload restores the document and
+   per-screen view choice; another browser tab has its own layout, like Editor
+   tabs. A restored document stays hidden until the Editor workspace hydration
+   signal and resource/identity validation complete. Existing project and Work
+   fences apply to the hidden candidate too. Restore never claims a revision:
+   any writer pick, Close, or view choice cancels it. Empty/loading Changes is a
+   presentation fallback, not a write to the writer's saved choice.
+   Width and collapse remain owned by the surface-prefs store.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
    are spelled, and `DockViewSwitch` is the one place that renders the segmented
@@ -102,8 +108,8 @@ finds an active draft.
 - **Don't give the dock document its own session or a viewer.** It is the
   Editor's host and chrome; a read-only preview, a second Y.Doc, or a
   `bg-background` shell around it are all bugs.
-- **Don't persist the dock view choice.** A stale view across reloads is worse
-  than starting fresh.
+- **Don't put dock peeks in the URL or browser history.** Reload restoration
+  belongs to sessionStorage, not navigation.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the
   tailwind-merge trap in `.context/CONTEXT.md`.
 
