@@ -34,7 +34,8 @@ import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
 import { DockDocumentTitle, DockTitleMenu } from "./DockDocumentTitle";
-import type { DockDocument, DockView } from "./dock-view-store";
+import type { DockDocument } from "./dock-view-store";
+import type { DockView } from "./dock-views";
 
 export type DockViewSwitchProps = {
   view: DockView;

@@ -8,9 +8,7 @@ import {
   readDockSnapshot,
   writeDockSnapshot,
 } from "./dock-persistence";
-
-/** Dock destinations the writer switches between. */
-export type DockView = "chat" | "context" | "changes";
+import { type DockView, type ResolvedDockView, resolveDockView } from "./dock-views";
 
 /**
  * The one document the dock shows in place of its views, until the writer
@@ -22,25 +20,6 @@ export type DockDocument = {
   projectId: string;
   screen: Exclude<ScreenKey, "context">;
   tab: ContextTab;
-};
-
-type DockViewSet = {
-  /** Ordered segments for the switch. */
-  views: readonly DockView[];
-  /** Shown when the writer has made no explicit choice this session. */
-  default: DockView;
-  /** The occupant's native (non-Changes) view — its content stays mounted. */
-  primary: DockView;
-};
-
-/**
- * The view set is a function of the dock occupant, which the screen fixes:
- * the Chat screen docks the context rail; Work/Editor dock the chat surface.
- */
-const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
-  work: { views: ["chat", "changes"], default: "chat", primary: "chat" },
-  chat: { views: ["context", "changes"], default: "context", primary: "context" },
-  context: { views: ["chat", "changes"], default: "chat", primary: "chat" },
 };
 
 type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
@@ -62,6 +41,9 @@ export function dockDocumentFitsScope(
 }
 
 type DockViewState = {
+  accountId: string | null;
+  /** Restore once per authenticated account; a foreign account's layout is never admitted. */
+  rehydrate: (accountId: string) => void;
   byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
   /** Hidden until resource validation finishes; every writer intent cancels restoration. */
@@ -90,12 +72,31 @@ type DockViewState = {
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export function createDockViewStore(storage: () => DockStorage | null = browserDockStorage) {
-  const snapshot = readDockSnapshot(storage);
+export function createDockViewStore(
+  storage: () => DockStorage | null = browserDockStorage,
+  accountId: string | null = null,
+) {
+  const snapshot = readDockSnapshot(storage, accountId);
   const store = create<DockViewState>((set, get) => {
     const setOccupant = (occupant: DockDocument | null) =>
       set((state) => ({ occupant, restoring: null, revision: state.revision + 1 }));
     return {
+      accountId,
+      rehydrate: (accountId) => {
+        const state = get();
+        if (state.accountId === accountId) return;
+        const snapshot = readDockSnapshot(storage, accountId);
+        set({
+          accountId,
+          byScreen: snapshot?.byScreen ?? {},
+          occupant: null,
+          restoring: dockDocumentFitsScope(snapshot?.occupant ?? null, state.scope)
+            ? (snapshot?.occupant ?? null)
+            : null,
+          // Account changes invalidate outstanding claims, not just the restore candidate.
+          revision: state.revision + (state.accountId === null ? 0 : 1),
+        });
+      },
       byScreen: snapshot?.byScreen ?? {},
       occupant: null,
       restoring: snapshot?.occupant ?? null,
@@ -150,13 +151,16 @@ export function createDockViewStore(storage: () => DockStorage | null = browserD
     };
   });
   store.subscribe((state, previous) => {
+    if (!state.accountId) return;
     if (
+      state.accountId === previous.accountId &&
       state.occupant === previous.occupant &&
       state.restoring === previous.restoring &&
       state.byScreen === previous.byScreen
     )
       return;
     writeDockSnapshot(storage, {
+      accountId: state.accountId,
       byScreen: state.byScreen,
       occupant: state.occupant ?? state.restoring,
     });
@@ -165,32 +169,6 @@ export function createDockViewStore(storage: () => DockStorage | null = browserD
 }
 
 export const useDockViewStore = createDockViewStore();
-
-export type ResolvedDockView = {
-  view: DockView;
-  views: readonly DockView[];
-  primaryView: DockView;
-};
-
-/** Resolve the explicit choice or the screen's default. */
-export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
-  const set = DOCK_VIEW_SETS[screen];
-  const view = stored && set.views.includes(stored) ? stored : set.default;
-  return { view, views: set.views, primaryView: set.primary };
-}
-
-/** Remove the Changes destination when its model is empty. */
-export function withoutEmptyChanges(
-  resolved: ResolvedDockView,
-  hasChanges: boolean,
-): ResolvedDockView {
-  if (hasChanges) return resolved;
-  return {
-    ...resolved,
-    view: resolved.view === "changes" ? resolved.primaryView : resolved.view,
-    views: resolved.views.filter((view) => view !== "changes"),
-  };
-}
 
 /** Resolve the active dock view for a screen and bind the switch action. */
 export function useDockView(

@@ -54,13 +54,19 @@ Chat-screen occupant survives screen and chat changes, but is only shown on Chat
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
-handling opens have. `dock-persistence.ts` stores `{ byScreen, occupant }` under
+handling opens have. `dock-persistence.ts` stores `{ accountId, byScreen, occupant }` under
 `meridian:dock:v1` in sessionStorage, reusing the Editor tab codec. Reads, parsing
-and writes degrade silently if storage is unavailable. A fresh store puts the
-saved document in `restoring`, never directly in the visible slot. Scope sync
-fences both slots. `ProjectView` supplies `_workspaceHydrated` (the Editor signal) to the dock-owned
-`useDockDocumentRestoration` hook; `restoreDockDocument` then waits for the replica projection. It projects resource
-identity, rejects terminal/removed resources and missing local Untitleds, and
+and writes degrade silently if storage is unavailable. The dock-owned restoration
+hook binds the authenticated account before admitting a snapshot; missing or
+foreign account stamps drop the entire layout. Account switches also clear live
+state and invalidate prior claims. Version 1 remains unchanged because this shape
+has no released data. `dock-views.ts` owns the shared view policy used by rendering
+and snapshot validation. A fresh store puts the saved document in `restoring`,
+never directly in the visible slot. The pure `dockDocumentFitsScope` predicate
+fences both scope sync and restored installation, including a Work owner changed
+during validation. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
+to the dock-owned `useDockDocumentRestoration` hook; `restoreDockDocument` then
+waits for the replica projection. It projects resource identity, rejects terminal/removed resources and missing local Untitleds, and
 resolves server-backed documents by stable ID with the Editor availability
 validator. Acquiring the resolved catalog before a final projection keeps a
 rename/move and optimistic namespace intents coherent. Validation failure leaves
