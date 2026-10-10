@@ -43,6 +43,10 @@ Shared across both shells:
   through confirmation, while folders carry no document identity.
 - Mobile `DrillRow`: `trailing: ReactNode` separates the tap target from action
   buttons. Never a `drillsIn` boolean.
+- Tree disclosure is tab-local sessionStorage, account/project/tree scoped.
+  `use-tree-expansion.ts` owns it for the project tree, chat Scratch, and Work
+  Files. Only resolved catalogs prune missing folders; new tabs start collapsed.
+  Active document reveal expands once, not on every catalog refresh.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.
 - Two triggers for entry actions (context menu + kebab), not three.
