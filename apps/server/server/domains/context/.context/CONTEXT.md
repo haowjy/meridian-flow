@@ -208,10 +208,22 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
-| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
+| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant live document ID (a draft's hidden contents split off first and are never named); deleting an empty folder returns none. A move is the overwrite victim, then `tree/node-moves.ts`'s `moveNodes`. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
 | `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
+
+## Live folder operations and hidden nodes
+
+A draft's hidden rows stay where that draft placed them whatever the writer
+does to live folders (`tree/folder-normalization.ts`). A rename or move that
+lands a folder at a hidden folder's path absorbs it; a recursive delete, or a
+folder move to another project or into a Work-owned or lineage Scratch source,
+first splits hidden
+contents into hidden twins at their old paths. Within the project they move with
+the folder, and the change rows under it take the new source. History (vacated
+aliases, consumed claims) is written for visible nodes only; every moved,
+deleted or overwritten node's `location_version` is bumped once.
 
 ## Moves and the link note
 
