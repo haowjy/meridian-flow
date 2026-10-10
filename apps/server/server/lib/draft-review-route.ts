@@ -9,8 +9,6 @@ import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contrac
 import type {
   DraftApplyAllRequest,
   DraftApplyAllResponse,
-  DraftApplyItemResult,
-  DraftApplyNote,
   DraftApplyRefusalBody,
   DraftApplyResponse,
   DraftApplyResponseAdditions,
@@ -213,7 +211,7 @@ export async function handleApplyWorkDraftRequest(
     case "applied":
       return {
         httpStatus: 200,
-        body: { status: "applied", draftId: result.draftId, item: toWireApplied(result.item) },
+        body: { status: "applied", draftId: result.draftId, item: result.item },
       };
     case "held":
       return {
@@ -267,21 +265,8 @@ export async function handleApplyAllWorkDraftRequest(
       }),
     ),
   );
-  switch (result.status) {
-    case "gone":
-      return { status: "gone", draftId: result.draftId };
-    case "stale":
-      return { status: "stale", draftId: result.draftId, staleItemKeys: [...result.staleItemKeys] };
-    case "applied":
-      return {
-        status: "applied",
-        draftId: result.draftId,
-        draftClosed: result.draftClosed,
-        items: result.items.map((item) =>
-          item.status === "applied" ? toWireApplied(item) : { ...item },
-        ),
-      };
-  }
+  // The service's result is the wire's type.
+  return result;
 }
 
 /**
@@ -410,14 +395,6 @@ function toWireItem(item: DraftReviewItem): DraftReviewItemWire {
     liveTextToken: item.tokens.liveTextToken,
     branchGenerationToken: item.tokens.branchGenerationToken,
   };
-}
-
-function toWireApplied(item: {
-  itemKey: string;
-  status: "applied";
-  notes: readonly DraftApplyNote[];
-}): Extract<DraftApplyItemResult, { status: "applied" }> {
-  return { itemKey: item.itemKey, status: "applied", notes: [...item.notes] };
 }
 
 function serializeThreadDraft(

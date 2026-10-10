@@ -132,10 +132,10 @@ writer boundary; neither check assumes the other ran.
 
 ## Pending publication
 
-`domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
-review lists, counts, and Auto-apply confirmation: current-generation reviewable
-rows loaded through the `WorkDraftPendingStore` seam, one joined query that
-projects only `turnId`. Counts are distinct pending documents per Work: the
+The `WorkDraftPendingStore` port (Drizzle adapter in `adapters/drizzle-branch-push.ts`)
+owns the pending Work-draft predicate used by review lists, counts, and
+Auto-apply confirmation: current-generation reviewable rows, one joined query
+that projects only `turnId`. Counts are distinct pending documents per Work: the
 active draft's branches with reviewable rows plus its change rows (a created
 document is pending with no text yet), never raw journal-row totals. The review
 list (`domain/draft-review-items.ts`) is the draft's tree state merged with those

@@ -126,7 +126,6 @@ const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
-const { createWorkDraftPending } = await import("../domain/work-draft-pending.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
@@ -687,7 +686,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const reviewItems = createDraftReviewItems({
     tree: createTreeReader(db),
-    branches: createWorkDraftPending(durableWorkDraftPendingStore).branches,
+    branches: (draftId, documentIds) =>
+      durableWorkDraftPendingStore.listDraftBranchEvidence(draftId, documentIds),
     liveFingerprint: (documentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });

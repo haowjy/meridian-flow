@@ -7,6 +7,7 @@
  * Every Apply caller goes through here: the per-document route, Apply all and D40's switch.
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
+import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
 import type { BranchPushService } from "./branch-push-contracts.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type {
@@ -54,18 +55,9 @@ export type ApplySelection =
   /** D40's switch: the writer confirmed a count; every item pending now. */
   | { kind: "all_pending" };
 
-export type ApplyItemResult =
-  | { itemKey: DraftItemKey; status: "applied"; notes: readonly ApplyNote[] }
-  | { itemKey: DraftItemKey; status: "held"; reason: HeldReason };
-export type ApplyResult =
-  | {
-      status: "applied";
-      draftId: DraftId;
-      draftClosed: boolean;
-      items: readonly ApplyItemResult[];
-    }
-  | { status: "stale"; draftId: DraftId; staleItemKeys: readonly DraftItemKey[] }
-  | { status: "gone"; draftId: DraftId };
+/** Per-item and whole results are the wire's own types (`@meridian/contracts/drafts`). */
+export type ApplyItemResult = DraftApplyItemResult;
+export type ApplyResult = DraftApplyAllResponse;
 
 /** A selection that names an item twice: refused before anything registers or stages. */
 export class DuplicateApplyItemError extends Error {
@@ -214,7 +206,7 @@ export function createDraftPublication(deps: {
             status: "stale",
             draftId,
             staleItemKeys:
-              refusal.kind === "stale" ? refusal.itemKeys : items.map((item) => item.itemKey),
+              refusal.kind === "stale" ? [...refusal.itemKeys] : items.map((item) => item.itemKey),
           };
         }
         const held = new Map(pushed.heldItems.map((hold) => [hold.itemKey, hold.reason]));

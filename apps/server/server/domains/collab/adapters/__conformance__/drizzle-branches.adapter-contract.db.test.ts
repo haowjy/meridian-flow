@@ -54,7 +54,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
-    const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
@@ -289,7 +288,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pendingDrafts = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
+      const pendingDrafts = createDrizzleWorkDraftPendingStore(db);
       await expect(
         pendingDrafts
           .countPendingByWorkIds([WORK_ID as never])

@@ -5,6 +5,7 @@
  * so neither side probes untyped JSON.
  */
 import type { DocumentId, DraftId } from "@meridian/contracts";
+import type { DraftApplyNote, DraftHeldReason } from "@meridian/contracts/drafts";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { z } from "zod";
 import type { PublicationRefusal } from "./ports/settlement-publication.js";
@@ -107,8 +108,8 @@ export function readDraftTreeRefusal(reason: PublicationRefusal): DraftTreeRefus
   }
 }
 
-/** Why an item stays in the draft: 5a, the live path it needs is taken. */
-export type HeldReason = { code: "path_taken"; path: string };
+/** Why an item stays in the draft: 5a, the live path it needs is taken (the wire's type). */
+export type HeldReason = DraftHeldReason;
 
 const HoldDetail = z.object({ path: z.string() });
 
@@ -124,9 +125,7 @@ export function readDraftTreeHold(reason: PublicationRefusal): HeldReason | null
 }
 
 /** A receipt note: what completion did to an item beyond publishing its text (§11.2). */
-export type ApplyNote =
-  | { code: "rename_replaced"; replacedPath: string; path: string }
-  | { code: "restored"; path: string };
+export type ApplyNote = DraftApplyNote;
 
 const NotesDetail = z.object({
   notes: z.array(

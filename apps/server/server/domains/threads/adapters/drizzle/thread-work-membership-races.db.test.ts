@@ -42,14 +42,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleWorkDraftPendingStore } = await import(
       "../../../collab/adapters/drizzle-branch-push.js"
     );
-    const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositoriesForTest(db);
-    const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
+    const draftPending = createDrizzleWorkDraftPendingStore(db);
     const works = createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
