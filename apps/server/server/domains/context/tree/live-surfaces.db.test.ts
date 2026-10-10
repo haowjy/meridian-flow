@@ -1,4 +1,10 @@
-/** Combined R and C-b live and draft reader chokepoints (C-1a, C-1b). */
+/**
+ * The chokepoint matrices (contract §16.3, F15): a draft's hidden document is absent from
+ * every live surface (C-1a) and present in its draft's view (C-1b). Each matrix is one case
+ * iterating its table with `expect.soft` per row, so a failure names every leaking surface.
+ * Rows from lanes R (independent readers), C-b (manifest-backed readers moved to the view)
+ * and C-a (the catalog and ContextFS, over a document a model created in its draft).
+ */
 
 import { randomUUID } from "node:crypto";
 import type { LinkView } from "@meridian/contracts";
@@ -20,6 +26,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { downloadDocument } from "../../../lib/document-download-route.js";
 import { hasLiveDocument } from "../../../lib/yjs-ws-handler.js";
 import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[projectId]/documents/[documentId]/figure/signed-url.get.js";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
@@ -55,12 +62,26 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
   assertThrowawayDatabaseForRunDbTests(url);
   describe("independent reader chokepoints", () => {
     // Registry registration owns a root transaction, so scenarios must be committed.
-    const db = createDb(url, { max: 3 });
+    const db = createDb(url, { max: 8 });
     beforeEach(() => deleteDrizzleRows(db, [users]));
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);
       await db.close();
     });
+    const runtimes = useComposedRuntimes(() => db);
+
+    const HARBOR = "lore/places/harbor.md";
+    const HARBOR_TEXT = "The harbor smells of salt and tar.";
+
+    /** A model's create in its draft, with text: hidden folders, a hidden row, D's branch. */
+    async function modelHarbor() {
+      const runtime = await runtimes.compose();
+      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const ascension = await scenario.work("Ascension", "draft");
+      const harbor = await scenario.model(ascension).create(HARBOR, HARBOR_TEXT);
+      const scope = { kind: "project", projectId: scenario.project.id } as const;
+      return { runtime, scenario, ascension, harbor, scope };
+    }
     async function setup() {
       const scenario = await draftTreeScenario(db);
       const work = await scenario.work("Ascension", "draft");
@@ -265,7 +286,79 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       });
       const aheadId = randomUUID();
       const registry = createDrizzleLinkAheadRegistry(db);
+      const m = await modelHarbor();
+      const liveFs = m.scenario.view("live");
       const rows = [
+        {
+          surface: "catalog snapshot",
+          run: async () =>
+            (await m.runtime.ports.contextCatalog.snapshot(m.scope)).entries.some(
+              (entry) => entry.entryId === m.harbor,
+            ),
+          expected: false,
+        },
+        {
+          surface: "catalog snapshot hidden folders",
+          run: async () =>
+            (await m.runtime.ports.contextCatalog.snapshot(m.scope)).entries.flatMap((entry) =>
+              entry.kind === "folder" && ["lore", "places"].includes(entry.name)
+                ? [entry.name]
+                : [],
+            ),
+          expected: [],
+        },
+        {
+          surface: "catalog children",
+          run: async () =>
+            (
+              await m.runtime.ports.contextCatalog.children({
+                scope: m.scope,
+                parentId: m.scenario.project.sources.manuscript,
+              })
+            ).entries.some((entry) => entry.name === "lore"),
+          expected: false,
+        },
+        {
+          surface: "ContextFS stat",
+          run: async () => {
+            const stat = await liveFs.stat(HARBOR);
+            return stat.ok ? stat.value.documentId : stat.error.code;
+          },
+          expected: "not_found",
+        },
+        {
+          surface: "ContextFS ls",
+          run: async () => {
+            const listing = await liveFs.ls("manuscript://");
+            return listing.ok
+              ? listing.value.entries.some((entry) => entry.uri === "manuscript://lore")
+              : listing.error.code;
+          },
+          expected: false,
+        },
+        {
+          surface: "ContextFS read",
+          run: async () => {
+            const read = await liveFs.read(HARBOR);
+            return read.ok ? read.value.documentId : read.error.code;
+          },
+          expected: "not_found",
+        },
+        {
+          surface: "ContextFS search",
+          run: async () => {
+            const hits = await liveFs.search("smells of salt");
+            return hits.ok
+              ? hits.value.some((hit) => hit.documentId === m.harbor)
+              : hits.error.code;
+          },
+          expected: false,
+        },
+        {
+          surface: "ContextFS locate",
+          run: () => liveFs.locate(m.harbor),
+          expected: null,
+        },
         {
           surface: "hidden tombstone facts",
           run: () =>
@@ -511,7 +604,52 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         );
       const f = await fixture();
       const draft = await f.scenario.draftOf(f.work);
+      const m = await modelHarbor();
+      const draftFs = m.scenario.view(m.ascension);
       const rows = [
+        {
+          surface: "ContextFS stat in D",
+          run: async () => {
+            const stat = await draftFs.stat(HARBOR);
+            return stat.ok ? stat.value.documentId : stat.error.code;
+          },
+          expected: m.harbor,
+        },
+        {
+          surface: "ContextFS ls in D",
+          run: async () => {
+            const listing = await draftFs.ls("lore/places");
+            return listing.ok
+              ? listing.value.entries.map((entry) => [entry.uri, entry.documentId])
+              : listing.error.code;
+          },
+          expected: [[`manuscript://${HARBOR}`, m.harbor]],
+        },
+        {
+          surface: "ContextFS read in D",
+          run: async () => {
+            const read = await draftFs.read(HARBOR);
+            return read.ok
+              ? [read.value.documentId, read.value.content.includes(HARBOR_TEXT)]
+              : read.error.code;
+          },
+          expected: [m.harbor, true],
+        },
+        {
+          surface: "ContextFS search in D",
+          run: async () => {
+            const hits = await draftFs.search("smells of salt");
+            return hits.ok
+              ? hits.value.flatMap((hit) => (hit.documentId === m.harbor ? [hit.uri] : []))
+              : hits.error.code;
+          },
+          expected: [`manuscript://${HARBOR}`],
+        },
+        {
+          surface: "ContextFS locate in D",
+          run: () => draftFs.locate(m.harbor),
+          expected: { path: HARBOR },
+        },
         {
           surface: "hidden tombstone facts in D",
           run: () =>

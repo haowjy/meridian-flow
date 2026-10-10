@@ -114,12 +114,10 @@ interface ContextStoreResolvers {
   ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
-/** The live manifest's writers and its remaining live readers, until lane M retires it. */
+/** The live manifest's writers, until lane M retires it; nothing reads it for visibility. */
 export interface ManifestMembershipPort {
   recordManifestDocumentCreated(documentId: string, view: { projectId: string }): Promise<void>;
   recordManifestDocumentDeleted(documentId: string, view: { projectId: string }): Promise<void>;
-  /** The live manifest: a move's note counts only its members (contract §10). */
-  resolveManifestMembership(input: { projectId: ProjectId }): Promise<{ members: string[] }>;
   /** A cross-project move carries live membership to its destination project (§9.3). */
   transferLiveManifestMembership(
     documentIds: readonly DocumentId[],
@@ -430,8 +428,6 @@ function createProductionStoreResolvers(
       manifestMembership.recordManifestDocumentDeleted(documentId, { projectId }),
   });
   const liveMembership: LiveMembership = {
-    members: async (projectId) =>
-      new Set((await manifestMembership.resolveManifestMembership({ projectId })).members),
     transfer: (documentIds, projects) =>
       manifestMembership.transferLiveManifestMembership(documentIds, projects),
   };

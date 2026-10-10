@@ -7,6 +7,7 @@ import { createDb } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
   documents,
+  draftTreeChanges,
   folders,
   modelResponses,
 } from "@meridian/database/schema";
@@ -288,9 +289,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.reconcileProjectManifest(PROJECT_ID as never);
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
+      // The Work's draft created this chapter: a hidden row and the draft's created row,
+      // as ContextFS leaves a model's create in a draft-mode Work.
+      const draft = await collab.drafts.ensureActiveForWrite({
+        workId: WORK_ID as never,
+        projectId: PROJECT_ID as never,
+        threadId: THREAD_ID as never,
+        userId: USER_ID as never,
+      });
       await db.insert(documents).values({
         id: CREATED_ID,
         contextSourceId: SOURCE_ID,
+        name: "created",
+        extension: "md",
+        hidden: true,
+      });
+      await db.insert(draftTreeChanges).values({
+        draftId: draft.id,
+        nodeKind: "document",
+        nodeId: CREATED_ID,
+        created: true,
+        contextSourceId: SOURCE_ID as never,
+        parentFolderId: null,
         name: "created",
         extension: "md",
       });
@@ -397,9 +417,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
       });
-      await collab.recordManifestDocumentCreated(CREATED_ID as never, {
-        projectId: PROJECT_ID as never,
-      });
       await expect(
         core.write(
           { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Suffix." },
@@ -426,7 +443,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
-      // Live creation is immediately visible in every view, independent of the reply.
+      // The same comparison in live. A create is a row, not a reply's in-memory set: a live
+      // create is visible in every view at once, and the draft's hidden create is "in a
+      // draft" in both views, spelled at its path only where its draft can read it.
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
       await db.insert(documents).values({
@@ -471,30 +490,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await links.within(
         { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
         async () => {
-          const replyLive = { kind: "live", responseId: LIVE_RESPONSE_ID } as const;
-          const replyDraft = {
-            kind: "draft",
-            workId: WORK_ID,
-            responseId: LIVE_RESPONSE_ID,
-          } as const;
-          const views = [replyLive, { kind: "live" } as const, replyDraft];
+          const live = { kind: "live" } as const;
+          const drafted = { kind: "draft", workId: WORK_ID } as const;
           await links.prepare({
-            holders: views.map((each) => ({ documentId: DOC_ID, view: each })),
-            refs: [`doc:${LIVE_CREATED_ID}`],
+            holders: [live, drafted].map((view) => ({ documentId: DOC_ID, view })),
+            refs: [`doc:${LIVE_CREATED_ID}`, `doc:${CREATED_ID}`],
           });
-          const link = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale.md" };
-          const [ownLive, baseline, ownDraft] = views.map((each) =>
-            links.holder({ documentId: DOC_ID, view: each }),
+          const [inLive, inDraft] = [live, drafted].map((view) =>
+            links.holder({ documentId: DOC_ID, view }),
           );
+          const liveCreate = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale.md" };
+          const draftCreate = { ref: `doc:${CREATED_ID}`, href: "manuscript://stale-created.md" };
           expect
-            .soft(ownLive?.spellLink(link).href, "the reply's live view")
+            .soft(inLive?.spellLink(liveCreate).href, "live create, live")
             .toBe("live-created.md");
           expect
-            .soft(baseline?.resolve(link), "baseline live")
+            .soft(inDraft?.resolve(liveCreate), "live create, draft")
             .toMatchObject({ kind: "document", inDraft: false });
           expect
-            .soft(ownDraft?.resolve(link), "the reply's draft view")
-            .toMatchObject({ kind: "document", inDraft: false });
+            .soft(inLive?.resolve(draftCreate), "draft create, live")
+            .toMatchObject({ kind: "document", inDraft: true });
+          expect
+            .soft(inDraft?.resolve(draftCreate), "draft create, its draft")
+            .toMatchObject({ kind: "document", inDraft: true });
+          expect
+            .soft(inDraft?.spellLink(draftCreate).href, "draft create spelled in its draft")
+            .toBe("created.md");
         },
       );
       await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);
