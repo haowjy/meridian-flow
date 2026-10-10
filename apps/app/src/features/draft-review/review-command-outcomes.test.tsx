@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Network answers projected through real review scopes, mutations and header models. */
+
 import type { DraftDiscardResponse } from "@meridian/contracts/drafts";
 import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
@@ -19,6 +20,7 @@ import {
   previewOf,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 const draftB = { documentId: "document-b", draftId: "draft-b" };
@@ -27,17 +29,19 @@ const ids = (p: ScopeProbe) => p.header.view.items.map(({ change }) => change.cl
 const failure = (p: ScopeProbe) =>
   p.header.view.items.find(({ change }) => change.classId === "class-2")?.failure;
 async function open(p: () => ScopeProbe) {
-  await vi.waitFor(() => expect(p().editor.files.length).toBeGreaterThan(0));
+  await settleReact(() => expect(p().editor.files.length).toBeGreaterThan(0));
   await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
-  await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
+  await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
 });
 afterEach(() => {
+  vi.useRealTimers();
   onlineManager.setOnline(true);
   vi.useRealTimers();
   fixture.dispose();
@@ -76,7 +80,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
       } as DraftDiscardResponse);
       await done;
     });
-    await vi.waitFor(() => expect(ids(p())).toEqual(["class-refreshed"]));
+    await settleReact(() => expect(ids(p())).toEqual(["class-refreshed"]));
     expect(p().header.view.items[0]?.failure).toMatchObject({ code: "stale", mode: "discard" });
     expect(p().header.finished).toBe(false);
     expect(p().header.completing).toBeNull();
@@ -111,7 +115,7 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
         "document-a",
         "document-b",
       ]);
-      await vi.waitFor(() =>
+      await settleReact(() =>
         expect(
           p().header.failedElsewhere.map(({ row, failure }) => [row.documentId, failure.code]),
         ).toEqual([["document-a", "apply-server-error"]]),
@@ -343,7 +347,7 @@ it("formatting residue after the last class is not completion and keeps whole co
     await act(async () => {
       await p().editor.controller.applyChanges(draftA, change("1"));
     });
-    await vi.waitFor(() => expect(p().header.unlisted).toBe(true));
+    await settleReact(() => expect(p().header.unlisted).toBe(true));
     expect(p().header.finished).toBe(false);
     expect(p().header.locked).toBe(false);
     expect(p().header.completing).toBeNull();
@@ -359,7 +363,7 @@ it("explicit server-certified closure finishes the last class", async () => {
     await act(async () => {
       await p().editor.controller.applyChanges(draftA, change("1"));
     });
-    await vi.waitFor(() => expect(p().header.finished).toBe(true));
+    await settleReact(() => expect(p().header.finished).toBe(true));
     expect(p().header.unlisted).toBe(false);
   });
 });
@@ -382,7 +386,7 @@ it.each([
 
   await fixture.render(async (p) => {
     await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await vi.waitFor(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(1));
+    await settleReact(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(1));
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().editor.controller[mode]("document-a", "draft-a");
@@ -402,7 +406,7 @@ it.each([
       );
       p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
     });
-    await vi.waitFor(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2));
     await act(async () => {
       answer.resolve();
       await done;

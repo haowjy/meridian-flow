@@ -3,8 +3,8 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import { runDraftBatch, startDraftCommand } from "./draft-command-executor";
 import {
   currentChangeCommandRecords,
@@ -73,7 +73,9 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
 }
 
 describe("draft command executor", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     resetDraftCommandRecords();
     api.listWorkDrafts.mockResolvedValue(listing("draft-a"));
@@ -81,11 +83,11 @@ describe("draft command executor", () => {
 
   it("keeps a lost response unknown even when a remote Discard emptied the list", async () => {
     await withHarness(async ({ apply, listed }) => {
-      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
+      await settleReact(() => expect(listed()).toEqual(["draft-a"]));
       api.applyDraft.mockRejectedValue(lost());
       api.listWorkDrafts.mockResolvedValue(listing());
       await act(async () => expect(await apply()).toEqual({ kind: "apply-outcome-unknown" }));
-      await vi.waitFor(() => expect(listed()).toEqual([]));
+      await settleReact(() => expect(listed()).toEqual([]));
     });
   });
 
@@ -110,8 +112,7 @@ describe("draft command executor", () => {
         await applied;
       });
       await act(async () => older.resolve(listing("draft-a")));
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      expect(listed()).toEqual([]);
+      await settleReact(() => expect(listed()).toEqual([]));
     });
   });
 });
