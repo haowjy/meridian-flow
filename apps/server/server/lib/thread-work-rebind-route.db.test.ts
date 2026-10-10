@@ -1,3 +1,4 @@
+import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
 
 /** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
@@ -48,6 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),

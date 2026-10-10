@@ -20,6 +20,7 @@ import {
   parseContextUri,
   parseLinkRef,
 } from "@meridian/contracts";
+import { contextOwner, type ResolvedContextOwner } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -54,6 +55,7 @@ type Row = {
   id: string;
   projectId: string;
   scheme: ContextUriScheme;
+  owner: ResolvedContextOwner;
   /** Path inside its source, with extension. */
   path: string;
   /** Decoded canonical URI. */
@@ -121,7 +123,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!isUuid(id)) return null;
     const threadUser =
       threadId && isUuid(threadId)
-        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid)`
+        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid AND t.project_id = p.id)`
         : sql`NULL::text`;
     const project =
       "projectId" in key
@@ -242,6 +244,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         id: address.documentId,
         projectId: address.projectId,
         scheme: address.scheme,
+        owner: contextOwner(address.lockWorkId, address.rootThreadId),
         path: address.path,
         uri: address.uri,
         stem: dot > 0 ? address.uri.slice(0, address.uri.length - (filename.length - dot)) : null,
@@ -387,7 +390,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const miss = (key: string) =>
         observer.snapshotMiss({ documentId: uri ?? "reader", key, prepared: snapshot.prepared });
       return createHolderLinkScope(
-        { uri, projectId: snapshot.projectId ?? "", view },
+        {
+          uri,
+          projectId: snapshot.projectId ?? "",
+          view,
+        },
         snapshotCatalog(snapshot, view, miss),
         miss,
       );
@@ -455,6 +462,7 @@ function snapshotCatalog(
     if (present === null) return null;
     return {
       documentId: row.id,
+      owner: row.owner,
       projectId: row.projectId,
       uri: row.uri,
       presence: present,

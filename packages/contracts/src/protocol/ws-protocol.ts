@@ -259,6 +259,11 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
         projectId: z.string().min(1),
         workId: z.string().min(1),
       }),
+      z.object({
+        kind: z.literal("lineage"),
+        projectId: z.string().min(1),
+        rootThreadId: z.string().min(1),
+      }),
     ]),
     headRevision: wsEventSeqSchema,
   }),

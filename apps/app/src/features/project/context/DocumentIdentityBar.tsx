@@ -1,5 +1,5 @@
 /** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
 
@@ -33,7 +33,7 @@ export type DocumentIdentityBarProps = {
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 };
 
 export function DocumentIdentityBar({

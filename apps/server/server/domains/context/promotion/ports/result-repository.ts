@@ -10,8 +10,6 @@ export interface ProjectResultRecord {
   sizeBytes: number;
   provenance: ResultProvenance;
   createdAt: string;
-  agentName?: string;
-  agentSlug?: string | null;
 }
 
 export interface CreateProjectResultInput {
@@ -27,7 +25,6 @@ export interface CreateProjectResultInput {
 
 export interface ResultRepository {
   createOrConverge(input: CreateProjectResultInput): Promise<CreateProjectResultOutcome>;
-  listByProject(projectId: string): Promise<ProjectResultRecord[]>;
 }
 
 export type CreateProjectResultOutcome =

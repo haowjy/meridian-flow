@@ -1,6 +1,6 @@
 /** thread_message authority: background is lineage, foreground is subtree. */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
+import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 
 const CALLER = "caller" as ThreadId;
@@ -52,10 +52,39 @@ async function authorize(input: {
     targetRef: input.targetRef,
     mode: input.mode,
     threads: repo(input.threads) as never,
+    turns: { findById: async () => null },
   });
 }
 
 describe("authorizeThreadMessage", () => {
+  it.each([
+    false,
+    true,
+  ])("admits a direct handoff background message (reverse=%s), not a foreground wait", async (reverse) => {
+    const source = thread({ id: CALLER, ref: "c1", kind: "primary" });
+    const handoff = {
+      ...thread({ id: "handoff", ref: "c2", kind: "primary" }),
+      originType: "handoff",
+      originTurnId: "cutoff",
+    } as Thread;
+    const callerThread = reverse ? source : handoff;
+    const targetRef = reverse ? "c2" : "c1";
+    const input = {
+      callerThread,
+      targetRef,
+      threads: repo([source, handoff]),
+      turns: { findById: async () => ({ threadId: source.id }) as Turn },
+    };
+    const { authorizeThreadMessage } = await import("./authorize-thread-message.js");
+    expect(await authorizeThreadMessage({ ...input, mode: "background" })).toMatchObject({
+      ok: true,
+    });
+    expect(await authorizeThreadMessage({ ...input, mode: "foreground" })).toMatchObject({
+      ok: false,
+      error: { code: "thread_message_not_authorized" },
+    });
+  });
+
   it("allows background to a lineage sibling and foreground to a descendant", async () => {
     const caller = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary", ref: "c1" });
     const sibling = thread({ id: SIBLING, rootThreadId: CALLER, ref: "p1" });

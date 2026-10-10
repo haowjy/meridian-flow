@@ -14,7 +14,7 @@ viewports. Tablets with phone-sized width at the boundary (`768px`) and iPad-lik
 landscape heights stay on desktop.
 
 The shell reuses the same route-owned `ProjectViewProps`, data hooks, chat,
-context tree, document editor/viewers, results body, and thread drawer content.
+context tree, document editor/viewers, and thread drawer content.
 Only the chrome changes: top bar, drawer, and one active destination. A local
 chat Sheet can open over Work or Editor without navigating or unmounting the
 underlying destination. The shell registers it as the dock reveal, so chat
@@ -26,7 +26,7 @@ Same-Work pending document navigation retains the prior document presentation
 and breadcrumb until address resolution settles. The shared review-scope owner
 supplies that same document identity to both the recovery executor and phone
 host; navigation commands always come from the current route. Errors, Work
-changes, Results, and screen changes do not reuse that pending projection.
+changes and screen changes do not reuse that pending projection.
 
 Deferred implementation work is tracked in [TODO](TODO).
 
@@ -41,14 +41,13 @@ and never construct paths or query strings. The first segment beneath
 `/works[/<work-uuid>]`, `/editor[/…]`); context browse and document paths live
 under `/editor` and carry scheme and location in path segments. Scratch and
 Uploads name their Work with the required `?work` query, never in the path.
-`work`, `settings`, `results`, and `view` are the only recognized query keys.
+`work`, `settings`, and `view` are the only recognized query keys.
 An invalid address shows "This destination is unavailable." in place. The removed `screen`, `thread`, `scheme`, `folder`, and
 `path` query parameters are not compatibility inputs.
 
-User navigation normally pushes so browser/OS Back walks destinations, Results,
+User navigation normally pushes so browser/OS Back walks destinations
 and context drill-in; canonicalization and an explicitly guarded controller
-repair replace. Results is auxiliary state: it preserves the underlying readable
-destination and Back closes it. Explicit unavailable or malformed selections
+repair replace. Explicit unavailable or malformed selections
 remain inert and must not be rewritten to remembered/default content.
 
 When a file is open, its breadcrumb derives from its parsed path. Mobile leaf
@@ -58,8 +57,7 @@ components do not duplicate filename/path parsing or URL mutation.
 
 `features/project/shell/screens.ts` has one primary destination registry:
 `SCREENS`. It supplies shell destination vocabulary, not browser query parsing.
-Settings and Results are auxiliary routed surfaces (`?settings=` and
-`?results=`), not drawer/sidebar destinations.
+Settings is an auxiliary routed surface (`?settings=`), not a drawer/sidebar destination.
 
 ### Document sessions: mobile is a registry owner
 
@@ -98,12 +96,11 @@ MobileProject
   │   ├─ hamburger on every screen
   │   ├─ breadcrumb for context screens and `Chats › <chat switcher>` on Chat
   │   ├─ Open chat action outside Chat
-  │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
+  │   └─ trailing slot: `+` create menu in Files
   ├─ one active main view
   │   ├─ ChatIndex or WorkScreen → one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
-  │   ├─ MobileContextBrowser or MobileDocumentHost
-  │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
+  │   └─ MobileContextBrowser or MobileDocumentHost
   ├─ local chat Sheet → ChatSurface above the retained Work/Editor view
   └─ NavigationDrawer → Sheet + WorkspaceNavBody + ContextTreePanel + account menu
 ```
@@ -126,7 +123,7 @@ the document session registry.
 - Chat uses the same breadcrumb grammar (`ChatBreadcrumb`): `Chats` is a
   never-truncating ancestor that opens the index, and the current segment is
   the chat switcher. The index shows a lone `Chats`, so its body hides the
-  duplicate heading (`namedByChrome`). Work and Results keep a centered title;
+  duplicate heading (`namedByChrome`). Work keeps a centered title;
   the leading side reserves as many 44px slots as the trailing side. Crumb
   targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
   project title inline without closing, and offers an explicit View projects link.
@@ -140,8 +137,7 @@ the document session registry.
   only over Work or Editor: on the Chat screen commands navigate instead of
   revealing.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
-  `MobileProject`): chat carries the Results entry, Results carries the way
-  back to chat, and the Files browser inside a scheme (scheme root or folder,
+  `MobileProject`): the Files browser inside a scheme (scheme root or folder,
   no file open) carries the `+` create menu (`MobileCreateEntryMenu`). The
   Files root and all other screens leave it empty.
 - The bar is solid `bg-background`, not `backdrop-filter`. On iOS Safari,
@@ -201,20 +197,6 @@ abandons an uncommitted row.
 - The row's input is 16px (`text-base`) — smaller fonts make iOS Safari zoom
   the page on focus, which fights the locked phone shell.
 
-### Results auxiliary surface
-
-`MobileResultsView` is a project-scoped full-screen auxiliary surface. It
-reuses `ResultsRailBody` as the single source of result-listing logic and opens
-result rows in `MobileResultViewerOverlay`, whose full-screen close chrome lives
-under `mobile/`.
-
-Results are reached only from the chat top bar:
-
-- Chat shows the Results action (`Sparkles`).
-- Results shows the way back to Chat (`MessageSquare`).
-- Opening sets `?results=` as a route push so OS/browser back closes it.
-- Results do not depend on the current thread; they are project-scoped.
-
 ### Filename chrome ownership
 
 The top bar names the current screen/location once. Inner views suppress their
@@ -227,10 +209,6 @@ chrome:
 - Non-tracked mobile documents use `ContextViewerBareHost`, which composes the
   read-only viewer frame without a name/path header because the breadcrumb
   already names the file.
-- `MobileResultsView` renders `ResultsRailBody` bare because the top bar already
-  says Results.
-- `MobileResultViewerOverlay` owns full-screen result chrome; the shared result
-  content owns signed-URL resolution and read-only viewer composition.
 
 If adding a new phone content view, decide whether the top bar or the view owns
 that name. Do not render both.

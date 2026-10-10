@@ -193,6 +193,34 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
+    it("keeps lineage Scratch independent of the first chat row and enforces its owner shape", async () => {
+      const target = postgres(databaseUrl, { max: 1 });
+      try {
+        await target.begin(async (tx) => {
+          const [user] =
+            await tx`INSERT INTO users (external_id, email) VALUES ('lineage-shape', 'lineage-shape@example.test') RETURNING id`;
+          const [project] =
+            await tx`INSERT INTO projects (user_id, name, slug) VALUES (${user.id}, 'Lineage', 'lineage') RETURNING id`;
+          const root = crypto.randomUUID();
+          await tx`INSERT INTO threads (id, root_thread_id, project_id, created_by_user_id, ref) VALUES (${root}, ${root}, ${project.id}, ${user.id}, 'c12')`;
+          const [source] =
+            await tx`INSERT INTO context_sources (project_id, root_thread_id, scope, name, slug) VALUES (${project.id}, ${root}, 'lineage', 'Scratch', 'scratch') RETURNING id`;
+          await expect(
+            tx.savepoint(
+              (save) =>
+                save`INSERT INTO context_sources (project_id, root_thread_id, scope, name, slug) VALUES (${project.id}, ${root}, 'lineage', 'Uploads', 'uploads')`,
+            ),
+          ).rejects.toMatchObject({ constraint_name: "context_sources_exactly_one_scope" });
+          await tx`DELETE FROM threads WHERE id = ${root}`;
+          expect(await tx`SELECT id FROM context_sources WHERE id = ${source.id}`).toEqual([
+            { id: source.id },
+          ]);
+          await tx`DELETE FROM users WHERE id = ${user.id}`;
+        });
+      } finally {
+        await target.end();
+      }
+    });
     it("applies the post-migrate FIFO function with replay-safe debits", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       try {

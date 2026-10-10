@@ -1,6 +1,6 @@
 {
-  "id": "f85e5ec5-ac17-4de6-9348-864fd5c628e4",
-  "prevId": "cc382c3a-9546-4b4d-9075-ec8392bdfa9a",
+  "id": "82a57899-6eca-4cb4-85ce-1b5b9855aadd",
+  "prevId": "c3e93285-2f1e-4f70-b89f-5a152bfe3baa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4031,6 +4031,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "root_thread_id": {
+          "name": "root_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -4134,8 +4140,8 @@
           "method": "btree",
           "with": {}
         },
-        "context_sources_project_slug": {
-          "name": "context_sources_project_slug",
+        "context_sources_project_scope_slug": {
+          "name": "context_sources_project_scope_slug",
           "columns": [
             {
               "expression": "project_id",
@@ -4151,7 +4157,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4174,6 +4180,28 @@
           ],
           "isUnique": true,
           "where": "\"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "context_sources_lineage_slug": {
+          "name": "context_sources_lineage_slug",
+          "columns": [
+            {
+              "expression": "root_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"context_sources\".\"root_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4248,15 +4276,15 @@
       "checkConstraints": {
         "context_sources_exactly_one_scope": {
           "name": "context_sources_exactly_one_scope",
-          "value": "(\"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL) OR (\"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL)"
+          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'scratch')"
         },
         "context_sources_scope_valid": {
           "name": "context_sources_scope_valid",
-          "value": "\"context_sources\".\"scope\" IN ('project', 'work')"
+          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage')"
         },
         "context_sources_scope_work_fk": {
           "name": "context_sources_scope_work_fk",
-          "value": "\"context_sources\".\"scope\" = 'project' OR \"context_sources\".\"work_id\" IS NOT NULL"
+          "value": "\"context_sources\".\"scope\" <> 'work' OR \"context_sources\".\"work_id\" IS NOT NULL"
         },
         "context_sources_scope_project_fk": {
           "name": "context_sources_scope_project_fk",
@@ -5320,6 +5348,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "root_thread_id": {
+          "name": "root_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "path": {
           "name": "path",
           "type": "text",
@@ -5347,8 +5381,8 @@
         }
       },
       "indexes": {
-        "link_ahead_refs_unsettled": {
-          "name": "link_ahead_refs_unsettled",
+        "link_ahead_refs_owner_unsettled": {
+          "name": "link_ahead_refs_owner_unsettled",
           "columns": [
             {
               "expression": "project_id",
@@ -5364,6 +5398,12 @@
             },
             {
               "expression": "work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "root_thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -8472,6 +8512,83 @@
         "branch_push_settlement_batches_counters_valid": {
           "name": "branch_push_settlement_batches_counters_valid",
           "value": "\"branch_push_settlement_batches\".\"attempt_count\" >= 0 AND \"branch_push_settlement_batches\".\"claim_epoch\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.branch_push_settlement_holds": {
+      "name": "branch_push_settlement_holds",
+      "schema": "",
+      "columns": {
+        "batch_id": {
+          "name": "batch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_key": {
+          "name": "item_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_in": {
+          "name": "decided_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "branch_push_settlement_holds_batch_id_branch_push_settlement_batches_id_fk": {
+          "name": "branch_push_settlement_holds_batch_id_branch_push_settlement_batches_id_fk",
+          "tableFrom": "branch_push_settlement_holds",
+          "tableTo": "branch_push_settlement_batches",
+          "columnsFrom": [
+            "batch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "branch_push_settlement_holds_batch_id_item_key_pk": {
+          "name": "branch_push_settlement_holds_batch_id_item_key_pk",
+          "columns": [
+            "batch_id",
+            "item_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "branch_push_settlement_holds_decided_in_valid": {
+          "name": "branch_push_settlement_holds_decided_in_valid",
+          "value": "\"branch_push_settlement_holds\".\"decided_in\" IN ('check', 'completion')"
         }
       },
       "isRLSEnabled": false

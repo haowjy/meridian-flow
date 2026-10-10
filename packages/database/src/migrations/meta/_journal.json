@@ -236,36 +236,29 @@
     {
       "idx": 33,
       "version": "7",
-      "when": 1791600212759,
-      "tag": "0033_mature_morph",
+      "when": 1791584302492,
+      "tag": "0033_green_mandroid",
       "breakpoints": true
     },
     {
       "idx": 34,
       "version": "7",
-      "when": 1791602003454,
-      "tag": "0034_tree_visibility",
+      "when": 1791584338333,
+      "tag": "0034_preserve_no_work_scratch",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
-      "when": 1791603138214,
-      "tag": "0035_batch_settlement",
+      "when": 1791584340301,
+      "tag": "0035_context_source_online_indexes",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
-      "when": 1791603158556,
-      "tag": "0036_batch_refusal_payloads",
-      "breakpoints": true
-    },
-    {
-      "idx": 37,
-      "version": "7",
-      "when": 1791603168349,
-      "tag": "0037_settlement_holds",
+      "when": 1791610089356,
+      "tag": "0036_heavy_vindicator",
       "breakpoints": true
     }
   ]

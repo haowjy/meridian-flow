@@ -302,7 +302,7 @@ export function useDeleteConfirmation({
         queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           scheme,
-          isWorkScopedProjectContextScheme(scheme) ? target.workId : undefined,
+          isWorkScopedProjectContextScheme(scheme) ? { workId: target.workId } : undefined,
         ),
       });
     } catch (cause) {

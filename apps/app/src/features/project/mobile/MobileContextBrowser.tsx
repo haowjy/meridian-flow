@@ -2,16 +2,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder } from "lucide-react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type {
   CatalogContextView,
   CatalogDirectory as ContextDir,
   CatalogFile as ContextFile,
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useWorks } from "@/client/query/useWorks";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
 import { cn } from "@/lib/utils";
 import {
@@ -84,9 +82,7 @@ export function MobileContextBrowser({
   creating,
   onCreateDone,
 }: MobileContextBrowserProps) {
-  const workId = editorWorkId;
   const schemes = EDITOR_CONTEXT_SCHEMES;
-  const { works } = useWorks(projectId);
 
   if (activeContextScheme) {
     return (
@@ -103,9 +99,6 @@ export function MobileContextBrowser({
     );
   }
 
-  const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
-  const workLabel = works?.find((work) => work.id === workId)?.name ?? t`Work`;
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -115,21 +108,18 @@ export function MobileContextBrowser({
             // identity icon; folder icons are reserved for real directories.
             const SchemeIcon = schemeIcon(scheme);
             return (
-              <Fragment key={scheme}>
-                {scheme === firstWorkScoped ? <MobileWorkBoundary label={workLabel} /> : null}
-                <li>
-                  <DrillRow
-                    icon={
-                      <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    }
-                    label={schemeLabel(scheme)}
-                    trailing={
-                      <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-                    }
-                    onClick={() => onSelectContextScheme(scheme)}
-                  />
-                </li>
-              </Fragment>
+              <li key={scheme}>
+                <DrillRow
+                  icon={
+                    <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  }
+                  label={schemeLabel(scheme)}
+                  trailing={
+                    <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                  }
+                  onClick={() => onSelectContextScheme(scheme)}
+                />
+              </li>
             );
           })}
         </ul>
@@ -544,7 +534,7 @@ function MobileRenameRow({
 }) {
   const form = useRenameEntryForm({
     projectId,
-    workId: editorWorkId,
+    owner: { workId: editorWorkId ?? undefined },
     scheme,
     entryId,
     path,
@@ -576,14 +566,6 @@ function MobileNameRow({
       <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <EntryNameField form={form} label={label} placeholder={placeholder} />
     </div>
-  );
-}
-
-function MobileWorkBoundary({ label }: { label: string }) {
-  return (
-    <li aria-hidden className="px-4 pt-3 pb-1">
-      <span className="text-meta text-muted-foreground">{label}</span>
-    </li>
   );
 }
 

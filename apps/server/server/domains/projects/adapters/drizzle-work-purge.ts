@@ -4,7 +4,9 @@ import type { WorkId } from "@meridian/contracts/runtime";
 import { workPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contextSources,
   documentBranches,
+  documents,
   eventJournal,
   projectResults,
   promptBakes,
@@ -110,7 +112,7 @@ export function createDrizzleWorkPurger(deps: {
         }
       }
 
-      const [uploads, results] = await Promise.all([
+      const [uploads, results, binaries] = await Promise.all([
         activeDb
           .select({ objectKey: uploadIntakes.objectKey })
           .from(uploadIntakes)
@@ -119,11 +121,23 @@ export function createDrizzleWorkPurger(deps: {
           .select({ storageUrl: projectResults.storageUrl })
           .from(projectResults)
           .where(eq(projectResults.deletedByWorkId, workId)),
+        activeDb
+          .select({ storageUrl: documents.storageUrl })
+          .from(documents)
+          .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+          .where(
+            or(
+              eq(contextSources.workId, workId),
+              lockedTree.threadIds.length
+                ? inArray(contextSources.rootThreadId, lockedTree.threadIds)
+                : sql`false`,
+            ),
+          ),
       ]);
       const objectKeys = [
         ...uploads.map(({ objectKey }) => objectKey),
-        ...results.flatMap(({ storageUrl }) => {
-          const key = objectStoreKeyFromStorageUrl(storageUrl);
+        ...[...results, ...binaries].flatMap(({ storageUrl }) => {
+          const key = storageUrl ? objectStoreKeyFromStorageUrl(storageUrl) : null;
           return key ? [key] : [];
         }),
       ];
@@ -131,6 +145,9 @@ export function createDrizzleWorkPurger(deps: {
       // Results and journal history restrict conversation deletion; branches restrict Work deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {
+        await activeDb
+          .delete(contextSources)
+          .where(inArray(contextSources.rootThreadId, lockedTree.threadIds));
         await activeDb
           .delete(eventJournal)
           .where(inArray(eventJournal.threadId, lockedTree.threadIds));

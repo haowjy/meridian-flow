@@ -22,7 +22,7 @@ import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
-import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
+import { gateCaretPresence } from "./local-presence";
 
 type EditorMountBase = {
   documentId: string;
@@ -61,6 +61,11 @@ export type EditorSurfaceOptions = {
    * that rebuilds this object pays an extra `view.setProps` — never a remount.
    */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
+  /**
+   * Whether this editor may publish the client's caret. A view kept warm
+   * behind another one of the same session must not (see `gateCaretPresence`).
+   */
+  publishPresence: boolean;
 };
 
 /** Room the `DocumentSessionRegistry` binds this editor to. */
@@ -126,16 +131,20 @@ export function useMountedEditor({
   atReferenceCatalogRef.current = atReferenceCatalog;
   const wikilinkPasteCatalogRef = useRef(wikilinkPasteCatalog);
   wikilinkPasteCatalogRef.current = wikilinkPasteCatalog;
+  const publishPresenceRef = useRef(surface.publishPresence);
+  publishPresenceRef.current = surface.publishPresence;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
   const [construction] = useState(() => {
+    const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
       document: session.document,
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
-      // caret's included.
-      presence: session.presence,
+      // caret's included. Its caret is arbitrated, because another view of
+      // this session may be the one in front.
+      presence: caretGate.presence,
       schemaType: identity.schemaType,
       assetRenderContext: { projectId: identity.projectId },
       showCollaborationDecorations: identity.collaborationDecorations,
@@ -149,17 +158,15 @@ export function useMountedEditor({
       wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },
     });
     return {
+      caretGate,
       editorConfig,
       initialOptions: {
         ...editorConfig,
         editable: surface.editable,
         editorProps: { ...editorConfig.editorProps, ...surface.editorProps },
       },
-      witness: {
-        document: session.document,
-        evidenceDegraded,
-        onRepair: (event: SchemaRepairEvent) => session.reportSchemaRepair(event),
-      },
+      session,
+      evidenceDegraded,
     };
   });
 
@@ -174,24 +181,22 @@ export function useMountedEditor({
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
+  // Going to the back takes the caret off the wire, once, on this editor's say.
+  useEffect(() => {
+    if (!surface.publishPresence) construction.caretGate.retire();
+  }, [construction, surface.publishPresence]);
+
   useEffect(() => {
     // TipTap's useEditor defers construction into its own passive effect when
     // immediatelyRender is false. Owning construction here is what creates one
     // gap-free synchronous bracket around every extension lifecycle mutation.
-    const witness = createSchemaRepairWitness(construction.witness);
-    let mounted: Editor;
-    try {
-      mounted = new Editor(construction.initialOptions);
-      // Atomic with construction: live observation starts before this effect
-      // yields, rather than in a later effect or TipTap's deferred onCreate.
-      witness.enterLive(mounted);
-    } catch (error) {
-      witness.destroy();
-      throw error;
-    }
+    const { editor: mounted, release } = construction.session.bindEditor(
+      () => new Editor(construction.initialOptions),
+      construction.evidenceDegraded,
+    );
     setEditor(mounted);
     return () => {
-      witness.destroy();
+      release();
       if (!mounted.isDestroyed) mounted.destroy();
     };
   }, [construction]);

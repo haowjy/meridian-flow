@@ -7,6 +7,7 @@ export type DocumentAddressInput = {
   userId: string;
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string | null;
   path: string;
 };
 

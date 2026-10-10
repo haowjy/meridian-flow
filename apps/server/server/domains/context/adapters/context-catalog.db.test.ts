@@ -1,4 +1,5 @@
 /** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
+
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -33,6 +34,7 @@ import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentAddressStore } from "./document-address.js";
+import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -654,6 +656,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db);
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
@@ -683,6 +686,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(authority()).resolves.toMatchObject({ available: true, entityRevision: "5" });
 
       const failingRepository = createDrizzleWorkRepository({
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
@@ -797,7 +801,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
       const NAMED = "00000000-0000-4000-8000-000000000809";
-      const SCRATCH = "00000000-0000-4000-8000-00000000080a";
       const UPLOADS = "00000000-0000-4000-8000-00000000080b";
       const NAMED_SCRATCH = "00000000-0000-4000-8000-00000000080c";
       const FILE = "00000000-0000-4000-8000-00000000080d";
@@ -822,7 +825,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(contextSources).values([
-        { id: SCRATCH, workId: NO_WORK, scope: "work", name: "Scratch", slug: "scratch" },
         { id: UPLOADS, workId: NO_WORK, scope: "work", name: "Uploads", slug: "uploads" },
         {
           id: NAMED_SCRATCH,
@@ -833,7 +835,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(documents).values([
-        { id: FILE, contextSourceId: SCRATCH, name: "notes", extension: "md" },
+        { id: FILE, contextSourceId: UPLOADS, name: "notes", extension: "md" },
         {
           id: UPLOAD_FILE,
           contextSourceId: UPLOADS,
@@ -854,7 +856,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           workId: NO_WORK,
         }),
-      ).toEqual(["scratch://@/notes.md", "uploads://@/shot.png"]);
+      ).toEqual(["uploads://@/notes.md", "uploads://@/shot.png"]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
@@ -891,7 +893,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAddressStore(db).candidate({
           projectId: PROJECT_ID as never,
           userId: USER_ID,
-          scheme: "scratch",
+          scheme: "uploads",
           workId: NO_WORK,
           path: "/notes.md",
         }),

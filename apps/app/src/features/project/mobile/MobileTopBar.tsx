@@ -7,7 +7,7 @@
  * drill-in is route-driven. Screens with a location trail (Files, and Chats ›
  * chat on the Chat screen) supply a breadcrumb, which sits left-aligned right
  * after the hamburger and takes the remaining row width. Screens without one
- * (Work, or the routed Results auxiliary surface) get a centered title: the
+ * (Work) get a centered title: the
  * leading side reserves as many 44px slots as the trailing side, so the title
  * stays truly centered even with the chat door beside the actions. A rejected
  * command on the screen's subject (a Work's Archive) takes a full-width
@@ -32,7 +32,6 @@ export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   actions?: ReactNode;
   /** Opens the chat sheet over Work or Editor. */
   chatAction?: ReactNode;
-  title?: ReactNode;
   /** A failed command's row, under the bar. */
   notice?: ReactNode;
 };
@@ -44,7 +43,6 @@ export function MobileTopBar({
   breadcrumb,
   actions,
   chatAction,
-  title,
   notice,
 }: MobileTopBarProps) {
   // Two trailing controls need a matching 44px reserve on the leading side.
@@ -79,11 +77,7 @@ export function MobileTopBar({
               breadcrumb ? "justify-start self-stretch" : "justify-center",
             )}
           >
-            {breadcrumb ?? (
-              <div className="truncate" title={typeof title === "string" ? title : undefined}>
-                {title ?? screenLabel(activeScreen)}
-              </div>
-            )}
+            {breadcrumb ?? <div className="truncate">{screenLabel(activeScreen)}</div>}
           </div>
         </div>
         <div className="flex min-w-11 shrink-0 items-center justify-end">

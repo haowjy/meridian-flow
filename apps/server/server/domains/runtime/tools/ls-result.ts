@@ -8,6 +8,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 
 export interface LsEntry {
   uri: string;
+  title?: string | null;
   kind: "file" | "directory";
   /** True when the agent can't edit the entry. */
   readonly: boolean;
@@ -70,7 +71,11 @@ function entryLine(entry: LsEntry, folder?: string): string {
     entry.updatedAt === undefined ? undefined : `edited ${formatUtc(entry.updatedAt)}`,
     entry.readonly ? "read-only" : undefined,
   ].filter((note) => note !== undefined);
-  return notes.length > 0 ? `${name} (${notes.join(", ")})` : name;
+  const label =
+    entry.title === undefined
+      ? name
+      : `${name} (${(entry.title || "New chat").replace(/\s+/g, " ")})`;
+  return notes.length > 0 ? `${label} (${notes.join(", ")})` : label;
 }
 
 function asFolder(uri: string): string {

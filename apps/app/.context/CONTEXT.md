@@ -87,6 +87,11 @@ Two interfaces are the only paths between the visual layer and the substrate:
   for placement, interaction ownership, and mid-thread rebind behavior.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
+  A passive reader of a key another hook fetches (`useMissingChatFallback`,
+  `useDisplayedThread` over the thread snapshot) spreads that hook's shared
+  options with `enabled: false`. Never pass `skipToken` there: observer options
+  land on the shared query, so the sentinel replaces the live host's fetch
+  function and its invalidations fail with "Missing queryFn".
   `project-invalidation` supplies project-level invalidators;
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
   thread or Work transition that can change the Chat index also invalidates `chatFeed`.

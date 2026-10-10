@@ -43,9 +43,11 @@ import {
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
+  createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
+  createDrizzleScratchLineages,
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
@@ -64,7 +66,6 @@ import {
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
-  type ResultRepository,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -311,7 +312,6 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -381,7 +381,6 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
   promotionService: PromotionService;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
@@ -490,7 +489,28 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, statusReader);
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
+    eventSink,
+  );
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
+  const threadRepos = createDrizzleRepositories(
+    db,
+    workProjectionMutation,
+    lineageScratch,
+    statusReader,
+  );
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -512,6 +532,7 @@ export async function createProductionAppPorts(input: {
     threads: threadRepos.threads,
     threadWorks: threadRepos.threadWorks,
     agentRevisions,
+    works: { findById: (id: string) => workRepo.findById(id) },
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
@@ -519,21 +540,6 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  // Bound once the collab domain exists; neither runs before composition finishes.
-  const manifestMembership: LinkScopeMembership = (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(
-      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
-    );
-  };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
-    eventSink,
-  );
-  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -576,6 +582,7 @@ export async function createProductionAppPorts(input: {
   boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
+    lineages: createDrizzleScratchLineages(db),
     objectStore,
     results,
     workAuthorityResolver,
@@ -628,6 +635,7 @@ export async function createProductionAppPorts(input: {
     db,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
+    lineageScratch,
     arrivals,
   });
   const creditLedger = createDrizzleCreditLedger(db);
@@ -681,6 +689,7 @@ export async function createProductionAppPorts(input: {
       catalog: contextCatalog,
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
+      lineages: createDrizzleScratchLineages(db),
     }),
     linkScopes: documentLinks,
     projects,
@@ -705,7 +714,6 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
-    results,
     promotionService,
     notices,
     activeDocuments,
@@ -963,6 +971,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     defaultModel: () => ports.gateway.getDefaultModel(),
     repos: {
       threads: ports.threadRepos.threads,
+      turns: ports.threadRepos.turns,
       subagentThreads: ports.threadRepos.threads,
       transaction: ports.threadRepos.transaction,
     },
@@ -1133,7 +1142,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
-    results: ports.results,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1665,14 +1673,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async getSignedFigureUrl() {
         throw new Error("in-memory figure assets are not implemented");
-      },
-    },
-    results: {
-      async createOrConverge() {
-        throw new Error("in-memory results are not implemented");
-      },
-      async listByProject() {
-        return [];
       },
     },
     fileAccess: createAllowAllFileAccess(),

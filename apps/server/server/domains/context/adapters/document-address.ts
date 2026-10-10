@@ -16,7 +16,7 @@ import {
 } from "@meridian/contracts/context-uri";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentPreviousLocations, projects, works } from "@meridian/database/schema";
+import { documentPreviousLocations, projects, threads, works } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -42,12 +42,13 @@ export function listsThroughLiveManifest(scheme: ContextUriScheme): boolean {
 }
 
 export const sameCoordinates = (
-  a: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "path">,
-  b: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "path">,
+  a: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
+  b: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
 ) =>
   a.projectId === b.projectId &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
+  (a.rootThreadId ?? null) === (b.rootThreadId ?? null) &&
   a.path === b.path;
 
 /** The address a content document holds now, or null when it is deleted there or unspellable. */
@@ -70,6 +71,7 @@ export async function documentAt(
   const sourceId = await presentSourceId(db, {
     scheme: at.scheme,
     workId: at.workId,
+    rootThreadId: at.rootThreadId,
     project: { id: at.projectId },
   });
   if (!sourceId) return null;
@@ -123,6 +125,9 @@ export async function resolveCanonicalAddress(
 
   let workId: string | null = null;
   let lockWorkId: string | null = null;
+  let rootThreadId: string | null = null;
+  if (scheme === "scratch" && authority.kind === "none")
+    throw new RangeError("Scratch needs a chat handle or named Work authority");
   if (authority.kind === "none") {
     const [noWork] = await tx
       .select({ id: works.id })
@@ -136,6 +141,19 @@ export async function resolveCanonicalAddress(
       );
     if (!noWork) throw new Error(`No Work row for ${input.holderProjectId} does not exist`);
     lockWorkId = noWork.id;
+  } else if (authority.kind === "lineage") {
+    const [root] = await tx
+      .select({ id: threads.id })
+      .from(threads)
+      .where(
+        and(
+          eq(threads.projectId, input.holderProjectId),
+          eq(threads.ref, authority.rootThreadRef),
+          eq(threads.rootThreadId, threads.id),
+        ),
+      );
+    if (!root) throw new Error(`Chat ${authority.rootThreadRef} does not exist`);
+    rootThreadId = root.id;
   } else if (authority.kind === "work") {
     // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: an
     // address resolves against it and is occupied only once a restore makes it live again.
@@ -146,7 +164,7 @@ export async function resolveCanonicalAddress(
     if (!work) throw new Error(`Work ${authority.workSlug} does not exist`);
     workId = lockWorkId = work.id;
   }
-  return { projectId, userId: holder.userId, scheme, workId, lockWorkId, path };
+  return { projectId, userId: holder.userId, scheme, workId, lockWorkId, rootThreadId, path };
 }
 
 export function createDrizzleDocumentAddressStore(db: Database): DocumentAddressStore {
@@ -167,10 +185,12 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           .limit(1);
         if (!project) return null;
         const workScoped = isWorkScopedProjectContextScheme(input.scheme);
+        if (input.rootThreadId && (input.workId || input.scheme !== "scratch")) return null;
         if (!workScoped && input.workId !== null) return null;
         const sourceId = await presentSourceId(db, {
           scheme: input.scheme,
           workId: input.workId,
+          rootThreadId: input.rootThreadId,
           project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
         });
         if (!sourceId) return null;
