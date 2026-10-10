@@ -1,8 +1,14 @@
 /** Palette projection with an account-stamped, pre-paint cache. */
-import { ACCOUNT_THEMES, type AccountTheme } from "@meridian/contracts/preferences";
+import {
+  ACCOUNT_LANGUAGES,
+  ACCOUNT_THEMES,
+  type AccountTheme,
+} from "@meridian/contracts/preferences";
 import {
   ACCOUNT_SETTINGS_ACTIVE_KEY,
   ACCOUNT_SETTINGS_CACHE_PREFIX,
+  ACCOUNT_SETTINGS_CACHE_VERSION,
+  parseSettingsCachePayload,
   readAccountSettingsCache,
 } from "./account-settings-cache";
 export const UI_THEMES = ACCOUNT_THEMES;
@@ -29,6 +35,21 @@ export function subscribeUiTheme(listener: () => void): () => void {
   };
 }
 export function createUiThemeBootScript(seed?: { accountId: string; theme?: UiTheme }): string {
-  return `(() => { try { const seed = ${JSON.stringify(seed ?? null)}; const id = seed?.accountId || localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_ACTIVE_KEY)}); const cache = JSON.parse(localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_CACHE_PREFIX)} + id) || "null"); const theme = seed?.theme ?? (id && cache?.accountId === id && ${JSON.stringify(UI_THEMES)}.includes(cache?.settings?.theme) ? cache.settings.theme : undefined); const root = document.documentElement; if (theme === "dark") root.setAttribute("data-ui-theme", "dark"); else root.removeAttribute("data-ui-theme"); } catch { ${seed?.theme === "dark" ? 'document.documentElement.setAttribute("data-ui-theme", "dark");' : 'document.documentElement.removeAttribute("data-ui-theme");'} } })();`;
+  return `(() => {
+    const seed = ${JSON.stringify(seed ?? null)};
+    let theme = seed?.theme;
+    try {
+      if (theme === undefined) {
+        const id = seed?.accountId || localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_ACTIVE_KEY)});
+        const cache = JSON.parse(localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_CACHE_PREFIX)} + id) || "null");
+        if (id && cache && !Array.isArray(cache) && cache.version === ${ACCOUNT_SETTINGS_CACHE_VERSION} && cache.accountId === id && cache.scope === undefined) {
+          const payload = (${parseSettingsCachePayload.toString()})(cache.payload, ${JSON.stringify(ACCOUNT_LANGUAGES)}, ${JSON.stringify(UI_THEMES)});
+          theme = payload?.settings.theme;
+        }
+      }
+    } catch {}
+    const root = document.documentElement;
+    if (theme === "dark") root.setAttribute("data-ui-theme", "dark");
+    else root.removeAttribute("data-ui-theme");
+  })();`;
 }
-export const UI_THEME_BOOT_SCRIPT = createUiThemeBootScript();
