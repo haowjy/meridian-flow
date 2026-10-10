@@ -16,7 +16,10 @@ export function parseAccountSettingsPatch(raw: unknown): Partial<AccountSettings
   };
   if (
     !Object.keys(body).length ||
-    Object.entries(body).some(([key, value]) => !validators[key as keyof AccountSettings]?.(value))
+    Object.entries(body).some(
+      ([key, value]) =>
+        !Object.hasOwn(validators, key) || !validators[key as keyof AccountSettings](value),
+    )
   ) {
     throw createError({ statusCode: 400, message: "Invalid account preference" });
   }
