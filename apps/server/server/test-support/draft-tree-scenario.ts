@@ -1,8 +1,8 @@
 /**
  * One scenario builder for the draft-tree DB tests (contract §16.1): a project with its
- * sources, Works with their primary threads, and seed verbs that write tree rows the way
- * the product's creates leave them, without going through commands. Command verbs join
- * as the lanes that build those commands land.
+ * sources, Works with their primary threads, seed verbs that write tree rows the way the
+ * product's creates leave them, and command verbs that drive the composed production
+ * runtime (the real tool executor, route cores and ports) when one is given.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
  * the other project sources.
@@ -27,16 +27,35 @@ import {
   projects,
   threads,
   threadWorks,
+  turns,
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "../domains/collab/adapters/drizzle-drafts.js";
 import { createDrafts, type Drafts } from "../domains/collab/domain/drafts.js";
 import type { Draft } from "../domains/collab/domain/ports/draft-store.js";
+import { ContextFS } from "../domains/context/adapters/context-fs/context-fs.js";
+import { DrizzleContextTreeMutationStore } from "../domains/context/adapters/context-fs/drizzle-tree-mutation-store.js";
+import {
+  contextPortForThread,
+  resolveThreadContext,
+} from "../domains/context/context-port-resolution.js";
+import { createProjectContextDocumentStore } from "../domains/context/context-source-provisioning.js";
+import type { ContextPort } from "../domains/context/ports/context-port.js";
+import {
+  type HiddenNodeHookPoint,
+  setHiddenNodeHook,
+} from "../domains/context/tree/hidden-nodes.js";
+import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
+import {
+  createContextEntry,
+  parseCreateContextEntryBody,
+} from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
+import type { useComposedRuntimes } from "./composed-runtime.js";
 
 export type ScenarioSource = "manuscript" | "kb" | "unfiled";
 
@@ -44,8 +63,49 @@ export type ScenarioWork = {
   id: WorkId;
   slug: string;
   threadId: ThreadId;
+  turnId: string;
   mode: "draft" | "direct";
 };
+
+type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
+export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
+
+/** One model reply on a Work's thread: tool calls staged until `save` or `rollback`. */
+export interface ScenarioReply {
+  responseId: string;
+  call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
+  save(): Promise<unknown>;
+  rollback(): Promise<unknown>;
+}
+
+export interface ScenarioModel {
+  reply(): Promise<ScenarioReply>;
+  /** One reply that creates `path` with `text` and saves; the created document's id. */
+  create(path: string, text: string): Promise<DocumentId>;
+  /** One reply that copies `from` to `to` and saves. */
+  copy(from: string, to: string): Promise<ToolExecutionResult>;
+}
+
+export type Settled = { ok: true; value: unknown } | { ok: false; error: unknown };
+
+export interface ScenarioWriter {
+  /** The create route's core, as the writer's sidebar and link Create call it. */
+  create(
+    path: string,
+    options?: { documentId?: DocumentId; content?: string },
+  ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
+  mkdir(path: string): Promise<void>;
+}
+
+/** What a reader sees through ContextFS: a writer's live port, or a Work thread's. */
+export interface ScenarioView {
+  stat(path: string): ReturnType<ContextPort["stat"]>;
+  ls(path: string): ReturnType<ContextPort["list"]>;
+  read(path: string): ReturnType<ContextPort["read"]>;
+  search(query: string): ReturnType<ContextPort["search"]>;
+  /** ContextFS's locate by id in the Manuscript source, in this view. */
+  locate(documentId: DocumentId): Promise<{ path: string } | null>;
+}
 
 export interface DraftTreeScenario {
   project: { id: ProjectId; userId: UserId; sources: Record<ScenarioSource, ContextSourceId> };
@@ -65,11 +125,34 @@ export interface DraftTreeScenario {
   seedHidden(work: ScenarioWork, path: string): Promise<DocumentId>;
   /** The Work's active draft, made at the write boundary if absent. */
   draftOf(work: ScenarioWork): Promise<Draft>;
+  /** Another thread whose primary Work is `work`. */
+  thread(work: ScenarioWork): Promise<ScenarioWork>;
+  // Command verbs: they need `options.runtime`.
+  model(work: ScenarioWork): ScenarioModel;
+  writer: ScenarioWriter;
+  view(of: ScenarioWork | "live"): ScenarioView;
+  /**
+   * Discard these documents from the Work's draft through the review command (lane D
+   * replaces what it calls with `discardItems`).
+   */
+  discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
+  /**
+   * Controlled interleaving: run `a` until it reaches the hook point `at`, run `b` to
+   * completion or to its first lock wait, then release `a`.
+   */
+  interleave(
+    a: () => Promise<unknown>,
+    at: HiddenNodeHookPoint,
+    b: () => Promise<unknown>,
+  ): Promise<{ a: Settled; b: Settled; bWaited: boolean }>;
 }
 
 const SOURCES: readonly ScenarioSource[] = ["manuscript", "kb", "unfiled"];
 
-export async function draftTreeScenario(db: Database): Promise<DraftTreeScenario> {
+export async function draftTreeScenario(
+  db: Database,
+  options: { runtime?: ScenarioRuntime; runtimes?: ComposedRuntimes } = {},
+): Promise<DraftTreeScenario> {
   const userId = randomUUID() as UserId;
   const projectId = randomUUID() as ProjectId;
   // One user per scenario, so a case may build several.
@@ -175,6 +258,255 @@ export async function draftTreeScenario(db: Database): Promise<DraftTreeScenario
     return row.id;
   }
 
+  /** A thread with one assistant turn, primary in `workId`. */
+  async function insertThread(title: string, workId: WorkId) {
+    const threadId = randomUUID() as ThreadId;
+    const turnId = randomUUID();
+    await db.insert(threads).values({
+      id: threadId,
+      projectId,
+      createdByUserId: userId,
+      rootThreadId: threadId,
+      title,
+    });
+    await db.insert(turns).values({
+      id: turnId,
+      threadId,
+      position: 1,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await db.insert(threadWorks).values({ threadId, workId, projectId });
+    return { threadId, turnId };
+  }
+
+  function runtime(): { runtime: ScenarioRuntime; runtimes: ComposedRuntimes } {
+    if (!options.runtime || !options.runtimes) {
+      throw new Error("Command verbs need draftTreeScenario(db, { runtime, runtimes })");
+    }
+    return { runtime: options.runtime, runtimes: options.runtimes };
+  }
+
+  function uri(path: string): string {
+    return /^[a-z]+:\/\//.test(path) ? path : `manuscript://${path}`;
+  }
+
+  function sourceOf(path: string): { scheme: "manuscript" | "kb" | "unfiled"; rel: string } {
+    const match = /^(kb|unfiled|manuscript):\/\/(.*)$/.exec(path);
+    return {
+      scheme: (match?.[1] ?? "manuscript") as "manuscript" | "kb" | "unfiled",
+      rel: match?.[2] ?? path,
+    };
+  }
+
+  function model(work: ScenarioWork): ScenarioModel {
+    async function reply(): Promise<ScenarioReply> {
+      const { runtime: composed, runtimes } = runtime();
+      const thread = { threadId: work.threadId, turnId: work.turnId };
+      const { responseId, call } = await runtimes.script(composed, thread).begin();
+      // The runtime loop's own lifecycle: its save and rollback retract staged creates.
+      const lifecycle = composed.app.responseWrites;
+      return {
+        responseId,
+        call,
+        save: () => lifecycle.commitResponse(responseId, thread),
+        rollback: () => lifecycle.rollbackResponse(responseId, thread),
+      };
+    }
+    async function succeed(result: ToolExecutionResult) {
+      if (result.isError) throw new Error(`model call failed: ${JSON.stringify(result.output)}`);
+      return result;
+    }
+    return {
+      reply,
+      async create(path, text) {
+        const turn = await reply();
+        const created = await succeed(
+          await turn.call("write", { command: "create", path: uri(path), content: text }),
+        );
+        await turn.save();
+        const documentId = (created.metadata as { documentId?: unknown } | undefined)?.documentId;
+        if (typeof documentId === "string") return documentId as DocumentId;
+        const stat = await view(work).stat(path);
+        if (!stat.ok || !stat.value.documentId) throw new Error(`create left no ${path}`);
+        return stat.value.documentId as DocumentId;
+      },
+      async copy(from, to) {
+        const turn = await reply();
+        const copied = await succeed(
+          await turn.call("write", { command: "copy", from: { path: uri(from) }, path: uri(to) }),
+        );
+        await turn.save();
+        return copied;
+      },
+    };
+  }
+
+  function livePort(): ContextPort {
+    return runtime().runtime.ports.contextPorts.forProject(projectId, userId, new Map());
+  }
+
+  const writer: ScenarioWriter = {
+    async create(path, createOptions = {}) {
+      const { scheme, rel } = sourceOf(path);
+      const result = await createContextEntry({
+        port: livePort(),
+        userId,
+        scheme,
+        body: parseCreateContextEntryBody({
+          type: "file",
+          path: `/${rel}`,
+          ...(createOptions.content !== undefined ? { content: createOptions.content } : {}),
+          ...(createOptions.documentId ? { documentId: createOptions.documentId } : {}),
+        }),
+      });
+      return result.status === "created"
+        ? { status: "created", ...(result.documentId ? { documentId: result.documentId } : {}) }
+        : { status: "conflict" };
+    },
+    async mkdir(path) {
+      const { scheme, rel } = sourceOf(path);
+      await createContextEntry({
+        port: livePort(),
+        userId,
+        scheme,
+        body: parseCreateContextEntryBody({ type: "folder", path: `/${rel}` }),
+      });
+    },
+  };
+
+  function view(of: ScenarioWork | "live"): ScenarioView {
+    const portFor = async (): Promise<ContextPort> => {
+      if (of === "live") return livePort();
+      const { ports } = runtime().runtime;
+      const resolution = await resolveThreadContext(
+        {
+          threads: ports.threadRepos.threads,
+          threadWorks: ports.threadRepos.threadWorks,
+          works: ports.workRepo,
+          workAuthorityResolver: ports.workAuthorityResolver,
+        },
+        of.threadId,
+      );
+      if (!resolution) throw new Error(`thread ${of.threadId} did not resolve`);
+      return contextPortForThread(ports.contextPorts, resolution);
+    };
+    let resolved: Promise<ContextPort> | null = null;
+    const port = () => {
+      resolved ??= portFor();
+      return resolved;
+    };
+    return {
+      stat: async (path) => (await port()).stat(uri(path)),
+      ls: async (path) => (await port()).list(uri(path)),
+      read: async (path) => (await port()).read(uri(path)),
+      search: async (query) => (await port()).search(query),
+      async locate(documentId) {
+        const { ports } = runtime().runtime;
+        const fs = new ContextFS({
+          links: ports.linkScopes,
+          store: createProjectContextDocumentStore(db, projectId, "manuscript", userId),
+          mutationStore: new DrizzleContextTreeMutationStore(db),
+          documentSync: ports.documentSync,
+          scheme: "manuscript",
+          holder: { projectId },
+          ...(of === "live" || of.mode !== "draft"
+            ? {}
+            : {
+                placement: {
+                  kind: "draft" as const,
+                  workId: of.id,
+                  projectId,
+                  threadId: of.threadId,
+                  userId,
+                  drafts: ports.documentSync.drafts,
+                },
+              }),
+        });
+        const located = await fs.locateDocument(documentId);
+        if (!located.ok) throw new Error(JSON.stringify(located.error));
+        return located.value ? { path: located.value.path } : null;
+      },
+    };
+  }
+
+  async function discard(work: ScenarioWork, documentIds: readonly DocumentId[]) {
+    const { ports } = runtime().runtime;
+    const review = ports.documentSync.draftReview;
+    const items = await review.list({ projectId, workId: work.id });
+    for (const documentId of documentIds) {
+      const item = items.find((candidate) => candidate.documentId === documentId);
+      if (!item) throw new Error(`No draft of ${documentId} to discard`);
+      await review.discardWorkDraft({
+        projectId,
+        workId: work.id,
+        documentId,
+        draftId: item.draftId,
+        userId,
+      });
+    }
+  }
+
+  /** Sessions of this database waiting on a lock. */
+  async function lockWaiters(): Promise<number> {
+    const [row] = await db.execute<{ waiting: number }>(sql`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'`);
+    return Number(row?.waiting ?? 0);
+  }
+
+  async function interleave(
+    a: () => Promise<unknown>,
+    at: HiddenNodeHookPoint,
+    b: () => Promise<unknown>,
+  ): Promise<{ a: Settled; b: Settled; bWaited: boolean }> {
+    const settle = (run: () => Promise<unknown>): Promise<Settled> =>
+      run().then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+    let reached!: () => void;
+    const atHook = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const remove = setHiddenNodeHook(at, async () => {
+      // Only `a`'s first arrival waits; `b` passes the same point freely.
+      remove();
+      reached();
+      await gate;
+    });
+    try {
+      const aRun = settle(a);
+      const first = await Promise.race([atHook.then(() => "hook" as const), aRun]);
+      if (first !== "hook") throw new Error(`a finished without reaching ${at}`);
+      const before = await lockWaiters();
+      const bRun = settle(b);
+      const deadline = Date.now() + 5_000;
+      let bDone = false;
+      void bRun.then(() => {
+        bDone = true;
+      });
+      let bWaited = false;
+      while (!bDone && Date.now() < deadline) {
+        if ((await lockWaiters()) > before) {
+          bWaited = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      release();
+      return { a: await aRun, b: await bRun, bWaited };
+    } finally {
+      remove();
+      release();
+    }
+  }
+
   function draftOf(work: ScenarioWork): Promise<Draft> {
     return drafts.ensureActiveForWrite({
       workId: work.id,
@@ -197,17 +529,18 @@ export async function draftTreeScenario(db: Database): Promise<DraftTreeScenario
         .values({ projectId, createdByUserId: userId, name, slug, aiWriteMode: mode })
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
-      const threadId = randomUUID() as ThreadId;
-      await db.insert(threads).values({
-        id: threadId,
-        projectId,
-        createdByUserId: userId,
-        rootThreadId: threadId,
-        title: name,
-      });
-      await db.insert(threadWorks).values({ threadId, workId: work.id, projectId });
-      return { id: work.id, slug, threadId, mode };
+      const { threadId, turnId } = await insertThread(name, work.id);
+      return { id: work.id, slug, threadId, turnId, mode };
     },
+    async thread(work) {
+      const { threadId, turnId } = await insertThread(`${work.slug} (second)`, work.id);
+      return { ...work, threadId, turnId };
+    },
+    model,
+    writer,
+    view,
+    discard,
+    interleave,
     async seedLive(path) {
       const { sourceId, dir, filename } = locate(path);
       return insertDocument(sourceId, await folderChain(sourceId, dir, false), filename, false);

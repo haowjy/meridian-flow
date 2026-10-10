@@ -9,8 +9,6 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentMarkdownProjections,
-  documents,
   linkAheadRefs,
   projects,
   threads,
@@ -78,16 +76,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .values({ projectId, createdByUserId: userId, name: "No Work", isNoWork: true })
         .returning();
       const noWorkId = noWork?.id ?? "";
-      const [source] = await db
-        .insert(contextSources)
-        .values({
-          projectId,
-          name: "Manuscript",
-          slug: "manuscript",
-          scope: "project",
-          isPrimary: true,
-        })
-        .returning();
+      await db.insert(contextSources).values({
+        projectId,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
       await db.insert(threads).values({
         id: threadId,
         rootThreadId: threadId,
