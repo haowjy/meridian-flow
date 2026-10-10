@@ -3,20 +3,22 @@
  * is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it,
  * by path or by id, and an aborted held write leaves live state alone (C-3); the fences
  * between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3); and a
- * reveal by id never lands from a source a split or move just changed (I-6).
+ * reveal by id lands where the writer asks, never from a source a split or move just
+ * changed (I-6).
+ *
+ * Outcomes are read through the tree's views. Rows are read only where no view can say
+ * it: a tombstone (versus a hidden node nobody uses), and rows left naming one.
  */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
   contextSources,
-  documentBranches,
   documents,
   documentYjsUpdates,
   draftTreeChanges,
   folders,
   users,
-  works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -26,11 +28,14 @@ import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
   draftTreeScenario,
+  type ScenarioWork,
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { interleave } from "../../../test-support/lock-interleave.js";
+import { interleave, type Settled } from "../../../test-support/lock-interleave.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
 import { endUse } from "./end-use.js";
+import type { TreeHookPoint } from "./test-hooks.js";
+import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -43,6 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 12 });
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
+    const tree = createTreeReader(db);
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [users]);
@@ -54,25 +60,57 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { runtime, scenario };
     }
 
-    async function row(id: string) {
-      const [found] = await db
-        .select({
-          id: documents.id,
-          hidden: documents.hidden,
-          deletedAt: documents.deletedAt,
-          contextSourceId: documents.contextSourceId,
-          folderId: documents.folderId,
-          name: documents.name,
-        })
-        .from(documents)
-        .where(eq(documents.id, id as DocumentId));
-      if (!found) throw new Error(`no document ${id}`);
-      return found;
+    /** The document's identity as the live view reads it. */
+    async function liveStatus(id: string) {
+      return (await tree.identityStatus(LIVE_TREE, [id as DocumentId])).get(id as DocumentId);
     }
 
-    async function folderNamed(scenario: DraftTreeScenario, name: string) {
+    /** What `view` shows at a Manuscript path. */
+    function at(scenario: DraftTreeScenario, view: TreeView, path: string) {
+      return tree.resolvePath(view, { contextSourceId: scenario.project.sources.manuscript, path });
+    }
+
+    /** The folder id `view` shows at a Manuscript path, else null. */
+    async function folderAt(scenario: DraftTreeScenario, view: TreeView, path: string) {
+      const found = await at(scenario, view, path);
+      return found.kind === "found" && found.node.kind === "folder" ? found.node.folder.id : null;
+    }
+
+    async function draftView(scenario: DraftTreeScenario, work: ScenarioWork): Promise<TreeView> {
+      return { kind: "draft", draftId: (await scenario.draftOf(work)).id };
+    }
+
+    /** The documents the Work's draft created, as its tree state lists them. */
+    async function createdIn(scenario: DraftTreeScenario, work: ScenarioWork) {
+      const draft = await scenario.draftOf(work);
+      return (await tree.treeState(draft.id))
+        .filter((node) => node.origin === "created")
+        .map((node) => node.nodeId);
+    }
+
+    /** Whether the row is a tombstone; null when no row has the id. */
+    async function tombstoned(id: string) {
+      const [row] = await db
+        .select({ deletedAt: documents.deletedAt })
+        .from(documents)
+        .where(eq(documents.id, id as DocumentId));
+      return row ? row.deletedAt !== null : null;
+    }
+
+    /** Every draft whose change row names the document, whatever the document's state. */
+    async function rowsNaming(id: string) {
+      return (
+        await db
+          .select({ draftId: draftTreeChanges.draftId })
+          .from(draftTreeChanges)
+          .where(eq(draftTreeChanges.nodeId, id))
+      ).map((row) => row.draftId);
+    }
+
+    /** Folders of the scenario named `name` that aren't tombstones, hidden ones included. */
+    async function foldersNamed(scenario: DraftTreeScenario, name: string) {
       return db
-        .select({ id: folders.id, hidden: folders.hidden, deletedAt: folders.deletedAt })
+        .select({ id: folders.id })
         .from(folders)
         .where(
           and(
@@ -83,71 +121,57 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    async function createdBy(id: string) {
-      return db
-        .select({ draftId: draftTreeChanges.draftId })
-        .from(draftTreeChanges)
-        .where(eq(draftTreeChanges.nodeId, id));
-    }
-
-    /** The scenario's documents named `name`, deleted ones left out, hidden ones included. */
-    async function rowsNamed(scenario: DraftTreeScenario, name: string) {
-      return db
-        .select({ id: documents.id, hidden: documents.hidden })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.name, name),
-            isNull(documents.deletedAt),
-            inArray(documents.contextSourceId, Object.values(scenario.project.sources)),
-          ),
-        );
-    }
-
-    async function workRevision(id: WorkId) {
-      const [found] = await db
-        .select({ revision: works.entityRevision })
-        .from(works)
-        .where(eq(works.id, id));
-      return found?.revision ?? 0n;
+    /** `runs[first]` to `at`, then the other run; each run's outcome by its name. */
+    async function race<K extends string>(
+      runs: Record<K, () => Promise<unknown>>,
+      first: K,
+      point: TreeHookPoint,
+    ): Promise<{ bWaited: boolean; by: Record<K, Settled<unknown>> }> {
+      const [second] = (Object.keys(runs) as K[]).filter((name) => name !== first);
+      if (!second) throw new Error("A race needs two runs");
+      const settled = await interleave(db, runs[first], point, runs[second]);
+      return {
+        bWaited: settled.bWaited,
+        by: { [first]: settled.a, [second]: settled.b } as Record<K, Settled<unknown>>,
+      };
     }
 
     it("makes a draft's create an empty hidden row its drafts share (C-2)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const rival = await scenario.work("Rival", "draft");
-      const revisionBefore = await workRevision(ascension.id);
 
       const kael = await scenario.model(ascension).create("lore/kael.md", "Kael, drafted.");
       const draft = await scenario.draftOf(ascension);
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(kael), "live Yjs is never seeded")
         .toEqual({ ok: true, value: "" });
-      expect.soft(await row(kael), "hidden row").toMatchObject({ hidden: true, deletedAt: null });
       expect
-        .soft(await folderNamed(scenario, "lore"), "hidden folder")
-        .toEqual([expect.objectContaining({ hidden: true })]);
+        .soft(await liveStatus(kael), "hidden, used by the draft")
+        .toMatchObject({ kind: "hidden", usedBy: [{ draftId: draft.id }] });
       expect
-        .soft(await createdBy(kael), "the draft's created row")
-        .toEqual([{ draftId: draft.id }]);
+        .soft(await folderAt(scenario, LIVE_TREE, "lore"), "its folder is in no live view")
+        .toBeNull();
       expect
         .soft(
-          await db
-            .select({ id: documentBranches.id })
-            .from(documentBranches)
-            .where(
-              and(
-                eq(documentBranches.documentId, kael),
-                eq(documentBranches.kind, "work_draft"),
-                eq(documentBranches.workId, ascension.id),
-              ),
-            ),
-          "the draft's branch",
+          await at(scenario, await draftView(scenario, ascension), "lore"),
+          "the draft's hidden folder",
         )
-        .toHaveLength(1);
+        .toMatchObject({ kind: "found", node: { kind: "folder", folder: { hidden: true } } });
+      expect.soft(await createdIn(scenario, ascension), "the draft's create").toEqual([kael]);
       expect
-        .soft(await workRevision(ascension.id), "pending projection enrolled")
-        .toBeGreaterThan(revisionBefore);
+        .soft(await scenario.draftBranch(ascension, kael), "the draft's branch")
+        .toMatchObject({ branchId: expect.any(String) });
+      const pending = await runtime.ports.documentSync.draftReview.list({
+        projectId: scenario.project.id,
+        workId: ascension.id,
+      });
+      expect
+        .soft(
+          pending.map((item) => item.documentId),
+          "pending in its Work",
+        )
+        .toContain(kael);
 
       // The same draft creating it again uses the document it already has.
       const again = await scenario.model(ascension).reply();
@@ -159,13 +183,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await again.save();
       expect.soft(rewritten.isError ?? false, "the overwrite succeeds").toBe(false);
-      expect.soft(await createdBy(kael), "no second row in one draft").toHaveLength(1);
+      expect.soft(await createdIn(scenario, ascension), "one create per draft").toEqual([kael]);
 
       // Another draft's create at the path joins the same hidden document.
       const joined = await scenario.model(rival).create("lore/kael.md", "Kael, the rival's.");
       expect.soft(joined, "a second draft joins").toBe(kael);
-      expect.soft(await createdBy(kael), "each draft's row").toHaveLength(2);
-      expect.soft(await rowsNamed(scenario, "kael"), "one document").toHaveLength(1);
+      expect.soft(await createdIn(scenario, rival), "the rival's create").toEqual([kael]);
       expect
         .soft(await scenario.view("live").stat("lore/kael.md"), "still not live")
         .toMatchObject({ ok: false, error: { code: "not_found" } });
@@ -174,58 +197,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual({ ok: true, value: "" });
     });
 
-    it("reveals instead of inserting a twin, by path and by id, and aborts a held write cleanly (C-3)", async () => {
+    // §6.3: a live create at a hidden node's path reveals it instead of making a twin.
+    it("reveals the hidden document and its folder on an empty live create (C-3)", async () => {
+      const { scenario } = await start();
+      const ascension = await scenario.work("Ascension", "draft");
+      const kael = await scenario.model(ascension).create("lore/kael.md", "Kael, drafted.");
+      const lore = await folderAt(scenario, await draftView(scenario, ascension), "lore");
+
+      expect(await scenario.writer.create("lore/kael.md")).toEqual({
+        status: "created",
+        documentId: kael,
+      });
+      expect.soft(await liveStatus(kael), "revealed").toMatchObject({ kind: "visible" });
+      expect.soft(await folderAt(scenario, LIVE_TREE, "lore"), "its folder revealed").toBe(lore);
+    });
+
+    it("reveals under the candidate's lease when the live create carries content (C-3)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const model = scenario.model(ascension);
+      const harbor = await scenario.model(ascension).create("lore/harbor.md", "Harbor, drafted.");
 
-      // An empty live create at a hidden document's path reveals it.
-      const kael = await model.create("lore/kael.md", "Kael, drafted.");
-      expect
-        .soft(await scenario.writer.create("lore/kael.md"), "empty create reveals")
-        .toEqual({ status: "created", documentId: kael });
-      expect.soft(await row(kael), "revealed").toMatchObject({ hidden: false, deletedAt: null });
-      expect
-        .soft(await folderNamed(scenario, "lore"), "its folder revealed")
-        .toEqual([expect.objectContaining({ hidden: false })]);
-      expect.soft(await rowsNamed(scenario, "kael"), "no twin").toHaveLength(1);
+      expect(
+        await scenario.writer.create("lore/harbor.md", { content: "The writer's harbor." }),
+      ).toEqual({ status: "created", documentId: harbor });
+      const text = await runtime.ports.documentSync.readAsMarkdown(harbor);
+      expect(text.ok && text.value, "the created content").toContain("The writer's harbor.");
+    });
 
-      // With content: the candidate's lease first, then the held write (B3).
-      const harbor = await model.create("lore/harbor.md", "Harbor, drafted.");
-      expect
-        .soft(
-          await scenario.writer.create("lore/harbor.md", { content: "The writer's harbor." }),
-          "create with content reveals",
-        )
-        .toEqual({ status: "created", documentId: harbor });
-      const harborText = await runtime.ports.documentSync.readAsMarkdown(harbor);
-      expect
-        .soft(harborText.ok && harborText.value, "the created content")
-        .toContain("The writer's harbor.");
+    it("reveals the hidden folder at the path on mkdir (C-3)", async () => {
+      const { scenario } = await start();
+      const ascension = await scenario.work("Ascension", "draft");
+      await scenario.model(ascension).create("notes/first.md", "Notes, drafted.");
+      const notes = await folderAt(scenario, await draftView(scenario, ascension), "notes");
 
-      // Create by id reveals exactly that document at the requested path, across sources.
-      const isle = await model.create("kb://atlas/isle.md", "Isle, drafted.");
-      expect
-        .soft(await scenario.writer.create("isle.md", { documentId: isle }), "create by id")
-        .toEqual({ status: "created", documentId: isle });
-      expect.soft(await row(isle), "revealed where the writer asked").toMatchObject({
-        hidden: false,
-        contextSourceId: scenario.project.sources.manuscript,
-        folderId: null,
-        name: "isle",
-      });
-
-      // mkdir at a hidden folder's path reveals that folder.
-      await model.create("notes/first.md", "Notes, drafted.");
-      const [hiddenNotes] = await folderNamed(scenario, "notes");
       await scenario.writer.mkdir("notes");
-      expect
-        .soft(await folderNamed(scenario, "notes"), "mkdir reveals, no twin")
-        .toEqual([{ id: hiddenNotes?.id, hidden: false, deletedAt: null }]);
+      expect(notes, "the draft had the folder").not.toBeNull();
+      expect(await folderAt(scenario, LIVE_TREE, "notes"), "that folder, live").toBe(notes);
+    });
 
-      // A failure after the held admission and before commit leaves durable and warm live
-      // state exactly as they were.
-      const tide = await model.create("tide.md", "Tide, drafted.");
+    it("leaves durable and warm live state alone when a held write fails before commit (C-3)", async () => {
+      const { runtime, scenario } = await start();
+      const ascension = await scenario.work("Ascension", "draft");
+      const tide = await scenario.model(ascension).create("tide.md", "Tide, drafted.");
       // A writer has the document open, so its live room stays warm through the create.
       const warm = await runtime.hocuspocus.openDirectConnection(tide, {
         origin: { type: "system", reason: "warm-room" },
@@ -243,7 +256,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         remove();
       }
-      expect.soft(await row(tide), "still hidden").toMatchObject({ hidden: true, deletedAt: null });
+      expect.soft(await liveStatus(tide), "still hidden").toMatchObject({ kind: "hidden" });
       expect
         .soft(
           await db
@@ -261,7 +274,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // §12.2 step 5: a batch's last uses prune every hidden ancestor left empty, whichever
-    // document of the batch comes first.
+    // document of the batch comes first. An unused hidden folder is in no view, so only its
+    // row tells a tombstone from a leftover.
     it.each([
       ["one first"],
       ["two first"],
@@ -273,30 +287,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const draft = await scenario.draftOf(drafting);
       const ids = order === "one first" ? [one, two] : [two, one];
       await runInDrizzleTransaction(db, () => endUse(db, { draftId: draft.id, documentIds: ids }));
-      expect(await folderNamed(scenario, "root"), "root pruned").toEqual([]);
-      expect(await folderNamed(scenario, "one")).toEqual([]);
-      expect(await folderNamed(scenario, "two")).toEqual([]);
+      expect(await foldersNamed(scenario, "root"), "root pruned").toEqual([]);
+      expect(await foldersNamed(scenario, "one")).toEqual([]);
+      expect(await foldersNamed(scenario, "two")).toEqual([]);
     });
 
     // §6.4: Create by id reveals only a hidden identity of the caller's project, found by
-    // its physical row (not the draft's address), and never mints a row with the id.
+    // its physical row (not the draft's address).
     it.each([
       {
-        name: "another account's hidden document",
-        expected: "conflict" as const,
-        async arrange() {
-          const { scenario: victim } = await start();
-          const theirs = await victim.work("Theirs", "draft");
-          const id = await victim.model(theirs).create("secret.md", "Their secret.");
-          return {
-            id,
-            untouched: { hidden: true, contextSourceId: victim.project.sources.manuscript },
-          };
-        },
-      },
-      {
         name: "a hidden document its draft places in another source",
-        expected: "created" as const,
         async arrange(scenario: DraftTreeScenario) {
           const drafting = await scenario.work("Drafting", "draft");
           const id = await scenario.model(drafting).create("draft-place/x.md", "Placed elsewhere.");
@@ -305,215 +305,214 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .update(draftTreeChanges)
             .set({ contextSourceId: scenario.project.sources.kb, parentFolderId: null })
             .where(eq(draftTreeChanges.nodeId, id));
-          return { id, untouched: null };
+          return { id, destination: undefined };
         },
       },
       {
         name: "a hidden document revealed into a Work's unprovisioned Scratch",
-        expected: "created" as const,
-        destination: "scratch" as const,
         async arrange(scenario: DraftTreeScenario) {
           const drafting = await scenario.work("Drafting", "draft");
           const id = await scenario.model(drafting).create("cold/x.md", "Revealed cold.");
-          return { id, untouched: null };
+          // A direct Work whose Scratch no create has provisioned yet: discovery mustn't need it.
+          return { id, destination: await scenario.work("Cold Scratch", "direct") };
         },
       },
-      {
-        name: "an id no document has",
-        expected: "conflict" as const,
-        async arrange() {
-          return { id: randomUUID() as DocumentId, untouched: null };
-        },
-      },
-      {
-        name: "a tombstone",
-        expected: "conflict" as const,
-        async arrange(scenario: DraftTreeScenario) {
-          const drafting = await scenario.work("Drafting", "draft");
-          const id = await scenario.model(drafting).create("gone/x.md", "Discarded.");
-          await scenario.discard(drafting, [id]);
-          return { id, untouched: { hidden: true, deletedAt: expect.any(Date) } };
-        },
-      },
-    ])("Create by id with $name: $expected (C-3)", async (testCase) => {
-      const { arrange, expected } = testCase;
+    ])("Create by id reveals $name (C-3)", async ({ arrange }) => {
       const { scenario } = await start();
-      const { id, untouched } = await arrange(scenario);
-      // A direct Work whose Scratch no create has provisioned yet: discovery mustn't need it.
-      const destination =
-        "destination" in testCase ? await scenario.work("Cold Scratch", "direct") : undefined;
+      const { id, destination } = await arrange(scenario);
       const created = await scenario.writer.create("revealed.md", {
         documentId: id,
         ...(destination ? { inScratchOf: destination } : {}),
       });
-      if (expected === "created") {
-        expect(created).toEqual({ status: "created", documentId: id });
-        const [scratch] = destination
-          ? await db
-              .select({ id: contextSources.id })
-              .from(contextSources)
-              .where(eq(contextSources.workId, destination.id))
-          : [];
-        expect(await row(id)).toMatchObject({
-          hidden: false,
+      expect(created).toEqual({ status: "created", documentId: id });
+      const [scratch] = destination
+        ? await db
+            .select({ id: contextSources.id })
+            .from(contextSources)
+            .where(eq(contextSources.workId, destination.id))
+        : [];
+      expect(await liveStatus(id)).toMatchObject({
+        kind: "visible",
+        address: {
           contextSourceId: scratch?.id ?? scenario.project.sources.manuscript,
-          name: "revealed",
-        });
-        return;
-      }
-      expect(created).toEqual({ status: "conflict" });
-      expect(await rowsNamed(scenario, "revealed"), "nothing minted").toEqual([]);
-      if (untouched) expect(await row(id), "the identity is untouched").toMatchObject(untouched);
-      else expect(await db.select().from(documents).where(eq(documents.id, id))).toEqual([]);
+          path: "revealed.md",
+        },
+      });
     });
 
-    it("never joins a tombstone nor orphans a node when a join meets a last use (I-1)", async () => {
-      for (const order of ["join first", "last use first"] as const) {
-        const { scenario } = await start();
-        const first = await scenario.work(`First ${order}`, "draft");
-        const second = await scenario.work(`Second ${order}`, "draft");
-        const x = await scenario.model(first).create("lore/x.md", "First's x.");
-        const join = () => scenario.model(second).create("lore/x.md", "Second's x.");
-        const discard = () => scenario.discard(first, [x]);
-        const settled =
-          order === "join first"
-            ? await interleave(db, join, "createInDraft.afterCandidateLock", discard)
-            : await interleave(db, discard, "endUse.afterRevalidate", join);
-        expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
-        const [joined, discarded] =
-          order === "join first" ? [settled.a, settled.b] : [settled.b, settled.a];
-        expect.soft(joined.ok, `${order}: join settles`).toBe(true);
-        expect.soft(discarded.ok, `${order}: discard settles`).toBe(true);
-        const secondDraft = await scenario.draftOf(second);
-        const secondsDocument = joined.ok ? (joined.value as string) : null;
-        if (order === "join first") {
-          expect.soft(secondsDocument, `${order}: joined x`).toBe(x);
-          expect.soft(await row(x), `${order}: x kept for its user`).toMatchObject({
-            hidden: true,
-            deletedAt: null,
-          });
-          expect
-            .soft(await createdBy(x), `${order}: only the second draft uses x`)
-            .toEqual([{ draftId: secondDraft.id }]);
-        } else {
-          expect.soft(secondsDocument, `${order}: a new document`).not.toBe(x);
-          expect.soft((await row(x)).deletedAt, `${order}: x tombstoned`).toBeInstanceOf(Date);
-          expect.soft(await createdBy(x), `${order}: nothing uses the tombstone`).toEqual([]);
-          if (secondsDocument) {
-            expect
-              .soft(await row(secondsDocument), `${order}: the new one hidden`)
-              .toMatchObject({ hidden: true, deletedAt: null });
-          }
-        }
-      }
+    // §6.4: and never mints a row with an id it can't reveal.
+    it.each([
+      {
+        name: "another account's hidden document",
+        async arrange() {
+          const { scenario: victim } = await start();
+          const theirs = await victim.work("Theirs", "draft");
+          const id = await victim.model(theirs).create("secret.md", "Their secret.");
+          const untouched = {
+            kind: "hidden",
+            address: { contextSourceId: victim.project.sources.manuscript },
+          };
+          return { id, untouched, tombstone: false };
+        },
+      },
+      {
+        name: "an id no document has",
+        async arrange() {
+          return { id: randomUUID() as DocumentId, untouched: { kind: "gone" }, tombstone: null };
+        },
+      },
+      {
+        name: "a tombstone",
+        async arrange(scenario: DraftTreeScenario) {
+          const drafting = await scenario.work("Drafting", "draft");
+          const id = await scenario.model(drafting).create("gone/x.md", "Discarded.");
+          await scenario.discard(drafting, [id]);
+          return { id, untouched: { kind: "gone" }, tombstone: true };
+        },
+      },
+    ])("Create by id refuses $name (C-3)", async ({ arrange }) => {
+      const { scenario } = await start();
+      const { id, untouched, tombstone } = await arrange(scenario);
+      expect(await scenario.writer.create("revealed.md", { documentId: id })).toEqual({
+        status: "conflict",
+      });
+      expect(await at(scenario, LIVE_TREE, "revealed.md"), "nothing minted").toEqual({
+        kind: "not_found",
+      });
+      expect(await liveStatus(id), "the identity is untouched").toMatchObject(untouched);
+      expect(await tombstoned(id), "its row, as it was").toBe(tombstone);
     });
 
-    it("either reveals or tombstones-and-inserts when a reveal meets a last use (I-2)", async () => {
-      for (const order of ["reveal first", "last use first"] as const) {
-        const { scenario } = await start();
-        const drafting = await scenario.work(`Drafting ${order}`, "draft");
-        const y = await scenario.model(drafting).create("lore/y.md", "Drafted y.");
-        const reveal = () => scenario.writer.create("lore/y.md");
-        const discard = () => scenario.discard(drafting, [y]);
-        const settled =
-          order === "reveal first"
-            ? await interleave(db, reveal, "createLive.afterCandidateLock", discard)
-            : await interleave(db, discard, "endUse.afterRevalidate", reveal);
-        expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
-        const [revealed, discarded] =
-          order === "reveal first" ? [settled.a, settled.b] : [settled.b, settled.a];
-        expect.soft(revealed.ok, `${order}: create settles`).toBe(true);
-        expect.soft(discarded.ok, `${order}: discard settles`).toBe(true);
-        const created = revealed.ok
-          ? (revealed.value as { status: string; documentId?: string })
-          : null;
-        expect.soft(created?.status, `${order}: created`).toBe("created");
-        const live = await rowsNamed(scenario, "y");
-        expect
-          .soft(
-            live.filter((each) => !each.hidden),
-            `${order}: one live y`,
-          )
-          .toHaveLength(1);
-        if (order === "reveal first") {
-          expect.soft(created?.documentId, `${order}: revealed y`).toBe(y);
-          expect.soft(await row(y), `${order}: y live`).toMatchObject({
-            hidden: false,
-            deletedAt: null,
-          });
-        } else {
-          expect.soft(created?.documentId, `${order}: a fresh row`).not.toBe(y);
-          expect.soft((await row(y)).deletedAt, `${order}: y tombstoned`).toBeInstanceOf(Date);
-        }
-      }
+    // Each fence in both orders: the first run pauses at the hook holding its locks, the
+    // second waits on them, then the first finishes.
+    it.each([
+      { first: "join" as const, at: "createInDraft.afterCandidateLock" as const, joinsX: true },
+      { first: "discard" as const, at: "endUse.afterRevalidate" as const, joinsX: false },
+    ])("never joins a tombstone nor orphans a node when a join meets a last use, $first first (I-1)", async ({
+      first,
+      at: point,
+      joinsX,
+    }) => {
+      const { scenario } = await start();
+      const firstWork = await scenario.work("First", "draft");
+      const second = await scenario.work("Second", "draft");
+      const x = await scenario.model(firstWork).create("lore/x.md", "First's x.");
+      const { bWaited, by } = await race(
+        {
+          join: () => scenario.model(second).create("lore/x.md", "Second's x."),
+          discard: () => scenario.discard(firstWork, [x]),
+        },
+        first,
+        point,
+      );
+      expect.soft(bWaited, "the second waits at the fence").toBe(true);
+      expect.soft(by.discard.ok, "discard settles").toBe(true);
+      if (!by.join.ok) throw by.join.error;
+      const seconds = by.join.value as DocumentId;
+      const secondDraft = await scenario.draftOf(second);
+      expect.soft(seconds === x, "the join takes x only while x is used").toBe(joinsX);
+      expect
+        .soft(await liveStatus(seconds), "the second's document, hidden for its one user")
+        .toMatchObject({ kind: "hidden", usedBy: [{ draftId: secondDraft.id }] });
+      expect.soft(await tombstoned(x), "x tombstoned only when nothing joined it").toBe(!joinsX);
+      expect
+        .soft(await rowsNaming(x), "no row names x but its user's")
+        .toEqual(joinsX ? [secondDraft.id] : []);
     });
 
-    it("leaves one document when a live create meets a draft create at one path (I-3)", async () => {
-      for (const order of ["draft first", "live first"] as const) {
-        const { scenario } = await start();
-        const drafting = await scenario.work(`Drafting ${order}`, "draft");
-        const draftCreate = () => scenario.model(drafting).create("lore/z.md", "Drafted z.");
-        const liveCreate = () => scenario.writer.create("lore/z.md");
-        const settled =
-          order === "draft first"
-            ? await interleave(db, draftCreate, "createInDraft.afterCandidateLock", liveCreate)
-            : await interleave(db, liveCreate, "createLive.afterCandidateLock", draftCreate);
-        expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
-        expect.soft(settled.a.ok, `${order}: first settles`).toBe(true);
-        expect.soft(settled.b.ok, `${order}: second settles`).toBe(true);
-        const rows = await rowsNamed(scenario, "z");
-        expect
-          .soft(rows, `${order}: one document, live`)
-          .toEqual([expect.objectContaining({ hidden: false })]);
-        const drafted = order === "draft first" ? settled.a : settled.b;
-        expect
-          .soft(drafted.ok && drafted.value, `${order}: the draft writes that document`)
-          .toBe(rows[0]?.id);
-      }
+    it.each([
+      { first: "reveal" as const, at: "createLive.afterCandidateLock" as const, revealsY: true },
+      { first: "discard" as const, at: "endUse.afterRevalidate" as const, revealsY: false },
+    ])("either reveals or tombstones-and-inserts when a reveal meets a last use, $first first (I-2)", async ({
+      first,
+      at: point,
+      revealsY,
+    }) => {
+      const { scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      const y = await scenario.model(drafting).create("lore/y.md", "Drafted y.");
+      const { bWaited, by } = await race(
+        {
+          reveal: () => scenario.writer.create("lore/y.md"),
+          discard: () => scenario.discard(drafting, [y]),
+        },
+        first,
+        point,
+      );
+      expect.soft(bWaited, "the second waits at the fence").toBe(true);
+      expect.soft(by.discard.ok, "discard settles").toBe(true);
+      if (!by.reveal.ok) throw by.reveal.error;
+      const created = by.reveal.value as { status: string; documentId?: string };
+      expect.soft(created.status, "created").toBe("created");
+      expect
+        .soft(await at(scenario, LIVE_TREE, "lore/y.md"), "one live y, the created one")
+        .toMatchObject({ kind: "found", node: { document: { id: created.documentId } } });
+      expect.soft(created.documentId === y, "y revealed only while used").toBe(revealsY);
+      expect.soft(await tombstoned(y), "y tombstoned only when not revealed").toBe(!revealsY);
     });
-    it("reveals by id only at a revalidated source when a split or move races it (I-6)", async () => {
-      for (const operation of ["split", "move"] as const) {
-        for (const order of ["reveal first", "live operation first"] as const) {
-          const label = `${operation}, ${order}`;
-          const { scenario } = await start();
-          const drafting = await scenario.work(`Drafting ${label}`, "draft");
-          await scenario.seedLive("kb://atlas/coast.md");
-          const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
-          const reveal = () => scenario.writer.create("isle.md", { documentId: isle });
-          const live = (): Promise<unknown> =>
+
+    it.each([
+      { first: "draft" as const, at: "createInDraft.afterCandidateLock" as const },
+      { first: "live" as const, at: "createLive.afterCandidateLock" as const },
+    ])("leaves one document when a live create meets a draft create at one path, $first first (I-3)", async ({
+      first,
+      at: point,
+    }) => {
+      const { scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      const { bWaited, by } = await race(
+        {
+          draft: () => scenario.model(drafting).create("lore/z.md", "Drafted z."),
+          live: () => scenario.writer.create("lore/z.md"),
+        },
+        first,
+        point,
+      );
+      expect.soft(bWaited, "the second waits at the fence").toBe(true);
+      expect.soft(by.live.ok, "the live create settles").toBe(true);
+      if (!by.draft.ok) throw by.draft.error;
+      expect
+        .soft(await at(scenario, LIVE_TREE, "lore/z.md"), "one document, live, the draft's")
+        .toMatchObject({ kind: "found", node: { document: { id: by.draft.value } } });
+    });
+
+    it.each([
+      { operation: "split", first: "reveal", at: "revealById.afterDiscovery", waits: false },
+      { operation: "move", first: "reveal", at: "revealById.afterDiscovery", waits: false },
+      { operation: "split", first: "live", at: "split.beforeRepoint", waits: true },
+      { operation: "move", first: "live", at: "moves.beforeInstall", waits: true },
+    ] as const)("reveals by id only at a revalidated source when a $operation races it, $first first (I-6)", async ({
+      operation,
+      first,
+      at: point,
+      waits,
+    }) => {
+      const { scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      await scenario.seedLive("kb://atlas/coast.md");
+      const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
+      const { bWaited, by } = await race(
+        {
+          reveal: () => scenario.writer.create("isle.md", { documentId: isle }),
+          live: () =>
             operation === "split"
               ? scenario.writer.delete("kb://atlas")
-              : scenario.writer.move("kb://atlas", "unfiled://atlas");
-          const settled =
-            order === "reveal first"
-              ? await interleave(db, reveal, "revealById.afterDiscovery", live)
-              : await interleave(
-                  db,
-                  live,
-                  operation === "split" ? "split.beforeRepoint" : "moves.beforeInstall",
-                  reveal,
-                );
-          if (order === "live operation first") {
-            expect.soft(settled.bWaited, `${label}: the reveal waits for the sources`).toBe(true);
-          }
-          const [revealed, operated] =
-            order === "reveal first" ? [settled.a, settled.b] : [settled.b, settled.a];
-          expect
-            .soft(operated.ok && operated.value, `${label}: live op`)
-            .toMatchObject({ ok: true });
-          expect
-            .soft(revealed.ok && revealed.value, `${label}: revealed that document`)
-            .toEqual({ status: "created", documentId: isle });
-          expect.soft(await row(isle), `${label}: where the writer asked`).toMatchObject({
-            hidden: false,
-            deletedAt: null,
-            contextSourceId: scenario.project.sources.manuscript,
-            folderId: null,
-            name: "isle",
-          });
-          expect.soft(await rowsNamed(scenario, "isle"), `${label}: no twin`).toHaveLength(1);
-        }
-      }
+              : scenario.writer.move("kb://atlas", "unfiled://atlas"),
+        },
+        first,
+        point,
+      );
+      // Paused after discovery the reveal holds nothing; the live operation's sources
+      // make the reveal wait.
+      expect.soft(bWaited, "the reveal waits only behind the live operation").toBe(waits);
+      expect.soft(by.live.ok && by.live.value, "live op").toMatchObject({ ok: true });
+      expect
+        .soft(by.reveal.ok && by.reveal.value, "revealed that document")
+        .toEqual({ status: "created", documentId: isle });
+      expect.soft(await liveStatus(isle), "where the writer asked").toMatchObject({
+        kind: "visible",
+        address: { uri: "manuscript://isle.md" },
+      });
     });
   });
 }
