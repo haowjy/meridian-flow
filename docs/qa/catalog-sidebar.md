@@ -88,3 +88,26 @@ returns documents for the populated case.
 
 Save screenshots and the two recent-documents responses in the active work
 directory. Close only the browser session used for this probe.
+
+## List moves and passive document failures
+
+Named risks: Work Files exposes an unhandled Move command; a homed document's
+refusal opens a name-only field; move retry loses a queued rename.
+
+1. Open an editable Work's Files tab. On a Scratch file, choose Move… from its
+   Actions menu. Drill to a different folder and submit. Check the file leaves
+   the old list and its new URI reads through `./mf doc read`.
+2. Keep a homed chapter open. For one move request, inject a typed terminal
+   HTTP 409 with `{code: "conflict", message: "Probe refusal", source: "system",
+   retryable: false}` into the owned browser's fetch. Move it from the file list.
+   After reconciliation, the path bar must show its original path and a passive
+   failure icon. Its tooltip names the rejected folder and says to use Move…
+   in the file list. Clicking the mark must not open a placement/name field.
+3. Repeat with a refused Rename. The list may offer its inline name repair;
+   the path bar only directs retry to Rename in the file list.
+4. Restore native fetch. Retry through the list. For a cancelled rename/move
+   chain, check the request's name is the retained destination name, not the
+   restored original name. Collision validation must use that retained name too.
+5. Restore any moved probe file and the Work's original lifecycle state. Save
+   screenshots and requests in the active work directory. Never leave fetch
+   interception installed in the shared browser session.
