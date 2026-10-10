@@ -67,7 +67,7 @@ const RULES: Rule[] = [
     id: "DROP_COLUMN",
     severity: "warning",
     // Pre-launch deploys retire unused fields in one release, after auditing data
-    // and removing reads. The mechanical gate bounds their strong table lock.
+    // and removing reads. The mechanical gate bounds the lock acquisition wait.
     matches: (context) =>
       context.statements.flatMap((statement) => {
         const drops = [...statement.sql.matchAll(/\bDROP\s+COLUMN\b/gi)];
@@ -76,15 +76,20 @@ const RULES: Rule[] = [
           .filter(
             (previous) =>
               previous.offset < statement.offset &&
-              /\bSET\s+LOCAL\s+lock_timeout\s*=/i.test(previous.sql),
+              (/\b(?:SET|RESET)\b[\s\S]*\block_timeout\b|\bRESET\s+ALL\b|\bset_config\s*\(/i.test(
+                previous.sql,
+              ) ||
+                /^\s*(?:BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|ABORT|SAVEPOINT|RELEASE)\b/i.test(
+                  previous.sql,
+                )),
           )
           .at(-1);
         const bounded =
           !context.marker &&
           timeout &&
-          /^\s*SET\s+LOCAL\s+lock_timeout\s*=\s*'[1-5](?:s|000ms)'\s*;?\s*$/i.test(
+          /^\s*SET\s+LOCAL\s+lock_timeout\s*(?:=|TO)\s*'[1-5](?:s|000ms)'\s*;?\s*$/i.test(
             context.content.slice(
-              timeout.offset + timeout.sql.search(/\bSET\s+LOCAL\s+lock_timeout\s*=/i),
+              timeout.offset + timeout.sql.search(/\bSET\s+LOCAL\s+lock_timeout\s*(?:=|TO)/i),
               timeout.offset + timeout.sql.length,
             ),
           );
