@@ -27,13 +27,9 @@ import {
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
+import { createLive, findLiveCreateCandidate, findRevealIdentity } from "../../tree/creates.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
-import {
-  createLive,
-  ensureLiveFolderPath,
-  findLiveCreateCandidate,
-  findRevealIdentity,
-} from "../../tree/hidden-nodes.js";
+import { ensureLiveFolderPath } from "../../tree/placement.js";
 import {
   createTreeReader,
   LIVE_TREE,

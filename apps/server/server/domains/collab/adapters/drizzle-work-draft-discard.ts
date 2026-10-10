@@ -11,7 +11,7 @@ import type * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import { lockDocumentNamespaces } from "../../context/adapters/context-fs/document-locations.js";
-import { endUse } from "../../context/tree/hidden-nodes.js";
+import { endUse } from "../../context/tree/end-use.js";
 import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import type { Drafts } from "../domain/drafts.js";

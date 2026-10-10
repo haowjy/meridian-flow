@@ -29,7 +29,7 @@ import {
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
-import { endUse } from "./hidden-nodes.js";
+import { endUse } from "./end-use.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;

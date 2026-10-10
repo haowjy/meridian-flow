@@ -97,7 +97,7 @@ export type VisibleFolder = {
 export type PathResolution<N> =
   | { kind: "found"; node: N }
   /** Two or more visible nodes at one path in this view. */
-  | { kind: "ambiguous"; ids: readonly [string, string, ...string[]] }
+  | { kind: "ambiguous"; nodes: readonly [NodeRef, NodeRef, ...NodeRef[]] }
   | { kind: "not_found" };
 
 export type TreeNode =
@@ -181,6 +181,15 @@ export interface TreeReader {
     view: TreeView,
     at: { contextSourceId: ContextSourceId; path: string },
   ): Promise<PathResolution<TreeNode>>;
+  /**
+   * One step of a walk: what this view shows named `filename` directly under `parentId`
+   * (null: the source root). The same answer as `resolvePath` at that folder's path plus
+   * `filename`, without walking down from the root again.
+   */
+  childAt(
+    view: TreeView,
+    at: { contextSourceId: ContextSourceId; parentId: FolderId | null; filename: string },
+  ): Promise<PathResolution<NodeRef>>;
   /** An id names one node; other visible ids at its address in this view are `clashesWith`. */
   findById(
     view: TreeView,
@@ -391,7 +400,31 @@ export function createTreeReader(db: Database): TreeReader {
     const [first, second, ...rest] = nodes;
     if (!first) return { kind: "not_found" };
     if (!second) return { kind: "found", node: first };
-    return { kind: "ambiguous", ids: [nodeId(first), nodeId(second), ...rest.map(nodeId)] };
+    return { kind: "ambiguous", nodes: [refOf(first), refOf(second), ...rest.map(refOf)] };
+  }
+
+  async function childAt(
+    view: TreeView,
+    at: { contextSourceId: ContextSourceId; parentId: FolderId | null; filename: string },
+  ): Promise<PathResolution<NodeRef>> {
+    const slot = { key: 0, sourceId: at.contextSourceId, parentId: at.parentId, name: at.filename };
+    const documentHits = await loadDocumentIdsAt(
+      tx(),
+      view,
+      filenameSplits(at.filename).map((split) => ({ ...slot, ...split })),
+    );
+    const folderHits = await loadFolderIdsAt(tx(), view, [slot]);
+    const [first, second, ...rest] = [
+      ...[...new Set(documentHits.map((hit) => hit.id))].map(
+        (id): NodeRef => ({ kind: "document", id }),
+      ),
+      ...[...new Set(folderHits.map((hit) => hit.id))].map(
+        (id): NodeRef => ({ kind: "folder", id }),
+      ),
+    ];
+    if (!first) return { kind: "not_found" };
+    if (!second) return { kind: "found", node: first };
+    return { kind: "ambiguous", nodes: [first, second, ...rest] };
   }
 
   async function findById(view: TreeView, id: DocumentId) {
@@ -691,6 +724,7 @@ export function createTreeReader(db: Database): TreeReader {
 
   return {
     resolvePath,
+    childAt,
     findById,
     findFolderById,
     identityStatus,
@@ -734,8 +768,11 @@ function positions(asks: readonly (Omit<PathSlot, "key"> & { owner: number })[])
   };
 }
 
-function nodeId(node: TreeNode): string {
-  return node.kind === "document" ? node.document.id : node.folder.id;
+/** The identity of a node a reader found. */
+export function refOf(node: TreeNode): NodeRef {
+  return node.kind === "document"
+    ? { kind: "document", id: node.document.id }
+    : { kind: "folder", id: node.folder.id };
 }
 
 function rowLocation(

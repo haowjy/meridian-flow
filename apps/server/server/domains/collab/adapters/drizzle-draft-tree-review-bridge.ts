@@ -13,7 +13,7 @@ import { lockContextSources } from "../../context/adapters/context-fs/document-l
 import { dropDraftSettlements } from "../../context/adapters/link-ahead-draft-settlements.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
-import { place } from "../../context/tree/hidden-nodes.js";
+import { place } from "../../context/tree/placement.js";
 import { createTreeReader } from "../../context/tree/tree-view.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { DraftTreeReviewBridge } from "../domain/work-draft-review-service.js";

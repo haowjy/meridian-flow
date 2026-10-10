@@ -32,8 +32,8 @@ import type {
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import { findRevealIdentity } from "./tree/creates.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
-import { findRevealIdentity } from "./tree/hidden-nodes.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
