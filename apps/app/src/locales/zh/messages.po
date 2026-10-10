@@ -4024,6 +4024,11 @@ msgstr ""
 msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
+#: src/features/project/dock/DockDocumentButtons.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "This view couldn’t open."
+msgstr ""
+
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr ""

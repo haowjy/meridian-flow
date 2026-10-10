@@ -2,6 +2,7 @@
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
+import type { RunDocumentSwitch } from "./document-switch-failure";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
 import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
 
@@ -10,8 +11,10 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
-  /** Slot hand-off, committed with the accepted destination. */
+  /** The destination is accepted, before its workspace commit. */
   onAccepted?: () => void;
+  /** Slot hand-off after the destination tab is installed. */
+  onCommitted?: () => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   draftId?: string;
   isCurrent?: () => boolean;
@@ -27,6 +30,8 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
+  runDocumentSwitch?: RunDocumentSwitch;
+  railSwitchFailed?: ScreenKey | null;
   capture?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
@@ -38,10 +43,14 @@ export function ProjectNavigationProvider({
   isCurrentContextRoute,
   screen,
   registerLeaveGuard,
+  runDocumentSwitch,
+  railSwitchFailed,
 }: {
   screen?: ScreenKey;
   children: ReactNode;
   openContextRoute: OpenContextRoute;
+  runDocumentSwitch?: RunDocumentSwitch;
+  railSwitchFailed?: ScreenKey | null;
   captureNavigation?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
@@ -54,6 +63,8 @@ export function ProjectNavigationProvider({
         capture: captureNavigation,
         isCurrentContextRoute,
         registerLeaveGuard,
+        runDocumentSwitch,
+        railSwitchFailed,
       }}
     >
       {children}
@@ -95,4 +106,13 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
       }),
     [register],
   );
+}
+
+/** Opt-in presentation for the dock header; ordinary document opens keep their own policy. */
+export function useRunDocumentSwitch() {
+  return useContext(ProjectNavigationContext)?.runDocumentSwitch;
+}
+
+export function useRailSwitchFailed() {
+  return useContext(ProjectNavigationContext)?.railSwitchFailed ?? null;
 }

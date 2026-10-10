@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
+import { useRailSwitchFailed } from "../routing/ProjectNavigationContext";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
 
 export type WorkspaceNavPresentation = "desktop" | "phone";
@@ -39,6 +40,7 @@ export function WorkspaceNavBody({
   scratch,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
+  const failed = useRailSwitchFailed();
 
   return (
     <>
@@ -50,13 +52,19 @@ export function WorkspaceNavBody({
         )}
       >
         {SCREENS.map((screen) => (
-          <ScreenNavItem
-            key={screen.key}
-            screen={screen}
-            active={screen.key === activeScreen}
-            presentation={presentation}
-            onClick={() => onSelectScreen(screen.key)}
-          />
+          <div key={screen.key}>
+            <ScreenNavItem
+              screen={screen}
+              active={screen.key === activeScreen}
+              presentation={presentation}
+              onClick={() => onSelectScreen(screen.key)}
+            />
+            {failed === screen.key && (
+              <p role="alert" className="px-2 py-1 text-xs text-destructive">
+                <Trans>This view couldn’t open.</Trans>
+              </p>
+            )}
+          </div>
         ))}
       </div>
 
@@ -105,7 +113,7 @@ function ScreenNavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "focus-ring flex items-center gap-2.5 text-left text-sm transition-colors",
+        "focus-ring flex w-full items-center gap-2.5 text-left text-sm transition-colors",
         // Desktop rows share the footer's inset, rounded treatment; keep the
         // icon and label aligned with their original positions.
         presentation === "phone"

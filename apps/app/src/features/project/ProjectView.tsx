@@ -62,9 +62,11 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { resolveEditorPresentation } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
+import type { VisibleEditorRoute } from "./context/resolve-visible-editor-tab";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
@@ -164,7 +166,7 @@ export type ProjectViewProps = {
   reviewDraftId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
-  onSelectScreen: (screen: ScreenKey) => void;
+  onSelectScreen: (screen: ScreenKey, displayedEditor?: VisibleEditorRoute | null) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
   onSelectContextFolder: (folder: string) => void;
@@ -547,15 +549,27 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       > & { editorWorkId: string })
     | null
   >(null);
-  const editorActive =
-    props.activeScreen === "context" &&
-    props.editorScope.status === "ready" &&
-    props.contextLive &&
-    !props.routeIssues?.editor;
-  const mountedEditor =
-    editorActive && props.editorScope.status === "ready"
-      ? { ...props, editorWorkId: props.editorScope.workId }
-      : priorEditor.current;
+  const editorPresentation = resolveEditorPresentation({
+    current:
+      props.editorScope.status === "ready"
+        ? { ...props, editorWorkId: props.editorScope.workId }
+        : null,
+    prior: priorEditor.current,
+    requestedWorkId: props.editorWorkId,
+    screen: props.activeScreen,
+    contextLive: props.contextLive,
+    issue: props.routeIssues?.editor,
+  });
+  const { active: editorActive, mounted: mountedEditor } = editorPresentation;
+  const mountedEditorRoute = mountedEditor
+    ? {
+        editorWorkId: mountedEditor.editorWorkId,
+        activeContextScheme: mountedEditor.activeContextScheme,
+        activeContextPath: mountedEditor.activeContextPath,
+        activeContextChat: mountedEditor.activeContextChat,
+        localDocumentId: mountedEditor.activeLocalDocumentId,
+      }
+    : null;
   useLayoutEffect(() => {
     if (editorActive && props.editorScope.status === "ready")
       priorEditor.current = { ...props, editorWorkId: props.editorScope.workId };
@@ -624,7 +638,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
-          onSelectScreen={props.onSelectScreen}
+          onSelectScreen={(next) =>
+            props.onSelectScreen(next, editorPresentation.visible ? mountedEditorRoute : null)
+          }
           onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
         />
@@ -650,16 +666,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           destinationKey={props.routeLocationKey}
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
           onRetry={props.onRetryEditorRoute}
-          retainWhileLoading={
-            !!priorEditor.current && priorEditor.current.editorWorkId === props.editorWorkId
-          }
+          retainWhileLoading={editorPresentation.retainWhileLoading}
           recovery={
             props.editorScope.status !== "ready" ? (
               <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
             ) : undefined
           }
         >
-          {mountedEditor ? (
+          {mountedEditor && mountedEditorRoute ? (
             <DraftReviewBoundary value={mountedEditor.editorReview}>
               {editorActive ? (
                 <EditorReviewIntentClaimant
@@ -669,12 +683,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               ) : null}
               <ContextViewerSurfaceController
                 projectId={props.projectId}
-                editorWorkId={mountedEditor.editorWorkId}
+                {...mountedEditorRoute}
                 editorWork={mountedEditor.editorWork}
-                activeContextScheme={mountedEditor.activeContextScheme}
-                activeContextPath={mountedEditor.activeContextPath}
-                activeContextChat={mountedEditor.activeContextChat}
-                localDocumentId={mountedEditor.activeLocalDocumentId}
                 addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
                 active={editorActive}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}

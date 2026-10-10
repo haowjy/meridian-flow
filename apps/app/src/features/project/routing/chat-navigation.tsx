@@ -65,7 +65,7 @@ export type ChatNavigation = {
   recoveringFirstSend: boolean;
   openChat: (threadId: string) => Promise<void>;
   /** The Chat screen: the current chat, or the index when there is none. */
-  showChatScreen: () => Promise<void>;
+  showChatScreen: (onAccepted?: () => void) => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
   openNewChat: (workId?: string) => Promise<void>;
   openChatIndex: () => Promise<void>;
@@ -89,7 +89,11 @@ export type ChatNavigation = {
   consumeNewChatFocusRequest: (id: number) => void;
 };
 
-type Go = (destination: ProjectDestination, options: NavigationOptions) => Promise<unknown>;
+type Go = (
+  destination: ProjectDestination,
+  options: NavigationOptions,
+  onAccepted?: () => void,
+) => Promise<unknown>;
 
 function computeChatDisplay(
   activeScreen: ScreenKey,
@@ -147,11 +151,12 @@ export function useProjectChatNavigation({
     const openChatIndex = async () => {
       await latest.current.go({ kind: "chat-index" }, { replace: false });
     };
-    const showChatScreen = async () => {
+    const showChatScreen = async (onAccepted?: () => void) => {
       const threadId = latest.current.currentThreadId;
       await latest.current.go(
         threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" },
         { replace: false },
+        onAccepted,
       );
     };
     const commands = {

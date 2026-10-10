@@ -20,7 +20,7 @@ it("routes Uploads without offering an ineligible prepared Editor tab", async ()
   await openDocumentInEditor(open, upload, onAccepted);
   expect(open).toHaveBeenCalledWith(
     { scheme: "uploads", path: "/map.png", workId: "work" },
-    { replace: false, onAccepted },
+    { replace: false, onCommitted: onAccepted, onAccepted: undefined },
   );
   expect(onAccepted).not.toHaveBeenCalled();
 });
@@ -36,6 +36,6 @@ it("keeps the stable Untitled identity and prepared tab on the Editor path", asy
   await openDocumentInEditor(open, tab);
   expect(open).toHaveBeenCalledWith(
     { scheme: "unfiled", path: "", documentId: "local" },
-    { replace: false, tab, onAccepted: undefined },
+    { replace: false, tab, onCommitted: undefined, onAccepted: undefined },
   );
 });
