@@ -77,6 +77,7 @@ import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
 } from "./dock/editor-review-handoff";
+import { useDockDocumentRestoration } from "./dock/restore-dock-document";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
@@ -288,6 +289,8 @@ export function ProjectView(props: ProjectViewProps) {
     props.onDisplayedSelection?.({ editorWorkId });
   }, [props.onDisplayedSelection, editorWorkId]);
   const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
+  useDockDocumentRestoration(props.projectId, workspaceHydrated);
+
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
     workspaceHydrated,
