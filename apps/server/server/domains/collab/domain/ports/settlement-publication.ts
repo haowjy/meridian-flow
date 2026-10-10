@@ -8,6 +8,7 @@
  * root-owned completion transaction:
  *
  * 1. Work row locks, the union of every member's and every plan's `workIds`;
+ *    then the plans' `draftIds` rows (`FOR NO KEY UPDATE`, id order);
  * 2. namespace locks, once, sorted, for the sources of every plan's
  *    `namespaceDocumentIds` together with every plan's `namespaceSourceIds`;
  * 3. document mutation locks, sorted, for every member and every plan's `documentIds`;
@@ -30,6 +31,7 @@
  * tree-only Apply) passes through the same order with phase 5 empty.
  */
 
+import type { DraftId } from "@meridian/contracts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 
@@ -76,8 +78,11 @@ type ScopeInputs = {
   batchId: string;
   /** Step inputs by step kind; at completion, exactly what was staged (immutable). */
   payloads: ReadonlyMap<string, JsonValue>;
-  /** Each member's live state vector at its coordinator lease (its lock cut), for text tokens. */
-  liveStateVectors: ReadonlyMap<DocumentId, Uint8Array>;
+  /**
+   * Each member's full-state fingerprint (`fullStateFingerprint`) at its coordinator
+   * lease, its lock cut, for rendered-text tokens: deletions change it.
+   */
+  liveTextFingerprints: ReadonlyMap<DocumentId, string>;
 };
 
 /** The batch being checked before staging, or settled after it, as a step sees it. */
@@ -93,6 +98,8 @@ export type SettlementBatchScope =
 export type SettlementPublicationPlan = {
   /** Works this step changes, locked with the batch's own before anything else. */
   workIds?: readonly WorkId[];
+  /** Drafts this step publishes or closes, row-locked after Works, before namespaces. */
+  draftIds?: readonly DraftId[];
   /** Documents whose current sources' namespaces must be held. */
   namespaceDocumentIds?: readonly DocumentId[];
   /** Explicit sources (current and final), merged with the documents' sources into one acquisition. */

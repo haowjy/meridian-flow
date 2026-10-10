@@ -297,6 +297,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.notices,
     deps.eventSink,
     deps.arrivals ? manifestArrivalPublication(deps.db, deps.arrivals) : undefined,
+    deps.workProjectionMutation,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(

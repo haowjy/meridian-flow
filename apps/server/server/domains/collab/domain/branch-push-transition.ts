@@ -132,10 +132,10 @@ export function createBranchPushTransition(input: {
             journalIds: push.journalRows.map((row) => row.id),
           })),
           payloads: new Map(Object.entries(payloads)),
-          liveStateVectors: new Map(
+          liveTextFingerprints: new Map(
             prepared.pushes.map((push) => [
               push.branch.documentId,
-              Y.encodeStateVectorFromUpdate(push.lockCutUpdate),
+              fullStateUpdateFingerprint(push.lockCutUpdate),
             ]),
           ),
         });
@@ -302,10 +302,10 @@ export function createBranchPushTransition(input: {
           })),
           payloads,
           leasedBranchIds: settlement.leasedBranchIds,
-          liveStateVectors: new Map(
+          liveTextFingerprints: new Map(
             members.map((member) => [
               member.push.documentId,
-              Y.encodeStateVectorFromUpdate(member.lockCutUpdate),
+              fullStateUpdateFingerprint(member.lockCutUpdate),
             ]),
           ),
           recheck: (cuts) => recheckWarmState(cuts, settlement.docs, ingress),
@@ -468,5 +468,14 @@ export function materializeFinalPrePush(
 }
 
 export function fullStateFingerprint(doc: Y.Doc): string {
-  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
+  return fullStateUpdateFingerprint(Y.encodeStateAsUpdate(doc));
+}
+
+/**
+ * The fingerprint of a full-state update: deletions count, unlike a state vector. A lock
+ * cut is `Y.encodeStateAsUpdate` of the warm room, so its fingerprint equals
+ * `fullStateFingerprint` of the room as the writer saw it under the same lease.
+ */
+export function fullStateUpdateFingerprint(update: Uint8Array): string {
+  return createHash("sha256").update(update).digest("base64");
 }

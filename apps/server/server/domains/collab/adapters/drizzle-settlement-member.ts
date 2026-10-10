@@ -30,6 +30,7 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -126,31 +127,39 @@ export async function stageSettlementMemberWithinTx(
  * transaction: their journal rows are active again at their generation, their
  * unconsumed notices are retracted, and their lineage is deleted (the outbox
  * member and its joins cascade), so the idempotency key never answers "already
- * pushed" for an Apply that didn't happen. The caller retires their trail
+ * pushed" for an Apply that didn't happen. The drafts are pending again, so the
+ * change goes through the Work projection like the staging that made them
+ * pushed; the caller already holds their Works. The caller retires their trail
  * contribution.
  */
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
-  pushes: readonly Pick<PushLineageRow, "id" | "journalIds">[],
+  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
   notices?: NoticePort,
+  workProjection?: WorkProjectionMutation,
 ): Promise<void> {
   if (pushes.length === 0) return;
-  const journalIds = pushes.flatMap((push) => push.journalIds);
-  if (journalIds.length > 0) {
-    await db
-      .update(branchWriteJournal)
-      .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
-      .where(
-        and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
-      );
-  }
-  await notices?.retractForPushes(pushes.map((push) => String(push.id)));
-  await db.delete(pushLineage).where(
-    inArray(
-      pushLineage.id,
-      pushes.map((push) => push.id),
-    ),
-  );
+  const withdraw = async () => {
+    const journalIds = pushes.flatMap((push) => push.journalIds);
+    if (journalIds.length > 0) {
+      await db
+        .update(branchWriteJournal)
+        .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
+        .where(
+          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+        );
+    }
+    await notices?.retractForPushes(pushes.map((push) => String(push.id)));
+    await db.delete(pushLineage).where(
+      inArray(
+        pushLineage.id,
+        pushes.map((push) => push.id),
+      ),
+    );
+  };
+  const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
+  if (!workProjection) return withdraw();
+  await workProjection.mutatePendingBranches(branchIds, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */

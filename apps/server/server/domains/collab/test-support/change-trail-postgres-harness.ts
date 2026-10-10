@@ -35,6 +35,7 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 );
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 export const {
+  currentDrizzleDb,
   deferUntilDrizzleCommit,
   isInDrizzleTransaction,
   deferUntilDrizzleRollback,
@@ -90,6 +91,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
+const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
 const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
   "../domain/branch-trail-projection.js"
 );
@@ -275,6 +277,8 @@ export type ChangeTrailHarnessOptions = {
   afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
   /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
+  /** Inside a withdrawal (refusal or hold), at its first write. */
+  duringWithdrawal?: () => Promise<void>;
   /** Publication steps after the manifest arrival step, in the order they run. */
   publicationSteps?: readonly SettlementPublicationStep[];
 };
@@ -412,7 +416,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     admissionProbe(createDrizzleDocumentProjectionEffects(db), options.afterAdmission),
     changeTrails,
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
-    notices,
+    {
+      ...notices,
+      // Withdrawal's first write: a refused or held member's notices are retracted.
+      async retractForPushes(pushIds) {
+        await options.duringWithdrawal?.();
+        return notices.retractForPushes(pushIds);
+      },
+    },
     undefined,
     {
       // The real sorted acquisition, as composition's arrivals adapter takes it.
@@ -1796,8 +1807,58 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     stageCertifiedReplace,
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
+    /** A writer edit on the warm room, journaled first, as a socket write would be. */
+    appendWriterPrefix,
     /** The process's branch critical sections, for lease probes. */
     criticalSections: branchCriticalSections,
+    /** The warm room's full-state fingerprint, as a text token captures it. */
+    liveFingerprint: (documentId: DocumentId) =>
+      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+    /**
+     * Expires the pending batch's lease inside the caller's transaction (completion or
+     * abandonment holds the row), as if the database clock passed it there.
+     */
+    expireLeaseInTransaction: () =>
+      currentDrizzleDb(db)
+        .update(schema.branchPushSettlementBatches)
+        .set({ leaseExpiresAt: sql`clock_timestamp() - interval '1 second'` })
+        .where(
+          and(
+            eq(schema.branchPushSettlementBatches.state, "pending"),
+            sql`${schema.branchPushSettlementBatches.claimToken} IS NOT NULL`,
+          ),
+        ),
+    /** A completion of the current owner's valid batch, attempted inside an ambient transaction. */
+    async attemptAmbientCompletion() {
+      const [batch] = await db
+        .select()
+        .from(schema.branchPushSettlementBatches)
+        .where(eq(schema.branchPushSettlementBatches.state, "pending"));
+      if (!batch?.claimToken) throw new Error("the probe needs an owned pending batch");
+      const owner = { token: batch.claimToken, epoch: batch.claimEpoch };
+      const loaded = await durableSettlementStore.loadSettlementBatch({ batchId: batch.id, owner });
+      if (!loaded) throw new Error("the owner lost its batch");
+      return runInRootDrizzleTransaction(db, () =>
+        durableSettlementStore.completeBatch({
+          batchId: batch.id,
+          claim: loaded.claim,
+          members: loaded.members.map((member) => ({
+            push: member.push,
+            joinVersion: member.joinVersion,
+            trail: member.trail,
+            replacement: trailContributionReplacement(member.trail, member.push),
+          })),
+          payloads: loaded.payloads,
+          leasedBranchIds: [],
+          liveTextFingerprints: new Map(),
+          recheck: () => "commit",
+          afterCommit() {},
+        }),
+      ).then(
+        () => "completed",
+        (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
+      );
+    },
     crossWorkProbeFixture: () => ({
       runtime,
       links,
@@ -1924,7 +1985,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         })),
         payloads: batch.payloads,
         leasedBranchIds: [],
-        liveStateVectors: new Map(),
+        liveTextFingerprints: new Map(),
         recheck() {
           completionCallbackRan = true;
           return "commit";

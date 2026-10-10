@@ -75,11 +75,14 @@
   payload `kind` and plans from immutable inputs: the scope's members
   (`PublicationMember` before staging; `StagedPublicationMember`, with its push
   id, reconstructed from lineage for completion), the payloads staged with the
-  batch, each member's lock-cut state vector, and at completion the items
-  already held. It names extra Works, namespace documents, explicit namespace
-  sources and document locks. `adapters/drizzle-settlement-publication.ts`
-  plans and locks in the global order (Works, one sorted namespace acquisition
-  over documents' sources and explicit sources, documents); the pre-staging
+  batch, each member's lock-cut full-state fingerprint (`liveTextFingerprints`,
+  the same `fullStateFingerprint` a rendered-text token takes; deletions count,
+  which a state vector would miss), and at completion the items already held. It
+  names extra Works, drafts, namespace documents, explicit namespace sources and
+  document locks. `adapters/drizzle-settlement-publication.ts` plans and locks
+  in the global order (Works, draft rows `FOR NO KEY UPDATE` in id order, one
+  sorted namespace acquisition over documents' sources and explicit sources,
+  documents); the pre-staging
   check and completion both call it, so they lock the same set in the same
   order.
   - **Outer leases first:** a step's `prepare(payload)` names the branches whose
@@ -101,10 +104,18 @@
     holding more items) or `refuse`. A held member is withdrawn in the same
     transaction (no admission, trail contribution retired, notices retracted,
     lineage and outbox gone, journal rows `active` again, no warm room, no
-    recheck, no auto reset) and its hold is written. A refusal rolls
-    completion back and `abandonBatch` withdraws every member the same way in
-    a new transaction under the owner predicate and ends the batch `abandoned`
-    (terminal; never listed for recovery). `afterAdmission` receives the
+    recheck, no auto reset) and its hold is written. Everything the publication
+    writes runs in a savepoint inside completion's root transaction: a refusal
+    rolls back to it and, still holding every lock, withdraws every member the
+    same way and ends the batch `abandoned` (terminal; never listed for
+    recovery) before that transaction commits. The terminal UPDATE is
+    owner-fenced and checked: if the lease ran out meanwhile, the whole
+    transaction rolls back and the next attempt decides again. No committed
+    state has the publication undone without a durable refusal, or a
+    withdrawal without its terminal state. Withdrawal (refused or held) goes
+    through `WorkProjectionMutation.mutatePendingBranches`, so the Works whose
+    drafts are pending again publish their snapshot, revision and authority
+    like the staging that made them pushed. `afterAdmission` receives the
     admitted documents. Every hold of the batch, branchless items included,
     comes back with the result and survives recovery as rows.
   - **Payloads:** `branch_push_settlement_payloads` rows are staged with the
@@ -112,8 +123,7 @@
     branchless Apply) stages and settles through the same order.
   - Today's manifest companion is the one production step
     (`adapters/drizzle-manifest-arrivals.ts`); Apply's tree step replaces it.
-    The draft-row lock slot (`draftIds`, after Works) is not built yet: the
-    `drafts` table arrives with lane T1, and lane E adds the slot.
+    Lane E's draft tree step declares its draft in `draftIds`.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
