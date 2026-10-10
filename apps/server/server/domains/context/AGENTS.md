@@ -109,8 +109,13 @@ Stored links resolve in batches at `POST /api/projects/[projectId]/links/resolve
 (`(ref, href)` pairs, answers in request order). A `doc:`/`ahead:` ref resolves
 through one prepared link scope keyed by (project, requesting account); a ref the
 reader cannot reach answers `gone` with no location, because a ref is not a
-capability. Ref-less links keep the address resolver; previous locations apply
-only when `baseUri` is null (chat).
+capability. A hidden document answers `inDraft` with the `draft` that names it
+and that draft's path. The route pins the holder (`holderDocumentId` wherever it
+now sits, else the one document at `baseUri`) so its own bindings answer its
+ahead refs first (`holderBound`), and returns `holderUri` when the holder moved;
+one it can't pin answers ahead refs without bindings and says `holderUnresolved`,
+never silently. Ref-less links keep the address resolver; previous locations
+apply only when `baseUri` is null (chat).
 
 **A move writes nothing into any document.** Links name documents, so a rename
 re-spells on read. Moves flush durable link derivation (which also registers
