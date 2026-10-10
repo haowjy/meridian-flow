@@ -8,7 +8,7 @@
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 import {
   createReviewEditor,
@@ -22,6 +22,7 @@ import {
   textHunk,
 } from "../../../../test-support/inline-review-editor";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
+import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
 import { type InlineReviewModel, unattributedHunkKey } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
 
@@ -143,20 +144,66 @@ describe("insertion marks", () => {
   });
 
   it("marks what the writer types at once, before any refetch", () => {
-    const { editor } = createReviewEditor(["Lin Feng counted breaths."]);
-    setModel(editor, model([], []));
+    const { editor, doc } = createReviewEditor(["Lin Feng counted breaths.", "Elsewhere."]);
+    const start = posOf(editor, "counted");
+    const end = posOf(editor, "breaths") + 7;
+    const stale = model(
+      [operation("a1", "agent")],
+      [textHunk(editor, "h1", ["a1"], { from: start, to: end })],
+    );
+    setModel(editor, stale);
     const at = posOf(editor, "breaths");
-    editor.chain().setTextSelection(at).insertContent("slow").run();
-    editor
-      .chain()
-      .setTextSelection(at + 4)
-      .insertContent("er ")
-      .run();
-    // Two keystroke batches that touch become one run.
+    editor.commands.insertContentAt(at, "slow");
+    editor.commands.insertContentAt(at + 4, "er ");
     expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-    // The refetched model replaces the optimistic run.
-    setModel(editor, model([], []));
+
+    const peer = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+      const paragraph = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
+      const text = paragraph.get(0) as Y.XmlText;
+      text.insert(text.length, " Remote.");
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer), "remote");
+    } finally {
+      peer.destroy();
+    }
+    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
+    editor.commands.setInlineReviewMarksVisible(false);
     expect(marked(editor, "meridian-review-writer")).toEqual([]);
+    editor.commands.setInlineReviewMarksVisible(true);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
+    setModel(editor, stale);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
+
+    // A partial receipt retires only the explicitly attributed portion.
+    paintText(
+      editor,
+      [operation("w1", "writer")],
+      ["w1"],
+      { from: at, to: at + 4 },
+      {
+        spans: [span(editor, "w1", at, at + 4)],
+      },
+    );
+    expect(marked(editor, "meridian-review-writer").join("")).toBe("slower ");
+    paintText(
+      editor,
+      [operation("w1", "writer")],
+      ["w1"],
+      { from: at, to: at + 7 },
+      {
+        spans: [span(editor, "w1", at, at + 7)],
+      },
+    );
+    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
+    expect(getInlineReviewPluginState(editor.state)?.pendingWriterRanges).toHaveLength(0);
+
+    // The old right anchor excludes new edge text after a rebuild.
+    setModel(editor, stale);
+    editor.commands.insertContentAt(posOf(editor, "counted"), "START ");
+    editor.commands.insertContentAt(posOf(editor, "breaths") + 7, " END");
+    setModel(editor, stale);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["START ", " END"]);
   });
 });
 
@@ -632,7 +679,7 @@ describe("focus and visibility", () => {
     expect(removals(editor)).toHaveLength(1);
     expect(marked(editor, "meridian-review-emphasized").join("")).toContain("gaNEW mma");
     setModel(editor, model([], []));
-    expect(marked(editor, "meridian-review-writer")).toEqual([]);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["zz", "NEW "]);
   });
 });
 
