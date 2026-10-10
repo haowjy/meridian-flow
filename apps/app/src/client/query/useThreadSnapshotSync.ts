@@ -52,9 +52,9 @@ export type ThreadSnapshotSyncStatus = {
   activateProjection: (after?: string) => boolean;
 };
 
-/** Shared options for the live host and route's passive missing-identity
- * observer (`useMissingChatFallback`). That observer stays `enabled: false`
- * and only reads whatever the live host's own richer query already put in
+/** Shared options for the live host and its passive observers
+ * (`useMissingChatFallback`, `useDisplayedThread`). They stay `enabled: false`
+ * and only read whatever the live host's own richer query already put in
  * the shared cache entry, so this queryFn's simpler shape never actually
  * runs; never replace it with skipToken, which would drop the shared key.
  */

@@ -52,7 +52,11 @@ vi.mock("./chat-navigation", () => ({
   chatSurfaceThreadId: () => null,
   ChatNavigationProvider: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../context/account-feature-context", () => ({ useContextRemovalCoordinator: () => ({}) }));
+vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
+vi.mock("../context/account-feature-context", () => ({
+  useAccountResourceProjection: () => ({ records: [], folders: [] }),
+  useContextRemovalCoordinator: () => ({}),
+}));
 vi.mock("../context/use-context-removal-project", () => ({
   useContextRemovalProject: () => ({ selection: null }),
 }));
@@ -177,10 +181,12 @@ it("preserves local opens and tab lifetime fencing, then publishes the placed Sc
                 tabs: [
                   {
                     ...getContextTabs(projectId).tabs[0],
-                    kind: "tracked",
-                    scheme: "scratch",
+                    kind: "tracked" as const,
+                    scheme: "scratch" as const,
                     path: "/note.md",
                     workId,
+                    rootThreadId: undefined,
+                    rootThreadRef: undefined,
                     origin: "local-resource",
                     editable: true,
                     filetype: "markdown",

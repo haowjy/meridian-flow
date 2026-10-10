@@ -156,21 +156,16 @@ jade action. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
-The Work dock has one transient read-only file slot for Scratch and Uploads. Its
-session-only `workFile` state carries `{ workId, tab }`; opening a second file
-replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
-the viewer, and the contained dock switch can return to Chat or close the file.
-`viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
-Scratch and Uploads. The Files tab shows Changes to review and Scratch only;
+The dock holds one transient document for Work and Chat (see
+[`dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)): a Work's Files row opens
+a Scratch note there in the standard editor, editable, with the Editor's saving,
+offline and archived-Work behaviour. The Files tab shows Changes to review and Scratch only;
 Work Uploads have no Files tab surface (composer attachments still land there, see
-[TODO](TODO)). The "Changes to review" group (`WorkChanges`) lists the Work's draft files; a
-row's name launches review through the same `useAiDraftLauncher` handoff as the
-other review launchers, not a plain document open, and the row expands in place
-to that draft's changes (`useDraftChanges`, previewed only once expanded). Its
-menu says "Apply all changes" and "Discard all changes", without draft counts,
-and runs across every draft through creation-bound `useWorkDraftCommands`,
-independently of the open Editor review. No Work has no Work
-page and so no Work-wide list. Files search uses one name matcher across drafts and Scratch;
+[TODO](TODO)). A "Changes to review" row launches review through the same
+`useAiDraftLauncher` handoff as the other review launchers, not a plain
+document open. Rows expand to their change lists and Work-wide Apply/Discard
+use creation-bound `useWorkDraftCommands`, independently of the Editor review.
+No Work has no Work page or Work-wide list. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
 (`compareTreePlaces`), a new note sorted by the path it will land at, so a
@@ -178,11 +173,52 @@ landing note keeps its row.
 `ProjectView` clears the slot when its Work changes or the Work destination
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens
-cannot inherit a prior Work's file.
-The viewer uses `ContextViewerBareHost` because dock header chrome names the file
-and provides Open in Editor; text content, images, and PDFs stay constrained to
-the dock body. Open in Editor clears the slot before routing through
-`openWorkContext`.
+cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
+Files row opens the document in the Editor instead.
+
+The left rail ends in a **Scratch** section above the account (`chat/ChatScratch.tsx`,
+`RailScratchSection`, passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and
+`NavigationDrawer`). It is a tree section in the tree's own style: the head is the tree's
+`RailPaneHeader` (chevron, Scratch icon, "SCRATCH"), clicking it expands upwards or collapses, and the
+body is the chat's Scratch as tree rows (`RailFolderRow`/`RailFileRow` over
+`contextTreeFileRowClassName`), with folders opening in place and the open note highlighted. The
+wording "Scratch for this chat" (a chat's own notes) or "Scratch for <Work>" is the head's tooltip and
+accessible name, not a line of text. The section is content-sized up to 40% of the rail and scrolls
+itself; the project tree keeps the rest. On desktop the writer can resize between the two: the shell's
+`ResizeHandle` (vertical orientation, `measure` and `onReset`) sits on the divider above the expanded
+section ("Resize Scratch", Up/Down keys, double-click resets), each pane keeps at least 120px, and the
+height is remembered with the expanded flag. Collapsed has no handle, and the phone drawer has none. Expanded or collapsed (and the chosen height) is remembered per viewer on the device
+(`chat/scratch-section-pref.ts`, collapsed by default; the tree's own sections do not persist).
+It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
+chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
+section (it hides, with its divider) when no chat is on screen, such as the chat index. A collapsed
+rail hides with its section. The chat's thread comes from `useDisplayedThread`
+(`client/query`: the primary list, then the thread's snapshot), never the primary
+list alone, which holds no subagents. Its owner is `chatScratchOwner` (`features/chat`): the
+chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
+is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
+its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the
+section follows `thread.workId` as soon as the rebind confirms. The section shows for
+every chat, so the rail never shifts when the first note lands; before it the body
+says "No notes yet" and the list fills live with the AI's writes (the AI makes the
+notes; there is no New note). A pick opens beside the chat by the existing rule
+(`dock/use-open-scratch-note.ts`) and the section stays open. On a phone it sits at the
+foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
+dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
+
+On the Chat screen every chat door opens its document in the dock instead of leaving for the Editor
+(see `dock/.context/CONTEXT.md`); the Editor and Work screens and the phone are unchanged.
+
+The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's
+parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
+`RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
+file name only (no size). The rail is Recent only: without a chat or recent documents it shows
+only the Open document header, with no empty section heading or hint. The header and open
+document title menus have no root heading; drilled areas and folders keep their back row.
+A Recent row opens in the dock's document slot
+(an id-keyed door, see `dock/.context/CONTEXT.md`); the rail stays mounted under the slot, so no "current
+row" mark is shown. The phone has no such rail, and no Results surface (the app has none; the
+server still records `project_results`).
 
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
@@ -285,7 +321,9 @@ and sending does not unarchive. The Work picker never offers an archived Work,
 since binding a chat to one is refused.
 The Editor shows a tab by one rule, `isEditorTab(tab, workId)` in
 `client/stores/context-tabs-store/editor-workspace-model.ts`: every scheme but
-Uploads (`isEditorScheme`), and a Work's Scratch only in that Work's Editor.
+Uploads (`isEditorScheme`), a Work's Scratch only in that Work's Editor, and a
+chat's Scratch (a tab with `rootThreadId`) in every Editor: a lineage belongs to
+no Work.
 A local-resource history pointer pins document identity, not its namespace.
 Once placed, its removal/viewer locator uses the tracked tab's scheme and path;
 only an unplaced local document publishes `unfiled` with an empty path.
@@ -450,15 +488,20 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
 /p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
-?settings=<section> on any screen; ?results on a chat or the Editor
+?settings=<section> on any screen
 ```
 
 A context `ProjectDestination` never carries a Work; the address's `work` is the one Work
 selection for every scheme. For project schemes (manuscript, kb, user,
 unfiled) `?work` is the editing context: absent, empty (no Work) or an id. For
-Scratch and Uploads (`workIsIdentity`) `?work` is the resource's identity:
+Uploads (`workIsIdentity`) `?work` is the resource's identity:
 `?work=<id>` names the Work, `?work=` is No Work, and absent or malformed is an
-invalid address. The query guard never repairs an identity `?work`. Slugs and
+invalid address. A Scratch resource has exactly one owner: `?work=<id>` for a
+named Work, or `?chat=<rootThreadId>` for a No Work chat's lineage (the first
+chat's id; `ProjectAddress.lineage`). No Work has no Scratch, so `?work=` on a
+Scratch address is invalid, and so is giving both. A lineage address leaves the
+Editor's own Work implicit, as a project document does. The query guard never
+repairs an identity `?work`. Slugs and
 `@` never appear. Older shapes (`/<scheme>/…`, `/browse/…`, `/works/<id>/<scheme>/…`)
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
@@ -514,7 +557,7 @@ short-circuits only while its creation record is pending or failed; meanwhile
 `ProjectRouteBootstrap` mounts the shell with no route data and seeds it when it
 arrives rather than remounting. Browser history state is not creation
 recovery, and an in-flight create may be lost on reload. Project-scoped Works,
-threads, context catalogs, Results, and Agent catalog reads pause through
+threads, context catalogs, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
 `routing/work-route.ts` also owns the read/write projection for remembered
 Work, stored by id. Work detail's `?view=files` and the
@@ -540,8 +583,11 @@ may still be missing or occupied by another document. Background namespace
 rejection therefore stays on the acted-on document's existing identity field.
 Work-scoped tab ownership and the ready Editor Work use the Work row id, including
 the locked No Work row. Only `workSelectionFor` spells that row as `none` for
-project-content addresses; Scratch and Uploads addresses carry the row id.
-An omitted open-document Work keeps the current Editor Work. Unresolved Editor
+project-content addresses; Uploads and a Work's Scratch addresses carry the row id, and a chat's Scratch address carries its lineage in `?chat=`.
+A chat's Scratch route target carries `rootThreadId` and keeps `workId` as the
+Editor's own Work (`ContextRouteTarget`); `targetInEditorOf` and
+`sameContextTarget` are the shared rules, so a Work change never prunes a
+lineage tab. An omitted open-document Work keeps the current Editor Work. Unresolved Editor
 Work never creates a locator or an empty selection-map key.
 
 A project address has explicit selections, not defaults: absent, no-Work,
@@ -554,8 +600,8 @@ selectors using synchronous, entry-guarded history replacement, pinning no selec
 without empty URL parameters. This same-destination repair bypasses blockers;
 it never queues a competing navigation behind a pending dirty-edit decision.
 Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
-invalid percent encoding, and a Scratch or Uploads address without its Work
-remain parser errors, not recoverable selector values. Required path identities never fall
+invalid percent encoding, and an Uploads or Work Scratch address without its Work
+(or a Scratch address with neither `?work=` nor `?chat=`) remain parser errors, not recoverable selector values. Required path identities never fall
 back. Work and document path misses stay unavailable. Path and remembered chat IDs are identity, not primary-list lookups. A confirmed
 snapshot miss falls back to the index.
 Editor can seed its initially absent Work

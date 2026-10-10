@@ -114,7 +114,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const deps = {
         threads: { findById: async (id: string) => ({ id, userId: USER }) },
         readAgentChain: async (threadId: string) => [
-          { threadId, permission: "edit", threadWorkId: "work-1" },
+          {
+            threadId,
+            permission: "edit",
+            threadWorkId: "work-1",
+            scratchOwner: { scope: "work", workId: "work-1" },
+          },
         ],
         readChainPermission: async () => "edit",
         fileAccess: createAllowAllFileAccess(),

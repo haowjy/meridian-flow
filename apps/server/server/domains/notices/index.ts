@@ -37,6 +37,7 @@ export type WriterWorkSwitchedNoticeData = {
   workId: WorkId;
   workName: string;
   actor: "writer";
+  previousScratchUri?: string;
 };
 
 export type WriterWorkSwitchedNotice = Extract<NoticeInput, { kind: "work_switched" }>;
@@ -84,6 +85,9 @@ export function parseNoticeInput(value: unknown): NoticeInput {
         workId: data.workId as WorkId,
         workName: data.workName,
         actor: "writer",
+        ...(typeof data.previousScratchUri === "string"
+          ? { previousScratchUri: data.previousScratchUri }
+          : {}),
       },
     };
   }
@@ -100,12 +104,14 @@ export function createWriterWorkSwitchedNotice(input: {
   previousWorkName: string;
   workId: WorkId;
   workName: string;
+  previousScratchUri?: string;
 }): WriterWorkSwitchedNotice {
   const data: WriterWorkSwitchedNoticeData = {
     previousWorkId: input.previousWorkId,
     previousWorkName: input.previousWorkName,
     workId: input.workId,
     workName: input.workName,
+    ...(input.previousScratchUri ? { previousScratchUri: input.previousScratchUri } : {}),
     actor: "writer",
   };
   return {
@@ -121,12 +127,20 @@ export function formatWorkSwitchedNotice(data: Record<string, unknown>): string 
   const previousWorkName = nonEmptyString(data.previousWorkName);
   const workName = nonEmptyString(data.workName);
   return previousWorkName && workName
-    ? workSwitchedNoticeMessage({ previousWorkName, workName })
+    ? workSwitchedNoticeMessage({
+        previousWorkName,
+        workName,
+        previousScratchUri: nonEmptyString(data.previousScratchUri) ?? undefined,
+      })
     : null;
 }
 
-function workSwitchedNoticeMessage(data: { previousWorkName: string; workName: string }): string {
-  return `This conversation's Work switched from ${JSON.stringify(data.previousWorkName)} to ${JSON.stringify(data.workName)}.`;
+function workSwitchedNoticeMessage(data: {
+  previousWorkName: string;
+  workName: string;
+  previousScratchUri?: string;
+}): string {
+  return `This conversation's Work switched from ${JSON.stringify(data.previousWorkName)} to ${JSON.stringify(data.workName)}.${data.previousScratchUri ? ` Your earlier notes are at ${data.previousScratchUri} Rebinding did not move them.` : ""}`;
 }
 
 function nonEmptyString(value: unknown): string | null {

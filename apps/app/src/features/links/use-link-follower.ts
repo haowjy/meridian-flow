@@ -104,6 +104,7 @@ export function useLinkFollower({
   const pending = scope === "pending";
   const projectId = ready?.projectId ?? null;
   const workId = ready?.workId ?? null;
+  const rootThreadId = ready?.rootThreadId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
@@ -122,7 +123,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
-        { projectId, workId, baseUri, holderDocumentId },
+        { projectId, workId, rootThreadId, baseUri, holderDocumentId },
         index,
         settlements,
       ),
@@ -139,7 +140,7 @@ export function useLinkFollower({
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
-  }, [baseUri, holderDocumentId, index, projectId, resolution, settlements, workId]);
+  }, [baseUri, holderDocumentId, index, projectId, resolution, rootThreadId, settlements, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -183,7 +184,11 @@ export function useLinkFollower({
   // aborts. A pending scope becoming known is not a move: that is the answer
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
-  const scopeKey = ready ? `${ready.projectId}\u0000${ready.workId}` : pending ? null : "";
+  const scopeKey = ready
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}`
+    : pending
+      ? null
+      : "";
   useEffect(() => {
     if (scopeKey === null) return;
     if (answeredScope.current !== null && answeredScope.current !== scopeKey) {

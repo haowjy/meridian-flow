@@ -33,12 +33,14 @@ export function useFollowOutcomeState(): {
 export function LinkFollowDialog({
   outcome,
   projectId,
+  scratchRootThreadId,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome | null;
   projectId: string | null;
+  scratchRootThreadId?: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
@@ -60,6 +62,7 @@ export function LinkFollowDialog({
         <FollowOutcomeContent
           outcome={outcome}
           projectId={projectId}
+          scratchRootThreadId={scratchRootThreadId}
           onClose={onClose}
           onRetry={onRetry}
           onOpen={onOpen}

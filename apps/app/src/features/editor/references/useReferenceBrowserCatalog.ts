@@ -1,3 +1,4 @@
+import type { CatalogScope } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
@@ -21,6 +22,8 @@ export function useReferenceBrowserCatalog(
   projectId: string | null | undefined,
   workId: string | null | undefined,
   label: string,
+  /** A No Work chat's lineage: its Scratch joins the Work's Uploads in the catalog. */
+  rootThreadId?: string | null,
 ): AtReferenceCatalog | null {
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
@@ -33,9 +36,10 @@ export function useReferenceBrowserCatalog(
             { kind: "project" as const, projectId },
             { kind: "user" as const, userId: "self" },
             ...(workId ? [{ kind: "work" as const, projectId, workId }] : []),
+            ...(rootThreadId ? [{ kind: "lineage" as const, projectId, rootThreadId }] : []),
           ]
         : [],
-    [projectId, workId],
+    [projectId, workId, rootThreadId],
   );
   useEffect(() => {
     if (!queryClient || !projectId || !resources || projectPending) return;
@@ -48,7 +52,7 @@ export function useReferenceBrowserCatalog(
         ? (() => {
             let snapshot = projection.snapshot;
             let projectionError = projection.error;
-            const read = (scope: (typeof scopes)[number]) => {
+            const read = (scope: CatalogScope) => {
               const checkpoint = snapshot?.catalogs.find(
                 (candidate) =>
                   candidate.projectId === projectId &&

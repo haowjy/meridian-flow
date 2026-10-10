@@ -100,7 +100,6 @@ it("preserves a proven local resource handle during readable-route admission", a
         destination: { kind: "document", scheme: "kb", path: "doc" },
 
         work: { kind: "none" },
-        results: false,
       }}
       result={documentResult("current")}
       localFile={localFile}
@@ -147,7 +146,6 @@ it.each([
     destination: { kind: "document", scheme: "kb", path: "before" },
 
     work: { kind: "none" },
-    results: false,
   };
   const onAdmission = vi.fn();
   try {
@@ -199,7 +197,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
         projectId,
         destination: { kind: "document", scheme: "manuscript", path: "doc" },
         work: { kind: "none" },
-        results: false,
       }}
       result={result}
       draftOnlyId="draft-1"

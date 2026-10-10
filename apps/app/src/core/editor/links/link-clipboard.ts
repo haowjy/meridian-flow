@@ -39,14 +39,13 @@
 import {
   type LinkHolder,
   type LinkResolution,
-  parseContextUri,
   parseLinkRef,
+  qualifyContextUriByHolder,
   resolveDocumentHref,
   spellStoredLink,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { DocumentLinkScope } from "@meridian/markup";
 import { UNSPELLED_UPLOAD } from "@meridian/markup/links";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
@@ -77,9 +76,8 @@ const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipb
  * The full address an internal href names from its holder, spelled as an href
  * (`%`, `#` and `?` in a filename encoded) with its fragment or query, or null
  * for an external link or one that cannot be resolved (a relative path with no
- * holder). A contextual `scratch://` or `uploads://` link in a Work's own
- * Scratch means that Work, so it is recorded with the holder's authority and
- * keeps meaning that Work wherever it is pasted.
+ * holder). Contextual owned links carry the holder's authority when copied;
+ * lineage Scratch keeps its chat handle while Uploads keep No Work ownership.
  */
 function linkHrefAddress(href: string, holderUri: string | null): string | null {
   const target = classifyLinkTarget(href);
@@ -89,19 +87,7 @@ function linkHrefAddress(href: string, holderUri: string | null): string | null 
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, holderUri);
   if (!resolved) return null;
-  return storedHref(qualifiedByHolder(resolved.uri, holderUri), resolved.suffix);
-}
-
-function qualifiedByHolder(uri: string, holderUri: string | null): string {
-  const parsed = parseContextUri(uri);
-  const holder = holderUri ? parseContextUri(holderUri) : null;
-  if (!parsed.ok || parsed.value.authority.kind !== "contextual" || !holder?.ok) return uri;
-  const { authority } = holder.value;
-  if (!isWorkScopedProjectContextScheme(holder.value.scheme) || authority.kind === "contextual")
-    return uri;
-  if (!isWorkScopedProjectContextScheme(parsed.value.scheme)) return uri;
-  const qualifier = authority.kind === "work" ? `@${authority.workSlug}` : "@";
-  return `${parsed.value.scheme}://${qualifier}/${parsed.value.path}`;
+  return storedHref(qualifyContextUriByHolder(resolved.uri, holderUri), resolved.suffix);
 }
 
 /**
@@ -299,7 +285,15 @@ function sourceResolution(
     // so the other fields are neutral fillers, not facts about the document.
     return {
       kind: "document",
-      document: { documentId, projectId, uri, presence: "live", readable: true, nameable: true },
+      document: {
+        documentId,
+        owner: { workId: null },
+        projectId,
+        uri,
+        presence: "live",
+        readable: true,
+        nameable: true,
+      },
       inDraft: false,
     };
   }

@@ -8,7 +8,11 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  type ContextOwner,
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -61,7 +65,7 @@ export function IdentityPlacementField({
   failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
   onExit: (reason: ExitReason) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 }) {
   const resources = useAccountResourceReplica();
   const localSessionRef = useRef<import("@/core/editor/document-session").DocumentSession | null>(
@@ -135,13 +139,25 @@ export function IdentityPlacementField({
     };
   }, [projectId, provisionalPlacement, resources, tab]);
 
+  // The document's own owner scopes its Scratch suggestions, collisions and "Open
+  // existing"; the Editor's selected Work does not (a chat's Scratch has none).
+  const { workId: locationWorkId, rootThreadId, rootThreadRef } = location;
+  const owner = useMemo<ContextOwner>(
+    () =>
+      rootThreadId !== undefined
+        ? { rootThreadId, rootThreadRef }
+        : { workId: locationWorkId ?? editorWorkId },
+    [editorWorkId, locationWorkId, rootThreadId, rootThreadRef],
+  );
+  const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
+    isWorkScopedProjectContextScheme(scheme) ? owner : { workId: null };
   const suggestionOptions = useMemo(
     () => ({
       schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
       kinds: ["dir", "file"] as const,
-      workId: editorWorkId ?? location.workId ?? null,
+      owner,
     }),
-    [editorWorkId, location.scheme, location.workId],
+    [location.scheme, owner],
   );
   const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
@@ -206,7 +222,11 @@ export function IdentityPlacementField({
               tabIndex={-1}
               className="focus-ring ml-1.5 font-medium underline underline-offset-2"
               onClick={() =>
-                onOpenExisting(identityNote.collision.scheme, identityNote.collision.path)
+                onOpenExisting(
+                  identityNote.collision.scheme,
+                  identityNote.collision.path,
+                  ownerOfScheme(identityNote.collision.scheme),
+                )
               }
             >
               <Trans>Open existing</Trans>
@@ -371,7 +391,7 @@ export function IdentityPlacementField({
               inputRef.current?.focus();
               return;
             }
-            onOpenExisting(entry.scheme, entry.path);
+            onOpenExisting(entry.scheme, entry.path, ownerOfScheme(entry.scheme));
           }}
           onClose={() => onExit("escape")}
           onNavigateUp={

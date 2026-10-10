@@ -22,7 +22,6 @@ export async function acceptContextTransition(
     delete next.scheme;
     delete next.path;
     delete next.folder;
-    delete next.results;
     return next;
   });
   prepared.commit();

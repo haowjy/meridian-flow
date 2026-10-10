@@ -46,10 +46,10 @@ import {
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
-
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 import {
   commitContentInitialization,
@@ -67,7 +67,11 @@ import {
   clearClientSchemaReloadGuard,
   type SchemaFence,
 } from "./schema-fence";
-import type { SchemaRepairEvent } from "./schema-repair-witness";
+import {
+  createSchemaRepairWitness,
+  type SchemaRepairEvent,
+  type SchemaRepairWitness,
+} from "./schema-repair-witness";
 
 export type { SchemaFence } from "./schema-fence";
 
@@ -231,6 +235,7 @@ export class DocumentSession {
   private access: DocumentSessionAccess | null = null;
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
+  private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
   private readonly localPersistenceSyncedPromise: Promise<void>;
@@ -432,6 +437,38 @@ export class DocumentSession {
     this.emit();
   }
 
+  /**
+   * Snapshot and arm once, immediately before the first binding is constructed.
+   * Every later view contributes PM attribution to the same document witness.
+   * Releasing a view removes only its attribution, never document observation.
+   */
+  bindEditor(
+    construct: () => Editor,
+    evidenceDegraded = false,
+  ): {
+    editor: Editor;
+    release: () => void;
+  } {
+    if (this.destroyed) throw new Error("Cannot bind an editor to a destroyed session");
+    const firstBinding = this.schemaRepairWitness === null;
+    this.schemaRepairWitness ??= createSchemaRepairWitness({
+      document: this.document,
+      evidenceDegraded,
+      onRepair: (event) => this.reportSchemaRepair(event),
+    });
+    const witness = this.schemaRepairWitness;
+    try {
+      const editor = construct();
+      return { editor, release: witness.enterLive(editor) };
+    } catch (error) {
+      if (firstBinding) {
+        witness.destroy();
+        this.schemaRepairWitness = null;
+      }
+      throw error;
+    }
+  }
+
   /** Append one session-scoped repair verdict and notify every report surface. */
   reportSchemaRepair(event: SchemaRepairEvent): void {
     if (this.destroyed) return;
@@ -629,6 +666,7 @@ export class DocumentSession {
           run: () =>
             options.clearPersistence ? this.persistence?.clearData() : this.persistence?.destroy(),
         },
+        { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
         { settled: false, run: () => this.document.destroy() },
         { settled: false, run: () => this.listeners.clear() },

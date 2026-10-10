@@ -25,6 +25,8 @@ export function HomeChip({ provisional, onClick }: { provisional: boolean; onCli
         <button
           key={provisional ? "invite" : "quiet"}
           type="button"
+          // The label hides in a narrow pane (the dock); the button keeps its name.
+          aria-label={provisional ? t`Choose a home` : t`Rename`}
           onClick={onClick}
           className={cn(
             "focus-ring",

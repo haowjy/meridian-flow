@@ -165,7 +165,11 @@ function workTerms(work: FileWorkFacts): Term[] {
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
   const terms: Term[] = [{ cap: SOURCE_RULES[facts.scheme].agentCap, limit: "uploads_read_only" }];
   for (const link of chain) {
-    const ownScratch = facts.scheme === "scratch" && facts.ownerWork?.id === link.threadWorkId;
+    const ownScratch =
+      facts.scheme === "scratch" &&
+      (link.scratchOwner.scope === "lineage"
+        ? facts.ownerRootThreadId === link.scratchOwner.rootThreadId
+        : facts.ownerWork?.id === link.scratchOwner.workId);
     const cap = link.permission === "edit" || ownScratch ? "edit" : "read";
     terms.push({ cap, limit: "agent_read_only" });
   }

@@ -41,6 +41,7 @@ export type ContextScheme = ContextUriScheme;
  * live text, without draft changes, when `version` is `live`.
  */
 export interface ThreadContextView {
+  scratchOwner?: import("../scratch-owner.js").ScratchOwner;
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
@@ -104,6 +105,7 @@ export interface ContextCreateUntitledDocumentOptions {
 
 interface BaseListEntry {
   uri: string;
+  title?: string | null;
   documentId?: string;
   sizeBytes?: number;
   updatedAt?: string;
@@ -222,7 +224,7 @@ export interface SearchResult {
 }
 
 export type WriteProvenance =
-  | { type: "agent"; agentSlug: string; threadId: string; turnId: string }
+  | { type: "agent"; agentSlug: string | null; threadId: string; turnId: string }
   | { type: "human"; userId: string; threadId?: string }
   | { type: "import"; userId: string; source: string; filename: string; sourceId?: string }
   | { type: "system" };

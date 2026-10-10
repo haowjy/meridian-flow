@@ -31,6 +31,7 @@ let container: HTMLDivElement;
 let client: QueryClient;
 let go: ReturnType<typeof vi.fn<(destination: ProjectDestination) => Promise<void>>>;
 let navigation: ChatNavigation;
+let effects: ReturnType<typeof vi.fn<(callback?: () => void) => void>>;
 let threadActions: ReturnType<typeof useThreadActions>;
 
 function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
@@ -38,7 +39,11 @@ function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
   navigation = useProjectChatNavigation({
     accountId: ACCOUNT,
     projectId: PROJECT,
-    go: (destination) => go(destination),
+    go: async (destination, options) => {
+      await go(destination);
+      effects(options.afterCommit);
+      return { kind: "applied" };
+    },
     ...props,
   });
   return null;
@@ -61,6 +66,7 @@ beforeEach(() => {
   root = createRoot(container);
   client = new QueryClient();
   go = vi.fn(async () => undefined);
+  effects = vi.fn();
 });
 
 afterEach(() => {
@@ -101,4 +107,31 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   act(() => threadActions.clearPendingCreation({ threadId: "sent" }));
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
   expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
+});
+
+it("rail switches use the remembered current chat and forward the post-commit effect", async () => {
+  render("context");
+  act(() => navigation.acceptCreatedChat("remembered"));
+  const commit = vi.fn();
+  await act(async () => {
+    await navigation.showChatScreen({ afterCommit: commit });
+  });
+  expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "remembered" });
+  expect(effects).toHaveBeenCalledWith(commit);
+  expect(commit).not.toHaveBeenCalled();
+  go.mockClear();
+  await act(async () => {
+    await navigation.showChatScreen();
+  });
+  expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "remembered" });
+});
+
+it("rail switches with no current chat use the index and still forward the hand-off", async () => {
+  render("context");
+  const commit = vi.fn();
+  await act(async () => {
+    await navigation.showChatScreen({ afterCommit: commit });
+  });
+  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+  expect(effects).toHaveBeenCalledWith(commit);
 });

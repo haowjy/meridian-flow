@@ -31,8 +31,8 @@ runs before the origin foreign key, in this order:
 Demotion erases the dangling origin and the old depth, so it runs last.
 Re-rooting the whole subtree preserves the threads domain's one-root lineage
 contract ([threads context](../../../apps/server/server/domains/threads/.context/CONTEXT.md)).
-Never hand-patch an applied database's migration ledger or reset a shared
-database. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
+Never hand-patch an applied database's migration ledger. Resetting a shared
+database requires explicit owner authorization. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
 
 [kb-migration-integrity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/drizzle-migration-integrity.md
 
@@ -153,6 +153,45 @@ grant_reason)` for `source_type = 'grant'` and `grant_reason LIKE
 
 ## Migration workflow
 
+Write migrations as if production data exists ([decision][kb-real-data]).
+
+- **Correct on populated tables.** Never delete writer data; move it. No
+  `migration-lint: skip` may rest on empty tables. A row-transform migration
+  ships with a populated upgrade fixture (below).
+- **Online-safe DDL.** Add CHECKs and FKs `NOT VALID`; `VALIDATE CONSTRAINT`
+  later, in a no-transaction file or a later migration. Build and drop indexes
+  `CONCURRENTLY`.
+- **No-transaction files.** First line `-- migration: no-transaction` (BOM and
+  CRLF tolerated). Each statement autocommits, and each `CONCURRENTLY`
+  statement sits alone in its `--> statement-breakpoint` chunk. A failed file
+  reruns from its first statement, so every statement must be re-runnable:
+  builds say `IF NOT EXISTS`, drops `IF EXISTS`. Before running the file, the
+  runner drops each INVALID index its concurrent builds name (a failed build's
+  remnant that `IF NOT EXISTS` would otherwise skip); it never drops a valid
+  one. To replace a unique guard, build the replacement under a new permanent
+  name and drop the old guard last, so a retry never leaves the table
+  unguarded.
+- **lock_timeout.** A transactional migration may `SET LOCAL` a short timeout
+  for its whole body. In a no-transaction file, bracket only ACCESS EXCLUSIVE
+  statements with it; concurrent builds, drops and `VALIDATE` legitimately wait
+  out long writers and must never run under it.
+- **Runner.** One session advisory lock covers the run. Each ordinary migration
+  commits with its history row, so a later failure leaves earlier migrations
+  applied. A no-transaction file records history only after every statement
+  succeeds.
+- **No previous-version compatibility before launch.** A migration may break
+  the server version it replaces; a broken deploy is reset with owner
+  authorization. Do not build expand/contract releases, rollout fences or
+  old-binary tolerance code.
+- **Regeneration drops hand edits.** Reapply these online-safety edits whenever
+  a branch regenerates migrations after merging the base.
+
+Migration lint enforces the marker, chunk isolation, `IF NOT EXISTS` and the
+`NOT VALID` / concurrent-drop warnings. Re-runnability beyond `IF NOT EXISTS`,
+lock_timeout scope and data preservation are review rules.
+
+[kb-real-data]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/real-data-migrations.md
+
 Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 
 1. `pnpm db:generate` — drizzle-kit appends the next migration to
@@ -174,8 +213,8 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    `pnpm db:apply-functions` only when the guarded standalone function sync is
    needed.
 
-A row-transform migration MUST ship with a populated upgrade fixture in
-`fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
+A row-transform migration MUST ship with a populated upgrade fixture beside
+the database migration contract tests. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes
 after the remaining chain runs. The upgrade fixture may be culled once a later
 frozen migration supersedes the transform. The original migration file itself
@@ -198,7 +237,8 @@ separate ETL, not universal schema migrations.
 
 For generated migrations, when two branches add at the same ordinal, **regenerate the
 incoming branch's migration from the merged schema; never renumber, rename, or
-hand-edit it.** Never touch a migration already present on the target branch
+hand-edit its identity.** Reapply the online-safety SQL edits after regeneration.
+Never touch a migration already present on the target branch
 (or on `main`).
 
 1. Keep the target branch's migrations, snapshots, and journal entries as
@@ -222,6 +262,41 @@ silently drops the other lane's value. A renamed file also breaks the snapshot
 `when` timestamps can make an incremental database skip entries that a fresh
 database applies. `fresh-migrations.db.test.ts` checks strict journal ordering
 and the installed baseline hash without preventing future additive migrations.
+
+### No Work Scratch upgrade (0033–0035)
+
+Lineage Scratch replaced the project's one No Work Scratch. Three migrations
+follow link identity `0032`:
+
+1. `0033` adds `root_thread_id` to `context_sources` and `link_ahead_refs`, and
+   installs the new scope CHECKs `NOT VALID`.
+2. `0034` moves every No Work Scratch source, trashed content included, into
+   the project's Unfiled source (provisioned when missing) under a fresh root
+   folder: `Scratch`, or `Scratch (2)`, `Scratch (3)` when any root entry,
+   trashed or not, holds the name. It never merges into an existing entry. The
+   emptied old source is then deleted.
+3. `0035` (no-transaction) builds the lineage and permanent project-scope
+   unique indexes concurrently, validates the CHECKs, and drops the old project
+   index last. A failed run retries the whole file.
+
+What the move keeps and changes:
+
+- Folder and document IDs, content, Yjs state, trash state and storage object
+  keys are unchanged. `doc:` refs follow the same documents, so reads spell
+  their Unfiled address; there is no link redirect or collaborative rewrite.
+- Upload intakes keep their No Work `work_id`, because the app has no
+  project-owned intake shape. Source, final path, canonical URI and location
+  revision change.
+- Only live, traversable destination occupants consume Unfiled
+  previous-location aliases. Old Scratch aliases cascade away with their source.
+- Still-unsettled `unfiled` ahead refs at exactly the newly occupied live paths
+  settle, under the app's namespace locks. Trashed content, live rows beneath
+  trashed folders, and existing settlements are excluded. Showing history keeps
+  its historical addresses.
+- Catalog heads for both scopes are deleted, so the next snapshot rebuilds
+  from current rows under a fresh generation.
+
+`scratch-archive-migration.db.test.ts` is the populated upgrade fixture.
 
 ### Works columns that must not return
 

@@ -38,6 +38,7 @@ const U = Object.fromEntries(
 
 const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = {}) => ({
   documentId,
+  owner: { workId: null },
   projectId: "p1",
   uri,
   presence: "live" as const,
@@ -287,7 +288,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["../kb.md", "manuscript://book/ch1.md", internal("manuscript://kb.md", "")],
     ["Kb://cast/Lin%20Feng.md", null, internal("kb://cast/Lin Feng.md", "")],
     ["scratch://notes.md", "manuscript://book/ch1.md", { kind: "contextual" }],
-    ["scratch://@/notes.md", "manuscript://book/ch1.md", internal("scratch://@/notes.md", "")],
+    ["scratch://@/notes.md", "manuscript://book/ch1.md", { kind: "external" }],
     ["manuscript://ch1.md", "user://journal/today.md", { kind: "contextual" }],
     ["user://journal/old.md", "user://journal/today.md", internal("user://journal/old.md", "")],
     ["ch2.md", null, { kind: "external" }],
@@ -460,3 +461,29 @@ it("classifies written links and mints ahead addresses by grammar", () => {
 function internal(uri: string, suffix: string) {
   return { kind: "internal" as const, uri, suffix };
 }
+
+it("spells lineage links through their holder, without a chat-only spelling channel", () => {
+  const target = doc(U.cast, "scratch://@/c12/x.md");
+  const resolution = { kind: "document", document: target, inDraft: false } as const;
+  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old.md#gate" };
+  const ownScratch = { ...holder, uri: "scratch://@/c12/holder.md" };
+  expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x.md#gate");
+  // Contextual spelling already in the chat's own Scratch stays contextual.
+  expect(
+    spellStoredLink(
+      { ref: null, href: "scratch://x.md" },
+      ownScratch,
+      { kind: "address" },
+      "holder",
+    ).href,
+  ).toBe("scratch://x.md");
+  for (const uri of [
+    null,
+    "scratch://@/c13/holder.md",
+    "scratch://@arc/holder.md",
+    "manuscript://holder.md",
+  ])
+    expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
+      "scratch://@/c12/x.md#gate",
+    );
+});

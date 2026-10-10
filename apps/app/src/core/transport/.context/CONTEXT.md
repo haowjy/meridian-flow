@@ -67,7 +67,7 @@ connection state: a read-only room that drops offline stays read-only.
 from its Works catalog, which can predate the room's first connect (a tab
 that loaded while the Work was archived and whose room connected after the
 unarchive). The host's `RoomScopeCatalogCheck`
-(`features/project/context/ContextEditorMountHost.tsx`) watches each named
+(`features/project/context/ContextDocumentHost.tsx`) watches each named
 scope, and each activation, against its `readOnly` and refreshes its Works
 catalog when they disagree. Its own changes to `readOnly` never ask, so the
 tab that archives fetches nothing extra.

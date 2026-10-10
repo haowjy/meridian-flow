@@ -14,7 +14,8 @@ files retain the Editor's Work context.
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
 Editor-eligible project binary/custom metadata still opens a viewer tab and route.
-Scratch documents open Editor tabs owned by their resolved Work (including No Work).
+Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
+(`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
@@ -46,6 +47,17 @@ A stable resource handle survives document-ID remint; the exact persistence name
 and mounted Y.Doc do not change. The resource descriptor also retains the
 catalog-defined file classification so cached code never reopens as rich text.
 
+## Visible Editor ownership
+
+`DesktopProjectController` owns the displayed Editor value for `DesktopProject`.
+It selects the retained same-Work pane and boundary visibility once, then resolves
+its tab identity through `resolveVisibleEditorTab` (local pointer, persisted tab
+selection, and removal binding) and applies the current resource projection.
+The pane consumes that resolved result; the rail captures the same visible tab at
+the click. A retained pane carries itself; hidden error, unavailable, recovery and
+chooser presentations carry nothing. No route-shaped Editor props travel back to
+the route, and no separate active-document pointer is stored.
+
 ## Architecture
 
 ```text
@@ -66,22 +78,26 @@ ContextPaneController
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
-              ├─ ReviewToast (confirmation of a per-change Apply or Discard)
-              ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip, and DraftReviewBand while reviewing)
-              ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
+              ├─ DocumentPaneChrome (shared with the dock's document)
+              │     ├─ PassageNotice, ArchivedWorkNotice
+              │     └─ DocumentIdentityBar (breadcrumb + DraftReviewChip and painted DraftReviewBand)
+              ├─ ContextEditorMountHost (warm-set LRU)
+              │     └─ ContextDocumentHost per tab (session boundary + EditorView;
+              │        the dock's document renders the same host)
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
-editing remains in `ContextEditorMountHost`. URL-backed text previews use a
+editing remains in `ContextDocumentHost`. URL-backed text previews use a
 TanStack query so reopening a signed preview can reuse its read.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
 strip's leading control (`showEditorRecents`) reaches it without closing a tab.
-The address owns which document is visible, including a local-document history
+The address requests a document; the displayed-props seam above decides what is visible
+while admission is pending or blocked. The address includes a local-document history
 pointer on `/editor`. Clearing that pointer leaves the working set intact, and
 Back returns to the document that was showing. Already on the chooser is a no-op.
 Recording

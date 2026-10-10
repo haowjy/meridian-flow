@@ -5,7 +5,6 @@ import type {
   DocumentAddressResult,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
@@ -32,7 +31,13 @@ export function canonicalDocumentPath(path: string): string {
  */
 export function projectAddressMatchesContextTarget(
   address: ProjectAddress,
-  target: { scheme: string; path: string; workId?: string; documentId?: string },
+  target: {
+    scheme: string;
+    path: string;
+    workId?: string;
+    rootThreadId?: string;
+    documentId?: string;
+  },
   noWorkId: string | null,
   /** The document the address resolved to, absent while it is still resolving. */
   addressDocumentId?: string,
@@ -41,6 +46,10 @@ export function projectAddressMatchesContextTarget(
 ): boolean {
   const destination = address.destination;
   if (destination.kind !== "document") return false;
+  // A chat's Scratch is owned by its lineage; a Work's Scratch by its Work.
+  if (target.rootThreadId !== address.lineage) return false;
+  if (target.rootThreadId !== undefined)
+    return sameDocument(destination, target, addressDocumentId);
   const work = workSelectionFor(destination, target.workId, noWorkId);
   // An address with no `?work=` is not a different Work from No Work: it shows the Editor's own.
   const addressWork =
@@ -52,6 +61,15 @@ export function projectAddressMatchesContextTarget(
     (work.kind === "id" && !(addressWork.kind === "id" && addressWork.id === work.id))
   )
     return false;
+  return sameDocument(destination, target, addressDocumentId);
+}
+
+/** Identity decides once both sides know the document; the path is only the fallback. */
+function sameDocument(
+  destination: DocumentDestination,
+  target: { scheme: string; path: string; documentId?: string },
+  addressDocumentId: string | undefined,
+): boolean {
   if (target.documentId !== undefined && addressDocumentId !== undefined)
     return target.documentId === addressDocumentId;
   return (
@@ -71,6 +89,8 @@ export function routeContinuityDocumentId(input: {
   admittedDocumentId: string | null;
   destination: DocumentDestination | null;
   editorWorkId: string | null;
+  /** The lineage a Scratch address names. */
+  rootThreadId?: string;
 }): string | null {
   const { selection, destination } = input;
   if (
@@ -80,7 +100,8 @@ export function routeContinuityDocumentId(input: {
     selection.identity.documentId !== input.admittedDocumentId ||
     selection.locator.scheme !== destination.scheme ||
     canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
-    selection.locator.workId !== input.editorWorkId
+    selection.locator.workId !== input.editorWorkId ||
+    selection.locator.rootThreadId !== input.rootThreadId
   )
     return null;
   return selection.identity.documentId;
@@ -89,10 +110,12 @@ export function routeContinuityDocumentId(input: {
 export function resolveLocalDocumentAddress(
   projectId: string,
   destination: DocumentDestination,
-  workId: ParsedRequestId | null,
+  workId: string | null,
   catalog: CatalogContextView | null,
   /** The document the route is bound to: where the URL names a path the document has left, it is found by identity. */
   boundDocumentId: string | null = null,
+  /** The lineage a Scratch address names, in place of a Work. */
+  rootThreadId: string | null = null,
 ): { result: DocumentAddressResult; file: CatalogFile; bound: boolean } | undefined {
   if (!catalog) return undefined;
   const requested = `/${canonicalDocumentPath(destination.path)}`;
@@ -118,7 +141,21 @@ export function resolveLocalDocumentAddress(
   let authority: AvailableDocumentAuthority;
   if (entry.scope.kind === "project") authority = entry.scope;
   else if (entry.scope.kind === "user") authority = entry.scope;
-  else {
+  else if (entry.scope.kind === "lineage") {
+    const uri = parseUnifiedContextUri(file.uri);
+    if (
+      rootThreadId !== entry.scope.rootThreadId ||
+      !uri.ok ||
+      uri.value.authority.kind !== "lineage"
+    )
+      return undefined;
+    authority = {
+      kind: "lineage",
+      projectId,
+      rootThreadId: entry.scope.rootThreadId,
+      rootThreadRef: uri.value.authority.rootThreadRef,
+    };
+  } else {
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
     if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;

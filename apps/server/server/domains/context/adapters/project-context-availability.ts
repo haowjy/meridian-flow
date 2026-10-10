@@ -16,6 +16,7 @@ import {
   documents,
   folders,
   projects,
+  threads,
   works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -63,6 +64,7 @@ type AvailabilityRow = {
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
+  rootThreadRef?: string | null;
 };
 type AvailabilityIdentity = {
   scope: CatalogScope;
@@ -101,14 +103,21 @@ export function classifyAuthoritativeIdentity(input: {
   }
   const scheme = source.slug;
   const isWorkScheme = WORK_SCHEMES.has(scheme);
+  const hasLineageOwnership =
+    source.scope === "lineage" &&
+    source.rootThreadId !== null &&
+    source.projectId !== null &&
+    source.workId === null &&
+    scheme === "scratch" &&
+    !!input.row.rootThreadRef;
   const hasWorkOwnership = source.scope === "work" && source.workId !== null;
   const hasProjectOwnership = source.scope === "project" && source.projectId !== null;
   if (
-    hasWorkOwnership === hasProjectOwnership ||
+    (!hasLineageOwnership && hasWorkOwnership === hasProjectOwnership) ||
     (hasWorkOwnership && !isWorkScheme) ||
-    (!hasWorkOwnership && !hasProjectOwnership) ||
+    (!hasWorkOwnership && !hasProjectOwnership && !hasLineageOwnership) ||
     (source.workId !== null) !== hasWorkOwnership ||
-    (source.projectId !== null) !== hasProjectOwnership ||
+    (source.projectId !== null) !== (hasProjectOwnership || hasLineageOwnership) ||
     (hasWorkOwnership && (!work || work.id !== source.workId)) ||
     (hasProjectOwnership && (!sourceProject || sourceProject.id !== source.projectId)) ||
     (scheme === "user" &&
@@ -120,7 +129,15 @@ export function classifyAuthoritativeIdentity(input: {
   let scope: CatalogScope;
   let authority: ProjectContextAuthority;
   let generation = input.projectGeneration;
-  if (hasWorkOwnership) {
+  if (hasLineageOwnership && source.projectId && source.rootThreadId && input.row.rootThreadRef) {
+    scope = { kind: "lineage", projectId: source.projectId, rootThreadId: source.rootThreadId };
+    authority = {
+      kind: "lineage",
+      projectId: source.projectId,
+      rootThreadId: source.rootThreadId,
+      rootThreadRef: input.row.rootThreadRef,
+    };
+  } else if (hasWorkOwnership) {
     if (!work || work.projectId !== input.requestProjectId) {
       return { kind: "inconsistent" };
     }
@@ -323,11 +340,13 @@ export function createDrizzleProjectContextAvailability(
               source: contextSources,
               sourceProject: projects,
               work: works,
+              rootThreadRef: threads.ref,
             })
             .from(documents)
             .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
             .leftJoin(projects, eq(contextSources.projectId, projects.id))
             .leftJoin(works, eq(contextSources.workId, works.id))
+            .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
             .where(inArray(documents.id, ids as never));
           const byId = new Map(rows.map((row) => [row.document.id, row]));
           const sourceIds = [
@@ -410,6 +429,7 @@ export function createDrizzleProjectContextAvailability(
                   workId: work?.id ?? null,
                   workSlug: work && !work.isNoWork ? work.slug : null,
                   parentPath,
+                  rootThreadRef: row.rootThreadRef,
                 }),
               } as never;
             } catch {

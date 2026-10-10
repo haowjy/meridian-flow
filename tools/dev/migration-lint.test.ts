@@ -14,13 +14,19 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
 });
 
-async function lintMigration(name: string, sql: string) {
+async function lintMigration(name: string, sql: string, ...options: string[]) {
   const directory = await mkdtemp(join(tmpdir(), "migration-lint-"));
   directories.push(directory);
   const migration = join(directory, name);
   await writeFile(migration, sql);
   try {
-    const result = await run("pnpm", ["exec", "tsx", "tools/dev/migration-lint.ts", migration]);
+    const result = await run(process.execPath, [
+      "--import",
+      "tsx",
+      "tools/dev/migration-lint.ts",
+      migration,
+      ...options,
+    ]);
     return { exitCode: 0, output: result.stdout + result.stderr };
   } catch (error) {
     const result = error as { code: number; stdout: string; stderr: string };
@@ -28,7 +34,8 @@ async function lintMigration(name: string, sql: string) {
   }
 }
 
-describe("migration lint", () => {
+// Each case launches several real CLI processes alongside the full unit gate.
+describe("migration lint", { timeout: 15_000 }, () => {
   it("enforces populated-row safety immediately after the baseline", async () => {
     const additive = await lintMigration(
       "0001_unsafe.sql",
@@ -57,5 +64,79 @@ describe("migration lint", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("No issues found");
+  });
+
+  it("requires a marker, IF NOT EXISTS, and isolated concurrent chunks", async () => {
+    const build =
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS public."events_id" ON "events" ("id");';
+    for (const prefix of ["", "\n-- migration: no-transaction\n"]) {
+      const result = await lintMigration("0001_index.sql", prefix + build);
+      expect(result.output).toContain("[CONCURRENTLY_IN_TRANSACTION]");
+    }
+    const missingGuard = await lintMigration(
+      "0001_index.sql",
+      `-- migration: no-transaction\n${build.replace("IF NOT EXISTS ", "")}`,
+    );
+    expect(missingGuard.output).toContain("[CONCURRENT_INDEX_IF_NOT_EXISTS]");
+    const shared = await lintMigration(
+      "0001_index.sql",
+      `-- migration: no-transaction\nDROP INDEX CONCURRENTLY IF EXISTS events_id;\n${build}`,
+    );
+    expect(shared.output).toContain("[CONCURRENTLY_SHARED_CHUNK]");
+    for (const marker of [
+      "-- migration: no-transaction\n",
+      "-- migration: no-transaction\r\n",
+      "\uFEFF-- migration: no-transaction\n",
+    ]) {
+      const safe = await lintMigration(
+        "0001_index.sql",
+        `${marker}DROP INDEX CONCURRENTLY IF EXISTS events_id;\n--> statement-breakpoint\n${build}`,
+        "--strict",
+      );
+      expect(safe.exitCode).toBe(0);
+    }
+  });
+
+  it("checks each multiline ALTER clause and recognizes all index identifiers", async () => {
+    const mixed = await lintMigration(
+      "0001_checks.sql",
+      'ALTER TABLE public.events\nADD CHECK (id > 0),\nADD CONSTRAINT "safe" CHECK (id < 10) NOT VALID,\nADD CONSTRAINT public.unsafe CHECK (id <> 5);',
+      "--strict",
+    );
+    expect(mixed.output.match(/\[ADD_CHECK_NOT_VALID\]/g)).toHaveLength(2);
+    for (const name of ["events_id", '"events_id"', "public.events_id", '"public"."events_id"']) {
+      const result = await lintMigration("0001_index.sql", `CREATE INDEX ${name} ON events (id);`);
+      expect(result.output).toContain("[INDEX_NOT_CONCURRENTLY]");
+    }
+  });
+
+  it("warns about offline checks and drops while preserving baseline and skip policy", async () => {
+    const unsafe = [
+      'ALTER TABLE "events" ADD CONSTRAINT "positive" CHECK ("id" > 0);',
+      'DROP INDEX "events_id";',
+    ].join("\n");
+    const warnings = await lintMigration("0001_checks.sql", unsafe);
+    expect(warnings.exitCode).toBe(0);
+    expect(warnings.output).toContain("[ADD_CHECK_NOT_VALID]");
+    expect(warnings.output).toContain("[DROP_INDEX_NOT_CONCURRENTLY]");
+    expect((await lintMigration("0001_checks.sql", unsafe, "--strict")).exitCode).toBe(1);
+    expect((await lintMigration("0000_baseline.sql", unsafe, "--strict")).exitCode).toBe(0);
+    const safe = await lintMigration(
+      "0001_checks.sql",
+      'ALTER TABLE "events" ADD CONSTRAINT "positive"\nCHECK ("id" > 0) NOT VALID;',
+      "--strict",
+    );
+    expect(safe.exitCode).toBe(0);
+    const unquoted = await lintMigration(
+      "0001_checks.sql",
+      "ALTER TABLE events ADD CONSTRAINT positive\nCHECK (id > 0)",
+    );
+    expect(unquoted.output).toContain("[ADD_CHECK_NOT_VALID]");
+    const skipped = await lintMigration(
+      "0001_skip.sql",
+      'DROP INDEX "events_id"; -- migration-lint: skip DROP_INDEX_NOT_CONCURRENTLY (pre-launch)',
+      "--strict",
+    );
+    expect(skipped.exitCode).toBe(0);
   });
 });

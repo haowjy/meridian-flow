@@ -22,6 +22,7 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
     caller: parent,
     ref: child.ref,
     threads: app.repos.threads,
+    turns: app.repos.turns,
   });
   if (!readable.ok)
     throw createError({

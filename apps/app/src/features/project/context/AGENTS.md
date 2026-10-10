@@ -74,7 +74,10 @@ Shared across both shells:
   removal coordinator owns live removal, route identity, and continuity, while
   `../ContextPaneController.tsx` owns ordinary view activation
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
+  `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
+  (one document's session and editor, rendered by the Editor's tabs and by the dock's
+  document alike), `context-tab-session.tsx` (the session boundary beneath it),
+  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
   (the universal breadcrumb band — placement, rename, and move share one inline
   field, committed through `use-identity-commit.ts`). While its document is under a painted review the same band hosts the review's controls (`DraftReviewBand`: Draft chip, stepper, Show changes, Discard, Apply) and Rename moves into the chip's menu; the band keeps its 26px geometry either way. Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,

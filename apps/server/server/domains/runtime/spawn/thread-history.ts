@@ -235,6 +235,7 @@ export async function readThreadHistory(input: {
       caller,
       ref: input.input.ref,
       threads: repos.threads,
+      turns: repos.turns,
     });
     if (!resolved.ok) return resolved;
     const projection: Projection = {

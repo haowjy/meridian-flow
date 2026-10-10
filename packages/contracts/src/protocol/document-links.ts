@@ -17,6 +17,7 @@ export type DocumentLinkTarget =
   | { kind: "relative"; path: string; baseUri: string };
 
 export interface ResolvedDocumentLink {
+  rootThreadId?: string | null;
   documentId: string;
   title: string;
   scheme: ContextUriScheme;

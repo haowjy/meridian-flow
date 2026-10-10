@@ -144,14 +144,19 @@ function ActiveSessionEditorView({
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = resourceForDocumentIdentity(records, documentId);
   const location = holder && projectId ? projectResourceLocation(projectId, holder) : null;
+  const linkRootThreadId = location?.rootThreadId ?? null;
   const linkWorkId = !location
-    ? null
-    : location.scheme === "scratch" || location.scheme === "uploads"
-      ? location.workId
-      : (noWork?.id ?? null);
+    ? identity.surface === "review"
+      ? identity.workId
+      : null
+    : linkRootThreadId
+      ? (noWork?.id ?? null)
+      : location.scheme === "scratch" || location.scheme === "uploads"
+        ? location.workId
+        : (noWork?.id ?? null);
   const scope = useMemo<EditorScope>(
-    () => ({ projectId: projectId ?? null, workId: linkWorkId }),
-    [projectId, linkWorkId],
+    () => ({ projectId: projectId ?? null, workId: linkWorkId, rootThreadId: linkRootThreadId }),
+    [projectId, linkWorkId, linkRootThreadId],
   );
 
   // Marks render before anyone clicks one. Warming their trail detail here is
@@ -204,6 +209,7 @@ function ActiveSessionEditorView({
     active ? projectId : null,
     active ? scope.workId : null,
     t`Reference a file`,
+    active ? scope.rootThreadId : null,
   );
   // Where a link to a document nobody has written goes, unless a document is
   // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
@@ -271,7 +277,7 @@ function ActiveSessionEditorView({
     slashCommandCatalog,
     atReferenceCatalog,
     wikilinkPasteCatalog,
-    surface: { editable: effectiveEditable, editorProps },
+    surface: { editable: effectiveEditable, editorProps, publishPresence: active },
     evidenceDegraded,
   });
 
@@ -312,7 +318,11 @@ function ActiveSessionEditorView({
   }, []);
 
   return (
-    <EditorScopeProvider projectId={scope.projectId} workId={scope.workId}>
+    <EditorScopeProvider
+      projectId={scope.projectId}
+      workId={scope.workId}
+      rootThreadId={scope.rootThreadId}
+    >
       <section
         className={cn(
           "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",

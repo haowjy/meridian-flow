@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
@@ -82,8 +83,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     it("chooses one complete prompt-freeze winner across independent connections", async () => {
       const otherDb = createDb(url, { max: 2 });
       try {
-        const firstThreads = createDrizzleThreadRepository(db);
-        const otherThreads = createDrizzleThreadRepository(otherDb);
+        const firstThreads = createDrizzleThreadRepository(db, {
+          lineageScratch: createDrizzleLineageScratchLifecycle(db),
+        });
+        const otherThreads = createDrizzleThreadRepository(otherDb, {
+          lineageScratch: createDrizzleLineageScratchLifecycle(otherDb),
+        });
         const candidates = [
           {
             composedSystemPrompt: "First retained prompt",

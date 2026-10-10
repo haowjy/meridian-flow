@@ -7,7 +7,6 @@ import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
 import { useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
-import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
 import {
   ContextEntryMenu,
@@ -15,14 +14,16 @@ import {
   EntryKebabButton,
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
+import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryNameField } from "../context/EntryNameField";
 import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
-import { useDockViewStore } from "../dock/dock-view-store";
-import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
+import { useDockDocument } from "../dock/dock-view-store";
+import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { RowIcon } from "../RuledList";
+import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import type { NoteAttempt } from "./use-work-note-intake";
 
 export const workFileRowClass =
@@ -66,10 +67,9 @@ export function ScratchFileRow({
   /** Absent: the row only opens, with no menu, kebab or rename. */
   edit?: ScratchFileEdit;
 }) {
-  const openFile = useOpenFileInDock(workId);
-  const docked = useDockViewStore(
-    (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
-  );
+  const openFile = useOpenDocumentInDock();
+  const screen = useProjectScreen();
+  const docked = useDockDocument(screen, projectId)?.tab.documentId === file.documentId;
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
   const startRename = edit?.onRename;
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
@@ -91,7 +91,10 @@ export function ScratchFileRow({
         />
       </div>
     );
-  const open = () => openFile(viewerTabForCatalogFile(file, "scratch", workId));
+  const open = () => {
+    const tab = serverTabFromFile("scratch", file, { workId });
+    if (tab) openFile(tab);
+  };
   const row = (
     <div
       className={cn("group relative flex min-w-0 items-center", docked && "rounded-md bg-muted")}
@@ -209,7 +212,7 @@ function InlineRename({
   const form = useRenameEntryForm({
     projectId,
     entryId: file.entryId,
-    workId,
+    owner: { workId },
     scheme: "scratch",
     path: file.path,
     currentName: file.name,

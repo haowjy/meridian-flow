@@ -24,6 +24,7 @@ import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
 } from "./adapters/context-fs/drizzle-store.js";
+import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
   ContextDocumentStore,
@@ -119,6 +120,7 @@ async function findProjectContextSource(
         eq(contextSources.projectId, sourceProjectId),
         eq(contextSources.slug, scheme),
         isNull(contextSources.workId),
+        isNull(contextSources.rootThreadId),
         isNull(contextSources.deletedAt),
       ),
     )
@@ -149,7 +151,7 @@ async function ensureProjectContextSource(
     })
     .onConflictDoNothing({
       target: [contextSources.projectId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
+      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
     })
     .returning({ id: contextSources.id });
   if (created) return created.id;
@@ -186,6 +188,13 @@ export async function ensureWorkContextSource(
   return runInDrizzleTransaction(db, async () => {
     await requireLockedActiveWorks(db, [workId]);
     const activeDb = currentDrizzleDb(db) as Database;
+    if (scheme === "scratch") {
+      const [work] = await activeDb
+        .select({ isNoWork: works.isNoWork })
+        .from(works)
+        .where(eq(works.id, workId));
+      if (work?.isNoWork) throw new Error("No Work does not own Scratch");
+    }
     const existing = await findWorkContextSource(activeDb, workId, scheme);
     if (existing) return existing;
 
@@ -223,6 +232,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly workId?: string | (() => Promise<string>),
     private readonly catalogMutations?: ContextCatalogMutationPort,
+    private readonly beforeWrite?: () => Promise<void>,
     private readonly arrivals?: DocumentArrivals,
   ) {}
 
@@ -234,6 +244,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWorks(this.db, [workId]);
+      await this.beforeWrite?.();
       return operation(await this.sourceStore());
     });
   }
@@ -340,6 +351,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWorks(this.db, [workId]);
+      await this.beforeWrite?.();
       await this.sourceStore();
       return operation();
     });
@@ -370,6 +382,7 @@ export function createProjectContextDocumentStore(
     membershipObserver,
     undefined,
     catalogMutations,
+    undefined,
     arrivals,
   );
 }
@@ -389,6 +402,7 @@ export function createWorkContextDocumentStore(
     membershipObserver,
     workId,
     catalogMutations,
+    undefined,
     arrivals,
   );
 }
@@ -396,7 +410,7 @@ export function createWorkContextDocumentStore(
 export function createNoWorkContextDocumentStore(
   db: Database,
   projectId: string,
-  scheme: WorkScopedContextFsScheme,
+  scheme: "uploads",
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
@@ -416,6 +430,44 @@ export function createNoWorkContextDocumentStore(
     membershipObserver,
     resolveWorkId,
     catalogMutations,
+    undefined,
+    arrivals,
+  );
+}
+
+/** Reads never provision lineage notes; the first AI write does. */
+export function createLineageContextDocumentStore(
+  db: Database,
+  projectId: string,
+  rootThreadId: string,
+  membershipObserver?: ContextDocumentMembershipObserver,
+  catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
+): ContextDocumentStore {
+  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations, arrivals);
+  const find = async () => {
+    const [row] = await currentDrizzleDb(db)
+      .select({ id: contextSources.id })
+      .from(contextSources)
+      .where(
+        and(
+          eq(contextSources.projectId, projectId),
+          eq(contextSources.rootThreadId, rootThreadId),
+          eq(contextSources.slug, "scratch"),
+          isNull(contextSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  };
+  return new SourceResolvedContextDocumentStore(
+    db,
+    () => lifecycle.ensureSource(projectId, rootThreadId),
+    find,
+    membershipObserver,
+    undefined,
+    catalogMutations,
+    () => lifecycle.requireLive(projectId, rootThreadId),
     arrivals,
   );
 }

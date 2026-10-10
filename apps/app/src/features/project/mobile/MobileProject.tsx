@@ -1,7 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { MessageSquare, Sparkles } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
@@ -19,6 +19,7 @@ import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import {
   chatSurfaceThreadId,
+  type DockReveal,
   displayedChatThreadId,
   useChatNavigation,
   useDockReveal,
@@ -36,7 +37,6 @@ import { MobileContextBrowser } from "./MobileContextBrowser";
 import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
-import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
 
@@ -51,8 +51,8 @@ export function MobileProject(props: MobileProjectProps) {
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = (view: "chat" | "file" = "chat") => {
-    setDockView(props.activeScreen, view);
+  const openChatSheet = (view: DockReveal = "chat") => {
+    if (view === "chat") setDockView(props.activeScreen, view);
     setChatOpen(true);
   };
   useDockReveal((view) => openChatSheet(view));
@@ -67,9 +67,9 @@ export function MobileProject(props: MobileProjectProps) {
   // The request is immutable command identity. A route Work change must not
   // retarget a row the writer already opened.
   const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
-  // Any navigation (screen switch, drill in/out, opening a file, Results)
+  // Any navigation (screen switch, drill in/out, opening a file)
   // abandons an uncommitted create row — the row is location-scoped chrome.
-  const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
+  const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
   const crumbs = contextBreadcrumbSegments(props);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
@@ -91,10 +91,9 @@ export function MobileProject(props: MobileProjectProps) {
       <MobileTopBar
         activeScreen={props.activeScreen}
         projectTitle={props.projectTitle}
-        title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
-          props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
+          props.activeScreen === "chat" ? (
             <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
           ) : onWorkDetail ? (
             <MobileBreadcrumb
@@ -107,7 +106,7 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={!props.resultsOpen && onWorkDetail ? work.notice : undefined}
+        notice={onWorkDetail ? work.notice : undefined}
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
@@ -186,6 +185,7 @@ export function MobileProject(props: MobileProjectProps) {
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
         onSelectContextPath={props.onSelectContextPath}
+        chatThreadId={displayedChatThreadId(props.chatDisplay)}
       />
     </div>
   );
@@ -196,20 +196,6 @@ function trailingAction(
   props: ReviewScopedProjectProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
 ) {
-  if (props.resultsOpen) {
-    return (
-      <PhoneIconButton onClick={props.onCloseResults} aria-label={t`Back to chat`}>
-        <MessageSquare className="size-5" aria-hidden />
-      </PhoneIconButton>
-    );
-  }
-  if (props.activeScreen === "chat" && props.chatDisplay.kind !== "index") {
-    return (
-      <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
-        <Sparkles className="size-5" aria-hidden />
-      </PhoneIconButton>
-    );
-  }
   // Same per-scheme policy as the desktop tree's `+`: Scratch and Uploads offer no creation.
   if (
     props.activeScreen === "context" &&
@@ -230,10 +216,6 @@ function renderActiveView(
   onCreateDone: () => void,
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
 ) {
-  if (props.resultsOpen) {
-    return <MobileResultsView projectId={props.projectId} />;
-  }
-
   switch (props.activeScreen) {
     case "work":
       return (
@@ -316,17 +298,24 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
     // Files root: nothing is drilled in, so "Files" is the current location.
     return [{ label: filesLabel }];
   }
+  // Scratch is browsed from its owner (the rail's or drawer's Scratch section, a Work's Files),
+  // never from the Editor's Files, so its trail names where a note lives and
+  // links nowhere.
+  const browsable = props.activeContextScheme !== "scratch";
   const segments: MobileBreadcrumbSegment[] = [
     { label: filesLabel, onSelect: () => props.onExitContextScheme() },
     {
       label: schemeLabel(props.activeContextScheme),
-      onSelect: () => props.onSelectContextFolder(""),
+      ...(browsable ? { onSelect: () => props.onSelectContextFolder("") } : {}),
     },
   ];
   // Route invariant: `folder === dirname(path)` whenever a file is open, so
   // the folder ancestry doubles as the document screen's ancestor trail.
   for (const folder of folderAncestry(props.activeContextFolder)) {
-    segments.push({ label: folder.name, onSelect: () => props.onSelectContextFolder(folder.path) });
+    segments.push({
+      label: folder.name,
+      ...(browsable ? { onSelect: () => props.onSelectContextFolder(folder.path) } : {}),
+    });
   }
   if (props.activeContextPath) {
     segments.push({ label: pathLeafName(props.activeContextPath) });

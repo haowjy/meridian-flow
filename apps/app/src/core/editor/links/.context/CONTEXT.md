@@ -389,7 +389,11 @@ full URI with any fragment or query), and for a link with a ref,
 `data-meridian-ref` and `data-meridian-project`. The text flavour
 (`markdownClipboardSerializer`) serializes through `clipboardLinkScope`, which
 spells every internal link as that same full address, so it means the same
-thing in another app or through the Markdown paste door. On paste the sanitizer
+thing in another app or through the Markdown paste door. A contextual owned link
+takes its holder's authority through the shared parsed-address serializer
+(`formatParsedContextUri`), never string building: Scratch in a lineage note
+becomes `scratch://@/c12/x`, while Uploads there stay No Work's `uploads://@/x`.
+On paste the sanitizer
 keeps well-formed metadata, and the plugin's `transformPastedHTML` (which runs
 after it) sets each recorded link's href to its address and keeps its ref only
 when the project matches, as `data-meridian-kept-ref`, the one attribute the

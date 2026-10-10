@@ -57,6 +57,7 @@ export function EditorView(props: EditorViewProps) {
         ...sharedIdentity,
         surface: "review",
         roomName: review.roomName,
+        workId: controller.workId,
         draftId: review.draftId,
       }
     : null;

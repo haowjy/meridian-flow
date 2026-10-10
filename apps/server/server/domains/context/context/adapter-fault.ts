@@ -4,6 +4,8 @@ import type { ContextError } from "../ports/context-port.js";
 
 export function adapterFaultToContextError(fault: AdapterFault, uri: string): ContextError {
   switch (fault.code) {
+    case "not_found":
+      return { code: "not_found", uri };
     case "permission_denied":
       return { code: "permission_denied", uri };
     case "conflict":

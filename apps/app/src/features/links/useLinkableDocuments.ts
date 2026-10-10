@@ -7,8 +7,9 @@
  * resolves against), which document is at an address, so a link the index can
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
- * and the scope Work's Scratch and Uploads by row id, including No Work. A URI naming another Work's Scratch is outside it and always asks the
- * server.
+ * and the scope's Scratch (the chat's lineage notes on No Work, else the scope
+ * Work's) and the scope Work's Uploads. A URI naming another owner's Scratch is
+ * outside it and always asks the server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -21,6 +22,7 @@
  * already pays for, so the index costs no request.
  */
 
+import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
 
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
@@ -36,6 +38,8 @@ export type LinkableDocument = {
   /** Its canonical Context URI: its address, and what a relative link in it resolves against. */
   uri: string;
   workId: string | null;
+  /** A chat's Scratch note is held by its lineage instead of a Work. */
+  rootThreadId?: string;
 };
 
 export type LinkableDocumentIndex = {
@@ -54,13 +58,16 @@ export type LinkableDocumentIndex = {
 export function useLinkableDocuments({
   projectId,
   workId,
+  rootThreadId,
 }: {
   projectId: string | null;
   workId: string | null;
+  rootThreadId?: string | null;
 }): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId });
+  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
   const catalogWorkId = scopes?.workId ?? null;
+  const catalogRootThreadId = scopes?.rootThreadId ?? null;
   const {
     manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
     kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
@@ -70,7 +77,9 @@ export function useLinkableDocuments({
     uploads: { catalog: uploads, isComplete: uploadsComplete },
   } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
-    workId: catalogWorkId,
+    ...contextOwner(catalogWorkId, catalogRootThreadId),
+    // A lineage's Scratch and the Work row's Uploads are separate owners of one index.
+    uploadsWorkId: catalogWorkId,
   });
 
   return useMemo(() => {
@@ -79,7 +88,13 @@ export function useLinkableDocuments({
       ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
       ...(user ? linkableDocuments(user, null) : []),
       ...(unfiled ? linkableDocuments(unfiled, null) : []),
-      ...(scratch ? linkableDocuments(scratch, catalogWorkId) : []),
+      ...(scratch
+        ? linkableDocuments(
+            scratch,
+            catalogRootThreadId ? null : catalogWorkId,
+            catalogRootThreadId,
+          )
+        : []),
       ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
     ];
     const next = {
@@ -111,6 +126,7 @@ export function useLinkableDocuments({
     user,
     userComplete,
     catalogWorkId,
+    catalogRootThreadId,
   ]);
 }
 
@@ -124,12 +140,17 @@ function catalogRevision(documents: readonly LinkableDocument[]): string {
   return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
 }
 
-function linkableDocuments(catalog: CatalogContextView, workId: string | null): LinkableDocument[] {
+function linkableDocuments(
+  catalog: CatalogContextView,
+  workId: string | null,
+  rootThreadId?: string | null,
+): LinkableDocument[] {
   return catalog.files().map((node) => ({
     documentId: node.documentId,
     title: documentTitle(node.name),
     uri: node.uri,
     workId,
+    ...(rootThreadId ? { rootThreadId } : {}),
   }));
 }
 

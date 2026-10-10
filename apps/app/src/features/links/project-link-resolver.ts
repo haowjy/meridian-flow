@@ -47,6 +47,12 @@ export type LinkResolutionScope = {
   projectId: string;
   /** Resolved Work row id, including No Work; unresolved surfaces use a pending scope. */
   workId: string;
+  /**
+   * The lineage a bare `scratch://` means, in a No Work chat or in a note of a
+   * lineage. The server takes it in place of the Work; bare `uploads://` stays
+   * the No Work row's.
+   */
+  rootThreadId?: string | null;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**
@@ -69,7 +75,7 @@ export function createProjectLinkResolver(
   index: LinkableDocumentIndex,
   settlements: LinkSettlements,
 ): InternalLinkResolver {
-  const { projectId, workId, baseUri, holderDocumentId } = scope;
+  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
   const memo = settlements.forProject(projectId);
   const catalog = createProjectLinkCatalog(projectId, index, memo);
   const indexedAnswer = (documentId: string) => {
@@ -108,7 +114,7 @@ export function createProjectLinkResolver(
 
     async remote(questions) {
       const response = await resolveDocumentLinks(projectId, {
-        workId,
+        ...(rootThreadId ? { rootThreadId } : { workId }),
         baseUri,
         links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
@@ -140,6 +146,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         title: document.title,
         uri: document.uri,
         workId: document.workId,
+        rootThreadId: document.rootThreadId ?? undefined,
       });
     }
     case "gone":
@@ -176,5 +183,6 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     path: parsed.value.path,
     uri: document.uri,
     workId: document.workId,
+    ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),
   };
 }

@@ -1,0 +1,7 @@
+# Reload layout follow-ups (dock audit)
+
+- `../shell/RailSection.tsx`: Recent expansion currently resets to defaultOpen
+  after reload. Consider browser-tab-local restoration of this writer choice;
+  panel collapse already persists separately.
+- Keep document menus, rename inputs and confirmations transient; their saved
+  state cannot be validated as a document identity can.

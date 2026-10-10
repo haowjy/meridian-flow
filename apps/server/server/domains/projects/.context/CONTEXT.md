@@ -7,7 +7,7 @@ over its owner-gated operations.
 ## What it owns
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
-  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Scratch and Uploads sources. Bootstrap creates no thread.
+  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Uploads source. Bootstrap creates no thread.
 - **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
@@ -54,7 +54,7 @@ translate those to `title` and `description` in `ProjectDto`.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
 - Bootstrap creates no Agent, thread, or membership. It does insert the locked No Work
-  row and that Work's Scratch/Uploads sources. System Agent provisioning happens at
+  row and that Work's Uploads source. System Agent provisioning happens at
   startup; root thread creation owns exact catalog selection.
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, or chapter document.
@@ -65,7 +65,7 @@ translate those to `title` and `description` in `ProjectDto`.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
 - The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
-  membership, No Work Scratch/Uploads sources, and readiness flag commit in one ambient
+  membership, No Work Uploads source, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning treats the durable readiness flag as authoritative; legacy
   data repair belongs to a future import, not a process-local readiness overlay.
@@ -104,6 +104,10 @@ translate those to `title` and `description` in `ProjectDto`.
   dependency. Keyset paging passes retained sources and still removes up to 100
   eligible Works per sweep. References can extend storage retention beyond the
   restore window; they do not extend the 30-day restore deadline.
+  Purge also deletes the lineage Scratch sources (`context_sources.root_thread_id`)
+  of every root thread in its purge set, with their documents, journal rows,
+  memberships and stored blobs. Work delete never marks lineage Scratch; it is
+  hidden only through lineage liveness when the delete trashes the last live member.
 - Membership changes follow thread-before-Work locking. Delete and purge use
   `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
   the Work, then recheck the full set; a newly joined chat retries rather than

@@ -5,8 +5,13 @@ prompt bake. Existing bakes keep their frozen tools. They accept project-local
 `cN` and `pN` refs, never internal IDs. Omitted `ref` means the caller.
 
 All three readers use the same authorization: a live target in the caller's
-project, owned by the same writer, with the same lineage root. Spawn, fork and
-handoff edges connect a lineage. A trashed target is not readable directly;
+project, owned by the same writer, with the same lineage root. Spawn and fork
+edges connect a lineage. A handoff starts a new lineage but remains connected
+to its direct source (the owner of its `originTurnId`), in both directions.
+That connection is one hop only: it does not admit earlier handoff sources or
+either thread's other lineage members. Background `thread_message` shares this
+connection check; foreground messages still require the caller's subtree.
+A trashed target is not readable directly;
 a fork still reads the inherited prefix of a trashed source.
 
 ## `thread_ls`
@@ -16,8 +21,8 @@ Input: `{ ref?, depth?: 1 | 2 | 3, cursor? }`. Default depth is 1.
 The typed result is `{ ref, listing }`: the resolved conversation and the
 listing the model reads. The listing includes the path to the root (up to 16 hops), current thread,
 and up to 50 descendant nodes. Trashed path hops are labelled; trashed nodes
-are omitted. Spawn edges use the parent. Fork and handoff edges use the cutoff
-turn's owner, including inherited cutoffs. Nodes are selected newest first per
+are omitted. Spawn edges use the parent. Fork edges use the cutoff turn's
+owner, including inherited cutoffs. Nodes are selected newest first per
 level and displayed beneath their parent. Status is `awake` or `asleep` from
 the run lease; subagents also show their saved spawn outcome.
 
@@ -194,7 +199,7 @@ ref. `current` resolves to the caller. The same live owner/project/lineage check
 runs before creating the child. Invalid, trashed and disconnected targets return
 tool errors without a child, run or debit. Error codes are
 `invalid_arguments` for a non-string or empty value, `thread_not_found` for a malformed,
-missing or trashed ref, and `thread_not_connected` for another lineage.
+missing or trashed ref, and `thread_not_connected` for an unconnected conversation.
 
 The child's first user turn holds the task prompt followed by a
 `thread-reference` custom block. Its source ref, title, Agent, last activity and
