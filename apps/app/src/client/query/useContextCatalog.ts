@@ -16,6 +16,7 @@ import {
   type FolderNamespaceRecord,
   indexCatalogView,
   projectFolderCatalog,
+  projectFolderLocation,
   projectFolderNeedsRepair,
   projectResourceLocation,
   projectResourceNeedsRepair,
@@ -38,11 +39,12 @@ import {
 import { useCallback, useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
-import type {
-  CatalogContextView,
-  CatalogDirectory,
-  CatalogFile,
-  CatalogNode,
+import {
+  type CatalogContextView,
+  type CatalogDirectory,
+  type CatalogFile,
+  type CatalogNode,
+  refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
@@ -299,8 +301,10 @@ export function projectCatalogFile(
 }
 
 function projectCatalogDirectory(
+  projectId: string,
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "folder" }>,
   folder?: FolderNamespaceRecord,
+  folders: readonly FolderNamespaceRecord[] = [],
 ): CatalogDirectory {
   const repair = folder ? projectFolderNeedsRepair(folder) : null;
   const failureAt = repair
@@ -317,6 +321,12 @@ function projectCatalogDirectory(
       ? {
           namespaceFailure: "set-location" as const,
           namespaceRepairName: repair.name,
+          namespaceRepairMove: folder
+            ? refusedMoveDestination(
+                repair.destination,
+                rebaseFolderResourceLocation(projectId, projectFolderLocation(folder), folders),
+              )
+            : undefined,
           ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
         }
       : {}),
@@ -397,6 +407,9 @@ export function projectCatalogView(
               ? {
                   namespaceFailure: "set-location" as const,
                   namespaceRepairName: repair.name,
+                  namespaceRepairMove: effective
+                    ? refusedMoveDestination(repair.destination, effective)
+                    : undefined,
                   ...(repairedAt === undefined ? {} : { namespaceFailureAt: repairedAt }),
                 }
               : {}),
@@ -408,7 +421,7 @@ export function projectCatalogView(
     if (!entry) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder" && entry.sourceId === sourceId)
-      return projectCatalogDirectory(entry, foldersById.get(entry.entryId));
+      return projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), folders);
     return null;
   };
   const files = () =>
@@ -435,7 +448,7 @@ export function projectCatalogView(
         entry.kind === "folder" &&
         entry.sourceId === sourceId &&
         `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId))]
+          ? [projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), folders)]
           : [],
       )[0] ??
       null,

@@ -1,10 +1,10 @@
 /**
  * The tree behind a Scratch listing: what the rail's Scratch section draws and
- * what the dock document's title menu browses.
+ * what document paths and row move pickers browse.
  *
  * `useCatalogMenuSource` is one area: the chat's Scratch, a named Work's or a
  * No Work chat's lineage, with the lineage's notes under "Earlier notes" after
- * a rebind. `useProjectMenuSource` is the dock document's menu: the project's
+ * a rebind. `useProjectMenuSource` is the project browsing and placement tree: the project's
  * areas (and the Scratch the writer has on screen) as folders, opening at the
  * document's own folder. Both read the same catalogs the left tree does and
  * build their trees with `menu-tree.ts`.
@@ -16,16 +16,26 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import type { ServerContextTab } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
-import { areaNode, buildMenuTree, foldersIn, type MenuArea, menuTabFor } from "./menu-tree";
+import {
+  areaNode,
+  buildMenuTree,
+  foldersIn,
+  type MenuArea,
+  menuEntryFor,
+  menuTabFor,
+} from "./menu-tree";
 
 const NO_NOTES = () => t`No notes yet. The AI keeps its notes for this chat here.`;
 
 export type CatalogMenuSource = {
+  entryFor(
+    rowId: string,
+  ): { node: CatalogNode; catalog: CatalogContextView; owner: ContextOwner } | null;
   tree: DrillTree;
   /** The tab a picked note opens as. */
   tabFor(rowId: string): ServerContextTab | null;
@@ -96,18 +106,50 @@ export function useCatalogMenuSource({
     () => buildMenuTree({ heading, empty: NO_NOTES(), areas, rooted: false }),
     [areas, heading],
   );
-  return { tree, tabFor: (rowId) => menuTabFor(areas, rowId) };
+  return {
+    tree,
+    tabFor: (rowId) => menuTabFor(areas, rowId),
+    entryFor: (rowId) => {
+      const catalogs = area
+        ? [
+            { catalog: area.catalog, owner: area.owner },
+            ...(area.earlier
+              ? [
+                  {
+                    catalog: area.earlier.catalog,
+                    owner: { rootThreadId: area.earlier.rootThreadId },
+                  },
+                ]
+              : []),
+          ]
+        : [];
+      for (const { catalog, owner } of catalogs) {
+        if (!catalog) continue;
+        const node = menuEntryFor(catalog, rowId);
+        if (node) return { node, catalog, owner };
+      }
+      return null;
+    },
+  };
 }
 
 export type ProjectMenuSource = {
   tree: DrillTree;
   tabFor(rowId: string): ServerContextTab | null;
-  /** The document's own area, for the current row, rename siblings and the folders to open at. */
+  /** Resolve an area or folder row into its placement destination. */
+  folderFor(rowId: string): {
+    scheme: ProjectContextTreeScheme;
+    owner: ContextOwner;
+    path: string;
+    catalog: CatalogContextView;
+    entryId: string;
+  } | null;
+  /** The document's own area and the folders to open inside. */
   own: { catalog: CatalogContextView | null; openAt(path: string): DrillNode[] };
 };
 
 /**
- * The dock document's menu: Manuscript, Knowledge Base, User, Unfiled and the
+ * The project browsing tree: Manuscript, Knowledge Base, User, Unfiled and the
  * Scratch on screen as folders under the project's title. The document's own
  * area is always reachable; when it is not one of those (an Uploads file, or a
  * Scratch the writer has since left), it is held but not offered at the root.
@@ -205,6 +247,30 @@ export function useProjectMenuSource({
   return {
     tree,
     tabFor: (rowId) => menuTabFor(areas, rowId),
+    folderFor: (rowId) => {
+      for (const area of areas) {
+        const catalog = area.catalog;
+        if (!catalog) continue;
+        if (rowId === area.id)
+          return {
+            scheme: area.scheme,
+            owner: area.owner,
+            path: "/",
+            catalog,
+            entryId: catalog.root.entryId,
+          };
+        const folder = menuEntryFor(catalog, rowId);
+        if (folder?.kind === "dir")
+          return {
+            scheme: area.scheme,
+            owner: area.owner,
+            path: folder.path,
+            catalog,
+            entryId: rowId,
+          };
+      }
+      return null;
+    },
     own: {
       catalog: ownArea?.catalog ?? null,
       openAt: (path) => (ownArea ? [areaNode(ownArea), ...foldersIn(ownArea, path)] : []),

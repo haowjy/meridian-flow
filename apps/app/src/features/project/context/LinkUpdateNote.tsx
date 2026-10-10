@@ -3,12 +3,13 @@
  * It reads the move's receipt from the replica journal (the operation id was
  * issued at admission), appears when the receipt settles, and lives until the
  * receipt's own deadline (settlement plus four seconds, however often its row
- * remounts). It says nothing when no link followed or the server refused the move.
+ * remounts). A picker move without updated links names its destination instead.
+ * Refused moves show nothing.
  * A row with no rename in flight mounts nothing and watches nothing; a watch ends
  * at the deadline. The announcement goes to the app's one polite region, once per
  * operation.
  */
-import { plural } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
   NAMESPACE_RECEIPT_NOTE_TTL_MS,
@@ -24,15 +25,19 @@ import { useOptionalAccountResourceReplica } from "./account-feature-context";
 const FADE_MS = 400;
 
 // Surfaces that remount while a rename lands (the identity bar) keep its operation here.
-const renameOperations = new Map<string, { operationId: string; at: number }>();
+const renameOperations = new Map<string, { operationId: string; at: number; folder?: string }>();
 const renameListeners = new Set<() => void>();
 
-export function rememberRenameOperation(documentId: string, operationId: string): void {
+export function rememberRenameOperation(
+  documentId: string,
+  operationId: string,
+  folder?: string,
+): void {
   const now = Date.now();
   // A note outlives its receipt's window by nothing, so older entries are dead weight.
   for (const [id, entry] of renameOperations)
     if (now - entry.at > 2 * NAMESPACE_RECEIPT_NOTE_TTL_MS) renameOperations.delete(id);
-  renameOperations.set(documentId, { operationId, at: now });
+  renameOperations.set(documentId, { operationId, at: now, folder });
   for (const listener of renameListeners) listener();
 }
 
@@ -76,7 +81,7 @@ function indexOf(snapshot: ResourceProjectionSnapshot): ProjectionIndex {
   return index;
 }
 
-type SettledMove = { links: number; deadline: number };
+type SettledMove = { links: number; deadline: number; succeeded: boolean };
 
 /** The move's link count and absolute deadline once it settles locally; watches only while `watching`. */
 function useSettledMove(
@@ -107,10 +112,13 @@ function useSettledMove(
             ? null
             : {
                 links: movedLinkCount(receipt),
+                succeeded: receipt?.command.kind === "move" && receipt.result.ok,
                 deadline: intent.settledAt + NAMESPACE_RECEIPT_NOTE_TTL_MS,
               };
         setSettled((previous) =>
-          previous?.links === next?.links && previous?.deadline === next?.deadline
+          previous?.links === next?.links &&
+          previous?.deadline === next?.deadline &&
+          previous?.succeeded === next?.succeeded
             ? previous
             : next,
         );
@@ -142,7 +150,7 @@ export function LinkUpdateNote(props: {
   className?: string;
 }) {
   const { operationId, ...rest } = props;
-  return operationId ? <ActiveNote {...rest} operationId={operationId} /> : null;
+  return operationId ? <ActiveNote key={operationId} {...rest} operationId={operationId} /> : null;
 }
 
 function ActiveNote({
@@ -164,7 +172,14 @@ function ActiveNote({
   const settled = useSettledMove(projectId, subject, operationId, phase !== "gone");
   const links = settled?.links ?? 0;
   const deadline = settled?.deadline;
-  const message = plural(links, { one: "Updated # link", other: "Updated # links" });
+  const remembered = renameOperations.get(subject.id);
+  const folder = remembered?.operationId === operationId ? remembered.folder : undefined;
+  const showMoved = Boolean(folder && settled?.succeeded);
+  const visible = links > 0 || showMoved;
+  const message =
+    links > 0
+      ? plural(links, { one: "Updated # link", other: "Updated # links" })
+      : t`Moved to ${folder ?? ""}`;
 
   useEffect(() => {
     if (deadline === undefined) return;
@@ -175,7 +190,7 @@ function ActiveNote({
     }
     // Whatever the receipt said, the watch ends at its deadline.
     const gone = window.setTimeout(() => setPhase("gone"), remaining);
-    if (links === 0) return () => window.clearTimeout(gone);
+    if (!visible) return () => window.clearTimeout(gone);
     setPhase(remaining <= FADE_MS ? "fading" : "shown");
     setEntered(false);
     const enter = window.requestAnimationFrame(() => setEntered(true));
@@ -186,9 +201,9 @@ function ActiveNote({
       window.clearTimeout(fade);
       window.clearTimeout(gone);
     };
-  }, [operationId, links, deadline]);
+  }, [operationId, visible, deadline, message]);
 
-  if (links === 0 || phase === "gone") return null;
+  if (!visible || phase === "gone") return null;
   if (layout === "stacked") {
     const open = entered && phase === "shown";
     return (

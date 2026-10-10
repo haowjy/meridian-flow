@@ -154,7 +154,11 @@ it.each([
   reopened.record = structuredClone(store.current());
   expect(reopened.current().intents.map((i) => i.state)).toEqual(["needs-repair", "cancelled"]);
   expect(projectFolderLocation(reopened.current())).toEqual(source);
-  expect(projectFolderNeedsRepair(reopened.current())).toEqual({ intentId: "B", name: "C" });
+  expect(projectFolderNeedsRepair(reopened.current())).toEqual({
+    intentId: "B",
+    name: "C",
+    destination: { scheme: "manuscript", folderPath: "", name: "C", workId: null },
+  });
   await command(reopened, "C", "repair");
   expect(
     await reconcile(reopened, {

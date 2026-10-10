@@ -200,6 +200,12 @@ function SchemeSection({
             projectId,
             workId: editorWorkId,
             scheme,
+            actions: [
+              ...(schemeAllowsCreation(scheme) ? (["new-file", "new-folder"] as const) : []),
+              "rename",
+              "move",
+              ...(scheme !== "uploads" ? (["delete"] as const) : []),
+            ],
             activeScheme,
             activePath,
             creating,
