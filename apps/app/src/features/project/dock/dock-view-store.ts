@@ -1,7 +1,13 @@
-/** Session-only view choices and the transient document slot for the project dock. */
+/** Browser-tab-local view choices and the document slot for the project dock. */
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
+import {
+  browserDockStorage,
+  type DockStorage,
+  readDockSnapshot,
+  writeDockSnapshot,
+} from "./dock-persistence";
 
 /** Dock destinations the writer switches between. */
 export type DockView = "chat" | "context" | "changes";
@@ -40,6 +46,9 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
+  /** Hidden until resource validation finishes; every writer intent cancels restoration. */
+  restoring: DockDocument | null;
+  restore: (expected: DockDocument, tab: ContextTab | null) => void;
   /**
    * Bumps on every new intent: an open requested or made, a close, a view
    * choice, and a move to another project, screen or Work. A slow open claims
@@ -63,52 +72,82 @@ type DockViewState = {
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export const useDockViewStore = create<DockViewState>((set, get) => {
-  const setOccupant = (occupant: DockDocument | null) =>
-    set((state) => ({ occupant, revision: state.revision + 1 }));
-  return {
-    byScreen: {},
-    occupant: null,
-    revision: 0,
-    scope: null,
-    workId: null,
-    setDockView: (screen, view) =>
-      set((state) => ({
-        byScreen: { ...state.byScreen, [screen]: view },
-        occupant: state.occupant?.screen === screen ? null : state.occupant,
-        revision: state.revision + 1,
-      })),
-    isCurrent: (claim) => get().revision === claim,
-    commit: (claim, document) => {
-      if (get().revision !== claim) return false;
-      setOccupant(document);
-      return true;
-    },
-    claim: () => {
-      set((state) => ({ revision: state.revision + 1 }));
-      return get().revision;
-    },
-    closeDocument: () => setOccupant(null),
-    syncOccupantScope: (projectId, screen, workId) =>
-      set((state) => {
-        const scope = `${projectId}\u0000${screen}\u0000${workId ?? ""}`;
-        if (scope === state.scope) return state;
-        const { occupant } = state;
-        // A Work's note belongs to that Work's screen.
-        const stays =
-          occupant != null &&
-          occupant.projectId === projectId &&
-          (occupant.screen !== "work" ||
-            (screen === "work" && occupant.tab.kind !== "new" && occupant.tab.workId === workId));
-        return {
-          scope,
-          workId: screen === "work" ? workId : null,
-          occupant: stays ? occupant : null,
+export function createDockViewStore(storage: () => DockStorage | null = browserDockStorage) {
+  const snapshot = readDockSnapshot(storage);
+  const store = create<DockViewState>((set, get) => {
+    const setOccupant = (occupant: DockDocument | null) =>
+      set((state) => ({ occupant, restoring: null, revision: state.revision + 1 }));
+    return {
+      byScreen: snapshot?.byScreen ?? {},
+      occupant: null,
+      restoring: snapshot?.occupant ?? null,
+      restore: (expected, tab) => {
+        if (get().restoring !== expected) return;
+        // A restore is not a new intent and must never supersede a writer's claim.
+        const sameWork =
+          get().scope === null ||
+          expected.screen !== "work" ||
+          (tab?.kind !== "new" && tab?.workId === get().workId);
+        set({ restoring: null, occupant: tab && sameWork ? { ...expected, tab } : null });
+      },
+      revision: 0,
+      scope: null,
+      workId: null,
+      setDockView: (screen, view) =>
+        set((state) => ({
+          byScreen: { ...state.byScreen, [screen]: view },
+          restoring: null,
+          occupant: state.occupant?.screen === screen ? null : state.occupant,
           revision: state.revision + 1,
-        };
-      }),
-  };
-});
+        })),
+      isCurrent: (claim) => get().revision === claim,
+      commit: (claim, document) => {
+        if (get().revision !== claim) return false;
+        setOccupant(document);
+        return true;
+      },
+      claim: () => {
+        set((state) => ({ restoring: null, revision: state.revision + 1 }));
+        return get().revision;
+      },
+      closeDocument: () => setOccupant(null),
+      syncOccupantScope: (projectId, screen, workId) =>
+        set((state) => {
+          const scope = `${projectId}\u0000${screen}\u0000${workId ?? ""}`;
+          if (scope === state.scope) return state;
+          const occupant = state.occupant ?? state.restoring;
+          // A Work's note belongs to that Work's screen.
+          const stays =
+            occupant != null &&
+            occupant.projectId === projectId &&
+            (occupant.screen !== "work" ||
+              (screen === "work" && occupant.tab.kind !== "new" && occupant.tab.workId === workId));
+          return {
+            scope,
+            workId: screen === "work" ? workId : null,
+            occupant: stays ? state.occupant : null,
+            restoring: stays ? state.restoring : null,
+            revision: state.revision + 1,
+          };
+        }),
+    };
+  });
+  store.subscribe((state, previous) => {
+    if (
+      state.occupant === previous.occupant &&
+      state.restoring === previous.restoring &&
+      state.byScreen === previous.byScreen
+    )
+      return;
+    writeDockSnapshot(storage, {
+      byScreen: state.byScreen,
+      occupant: state.occupant ?? state.restoring,
+    });
+  });
+  return store;
+}
+
+export const useDockViewStore = createDockViewStore();
 
 export type ResolvedDockView = {
   view: DockView;

@@ -58,6 +58,7 @@ import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
+  useAccountResourceReplica,
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
@@ -77,6 +78,7 @@ import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
 } from "./dock/editor-review-handoff";
+import { restoreDockDocument } from "./dock/restore-dock-document";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
@@ -288,6 +290,29 @@ export function ProjectView(props: ProjectViewProps) {
     props.onDisplayedSelection?.({ editorWorkId });
   }, [props.onDisplayedSelection, editorWorkId]);
   const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
+  const restoringDockDocument = useDockViewStore((state) => state.restoring);
+  const dockResources = useAccountResourceReplica();
+  useEffect(() => {
+    if (
+      !workspaceHydrated ||
+      !restoringDockDocument ||
+      restoringDockDocument.projectId !== props.projectId
+    )
+      return;
+    let live = true;
+    void restoreDockDocument(restoringDockDocument, dockResources).then(
+      (tab) => {
+        if (live) useDockViewStore.getState().restore(restoringDockDocument, tab);
+      },
+      () => {
+        // Read degradation is not proof of deletion. Keep the hidden candidate for reload/retry.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceHydrated, restoringDockDocument, dockResources, props.projectId]);
+
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
     workspaceHydrated,
