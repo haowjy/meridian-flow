@@ -22,8 +22,10 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
+  CollabDraftResolver,
   CollabDrafts,
   DocumentProjectionRefresher,
+  MarkdownDocumentStore,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
 import {
@@ -63,7 +65,11 @@ import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
+  documentSync: AgentEditAccess &
+    DocumentProjectionRefresher &
+    ResponseWriteFinalizer &
+    Pick<MarkdownDocumentStore, "rebindHolderBoundRefs"> &
+    Pick<CollabDraftResolver, "drafts">;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: WorkRepository;

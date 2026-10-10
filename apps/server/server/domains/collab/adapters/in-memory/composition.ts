@@ -220,6 +220,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
+      rebindHolderBoundRefs: runtime.linkBinder.rebindHolderBoundRefs,
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
