@@ -18,9 +18,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: quality
-    # Skip draft PRs; every non-PR caller runs.
+  # scripts.check remains the inventory; keep explicit jobs so the required
+  # aggregate checks each result directly, including after partial reruns.
+  quality-static:
+    name: quality-static
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs static
+
+  quality-typecheck:
+    name: quality-typecheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Keep Nx outputs local to this runner. Project-scoped Nx inputs omit
+      # root config changes, so restoring outputs across runs is unsafe.
+      - run: node tools/ci/run-check-group.mjs typecheck
+
+  # Vitest partitions the same default projects into disjoint file sets.
+  quality-test-1:
+    name: quality-test-1
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +67,40 @@ jobs:
           node-version: 24.17.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - run: node tools/ci/run-check-group.mjs test --shard=1/2
+
+  quality-test-2:
+    name: quality-test-2
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # S7 reads the pre-history snapshot when bootstrapping its immutable
+          # append-only schema-version baseline.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs test --shard=2/2
+
+  quality:
+    name: quality
+    needs: [quality-static, quality-typecheck, quality-test-1, quality-test-2]
+    # A skipped required job counts as passing. Run even after a dependency
+    # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality group to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
 
   migration-checks:
     name: migration-checks

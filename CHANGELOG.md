@@ -46,6 +46,7 @@
 - A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.
 
 - Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
+- Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
 
