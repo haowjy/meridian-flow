@@ -5,9 +5,9 @@
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:
 Hocuspocus can mutate the same in-memory Y.Doc while a coordinator callback is
 awaiting journal or detection work. Any content apply after an `await` must use
-the durable settlement row, and the live recheck and apply share one synchronous
-fence. Writer admission is journal-first; optional sweep detection may degrade
-to no elevation, but it never supplies apply authority.
+durable authority and a synchronous recheck. Writer admission is journal-first;
+optional sweep detection may degrade to no elevation, but it never supplies
+apply authority.
 
 The response phase-C path enforces this in
 `@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
@@ -15,6 +15,13 @@ enforces the invariant while holding sorted branch locks followed by sorted live
 document locks. Reversal `executePrepared` snapshots around the durable write,
 then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
 Do not treat the coordinator mutex as coverage for WebSocket mutations.
+
+Push settlement splits recheck from apply on purpose: the recheck runs inside
+the batch's completion transaction, under every document mutation lock, and
+the apply runs only after commit, so a rolled-back batch never reaches a warm
+room. A writer admission that starts after the recheck waits on those locks and
+journals after the push; Yjs merges the two in either order to the durable
+state.
 
 - **Push LOCK-WS cut**: the first instruction in each live-document lock captures
   the complete Yjs update. The push transaction stores that immutable cut and its

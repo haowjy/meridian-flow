@@ -181,27 +181,15 @@ export const pushLineage = pgTable(
   ],
 );
 
-/** Durable authority for classifying and completing one staged branch push. */
-export const branchPushSettlementOutbox = pgTable(
-  "branch_push_settlement_outbox",
+/**
+ * One settlement identity for a batch of staged pushes: recovery claims the batch
+ * whole, and one completion transaction settles every member.
+ */
+export const branchPushSettlementBatches = pgTable(
+  "branch_push_settlement_batches",
   {
-    pushId: bigint("push_id", { mode: "number" })
-      .primaryKey()
-      .references(() => pushLineage.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+    id: uuid("id").primaryKey(),
     state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
-    documentTitle: text("document_title").notNull(),
-    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
-    pushUpdate: byteaColumn("push_update").notNull(),
-    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
-    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
-    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
-      .notNull()
-      .default(0),
-    settledJoinVersion: bigint("settled_join_version", { mode: "number" }),
     claimToken: uuid("claim_token"),
     claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
     claimKind: text("claim_kind").$type<BranchPushSettlementClaimKind>(),
@@ -217,18 +205,19 @@ export const branchPushSettlementOutbox = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("branch_push_settlement_outbox_recovery")
+    index("branch_push_settlement_batches_recovery")
       .on(table.availableAt, table.leaseExpiresAt, table.createdAt)
       .where(sql`${table.state} = 'pending'`),
-    index("branch_push_settlement_outbox_document_unresolved")
-      .on(table.documentId)
+    // Writer admissions join unresolved members; few batches are ever unresolved.
+    index("branch_push_settlement_batches_unresolved")
+      .on(table.id)
       .where(sql`${table.state} <> 'completed'`),
     check(
-      "branch_push_settlement_outbox_state_valid",
+      "branch_push_settlement_batches_state_valid",
       sql`${table.state} IN ('pending', 'blocked', 'completed')`,
     ),
     check(
-      "branch_push_settlement_outbox_terminal_shape",
+      "branch_push_settlement_batches_terminal_shape",
       sql`(
         (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
         OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
@@ -236,19 +225,54 @@ export const branchPushSettlementOutbox = pgTable(
       )`,
     ),
     check(
-      "branch_push_settlement_outbox_claim_shape",
+      "branch_push_settlement_batches_claim_shape",
       sql`${table.state} <> 'pending' OR (
         (${table.claimToken} IS NOT NULL AND ${table.claimKind} IS NOT NULL AND ${table.claimedAt} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)
         OR (${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
       )`,
     ),
     check(
-      "branch_push_settlement_outbox_claim_kind_valid",
+      "branch_push_settlement_batches_claim_kind_valid",
       sql`${table.claimKind} IS NULL OR ${table.claimKind} IN ('warm', 'recovery')`,
     ),
     check(
+      "branch_push_settlement_batches_counters_valid",
+      sql`${table.attemptCount} >= 0 AND ${table.claimEpoch} >= 0`,
+    ),
+  ],
+);
+
+/** One staged push of a settlement batch: its lock cut, update, trail and joins. */
+export const branchPushSettlementOutbox = pgTable(
+  "branch_push_settlement_outbox",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .primaryKey()
+      .references(() => pushLineage.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    documentTitle: text("document_title").notNull(),
+    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
+    pushUpdate: byteaColumn("push_update").notNull(),
+    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
+    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
+    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("branch_push_settlement_outbox_document").on(table.documentId),
+    uniqueIndex("branch_push_settlement_outbox_batch_document").on(table.batchId, table.documentId),
+    check(
       "branch_push_settlement_outbox_counters_valid",
-      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion} AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
+      sql`${table.joinVersion} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion}`,
     ),
   ],
 );

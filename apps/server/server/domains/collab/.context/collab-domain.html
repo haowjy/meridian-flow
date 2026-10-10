@@ -540,9 +540,12 @@ call. So any server-side apply that follows an <code>await</code> must re-check
 the live document and apply in one synchronous block with no
 <code>await</code> between them. agent-edit's
 <code>applyCommittedUpdateWithRecheck</code> is that block for response
-commits and reversal; push settlement uses a full-state fingerprint compare
-plus the writer-ingress generation inside its completion fence.
-<span class="ref"><code>adapters/hocuspocus-coordinator.ts</code>, <code>packages/agent-edit/src/tool/mutation-commit.ts</code>, <code>domain/branch-push-transition.ts</code> <code>completeUnderFence</code>, <a href="websocket-concurrency.md">WebSocket concurrency</a></span>
+commits and reversal. Push settlement is the exception: it rechecks every
+document of its batch (full-state fingerprint plus the writer-ingress
+generation) inside its completion transaction and applies to warm rooms only
+after commit. Writer admissions after the recheck wait on the document locks
+and journal after the push, and Yjs merges both orders to the same state.
+<span class="ref"><code>adapters/hocuspocus-coordinator.ts</code>, <code>packages/agent-edit/src/tool/mutation-commit.ts</code>, <code>domain/branch-push-transition.ts</code> <code>recheckWarmState</code>, <a href="websocket-concurrency.md">WebSocket concurrency</a></span>
 </p>
 
 <details>
@@ -638,37 +641,42 @@ instruction to the AI.</p>
 <h3>Settlement: how a push reaches live</h3>
 <p>
 A push (Apply or automatic) is a staged, fenced transition so that warm and
-cold execution produce the same live document.
+cold execution produce the same live document. Every push one commit stages
+belongs to one <em>settlement batch</em>; a single push is a batch of one.
 </p>
 <ol>
   <li><strong>Lock.</strong> Branch locks in branch-ID order, then live
     coordinator locks in document-ID order. The first thing done inside each
     live lock is to capture the complete Yjs state: the <em>lock cut</em>.</li>
-  <li><strong>Durable commit.</strong> One transaction writes
-    <code>push_lineage</code> (publication identity and idempotency key), the
-    <code>branch_push_settlement_outbox</code> row (lock cut, push update,
-    trail seed, claim), and the required change trail.</li>
-  <li><strong>Settle.</strong> Drain writer admissions that started before
-    this point, reload the outbox (including any writer edits joined after the
-    cut), rebuild the final pre-push document from the lock cut plus those
-    post-cut updates, and settle the trail.</li>
-  <li><strong>Complete under the fence.</strong> In one transaction under the
-    document mutation lock: append the branch's exact authored rows with their
-    original attribution plus one <code>reconcile</code> row carrying the whole
-    push update, re-derive the projection from the durable journal, then, still
-    synchronously, compare the live room's full-state fingerprint to the
-    rebuilt pre-push document and apply the push only if they match. A newer
-    writer admission or mismatch means retry.</li>
+  <li><strong>Durable commit.</strong> One transaction writes every
+    <code>push_lineage</code> row (publication identity and idempotency key),
+    the required change trails, one
+    <code>branch_push_settlement_batches</code> row (the claim), and one
+    <code>branch_push_settlement_outbox</code> member per push (lock cut, push
+    update, trail seed).</li>
+  <li><strong>Classify.</strong> Drain writer admissions that started before
+    this point and reload the batch, including any writer edits joined after
+    each cut, for sweep evidence.</li>
+  <li><strong>Complete in one transaction.</strong> Work locks, namespace
+    locks, then every document mutation lock in id order; reread each member's
+    cut and join version; settle the batch's trails in one pass; append each
+    branch's exact authored rows plus one <code>reconcile</code> row carrying
+    the whole push update; re-derive projections; run publication steps around text
+    admission; then, synchronously, compare every warm room's full-state
+    fingerprint with its rebuilt pre-push document. A newer writer admission
+    or mismatch anywhere rolls the whole batch back and retries.</li>
+  <li><strong>After commit.</strong> Apply the admitted updates to warm rooms,
+    run publication steps' after-commit effects, deliver change events.</li>
 </ol>
-<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>withCompletionFence</code> and <code>completeStagedPush</code></p>
+<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>domain/ports/settlement-publication.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>completeBatch</code> and <code>completeStagedPush</code></p>
 <p>
 The reconcile row exists because the active authored rows alone can omit
 causal dependencies of the branch state being published; replaying only them
 cold would not reproduce the merged live document. It is coverage, not an
 author: dependency checks ignore it and it is never a reversal target. A crash
-after the durable commit leaves a pending outbox row that the recovery lane
+after the durable commit leaves a pending batch that the recovery lane
 (<code>recoverPendingLiveSettlements</code>, run by the change-trail worker)
-completes with the same code path. Depth lives in
+claims whole and completes with the same code path. Depth lives in
 <a href="settlement-and-trail.md">push settlement and change trail</a>.
 </p>
 

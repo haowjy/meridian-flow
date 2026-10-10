@@ -29,13 +29,13 @@ import {
   type PushLineageRow,
   type WorkPushPolicyStore,
 } from "../domain/branch-push-contracts.js";
-import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
+import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
+import type { StageSettlementBatchWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -44,15 +44,6 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
   return [...pushes].sort((left, right) =>
     left.branch.documentId.localeCompare(right.branch.documentId),
   );
-}
-
-async function persistRequiredTrail(
-  persistence: ChangeTrailPersistence,
-  prepared: PreparedPushCommit,
-  push: PushLineageRow,
-  notices?: NoticePort,
-): Promise<void> {
-  await persistDurableTrailRecord(prepared.trail, push, persistence, notices);
 }
 
 export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
@@ -196,7 +187,7 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
 
 export function createDrizzlePushCommitStore(
   db: Database,
-  stagePendingSettlementWithinTx: StagePendingSettlementWithinTx,
+  stageSettlementBatchWithinTx: StageSettlementBatchWithinTx,
   changeTrails: ChangeTrailPersistence,
   notices?: NoticePort,
   workProjection?: WorkProjectionMutation,
@@ -204,32 +195,6 @@ export function createDrizzlePushCommitStore(
   const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
-    async commitPush(input) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
-        mutatePending([input.branch.branchId], async () => {
-          const txDb = currentDrizzleDb(db);
-          const existing = await findLineage(txDb, input.idempotencyKey);
-          if (existing) return { status: "conflict" as const, push: existing };
-          const now = new Date();
-          const lineage = await commitPreparedPush(txDb, input, now);
-          const push = mapLineage(lineage);
-          await persistRequiredTrail(changeTrails, input, push, notices);
-          await stagePendingSettlementWithinTx(txDb, input, push);
-          return {
-            status: "inserted" as const,
-            push,
-          };
-        }),
-      ).catch(async (error: unknown) => {
-        if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
-        // Archive can win after another process committed this exact attempt.
-        // A durable receipt is history, not permission to perform another write.
-        const existing = await findLineage(currentDrizzleDb(db), input.idempotencyKey);
-        if (existing) return { status: "conflict" as const, push: existing };
-        throw error;
-      });
-    },
-
     async commitDiscard(input) {
       return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], () =>
@@ -255,41 +220,46 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitPushBatch(input) {
-      return runWithActiveWorkDrafts(
-        db,
-        { branchIds: input.pushes.map(({ branch }) => branch.branchId) },
-        () =>
-          mutatePending(
-            input.pushes.map(({ branch }) => branch.branchId),
-            async () => {
-              const txDb = currentDrizzleDb(db);
-              const pushes = sortPushesByDocumentId(input.pushes);
-              for (const push of pushes) {
-                const existing = await findLineage(txDb, push.idempotencyKey);
-                if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
-              }
-              const now = new Date();
-              const rows = [];
-              for (const push of pushes) {
-                const lineage = await commitPreparedPush(txDb, push, now);
-                rows.push(lineage);
-                const mapped = mapLineage(lineage);
-                await persistRequiredTrail(changeTrails, push, mapped, notices);
-                await stagePendingSettlementWithinTx(txDb, push, mapped);
-              }
-              const mappedPushes = rows.map(mapLineage);
-              return {
-                pushes: mappedPushes,
-              };
-            },
-          ),
+      const branchIds = input.pushes.map(({ branch }) => branch.branchId);
+      const firstCommitted = async () => {
+        for (const prepared of sortPushesByDocumentId(input.pushes)) {
+          const existing = await findLineage(currentDrizzleDb(db), prepared.idempotencyKey);
+          if (existing) return existing;
+        }
+        return null;
+      };
+      return runWithActiveWorkDrafts(db, { branchIds }, () =>
+        mutatePending(branchIds, async () => {
+          const txDb = currentDrizzleDb(db);
+          const existing = await firstCommitted();
+          if (existing) return { status: "conflict" as const, push: existing };
+          const sorted = sortPushesByDocumentId(input.pushes);
+          // Every document lock before any trail lock, as completion takes them.
+          for (const prepared of sorted)
+            await lockDocumentMutation(txDb, prepared.branch.documentId);
+          const now = new Date();
+          const staged = [];
+          for (const prepared of sorted) {
+            staged.push({
+              prepared,
+              push: mapLineage(await commitPreparedPush(txDb, prepared, now)),
+            });
+          }
+          // A durable commit requires its trail bundle: every push's, in one record.
+          await persistDurableTrailRecords(
+            staged.map(({ prepared, push }) => ({ record: prepared.trail, push })),
+            changeTrails,
+            notices,
+          );
+          await stageSettlementBatchWithinTx(txDb, input.settlement, staged);
+          return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
+        }),
       ).catch(async (error: unknown) => {
         if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
-        for (const push of sortPushesByDocumentId(input.pushes)) {
-          if (await findLineage(currentDrizzleDb(db), push.idempotencyKey)) {
-            throw new BranchPushCommitConflictError(push.branch.branchId);
-          }
-        }
+        // Archive can win after another process committed this exact attempt.
+        // A durable receipt is history, not permission to perform another write.
+        const existing = await firstCommitted();
+        if (existing) return { status: "conflict" as const, push: existing };
         throw error;
       });
     },

@@ -470,7 +470,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     await expect(apply(recovered.documentId)).rejects.toThrow("crash after the durable push");
     expect(await settlement(recovered.aheadId)).toBeNull();
     await db.execute(
-      sql`UPDATE branch_push_settlement_outbox SET lease_expires_at = to_timestamp(0), available_at = to_timestamp(0) WHERE state = 'pending'`,
+      sql`UPDATE branch_push_settlement_batches SET lease_expires_at = to_timestamp(0), available_at = to_timestamp(0) WHERE state = 'pending' AND claim_token IS NOT NULL`,
     );
     let cold!: ReturnType<typeof createHarness>;
     cold = createHarness(db, { arrivals: registryFor(() => cold) });

@@ -107,8 +107,9 @@ export type PreparedPushCommit = {
   pushedByUserId?: UserId;
   /** Required participant in the atomic branch-push commit bundle. */
   trail: DurableTrailRecord;
-  /** Crash-recoverable handoff guarding the post-commit LOCK-WS window. */
-  pendingLiveSettlement: Omit<PendingLiveSettlement, "push">;
+  documentTitle: string;
+  /** The live state captured as the document lock was taken (the LOCK-WS cut). */
+  lockCutUpdate: Uint8Array;
 };
 
 export type PreparedPush = {
@@ -116,10 +117,14 @@ export type PreparedPush = {
   lockCutUpdate: Uint8Array;
   prepared: Omit<
     PreparedPushCommit,
-    "pushedByUserId" | "trail" | "pendingLiveSettlement" | "receiptId"
+    "pushedByUserId" | "trail" | "receiptId" | "documentTitle" | "lockCutUpdate"
   > & { receiptId: string };
 };
 
+/** The durable identity a batch of staged pushes settles under, minted before its commit. */
+export type SettlementBatchIdentity = { batchId: string; claimToken: string };
+
+/** One staged push of a settlement batch, as completion and recovery load it. */
 export type PendingLiveSettlement = {
   push: PushLineageRow;
   documentTitle: string;
@@ -130,10 +135,18 @@ export type PendingLiveSettlement = {
   /** Optional evidence for live-session sweep elevation; never settlement authority. */
   sweepEvidence: SweepEvidence | null;
   joinVersion: number;
-  settledJoinVersion: number | null;
+};
+
+/**
+ * Every push one commit staged, settled whole: one claim, one completion
+ * transaction, one recovery. A single push is a batch of one.
+ */
+export type PendingSettlementBatch = {
+  batchId: string;
   claim: SettlementClaim;
   attemptCount: number;
-  state: "pending";
+  /** Sorted by document id, the global document lock order. */
+  members: readonly PendingLiveSettlement[];
 };
 
 export type SweepProjectionDiagnostics = {
@@ -146,8 +159,6 @@ export type SettlementClaim = {
   kind: "warm" | "recovery";
   leaseExpiresAt: Date;
 };
-
-export type CompletionFenceResult = "applied" | "already_applied" | "retry";
 
 type TrailContributionTarget = {
   owner: NormalizedTrail["owner"];
@@ -209,15 +220,17 @@ export type BranchJournalReadStore = {
 };
 
 export type PushCommitStore = {
-  commitPush(
-    input: PreparedPushCommit,
-  ): Promise<
-    { status: "inserted"; push: PushLineageRow } | { status: "conflict"; push: PushLineageRow }
+  /**
+   * Commits every push and stages them under one settlement batch, atomically.
+   * A push whose idempotency key already committed reports `conflict` and commits nothing.
+   */
+  commitPushBatch(input: {
+    settlement: SettlementBatchIdentity;
+    pushes: readonly PreparedPushCommit[];
+  }): Promise<
+    { status: "inserted"; pushes: PushLineageRow[] } | { status: "conflict"; push: PushLineageRow }
   >;
   commitDiscard(input: PreparedDiscardCommit): Promise<void>;
-  commitPushBatch(input: { pushes: PreparedPushCommit[] }): Promise<{
-    pushes: PushLineageRow[];
-  }>;
   commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
   /**
    * Seam B for a review that changes several drafts in one transaction: locks

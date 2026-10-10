@@ -100,13 +100,13 @@ export type ChangeTrailPersistence = {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
     settlementRefinement?: {
-      pushId: string;
+      pushIds: readonly string[];
       currentVersion: boolean;
     };
   }): Promise<readonly CommittedChangeTrailProjection[]>;
-  replacePushContribution(
-    pushId: string,
-    replacement: TrailContributionReplacement,
+  /** Replaces several pushes' provisional contributions in one pass over each trail. */
+  replacePushContributions(
+    contributions: readonly { pushId: string; replacement: TrailContributionReplacement }[],
     context: { refineCurrentVersion: boolean },
   ): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;

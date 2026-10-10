@@ -156,8 +156,11 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           })
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
-        const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
-        if (input.settlementRefinement) incomingPushIds.add(input.settlementRefinement.pushId);
+        const refinedPushIds = new Set<string | null>(input.settlementRefinement?.pushIds ?? []);
+        const incomingPushIds = new Set([
+          ...trail.changes.map((change) => change.pushId),
+          ...refinedPushIds,
+        ]);
         const persistedChanges = existingDetails.flatMap(
           (detail) => detail.changes as TrailChangeV1[],
         );
@@ -181,9 +184,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             : persistedChanges
           : mergeTrailChanges(
               input.settlementRefinement
-                ? persistedChanges.filter(
-                    (change) => change.pushId !== input.settlementRefinement?.pushId,
-                  )
+                ? persistedChanges.filter((change) => !refinedPushIds.has(change.pushId))
                 : persistedChanges,
               replacement,
             );
@@ -337,23 +338,35 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       }
       return committed;
     },
-    async replacePushContribution(pushId, replacement, context) {
-      const trails = replacement.targets.map(({ owner, changes: contribution }) => {
-        const changes = [...contribution];
-        return {
+    async replacePushContributions(contributions, context) {
+      const byTrail = new Map<
+        string,
+        { owner: NormalizedTrail["owner"]; changes: TrailChangeV1[] }
+      >();
+      const documentTitles = new Map<string, string>();
+      for (const { replacement } of contributions) {
+        for (const [documentId, title] of replacement.documentTitles) {
+          documentTitles.set(documentId, title);
+        }
+        for (const { owner, changes } of replacement.targets) {
+          const key = trailIdForOwner(owner);
+          const target = byTrail.get(key) ?? { owner, changes: [] };
+          target.changes.push(...changes);
+          byTrail.set(key, target);
+        }
+      }
+      return writer.record({
+        trails: [...byTrail.values()].map(({ owner, changes }) => ({
           owner,
           changes,
           counts: {
             changes: changes.length,
             documents: new Set(changes.map((change) => change.documentId)).size,
           },
-        };
-      });
-      return writer.record({
-        trails,
-        documentTitles: replacement.documentTitles,
+        })),
+        documentTitles,
         settlementRefinement: {
-          pushId,
+          pushIds: contributions.map(({ pushId }) => pushId),
           currentVersion: context.refineCurrentVersion,
         },
       });

@@ -63,10 +63,11 @@ import {
 } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
+import { manifestArrivalPublication } from "./adapters/drizzle-manifest-arrivals.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
   createDrizzlePendingSettlementStore,
-  stagePendingSettlementWithinTx,
+  stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
@@ -295,12 +296,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivationStore,
     deps.notices,
     deps.eventSink,
-    deps.arrivals,
+    deps.arrivals ? manifestArrivalPublication(deps.db, deps.arrivals) : undefined,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(
     deps.db,
-    stagePendingSettlementWithinTx,
+    stageSettlementBatchWithinTx,
     changeTrails,
     deps.notices,
     deps.workProjectionMutation,

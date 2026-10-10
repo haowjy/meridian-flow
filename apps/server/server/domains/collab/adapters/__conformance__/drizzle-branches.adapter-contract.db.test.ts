@@ -45,7 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleWorkDraftPendingStore,
       createDrizzleWorkPushPolicyStore,
     } = await import("../drizzle-branch-push.js");
-    const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
+    const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
       "../drizzle-pending-settlement.js"
     );
     const { createDrizzleChangeTrailAggregateWriter } = await import(
@@ -195,7 +195,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const commitStore = createDrizzlePushCommitStore(
         db,
-        stagePendingSettlementWithinTx,
+        stageSettlementBatchWithinTx,
         changeTrails,
       );
       return {
@@ -529,21 +529,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveDoc: manifest.doc,
       });
       const realChangeTrails = createDrizzleChangeTrailAggregateWriter(db);
-      let trailRecordCalls = 0;
-      let failSecondTrailRecord = true;
+      // The batch commits the content push's and its companion's trails in one record.
+      let failTrailRecord = true;
       const failingChangeTrails = {
         async record(input: Parameters<typeof realChangeTrails.record>[0]) {
-          trailRecordCalls += 1;
-          if (failSecondTrailRecord && trailRecordCalls === 2) {
+          if (failTrailRecord) {
             throw new Error("injected companion trail failure");
           }
           return realChangeTrails.record(input);
         },
-        replacePushContribution: (
-          pushId: Parameters<typeof realChangeTrails.replacePushContribution>[0],
-          replacement: Parameters<typeof realChangeTrails.replacePushContribution>[1],
-          context: Parameters<typeof realChangeTrails.replacePushContribution>[2],
-        ) => realChangeTrails.replacePushContribution(pushId, replacement, context),
+        replacePushContributions: (
+          contributions: Parameters<typeof realChangeTrails.replacePushContributions>[0],
+          context: Parameters<typeof realChangeTrails.replacePushContributions>[1],
+        ) => realChangeTrails.replacePushContributions(contributions, context),
         reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
           realChangeTrails.reopenOwners(owners),
       };
@@ -585,8 +583,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await db.select().from(branchWriteJournal)).filter((row) => row.status === "pushed"),
       ).toEqual([]);
 
-      failSecondTrailRecord = false;
-      trailRecordCalls = 0;
+      failTrailRecord = false;
       const pushed = await branchPush.pushToLiveWithManifestEntry(pushInput);
       const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const lineageRows = await db.select().from(pushLineage);
@@ -645,10 +642,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       manifest.doc.destroy();
     });
 
-    it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
+    it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {
       const pushStore = createDrizzlePushCommitStore(
         db,
-        stagePendingSettlementWithinTx,
+        stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
       );
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
@@ -676,49 +673,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ state: Buffer.from(Y.encodeStateAsUpdate(docWithText("concurrent"))) })
         .where(eq(documentBranches.id, branch.branchId));
       await expect(
-        pushStore.commitPush({
-          branch,
-          journalRows: [
-            {
-              id: journalRow.id,
-              branchId: branch.branchId,
-              generation: branch.generation,
-              wId: null,
-              source: "agent",
-              threadId: null,
-              turnId: null,
-              actorUserId: null,
-              updateData: update,
-              draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
-              status: "active",
-            },
-          ],
-          pushUpdate: update,
-          idempotencyKey: "stale-branch",
-          trail: {
-            documentId: DOC_ID,
-            documentTitle: "document",
-            receiptId: "receipt",
-            threadIds: [],
-            journalOwners: [],
-            changes: [],
-          },
-          pendingLiveSettlement: {
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+        pushStore.commitPushBatch(
+          batchOfOne({
+            branch,
+            journalRows: [
+              {
+                id: journalRow.id,
+                branchId: branch.branchId,
+                generation: branch.generation,
+                wId: null,
+                source: "agent",
+                threadId: null,
+                turnId: null,
+                actorUserId: null,
+                updateData: update,
+                draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
+                status: "active",
+              },
+            ],
             pushUpdate: update,
-            postCutUpdates: [],
-            sweepEvidence: null,
-            joinVersion: 0,
-            settledJoinVersion: null,
-            claim: {
-              token: "00000000-0000-4000-8000-000000000699",
-              epoch: 1,
-              kind: "warm",
-              leaseExpiresAt: new Date(Date.now() + 30_000),
-            },
-            attemptCount: 0,
-            state: "pending",
+            idempotencyKey: "stale-branch",
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",
@@ -727,8 +701,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               journalOwners: [],
               changes: [],
             },
-          },
-        }),
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+          }),
+        ),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
 
@@ -746,35 +722,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ status: "discarded" })
         .where(eq(branchWriteJournal.id, journalRow.id));
       await expect(
-        pushStore.commitPush({
-          branch: fresh,
-          journalRows: freshRows,
-          pushUpdate: update,
-          idempotencyKey: "inactive-row",
-          trail: {
-            documentId: DOC_ID,
-            documentTitle: "document",
-            receiptId: "receipt",
-            threadIds: [],
-            journalOwners: [],
-            changes: [],
-          },
-          pendingLiveSettlement: {
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+        pushStore.commitPushBatch(
+          batchOfOne({
+            branch: fresh,
+            journalRows: freshRows,
             pushUpdate: update,
-            postCutUpdates: [],
-            sweepEvidence: null,
-            joinVersion: 0,
-            settledJoinVersion: null,
-            claim: {
-              token: "00000000-0000-4000-8000-000000000699",
-              epoch: 1,
-              kind: "warm",
-              leaseExpiresAt: new Date(Date.now() + 30_000),
-            },
-            attemptCount: 0,
-            state: "pending",
+            idempotencyKey: "inactive-row",
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",
@@ -783,8 +736,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               journalOwners: [],
               changes: [],
             },
-          },
-        }),
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+          }),
+        ),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
     });
@@ -999,4 +954,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
     });
   });
+}
+
+function batchOfOne<T>(prepared: T) {
+  return {
+    settlement: {
+      batchId: "00000000-0000-4000-8000-000000000698",
+      claimToken: "00000000-0000-4000-8000-000000000699",
+    },
+    pushes: [prepared],
+  };
 }

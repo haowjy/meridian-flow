@@ -12,7 +12,6 @@ import {
   type BranchPushService,
   type BranchPushServiceInput,
   type CandidateBatch,
-  type PendingLiveSettlement,
   type PushCandidate,
   type PushLineageRow,
   type PushToLiveResult,
@@ -26,7 +25,6 @@ import {
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
-import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import { createWorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -140,20 +138,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       receiptId,
     );
 
-  function pendingLiveSettlement(
-    prepared: Awaited<ReturnType<typeof prepareCandidate>>,
-    documentTitle: string,
-    trail: DurableTrailRecord,
-  ): Omit<PendingLiveSettlement, "push"> {
-    return transition.prepare({
-      documentTitle,
-      sweepEvidence: null,
-      lockCutUpdate: prepared.lockCutUpdate,
-      pushUpdate: prepared.prepared.pushUpdate,
-      trail,
-    });
-  }
-
   async function executeCandidateBatch(
     batch: CandidateBatch,
     branches: ReadonlyMap<string, BranchSnapshot>,
@@ -196,7 +180,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             receiptId: batch.receiptId,
             pushedByUserId: batch.pushedByUserId,
             trail,
-            pendingLiveSettlement: pendingLiveSettlement(candidate, documentTitle, trail),
+            documentTitle,
+            lockCutUpdate: candidate.lockCutUpdate,
             branch: phase.branch,
           };
         });

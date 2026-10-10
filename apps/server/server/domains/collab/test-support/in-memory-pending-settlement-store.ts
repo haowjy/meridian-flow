@@ -3,10 +3,10 @@
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type {
   PendingLiveSettlement,
+  PendingSettlementBatch,
   SettlementClaim,
   TrailContributionReplacement,
 } from "../domain/branch-push-contracts.js";
-import type { DurableTrailRecord } from "../domain/ports/change-trail-persistence.js";
 import type {
   PendingSettlementStore,
   SettlementAdmission,
@@ -14,261 +14,233 @@ import type {
 
 const LEASE_MS = 30_000;
 
-type SettlementState = {
+type MemberState = {
   pending: PendingLiveSettlement;
+  classifiedJoinVersion: number;
+  joinedSources: Set<string>;
+  replacement?: TrailContributionReplacement;
+};
+
+type BatchState = {
+  batchId: string;
+  members: MemberState[];
   state: "pending" | "blocked" | "completed";
   claim: SettlementClaim | null;
   claimEpoch: number;
-  classifiedJoinVersion: number;
-  settledJoinVersion: number | null;
-  joinedSources: Set<string>;
   availableAt: Date;
   attemptCount: number;
   lastError?: string;
   lastErrorCode?: string;
-  settledTrail?: DurableTrailRecord;
-  replacement?: TrailContributionReplacement;
 };
 
 export type InMemoryPendingSettlementStore = PendingSettlementStore & {
-  /** Mirrors the durable staging performed inside a successful push commit. */
-  stage(pending: PendingLiveSettlement): void;
+  /** Mirrors the durable staging performed inside a successful batch commit. */
+  stage(input: {
+    batchId: string;
+    claimToken: string;
+    members: readonly Omit<PendingLiveSettlement, "postCutUpdates" | "joinVersion">[];
+  }): void;
 };
 
 export function createInMemoryPendingSettlementStore(options?: {
-  materialize?: (pending: PendingLiveSettlement) => PendingLiveSettlement;
   onCompleted?: (pushId: number) => void;
 }): InMemoryPendingSettlementStore {
-  const settlements = new Map<number, SettlementState>();
+  const batches = new Map<string, BatchState>();
+  // One fence per batch, as the batch row serializes its owners.
   const fences = new KeyedMutex();
 
   const store: InMemoryPendingSettlementStore = {
-    stage(pending) {
+    stage(input) {
       const now = new Date();
-      const claim = {
-        ...pending.claim,
-        leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
-      };
-      settlements.set(pending.push.id, {
-        pending: clonePending(pending, claim),
+      batches.set(input.batchId, {
+        batchId: input.batchId,
+        members: [...input.members]
+          .sort((left, right) => left.push.documentId.localeCompare(right.push.documentId))
+          .map((member) => ({
+            pending: { ...member, postCutUpdates: [], joinVersion: 0 },
+            classifiedJoinVersion: 0,
+            joinedSources: new Set(),
+          })),
         state: "pending",
-        claim,
-        claimEpoch: claim.epoch,
-        classifiedJoinVersion: pending.joinVersion,
-        settledJoinVersion: pending.settledJoinVersion,
-        joinedSources: new Set(),
+        claim: {
+          token: input.claimToken,
+          epoch: 1,
+          kind: "warm",
+          leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
+        },
+        claimEpoch: 1,
         availableAt: now,
-        attemptCount: pending.attemptCount,
+        attemptCount: 0,
       });
     },
 
     async joinAdmission(input) {
-      const targetIds = [...settlements.values()]
-        .filter(
-          ({ pending, state }) =>
-            pending.push.documentId === input.documentId &&
-            state !== "completed" &&
-            String(pending.push.id) !== input.excludePushId,
-        )
-        .map(({ pending }) => pending.push.id)
-        .sort((left, right) => left - right);
-      for (const pushId of targetIds) {
-        await fences.run(String(pushId), async () => {
-          const state = settlements.get(pushId);
-          if (
-            !state ||
-            state.state === "completed" ||
-            state.pending.push.documentId !== input.documentId ||
-            String(pushId) === input.excludePushId
-          ) {
-            return;
+      for (const batch of [...batches.values()]) {
+        await fences.run(batch.batchId, async () => {
+          if (batch.state === "completed") return;
+          for (const member of batch.members) {
+            if (
+              member.pending.push.documentId !== input.documentId ||
+              String(member.pending.push.id) === input.excludePushId
+            ) {
+              continue;
+            }
+            const sourceKey = admissionSourceKey(input);
+            if (member.joinedSources.has(sourceKey)) continue;
+            member.joinedSources.add(sourceKey);
+            member.pending = {
+              ...member.pending,
+              postCutUpdates: [...member.pending.postCutUpdates, input.update],
+              joinVersion: member.pending.joinVersion + 1,
+            };
           }
-          const sourceKey = admissionSourceKey(input);
-          if (state.joinedSources.has(sourceKey)) return;
-          state.joinedSources.add(sourceKey);
-          state.pending = {
-            ...state.pending,
-            postCutUpdates: [...state.pending.postCutUpdates, input.update],
-            joinVersion: state.pending.joinVersion + 1,
-            settledJoinVersion: null,
-          };
-          state.settledJoinVersion = null;
         });
       }
     },
 
-    async loadLiveSettlement(pushId) {
-      const state = settlements.get(pushId);
-      if (state?.state !== "pending") {
-        throw new Error(`Pending branch push settlement ${pushId} is unavailable`);
+    async loadSettlementBatch(batchId) {
+      const batch = batches.get(batchId);
+      if (batch?.state !== "pending") {
+        throw new Error(`Pending settlement batch ${batchId} is unavailable`);
       }
-      if (!state.claim) {
-        throw new Error(`Pending branch push settlement ${pushId} is not owned`);
-      }
-      return snapshot(state, options?.materialize);
+      return snapshot(batch);
     },
 
-    async claimRecoverable(input) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
+    async claimRecoverableBatch(input) {
+      return fences.run(input.batchId, async () => {
+        const batch = batches.get(input.batchId);
         const now = new Date();
         if (
-          state?.state !== "pending" ||
-          state.availableAt > now ||
-          (state.claim && state.claim.leaseExpiresAt > now)
+          batch?.state !== "pending" ||
+          batch.availableAt > now ||
+          (batch.claim && batch.claim.leaseExpiresAt > now)
         ) {
           return null;
         }
-        const claim: SettlementClaim = {
+        batch.claimEpoch += 1;
+        batch.claim = {
           token: input.token,
-          epoch: state.claimEpoch + 1,
+          epoch: batch.claimEpoch,
           kind: "recovery",
           leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
         };
-        state.claim = claim;
-        state.claimEpoch = claim.epoch;
-        return snapshot(state, options?.materialize);
+        return snapshot(batch);
       });
     },
 
     async renewClaim(input) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
-        if (!isOwned(state, input.claim)) return null;
-        const claim = {
-          ...input.claim,
-          leaseExpiresAt: new Date(Date.now() + LEASE_MS),
-        };
-        state.claim = claim;
+      return fences.run(input.batchId, async () => {
+        const batch = batches.get(input.batchId);
+        if (!isOwned(batch, input.claim)) return null;
+        const claim = { ...input.claim, leaseExpiresAt: new Date(Date.now() + LEASE_MS) };
+        batch.claim = claim;
         return { ...claim };
       });
     },
 
-    async handoffClaim(input) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
-        if (!isOwned(state, input.claim)) return false;
-        state.claim = null;
-        state.availableAt = new Date();
-        return true;
-      });
-    },
-
     async recordFailure(input) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
-        if (!isOwned(state, input.claim)) return false;
-        state.attemptCount += 1;
-        state.lastError = input.error;
-        state.claim = null;
-        const backoffSeconds = Math.min(60, 2 ** Math.min(6, state.attemptCount));
-        state.availableAt = new Date(Date.now() + backoffSeconds * 1_000);
+      return fences.run(input.batchId, async () => {
+        const batch = batches.get(input.batchId);
+        if (!isOwned(batch, input.claim)) return false;
+        batch.attemptCount += 1;
+        batch.lastError = input.error;
+        batch.claim = null;
+        const backoffSeconds = Math.min(60, 2 ** Math.min(6, batch.attemptCount));
+        batch.availableAt = new Date(Date.now() + backoffSeconds * 1_000);
         return true;
       });
     },
 
     async block(input) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
-        if (!isOwned(state, input.claim)) return false;
-        state.state = "blocked";
-        state.lastErrorCode = input.code;
-        state.lastError = input.error;
-        state.claim = null;
+      return fences.run(input.batchId, async () => {
+        const batch = batches.get(input.batchId);
+        if (!isOwned(batch, input.claim)) return false;
+        batch.state = "blocked";
+        batch.lastErrorCode = input.code;
+        batch.lastError = input.error;
+        batch.claim = null;
         return true;
       });
     },
 
-    async settlePushTrail(input) {
-      return fences.run(String(input.push.id), async () => {
-        const state = settlements.get(input.push.id);
-        if (!isOwned(state, input.claim, input.joinVersion)) return false;
-        state.settledTrail = input.trail;
-        state.replacement = input.replacement;
-        state.classifiedJoinVersion = input.joinVersion;
-        state.settledJoinVersion = input.joinVersion;
-        state.pending = {
-          ...state.pending,
-          settledJoinVersion: input.joinVersion,
-        };
-        return [];
-      });
-    },
-
-    async withCompletionFence(input, complete) {
-      return fences.run(String(input.pushId), async () => {
-        const state = settlements.get(input.pushId);
+    async completeBatch(input) {
+      const result = await fences.run(input.batchId, async () => {
+        const batch = batches.get(input.batchId);
+        if (!isOwned(batch, input.claim)) return "retry" as const;
         if (
-          !isOwned(state, input.claim, input.settledJoinVersion) ||
-          state.settledJoinVersion !== input.settledJoinVersion
+          batch.members.length !== input.members.length ||
+          input.members.some(
+            (member) =>
+              batch.members.find(({ pending }) => pending.push.id === member.push.id)?.pending
+                .joinVersion !== member.joinVersion,
+          )
         ) {
-          return "retry";
+          return "retry" as const;
         }
-        const result = complete();
-        if (result !== "applied" && result !== "already_applied" && result !== "retry") {
-          throw new Error("Completion fence callback must return synchronously");
+        const decision = input.recheck(
+          batch.members.map(({ pending }) => ({
+            pushId: pending.push.id,
+            documentId: pending.push.documentId,
+            lockCutUpdate: pending.lockCutUpdate,
+            postCutUpdates: pending.postCutUpdates,
+            pushUpdate: pending.pushUpdate,
+          })),
+        );
+        if (decision !== "commit" && decision !== "retry") {
+          throw new Error("Batch settlement recheck must return synchronously");
         }
-        if (result === "retry") return result;
-        state.state = "completed";
-        state.claim = null;
-        options?.onCompleted?.(input.pushId);
-        return result;
+        if (decision === "retry") return decision;
+        for (const member of batch.members) {
+          const settled = input.members.find(({ push }) => push.id === member.pending.push.id);
+          member.classifiedJoinVersion = member.pending.joinVersion;
+          member.replacement = settled?.replacement;
+        }
+        batch.state = "completed";
+        batch.claim = null;
+        return "commit" as const;
       });
+      if (result === "retry") return { status: "retry" as const };
+      input.afterCommit();
+      for (const member of input.members) options?.onCompleted?.(member.push.id);
+      return { status: "completed" as const, projections: [] };
     },
 
-    async listRecoverableSettlementIds() {
+    async listRecoverableBatchIds() {
       const now = new Date();
-      return [...settlements.values()]
+      return [...batches.values()]
         .filter(
-          (state) =>
-            state.state === "pending" &&
-            state.availableAt <= now &&
-            (!state.claim || state.claim.leaseExpiresAt <= now),
+          (batch) =>
+            batch.state === "pending" &&
+            batch.availableAt <= now &&
+            (!batch.claim || batch.claim.leaseExpiresAt <= now),
         )
-        .map(({ pending }) => pending.push.id);
+        .map(({ batchId }) => batchId);
     },
   };
 
   return store;
 }
 
-function isOwned(
-  state: SettlementState | undefined,
-  claim: SettlementClaim,
-  joinVersion?: number,
-): state is SettlementState {
+function isOwned(batch: BatchState | undefined, claim: SettlementClaim): batch is BatchState {
   return Boolean(
-    state &&
-      state.state === "pending" &&
-      state.claim?.token === claim.token &&
-      state.claim.epoch === claim.epoch &&
-      state.claim.leaseExpiresAt > new Date() &&
-      (joinVersion === undefined || state.pending.joinVersion === joinVersion),
+    batch &&
+      batch.state === "pending" &&
+      batch.claim?.token === claim.token &&
+      batch.claim.epoch === claim.epoch &&
+      batch.claim.leaseExpiresAt > new Date(),
   );
 }
 
-function snapshot(
-  state: SettlementState,
-  materialize?: (pending: PendingLiveSettlement) => PendingLiveSettlement,
-): PendingLiveSettlement {
-  if (!state.claim)
-    throw new Error(`Pending branch push settlement ${state.pending.push.id} is not owned`);
-  const pending = {
-    ...clonePending(state.pending, state.claim),
-    settledJoinVersion: state.settledJoinVersion,
-    attemptCount: state.attemptCount,
-  };
-  return materialize?.(pending) ?? pending;
-}
-
-function clonePending(
-  pending: PendingLiveSettlement,
-  claim: SettlementClaim,
-): PendingLiveSettlement {
+function snapshot(batch: BatchState): PendingSettlementBatch {
+  if (!batch.claim) throw new Error(`Pending settlement batch ${batch.batchId} is not owned`);
   return {
-    ...pending,
-    postCutUpdates: [...pending.postCutUpdates],
-    claim: { ...claim, leaseExpiresAt: new Date(claim.leaseExpiresAt) },
+    batchId: batch.batchId,
+    claim: { ...batch.claim, leaseExpiresAt: new Date(batch.claim.leaseExpiresAt) },
+    attemptCount: batch.attemptCount,
+    members: batch.members.map(({ pending }) => ({
+      ...pending,
+      postCutUpdates: [...pending.postCutUpdates],
+    })),
   };
 }
 

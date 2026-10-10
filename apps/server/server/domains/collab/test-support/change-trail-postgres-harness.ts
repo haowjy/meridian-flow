@@ -51,10 +51,11 @@ const {
   createDrizzlePushCommitStore,
   createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
-const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
+const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
+const { manifestArrivalPublication } = await import("../adapters/drizzle-manifest-arrivals.js");
 const { createDrizzleChangeTrailAggregateWriter } = await import(
   "../adapters/drizzle-change-trail-aggregate.js"
 );
@@ -205,7 +206,7 @@ export async function seedDatabase(
     {
       id: GAMMA_ID,
       contextSourceId: SOURCE_ID,
-      name: "gamma",
+      name: "third",
       extension: "md",
       fileType: "markdown",
     },
@@ -256,11 +257,13 @@ export type ChangeTrailHarnessOptions = {
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
-  afterSettlement?: (input: {
+  /** After a batch member is classified, before its completion transaction opens. */
+  afterClassification?: (input: {
     documentId: DocumentId;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
-  afterLiveApply?: () => void;
+  /** Inside the completion transaction, after every write, just before commit. */
+  beforeCompletionCommit?: () => void;
   /** Inside the completion transaction, after each push's text is admitted (journal and projection). */
   afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
   /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
@@ -281,7 +284,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const links = options.links ?? createStaticDocumentLinkScopes();
   const { ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const documentName = (documentId: DocumentId) =>
-    documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "gamma" : "beta";
+    documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
   const DRAFT_DESTINATION = {
     kind: "draft",
     workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
@@ -388,7 +391,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const durableBranchJournalReadStore = createDrizzleBranchJournalReadStore(db);
   const durablePushCommitStore = createDrizzlePushCommitStore(
     db,
-    stagePendingSettlementWithinTx,
+    stageSettlementBatchWithinTx,
     changeTrails,
     notices,
   );
@@ -402,7 +405,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
     undefined,
-    options.arrivals,
+    options.arrivals ? manifestArrivalPublication(db, options.arrivals) : undefined,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -428,28 +431,25 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       seq: 0,
     });
   };
-  const settlementStore = {
+  const settlementStore: typeof durableSettlementStore = {
     ...durableSettlementStore,
-    async settlePushTrail(input: Parameters<typeof durableSettlementStore.settlePushTrail>[0]) {
-      const settled = await durableSettlementStore.settlePushTrail(input);
-      if (Array.isArray(settled)) settlementProjections.push(...settled);
-      if (settled !== false) {
-        await options.afterSettlement?.({
-          documentId: input.push.documentId,
+    async completeBatch(input) {
+      for (const member of input.members) {
+        await options.afterClassification?.({
+          documentId: member.push.documentId,
           deleteWriterPrefix,
         });
       }
-      return settled;
-    },
-    async withCompletionFence(
-      input: Parameters<typeof durableSettlementStore.withCompletionFence>[0],
-      complete: Parameters<typeof durableSettlementStore.withCompletionFence>[1],
-    ) {
-      return durableSettlementStore.withCompletionFence(input, () => {
-        const result = complete();
-        options.afterLiveApply?.();
-        return result;
+      const completed = await durableSettlementStore.completeBatch({
+        ...input,
+        recheck(cuts) {
+          const decision = input.recheck(cuts);
+          options.beforeCompletionCommit?.();
+          return decision;
+        },
       });
+      if (completed.status === "completed") settlementProjections.push(...completed.projections);
+      return completed;
     },
   };
 
@@ -1855,28 +1855,23 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .where(eq(schema.branchPushSettlementOutbox.documentId, ALPHA_ID));
       if (!row) throw new Error("settlement row is unavailable");
       let completionCallbackRan = false;
-      const renewed = await durableSettlementStore.renewClaim({
-        pushId: row.pushId,
-        claim,
-      });
+      const renewed = await durableSettlementStore.renewClaim({ batchId: row.batchId, claim });
       const failureRecorded = await durableSettlementStore.recordFailure({
-        pushId: row.pushId,
+        batchId: row.batchId,
         claim,
         error: "stale actor A failure",
       });
-      const completion = await durableSettlementStore.withCompletionFence(
-        {
-          pushId: row.pushId,
-          documentId: row.documentId,
-          claim,
-          settledJoinVersion: row.settledJoinVersion ?? row.joinVersion,
-        },
-        () => {
+      const completion = await durableSettlementStore.completeBatch({
+        batchId: row.batchId,
+        claim,
+        members: [],
+        recheck() {
           completionCallbackRan = true;
-          return "applied";
+          return "commit";
         },
-      );
-      return { renewed, failureRecorded, completion, completionCallbackRan };
+        afterCommit() {},
+      });
+      return { renewed, failureRecorded, completion: completion.status, completionCallbackRan };
     },
     async attemptSnapshotReplacement() {
       const [checkpoint] = await db
