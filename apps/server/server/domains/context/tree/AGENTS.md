@@ -8,9 +8,10 @@ module decides what each view shows and spells where nodes are.
   occupants, tree state, lineage) and the relations readers select from
   (`visibleDocuments(view)`, `visibleFolders(view)` and their raw-SQL forms).
 - `tree-view-sql.ts`: the SQL behind them. Diagnostic `identityDocuments` and
-  `identityFolders` retain deleted lifecycle facts, but apply the same view visibility
-  and draft location. Availability uses them to distinguish tombstones from missing
-  identities; they never authorize bytes. Plain-field helpers support nested Drizzle
+  `identityFolders` derive selection and placement from the canonical branches, then
+  add only non-hidden deleted lifecycle and malformed-identity diagnostics. Hidden
+  tombstones are absent even with stale draft change rows. Availability distinguishes
+  formerly live tombstones from missing identities; diagnostics never authorize bytes. Plain-field helpers support nested Drizzle
   selections, which cannot select a Subquery as a whole.
 - `tree-addresses.ts`: identity rows by id or name and their addresses, hidden and
   deleted included; the folder-chain walk.
