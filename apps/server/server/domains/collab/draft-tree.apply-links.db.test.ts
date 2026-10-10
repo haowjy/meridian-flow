@@ -37,6 +37,19 @@ describeDraftTreeDb("Apply binds what the writer reviewed (postgres)", (start) =
     await s.writer.editDraft(ascension, two, typeLink(KAEL, pasted));
     const minted = randomUUID();
     await s.writer.editDraft(ascension, two, typeLink(KAEL, minted));
+    // An item named twice is refused before anything registers or stages (E-R1).
+    const twice = (await s.items(ascension)).find((item) => item.documentId === two);
+    await expect(
+      s.applyAll(ascension, { items: twice ? [twice, twice] : [] }),
+      "a duplicate selection",
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect.soft(await s.batchStates(), "nothing staged").toEqual([]);
+    expect
+      .soft(
+        (await s.review(ascension)).drafts.map((draft) => draft.documentId),
+        "its rows still reviewable",
+      )
+      .toContain(two);
     // The writer types once more between the link cut and staging: the fence (F18)
     // registers again, so that link keeps D's meaning too.
     const late = randomUUID();

@@ -50,7 +50,14 @@ export type DraftApplyItemRef = z.infer<typeof DraftApplyItemRefSchema>;
 export const DraftApplyAllRequestSchema = z.object({
   /** The whole draft the dock rendered (a drafts row; D68). */
   draftId: z.string().uuid(),
-  items: z.array(DraftApplyItemRefSchema).min(1).max(500),
+  /** Each item once: a selection is a set. */
+  items: z
+    .array(DraftApplyItemRefSchema)
+    .min(1)
+    .max(500)
+    .refine((items) => new Set(items.map((item) => item.itemKey)).size === items.length, {
+      message: "Each item can be applied once per request",
+    }),
 });
 export type DraftApplyAllRequest = z.infer<typeof DraftApplyAllRequestSchema>;
 

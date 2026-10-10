@@ -231,7 +231,13 @@ export function createDrizzleDraftTreeStep(
               draftId: payload.draftId,
               aheadIds: read.refs.map((ref) => ref.aheadId),
             });
-            if (refs.length > 0) holderMeanings.push({ holderDocumentId: item.documentId, refs });
+            // One snapshot per holder: the durable payload never names a (holder, ref) twice.
+            const captured = holderMeanings.some(
+              (meaning) => meaning.holderDocumentId === item.documentId,
+            );
+            if (refs.length > 0 && !captured) {
+              holderMeanings.push({ holderDocumentId: item.documentId, refs });
+            }
           }
           const refined: DraftTreePayload = {
             ...payload,

@@ -18,9 +18,17 @@ export async function bindHolderRefs(
     refs: readonly { aheadId: string; documentId: DocumentId }[];
   }[],
 ): Promise<void> {
-  const rows = holders.flatMap(({ holderDocumentId, refs }) =>
-    refs.map((ref) => ({ aheadId: ref.aheadId, holderDocumentId, documentId: ref.documentId })),
-  );
+  // One row per (ref, holder): an upsert can't touch a row twice in one statement.
+  const rows = [
+    ...new Map(
+      holders.flatMap(({ holderDocumentId, refs }) =>
+        refs.map((ref) => [
+          `${ref.aheadId}:${holderDocumentId}`,
+          { aheadId: ref.aheadId, holderDocumentId, documentId: ref.documentId },
+        ]),
+      ),
+    ).values(),
+  ];
   if (rows.length === 0) return;
   await currentDrizzleDb(db)
     .insert(linkAheadHolderBindings)

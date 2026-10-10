@@ -103,6 +103,14 @@ export const APPLY_REFUSAL = {
   linkCutChanged: "link_cut_changed",
 } as const;
 
+/** A selection that names an item twice: refused before anything registers or stages. */
+export class DuplicateApplyItemError extends Error {
+  constructor(readonly itemKeys: readonly DraftItemKey[]) {
+    super(`Each item can be applied once per request: ${itemKeys.join(", ")}`);
+    this.name = "DuplicateApplyItemError";
+  }
+}
+
 /** A ref in the cut that can't register now (connection, timeout, lock): retry the Apply later. */
 export class DraftLinkRegistrationFailedError extends Error {
   constructor(
@@ -140,6 +148,13 @@ export function createDraftPublication(deps: {
   return {
     async applyItems(input) {
       const { draftId } = input;
+      if (input.selection.kind === "rendered") {
+        const seen = new Set<string>();
+        const twice = input.selection.items
+          .map((ref) => ref.itemKey)
+          .filter((key) => seen.size === seen.add(key).size);
+        if (twice.length > 0) throw new DuplicateApplyItemError([...new Set(twice)]);
+      }
       if (!(await activeDraft(draftId, input.workId))) return { status: "gone", draftId };
       const current = await deps.reviewItems.list(draftId, { liveTextTokens: false });
       const byKey = new Map(current.map((item) => [item.itemKey, item]));
