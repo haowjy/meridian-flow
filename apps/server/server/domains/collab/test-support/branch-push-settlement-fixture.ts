@@ -3,7 +3,7 @@
 import { splitHashline } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { expect } from "vitest";
 import {
   type createHarness,
@@ -17,9 +17,11 @@ import type { SettlementOracleOutput } from "./durable-settlement-oracle.js";
 
 export {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
+  GAMMA_ID,
   markdownFromUpdate,
   OTHER_USER_ID,
   runInRootDrizzleTransaction,
@@ -50,6 +52,59 @@ export async function expirePendingClaims(
         eq(schema.branchPushSettlementOutbox.documentId, documentId),
       ),
     );
+}
+
+/** Lets any recoverer claim every pending settlement at once. */
+export async function expireAllPendingClaims(db: Database): Promise<void> {
+  await db
+    .update(schema.branchPushSettlementOutbox)
+    .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
+    .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
+}
+
+/** Settlement state per document, in document order. */
+export async function settlementStates(
+  db: Database,
+  documentIds: readonly DocumentId[],
+): Promise<Array<{ documentId: DocumentId; state: string }>> {
+  return db
+    .select({
+      documentId: schema.branchPushSettlementOutbox.documentId,
+      state: schema.branchPushSettlementOutbox.state,
+    })
+    .from(schema.branchPushSettlementOutbox)
+    .where(inArray(schema.branchPushSettlementOutbox.documentId, [...documentIds]))
+    .orderBy(asc(schema.branchPushSettlementOutbox.documentId));
+}
+
+/** What a settlement may change live: journal, head and projection, per document. */
+export async function liveDurableState(db: Database, documentIds: readonly DocumentId[]) {
+  return Promise.all(
+    documentIds.map(async (documentId) => {
+      const updates = await db
+        .select({
+          id: schema.documentYjsUpdates.id,
+          originType: schema.documentYjsUpdates.originType,
+        })
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, documentId))
+        .orderBy(asc(schema.documentYjsUpdates.id));
+      const [head] = await db
+        .select({ latestUpdateSeq: schema.documentYjsHeads.latestUpdateSeq })
+        .from(schema.documentYjsHeads)
+        .where(eq(schema.documentYjsHeads.documentId, documentId));
+      const [row] = await db
+        .select({ markdownProjection: schema.documents.markdownProjection })
+        .from(schema.documents)
+        .where(eq(schema.documents.id, documentId));
+      return {
+        documentId,
+        updates: updates.map(({ originType }) => originType),
+        latestUpdateSeq: head?.latestUpdateSeq ?? null,
+        markdownProjection: row?.markdownProjection ?? null,
+      };
+    }),
+  );
 }
 
 export function appliedMarkdown(output: SettlementOracleOutput): string {

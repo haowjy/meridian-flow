@@ -252,6 +252,13 @@ export type BranchPushService = {
     signal?: AbortSignal;
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
+  /** Publishes several drafts as one batch; one item per requested branch, in request order. */
+  pushBranchesToLive(input: {
+    branchIds: readonly string[];
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
+    resetPolicy?: "auto";
+  }): Promise<{ items: PushToLiveResult[] }>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;

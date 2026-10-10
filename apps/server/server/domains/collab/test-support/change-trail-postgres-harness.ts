@@ -130,6 +130,7 @@ export const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
 export const WORK_ID = "00000000-0000-4000-8000-000000000804" as WorkId;
 export const ALPHA_ID = "00000000-0000-4000-8000-000000000805" as DocumentId;
 export const BETA_ID = "00000000-0000-4000-8000-000000000806" as DocumentId;
+export const GAMMA_ID = "00000000-0000-4000-8000-000000000810" as DocumentId;
 export const THREAD_ID = "00000000-0000-4000-8000-000000000807" as ThreadId;
 export const TURN_ID = "00000000-0000-4000-8000-000000000808" as TurnId;
 
@@ -139,6 +140,7 @@ export const DEFAULT_SCENARIO_IDS = {
   WORK_ID,
   ALPHA_ID,
   BETA_ID,
+  GAMMA_ID,
   THREAD_ID,
   TURN_ID,
 };
@@ -155,7 +157,7 @@ export async function seedDatabase(
   db: Database,
   ids: ChangeTrailScenarioIds = DEFAULT_SCENARIO_IDS,
 ): Promise<void> {
-  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = ids;
+  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = ids;
   await db
     .insert(schema.users)
     .values([
@@ -197,6 +199,13 @@ export async function seedDatabase(
       id: BETA_ID,
       contextSourceId: SOURCE_ID,
       name: "beta",
+      extension: "md",
+      fileType: "markdown",
+    },
+    {
+      id: GAMMA_ID,
+      contextSourceId: SOURCE_ID,
+      name: "gamma",
       extension: "md",
       fileType: "markdown",
     },
@@ -252,6 +261,8 @@ export type ChangeTrailHarnessOptions = {
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
   afterLiveApply?: () => void;
+  /** Inside the completion transaction, after each push's text is admitted (journal and projection). */
+  afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
   /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
 };
@@ -268,7 +279,9 @@ export type MatrixDraftStep = {
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
-  const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const { ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const documentName = (documentId: DocumentId) =>
+    documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "gamma" : "beta";
   const DRAFT_DESTINATION = {
     kind: "draft",
     workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
@@ -384,7 +397,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
-    createDrizzleDocumentProjectionEffects(db),
+    admissionProbe(createDrizzleDocumentProjectionEffects(db), options.afterAdmission),
     changeTrails,
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
@@ -462,7 +475,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     model,
     codec: createAgentEditCodecFactory(markupCodec),
     resolveDocumentTitle: async (documentId) => {
-      return documentId === ALPHA_ID ? "alpha" : "beta";
+      return documentName(documentId);
     },
     hooks: options.afterDurableCommit
       ? {
@@ -506,7 +519,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     flush: async () => {},
   };
   const resolveDocumentUri = async (documentId: string) =>
-    documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md";
+    `manuscript/${documentName(documentId as DocumentId)}.md`;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
@@ -760,7 +773,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     writerEditBeforeWrite = false,
     sameIdentityRewrite = false,
   ) {
-    const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
+    const file = `${documentName(documentId)}.md`;
     await writeMarkdown(collab, {
       documentId,
       markdown,
@@ -862,7 +875,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       turnId: TURN_ID,
       responseId,
     };
-    const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
+    const file = `${documentName(documentId)}.md`;
     await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
@@ -889,7 +902,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (!block) throw new Error("live writer block missing");
       const before = Y.encodeStateVector(doc);
       model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer recent: ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
@@ -1740,6 +1753,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         true,
       ),
     push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
+    pushBranches: (branchIds: readonly string[]) =>
+      realBranchPush.pushBranchesToLive({ branchIds }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
@@ -2163,6 +2178,22 @@ function remintMarkdown(doc: Y.Doc, markdown: string): void {
     if (fragment.length > 0) fragment.delete(0, fragment.length);
     replaceMarkdown(doc, markdown);
   });
+}
+
+/** Counts push admissions inside the completion transaction for fault injection. */
+function admissionProbe(
+  effects: ReturnType<typeof createDrizzleDocumentProjectionEffects>,
+  afterAdmission: ChangeTrailHarnessOptions["afterAdmission"],
+): ReturnType<typeof createDrizzleDocumentProjectionEffects> {
+  if (!afterAdmission) return effects;
+  let ordinal = 0;
+  return {
+    ...effects,
+    async applyPushCompletion(input) {
+      await effects.applyPushCompletion(input);
+      await afterAdmission({ documentId: input.documentId, ordinal: ++ordinal });
+    },
+  };
 }
 
 function fakeHocuspocus() {

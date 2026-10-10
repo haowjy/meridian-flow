@@ -44,7 +44,8 @@ type BatchPipelineResult =
       pushes: readonly PushLineageRow[];
       phases: readonly ComputedCandidate[];
       liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
-      branchReset?: { branchId: string; fromGeneration: number };
+      /** One entry per drained branch the auto reset rebased onto live. */
+      branchResets: ReadonlyMap<string, { branchId: string; fromGeneration: number }>;
     };
 
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
@@ -218,27 +219,24 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
                 Y.encodeStateAsUpdate(docs.get(phase.candidate.documentId) as Y.Doc),
               ]),
             ),
+            branchResets: new Map(),
           }),
         };
       },
     });
     if (locked.kind !== "committed") return locked;
-    const primary = phases[0] as ComputedCandidate;
-    const branchReset =
-      batch.resetPolicy === "auto"
-        ? await resetAutoBranchIfDrained(
-            lease,
-            primary.branch,
-            locked.liveAfterPush.get(primary.candidate.documentId) as Uint8Array,
-          )
-        : undefined;
-    return {
-      kind: "committed",
-      pushes: locked.pushes,
-      phases,
-      liveAfterPush: locked.liveAfterPush,
-      ...(branchReset ? { branchReset } : {}),
-    };
+    const branchResets = new Map<string, { branchId: string; fromGeneration: number }>();
+    if (batch.resetPolicy === "auto") {
+      for (const phase of phases) {
+        const reset = await resetAutoBranchIfDrained(
+          lease,
+          phase.branch,
+          locked.liveAfterPush.get(phase.candidate.documentId) as Uint8Array,
+        );
+        if (reset) branchResets.set(reset.branchId, reset);
+      }
+    }
+    return { ...locked, branchResets };
   }
 
   async function withActiveWorkDraftBranchLock<T>(
@@ -326,36 +324,66 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return doc;
   }
 
-  function mapCommitted(result: Extract<BatchPipelineResult, { kind: "committed" }>) {
-    const phase = result.phases[0] as ComputedCandidate;
-    return {
-      status: "pushed" as const,
-      push: result.pushes[0] as PushLineageRow,
-      update: phase.pushUpdate,
-      ...(result.branchReset ? { branchReset: result.branchReset } : {}),
-    };
+  /** One item per pushed candidate, keyed by its branch. */
+  function mapCommitted(
+    result: Extract<BatchPipelineResult, { kind: "committed" }>,
+  ): ReadonlyMap<string, PushToLiveResult> {
+    return new Map(
+      result.phases.map((phase) => {
+        const push = result.pushes.find(
+          (candidate) => candidate.documentId === phase.candidate.documentId,
+        );
+        if (!push) throw new Error(`Batch lost the push for ${phase.candidate.documentId}`);
+        const branchReset = result.branchResets.get(phase.branch.branchId);
+        return [
+          phase.branch.branchId,
+          {
+            status: "pushed" as const,
+            push,
+            update: phase.pushUpdate,
+            ...(branchReset ? { branchReset } : {}),
+          },
+        ];
+      }),
+    );
   }
 
-  const pushToLive: BranchPushService["pushToLive"] = (pushInput) =>
-    withActiveWorkDraftBranchLock([pushInput.branchId], async ([branch], lease) => {
-      const source = await sourceFor(branch as BranchSnapshot);
-      if (source.rows.length === 0) return mapNoActiveRows(await noActiveRows(source.branch));
-      const batch = buildWholeBranchCandidates({
-        source,
-        ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
-        ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-      });
-      const result = await executeCandidateBatch(
-        batch,
-        branchMap([source.branch]),
-        lease,
-        pushInput.signal,
-      );
-      if (result.kind === "conflict") {
-        return { status: "already_pushed", push: result.push };
+  const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = (pushInput) =>
+    withActiveWorkDraftBranchLock(pushInput.branchIds, async (branches, lease) => {
+      const sources = await Promise.all(branches.map(sourceFor));
+      const drafted = sources.filter((source) => source.rows.length > 0);
+      const items = new Map<string, PushToLiveResult>();
+      for (const source of sources) {
+        if (source.rows.length > 0) continue;
+        items.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
       }
-      return mapCommitted(result);
+      if (drafted.length > 0) {
+        const batch = buildWholeBranchCandidates({
+          sources: drafted,
+          ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
+          ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+        });
+        const result = await executeCandidateBatch(
+          batch,
+          branchMap(drafted.map((source) => source.branch)),
+          lease,
+          pushInput.signal,
+        );
+        // The retry rereads every branch; the pushed one then reports already_pushed.
+        if (result.kind === "conflict") {
+          throw new BranchPushCommitConflictError(result.push.branchId ?? "");
+        }
+        for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
+      }
+      return {
+        items: sources.map((source) => items.get(source.branch.branchId) as PushToLiveResult),
+      };
     });
+
+  const pushToLive: BranchPushService["pushToLive"] = async (pushInput) => {
+    const { items } = await pushBranchesToLive({ ...pushInput, branchIds: [pushInput.branchId] });
+    return items[0] as PushToLiveResult;
+  };
 
   const pushToLiveWithManifestEntry: BranchPushService["pushToLiveWithManifestEntry"] = (
     pushInput,
@@ -382,7 +410,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         if (result.kind === "conflict") {
           throw new BranchPushCommitConflictError(content.branch.branchId);
         }
-        return mapCommitted(result);
+        return mapCommitted(result).get(content.branch.branchId) as PushToLiveResult;
       },
     );
 
@@ -407,6 +435,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
 
   return {
     pushToLive,
+    pushBranchesToLive,
     pushToLiveWithManifestEntry,
     recoverPendingLiveSettlements: transition.recover,
     ...workPushPolicy,
