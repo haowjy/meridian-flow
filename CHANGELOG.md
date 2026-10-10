@@ -44,6 +44,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
+
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.

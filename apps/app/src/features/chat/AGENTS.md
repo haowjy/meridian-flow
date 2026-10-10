@@ -20,6 +20,15 @@ the rebind adapter.
 never writes a URL. The first-send journal survives reload under the remembered
 current thread ID, including when creation starts in the dock.
 
+Unsent authoring state has one session owner, `useComposerSessionDraft`, keyed by
+account/chat for `ChatView` and account/project for `CreationComposer` on every
+host. Work selection is prospective context, not a separate creation draft.
+It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
+on pagehide/unmount. Transfer to the submission journal clears it synchronously
+before dispatch/navigation. A rejection leaves live edits intact and publishes
+the current draft back to this owner; Edit never overwrites a nonempty composer.
+Pending upload bytes do not persist. Successfully uploaded reference atoms do.
+
 ## Mental model
 
 An assistant turn renders as one **ordered list of render items** (see
