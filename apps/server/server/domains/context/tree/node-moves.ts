@@ -36,7 +36,7 @@ import {
   type SplitFolder,
   type SplitPlan,
 } from "./folder-normalization.js";
-import { ensureLiveFolderPath } from "./hidden-nodes.js";
+import { ensureLiveFolderPath } from "./placement.js";
 import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type NodeRef } from "./tree-view.js";

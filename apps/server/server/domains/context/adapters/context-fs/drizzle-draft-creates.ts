@@ -6,7 +6,8 @@
 import type { Database } from "@meridian/database";
 import type { BranchPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { DraftCreatePort } from "../../ports/draft-create.js";
-import { createInDraft, retractCreate } from "../../tree/hidden-nodes.js";
+import { createInDraft } from "../../tree/creates.js";
+import { retractCreate } from "../../tree/end-use.js";
 
 export function createDrizzleDraftCreates(deps: {
   db: Database;

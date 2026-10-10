@@ -149,9 +149,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const ambiguous = await tree.resolvePath(draft, at("drafts/notes.md"));
       expect(ambiguous.kind).toBe("ambiguous");
-      expect(ambiguous.kind === "ambiguous" && [...ambiguous.ids].sort()).toEqual(
-        [notes, scraps].sort(),
-      );
+      expect(
+        ambiguous.kind === "ambiguous" && ambiguous.nodes.map((node) => node.id).sort(),
+      ).toEqual([notes, scraps].sort());
       expect(await tree.findById(draft, notes)).toMatchObject({ clashesWith: [scraps] });
 
       // Two storage tuples that render one filename hold one path, by path and by id.
@@ -162,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning({ id: documents.id });
       if (!literal) throw new Error("Literal-name document was not inserted");
       const same = await tree.resolvePath(LIVE_TREE, at("same.md"));
-      expect(same.kind === "ambiguous" && [...same.ids].sort()).toEqual(
+      expect(same.kind === "ambiguous" && same.nodes.map((node) => node.id).sort()).toEqual(
         [dotted, literal.id].sort(),
       );
       expect(await tree.findById(LIVE_TREE, dotted)).toMatchObject({ clashesWith: [literal.id] });
