@@ -13,6 +13,7 @@ export interface MigrationJournalEntry {
 
 export interface MigrationIdentity extends MigrationJournalEntry {
   hash: string;
+  sql: Buffer;
 }
 
 export interface MigrationHistory {
@@ -81,7 +82,7 @@ export function buildMigrationHistory(input: {
 
   const entries = journal.entries.flatMap((entry) => {
     const bytes = input.sqlFiles.get(`${entry.tag}.sql`);
-    return bytes ? [{ ...entry, hash: sha256(bytes) }] : [];
+    return bytes ? [{ ...entry, hash: sha256(bytes), sql: bytes }] : [];
   });
   return { entries, sqlFiles: input.sqlFiles, issues };
 }
