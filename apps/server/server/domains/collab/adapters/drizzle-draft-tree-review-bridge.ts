@@ -51,6 +51,7 @@ export function createDrizzleDraftTreeReviewBridge(
         if (!item?.hidden) return;
         await lockContextSources(db, [item.target.contextSourceId, item.live.contextSourceId]);
         await lockDocumentMutation(currentDrizzleDb(db), documentId);
+        // The Apply route refreshes the project catalog after its response.
         const placed = await place(db, {
           targets: [
             {

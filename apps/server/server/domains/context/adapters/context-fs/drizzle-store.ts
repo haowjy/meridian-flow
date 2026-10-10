@@ -163,10 +163,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const ensured = await ensureLiveFolderPath(this.deps.db, {
         contextSourceId: this.sourceId,
         dir,
-        catalog: this.deps.catalogMutations,
       });
       if (!ensured.ok) throw new ContextEntryConflictError();
-      return ensured.value;
+      const { folderId, placed } = ensured.value;
+      if (placed.length > 0) {
+        await this.deps.catalogMutations?.refreshSources([this.sourceId], placed);
+      }
+      return folderId;
     });
   }
 
@@ -203,7 +206,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const created = await createLive(this.deps.db, {
         slot: this.slotOf(input),
         claim,
-        catalog: this.deps.catalogMutations,
         insert: {
           node: {
             kind: "tracked",
@@ -220,8 +222,14 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         if (created.error.code === "id_taken") throw new ContextEntryConflictError();
         return null;
       }
-      if (created.value.kind === "inserted") {
+      const outcome = created.value;
+      if (outcome.kind === "inserted") {
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
+      } else {
+        await this.deps.catalogMutations?.refreshSources(
+          outcome.placed.sourceIds,
+          outcome.placed.placed.map((node) => node.id),
+        );
       }
       const document = await this.findDocument(
         LIVE_TREE,
