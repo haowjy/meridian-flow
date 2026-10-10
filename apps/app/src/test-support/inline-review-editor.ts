@@ -95,9 +95,7 @@ export function operation(
     operationId,
     closureClassId,
     kind,
-    contribution: "added",
     classification: "rewrite",
-    hunkCount: 1,
   };
 }
 

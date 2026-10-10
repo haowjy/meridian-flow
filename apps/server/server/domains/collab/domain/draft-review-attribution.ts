@@ -21,8 +21,6 @@ export type IndexedDraftUpdate = {
   updateMeta?: unknown;
 };
 
-export type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
-
 export type DraftUpdateAttributionIndex = {
   byOperationId: Map<string, IndexedOperation>;
   attributeRanges(input: {
@@ -35,10 +33,6 @@ export type DraftUpdateAttributionIndex = {
     deletedSpans: ReviewDeletedSpan[];
   };
   hasInterleavedEdits(insertedRanges: readonly ClockRange[]): boolean;
-  operationContributionsForRanges(input: {
-    insertedRanges: readonly ClockRange[];
-    deletedRanges: readonly ClockRange[];
-  }): Map<string, DraftOperationContributionFlags>;
 };
 
 export type IndexedOperation = {
@@ -56,7 +50,6 @@ export type IndexedOperation = {
   kind: "agent" | "writer";
 };
 
-type YId = { client: number; clock: number };
 type RangeAssignment = { start: number; end: number; operationId: string };
 export type OperationClockRange = ClockRange & { operationId: string };
 type RangeLookup = Map<number, RangeAssignment[]>;
@@ -64,20 +57,6 @@ type RangeAlias = { source: ClockRange; target: ClockRange };
 type TextSegment = { text: string; operationId: string };
 type DeletedContent = { segments: TextSegment[]; text: string };
 type RestorativeContentMatch = { operationId: string; deletedContent: DeletedContent };
-
-type ItemLike = {
-  id: YId;
-  length: number;
-  deleted?: boolean;
-  redone?: YId | null;
-  origin?: YId | null;
-  rightOrigin?: YId | null;
-  content?: unknown;
-};
-
-type StructStoreLike = {
-  clients: Map<number, ItemLike[]>;
-};
 
 export function indexDraftUpdates(input: {
   baseDoc: Y.Doc;
@@ -88,7 +67,7 @@ export function indexDraftUpdates(input: {
   const deleted: RangeLookup = new Map();
   const deletedHistory: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
-  const insertedItems: ItemLike[] = [];
+  const insertedItems: Y.Item[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const deletedContentByOperationId = new Map<string, DeletedContent>();
   const physicalUpdateIdsByOperationId = new Map<string, Set<PhysicalSourceUpdateId>>();
@@ -109,7 +88,9 @@ export function indexDraftUpdates(input: {
       addPhysicalUpdateId(physicalUpdateIdsByOperationId, operationId, update.id);
 
       const decoded = Y.decodeUpdate(update.updateData);
-      insertedItems.push(...(decoded.structs as ItemLike[]));
+      insertedItems.push(
+        ...decoded.structs.filter((struct): struct is Y.Item => struct instanceof Y.Item),
+      );
       const beforeRanges = deleteSetRanges(decoded.ds).flatMap((range) =>
         splitRangeAtStructBoundaries(replayDoc, range),
       );
@@ -124,9 +105,7 @@ export function indexDraftUpdates(input: {
       const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
       const introducedRanges = decoded.structs
         .map((struct) => {
-          const id = structId(struct);
-          const length = structLength(struct);
-          if (!id) return null;
+          const { id, length } = struct;
           // Reconnect frames repeat old structs. Only novel clocks acquire the
           // current row’s owner; inherited bytes retain their earlier source.
           const clock = Math.max(id.clock, beforeState.get(id.client) ?? 0);
@@ -359,23 +338,6 @@ export function indexDraftUpdates(input: {
         );
       });
     },
-    operationContributionsForRanges(input) {
-      const contributions = new Map<string, DraftOperationContributionFlags>();
-      for (const range of input.insertedRanges) {
-        for (const operationId of matchingOperationIds(introduced, range)) {
-          markContribution(contributions, operationId, "inserted");
-        }
-      }
-      for (const range of input.deletedRanges) {
-        const current = matchingOperationIds(deleted, range);
-        const operationIds =
-          current.length > 0 ? current : matchingOperationIds(deletedHistory, range);
-        for (const operationId of operationIds) {
-          markContribution(contributions, operationId, "deleted");
-        }
-      }
-      return contributions;
-    },
   };
 }
 
@@ -399,7 +361,7 @@ function contentRestorativeUndoMatch(input: {
     visible: boolean;
     operationIds: readonly string[];
   }[];
-  introducedStructs: readonly unknown[];
+  introducedStructs: readonly (Y.Item | Y.GC | Y.Skip)[];
   deletedOperationIds: ReadonlySet<string>;
   reversedOperationIdsByOperationId: ReadonlyMap<string, ReadonlySet<string>>;
   deletedContentByOperationId: ReadonlyMap<string, DeletedContent>;
@@ -474,7 +436,7 @@ function textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[]
     if (!item) break;
     const itemOffset = clock - item.id.clock;
     const length = Math.min(end, item.id.clock + item.length) - clock;
-    const text = itemText(item).slice(itemOffset, itemOffset + length);
+    const text = structText(item).slice(itemOffset, itemOffset + length);
     if (text.length > 0) segments.push({ text });
     clock += length;
   }
@@ -484,7 +446,7 @@ function textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[]
 function assignIntroducedContentSegments(
   lookup: RangeLookup,
   introducedRanges: readonly ClockRange[],
-  introducedStructs: readonly unknown[],
+  introducedStructs: readonly (Y.Item | Y.GC | Y.Skip)[],
   sourceSegments: readonly TextSegment[],
 ): void {
   let sourceIndex = 0;
@@ -524,24 +486,18 @@ function appendTextSegment(segments: TextSegment[], segment: TextSegment): void 
   }
 }
 
-function structsText(structs: readonly unknown[]): string {
+function structsText(structs: readonly (Y.Item | Y.GC | Y.Skip)[]): string {
   return structs.map(structText).join("");
 }
 
-function structText(struct: unknown): string {
-  return itemText(struct as ItemLike);
+function structText(struct: Y.Item | Y.GC | Y.Skip | undefined): string {
+  return struct instanceof Y.Item ? itemText(struct) : "";
 }
 
-function itemText(item: ItemLike): string {
-  const content = item.content as
-    | { str?: string; arr?: unknown[]; getContent?: () => unknown[] }
-    | undefined;
-  if (!content) return "";
-  if (typeof content.str === "string") return content.str;
-  if (Array.isArray(content.arr)) return content.arr.filter(isString).join("");
-  if (typeof content.getContent === "function")
-    return content.getContent().filter(isString).join("");
-  return "";
+function itemText(item: Y.Item): string {
+  return item.content instanceof Y.ContentString
+    ? item.content.str
+    : item.content.getContent().filter(isString).join("");
 }
 
 function isString(value: unknown): value is string {
@@ -651,7 +607,8 @@ function isRangeEffectivelyVisible(doc: Y.Doc, range: ClockRange): boolean {
   return true;
 }
 
-function isItemEffectivelyVisible(doc: Y.Doc, item: ItemLike, offset: number): boolean {
+function isItemEffectivelyVisible(doc: Y.Doc, item: Y.Item | Y.GC, offset: number): boolean {
+  if (!(item instanceof Y.Item)) return false;
   if (!item.deleted) return true;
   if (!item.redone) return false;
   const redone = findItem(doc, item.redone.client, item.redone.clock + offset);
@@ -660,9 +617,8 @@ function isItemEffectivelyVisible(doc: Y.Doc, item: ItemLike, offset: number): b
     : false;
 }
 
-function findItem(doc: Y.Doc, client: number, clock: number): ItemLike | null {
-  const structs = ((doc as unknown as { store: StructStoreLike }).store.clients.get(client) ??
-    []) as ItemLike[];
+function findItem(doc: Y.Doc, client: number, clock: number): Y.Item | Y.GC | null {
+  const structs = doc.store.clients.get(client) ?? [];
   let low = 0;
   let high = structs.length - 1;
   while (low <= high) {
@@ -748,9 +704,10 @@ function redoneSourceRanges(doc: Y.Doc, target: ClockRange): ClockRange[] {
   const sources: ClockRange[] = [];
   const targetStart = target.clock;
   const targetEnd = target.clock + target.length;
-  for (const [client, structs] of (doc as unknown as { store: StructStoreLike }).store.clients) {
+  for (const [client, structs] of doc.store.clients) {
     for (const item of structs) {
-      if (!item.redone || item.redone.client !== target.client) continue;
+      if (!(item instanceof Y.Item) || !item.redone || item.redone.client !== target.client)
+        continue;
       const redoneStart = item.redone.clock;
       const redoneEnd = item.redone.clock + item.length;
       const overlapStart = Math.max(targetStart, redoneStart);
@@ -768,16 +725,6 @@ function redoneSourceRanges(doc: Y.Doc, target: ClockRange): ClockRange[] {
 
 function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: ClockRange): void {
   for (const operationId of matchingOperationIds(lookup, range)) ids.add(operationId);
-}
-
-function markContribution(
-  contributions: Map<string, DraftOperationContributionFlags>,
-  operationId: string,
-  kind: keyof DraftOperationContributionFlags,
-): void {
-  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
-  current[kind] = true;
-  contributions.set(operationId, current);
 }
 
 function matchingOperationIds(lookup: RangeLookup, range: ClockRange): string[] {
@@ -876,15 +823,6 @@ function mergeAssignments(ranges: RangeAssignment[]): RangeAssignment[] {
     }
   }
   return merged;
-}
-
-function structId(struct: unknown): YId | null {
-  const id = (struct as { id?: { client: number; clock: number } }).id;
-  return id ? { client: id.client, clock: id.clock } : null;
-}
-
-function structLength(struct: unknown): number {
-  return Number((struct as { length?: number }).length ?? 0);
 }
 
 function splitAtAliasBoundaries(

@@ -16,7 +16,6 @@ const group = (documentId: string, documentName: string | null) =>
       documentName,
       contextPath: null,
       status: "active",
-      lastActorTurnId: null,
       actorThreads: [],
     },
   }) as unknown as ReviewFileTarget;

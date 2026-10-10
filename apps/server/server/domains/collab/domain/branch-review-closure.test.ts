@@ -21,9 +21,7 @@ function op(
     sourceUpdateIds: asSourceUpdateIds(sourceUpdateIds),
     closureUpdateIds: asPhysicalSourceUpdateIds(closureUpdateIds),
     kind: "agent",
-    contribution: "added",
     classification: "addition",
-    hunkCount: 1,
   };
 }
 
