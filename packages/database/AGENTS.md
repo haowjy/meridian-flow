@@ -37,7 +37,8 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
   edits; reapply them.
 - Column retirement requires auditing the removed values and removing readers
-  in the same release. Bound the strong lock with transactional
+  in the same release. Transfer valid pins to canonical Favorites before
+  retirement. Bound the lock acquisition wait with transactional
   `SET LOCAL lock_timeout` of 1–5 seconds; migration lint enforces that bound.
 - **Until launch, a migration need not keep the previous server version
   working.** Do not split a change into expand/contract releases or add
