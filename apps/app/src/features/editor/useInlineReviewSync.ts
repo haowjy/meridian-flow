@@ -22,16 +22,13 @@ import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 
 export interface UseInlineReviewSyncOptions {
-  /** The mounted editor bound to the draft room. Null when not in review. */
+  /** The mounted editor bound to the draft room. Null until construction. */
   editor: Editor | null;
   /** Work + draft identity — same tuple `useDraftPreview` needs. */
-  projectId: string | null;
-  workId: string | null;
-  documentId: string | null;
-  draftId: string | null;
-  /** When true, actually connect the extension. Callers pass true when
-   *  `reviewDraftId` is set on the editor view. */
-  enabled: boolean;
+  projectId: string;
+  workId: string;
+  documentId: string;
+  draftId: string;
   /**
    * The draft generation the review shows (`InlineDraftReview.draftGeneration`).
    * A preview of another generation is not projected: its model describes a
@@ -48,12 +45,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     workId,
     documentId,
     draftId,
-    enabled,
     draftGeneration,
     onInlineModelAvailable,
   } = options;
   const { preview } = useDraftPreview(projectId, workId, documentId, draftId, {
-    enabled: enabled && Boolean(projectId && workId && documentId && draftId),
+    enabled: Boolean(projectId && workId && documentId && draftId),
   });
 
   // The last preview payload pushed into the plugin, so React re-renders around
@@ -65,11 +61,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
   const lastPushedPreviewRef = useRef<unknown>(null);
 
   useEffect(() => {
-    if (!editor || editor.isDestroyed || !enabled) return;
-    // The extension is only mounted when review mode is active — outside of
-    // review the command surface is absent, so calling it would throw.
-    if (!("setInlineReviewModel" in editor.commands)) return;
-
+    if (!editor || editor.isDestroyed) return;
     if (preview?.status !== "active") {
       if (lastPushedPreviewRef.current != null) {
         editor.commands.setInlineReviewModel(null);
@@ -83,7 +75,6 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
 
     const operations = preview.operations;
     const hunks = preview.hunks;
-    if (!documentId) return;
 
     const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
     if (lastPushedPreviewRef.current === preview) return;
@@ -97,5 +88,5 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     editor.commands.setInlineReviewModel(model);
     lastPushedPreviewRef.current = preview;
     onInlineModelAvailable?.(previewIdentity, documentId, reviewId);
-  }, [editor, enabled, preview, draftGeneration, documentId, onInlineModelAvailable]);
+  }, [editor, preview, draftGeneration, documentId, onInlineModelAvailable]);
 }

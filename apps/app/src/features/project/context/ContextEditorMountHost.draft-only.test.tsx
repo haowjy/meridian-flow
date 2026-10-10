@@ -44,15 +44,13 @@ vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: {
     session?: unknown;
     reviewDraftId?: string | null;
-    reviewRoomName?: string | null;
-    onReviewSessionUnavailable?: () => void;
+    draftOnly?: boolean;
   }) => (
     <div
       data-editor
-      data-leaves-review-when-unavailable={String(props.onReviewSessionUnavailable !== undefined)}
+      data-retains-draft-on-error={String(props.draftOnly === true)}
       data-live-session={String(props.session !== undefined)}
       data-review-draft={props.reviewDraftId ?? ""}
-      data-review-room={props.reviewRoomName ?? ""}
     />
   ),
 }));
@@ -134,10 +132,10 @@ describe("ContextEditorMountHost draft-only review", () => {
       expect(review.publish).toHaveBeenCalledWith("document-a", null, false, expect.anything());
       await act(async () => startReview());
       const editor = document.querySelector("[data-editor]");
-      expect(editor?.getAttribute("data-review-room")).toBe("review-room-a");
+      expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
       expect(editor?.getAttribute("data-live-session")).toBe("false");
       // Leaving review would strand a draft-only tab on an empty editor.
-      expect(editor?.getAttribute("data-leaves-review-when-unavailable")).toBe("false");
+      expect(editor?.getAttribute("data-retains-draft-on-error")).toBe("true");
       expect(opener.open).not.toHaveBeenCalled();
       expect(resourceReplica.openDocument).not.toHaveBeenCalled();
 
@@ -182,7 +180,6 @@ describe("ContextEditorMountHost draft-only review", () => {
         await act(async () => undefined);
         const editor = document.querySelector("[data-editor]");
         expect(editor?.getAttribute("data-live-session")).toBe("true");
-        expect(editor?.getAttribute("data-review-room")).toBe("");
         // The click's intent reaches the editor, which holds the live one read-only.
         expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
       },

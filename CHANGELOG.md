@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Bind review rooms through one editor adapter and one construction receipt; live editors mount no review runtime.
+
 - Simplify active draft previews to their required inline model, removing unreachable missing-model handling.
 
 - Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending. Offline batches refuse every file in the same admission turn.

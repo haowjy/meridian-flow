@@ -93,8 +93,9 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
     error: null,
   }),
 }));
-vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
-vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
+const reviewHooks = vi.hoisted(() => ({ sync: vi.fn(), focus: vi.fn() }));
+vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: reviewHooks.sync }));
+vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.focus }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
@@ -167,6 +168,8 @@ describe("editor lifetime", () => {
         await Promise.resolve();
       });
       expect(mountedEditor()).toBeDefined();
+      expect(reviewHooks.sync).not.toHaveBeenCalled();
+      expect(reviewHooks.focus).not.toHaveBeenCalled();
     });
   });
 

@@ -97,9 +97,7 @@ function Host() {
       documentId={documentId}
       projectId="project-a"
       session={sessionFor(documentId)}
-      reviewWorkId="work-a"
       reviewDraftId={inlineReview?.draftId}
-      reviewRoomName={reviewRoomName ?? undefined}
     />
   );
 }
