@@ -70,7 +70,7 @@ const DOCUMENT_FILE_TYPES = {
 const optionalString = (value: unknown): value is string | undefined =>
   value === undefined || typeof value === "string";
 
-function parseTab(value: unknown): ContextTab | null {
+export function parseContextTab(value: unknown): ContextTab | null {
   if (!value || typeof value !== "object") return null;
   const tab = value as Record<string, unknown>;
   if (
@@ -148,7 +148,7 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
     Array.isArray(record.selectedTabIdByWork)
   )
     return null;
-  const tabs = record.tabs.map(parseTab);
+  const tabs = record.tabs.map(parseContextTab);
   if (tabs.some((tab) => tab === null)) return null;
   const resourceIds = new Set(
     tabs.filter((tab) => tab && !isEditorContextTab(tab)).map((tab) => tab?.documentId),
@@ -205,7 +205,7 @@ export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapsho
   }
 }
 
-function durableTab(tab: ContextTab): ContextTab {
+export function durableContextTab(tab: ContextTab): ContextTab {
   const tabInstanceId = tab.tabInstanceId ?? crypto.randomUUID();
   if (tab.kind === "new") return { ...tab, tabInstanceId };
   const {
@@ -343,7 +343,7 @@ export function reduceEditorWorkspace(
         );
         continue;
       }
-      const incoming = durableTab({
+      const incoming = durableContextTab({
         ...change.next,
         tabInstanceId: live.tabInstanceId,
       } as ContextTab);
@@ -379,7 +379,7 @@ export function reduceEditorWorkspace(
     for (const update of command.updates) {
       const index = tabs.findIndex((tab) => sameTabIdentity(tab, update.prior));
       if (index < 0) continue;
-      tabs[index] = durableTab({
+      tabs[index] = durableContextTab({
         ...update.next,
         tabInstanceId: tabs[index]?.tabInstanceId,
       } as ContextTab);
@@ -402,7 +402,7 @@ export function reduceEditorWorkspace(
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     const index = workspace?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
     if (command.tab.kind === "new") return outcome("stale", current);
-    const settled = durableTab(command.tab);
+    const settled = durableContextTab(command.tab);
     const conflicting = workspace.tabs.find(
       (tab) =>
         tab.documentId === command.tab.documentId &&
@@ -441,7 +441,10 @@ export function reduceEditorWorkspace(
             sameServerContextTabLocator(tab, command.tab))),
     );
     if (conflict) return outcome("stale", current);
-    const next = durableTab({ ...command.tab, tabInstanceId: prior.tabInstanceId } as ContextTab);
+    const next = durableContextTab({
+      ...command.tab,
+      tabInstanceId: prior.tabInstanceId,
+    } as ContextTab);
     if (JSON.stringify(next) === JSON.stringify(prior))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
@@ -456,7 +459,7 @@ export function reduceEditorWorkspace(
   if (command.kind === "open") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     if (command.tab.draftOnly) return outcome("already-committed", current);
-    const tab = durableTab(command.tab);
+    const tab = durableContextTab(command.tab);
     const sameDocumentIndex = workspace.tabs.findIndex(
       (candidate) =>
         candidate.tabInstanceId === tab.tabInstanceId || candidate.documentId === tab.documentId,
