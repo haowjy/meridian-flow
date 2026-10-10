@@ -20,18 +20,20 @@ export function useTreeExpansion(
 ) {
   const accountId = useAccountId();
   const key = treeExpansionKey(accountId, projectId, scope);
-  const [saved, setSaved] = useState(() => ({ key, state: readTreeExpansion(key) }));
-  if (saved.key !== key) setSaved({ key, state: readTreeExpansion(key) });
+  const [saved, setSaved] = useState(() => ({ key, state: readTreeExpansion(key, accountId) }));
+  if (saved.key !== key) setSaved({ key, state: readTreeExpansion(key, accountId) });
   const update = useCallback(
     (change: (current: TreeExpansion) => TreeExpansion) => {
       setSaved((current) => {
-        const state = change(current.key === key ? current.state : readTreeExpansion(key));
+        const state = change(
+          current.key === key ? current.state : readTreeExpansion(key, accountId),
+        );
         if (current.key === key && current.state === state) return current;
-        writeTreeExpansion(key, state);
+        writeTreeExpansion(key, accountId, state);
         return { key, state };
       });
     },
-    [key],
+    [key, accountId],
   );
   useEffect(() => {
     if (folderIds === null) return;

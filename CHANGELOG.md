@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Browser-restored workspace state shares one account-stamped storage boundary. Misfiled chat and Work selections no longer restore across accounts or projects.
+
 - Rejected chat messages return to this tab’s draft even after leaving the chat. Retry clears the unchanged sent draft without removing newer writing. Reload safely restores the caret when pending uploads are removed.
 - Passage jumps stay visible when you return to an already-open Editor tab.
 

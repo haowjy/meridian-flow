@@ -98,7 +98,8 @@ describe("session composer drafts", () => {
       JSON.stringify({
         version: 1,
         accountId: account,
-        draft: {
+        scope: JSON.stringify([scope.kind, scope.id]),
+        payload: {
           ...change("bad").snapshot,
           doc: { type: "doc", content: [{ type: "composerReference" }] },
         },
