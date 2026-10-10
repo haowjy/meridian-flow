@@ -11,6 +11,9 @@ import type { DocumentId, WorkId } from "@meridian/contracts";
 import type { DraftApplyAllResponse, DraftReviewItemWire } from "@meridian/contracts/drafts";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import { branchPushSettlementBatches } from "@meridian/database/schema";
+import { extractStoredLinks } from "@meridian/markup/stored-links";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { collabHook } from "../domains/collab/domain/collab-test-hooks.js";
 import {
@@ -34,6 +37,7 @@ import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../shared/work-lifecycle-lock.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
 import { type DraftTreeWorld, type ScenarioWork, sourceOf } from "./draft-tree-seeds.js";
+import { expirePendingSettlementClaims } from "./settlement-claims.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -54,6 +58,8 @@ export interface ScenarioModel {
   create(path: string, text: string): Promise<DocumentId>;
   /** One reply that copies `from` to `to` and saves. */
   copy(from: string, to: string): Promise<ToolExecutionResult>;
+  /** One saved reply that reads `path` and replaces `find` in it with `content`. */
+  edit(path: string, find: string, content: string): Promise<void>;
 }
 
 export interface ScenarioWriter {
@@ -67,6 +73,8 @@ export interface ScenarioWriter {
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
+  /** `create` with content that must succeed; the document's id. */
+  createDocument(path: string, content: string): Promise<DocumentId>;
   mkdir(path: string): Promise<void>;
   /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
   move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
@@ -94,6 +102,10 @@ export interface ScenarioView {
   search(query: string): ReturnType<ContextPort["search"]>;
   /** Where this reader sees the document, by id: its URI, or null. */
   locate(documentId: DocumentId): Promise<string | null>;
+  /** The text at `path`, or null when this reader has no file there. */
+  text(path: string): Promise<string | null>;
+  /** The document at `path`, or null. */
+  idAt(path: string): Promise<DocumentId | null>;
 }
 
 export interface DraftTreeCommands {
@@ -107,6 +119,27 @@ export interface DraftTreeCommands {
   discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
   /** The Work's review list through its route core: the legacy `drafts` and the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleWorkDraftListRequest>;
+  /** The review list's `items` only. */
+  items(work: ScenarioWork): Promise<DraftReviewItemWire[]>;
+  /** The statuses of every draft whose origin is the Work, oldest first. */
+  draftStatuses(work: ScenarioWork): Promise<string[]>;
+  /** Every settlement batch's state (they belong to no user: suites clear them per case). */
+  batchStates(): Promise<string[]>;
+  /** As if the warm owner died: its claim on every pending batch has expired. */
+  expirePendingClaims(): Promise<void>;
+  /** Recovery's pass over every recoverable batch; how many it settled. */
+  recover(): Promise<number>;
+  /** The stored links in a live document: each one's ref and href. */
+  storedLinks(documentId: DocumentId): Promise<{ ref: string | null; href: string }[]>;
+  /**
+   * What a stored link means live from its holder (pinned by id): the document's id with
+   * `inDraft`/`bound` when they hold, else the answer's state (`missing`, `gone`, …).
+   */
+  liveMeaning(input: {
+    ref: string;
+    href: string;
+    holder: { uri: string; id: DocumentId };
+  }): Promise<{ id: string; inDraft?: true; bound?: true } | string>;
   /**
    * The per-document Apply route core, one call per document in order, each with the
    * tokens its item rendered unless `tokens` says otherwise (`none`: the legacy request).
@@ -135,6 +168,27 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     documentId: DocumentId,
   ): Promise<{ branchId: string; generation: number }>;
+}
+
+/** The review item of `documentId`; throws when the list has none. */
+export function itemFor(
+  items: readonly DraftReviewItemWire[],
+  documentId: DocumentId,
+): DraftReviewItemWire {
+  const item = items.find((candidate) => candidate.documentId === documentId);
+  if (!item) throw new Error(`no review item for ${documentId}`);
+  return item;
+}
+
+/** A review-room edit that appends one paragraph linking `href` by `ahead:<aheadId>`. */
+export function typeLink(href: string, aheadId: string) {
+  return (doc: Y.Doc) => {
+    const paragraph = new Y.XmlElement("paragraph");
+    const text = new Y.XmlText();
+    text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
+    paragraph.insert(0, [text]);
+    doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+  };
 }
 
 /** The tokens an item rendered, as a request carries them. */
@@ -209,6 +263,14 @@ export function draftTreeCommands(
         await turn.save();
         return copied;
       },
+      async edit(path, find, content) {
+        const turn = await reply();
+        await succeed(await turn.call("read", { path: uri(path) }));
+        await succeed(
+          await turn.call("write", { command: "replace", path: uri(path), find, content }),
+        );
+        await turn.save();
+      },
     };
   }
 
@@ -252,6 +314,13 @@ export function draftTreeCommands(
       return result.status === "created"
         ? { status: "created", ...(result.documentId ? { documentId: result.documentId } : {}) }
         : { status: "conflict" };
+    },
+    async createDocument(path, content) {
+      const created = await writer.create(path, { content });
+      if (created.status !== "created" || !created.documentId) {
+        throw new Error(`the writer's ${path} was not created`);
+      }
+      return created.documentId as DocumentId;
     },
     async mkdir(path) {
       const { scheme, rel } = sourceOf(path);
@@ -349,6 +418,14 @@ export function draftTreeCommands(
         if (!located.ok) throw new Error(JSON.stringify(located.error));
         return located.value?.uri ?? null;
       },
+      async text(path) {
+        const read = await (await port()).read(uri(path));
+        return read.ok ? read.value.content : null;
+      },
+      async idAt(path) {
+        const stat = await (await port()).stat(uri(path));
+        return stat.ok ? ((stat.value.documentId ?? null) as DocumentId | null) : null;
+      },
     };
   }
 
@@ -404,6 +481,44 @@ export function draftTreeCommands(
         }),
       ),
     review,
+    items: async (work) => (await review(work)).items,
+    async draftStatuses(work) {
+      return (await world.drafts.byOriginWork(work.id)).map((draft) => draft.status);
+    },
+    async batchStates() {
+      return (
+        await world.db
+          .select({ state: branchPushSettlementBatches.state })
+          .from(branchPushSettlementBatches)
+      ).map((row) => row.state);
+    },
+    async expirePendingClaims() {
+      await expirePendingSettlementClaims(world.db);
+    },
+    recover: () => ports().documentSync.recoverPendingLiveSettlements(),
+    storedLinks: (documentId) =>
+      ports().documentSync.withLiveDocument(documentId, async ({ doc }) =>
+        extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map((link) => ({
+          ref: link.ref,
+          href: link.href,
+        })),
+      ),
+    async liveMeaning({ ref, href, holder }) {
+      const { answer } = await world.linkAnswer({
+        view: "live",
+        ref,
+        href,
+        baseUri: holder.uri,
+        holderDocumentId: holder.id,
+      });
+      return answer.state === "document"
+        ? {
+            id: answer.document.id,
+            ...(answer.inDraft ? { inDraft: true as const } : {}),
+            ...(answer.holderBound ? { bound: true as const } : {}),
+          }
+        : answer.state;
+    },
     async apply(work, documentIds, options = {}) {
       const { items } = await review(work);
       const results: DraftApplyRouteResult[] = [];
