@@ -2,17 +2,19 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createDb, type Database } from "@meridian/database";
+import { createDb } from "@meridian/database";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import type { ContextCatalog } from "../../../apps/server/server/domains/context/ports/context-catalog.js";
-import type { UploadIntakeRepository } from "../../../apps/server/server/domains/context/uploads/upload-intake.js";
-import { runMigrations } from "../../../tools/dev/lib/migration-runner.js";
+import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
+import { createHarness } from "../domains/collab/test-support/change-trail-postgres-harness.js";
+import { createTestDocumentLinkScopes } from "../domains/collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../domains/context/adapters/context-catalog.js";
+import { createDrizzleUploadIntakeRepository } from "../domains/context/uploads/drizzle-upload-intake.js";
 import {
   archiveNoteState,
   archiveId as id,
   seedScratchArchive,
-} from "./__test-support__/scratch-archive-fixture.js";
+} from "./scratch-archive-fixture.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
@@ -22,7 +24,10 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
     const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const db = createDb(databaseUrl ?? "", { max: 1 });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-scratch-archive-"));
-    const migrations = path.join(import.meta.dirname, "migrations");
+    const migrations = path.resolve(
+      import.meta.dirname,
+      "../../../../packages/database/src/migrations",
+    );
     const journal = JSON.parse(await readFile(path.join(migrations, "meta/_journal.json"), "utf8"));
     let isolated = false;
     try {
@@ -42,18 +47,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       );
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedScratchArchive(target);
-      const { createHarness } = await import(
-        new URL(
-          "../../../apps/server/server/domains/collab/test-support/change-trail-postgres-harness.ts",
-          import.meta.url,
-        ).href
-      );
-      const { createTestDocumentLinkScopes } = await import(
-        new URL(
-          "../../../apps/server/server/domains/collab/test-support/document-link-scopes.ts",
-          import.meta.url,
-        ).href
-      );
       const links = createTestDocumentLinkScopes(db);
       const readChapter = async () => {
         const harness = createHarness(db, { links });
@@ -144,6 +137,8 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       ]);
       const chapter = await readChapter();
       expect(chapter).toMatchObject({ ok: true });
+      if (!chapter.ok)
+        throw new Error("Could not render the migrated chapter", { cause: chapter.error });
       expect(chapter.value).toContain(
         "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
       );
@@ -151,12 +146,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
       );
       // Exercise the actual lifecycle reader, not just the migrated row shape.
-      const { createDrizzleUploadIntakeRepository } = (await import(
-        new URL(
-          "../../../apps/server/server/domains/context/uploads/drizzle-upload-intake.ts",
-          import.meta.url,
-        ).href
-      )) as { createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository };
       const intakeRepository = createDrizzleUploadIntakeRepository(db);
       const reservation = await intakeRepository.transaction(() =>
         intakeRepository.lockForFinalize(id(2), "reserved-intake"),
@@ -185,14 +174,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
           fingerprint: "retained-fingerprint",
         },
       ]);
-      // Load the actual catalog adapter at runtime: package typechecks must not
-      // pull Nitro's composition-only virtual assets into the database package.
-      const { createDrizzleContextCatalog } = (await import(
-        new URL(
-          "../../../apps/server/server/domains/context/adapters/context-catalog.ts",
-          import.meta.url,
-        ).href
-      )) as { createDrizzleContextCatalog(db: Database): ContextCatalog };
       const catalog = createDrizzleContextCatalog(db);
       const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
       expect(snapshot.entries).toEqual(

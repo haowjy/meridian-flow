@@ -29,3 +29,8 @@ code's injectable delay and assert the schedule (`context-catalog.ts` is the
 pattern). Keep a real clock only when the claim is PostgreSQL's own timing,
 such as lock contention. Never poll for work a seed suppressed; await the
 notification that proves it ran.
+
+The Scratch archival upgrade contract owns an isolated historical schema and
+fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
+committed migration chain through the real runner, then exercises typed server
+consumers. Do not regenerate historical fixture bytes with current writers.
