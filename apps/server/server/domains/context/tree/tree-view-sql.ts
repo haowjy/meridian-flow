@@ -108,47 +108,174 @@ const draftFolderId = sql.raw(
   "CASE WHEN c.context_source_id IS NULL THEN d.folder_id ELSE c.parent_folder_id END",
 );
 
-function documentsQuery(view: TreeView): SQL {
-  const live = sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, ${documentTail},
-      false AS draft_located
-    FROM documents d WHERE ${liveDocument}`;
+/**
+ * Lookup positions joined into each branch, so a path question stays bounded by the path
+ * indexes and D's own rows instead of filtering the whole relation. `parent` matches a
+ * branch's parent column: root slots by `IS NULL`, the rest by equality.
+ */
+type SlotMatch = { values: SQL; parent: (column: SQL) => SQL };
+
+function slotted(match: SlotMatch | undefined, columns: string): SQL {
+  return match ? sql`(VALUES ${match.values}) AS p(${sql.raw(columns)}), ` : sql``;
+}
+
+/** The slot's position on one alias's location columns. */
+function at(
+  match: SlotMatch | undefined,
+  location: Record<"source" | "parent" | "name", string>,
+  extension?: string,
+): SQL {
+  if (!match) return sql``;
+  return sql` AND ${sql.raw(location.source)} = p.source_id AND ${sql.raw(location.name)} = p.name${
+    extension ? sql` AND ${sql.raw(extension)} = p.extension` : sql``
+  } AND ${match.parent(sql.raw(location.parent))}`;
+}
+
+const rowLocation = { source: "d.context_source_id", parent: "d.folder_id", name: "d.name" };
+const draftLocation = {
+  source: "c.context_source_id",
+  parent: "c.parent_folder_id",
+  name: "c.name",
+};
+
+/**
+ * Live rows D says nothing about, D's rows at D's location, and D's rows that set no
+ * location at the row's. The last two are separate branches projecting plain columns, so
+ * a path predicate reaches an index on either side.
+ */
+function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
+  const slots = slotted(match, "key, source_id, parent_id, name, extension");
+  const select = (location: string, located: boolean) =>
+    match
+      ? sql`SELECT p.key, d.id`
+      : sql`SELECT d.id, ${sql.raw(location)}, ${documentTail}, ${sql.raw(String(located))} AS draft_located`;
+  const rowColumns = "d.context_source_id, d.folder_id, d.name, d.extension";
+  const live = sql`${select(rowColumns, false)}
+    FROM ${slots}documents d WHERE ${liveDocument}${at(match, rowLocation, "d.extension")}`;
   if (view.kind === "live") return live;
   const draftId = view.draftId;
+  const draftRows = sql`c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}`;
   return sql`${live}
       AND NOT EXISTS (SELECT 1 FROM draft_tree_changes c
         WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.node_id = d.id)
     UNION ALL
-    SELECT d.id, COALESCE(c.context_source_id, d.context_source_id), ${draftFolderId},
-      COALESCE(c.name, d.name), COALESCE(c.extension, d.extension), ${documentTail},
-      c.context_source_id IS NOT NULL
-    FROM draft_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}`;
+    ${select("c.context_source_id, c.parent_folder_id, c.name, c.extension", true)}
+    FROM ${slots}draft_tree_changes c JOIN documents d ON d.id = c.node_id
+    WHERE ${draftRows} AND c.context_source_id IS NOT NULL${at(match, draftLocation, "c.extension")}
+    UNION ALL
+    ${select(rowColumns, false)}
+    FROM ${slots}draft_tree_changes c JOIN documents d ON d.id = c.node_id
+    WHERE ${draftRows} AND c.context_source_id IS NULL${at(match, rowLocation, "d.extension")}`;
 }
 
-function foldersQuery(view: TreeView): SQL {
-  const live = sql`SELECT ${folderColumns} FROM folders f
-    WHERE f.deleted_at IS NULL AND NOT f.hidden`;
+/**
+ * Hidden folders D's view places something under, and their ancestors (TM invariant 1),
+ * seeded from D's change rows: each row's document is one primary-key probe.
+ */
+function usedHiddenFolderIds(draftId: DraftId): SQL {
+  return sql`
+    WITH RECURSIVE used(id) AS (
+      SELECT placed.folder_id FROM draft_tree_changes c
+      CROSS JOIN LATERAL (
+        SELECT ${draftFolderId} AS folder_id FROM documents d
+        WHERE d.id = c.node_id AND ${draftDocument} OFFSET 0
+      ) placed
+      WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document'
+        AND placed.folder_id IS NOT NULL
+      UNION
+      SELECT c.node_id FROM draft_tree_changes c
+      WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'folder' AND c.created
+      UNION
+      SELECT f2.parent_id FROM folders f2 JOIN used u ON f2.id = u.id
+      WHERE f2.parent_id IS NOT NULL
+    )
+    SELECT id FROM used`;
+}
+
+function foldersQuery(view: TreeView, match?: SlotMatch): SQL {
+  const slots = slotted(match, "key, source_id, parent_id, name");
+  const select = match ? sql`SELECT p.key, f.id` : sql`SELECT ${folderColumns}`;
+  const position = at(match, {
+    source: "f.context_source_id",
+    parent: "f.parent_id",
+    name: "f.name",
+  });
+  const live = sql`${select} FROM ${slots}folders f
+    WHERE f.deleted_at IS NULL AND NOT f.hidden${position}`;
   if (view.kind === "live") return live;
-  const draftId = view.draftId;
-  // Hidden folders the draft's view places something under, and their ancestors (TM
-  // invariant 1). A second branch rather than an OR, so live lookups keep their indexes.
+  // A second branch rather than an OR, so live lookups keep their indexes.
   return sql`${live}
     UNION ALL
-    SELECT ${folderColumns} FROM folders f
-    WHERE f.deleted_at IS NULL AND f.hidden AND f.id IN (
-      WITH RECURSIVE used(id) AS (
-        SELECT ${draftFolderId}
-        FROM draft_tree_changes c JOIN documents d ON d.id = c.node_id
-        WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}
-          AND ${draftFolderId} IS NOT NULL
-        UNION
-        SELECT c.node_id FROM draft_tree_changes c
-        WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'folder' AND c.created
-        UNION
-        SELECT f2.parent_id FROM folders f2 JOIN used u ON f2.id = u.id
-        WHERE f2.parent_id IS NOT NULL
-      )
-      SELECT id FROM used)`;
+    ${select} FROM ${slots}folders f
+    WHERE f.deleted_at IS NULL AND f.hidden${position}
+      AND f.id IN (${usedHiddenFolderIds(view.draftId)})`;
+}
+
+/** One lookup position: a name under a parent folder (null: the source root). */
+export type PathSlot = {
+  key: number;
+  sourceId: ContextSourceId;
+  parentId: FolderId | null;
+  name: string;
+};
+
+/** Ids of the documents visible in this view at each slot, by slot key. */
+export async function loadDocumentIdsAt(
+  db: DrizzleDb,
+  view: TreeView,
+  slots: readonly (PathSlot & { extension: string })[],
+): Promise<{ key: number; id: DocumentId }[]> {
+  if (slots.length === 0) return [];
+  const rows = await currentDrizzleDb(db).execute<{ key: number; id: string }>(
+    bySlotParent(
+      slots,
+      (match) => documentsQuery(view, match),
+      (slot) => sql`, ${slot.extension}::text`,
+    ),
+  );
+  return rows.map((row) => ({ key: Number(row.key), id: row.id as DocumentId }));
+}
+
+/** Ids of the folders visible in this view at each slot, by slot key. */
+export async function loadFolderIdsAt(
+  db: DrizzleDb,
+  view: TreeView,
+  slots: readonly PathSlot[],
+): Promise<{ key: number; id: FolderId }[]> {
+  if (slots.length === 0) return [];
+  const rows = await currentDrizzleDb(db).execute<{ key: number; id: string }>(
+    bySlotParent(slots, (match) => foldersQuery(view, match)),
+  );
+  return rows.map((row) => ({ key: Number(row.key), id: row.id as FolderId }));
+}
+
+/** One statement over slot VALUES, root slots and nested ones as separate halves. */
+function bySlotParent<S extends PathSlot>(
+  slots: readonly S[],
+  query: (match: SlotMatch) => SQL,
+  extra: (slot: S) => SQL = () => sql``,
+): SQL {
+  const values = (group: readonly S[]) =>
+    sql.join(
+      group.map(
+        (slot) =>
+          sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${slot.parentId}::uuid, ${slot.name}::text${extra(slot)})`,
+      ),
+      sql`, `,
+    );
+  const root = slots.filter((slot) => slot.parentId === null);
+  const nested = slots.filter((slot) => slot.parentId !== null);
+  return sql.join(
+    [
+      ...(root.length > 0
+        ? [query({ values: values(root), parent: (column) => sql`${column} IS NULL` })]
+        : []),
+      ...(nested.length > 0
+        ? [query({ values: values(nested), parent: (column) => sql`${column} = p.parent_id` })]
+        : []),
+    ],
+    sql` UNION ALL `,
+  );
 }
 
 /** Documents visible in this view, at the view's location (alias "visible_documents"). */
@@ -301,9 +428,11 @@ export async function loadDraftCreatedDocuments(
       c.context_source_id::text AS c_context_source_id,
       c.parent_folder_id::text AS c_parent_folder_id,
       c.name AS c_name, c.extension AS c_extension
-    FROM draft_tree_changes c JOIN documents d ON d.id = c.node_id
+    FROM draft_tree_changes c
+    CROSS JOIN LATERAL (
+      SELECT * FROM documents d WHERE d.id = c.node_id AND d.kind = 'content' OFFSET 0
+    ) d
     WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.created
-      AND d.kind = 'content'
     ORDER BY c.created_at, c.node_id`);
   return rows.map((row) => ({
     row: identityRow(row),
