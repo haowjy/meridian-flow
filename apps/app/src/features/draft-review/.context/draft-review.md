@@ -203,8 +203,10 @@ arrival order does not change the outcome. Row X is the owner's typed
 `reviewAbsent` observation for list omission and gone / 404 preview reads:
 a cached `gone` carries the generation horizon known when its request began
 (the shown generation, cached preview and listed row), never the generation
-known when its answer arrives. A 404 from room acquisition addresses that
-attempt's generation. The reducer ignores absence below R, so an old `gone`
+known when its answer arrives. HTTP 404 is normalized to that same stamped
+`gone` in the shared preview query, not dispatched once from acquisition.
+The cache adapter re-observes it when writer evidence clears without another
+HTTP read; only a non-older read can replace it. The reducer ignores absence below R, so an old `gone`
 cannot cancel an adopted newer row or preview. A fresh `gone` at R still
 closes despite a stale row at R; a row is not a veto on that read.
 The observation carries cached preview and pending writer evidence, and the reducer decides

@@ -167,7 +167,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   for their terminal notice and are never input-eligible.
 - **Entry absence belongs to the fresh preview read.** List omission is withheld
   until that read answers. `active` observes the generation; `gone`, 404 and
-  list omission share the reducer's `reviewAbsent` observation, addressed to
+  list omission share the reducer's `reviewAbsent` observation. HTTP 404 and
+  JSON `gone` are retained as the same stamped cache answer, reconsidered when
+  writer evidence clears without refetching, addressed to
   the generation the read asked for: absence below the shown generation is
   ignored. Pending writer delivery at the shown generation or later keeps
   review open; otherwise a missing read exits to live or fails a draft-only
