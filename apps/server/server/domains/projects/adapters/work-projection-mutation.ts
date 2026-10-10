@@ -113,10 +113,7 @@ export function createWorkProjectionMutation(input: {
             select 1 from ${branchWriteJournal}
             where ${branchWriteJournal.branchId} = ${documentBranches.id}
               and ${branchWriteJournal.generation} = ${documentBranches.generation}
-              and ${branchWriteJournal.status} in ('active', 'rollback_pending')
-              and ((${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
-                or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId')
-                  is distinct from 'string'))`,
+              and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
         ),
       );
     const changed = tx

@@ -1,47 +1,34 @@
 /** Canonical pending-review predicate for Work draft branches. */
 import type { DraftId } from "@meridian/contracts";
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
-import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
+import type { WorkId } from "@meridian/contracts/runtime";
 import type {
   WorkDraftPendingEvidence,
-  WorkDraftPendingRowEvidence,
   WorkDraftPendingStore,
 } from "./ports/work-draft-pending-store.js";
 
-export type PendingWorkDraft = {
-  branch: WorkDraftPendingEvidence["branch"];
-  rows: WorkDraftPendingRowEvidence[];
-  manifestEntry?: {
-    branchId: string;
-    documentId: DocumentId;
-  };
-};
+/** One active `work_draft` branch of a draft and its reviewable rows (maybe none). */
+export type DraftBranchEvidence = WorkDraftPendingEvidence;
+
+/** A branch with reviewable rows. */
+export type PendingWorkDraft = WorkDraftPendingEvidence;
 
 export type WorkDraftPending = {
+  /** The draft's branches with reviewable rows. */
   list(draftId: DraftId): Promise<PendingWorkDraft[]>;
+  /** Every active branch of the draft, with or without rows: the review list's branch half. */
+  branches(draftId: DraftId): Promise<DraftBranchEvidence[]>;
+  /** Pending documents per Work: branches with rows plus its draft's change rows (§13.2). */
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftPending {
-  async function list(draftId: DraftId): Promise<PendingWorkDraft[]> {
-    const evidence = await store.listReviewableEvidenceForDraft(draftId);
-    const manifestEntries = new Map<DocumentId, PendingWorkDraft["manifestEntry"]>();
-    for (const { branch, rows } of evidence) {
-      for (const row of rows) {
-        const documentId = manifestMembershipRowDocumentId(row);
-        if (documentId) manifestEntries.set(documentId, { branchId: branch.branchId, documentId });
-      }
-    }
-    return evidence.flatMap(({ branch, rows }) => {
-      const contentRows = rows.filter((row) => manifestMembershipRowDocumentId(row) === null);
-      if (contentRows.length === 0) return [];
-      const manifestEntry = manifestEntries.get(branch.documentId);
-      return [{ branch, rows: contentRows, ...(manifestEntry ? { manifestEntry } : {}) }];
-    });
-  }
-
   return {
-    list,
+    async list(draftId) {
+      return (await store.listDraftBranchEvidence(draftId)).filter(
+        (evidence) => evidence.rows.length > 0,
+      );
+    },
+    branches: (draftId) => store.listDraftBranchEvidence(draftId),
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       return store.countPendingByWorkIds(workIds);

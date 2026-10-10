@@ -149,8 +149,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           updateMeta,
         }) ?? Promise.reject(new Error("Drizzle branch journal append is unavailable"));
       const initial = await projectionState();
-      await appendJournal({ kind: "manifest_membership", documentId: DOCUMENT_ID });
-      await expect(projectionState()).resolves.toEqual(initial);
       await appendJournal({ kind: "edit" });
       const appended = await projectionState();
       expect(appended.entityRevision).toBe((initial.entityRevision ?? 0n) + 1n);

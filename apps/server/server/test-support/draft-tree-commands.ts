@@ -8,6 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { DraftApplyAllResponse, DraftReviewItemWire } from "@meridian/contracts/drafts";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import * as Y from "yjs";
@@ -18,6 +19,13 @@ import {
 } from "../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
+import {
+  type DraftApplyRouteResult,
+  handleApplyAllWorkDraftRequest,
+  handleApplyWorkDraftRequest,
+  handleWorkDraftListRequest,
+  selectDraftRouteServices,
+} from "../lib/draft-review-route.js";
 import {
   createContextEntry,
   parseCreateContextEntryBody,
@@ -97,8 +105,25 @@ export interface DraftTreeCommands {
    * replaces what it calls with `discardItems`).
    */
   discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
-  /** Apply these documents from the Work's draft through the review command (lane E's seam). */
-  apply(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
+  /** The Work's review list through its route core: the legacy `drafts` and the `items`. */
+  review(work: ScenarioWork): ReturnType<typeof handleWorkDraftListRequest>;
+  /**
+   * The per-document Apply route core, one call per document in order, each with the
+   * tokens its item rendered unless `tokens` says otherwise (`none`: the legacy request).
+   */
+  apply(
+    work: ScenarioWork,
+    documentIds: readonly DocumentId[],
+    options?: { tokens?: "rendered" | "none" },
+  ): Promise<DraftApplyRouteResult[]>;
+  /**
+   * The Apply all route core over the items the review list rendered (or `items`, as a
+   * dock would send what it rendered earlier), for the Work's active draft (or `draftId`).
+   */
+  applyAll(
+    work: ScenarioWork,
+    options?: { items?: readonly DraftReviewItemWire[]; draftId?: string },
+  ): Promise<DraftApplyAllResponse>;
   /**
    * Close the Work's active draft whole, as Discard all will (§2.1): every branch of the
    * draft leased first (hook `discard.afterLeases`), then the Work, the draft, the close.
@@ -110,6 +135,17 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     documentId: DocumentId,
   ): Promise<{ branchId: string; generation: number }>;
+}
+
+/** The tokens an item rendered, as a request carries them. */
+function refOf(item: DraftReviewItemWire) {
+  return {
+    locationToken: item.locationToken,
+    ...(item.liveTextToken === null ? {} : { liveTextToken: item.liveTextToken }),
+    ...(item.branchGenerationToken === null
+      ? {}
+      : { branchGenerationToken: item.branchGenerationToken }),
+  };
 }
 
 function uri(path: string): string {
@@ -331,6 +367,12 @@ export function draftTreeCommands(
     }
   }
 
+  const routes = () => selectDraftRouteServices(composed().runtime.app);
+
+  function review(work: ScenarioWork) {
+    return handleWorkDraftListRequest(routes(), { projectId, workId: work.id, userId });
+  }
+
   async function closeDraft(work: ScenarioWork) {
     const { drafts, draftLeases } = ports().documentSync;
     const draft = await drafts.activeForWork(work.id);
@@ -361,15 +403,43 @@ export function draftTreeCommands(
           userId,
         }),
       ),
-    apply: (work, documentIds) =>
-      eachItem(work, documentIds, "apply", ({ documentId, draftId }) =>
-        ports().documentSync.draftReview.applyWorkDraft({
-          projectId,
-          workId: work.id,
-          documentId,
+    review,
+    async apply(work, documentIds, options = {}) {
+      const { items } = await review(work);
+      const results: DraftApplyRouteResult[] = [];
+      for (const documentId of documentIds) {
+        const item = items.find((candidate) => candidate.documentId === documentId);
+        if (!item?.draftBranchId) throw new Error(`No draft branch of ${documentId} to apply`);
+        results.push(
+          await handleApplyWorkDraftRequest(routes(), {
+            projectId,
+            workId: work.id,
+            documentId,
+            draftId: item.draftBranchId,
+            userId,
+            ...(options.tokens === "none" ? {} : { tokens: refOf(item) }),
+          }),
+        );
+      }
+      return results;
+    },
+    async applyAll(work, options = {}) {
+      const listed = options.items ? null : await review(work);
+      const items = options.items ?? listed?.items ?? [];
+      const draftId =
+        options.draftId ??
+        items[0]?.draftId ??
+        (await ports().documentSync.drafts.activeForWork(work.id))?.id;
+      if (!draftId) throw new Error(`${work.slug} has no draft to apply`);
+      return handleApplyAllWorkDraftRequest(routes(), {
+        projectId,
+        workId: work.id,
+        userId,
+        request: {
           draftId,
-          userId,
-        }),
-      ),
+          items: items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) })),
+        },
+      });
+    },
   };
 }

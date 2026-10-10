@@ -245,7 +245,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
       }
 
-      // A personal document moved into the project arrives there: live in its manifest, and
+      // A personal document moved into the project arrives there: live in the project, and
       // the ref waiting at the destination settles on it.
       const castRef = await register("kb://cast.md");
       const cast = await create("user://cast.md");

@@ -4,7 +4,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import { buildCompanionCandidates, buildWholeBranchCandidates } from "./branch-push-candidates.js";
+import { buildWholeBranchCandidates } from "./branch-push-candidates.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
@@ -16,18 +16,11 @@ import {
   type PushLineageRow,
   type PushToLiveResult,
 } from "./branch-push-contracts.js";
-import {
-  assertNoPendingIntegration,
-  assertRowsIntegrated,
-  stablePushIdempotencyKey,
-  wholeBranchPushUpdate,
-} from "./branch-push-plan.js";
+import { stablePushIdempotencyKey, wholeBranchPushUpdate } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
-import { createWorkDraftPending } from "./work-draft-pending.js";
-import { createWorkPushPolicy } from "./work-push-policy.js";
 
 type ComputedCandidate = {
   candidate: PushCandidate;
@@ -90,26 +83,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<ComputedCandidate> {
     const rows = candidate.rows;
     const liveDoc = await loadLiveDoc(branch.documentId);
-    let afterDoc: Y.Doc | null = null;
-    let branchDoc: Y.Doc | null = null;
+    const branchDoc = materializeBranch(branch);
     try {
-      let pushUpdate: Uint8Array;
-      if (candidate.kind === "manifest") {
-        const operation = "manifest_membership_push";
-        afterDoc = createCollabYDoc({ gc: false });
-        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-        for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
-        assertNoPendingIntegration(
-          afterDoc,
-          operation,
-          rows.map((row) => row.id),
-        );
-        assertRowsIntegrated(afterDoc, rows, operation);
-        pushUpdate = Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc));
-      } else {
-        branchDoc = materializeBranch(branch);
-        pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
-      }
+      const pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
       return {
         candidate,
         branch,
@@ -118,12 +94,10 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           branchId: branch.branchId,
           generation: branch.generation,
           journalIds: rows.map((row) => row.id),
-          publicationKind: candidate.kind,
         }),
       };
     } finally {
-      branchDoc?.destroy();
-      afterDoc?.destroy();
+      branchDoc.destroy();
       liveDoc.destroy();
     }
   }
@@ -278,8 +252,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             .documentId,
       ),
     );
-    // The tree is independent of branch state. Open the scope before either
-    // content or companion-manifest locks, then revalidate every branch under its lock.
+    // The tree is independent of branch state. Open the scope before any lock, then
+    // revalidate every branch under its lock.
     return input.links.within({ documentId: documentIds[0] as string, documentIds }, async () => {
       for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
         try {
@@ -453,67 +427,10 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return items[0] as PushToLiveResult;
   };
 
-  const pushToLiveWithManifestEntry: BranchPushService["pushToLiveWithManifestEntry"] = (
-    pushInput,
-  ) =>
-    withActiveWorkDraftBranchLock(
-      [pushInput.branchId, pushInput.manifestBranchId],
-      async ([contentBranch, manifestBranch], lease, leasedBranchIds) => {
-        const content = await sourceFor(contentBranch as BranchSnapshot);
-        if (content.rows.length === 0) return mapNoActiveRows(await noActiveRows(content.branch));
-        const manifest = await sourceFor(manifestBranch as BranchSnapshot);
-        const built = buildCompanionCandidates({
-          content,
-          manifest,
-          manifestEntryDocumentId: pushInput.manifestEntryDocumentId,
-          ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-          ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
-        });
-        const result = await executeCandidateBatch(
-          built,
-          branchMap([content.branch, manifest.branch]),
-          lease,
-          leasedBranchIds,
-          pushInput.signal,
-        );
-        if (result.kind === "conflict") {
-          throw new BranchPushCommitConflictError(content.branch.branchId);
-        }
-        if (result.kind === "refused") {
-          return mapRefused(result).find(
-            (item) => item.branchId === content.branch.branchId,
-          ) as PushToLiveResult;
-        }
-        return mapCommitted(result).get(content.branch.branchId) as PushToLiveResult;
-      },
-    );
-
-  const workPushPolicy = createWorkPushPolicy({
-    workPushPolicyStore: input.workPushPolicyStore,
-    workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
-    drafts: input.drafts,
-    applyPendingDraft: ({ draft, pushedByUserId }) =>
-      draft.manifestEntry
-        ? pushToLiveWithManifestEntry({
-            branchId: draft.branch.branchId,
-            manifestBranchId: draft.manifestEntry.branchId,
-            manifestEntryDocumentId: draft.manifestEntry.documentId,
-            ...(pushedByUserId ? { pushedByUserId } : {}),
-            resetPolicy: "auto",
-          })
-        : pushToLive({
-            branchId: draft.branch.branchId,
-            ...(pushedByUserId ? { pushedByUserId } : {}),
-            resetPolicy: "auto",
-          }),
-  });
-
   return {
     pushToLive,
     pushBranchesToLive,
-    pushToLiveWithManifestEntry,
     recoverPendingLiveSettlements: transition.recover,
-    ...workPushPolicy,
   };
 
   async function resolveDocumentTitle(documentId: DocumentId): Promise<string> {

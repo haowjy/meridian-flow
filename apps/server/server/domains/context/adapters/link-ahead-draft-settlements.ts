@@ -129,3 +129,26 @@ export async function dropDraftSettlements(
       ),
     );
 }
+
+/**
+ * What these refs mean in the draft now: Apply's staging snapshot of a holder's links
+ * (§10.8 step 2). Refs the draft never settled are absent. Inside the caller's transaction.
+ */
+export async function draftMeaningsOf(
+  db: Database,
+  input: { draftId: DraftId; aheadIds: readonly string[] },
+): Promise<{ aheadId: string; documentId: DocumentId }[]> {
+  if (input.aheadIds.length === 0) return [];
+  return currentDrizzleDb(db)
+    .select({
+      aheadId: linkAheadDraftSettlements.aheadId,
+      documentId: linkAheadDraftSettlements.documentId,
+    })
+    .from(linkAheadDraftSettlements)
+    .where(
+      and(
+        eq(linkAheadDraftSettlements.draftId, input.draftId),
+        inArray(linkAheadDraftSettlements.aheadId, [...new Set(input.aheadIds)]),
+      ),
+    );
+}

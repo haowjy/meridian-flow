@@ -12,13 +12,11 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
-import type { Drafts } from "./drafts.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
-import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -198,9 +196,8 @@ export type PreparedDiscardCommit = {
 export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
+  /** The reviewable rows the whole-branch state publishes. */
   rows: BranchJournalRow[];
-  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
-  kind: "content" | "manifest";
 };
 
 export type CandidateBatch = {
@@ -300,15 +297,6 @@ export type BranchPushService = {
     /** Every item a publication step held, branchless ones included. */
     heldItems: readonly PublicationItemHold[];
   }>;
-  pushToLiveWithManifestEntry(input: {
-    branchId: string;
-    manifestBranchId: string;
-    manifestEntryDocumentId: DocumentId;
-    pushedByUserId?: UserId;
-    signal?: AbortSignal;
-    resetPolicy?: "auto";
-  }): Promise<PushToLiveResult>;
-  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
 
 export type SetWorkPushPolicyInput = {
@@ -362,10 +350,6 @@ export type BranchPushServiceInput = {
   branchStore: BranchStore;
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
-  workPushPolicyStore: WorkPushPolicyStore;
-  workDraftPendingStore: WorkDraftPendingStore;
-  /** The D40 switch applies the Work's active draft's pending branches. */
-  drafts: Pick<Drafts, "activeForWork">;
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;

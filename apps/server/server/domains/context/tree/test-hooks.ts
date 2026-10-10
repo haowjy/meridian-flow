@@ -6,6 +6,7 @@
 export type TreeHookPoint =
   | "absorb.beforeRepoint"
   | "createInDraft.afterCandidateLock"
+  | "createLive.afterLease"
   | "createLive.afterCandidateLock"
   | "endUse.afterRevalidate"
   | "moves.beforeInstall"

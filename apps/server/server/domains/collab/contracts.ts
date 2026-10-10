@@ -43,6 +43,8 @@ export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
+import type { ApplyItemRef, ApplyResult } from "./domain/draft-publication.js";
+import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
@@ -325,7 +327,14 @@ export type DocumentCheckpoints = {
 };
 
 export type DraftReviewApi = {
+  /** The legacy list: branch items with reviewable rows (`draftId` is the branch id). */
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
+  /** One read of the Work's active draft: its items (§13.1) and the legacy list from them. */
+  listItems(input: { workId: WorkId }): Promise<{
+    draftId: DraftId | null;
+    drafts: ReviewableDraft[];
+    items: DraftReviewItem[];
+  }>;
   preview(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -334,14 +343,24 @@ export type DraftReviewApi = {
   }): Promise<
     ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
   >;
+  /** The legacy per-document Apply (`draftId` is the branch id), optionally with tokens. */
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
     userId: UserId;
+    tokens?: Omit<ApplyItemRef, "itemKey">;
     signal?: AbortSignal;
   }): Promise<DraftApplyResult>;
+  /** Apply all (§11.5): the items the writer saw, one publication; closes D when drained. */
+  applyAll(input: {
+    workId: WorkId;
+    draftId: DraftId;
+    items: readonly ApplyItemRef[];
+    userId: UserId;
+    signal?: AbortSignal;
+  }): Promise<ApplyResult>;
   discardWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;

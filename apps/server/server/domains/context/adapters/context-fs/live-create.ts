@@ -171,15 +171,16 @@ export class LiveCreate {
         }
         const { reveal } = found;
         return withContent
-          ? await this.deps.documentSync.withLiveDocument(reveal.documentId, (held) =>
-              run({
+          ? await this.deps.documentSync.withLiveDocument(reveal.documentId, async (held) => {
+              await treeHook("createLive.afterLease");
+              return run({
                 kind: "reveal-with-content",
                 content: withContent,
                 reveal,
                 held,
                 uri: this.deps.holderUri(path),
-              }),
-            )
+              });
+            })
           : await run({ kind: "reveal", reveal });
       } catch (error) {
         if (!(error instanceof LiveCreateCandidateChangedError)) throw error;

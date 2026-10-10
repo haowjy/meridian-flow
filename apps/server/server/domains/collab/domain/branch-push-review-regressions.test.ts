@@ -36,13 +36,10 @@ import type {
   PushCommitStore,
   PushLineageRow,
   SettlementBatchIdentity,
-  WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
-import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
-const MANIFEST_ID = "00000000-0000-4000-8000-000000000102" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000104" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000105" as TurnId;
@@ -255,14 +252,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
   }
 }
 
-function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
-  return {
-    async setWorkWriteMode() {
-      throw new Error("review regression store does not support work policy writes");
-    },
-  };
-}
-
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
   criticalSections?: BranchCriticalSections;
@@ -310,20 +299,6 @@ function serviceFixture(input: {
       branchStore,
       journalReadStore: stores,
       commitStore: stores,
-      workPushPolicyStore: unsupportedWorkPolicyStore(),
-      workDraftPendingStore: {
-        async countPendingByWorkIds() {
-          throw new Error("review regression store does not support pending Work counts");
-        },
-        async listReviewableEvidenceForDraft() {
-          throw new Error("review regression store does not support pending Work reads");
-        },
-      },
-      drafts: {
-        async activeForWork() {
-          throw new Error("review regression store does not resolve drafts");
-        },
-      },
       settlementStore: settlements,
       journal: input.journal,
       liveCoordinator,
@@ -366,86 +341,18 @@ async function blindConflictFixture(
   contentBranch.state = Y.encodeStateAsUpdate(contentBranchDoc);
   contentBranch.stateVector = Y.encodeStateVector(contentBranchDoc);
 
-  const manifestLive = docFromMarkdown("Manifest base.");
-  const manifestBranch = branchFromDoc("branch_manifest", MANIFEST_ID, manifestLive);
-  await journal.append(MANIFEST_ID, Y.encodeStateAsUpdate(manifestLive), {
-    origin: "system",
-    seq: 0,
-  });
   const fixture = serviceFixture({
     ...options,
-    branches: [contentBranch, manifestBranch],
+    branches: [contentBranch],
     rows: [row],
     journal,
-    liveDocs: new Map([
-      [CONTENT_ID, contentLive],
-      [MANIFEST_ID, manifestLive],
-    ]),
+    liveDocs: new Map([[CONTENT_ID, contentLive]]),
   });
-  return { ...fixture, contentBranch, manifestBranch };
+  return { ...fixture, contentBranch };
 }
 
 describe("branch push review regressions", () => {
-  it("rejects manifest membership rows with missing Yjs dependencies", async () => {
-    const contentLive = docFromMarkdown("Content base.");
-    const contentDoc = cloneDoc(contentLive);
-    const beforeContent = Y.encodeStateVector(contentDoc);
-    model.insertBlocks(toDocHandle(contentDoc), null, codec.parse("Draft content."));
-    const contentBranch = branchFromDoc("branch_content", CONTENT_ID, contentDoc);
-    const contentRow = rowFor(contentBranch, 1, Y.encodeStateAsUpdate(contentDoc, beforeContent));
-
-    const manifestLive = createCollabYDoc({ gc: false });
-    const manifestDoc = createCollabYDoc({ gc: false });
-    const text = manifestDoc.getText("split-dependency");
-    text.insert(0, "A");
-    const beforeSecond = Y.encodeStateVector(manifestDoc);
-    text.insert(1, "B");
-    const manifestBranch = branchFromDoc("branch_manifest", MANIFEST_ID, manifestDoc);
-    const manifestRow = rowFor(
-      manifestBranch,
-      2,
-      Y.encodeStateAsUpdate(manifestDoc, beforeSecond),
-      { kind: "manifest_membership", documentId: CONTENT_ID },
-    );
-    const journal = createInMemoryJournal();
-    await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(contentLive), {
-      origin: "system",
-      seq: 0,
-    });
-    await journal.append(MANIFEST_ID, Y.encodeStateAsUpdate(manifestLive), {
-      origin: "system",
-      seq: 0,
-    });
-    const { service } = serviceFixture({
-      branches: [contentBranch, manifestBranch],
-      rows: [contentRow, manifestRow],
-      journal,
-      liveDocs: new Map([
-        [CONTENT_ID, contentLive],
-        [MANIFEST_ID, manifestLive],
-      ]),
-    });
-
-    const error = await service
-      .pushToLiveWithManifestEntry({
-        branchId: contentBranch.branchId,
-        manifestBranchId: manifestBranch.branchId,
-        manifestEntryDocumentId: CONTENT_ID,
-      })
-      .catch((cause: unknown) => cause);
-
-    expect(error).toBeInstanceOf(BranchPeerIntegrationError);
-    expect(error).toMatchObject({
-      operation: "manifest_membership_push",
-      journalIds: [2],
-      message: "manifest_membership_push left pending Yjs dependencies for journal rows 2",
-    });
-  });
-
-  it.each([
-    false,
-    true,
-  ])("opens the link scope before branch locks (companion: %s)", async (companion) => {
+  it("opens the link scope before branch locks", async () => {
     const criticalSections = createBranchCriticalSections();
     let loaded = false;
     const fixture = await blindConflictFixture({
@@ -455,7 +362,7 @@ describe("branch push review regressions", () => {
         async within<T>(_key: LinkScopeKey, operation: () => Promise<T>) {
           // Nested settlement reuses the operation's snapshot, just as the adapter does.
           if (!loaded) {
-            await criticalSections.withBranches(["branch_content", "branch_manifest"], async () => {
+            await criticalSections.withBranches(["branch_content"], async () => {
               loaded = true;
             });
           }
@@ -463,31 +370,16 @@ describe("branch push review regressions", () => {
         },
       },
     });
-    const result = companion
-      ? await fixture.service.pushToLiveWithManifestEntry({
-          branchId: fixture.contentBranch.branchId,
-          manifestBranchId: fixture.manifestBranch.branchId,
-          manifestEntryDocumentId: CONTENT_ID,
-        })
-      : await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
+    const result = await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
     expect(result.status).toBe("pushed");
     expect(loaded).toBe(true);
   });
 
-  it("always applies writer-overlapping whole and companion pushes", async () => {
+  it("always applies writer-overlapping whole pushes", async () => {
     const whole = await blindConflictFixture();
     await expect(
       whole.service.pushToLive({
         branchId: whole.contentBranch.branchId,
-      }),
-    ).resolves.toMatchObject({ status: "pushed" });
-
-    const companion = await blindConflictFixture();
-    await expect(
-      companion.service.pushToLiveWithManifestEntry({
-        branchId: companion.contentBranch.branchId,
-        manifestBranchId: companion.manifestBranch.branchId,
-        manifestEntryDocumentId: CONTENT_ID,
       }),
     ).resolves.toMatchObject({ status: "pushed" });
   });
