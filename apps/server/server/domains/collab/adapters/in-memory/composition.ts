@@ -32,6 +32,7 @@ import { createDrafts } from "../../domain/drafts.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
+import { createReplySaveFences } from "../../domain/reply-save-fences.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -99,6 +100,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     boundary: createInMemoryDraftWriteBoundary(),
   });
   // No Work drafts exist in memory, so the pool routes both destinations to the live core.
+  const fileAccess = createAllowAllFileAccess();
   const agentEdit = createThreadPeerCorePool({
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
@@ -116,22 +118,22 @@ export function createInMemoryCollabDomain(): CollabDomain {
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
-    pinFences: {
-      branchIds: async () => [],
-      withLeases: () => {
-        throw new Error("The in-memory collab domain has no branches to lease");
-      },
-      stale: async () => new Set(),
-    },
+    fences: createReplySaveFences({
+      liveUtilityCore: runtime.liveUtilityCore,
+      branches: { getBranch: async () => null },
+      criticalSections: createBranchCriticalSections(),
+      drafts,
+      fileAccess,
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+    }),
     commitThreadResponseAtomically: (operation) => operation(),
     responseTransactionSettlement: {
       deferUntilCommit: () => false,
       deferUntilRollback: () => false,
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
-    fileAccess: createAllowAllFileAccess(),
-    lockWorks: async () => {},
-    lockLiveDocuments: async () => {},
+    fileAccess,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({

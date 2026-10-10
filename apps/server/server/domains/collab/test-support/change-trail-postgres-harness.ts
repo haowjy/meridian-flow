@@ -113,7 +113,7 @@ const { createResponseBranchFinalization, createResponseWriteFinalizer } = await
   "../domain/response-write-finalizer.js"
 );
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
-const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
+const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"

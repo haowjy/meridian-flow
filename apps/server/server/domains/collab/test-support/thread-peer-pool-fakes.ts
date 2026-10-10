@@ -8,14 +8,13 @@ import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
 import * as Y from "yjs";
-import {
-  type BranchLockLease,
-  createBranchCriticalSections,
-} from "../domain/branch-critical-sections.js";
+import { createAllowAllFileAccess } from "../../file-policy/index.js";
+import { createBranchCriticalSections } from "../domain/branch-critical-sections.js";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
 import { BranchNotFoundError } from "../domain/branch-resolver.js";
 import type { BranchReversalHistoryReader } from "../domain/branch-reversal-history.js";
 import type { Draft } from "../domain/ports/draft-store.js";
+import { createReplySaveFences } from "../domain/reply-save-fences.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -188,12 +187,11 @@ export function createFakeThreadPeerCores() {
 }
 
 /**
- * Drafts with no database: a Work has no draft until a write ensures one (F7), and the
- * save's pin fences lease in-process and find nothing stale.
+ * Drafts with no database: a Work has no draft until a write ensures one (F7). The save's
+ * fences are the real ones over no branches and no locks.
  */
-export function createFakeDrafts() {
+export function createFakeDrafts(liveUtilityCore: AgentEditCore) {
   const active = new Map<WorkId, DraftId>();
-  const sections = createBranchCriticalSections();
   return {
     drafts: {
       viewForWork: async (workId: WorkId | null): Promise<LinkView> => {
@@ -214,12 +212,15 @@ export function createFakeDrafts() {
         };
       }),
     },
-    pinFences: {
-      branchIds: async (pins: readonly { branchId: string }[]) => pins.map((pin) => pin.branchId),
-      withLeases: <T>(ids: readonly string[], run: (lease: BranchLockLease) => Promise<T>) =>
-        sections.withBranches(ids, run),
-      stale: async () => new Set<DocumentId>(),
-    },
+    fences: createReplySaveFences({
+      liveUtilityCore,
+      branches: { getBranch: async () => null },
+      criticalSections: createBranchCriticalSections(),
+      drafts: { shareActive: async () => null },
+      fileAccess: createAllowAllFileAccess(),
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+    }),
   };
 }
 
