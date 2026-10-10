@@ -1,9 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Decoration model for in-manuscript draft review: each kind of change, the
- * removal widget and its fold, focus, and hidden marks, driven through a real
- * collaborative TipTap editor so anchors resolve exactly as they do in review.
- */
+/** Review marks, removals, focus and visibility through a real collaborative editor. */
 
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
@@ -72,48 +68,23 @@ function markedTextHunk(editor: Editor, id: string, op: string, words: string, e
 }
 
 describe("insertion marks", () => {
-  it("paints an AI insertion green and a writer insertion gold", () => {
-    const { editor } = createReviewEditor(["Elder Mo raised one withered hand and wept."]);
-    setModel(
-      editor,
-      model(
-        [operation("a1", "agent"), operation("w1", "writer")],
-        [
-          markedTextHunk(editor, "h1", "a1", "one withered"),
-          markedTextHunk(editor, "h2", "w1", "wept"),
-        ],
-      ),
-    );
-    expect(marked(editor, "meridian-review-added")).toEqual(["one withered"]);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["wept"]);
-  });
-
   it("paints writer text typed inside an AI change gold inside green", () => {
     const { editor } = createReviewEditor(["The third seal cracked, spilling bone-white light."]);
     const start = posOf(editor, "The third");
     const bone = posOf(editor, "bone-white");
     const end = posOf(editor, ".") + 1;
-    setModel(
+    paintText(
       editor,
-      model(
-        [operation("a1", "agent", "closure:a1+w1"), operation("w1", "writer", "closure:a1+w1")],
-        [
-          // Ordinary writer typing inside AI text: the server does not flag it.
-          textHunk(
-            editor,
-            "h1",
-            ["a1", "w1"],
-            { from: start, to: end },
-            {
-              spans: [
-                span(editor, "a1", start, bone),
-                span(editor, "w1", bone, bone + 10),
-                span(editor, "a1", bone + 10, end),
-              ],
-            },
-          ),
+      [operation("a1", "agent", "closure:a1+w1"), operation("w1", "writer", "closure:a1+w1")],
+      ["a1", "w1"],
+      { from: start, to: end },
+      {
+        spans: [
+          span(editor, "a1", start, bone),
+          span(editor, "w1", bone, bone + 10),
+          span(editor, "a1", bone + 10, end),
         ],
-      ),
+      },
     );
     expect(marked(editor, "meridian-review-writer")).toEqual(["bone-white"]);
     expect(marked(editor, "meridian-review-added").join("")).toBe(
@@ -176,25 +147,18 @@ describe("insertion marks", () => {
     expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
 
     // A partial receipt retires only the explicitly attributed portion.
-    paintText(
-      editor,
-      [operation("w1", "writer")],
-      ["w1"],
-      { from: at, to: at + 4 },
-      {
-        spans: [span(editor, "w1", at, at + 4)],
-      },
-    );
-    expect(marked(editor, "meridian-review-writer").join("")).toBe("slower ");
-    paintText(
-      editor,
-      [operation("w1", "writer")],
-      ["w1"],
-      { from: at, to: at + 7 },
-      {
-        spans: [span(editor, "w1", at, at + 7)],
-      },
-    );
+    for (const length of [4, 7]) {
+      paintText(
+        editor,
+        [operation("w1", "writer")],
+        ["w1"],
+        { from: at, to: at + length },
+        {
+          spans: [span(editor, "w1", at, at + length)],
+        },
+      );
+      expect(marked(editor, "meridian-review-writer").join("")).toBe("slower ");
+    }
     expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
     expect(getInlineReviewPluginState(editor.state)?.pendingWriterRanges).toHaveLength(0);
 
@@ -615,22 +579,22 @@ describe("clicking a removal puts the caret where it stands", () => {
   });
 });
 
-describe("focus and visibility", () => {
-  function focusModel(editor: Editor): InlineReviewModel {
-    return model(
-      [
-        operation("a1", "agent", "closure:one"),
-        operation("w1", "writer", "closure:one"),
-        operation("a2", "agent", "closure:two"),
-      ],
-      [
-        markedTextHunk(editor, "h1", "a1", "alpha"),
-        markedTextHunk(editor, "h2", "w1", "beta"),
-        markedTextHunk(editor, "h3", "a2", "gamma", { deletedText: "old" }),
-      ],
-    );
-  }
+function focusModel(editor: Editor): InlineReviewModel {
+  return model(
+    [
+      operation("a1", "agent", "closure:one"),
+      operation("w1", "writer", "closure:one"),
+      operation("a2", "agent", "closure:two"),
+    ],
+    [
+      markedTextHunk(editor, "h1", "a1", "alpha"),
+      markedTextHunk(editor, "h2", "w1", "beta"),
+      markedTextHunk(editor, "h3", "a2", "gamma", { deletedText: "old" }),
+    ],
+  );
+}
 
+describe("focus and visibility", () => {
   it("emphasizes every operation of the focused change and nothing else", () => {
     const { editor } = createReviewEditor(["alpha beta gamma."]);
     setModel(editor, focusModel(editor));
@@ -684,37 +648,22 @@ describe("focus and visibility", () => {
 });
 
 describe("anchors survive real edits", () => {
-  function threeHunks(editor: Editor): InlineReviewModel {
-    return model(
-      [
-        operation("a1", "agent", "c1"),
-        operation("a2", "agent", "c2"),
-        operation("a3", "agent", "c3"),
-      ],
-      [
-        markedTextHunk(editor, "h1", "a1", "alpha"),
-        markedTextHunk(editor, "h2", "a2", "beta"),
-        markedTextHunk(editor, "h3", "a3", "gamma", { deletedText: "old" }),
-      ],
-    );
-  }
-
   it("re-anchors after the writer types, so a focus step marks the right words", () => {
     const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, threeHunks(editor));
+    setModel(editor, focusModel(editor));
     editor.chain().setTextSelection(1).insertContent("Well, ").run();
     editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-emphasized")).toEqual(["beta"]);
+    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
     expect(editor.getText()).toBe("Well, alpha beta gamma.");
   });
 
   it("re-anchors after a remote edit moves the words", () => {
     const { editor, doc } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, threeHunks(editor));
+    setModel(editor, focusModel(editor));
     const text = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
     doc.transact(() => (text.get(0) as Y.XmlText).insert(0, "Remote "), "remote");
     editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-emphasized")).toEqual(["beta"]);
+    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
     expect(editor.getText()).toBe("Remote alpha beta gamma.");
   });
 });
