@@ -11,14 +11,13 @@ type EditorDocument =
 export function openDocumentInEditor(
   open: OpenContextRoute,
   target: EditorDocument,
-  onCommitted?: () => void,
-  onAccepted?: () => void,
+  options: { afterCommit?: () => void } = {},
 ) {
   const tab = "kind" in target && isEditorContextTab(target) ? target : undefined;
   if ("kind" in target && target.kind === "new")
     return open(
       { scheme: "unfiled", path: "", documentId: target.documentId },
-      { replace: false, tab, onCommitted, onAccepted },
+      { replace: false, tab, ...options },
     );
   return open(
     {
@@ -28,15 +27,15 @@ export function openDocumentInEditor(
       ...(tab ? { documentId: tab.documentId } : {}),
       ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
     },
-    { replace: false, onCommitted, onAccepted, ...(tab ? { tab } : {}) },
+    { replace: false, ...options, ...(tab ? { tab } : {}) },
   );
 }
 
 export function useOpenDocumentInEditor() {
   const open = useOpenContextRoute();
   return useCallback(
-    (target: EditorDocument, onCommitted?: () => void) => {
-      if (open) void openDocumentInEditor(open, target, onCommitted);
+    (target: EditorDocument, options?: { afterCommit?: () => void }) => {
+      if (open) void openDocumentInEditor(open, target, options);
     },
     [open],
   );

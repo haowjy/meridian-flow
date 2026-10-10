@@ -6,7 +6,7 @@ import { openDocumentInEditor } from "./use-open-document-in-editor";
 
 it("routes Uploads without offering an ineligible prepared Editor tab", async () => {
   const open = vi.fn<OpenContextRoute>().mockResolvedValue({ kind: "applied" });
-  const onAccepted = vi.fn();
+  const afterCommit = vi.fn();
   const upload: ContextTab = {
     kind: "viewer",
     documentId: "upload",
@@ -17,12 +17,12 @@ it("routes Uploads without offering an ineligible prepared Editor tab", async ()
     editable: false,
     fileType: "image",
   };
-  await openDocumentInEditor(open, upload, onAccepted);
+  await openDocumentInEditor(open, upload, { afterCommit });
   expect(open).toHaveBeenCalledWith(
     { scheme: "uploads", path: "/map.png", workId: "work" },
-    { replace: false, onCommitted: onAccepted, onAccepted: undefined },
+    { replace: false, afterCommit },
   );
-  expect(onAccepted).not.toHaveBeenCalled();
+  expect(afterCommit).not.toHaveBeenCalled();
 });
 
 it("keeps the stable Untitled identity and prepared tab on the Editor path", async () => {
@@ -36,6 +36,6 @@ it("keeps the stable Untitled identity and prepared tab on the Editor path", asy
   await openDocumentInEditor(open, tab);
   expect(open).toHaveBeenCalledWith(
     { scheme: "unfiled", path: "", documentId: "local" },
-    { replace: false, tab, onCommitted: undefined, onAccepted: undefined },
+    { replace: false, tab },
   );
 });

@@ -62,12 +62,14 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
-import { resolveEditorPresentation } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
-import type { VisibleEditorRoute } from "./context/resolve-visible-editor-tab";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import {
+  DesktopProjectPresentationProvider,
+  useDesktopProjectController,
+} from "./DesktopProjectController";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
 import { EditorReviewAddressOwner } from "./dock/EditorReviewAddressOwner";
@@ -166,7 +168,7 @@ export type ProjectViewProps = {
   reviewDraftId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
-  onSelectScreen: (screen: ScreenKey, displayedEditor?: VisibleEditorRoute | null) => void;
+  onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
   onSelectContextFolder: (folder: string) => void;
@@ -536,30 +538,23 @@ function expandToggle(
 
 /** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
-  const priorEditor = useRef<
-    | (Pick<
-        ReviewScopedProjectProps,
-        | "editorReview"
-        | "editorWorkId"
-        | "editorWork"
-        | "activeContextScheme"
-        | "activeContextPath"
-        | "activeContextChat"
-        | "activeLocalDocumentId"
-      > & { editorWorkId: string })
-    | null
-  >(null);
-  const editorPresentation = resolveEditorPresentation({
+  const screenSwitch = useDesktopProjectController({
+    entryKey: props.routeLocationKey ?? "",
+    projectId: props.projectId,
     current:
       props.editorScope.status === "ready"
-        ? { ...props, editorWorkId: props.editorScope.workId }
+        ? {
+            ...props,
+            editorWorkId: props.editorScope.workId,
+            localDocumentId: props.activeLocalDocumentId,
+          }
         : null,
-    prior: priorEditor.current,
     requestedWorkId: props.editorWorkId,
     screen: props.activeScreen,
     contextLive: props.contextLive,
     issue: props.routeIssues?.editor,
   });
+  const { editorPresentation } = screenSwitch;
   const { active: editorActive, mounted: mountedEditor } = editorPresentation;
   const mountedEditorRoute = mountedEditor
     ? {
@@ -570,10 +565,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         localDocumentId: mountedEditor.activeLocalDocumentId,
       }
     : null;
-  useLayoutEffect(() => {
-    if (editorActive && props.editorScope.status === "ready")
-      priorEditor.current = { ...props, editorWorkId: props.editorScope.workId };
-  });
 
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
@@ -638,9 +629,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
-          onSelectScreen={(next) =>
-            props.onSelectScreen(next, editorPresentation.visible ? mountedEditorRoute : null)
-          }
+          onSelectScreen={screenSwitch.selectScreen}
           onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
         />
@@ -684,6 +673,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               <ContextViewerSurfaceController
                 projectId={props.projectId}
                 {...mountedEditorRoute}
+                resolvedEditor={editorPresentation.resolved}
                 editorWork={mountedEditor.editorWork}
                 addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
                 active={editorActive}
@@ -766,27 +756,29 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   ];
 
   return (
-    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-      <ChatDocumentsBesideProvider>
-        <ProjectShell
-          layout={layout}
-          surfaces={stableSurfaces}
-          onSetWidth={setSurfaceWidth}
-          onSetCollapsed={setCollapsedFor}
-          onSetDockWidth={setDockWidth}
-          onSetDockCollapsed={setDockCollapsed}
-          bounds={SURFACE_WIDTH_BOUNDS}
-          mainMinWidth={MAIN_MIN_WIDTH}
-        >
-          <ProjectRouteBoundary
-            issue={props.routeIssues?.main}
-            destinationKey={props.routeLocationKey}
+    <DesktopProjectPresentationProvider screen={screen} {...screenSwitch}>
+      <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+        <ChatDocumentsBesideProvider>
+          <ProjectShell
+            layout={layout}
+            surfaces={stableSurfaces}
+            onSetWidth={setSurfaceWidth}
+            onSetCollapsed={setCollapsedFor}
+            onSetDockWidth={setDockWidth}
+            onSetDockCollapsed={setDockCollapsed}
+            bounds={SURFACE_WIDTH_BOUNDS}
+            mainMinWidth={MAIN_MIN_WIDTH}
           >
-            {renderDesktopPane(props, surfaceToggle)}
-          </ProjectRouteBoundary>
-        </ProjectShell>
-      </ChatDocumentsBesideProvider>
-    </TreeCreationProvider>
+            <ProjectRouteBoundary
+              issue={props.routeIssues?.main}
+              destinationKey={props.routeLocationKey}
+            >
+              {renderDesktopPane(props, surfaceToggle)}
+            </ProjectRouteBoundary>
+          </ProjectShell>
+        </ChatDocumentsBesideProvider>
+      </TreeCreationProvider>
+    </DesktopProjectPresentationProvider>
   );
 }
 

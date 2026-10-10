@@ -31,7 +31,7 @@ let container: HTMLDivElement;
 let client: QueryClient;
 let go: ReturnType<typeof vi.fn<(destination: ProjectDestination) => Promise<void>>>;
 let navigation: ChatNavigation;
-let accepted: ReturnType<typeof vi.fn<(callback?: () => void) => void>>;
+let effects: ReturnType<typeof vi.fn<(callback?: () => void) => void>>;
 let threadActions: ReturnType<typeof useThreadActions>;
 
 function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
@@ -39,9 +39,10 @@ function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
   navigation = useProjectChatNavigation({
     accountId: ACCOUNT,
     projectId: PROJECT,
-    go: async (destination, _options, onAccepted) => {
+    go: async (destination, options) => {
       await go(destination);
-      accepted(onAccepted);
+      effects(options.afterCommit);
+      return { kind: "applied" };
     },
     ...props,
   });
@@ -65,7 +66,7 @@ beforeEach(() => {
   root = createRoot(container);
   client = new QueryClient();
   go = vi.fn(async () => undefined);
-  accepted = vi.fn();
+  effects = vi.fn();
 });
 
 afterEach(() => {
@@ -108,15 +109,15 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
 });
 
-it("rail switches use the remembered current chat and forward the accepted hand-off", async () => {
+it("rail switches use the remembered current chat and forward the post-commit effect", async () => {
   render("context");
   act(() => navigation.acceptCreatedChat("remembered"));
   const commit = vi.fn();
   await act(async () => {
-    await navigation.showChatScreen(commit);
+    await navigation.showChatScreen({ afterCommit: commit });
   });
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "remembered" });
-  expect(accepted).toHaveBeenCalledWith(commit);
+  expect(effects).toHaveBeenCalledWith(commit);
   expect(commit).not.toHaveBeenCalled();
   go.mockClear();
   await act(async () => {
@@ -129,8 +130,8 @@ it("rail switches with no current chat use the index and still forward the hand-
   render("context");
   const commit = vi.fn();
   await act(async () => {
-    await navigation.showChatScreen(commit);
+    await navigation.showChatScreen({ afterCommit: commit });
   });
   expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
-  expect(accepted).toHaveBeenCalledWith(commit);
+  expect(effects).toHaveBeenCalledWith(commit);
 });

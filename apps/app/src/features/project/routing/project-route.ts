@@ -77,7 +77,10 @@ export function routeWorkIssue(
   if (routeWork.status === "creating") return routeWork.phase === "failed" ? "error" : "loading";
 }
 
-export type NavigationOptions = { replace: boolean };
+export type NavigationOptions = {
+  afterCommit?: () => void;
+  replace: boolean;
+};
 
 export type WorkDetailTarget = {
   kind: "work-detail";
