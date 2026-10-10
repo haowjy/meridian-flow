@@ -304,7 +304,11 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin !== provider) outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+    if (origin !== provider) {
+      const wasEmpty = outbox === null;
+      outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+      if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
+    }
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
@@ -333,6 +337,9 @@ export function createHocuspocusDocumentTransport({
     for (const listener of changeEventListeners) listener(message);
   }
 
+  // Store local bytes before the provider's listener sends and publishes its
+  // acknowledgement edge. Session observers must see one complete pending edge.
+  document.on("update", handleDocumentUpdate);
   const provider = new HocuspocusProvider({
     name: roomName,
     document,
@@ -360,8 +367,6 @@ export function createHocuspocusDocumentTransport({
         void websocket.connect();
       }
     }) ?? (() => {});
-
-  document.on("update", handleDocumentUpdate);
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();

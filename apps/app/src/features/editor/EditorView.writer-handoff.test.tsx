@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 /** Real editor, controller, sessions and handoff with held reads and wire acknowledgements. */
 
+import { MessageType } from "@hocuspocus/provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
+import * as encoding from "lib0/encoding";
 import { act, useEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
+import { DocumentSocketHarness } from "@/core/transport/test-support/DocumentSocketHarness";
 import {
   DraftReviewBoundary,
   useDraftReview,
@@ -15,6 +20,16 @@ import {
 import { listed, previewOf, work } from "@/test-support/draft-review-scope";
 import { sessionFor } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+
+vi.mock("@/core/transport/dev-transport", () => ({
+  buildSameOriginWsUrl: (path: string) => `ws://test${path}`,
+}));
+vi.mock("@/core/transport/tapped-websocket", async () => {
+  const { DocumentSocketHarness } = await import(
+    "@/core/transport/test-support/DocumentSocketHarness"
+  );
+  return { notifyYjsRoomAttached: () => {}, TappedWebSocket: DocumentSocketHarness };
+});
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -142,6 +157,24 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { branchHandoffHarness } from "@/test-support/branch-handoff-harness";
 
+let nativeRoom: string | null = null;
+function syncRoom(room: string) {
+  if (room !== nativeRoom) {
+    runtime.wire(room).sync();
+    return;
+  }
+  setTimeout(() => {
+    const socket = DocumentSocketHarness.instances.at(-1);
+    const session = runtime.pool.peek(room);
+    if (!socket || !session) throw new Error("Missing native room");
+    const baseline = new Y.Doc();
+    socket.open();
+    socket.syncStep1(room, baseline);
+    socket.syncStep2(room, baseline, Y.encodeStateVector(session.document));
+    socket.acknowledge(room);
+    baseline.destroy();
+  }, 0);
+}
 let testQueryClient: QueryClient;
 let heldCarryLookup: (() => Promise<string | null>) | null = null;
 let runtime: ReturnType<typeof branchHandoffHarness>;
@@ -154,12 +187,12 @@ const realRegistry = {
   releaseBranchRooms: (owner: string) => runtime.pool.release(owner),
   getBranchRoom: (room: string) => {
     const session = runtime.pool.get(room);
-    runtime.wire(room).sync();
+    syncRoom(room);
     return session;
   },
   rebuildBranchRoom: async (room: string) => {
     const session = await runtime.pool.rebuild(room);
-    runtime.wire(room).sync();
+    syncRoom(room);
     return session;
   },
 };
@@ -178,12 +211,24 @@ it.each([
   "remote whole Discard",
 ])("writer edit survives reentry after %s", async (reason) => {
   vi.useFakeTimers();
-  runtime = branchHandoffHarness();
+  nativeRoom = reason === "remote whole Discard" ? branchRoomName("writer-loss", 1) : null;
+  DocumentSocketHarness.instances.length = 0;
+  runtime = branchHandoffHarness(
+    nativeRoom
+      ? (context) =>
+          createHocuspocusDocumentTransport({
+            roomName: context.roomKey,
+            document: context.document,
+            awareness: context.awareness,
+          })
+      : undefined,
+  );
   const oldRoom = branchRoomName("writer-loss", 1);
   const newRoom = reason === "branch-stale-doc" ? oldRoom : branchRoomName("writer-loss", 2);
   let releaseCarry!: (room: string) => void;
   if (reason === "remote whole Discard") {
-    // The handoff's successor lookup stays pending while the review read reports gone.
+    // Native sends precede outbox bookkeeping. Empty G2 reads arrive over HTTP
+    // before the held native reset, while the handoff lookup stays pending.
     const successorRead = new Promise<string>((resolve) => {
       releaseCarry = resolve;
     });
@@ -210,7 +255,21 @@ it.each([
         drafts: reason === "remote whole Discard" ? [] : [{ ...listed, draftGeneration: 2 }],
       });
       if (reason === "remote whole Discard") {
-        mocks.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
+        mocks.getDraftPreview.mockResolvedValue({
+          ...previewOf(),
+          draftGeneration: 2,
+          reviewRoomName: newRoom,
+        });
+        await act(async () => {
+          await testQueryClient.invalidateQueries({
+            queryKey: projectQueryKeys.workDraftPreview(
+              "project-a",
+              "work-a",
+              documentId,
+              "draft-a",
+            ),
+          });
+        });
         await act(async () => {
           await testQueryClient.invalidateQueries({
             queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
@@ -252,11 +311,18 @@ it.each([
                   resolve({ ...previewOf("5"), draftGeneration: 2, reviewRoomName: room });
               }),
           );
-        runtime.wire(oldRoom).emit({
-          kind: "reset",
-          reason: reason === "branch-stale-doc" ? "branch-stale-doc" : "branch-generation-stale",
-          disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
-        });
+        if (reason === "remote whole Discard") {
+          const socket = DocumentSocketHarness.instances.at(-1);
+          if (!socket) throw new Error("Missing native socket");
+          socket.receive(oldRoom, MessageType.CLOSE, (encoder) =>
+            encoding.writeVarString(encoder, "branch-generation-stale"),
+          );
+        } else
+          runtime.wire(oldRoom).emit({
+            kind: "reset",
+            reason: reason === "branch-stale-doc" ? "branch-stale-doc" : "branch-generation-stale",
+            disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
+          });
       });
       if (reason === "remote whole Discard") {
         await act(async () => {
@@ -271,7 +337,7 @@ it.each([
           testQueryClient.getQueryData(
             projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a"),
           ),
-        ).toMatchObject({ status: "gone" });
+        ).toMatchObject({ draftGeneration: 2, operations: [] });
         expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
         expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
         mocks.getDraftPreview.mockResolvedValue({

@@ -6,6 +6,7 @@ import { BranchWriterHandoff } from "@/core/editor/branch-writer-handoff";
 import {
   DocumentSession,
   type DocumentSessionConnectionState,
+  type DocumentSessionTransportFactory,
   type DocumentSessionTransportProvider,
 } from "@/core/editor/document-session";
 import { DocumentSessionTeardownOwner } from "@/core/editor/document-session-teardown-owner";
@@ -72,7 +73,7 @@ export class HeldBranchTransport implements DocumentSessionTransportProvider {
   };
 }
 
-export function branchHandoffHarness() {
+export function branchHandoffHarness(transportFactory?: DocumentSessionTransportFactory) {
   const wires = new Map<string, HeldBranchTransport[]>();
   const epoch = new AbortController();
   const teardown = new DocumentSessionTeardownOwner(() => new Error("quarantined"));
@@ -85,7 +86,10 @@ export function branchHandoffHarness() {
       new DocumentSession({
         roomKey,
         persistence: { kind: "none" },
-        transportFactory: ({ document }) => {
+        transportFactory: (context) => {
+          if (transportFactory && context.roomKey.endsWith(":gen:1"))
+            return transportFactory(context);
+          const { document } = context;
           const wire = new HeldBranchTransport(document);
           wires.set(roomKey, [...(wires.get(roomKey) ?? []), wire]);
           return wire;
