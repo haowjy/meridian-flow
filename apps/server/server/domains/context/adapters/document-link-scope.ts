@@ -637,11 +637,13 @@ function snapshotCatalog(
       ? undefined
       : documents.filter((document): document is CatalogDocument | null => document !== UNLOADED);
   };
+  // Pictures by their rows' own addresses; presence, as for every link, is the view's
+  // identity status: a hidden tombstone is gone, never a deleted picture at its path.
   const images = (uri: string) =>
     (snapshot.byUri.get(uri) ?? []).filter((row) => row.image && row.manuscript);
   const liveImage = (uri: string) => images(uri).find((row) => occupies(row));
   const soleDeletedImage = (uri: string) => {
-    const deleted = images(uri).filter((row) => row.deleted);
+    const deleted = images(uri).filter((row) => statusOf(row)?.kind === "deleted");
     return !liveImage(uri) && deleted.length === 1 ? deleted[0] : undefined;
   };
   /** One meaning's lookup: undefined when that key was never loaded. */
@@ -693,6 +695,7 @@ function snapshotCatalog(
       if (row === undefined) return undefined;
       // Never another project's address: its id names nothing this reader has.
       if (!row?.image || row.projectId !== snapshot.projectId) return null;
+      if (statusOf(row)?.kind === "gone") return null;
       if (row.manuscript && occupies(row)) return { kind: "path", path: row.path };
       if (row.manuscript) {
         if (!snapshot.addresses.has(row.uri)) return undefined;
