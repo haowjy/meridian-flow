@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
+  contextSources,
   documentBranches,
   documents,
   documentYjsUpdates,
@@ -306,6 +307,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
       {
+        name: "a hidden document revealed into a Work's unprovisioned Scratch",
+        expected: "created" as const,
+        destination: "scratch" as const,
+        async arrange(scenario: DraftTreeScenario) {
+          const drafting = await scenario.work("Drafting", "draft");
+          const id = await scenario.model(drafting).create("cold/x.md", "Revealed cold.");
+          return { id, untouched: null };
+        },
+      },
+      {
         name: "an id no document has",
         expected: "conflict" as const,
         async arrange() {
@@ -322,15 +333,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           return { id, untouched: { hidden: true, deletedAt: expect.any(Date) } };
         },
       },
-    ])("Create by id with $name: $expected (C-3)", async ({ arrange, expected }) => {
+    ])("Create by id with $name: $expected (C-3)", async (testCase) => {
+      const { arrange, expected } = testCase;
       const { scenario } = await start();
       const { id, untouched } = await arrange(scenario);
-      const created = await scenario.writer.create("revealed.md", { documentId: id });
+      // A direct Work whose Scratch no create has provisioned yet: discovery mustn't need it.
+      const destination =
+        "destination" in testCase ? await scenario.work("Cold Scratch", "direct") : undefined;
+      const created = await scenario.writer.create("revealed.md", {
+        documentId: id,
+        ...(destination ? { inScratchOf: destination } : {}),
+      });
       if (expected === "created") {
         expect(created).toEqual({ status: "created", documentId: id });
+        const [scratch] = destination
+          ? await db
+              .select({ id: contextSources.id })
+              .from(contextSources)
+              .where(eq(contextSources.workId, destination.id))
+          : [];
         expect(await row(id)).toMatchObject({
           hidden: false,
-          contextSourceId: scenario.project.sources.manuscript,
+          contextSourceId: scratch?.id ?? scenario.project.sources.manuscript,
           name: "revealed",
         });
         return;

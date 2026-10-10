@@ -93,7 +93,12 @@ export interface ScenarioWriter {
   /** The create route's core, as the writer's sidebar and link Create call it. */
   create(
     path: string,
-    options?: { documentId?: DocumentId; content?: string },
+    options?: {
+      documentId?: DocumentId;
+      content?: string;
+      /** Create in this Work's Scratch (`scratch://@slug/path`) instead of a project source. */
+      inScratchOf?: ScenarioWork;
+    },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
   mkdir(path: string): Promise<void>;
 }
@@ -350,11 +355,27 @@ export async function draftTreeScenario(
 
   const writer: ScenarioWriter = {
     async create(path, createOptions = {}) {
-      const { scheme, rel } = sourceOf(path);
+      const { scheme, rel } = createOptions.inScratchOf
+        ? { scheme: "scratch" as const, rel: path }
+        : sourceOf(path);
+      const authority = createOptions.inScratchOf
+        ? await runtime().runtime.ports.workAuthorityResolver.byId(
+            projectId,
+            createOptions.inScratchOf.id,
+          )
+        : null;
       const result = await createContextEntry({
-        port: livePort(),
+        port: authority
+          ? runtime().runtime.ports.contextPorts.forWork(
+              authority,
+              projectId,
+              userId,
+              authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+            )
+          : livePort(),
         userId,
         scheme,
+        ...(authority ? { authority } : {}),
         body: parseCreateContextEntryBody({
           type: "file",
           path: `/${rel}`,
