@@ -4,7 +4,7 @@
  * than inserting a twin, and a draft's creates make hidden rows through the tree owner.
  */
 
-import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections, documents } from "@meridian/database/schema";
@@ -23,19 +23,17 @@ import {
   type ContextFolder,
   type CreateBinaryDocumentInput,
   type CreateDocumentInput,
-  type DraftCreateInput,
   LiveCreateCandidateChangedError,
-  type LiveCreateExpectation,
   type LiveDocumentCreation,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
+import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import {
-  createInDraft,
   createLive,
   ensureLiveFolderPath,
   findLiveCreateCandidate,
-  retractCreate,
+  findRevealIdentity,
 } from "../../tree/hidden-nodes.js";
 import {
   createTreeReader,
@@ -189,17 +187,8 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     };
   }
 
-  async liveIdentity(documentId: string) {
-    const status = (
-      await createTreeReader(this.deps.db).identityStatus(LIVE_TREE, [documentId as DocumentId])
-    ).get(documentId as DocumentId);
-    if (status?.kind === "visible") {
-      return { kind: "visible" as const, contextSourceId: status.address.contextSourceId };
-    }
-    if (status?.kind === "hidden") {
-      return { kind: "hidden" as const, contextSourceId: status.address.contextSourceId };
-    }
-    return { kind: "other" as const };
+  async findRevealIdentity(documentId: string, projectId: ProjectId) {
+    return findRevealIdentity(this.deps.db, { documentId, projectId });
   }
 
   async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
@@ -212,14 +201,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         catalog: this.deps.catalogMutations,
       });
       if (!ensured.ok) throw new ContextEntryConflictError();
-      return ensured.value.folderId;
+      return ensured.value;
     });
   }
 
-  async findLiveCreateCandidate(dir: readonly string[], filename: string) {
-    const dot = filename.lastIndexOf(".");
-    const [name, extension] =
-      dot <= 0 ? [filename, ""] : [filename.slice(0, dot), filename.slice(dot + 1)];
+  async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
     return findLiveCreateCandidate(this.deps.db, {
       contextSourceId: this.sourceId,
       dir,
@@ -229,7 +215,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
-    const created = await this.claimLive(input);
+    const created = await this.claimLive(input, { kind: "any" });
     if (!created) throw new ContextEntryConflictError();
     // Direct creates tell the live manifest once they commit.
     await notifyMembershipObserver(
@@ -241,10 +227,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentRecordIfAbsent(
-    input: CreateDocumentInput & LiveCreateExpectation,
+    input: CreateDocumentInput,
+    claim: LiveClaim = { kind: "any" },
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
-      const created = await this.claimLive(input);
+      const created = await this.claimLive(input, claim);
       // The creation aggregate's membership commits with the identity, until lane M
       // retires the live manifest.
       if (created) await this.deps.membershipObserver?.documentCreated(created.document.id);
@@ -252,9 +239,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  /** Reveal the hidden document at the path, or insert the live row. Null when taken. */
+  /** Reveal the hidden document at the path, or insert the live row, under `claim`. Null when taken. */
   private async claimLive(
-    input: CreateDocumentInput & LiveCreateExpectation,
+    input: CreateDocumentInput,
+    claim: LiveClaim,
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
@@ -262,23 +250,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const created = await createLive(this.deps.db, {
         slot: {
           contextSourceId: this.sourceId,
-          folderId: input.folderId as FolderId | null,
+          folderId: input.folderId,
           name: input.name,
           extension: input.extension,
         },
-        binary: false,
-        ...(input.revealById ? { revealById: input.revealById as DocumentId } : {}),
-        ...(input.expected
-          ? {
-              expected:
-                "none" in input.expected
-                  ? { none: true }
-                  : {
-                      documentId: input.expected.documentId as DocumentId,
-                      sourceId: input.expected.sourceId as ContextSourceId,
-                    },
-            }
-          : {}),
+        claim,
         catalog: this.deps.catalogMutations,
         insert: () => this.insertTrackedRow(input),
       });
@@ -397,18 +373,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       if (!document) throw new Error(`Created binary document ${row.id} is not live`);
       return document;
     });
-  }
-
-  async createInDraft(input: DraftCreateInput) {
-    return createInDraft(this.deps.db, { ...input, contextSourceId: this.sourceId });
-  }
-
-  async retractDraftCreate(input: {
-    draftId: DraftCreateInput["draftId"];
-    workId: string;
-    documentId: DocumentId;
-  }) {
-    return (await retractCreate(this.deps.db, input)).retracted;
   }
 
   async readProjections(ids: string[]): Promise<Map<string, string>> {

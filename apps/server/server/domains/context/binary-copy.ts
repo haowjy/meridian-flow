@@ -13,9 +13,9 @@ import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../storage/i
 import type { CopiedFrom } from "./document-metadata.js";
 import type {
   BinaryFileRef,
+  ContextBinaryWriteResult,
   ContextError,
   ContextPort,
-  ContextWriteResult,
   WriteProvenance,
 } from "./ports/context-port.js";
 
@@ -34,7 +34,7 @@ interface BinaryCopyInput {
 /** Copies a binary file to a destination that must not exist yet. */
 export async function copyBinaryDocument(
   input: BinaryCopyInput,
-): Promise<Result<ContextWriteResult, ContextError>> {
+): Promise<Result<ContextBinaryWriteResult, ContextError>> {
   const granted = input.sourceGrant.facts.target;
   if (granted.kind === "container" || granted.documentId !== input.source.documentId) {
     throw new Error("A binary copy's grant must name its source document");

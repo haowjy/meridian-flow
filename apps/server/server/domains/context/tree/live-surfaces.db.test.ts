@@ -47,6 +47,7 @@ import { createDrizzleThreadWorksRepository } from "../../threads/adapters/drizz
 import { createDrizzleDocumentLinkScopes } from "../adapters/document-link-scope.js";
 import { createDrizzleLinkAheadRegistry } from "../adapters/drizzle-link-ahead-registry.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
+import { createDrizzleLineageScratchLifecycle } from "../adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../document-revisions.js";
 import { createFigureAssetService } from "../figures/figure-assets.js";
@@ -220,7 +221,9 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         documents: { readEffectiveRevision: async () => "draft-revision" },
         drafts: scenario.drafts,
         availability: createDrizzleProjectContextAvailability(db),
-        threads: createDrizzleThreadRepository(db),
+        threads: createDrizzleThreadRepository(db, {
+          lineageScratch: createDrizzleLineageScratchLifecycle(db),
+        }),
         threadWorks: createDrizzleThreadWorksRepository(db),
         works: {
           findById: async (id) =>

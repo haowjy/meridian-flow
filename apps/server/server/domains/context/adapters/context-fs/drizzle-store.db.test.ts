@@ -89,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,

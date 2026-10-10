@@ -13,7 +13,14 @@
  * `kind = 'content'` keeps the live manifest row out of every relation until lane M
  * deletes the manifest and the column.
  */
-import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
+import type {
+  ContextSourceId,
+  DocumentId,
+  DraftId,
+  FolderId,
+  ProjectId,
+  WorkId,
+} from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
@@ -29,6 +36,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
 import type { TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
@@ -512,7 +520,8 @@ export function identityDocumentFields(relation: ReturnType<typeof identityDocum
 /** A hidden, live document matched at one location, with how many active drafts use it. */
 export type HiddenDocumentCandidate = {
   id: DocumentId;
-  createdAt: Date;
+  /** The row's physical source, which a reveal locks with its destination. */
+  sourceId: ContextSourceId;
   /** Active drafts with a `created` row on it; zero is an inconsistent row (repair on touch). */
   activeUses: number;
 };
@@ -525,15 +534,16 @@ export type DocumentSlot = {
   extension: string;
 };
 
-const textDocument = sql.raw(
-  "d.storage_url IS NULL AND d.file_type NOT IN ('docx', 'image', 'pdf', 'binary')",
-);
+const textDocument = sql`d.storage_url IS NULL AND d.file_type NOT IN (${sql.join(
+  [...BINARY_FILE_TYPES].map((fileType) => sql`${fileType}`),
+  sql`, `,
+)})`;
 
 /**
- * Hidden, live text documents at `slot`, matched by any active draft's `created` row
- * location or by the row's own location, excluding the documents `excludeDraftId`
- * already uses (§6.2 step 3). Binaries are never candidates (12b-Q2). `ids` narrows the
- * match to rows already locked, for revalidation under their locks.
+ * Hidden, live text documents at `slot`, oldest first, matched by any active draft's
+ * `created` row location or by the row's own location, excluding the documents
+ * `excludeDraftId` already uses (§6.2 step 3). Binaries are never candidates (12b-Q2).
+ * `ids` narrows the match to rows already locked, for revalidation under their locks.
  */
 export async function loadHiddenDocumentCandidates(
   db: DrizzleDb,
@@ -547,10 +557,10 @@ export async function loadHiddenDocumentCandidates(
       : sql`${sql.raw(column)} = ${slot.folderId}::uuid`;
   const rows = await currentDrizzleDb(db).execute<{
     id: string;
-    created_ms: number;
+    source_id: string;
     active_uses: number;
   }>(sql`
-    SELECT d.id::text AS id, (extract(epoch FROM d.created_at) * 1000)::float8 AS created_ms,
+    SELECT d.id::text AS id, d.context_source_id::text AS source_id,
       (SELECT count(*)::int FROM draft_tree_changes u JOIN drafts r ON r.id = u.draft_id
         WHERE u.node_kind = 'document' AND u.node_id = d.id AND u.created
           AND r.status = 'active') AS active_uses
@@ -575,9 +585,54 @@ export async function loadHiddenDocumentCandidates(
     ORDER BY d.created_at, d.id`);
   return rows.map((row) => ({
     id: row.id as DocumentId,
-    createdAt: new Date(Number(row.created_ms)),
+    sourceId: row.source_id as ContextSourceId,
     activeUses: Number(row.active_uses),
   }));
+}
+
+/** A caller-named document's lifecycle facts, for §6.4's authority and identity checks. */
+export type RevealIdentityRow = {
+  id: DocumentId;
+  hidden: boolean;
+  deleted: boolean;
+  /** The row's physical source, never a draft's address for it. */
+  sourceId: ContextSourceId;
+  projectId: ProjectId | null;
+  /** Active drafts of `projectId` with a `created` row on it. */
+  projectUses: number;
+};
+
+export async function loadRevealIdentityRow(
+  db: DrizzleDb,
+  documentId: DocumentId,
+  projectId: ProjectId,
+): Promise<RevealIdentityRow | null> {
+  const [row] = await currentDrizzleDb(db).execute<{
+    hidden: boolean;
+    deleted: boolean;
+    source_id: string;
+    project_id: string | null;
+    project_uses: number;
+  }>(sql`
+    SELECT d.hidden, d.deleted_at IS NOT NULL AS deleted, d.context_source_id::text AS source_id,
+      COALESCE(cs.project_id, w.project_id)::text AS project_id,
+      (SELECT count(*)::int FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
+        WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
+          AND r.status = 'active' AND r.project_id = ${projectId}::uuid) AS project_uses
+    FROM documents d
+    JOIN context_sources cs ON cs.id = d.context_source_id
+    LEFT JOIN works w ON w.id = cs.work_id
+    WHERE d.id = ${documentId}::uuid AND d.kind = 'content'`);
+  return row
+    ? {
+        id: documentId,
+        hidden: row.hidden,
+        deleted: row.deleted,
+        sourceId: row.source_id as ContextSourceId,
+        projectId: row.project_id as ProjectId | null,
+        projectUses: Number(row.project_uses),
+      }
+    : null;
 }
 
 /** The oldest hidden, live folder at (source, parent, name), else null. */
