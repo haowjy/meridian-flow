@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: drive native review handoff setup and carry resolution inside awaited React act boundaries, keeping the transport-ordering witness quiet.
+
 - A missing draft read stays observable while writer delivery protects review, so withdrawn delivery closes the missing review instead of leaving it stranded.
 
 - Document session snapshots update on pending-writing edges, not on every keystroke, while retaining review through remote Discard.
