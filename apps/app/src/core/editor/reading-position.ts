@@ -105,7 +105,6 @@ export function restoreReadingPosition(
         pane.scrollTop += rect.top - top + place.viewport.offset * rect.height;
       } else pane.scrollTop = 0;
     } else pane.scrollTop = 0;
-    pane.dataset.stableLayoutScrollTop = String(pane.scrollTop);
     return true;
   } catch {
     // Deleted types, replaced content, and unavailable layout are convenience loss, never a broken editor.

@@ -12,6 +12,10 @@ type Entry = { documentId: string; place: ReadingPosition; updatedAt: number; ac
 type Snapshot = { version: 1; accountId: string; entries: Entry[] };
 type StoragePort = Pick<Storage, "getItem" | "setItem">;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function validAnchor(value: unknown): value is ReadingAnchor {
   if (
     !Array.isArray(value) ||
@@ -28,19 +32,32 @@ function validAnchor(value: unknown): value is ReadingAnchor {
   }
 }
 function validPlace(value: unknown): value is ReadingPosition {
-  if (!value || typeof value !== "object") return false;
-  const { viewport, selection } = value as ReadingPosition;
+  if (!isRecord(value)) return false;
+  const { viewport, selection } = value;
   return Boolean(
-    viewport &&
-      selection &&
+    isRecord(viewport) &&
+      isRecord(selection) &&
       validAnchor(viewport.block) &&
       (viewport.text === null || validAnchor(viewport.text)) &&
+      typeof viewport.offset === "number" &&
       Number.isFinite(viewport.offset) &&
       viewport.offset >= 0 &&
       viewport.offset <= 1 &&
       validAnchor(selection.anchor) &&
       validAnchor(selection.head) &&
       typeof selection.node === "boolean",
+  );
+}
+
+function validEntry(value: unknown): value is Entry {
+  return (
+    isRecord(value) &&
+    typeof value.documentId === "string" &&
+    validPlace(value.place) &&
+    typeof value.updatedAt === "number" &&
+    Number.isFinite(value.updatedAt) &&
+    typeof value.accessedAt === "number" &&
+    Number.isFinite(value.accessedAt)
   );
 }
 
@@ -55,24 +72,18 @@ export class ReadingPositionStore {
   private read(): Snapshot {
     const empty: Snapshot = { version: 1, accountId: this.accountId, entries: [] };
     try {
-      const value = JSON.parse(this.storage().getItem(this.key) ?? "null") as Snapshot | null;
+      const value: unknown = JSON.parse(this.storage().getItem(this.key) ?? "null");
       if (
-        value?.version !== 1 ||
+        !isRecord(value) ||
+        value.version !== 1 ||
         value.accountId !== this.accountId ||
         !Array.isArray(value.entries) ||
         value.entries.length > READING_POSITION_LIMIT ||
-        !value.entries.every(
-          (entry) =>
-            entry &&
-            typeof entry.documentId === "string" &&
-            validPlace(entry.place) &&
-            Number.isFinite(entry.updatedAt) &&
-            Number.isFinite(entry.accessedAt),
-        ) ||
+        !value.entries.every(validEntry) ||
         new Set(value.entries.map((entry) => entry.documentId)).size !== value.entries.length
       )
         return empty;
-      return value;
+      return { version: 1, accountId: this.accountId, entries: value.entries };
     } catch {
       return empty;
     }
