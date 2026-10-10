@@ -27,6 +27,7 @@ import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
+import { createDrafts } from "../../domain/drafts.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
@@ -52,6 +53,7 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
+import { createInMemoryDraftStore, inMemoryDraftWriteBoundary } from "./drafts.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -246,6 +248,12 @@ export function createInMemoryCollabDomain(): CollabDomain {
       links,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    draftResolver: {
+      drafts: createDrafts({
+        store: createInMemoryDraftStore(),
+        boundary: inMemoryDraftWriteBoundary,
+      }),
+    },
     documentCreation,
   });
 }
