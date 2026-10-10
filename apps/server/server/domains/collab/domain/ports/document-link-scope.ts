@@ -29,8 +29,8 @@ export type LinkScopeKey = (
   /**
    * Who reads. `accountId` is the file-policy principal whose readability the
    * snapshot answers (default: the thread's account, else the project owner);
-   * `threadId` the thread it reads in, whose manifest peer and reply's staged
-   * creates a draft view counts. A door never joins a snapshot read for
+   * `threadId` the reading thread. Presence uses the selected SQL tree view; hidden creates
+   * are visible only in a draft using them. A door never joins a snapshot read for
    * another account or thread.
    */
   viewer?: { accountId?: string; threadId?: string };

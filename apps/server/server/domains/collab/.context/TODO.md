@@ -88,8 +88,3 @@ Thread-peer branches and Work-draft branches have independent generation
 counters. A reset bumps the Work-draft generation; thread peers must be
 individually evicted. Missing one invalidation path reintroduces stale state.
 A unified generation scheme or tiered invalidation API is the long-term shape.
-
-## N+1 manifest resolution
-
-Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
-resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.

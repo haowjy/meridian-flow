@@ -86,12 +86,11 @@ that module exists and contains findings.
 Temporary entries use reasons starting `pending: lane <X>` from the foundation
 reader audit. Each converting lane removes its pending entry; lane V's final
 gate is `rg -c '"pending:' tools/ci/tree-visibility-allowlist.json` = 0 (no
-matches; ripgrep exits 1). Two permanent entries currently have transitional
-forms: `context-fs/drizzle-store.ts` allows reads until lane C converts them
-(then `forms` becomes `["write"]`), and `drizzle-branches.ts` allows the manifest
-write until lane M deletes it (then `forms` becomes `["read"]`). Their reasons
-are the final audit reasons. Stale detection operates per entry, not per form;
-lane V must also tighten these two forms.
+matches; ripgrep exits 1). The permanent entries already have their final forms:
+`context-fs/drizzle-store.ts` is `["write"]` after lane C's reader conversion,
+and `drizzle-branches.ts` is `["read"]` after lane M's manifest retirement.
+Their reasons are the final audit reasons. Stale detection operates per entry,
+not per form; future changes must keep forms as narrow as the permitted operations.
 
 To add a fixture, create a `.ts` file in
 `tools/ci/fixtures/tree-visibility/`. Mark each offending source line with

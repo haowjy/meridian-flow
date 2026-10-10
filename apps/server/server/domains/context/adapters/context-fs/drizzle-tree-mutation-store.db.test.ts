@@ -50,7 +50,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000712";
     const NON_EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000713";
-    const _DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
     const DOC_STALE_DELETE_ID = "00000000-0000-4000-8000-000000000715";
     const DOC_ROLLBACK_DELETE_ID = "00000000-0000-4000-8000-000000000716";
 
@@ -483,6 +482,114 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_SCOPE_KEY)),
       ).toEqual([]);
       expect(publish).not.toHaveBeenCalled();
+
+      // Committed setup lets this arm detect a delete escaping the outer command transaction.
+      const committed = createDb(DATABASE_URL, { max: 2 });
+      const userId = randomUUID();
+      const projectId = randomUUID();
+      const sourceId = randomUUID();
+      const parentId = randomUUID();
+      const childId = randomUUID();
+      const scopeKey = `project:${projectId}`;
+      const outerPublish = vi.fn();
+      const availability = createDrizzleProjectContextAvailability(committed);
+      const outerCatalog = createDrizzleContextCatalog(
+        committed,
+        { publish: outerPublish },
+        {
+          availabilityMutations: availability,
+        },
+      );
+      try {
+        await committed.insert(users).values(conformanceUserValues(userId, "delete-outer-abort"));
+        await committed
+          .insert(projects)
+          .values({ id: projectId, userId, name: "Rollback", slug: "rollback" });
+        await committed.insert(contextSources).values({
+          id: sourceId,
+          projectId,
+          name: "Manuscript",
+          slug: "manuscript",
+          scope: "project",
+          isPrimary: true,
+        });
+        await committed
+          .insert(folders)
+          .values({ id: parentId, contextSourceId: sourceId, name: "parent" });
+        await committed.insert(documents).values({
+          id: childId,
+          contextSourceId: sourceId,
+          folderId: parentId,
+          name: "child",
+          extension: "md",
+        });
+        await outerCatalog.refreshSources([sourceId]);
+        const committedPublications = () =>
+          Promise.all([
+            committed
+              .select()
+              .from(contextCatalogScopeHeads)
+              .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey)),
+            committed
+              .select()
+              .from(contextCatalogEntries)
+              .where(eq(contextCatalogEntries.scopeKey, scopeKey))
+              .orderBy(contextCatalogEntries.entryId),
+            committed
+              .select()
+              .from(contextCatalogCommits)
+              .where(eq(contextCatalogCommits.scopeKey, scopeKey))
+              .orderBy(contextCatalogCommits.eventId),
+            committed
+              .select()
+              .from(contextAvailabilityHeads)
+              .where(eq(contextAvailabilityHeads.authorityKey, scopeKey)),
+          ]);
+        const before = await committedPublications();
+        outerPublish.mockClear();
+        const outerTree = new DrizzleContextTreeMutationStore(committed, outerCatalog);
+        const parent = await outerTree.inspect(sourceId, "parent");
+        if (!parent) throw new Error("expected committed folder token");
+        const outerFailure = new Error("abort after successful delete");
+        await expect(
+          runInDrizzleTransaction(committed, async () => {
+            const deleted = await outerTree.commitRecursiveDelete({
+              root: parent,
+              mode: "recursive",
+            });
+            expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [childId] } });
+            await expect(outerTree.inspect(sourceId, "parent/child.md")).resolves.toBeNull();
+            throw outerFailure;
+          }),
+        ).rejects.toBe(outerFailure);
+        await expect(outerTree.inspect(sourceId, "parent")).resolves.toMatchObject({
+          nodeId: parentId,
+        });
+        await expect(outerTree.inspect(sourceId, "parent/child.md")).resolves.toMatchObject({
+          nodeId: childId,
+        });
+        const [document] = await committed
+          .select({ deletedAt: documents.deletedAt })
+          .from(documents)
+          .where(eq(documents.id, childId));
+        const [folder] = await committed
+          .select({ deletedAt: folders.deletedAt })
+          .from(folders)
+          .where(eq(folders.id, parentId));
+        expect(document?.deletedAt).toBeNull();
+        expect(folder?.deletedAt).toBeNull();
+        expect(await committedPublications()).toEqual(before);
+        expect(outerPublish).not.toHaveBeenCalled();
+      } finally {
+        await committed
+          .delete(contextCatalogScopeHeads)
+          .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
+        await committed
+          .delete(contextAvailabilityHeads)
+          .where(eq(contextAvailabilityHeads.authorityKey, scopeKey));
+        await committed.delete(users).where(eq(users.id, userId));
+        await committed.close();
+      }
     });
   });
 

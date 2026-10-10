@@ -1,4 +1,4 @@
-/** Postgres-backed coverage for work-scoped untitled creation and manifest repair. */
+/** Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery. */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -40,7 +40,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
 
     const USER_ID = "00000000-0000-4000-8000-000000000931";
-    const _DOCUMENT_ID = "00000000-0000-4000-8000-000000000933";
     const REPAIR_DOCUMENT_ID = "00000000-0000-4000-8000-000000000934";
     const CROSS_SCHEME_DOCUMENT_ID = "00000000-0000-4000-8000-000000000935";
     const database = useRollbackTestDatabase(DATABASE_URL, {

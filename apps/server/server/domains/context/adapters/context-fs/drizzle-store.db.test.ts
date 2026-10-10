@@ -1,4 +1,4 @@
-/** ContextFS Drizzle-store shadow observer behavior. */
+/** ContextFS Drizzle persistence and atomic writer mutation coverage. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -34,13 +34,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000703";
-    const _DOC_CREATE_ID = "00000000-0000-4000-8000-000000000704";
-    const _DOC_DELETE_ID = "00000000-0000-4000-8000-000000000705";
-    const _DOC_MOVE_SOURCE_ID = "00000000-0000-4000-8000-000000000706";
-    const _DOC_MOVE_TARGET_ID = "00000000-0000-4000-8000-000000000707";
     const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
-    const _DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,

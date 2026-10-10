@@ -470,7 +470,7 @@ client reconnects (1013 is retryable).
 
 <ol>
   <li><strong>Connect.</strong> <code>onConnect</code> authenticates, checks
-    document access, requires live manifest membership for a live room, runs
+    document access, requires presence in the live SQL tree for a live room, runs
     the schema fence (<a href="#schema">section 9</a>), and records the
     admission target. For a live room the target captures the current
     authority generation; every later frame on that connection is checked
@@ -1043,12 +1043,11 @@ specific write paths, and some write paths do not refresh it at all.
     full-text and trigram indexes on <code>markdown_projection</code> exist in
     the schema, but no query on this checkout uses them.
     <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>search</code>, <code>packages/database/src/schema/content.ts</code></span></li>
-  <li><strong>Readers that do use it:</strong> repairing a tracked document
-    that is missing from manifest membership seeds Yjs from the projection
-    (a no-op when Yjs state already exists, since seeding is initialize-only); the download
-    route falls back to it when the Yjs read fails; upload identity lookups
-    return it.
-    <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>repairTrackedDocument</code>, <code>../../routes/api/documents/[documentId]/download.get.ts</code>, <code>../context/uploads/upload-identity.ts</code></span></li>
+  <li><strong>Readers that do use it:</strong> the download route falls back to
+    the projection when the Yjs read fails; upload identity lookups return it.
+    Tree visibility is determined by the selected SQL view, not projection or
+    membership repair.
+    <span class="ref"><code>../../routes/api/documents/[documentId]/download.get.ts</code>, <code>../context/uploads/upload-identity.ts</code></span></li>
 </ul>
 <p>
 So on this checkout a stale projection is visible through the download
