@@ -65,9 +65,25 @@ export async function documentAt(
 }
 
 /**
+ * An address that can never name a document from this holder: not canonical, no file
+ * extension, no Work authority where one is needed, or a Work or personal space that
+ * doesn't exist. Asking again never helps.
+ */
+export class UnresolvableAddressError extends RangeError {
+  constructor(
+    readonly address: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "UnresolvableAddressError";
+  }
+}
+
+/**
  * A decoded canonical address named from a holder in `holderProjectId`, resolved
- * to storage coordinates. Throws when the address is not canonical, names no file,
- * or names a project or Work that does not exist.
+ * to storage coordinates. Throws `UnresolvableAddressError` when the address is not
+ * canonical, names no file, or names a Work or personal space that does not exist;
+ * a plain error when the holder's own project or No Work row is missing.
  */
 export async function resolveCanonicalAddress(
   db: Database,
@@ -75,14 +91,20 @@ export async function resolveCanonicalAddress(
 ): Promise<DocumentCoordinates> {
   const parsed = parseContextUri(input.address);
   if (!parsed.ok || parsed.value.normalized !== input.address) {
-    throw new RangeError(`Address is not canonical: ${input.address}`);
+    throw new UnresolvableAddressError(input.address, `Address is not canonical: ${input.address}`);
   }
   const { scheme, authority, path } = parsed.value;
   if (!hasFileExtension(path.split("/").at(-1) ?? "")) {
-    throw new RangeError(`Address needs a file extension: ${input.address}`);
+    throw new UnresolvableAddressError(
+      input.address,
+      `Address needs a file extension: ${input.address}`,
+    );
   }
   if (authority.kind === "contextual" && !isProjectScopedScheme(scheme)) {
-    throw new RangeError(`Address needs a Work authority: ${input.address}`);
+    throw new UnresolvableAddressError(
+      input.address,
+      `Address needs a Work authority: ${input.address}`,
+    );
   }
   const tx = currentDrizzleDb(db);
   const [holder] = await tx
@@ -103,7 +125,12 @@ export async function resolveCanonicalAddress(
           isNull(projects.deletedAt),
         ),
       );
-    if (!personal) throw new Error(`Personal project for ${holder.userId} does not exist`);
+    if (!personal) {
+      throw new UnresolvableAddressError(
+        input.address,
+        `Personal project for ${holder.userId} does not exist`,
+      );
+    }
     projectId = personal.id as ProjectId;
   }
 
@@ -145,7 +172,12 @@ export async function resolveCanonicalAddress(
       .select({ id: works.id })
       .from(works)
       .where(and(eq(works.projectId, input.holderProjectId), eq(works.slug, authority.workSlug)));
-    if (!work) throw new Error(`Work ${authority.workSlug} does not exist`);
+    if (!work) {
+      throw new UnresolvableAddressError(
+        input.address,
+        `Work ${authority.workSlug} does not exist`,
+      );
+    }
     workId = lockWorkId = work.id;
   }
   return { projectId, userId: holder.userId, scheme, workId, lockWorkId, rootThreadId, path };

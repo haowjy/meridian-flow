@@ -37,6 +37,7 @@ import {
   type AheadRegistration,
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
+  UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
 import type { DocumentCoordinates } from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
@@ -45,6 +46,7 @@ import {
   currentDocumentAddress,
   resolveCanonicalAddress,
   sameCoordinates,
+  UnresolvableAddressError,
 } from "./document-address.js";
 import { atAddress, settleRegisteredInDrafts } from "./link-ahead-draft-settlements.js";
 
@@ -83,10 +85,24 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         const resolved = [];
         for (const registration of registrations) {
           const aheadId = parseRequestId(registration.aheadId);
-          if (!aheadId) throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
+          if (!aheadId) {
+            throw new UnregistrableAheadRefError(
+              registration.aheadId,
+              registration.address,
+              `Invalid ahead id: ${registration.aheadId}`,
+            );
+          }
           resolved.push({
             aheadId,
-            address: await resolveCanonicalAddress(this.db, registration),
+            requested: registration.address,
+            address: await resolveCanonicalAddress(this.db, registration).catch(
+              (cause: unknown) => {
+                if (!(cause instanceof UnresolvableAddressError)) throw cause;
+                throw new UnregistrableAheadRefError(aheadId, registration.address, cause.message, {
+                  cause,
+                });
+              },
+            ),
             draftId:
               registration.draftId && active.has(registration.draftId)
                 ? registration.draftId
@@ -114,19 +130,22 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
             })),
           )
           .onConflictDoNothing({ target: linkAheadRefs.aheadId });
-        // After the insert: whichever registration owns an id, a different address is a bug.
+        // After the insert: whichever registration owns an id, it keeps its first address
+        // for good, so another address is refused permanently.
         const stored = new Map(
           (await tx.select().from(linkAheadRefs).where(inArray(linkAheadRefs.aheadId, ids))).map(
             (row) => [row.aheadId, row],
           ),
         );
-        for (const { aheadId, address } of resolved) {
+        for (const { aheadId, address, requested } of resolved) {
           const row = stored.get(aheadId);
-          if (
-            !row ||
-            !sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme })
-          ) {
-            throw new Error(`Ahead ref ${aheadId} was registered for another address`);
+          if (!row) throw new Error(`Ahead ref ${aheadId} has no row after its insert`);
+          if (!sameCoordinates(address, { ...row, scheme: row.scheme as ContextUriScheme })) {
+            throw new UnregistrableAheadRefError(
+              aheadId,
+              requested,
+              `Ahead ref ${aheadId} was registered for another address`,
+            );
           }
         }
 

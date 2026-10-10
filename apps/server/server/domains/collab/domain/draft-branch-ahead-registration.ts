@@ -21,6 +21,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import { UnregistrableAheadRefError } from "../../context/ports/link-ahead-registry.js";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import { fullStateFingerprint } from "./branch-push-transition.js";
 import type { Drafts } from "./drafts.js";
@@ -41,19 +42,28 @@ export type DraftBranchCut = {
 /** The branches a publication read, every ref in them registered in `draftId`. */
 export type DraftLinkCut = { draftId: DraftId; branches: readonly DraftBranchCut[] };
 
-/** A ref in the cut that didn't register: it has no meaning in the draft to publish. */
+/** A ref in the cut that didn't register, and why. */
 export type DraftLinkRegistrationFailure = { aheadId: string; address: string; reason: string };
 
 /**
- * The prerequisite's answer. Only `ready` lets Apply stage; a failed registration is the
- * caller's to surface, never a cut, since the draft has no meaning for that ref.
+ * The prerequisite's answer. `ready` lets Apply stage. `unregistrable` refs are ones the
+ * registry refuses for good (F20: a Work that doesn't exist, an inadmissible address):
+ * such an address never showed D's document in D's view, so it has no meaning to keep,
+ * and Apply publishes it unbound rather than refusing the writer's Apply over a link.
+ * `registration_failed` is a failure that may pass (connection, timeout, lock): no cut,
+ * the caller surfaces it and the writer retries.
  */
 export type DraftLinkPublication =
-  | { status: "ready"; cut: DraftLinkCut }
+  | {
+      status: "ready";
+      cut: DraftLinkCut;
+      unregistrable: readonly DraftLinkRegistrationFailure[];
+    }
   | {
       status: "registration_failed";
       draftId: DraftId;
       failed: readonly DraftLinkRegistrationFailure[];
+      unregistrable: readonly DraftLinkRegistrationFailure[];
     };
 
 export interface DraftBranchAheadRegistration {
@@ -65,7 +75,8 @@ export interface DraftBranchAheadRegistration {
    * Apply's prerequisite (B8): outside any transaction, reads each selected branch at its
    * current state, records its cut, and registers every ahead ref it holds in `draftId`,
    * so the draft's settlement exists for every ref the publication carries. Valid refs
-   * register even when another fails, but any failure answers `registration_failed`.
+   * register even when another fails. A ref the registry refuses for good is listed as
+   * `unregistrable` and doesn't block; any other failure answers `registration_failed`.
    * The caller stages under the branches' leases and compares each branch's fingerprint
    * with its cut; a changed branch (the writer typed, a live pull landed) means repeat.
    */
@@ -116,13 +127,21 @@ export function createDraftBranchAheadRegistration(input: {
   /**
    * One batch; if it fails, each ref alone, so one ref that can't register (an address
    * naming a Work that doesn't exist) never keeps the rest from their meaning. Returns
-   * the refs that didn't register; each caller decides what that means.
+   * the refs that didn't register, split by the registry's typed refusal: `unregistrable`
+   * never will, `failed` might; each caller decides what that means.
    */
   async function register(
     draft: { id: DraftId; projectId: string },
     refs: readonly { aheadId: string; address: string }[],
-  ): Promise<DraftLinkRegistrationFailure[]> {
-    if (refs.length === 0) return [];
+  ): Promise<{
+    failed: DraftLinkRegistrationFailure[];
+    unregistrable: DraftLinkRegistrationFailure[];
+  }> {
+    const outcome = {
+      failed: [] as DraftLinkRegistrationFailure[],
+      unregistrable: [] as DraftLinkRegistrationFailure[],
+    };
+    if (refs.length === 0) return outcome;
     const rows = refs.map((ref) => ({
       ...ref,
       holderProjectId: draft.projectId,
@@ -130,21 +149,22 @@ export function createDraftBranchAheadRegistration(input: {
     }));
     try {
       await input.outsideTransaction(() => input.registrar.register(rows));
-      return [];
+      return outcome;
     } catch {
-      const failed: DraftLinkRegistrationFailure[] = [];
       for (const row of rows) {
         try {
           await input.outsideTransaction(() => input.registrar.register([row]));
         } catch (cause) {
-          failed.push({
+          const failure = {
             aheadId: row.aheadId,
             address: row.address,
             reason: cause instanceof Error ? cause.message : String(cause),
-          });
+          };
+          if (cause instanceof UnregistrableAheadRefError) outcome.unregistrable.push(failure);
+          else outcome.failed.push(failure);
         }
       }
-      return failed;
+      return outcome;
     }
   }
 
@@ -161,7 +181,8 @@ export function createDraftBranchAheadRegistration(input: {
     const { snapshot, refs } = await readCut(branchId);
     const draft = await draftOfBranch(snapshot);
     if (!draft) return;
-    for (const failure of await register(draft, refs)) {
+    const { failed, unregistrable } = await register(draft, refs);
+    for (const failure of [...failed, ...unregistrable]) {
       input.diagnostics?.registrationFailed({ branchId, cause: failure });
     }
   }
@@ -210,13 +231,13 @@ export function createDraftBranchAheadRegistration(input: {
         branches.push(read.cut);
         for (const ref of read.refs) refs.set(ref.aheadId, ref.address);
       }
-      const failed = await register(
+      const { failed, unregistrable } = await register(
         draft,
         [...refs].map(([aheadId, address]) => ({ aheadId, address })),
       );
       return failed.length > 0
-        ? { status: "registration_failed", draftId, failed }
-        : { status: "ready", cut: { draftId, branches } };
+        ? { status: "registration_failed", draftId, failed, unregistrable }
+        : { status: "ready", cut: { draftId, branches }, unregistrable };
     },
     async flush() {
       while (timers.size > 0) {

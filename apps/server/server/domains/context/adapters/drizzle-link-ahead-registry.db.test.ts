@@ -24,12 +24,18 @@ import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleBranchStore } from "../../collab/adapters/drizzle-branches.js";
+import { createBranchCoordinator } from "../../collab/domain/branch-coordinator.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
-import { aheadRefsIn } from "../../collab/domain/draft-branch-ahead-registration.js";
+import {
+  aheadRefsIn,
+  createDraftBranchAheadRegistration,
+} from "../../collab/domain/draft-branch-ahead-registration.js";
 import {
   createTestDocumentLinkScopes,
   createTestLinkAheadRegistry,
@@ -520,6 +526,7 @@ if (!RUN) {
             draftId: draft.id,
             branches: [{ branchId, documentId: chapter, fingerprint: expect.any(String) }],
           },
+          unregistrable: [],
         });
         expect
           .soft(await meanings(applied), "registered in the draft before staging")
@@ -568,8 +575,8 @@ if (!RUN) {
           .soft(await meanings(pulled?.aheadId ?? ""), "re-registered, the pulled ref means D's")
           .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
 
-        // A ref that can't register (its Work doesn't exist) fails the prerequisite; the
-        // valid one beside it still registers.
+        // A ref that can never register (its Work doesn't exist) never blocks Apply (F20):
+        // the cut is ready and names it unregistrable, and the valid one beside it registers.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
         await scenario.writer.editDraft(work, chapter, (doc) => {
           typeLink(beside)(doc);
@@ -581,18 +588,55 @@ if (!RUN) {
           paragraph.insert(0, [text]);
           doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
         });
-        const failed = await draftLinks.prepareDraftLinkPublication({
+        const unregistrable = await draftLinks.prepareDraftLinkPublication({
           draftId: draft.id,
           branchIds: [branchId],
         });
-        expect
-          .soft(failed, "no publication-ready cut after a failed registration")
-          .toMatchObject({ status: "registration_failed", failed: [{ aheadId: ghost }] });
+        expect.soft(unregistrable, "a ready cut that names the unregistrable ref").toMatchObject({
+          status: "ready",
+          cut: { draftId: draft.id, branches: [{ branchId }] },
+          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes.md" }],
+        });
         expect
           .soft(await meanings(beside), "the independent valid ref still registers")
           .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-        expect.soft((await meanings(ghost)).registered, "the failed one has no row").toBe(false);
+        expect.soft((await meanings(ghost)).registered, "the refused one has no row").toBe(false);
         await draftLinks.flush();
+
+        // A failure that may pass (a dropped connection) still fails the prerequisite loudly.
+        const flaky = crypto.randomUUID();
+        await scenario.writer.editDraft(work, chapter, typeLink(flaky));
+        await draftLinks.flush();
+        await db.delete(linkAheadRefs).where(eq(linkAheadRefs.aheadId, flaky));
+        const registry = createTestLinkAheadRegistry(db);
+        const interrupted = createDraftBranchAheadRegistration({
+          branches: createBranchCoordinator({ store: createDrizzleBranchStore(db, undefined) }),
+          drafts: scenario.drafts,
+          registrar: {
+            async register(rows) {
+              if (rows.some((row) => row.aheadId === flaky)) {
+                throw new Error("Connection terminated unexpectedly");
+              }
+              await registry.register(rows);
+            },
+          },
+          outsideTransaction: runOutsideDrizzleTransaction,
+        });
+        expect
+          .soft(
+            await interrupted.prepareDraftLinkPublication({
+              draftId: draft.id,
+              branchIds: [branchId],
+            }),
+            "no publication-ready cut after a transient failure",
+          )
+          .toMatchObject({
+            status: "registration_failed",
+            failed: [{ aheadId: flaky, reason: "Connection terminated unexpectedly" }],
+          });
+        expect
+          .soft((await meanings(flaky)).registered, "the interrupted ref is unregistered")
+          .toBe(false);
 
         // A close holds the draft while the registration of another typed link waits on it.
         const late = crypto.randomUUID();

@@ -50,7 +50,7 @@ import {
   LIVE_TREE,
   type TreeView,
 } from "../tree/tree-view.js";
-import { resolveCanonicalAddress } from "./document-address.js";
+import { resolveCanonicalAddress, UnresolvableAddressError } from "./document-address.js";
 
 type Row = {
   id: string;
@@ -349,8 +349,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const address of uris) {
       try {
         out.push(await resolveCanonicalAddress(db, { holderProjectId: projectId, address }));
-      } catch {
+      } catch (cause) {
         // Not canonical, no extension, or a Work that doesn't exist: nothing sits there.
+        if (!(cause instanceof UnresolvableAddressError)) throw cause;
       }
     }
     return out;
