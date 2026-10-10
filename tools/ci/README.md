@@ -2,7 +2,7 @@
 
 [CI](../../.github/workflows/ci.yml) runs four parallel quality jobs:
 
-- `quality-static`: lint, debug probes, negative space, i18n and the Nx graph.
+- `quality-static`: lint, debug probes, negative space, tree visibility, i18n and the Nx graph.
 - `quality-typecheck`: typecheck, with runner-local Nx caching only.
 - `quality-test-1` and `quality-test-2`: the default unit test projects, using
   Vitest `--shard=1/2` and `--shard=2/2` on the same `test` script.
@@ -56,3 +56,47 @@ For shard coverage, run the unsharded test group and both shard commands with
 unsharded set. Compare summed test counts too. Keep evidence outside the checkout.
 Vitest partitions by file count, not measured duration; record each Actions
 job's duration before considering a custom balancer.
+
+## Tree visibility boundary
+
+`pnpm check:tree-visibility` parses server code, server scripts, package `src/`
+code and tools with the TypeScript compiler API (no program or type checker).
+It rejects reads and writes of `documents` and `folders` outside the explicit
+query boundary. Schema definitions, migrations, tests and test support are
+excluded. Fixtures are checked separately, first, on **every invocation**.
+
+The syntactic rules cover Drizzle `from`/joins, relational `query`,
+`insert`/`update`/`delete`, imported `sql` templates and `sql.raw` strings, and
+bare table bindings escaping into helpers. Renamed imports, namespace imports,
+`alias()` results and local shadowing are tracked per file. `getTableColumns`
+and `getTableName` are metadata operations, not escapes. Column references and
+type positions do not count as queries. This is a syntactic guard, not a
+whole-program dataflow analysis: wrappers must accept tree views, not raw tables.
+
+`tools/ci/tree-visibility-allowlist.json` lists file paths or `*`/`**` globs,
+`forms` (`read`, `write`) and nonempty reasons. An uncovered finding, a stale
+entry (covers no finding) or a duplicate path fails the check. A `hidden`
+reference, mutation key or SQL mention associated with either table is never
+allowlistable outside `apps/server/server/domains/context/tree/`. The schema is
+excluded because it defines the column. The tree-owner glob is added only when
+that module exists and contains findings.
+
+Temporary entries use reasons starting `pending: lane <X>` from the foundation
+reader audit. Each converting lane removes its pending entry; lane V's final
+gate is `rg -c '"pending:' tools/ci/tree-visibility-allowlist.json` = 0 (no
+matches; ripgrep exits 1). Two permanent entries currently have transitional
+forms: `context-fs/drizzle-store.ts` allows reads until lane C converts them
+(then `forms` becomes `["write"]`), and `drizzle-branches.ts` allows the manifest
+write until lane M deletes it (then `forms` becomes `["read"]`). Their reasons
+are the final audit reasons. Stale detection operates per entry, not per form;
+lane V must also tighten these two forms.
+
+To add a fixture, create a `.ts` file in
+`tools/ci/fixtures/tree-visibility/`. Mark each offending source line with
+`// expect: <rule>` (`from`, `query`, `write`, `raw-read`, `raw-write`, `escape`,
+`hidden`). More than one rule on a line uses repeated markers. For a multiline
+SQL template, put the marker in a TypeScript comment on the tag's line, not in
+the SQL text. Unmarked findings and missed markers both fail the self-test.
+No-findings examples belong in `allowed.ts`; they protect against false
+positives. Fixtures need not execute or typecheck; the guard parses them as
+source. Run the check and lint after changing fixtures.

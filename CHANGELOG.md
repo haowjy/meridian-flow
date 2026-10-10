@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Development: enforce the tree query boundary in `pnpm check` with a self-testing TypeScript AST guard, explicit read/write allowlist and a non-overridable hidden-column rule.
+
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
