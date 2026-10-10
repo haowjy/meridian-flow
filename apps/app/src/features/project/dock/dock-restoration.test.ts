@@ -38,10 +38,10 @@ function storage(): DockStorage {
 }
 function reload(occupant = document) {
   const disk = storage();
-  const first = createDockViewStore(() => disk);
+  const first = createDockViewStore(() => disk, "account");
   first.getState().setDockView("chat", "changes");
   first.getState().commit(first.getState().claim(), occupant);
-  return createDockViewStore(() => disk);
+  return createDockViewStore(() => disk, "account");
 }
 const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
 function resources(snapshot = empty) {
@@ -208,7 +208,7 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
       },
     }),
   ]) {
-    const store = createDockViewStore(disk);
+    const store = createDockViewStore(disk, "account");
     expect(store.getState().restoring).toBeNull();
     store.getState().setDockView("chat", "changes");
     expect(store.getState().commit(store.getState().claim(), document)).toBe(true);
@@ -222,17 +222,19 @@ it.each([
 ])("ignores invalid storage: %s", (raw) => {
   const disk = storage();
   disk.setItem(DOCK_STORAGE_KEY, raw);
-  expect(createDockViewStore(() => disk).getState().restoring).toBeNull();
+  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
 });
 it("reloads the production singleton with its saved document and view", async () => {
   vi.stubGlobal("window", { sessionStorage: storage() });
   try {
     vi.resetModules();
     const first = (await import("./dock-view-store")).useDockViewStore;
+    first.getState().rehydrate("account");
     first.getState().setDockView("chat", "changes");
     first.getState().commit(first.getState().claim(), document);
     vi.resetModules();
     const second = (await import("./dock-view-store")).useDockViewStore;
+    second.getState().rehydrate("account");
     expect(second.getState().byScreen).toEqual({ chat: "changes" });
     expect(second.getState().restoring).toEqual(document);
   } finally {
@@ -254,4 +256,82 @@ it.each([
   };
   expect(dockDocumentFitsScope(note, scope)).toBe(stays);
   expect(dockDocumentFitsScope(document, scope)).toBe(scope.projectId === "project");
+});
+it("does not restore another account's resource handles or view choices", () => {
+  const disk = storage();
+  const first = createDockViewStore(() => disk, "account-a");
+  first.getState().setDockView("chat", "changes");
+  first.getState().commit(first.getState().claim(), document);
+  const second = createDockViewStore(() => disk, "account-b");
+  expect(second.getState().restoring).toBeNull();
+  expect(second.getState().byScreen).toEqual({});
+});
+it("stamps the snapshot and makes same-account hydration idempotent", () => {
+  const disk = storage();
+  const store = createDockViewStore(() => disk, "account");
+  store.getState().setDockView("chat", "changes");
+  store.getState().commit(store.getState().claim(), document);
+  expect(JSON.parse(disk.getItem(DOCK_STORAGE_KEY) ?? "null").accountId).toBe("account");
+  const revision = store.getState().revision;
+  store.getState().rehydrate("account");
+  expect(store.getState().occupant).toEqual(document);
+  expect(store.getState().revision).toBe(revision);
+});
+it("account changes clear live state and invalidate the previous account's claim", () => {
+  const disk = storage();
+  const store = createDockViewStore(() => disk, "account-a");
+  store.getState().setDockView("chat", "changes");
+  store.getState().commit(store.getState().claim(), document);
+  const claim = store.getState().claim();
+  store.getState().rehydrate("account-b");
+  expect(store.getState().occupant).toBeNull();
+  expect(store.getState().restoring).toBeNull();
+  expect(store.getState().byScreen).toEqual({});
+  expect(store.getState().commit(claim, document)).toBe(false);
+});
+it("rejects an unstamped snapshot instead of assigning its resource handles to the current account", () => {
+  const disk = storage();
+  disk.setItem(
+    DOCK_STORAGE_KEY,
+    JSON.stringify({ version: 1, byScreen: { chat: "changes" }, occupant: document }),
+  );
+  const store = createDockViewStore(() => disk, "account");
+  expect(store.getState().restoring).toBeNull();
+  expect(store.getState().byScreen).toEqual({});
+});
+it("deferred account hydration obeys the scope already synced by the shell without claiming", () => {
+  const disk = storage();
+  const first = createDockViewStore(() => disk, "account");
+  first.getState().commit(first.getState().claim(), document);
+  const second = createDockViewStore(() => disk);
+  second.getState().syncOccupantScope("other-project", "chat", null);
+  const revision = second.getState().revision;
+  second.getState().rehydrate("account");
+  expect(second.getState().restoring).toBeNull();
+  expect(second.getState().revision).toBe(revision);
+});
+it.each([
+  { chat: "chat" },
+  { work: "context" },
+  { invented: "changes" },
+])("rejects view choices outside the shared screen policy: %o", (byScreen) => {
+  const disk = storage();
+  disk.setItem(
+    DOCK_STORAGE_KEY,
+    JSON.stringify({ version: 1, accountId: "account", byScreen, occupant: document }),
+  );
+  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
+});
+it("rejects a non-string occupant screen even if it coerces to a valid policy key", () => {
+  const disk = storage();
+  disk.setItem(
+    DOCK_STORAGE_KEY,
+    JSON.stringify({
+      version: 1,
+      accountId: "account",
+      byScreen: {},
+      occupant: { ...document, screen: ["work"] },
+    }),
+  );
+  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
 });

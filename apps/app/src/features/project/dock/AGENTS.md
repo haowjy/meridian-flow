@@ -50,12 +50,13 @@ finds an active draft.
    sessions must survive a view switch.
 
 3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored)`
-   is a pure function with no React dependency — testable in isolation. It defaults
+   lives in `dock-views.ts` and is a pure function with no React dependency — testable in isolation. It defaults
    to the occupant's native view when no stored choice exists and falls back when a
    stored choice is invalid for the current screen's set.
 
 4. **Browser-tab-local layout.** `dock-persistence.ts` owns the versioned
-   `meridian:dock:v1` sessionStorage boundary. Reload restores the document and
+   `meridian:dock:v1` sessionStorage boundary, stamped with the authenticated account. Missing or foreign account
+   stamps are rejected. Reload restores the document and
    per-screen view choice; another browser tab has its own layout, like Editor
    tabs. A restored document stays hidden until the Editor workspace hydration
    signal and resource/identity validation complete. Existing project and Work

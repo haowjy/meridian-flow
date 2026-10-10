@@ -1,12 +1,12 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
 
 import { resourceVisibleInProject } from "@meridian/resource-replica";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import type { ContextTab } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { validateServerRoute } from "../browser-editor-tab-validation";
-import { useAccountResourceReplica } from "../context/account-feature-context";
+import { useAccountId, useAccountResourceReplica } from "../context/account-feature-context";
 import { workingSetRouteForTab } from "../context/context-removal-planner";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { type DockDocument, useDockViewStore } from "./dock-view-store";
@@ -48,10 +48,21 @@ export async function restoreDockDocument(
 
 /** Dock-owned effect shell; the project supplies only its identity and Editor hydration signal. */
 export function useDockDocumentRestoration(projectId: string, workspaceHydrated: boolean): void {
+  const accountId = useAccountId();
+  useLayoutEffect(() => {
+    useDockViewStore.getState().rehydrate(accountId);
+  }, [accountId]);
+  const storedAccountId = useDockViewStore((state) => state.accountId);
   const restoring = useDockViewStore((state) => state.restoring);
   const resources = useAccountResourceReplica();
   useEffect(() => {
-    if (!workspaceHydrated || !restoring || restoring.projectId !== projectId) return;
+    if (
+      storedAccountId !== accountId ||
+      !workspaceHydrated ||
+      !restoring ||
+      restoring.projectId !== projectId
+    )
+      return;
     let live = true;
     void restoreDockDocument(restoring, resources).then(
       (tab) => {
@@ -64,5 +75,5 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
     return () => {
       live = false;
     };
-  }, [workspaceHydrated, restoring, resources, projectId]);
+  }, [accountId, storedAccountId, workspaceHydrated, restoring, resources, projectId]);
 }

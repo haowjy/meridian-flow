@@ -33,7 +33,8 @@ import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { useDockView, withoutEmptyChanges } from "./dock-view-store";
+import { useDockView } from "./dock-view-store";
+import { withoutEmptyChanges } from "./dock-views";
 
 export type DockShellProps = {
   projectId: string;
