@@ -746,7 +746,7 @@ function ReadableProjectDestination({
                       replace: true,
                       // The coordinator relocates the document the address names,
                       // or falls back to another. Either way the review follows
-                      // the address until EditorReviewAddressOwner, which knows
+                      // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
                       draftId: address.draftId,
                     },

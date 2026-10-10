@@ -180,7 +180,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
         expect(writer().items.map((item) => item.change.operationIds)).toEqual([["4"]]),
       );
       expect(navigate).not.toHaveBeenCalled();
-      expect(probe().editor.controller.inlineReview).toBeNull();
+      expect(probe().presented.controller.inlineReview).toBeNull();
     },
     {
       chatSurface: <Strip />,

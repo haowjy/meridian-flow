@@ -29,8 +29,8 @@ const ids = (p: ScopeProbe) => p.header.view.items.map(({ change }) => change.cl
 const failure = (p: ScopeProbe) =>
   p.header.view.items.find(({ change }) => change.classId === "class-2")?.failure;
 async function open(p: () => ScopeProbe) {
-  await settleReact(() => expect(p().editor.files.length).toBeGreaterThan(0));
-  await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
+  await settleReact(() => expect(p().presented.files.length).toBeGreaterThan(0));
+  await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
   await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
@@ -65,7 +65,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
     await open(p);
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller.discardChanges(draftA, change("2"));
+      done = p().presented.controller.discardChanges(draftA, change("2"));
     });
     expect(ids(p())).toEqual([]);
     fixture.network.getDraftPreview.mockResolvedValue({
@@ -84,7 +84,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
     expect(p().header.view.items[0]?.failure).toMatchObject({ code: "stale", mode: "discard" });
     expect(p().header.finished).toBe(false);
     expect(p().header.completing).toBeNull();
-    expect(p().editor.controller.inlineReview?.completion).toBeUndefined();
+    expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
   });
 });
 
@@ -103,10 +103,10 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
       await open(p);
       let done!: Promise<unknown>;
       await act(async () => {
-        done = p().editor.controller.disposeDrafts("apply", [draftA, draftB]);
+        done = p().presented.controller.disposeDrafts("apply", [draftA, draftB]);
       });
       await p().openDraft(draftC);
-      await act(async () => p().editor.controller.enterInlineReview("document-c", "draft-c"));
+      await act(async () => p().presented.controller.enterInlineReview("document-c", "draft-c"));
       await act(async () => {
         answer.reject(new HttpResponseError("refused", 500, null));
         await done;
@@ -122,7 +122,7 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
       );
       expect(p().header.commandError).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
-      expect(p().editor.controller.inlineReview?.draftId).toBe("draft-c");
+      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-c");
     },
     { onOpenDraft: navigate },
   );
@@ -136,13 +136,13 @@ it("a batch's current-file failure leaves its review usable and unfinished", asy
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      await p().editor.controller.disposeDrafts("apply", [draftA, draftB]);
+      await p().presented.controller.disposeDrafts("apply", [draftA, draftB]);
     });
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
     expect(p().header.finished).toBe(false);
     expect(p().header.completing).toBeNull();
-    expect(p().editor.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
-    expect(p().editor.controller.inlineReview?.completion).toBeUndefined();
+    expect(p().presented.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
+    expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
     expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
       "document-a",
       "document-b",
@@ -160,8 +160,8 @@ it.each([
     onlineManager.setOnline(false);
     await act(async () => {
       const outcome = await (mode === "apply"
-        ? p().editor.controller.applyChanges
-        : p().editor.controller.discardChanges)(draftA, change("2"));
+        ? p().presented.controller.applyChanges
+        : p().presented.controller.discardChanges)(draftA, change("2"));
       expect(outcome).toEqual({ kind: "change-refused", mode, code: "offline" });
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -189,7 +189,7 @@ it.each([
       let outcomes: unknown;
       await act(async () => {
         void p()
-          .editor.controller.disposeDrafts(mode, [draftA, draftB])
+          .presented.controller.disposeDrafts(mode, [draftA, draftB])
           .then((result) => {
             outcomes = result;
           });
@@ -199,8 +199,8 @@ it.each([
         { kind: "failed", failure: { code: `${mode}-offline` } },
         { kind: "failed", failure: { code: `${mode}-offline` } },
       ]);
-      expect(p().editor.controller.isDisposing).toBe(false);
-      expect(p().editor.files).toHaveLength(2);
+      expect(p().presented.controller.isDisposing).toBe(false);
+      expect(p().presented.files).toHaveLength(2);
       reachability.mockReturnValue(true);
       await reconnect();
       expect(fixture.network.applyDraft).not.toHaveBeenCalled();
@@ -223,8 +223,8 @@ it.each([
     await open(p);
     await act(async () => {
       const outcome = await (mode === "apply"
-        ? p().editor.controller.applyChanges
-        : p().editor.controller.discardChanges)(draftA, change("2"));
+        ? p().presented.controller.applyChanges
+        : p().presented.controller.discardChanges)(draftA, change("2"));
       expect(outcome).toEqual({ kind: "change-refused", mode, code: "unknown" });
     });
     expect(ids(p())).toEqual(["class-1", "class-2"]);
@@ -239,7 +239,7 @@ it("an HTTP Discard refusal restores the change as server-error rather than unkn
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      await p().editor.controller.discardChanges(draftA, change("2"));
+      await p().presented.controller.discardChanges(draftA, change("2"));
     });
     expect(failure(p())).toMatchObject({ code: "server-error", mode: "discard" });
     expect(ids(p())).toEqual(["class-1", "class-2"]);
@@ -266,7 +266,7 @@ it.each([
         code: command === "applyDraft" ? "apply-offline" : "discard-offline",
       });
       expect(p().header.locked).toBe(false);
-      expect(p().editor.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
       expect(navigate).not.toHaveBeenCalled();
       await reconnect();
       expect(fixture.network.applyDraft).not.toHaveBeenCalled();
@@ -314,7 +314,7 @@ it("classified commands never hide or send an unowned hunk, which prevents compl
     expect(fixture.network.discardDraft).not.toHaveBeenCalled();
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller.applyChanges(draftA, change("1"));
+      done = p().presented.controller.applyChanges(draftA, change("1"));
     });
     expect(p().header.view.items.map(({ change }) => change.attribution.kind)).toEqual([
       "unattributed",
@@ -334,7 +334,7 @@ it("classified commands never hide or send an unowned hunk, which prevents compl
     ]);
     expect(p().header.finished).toBe(false);
     expect(p().header.unlisted).toBe(false);
-    expect(p().editor.controller.inlineReview?.completion).toBeUndefined();
+    expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
   });
 });
 
@@ -345,7 +345,7 @@ it("formatting residue after the last class is not completion and keeps whole co
     await open(p);
     fixture.network.getDraftPreview.mockResolvedValue({ ...preview, operations: [], hunks: [] });
     await act(async () => {
-      await p().editor.controller.applyChanges(draftA, change("1"));
+      await p().presented.controller.applyChanges(draftA, change("1"));
     });
     await settleReact(() => expect(p().header.unlisted).toBe(true));
     expect(p().header.finished).toBe(false);
@@ -361,7 +361,7 @@ it("explicit server-certified closure finishes the last class", async () => {
     await open(p);
     fixture.network.getDraftPreview.mockResolvedValue({ ...preview, operations: [], hunks: [] });
     await act(async () => {
-      await p().editor.controller.applyChanges(draftA, change("1"));
+      await p().presented.controller.applyChanges(draftA, change("1"));
     });
     await settleReact(() => expect(p().header.finished).toBe(true));
     expect(p().header.unlisted).toBe(false);
@@ -385,11 +385,11 @@ it.each([
     );
 
   await fixture.render(async (p) => {
-    await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(1));
+    await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
+    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(1));
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller[mode]("document-a", "draft-a");
+      done = p().presented.controller[mode]("document-a", "draft-a");
     });
     const nextPreview = {
       ...previewOf("new"),
@@ -406,11 +406,11 @@ it.each([
       );
       p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
     });
-    await settleReact(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2));
     await act(async () => {
       answer.resolve();
       await done;
     });
-    expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
   });
 });

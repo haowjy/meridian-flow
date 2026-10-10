@@ -22,7 +22,7 @@ import {
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
-import { useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -38,7 +38,7 @@ export type DockFileFailure =
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
   const controller = useBoundWorkDraftCommands();
   const listedFiles = useWorkDrafts(controller.projectId, controller.workId).files ?? [];
-  const editor = useEditorDraftReview().controller;
+  const presented = usePresentedDraftReview().controller;
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const records = useChangeCommandRecords();
@@ -62,7 +62,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     [candidates, projectId, workId],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
-  const open = editor.workId === workId ? editor.inlineReview : null;
+  const open = presented.workId === workId ? presented.inlineReview : null;
   const entries = useDraftPreviews(targets, { openReview: open });
 
   const untitled = t`Document`;

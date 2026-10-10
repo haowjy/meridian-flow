@@ -9,7 +9,9 @@ no-op verbs, stuck pending states.
 
 Ownership and command contracts: [draft-review reference](../../apps/app/src/features/draft-review/.context/draft-review.md). The shared
 `draft-command-executor.ts` admits commands; `EditorView` owns paint readiness,
-not `useReviewRoomOwner`.
+not `useReviewRoomOwner`. `PresentedReviewScope` and
+`usePresentedDraftReview` share the one presented-document review across Editor
+and dock hosts.
 
 ## Environment
 

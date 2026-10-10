@@ -156,7 +156,7 @@ Scratch.
 `DockDocumentView` follows the resource projection (`useDockDocumentTab`): a rename
 elsewhere updates the name and path the header and identity bar show, and a removed
 or terminal document closes the slot. It reads the project's one review value
-(`useEditorDraftReview`), the same one the Editor uses, so review claims follow the
+(`usePresentedDraftReview`), the same one the Editor uses, so review claims follow the
 editor that is in front: the Editor tab's editor and the dock's are never both `active`.
 
 The menu browses the tab's real scheme: a note moved out of Scratch to Manuscript or
@@ -312,7 +312,7 @@ prevents missing or terminal documents from flashing on screen.
 
 The dock has no Changes view or controller scope. Review lists live in the
 composer, document identity row, phone sheet and Work page. Its document mounts
-`DraftReviewBoundary` with the existing Editor scope, then the common
+`DraftReviewBoundary` with the shared presented-review scope, then the common
 `ContextDocumentHost` and `DocumentPaneChrome`. The host uses
 `useActiveReviewBinding`; no second projection or presence-suspension path exists.
 Review composition remains in `EditorView` over `SessionEditor`.

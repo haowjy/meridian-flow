@@ -7,7 +7,7 @@
  *
  * The manuscript does not subscribe on its own: `useInlineReviewSync` only
  * projects the preview this refreshes into the editor, so a local edit costs one
- * read, and the review stays current with no editor mounted (the dock alone).
+ * read, and the review stays current with no document editor mounted.
  *
  * A burst of changes is one read after it settles (`SETTLE_MS`), but a stream
  * that never pauses (the AI writing) still refreshes every `MAX_WAIT_MS`, so the

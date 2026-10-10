@@ -28,7 +28,7 @@ export type ReviewHeaderOptions = {
   draftId: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the editor's launcher). */
+  /** Opens another draft of the Work in review (the presenting container's launcher). */
   onOpenDraft: (row: ReviewFileTarget) => void;
 };
 
@@ -37,7 +37,7 @@ export type ReviewHeaderModel = {
   view: ReviewChangesView;
   /** A draft-only document has no live version: its way out closes the tab. */
   draftOnly: boolean;
-  /** Opens another draft of the Work in review (the editor's launcher). */
+  /** Opens another draft of the Work in review (the presenting container's launcher). */
   openDraft: (row: ReviewFileTarget) => void;
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;

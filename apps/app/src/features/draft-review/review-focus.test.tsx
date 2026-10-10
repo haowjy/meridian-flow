@@ -43,7 +43,7 @@ const second = { ...listed, draftId: "draft-b", documentId: "document-b" };
 
 async function reviewOpened(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(fixture.network.listWorkDrafts).toHaveBeenCalled());
-  await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+  await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
   await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
 
@@ -67,7 +67,7 @@ describe("a change regrouped more than once", () => {
   it("is followed through each regrouping, even when the last shares nothing with the first", async () => {
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
-      await act(async () => probe().editor.controller.focusReviewChange(review, target("2")));
+      await act(async () => probe().presented.controller.focusReviewChange(review, target("2")));
       const previewKey = projectQueryKeys.workDraftPreview(
         "project-a",
         "work-a",
@@ -113,16 +113,18 @@ describe("a command's late answer", () => {
       });
 
       // The writer moves on to another draft before the server answers.
-      await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-b", "draft-b"),
+      );
       await vi.waitFor(() =>
-        expect(probe().editor.controller.inlineReview?.documentId).toBe("document-b"),
+        expect(probe().presented.controller.inlineReview?.documentId).toBe("document-b"),
       );
 
       await act(async () => {
         answer({ status: "stale", draftId: "draft-a" });
         await done;
       });
-      expect(probe().editor.controller.focus).toBeNull();
+      expect(probe().presented.controller.focus).toBeNull();
     });
   });
 });

@@ -242,7 +242,7 @@ function renderActiveView(
       }
       if (!props.contextLive) return null;
       return (
-        <DraftReviewBoundary value={props.editorReview}>
+        <DraftReviewBoundary value={props.presentedReview}>
           <EditorReviewIntentClaimant
             editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}

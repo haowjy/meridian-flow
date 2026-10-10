@@ -47,7 +47,7 @@ import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
-  EditorReviewScope,
+  PresentedReviewScope,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import {
@@ -397,7 +397,7 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
     chatCommands: WorkDraftCommands;
-    editorReview: DraftReviewContextValue;
+    presentedReview: DraftReviewContextValue;
     mobileDocumentRoute: MobileDocumentRoute;
     retainEditorWhileLoading?: boolean;
   };
@@ -426,7 +426,7 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
 }
 
 function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const editorReviewState = useDraftReviewStateOwner();
+  const presentedReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
   const requestedMobileDocumentRoute = useMobileDocumentRoute({
     enabled:
@@ -486,7 +486,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     <HydratedReviewControllers
       {...displayedProps}
       retainEditorWhileLoading={retainEditorWhileLoading}
-      editorReviewState={editorReviewState}
+      presentedReviewState={presentedReviewState}
       mobileDocumentRoute={mobileDocumentRoute}
       usePhone={usePhone}
     />
@@ -494,14 +494,14 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
 }
 
 function HydratedReviewControllers({
-  editorReviewState,
+  presentedReviewState,
   usePhone,
   mobileDocumentRoute,
   ...props
 }: ResolvedProjectViewProps & {
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  editorReviewState: DraftReviewStateOwner;
+  presentedReviewState: DraftReviewStateOwner;
   usePhone: boolean;
   mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
@@ -540,11 +540,11 @@ function HydratedReviewControllers({
       : reviewWorkId === noWork?.id
         ? noWork
         : (works?.find((work) => work.id === reviewWorkId) ?? null);
-  const editorReview = useDraftReviewScopeValue({
+  const presentedReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
     presented,
-    stateOwner: editorReviewState,
+    stateOwner: presentedReviewState,
     threadId: null,
   });
   const openEditorReview = useOpenEditorReview();
@@ -554,7 +554,7 @@ function HydratedReviewControllers({
         ? {
             write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
             admit: (target) =>
-              editorReview.controller.enterInlineReview(target.documentId, target.draftId),
+              presentedReview.controller.enterInlineReview(target.documentId, target.draftId),
           }
         : {
             write: (review) => props.onSetEditorReviewDraftId(review?.draftId ?? null),
@@ -562,19 +562,19 @@ function HydratedReviewControllers({
           },
     [
       presented?.container,
-      editorReview.controller.enterInlineReview,
+      presentedReview.controller.enterInlineReview,
       props.onSetEditorReviewDraftId,
       openEditorReview,
     ],
   );
-  const scopedProps = { ...props, chatCommands, editorReview, mobileDocumentRoute };
+  const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>
-      <EditorReviewScope value={editorReview}>
+      <PresentedReviewScope value={presentedReview}>
         <DraftOnlySettlement projectId={props.projectId} />
-        <ReviewAddressOwner review={editorReview} presented={presented} port={port} />
+        <ReviewAddressOwner review={presentedReview} presented={presented} port={port} />
         {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-      </EditorReviewScope>
+      </PresentedReviewScope>
     </PresentedDocumentContext.Provider>
   );
 }
@@ -625,7 +625,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
   // never written to prefs, so the writer's saved rail state returns by itself.
-  const proseFocus = useReviewProseFocus(props.activeScreen, props.editorReview);
+  const proseFocus = useReviewProseFocus(props.activeScreen, props.presentedReview);
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
@@ -719,7 +719,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           }
         >
           {mountedEditor && mountedEditorRoute ? (
-            <DraftReviewBoundary value={props.editorReview}>
+            <DraftReviewBoundary value={props.presentedReview}>
               {editorActive ? (
                 <EditorReviewIntentClaimant
                   editorWorkId={mountedEditor.editorWorkId}

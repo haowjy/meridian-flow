@@ -13,7 +13,7 @@ import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
-  EditorReviewScope,
+  PresentedReviewScope,
   useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
@@ -37,7 +37,7 @@ export const work = {
   archivedAt: null,
 } as Work;
 
-/** A Work neither the Editor nor the Chat has: an independent Work command capability. */
+/** A Work neither the presented review nor the Chat has: an independent Work command capability. */
 export const workC = {
   id: "work-c",
   projectId: "project-a",
@@ -103,14 +103,14 @@ export const discarded = (draftClosed: boolean) => ({
 
 export type ScopeProbe = {
   queryClient: QueryClient;
-  editor: DraftReviewContextValue;
+  presented: DraftReviewContextValue;
   chat: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
   third: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
   header: ReviewHeaderModel;
   openDraft: (draft: ReviewedDraft) => Promise<void>;
   mountLateReader: () => Promise<() => ReviewChangesView>;
   chatRunner: WorkDraftCommands;
-  moveEditorToWork: (to: Work) => Promise<void>;
+  movePresentedToWork: (to: Work) => Promise<void>;
   moveChatToWork: (to: Work) => Promise<void>;
   mountDraftChanges: (
     target: DraftChangesTarget,
@@ -125,7 +125,7 @@ export async function renderReviewScopes(
   options: {
     reviewed?: ReviewedDraft;
     projectId?: string;
-    editorWork?: Work;
+    presentedWork?: Work;
     chatWork?: Work;
     thirdWork?: Work;
     threadId?: string;
@@ -133,7 +133,7 @@ export async function renderReviewScopes(
     onOpenDraft?: (row: ReviewFileTarget) => void;
     /** A surface that reads the scopes, as the project shell offers them (the Work page's list). */
     surface?: ReactNode;
-    /** A surface that lives in the Chat's scope (the composer strip), beside the Editor's. */
+    /** A surface that lives in the Chat's scope (the composer strip), beside the presented review's. */
     chatSurface?: ReactNode;
   } = {},
 ): Promise<void> {
@@ -198,11 +198,11 @@ export async function renderReviewScopes(
     );
   }
   function Scopes(): ReactNode {
-    const [editorWork, setEditorWork] = useState(options.editorWork ?? work);
-    current.moveEditorToWork = (to) => act(async () => setEditorWork(to));
-    const editor = useDraftReviewScopeValue({
+    const [presentedWork, setPresentedWork] = useState(options.presentedWork ?? work);
+    current.movePresentedToWork = (to) => act(async () => setPresentedWork(to));
+    const presented = useDraftReviewScopeValue({
       projectId: options.projectId ?? "project-a",
-      work: editorWork,
+      work: presentedWork,
     });
     const [chatWork, setChatWork] = useState(options.chatWork ?? work);
     current.moveChatToWork = (to) => act(async () => setChatWork(to));
@@ -215,7 +215,7 @@ export async function renderReviewScopes(
       projectId: options.projectId ?? "project-a",
       work: options.thirdWork ?? workC,
     });
-    current.editor = editor;
+    current.presented = presented;
     const chat = {
       commands: chatCommands,
       files: useWorkDrafts(options.projectId ?? "project-a", chatWork.id).files ?? [],
@@ -229,15 +229,15 @@ export async function renderReviewScopes(
     };
     current.third = third;
     return (
-      <EditorReviewScope value={editor}>
+      <PresentedReviewScope value={presented}>
         <DraftOnlySettlement projectId={options.projectId ?? "project-a"} />
-        <DraftReviewBoundary value={editor}>
+        <DraftReviewBoundary value={presented}>
           <HeaderProbe />
         </DraftReviewBoundary>
         {chatSurface ? (
           <WorkDraftCommandsBoundary value={chat.commands}>{chatSurface}</WorkDraftCommandsBoundary>
         ) : null}
-      </EditorReviewScope>
+      </PresentedReviewScope>
     );
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
