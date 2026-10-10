@@ -278,3 +278,130 @@ Image and figure `src` attributes are occurrences with their own `ref`. Derive
 and the view-revision digest share it. It is the Yjs twin of
 `walkLinkOccurrences`, which ref assignment walks; a parity row in agent-edit's
 `assign-refs.test.ts` pins the two to the same sequence. Nothing rewrites stored links.
+### Preview chat attribution
+
+Agent preview operations carry `actorThreadId` and the thread title at preview
+time (`actorThreadTitle`). The application service collects journal thread IDs
+and resolves titles with one batched lookup, never one query per operation.
+Writer operations carry neither field. The same operations carry `actorTurnId`
+and `actorToolCallId` (the journal row's `turn_id` and `tool_call_id`, the
+model's own unscoped tool call id), so the app can open the chat at the write.
+Rows written before the column existed have no tool call id.
+
+### Empty per-change reviews
+
+After a successful per-change Apply or Discard, the command re-checks the draft
+under the same branch/live/Work locking order as full Discard. A draft whose
+complete document effect equals live (see "Complete-effect terminal settlement")
+uses the existing generation-reset path, closing old review rooms
+and clearing current pending journal evidence through the Work projection mutation
+seam (the catalog wake hint). The infrastructure branch remains reusable, as for
+full Discard; future AI writes populate the new generation. Pushed history stays
+pushed. The terminal `draftDisposition` is `applied` when any current-generation
+journal row reached live, otherwise `discarded`, even if the last action was
+Discard. Success responses expose `draftClosed`; only closed responses expose
+`draftDisposition`. Whole Apply is unchanged.
+
+### Live writes versus CLI replacement
+
+Live writer SET and agent writes routed to live preserve a pending Work draft:
+parent-to-child pulls merge live edits into the existing draft without resetting
+its generation or settling its authored rows. `./mf doc put --overwrite` is not
+this path: it deletes the document and creates a new one at the same URI, and
+the new identity inherits no drafts.
+
+### Cumulative-delete Apply closure
+
+Review classes close over overlapping branch delete sets as well as supplied
+struct references and same-client clock prefixes. Agent-edit writes now journal
+transaction deltas containing only their own deletions, so independent writes
+with distinct insertion clients no longer join through inherited tombstones.
+Thread-peer publication also captures the effective sync transaction on a
+provisional target clone before admission. It must not regenerate durable Work
+journal rows with a raw source state-vector diff, which reintroduces the
+tombstones. An unresolved sync dependency is an integrity failure, never a
+partially journaled update. Manifest membership mutations in
+`adapters/drizzle-branches.ts` still journal `sync(peerDoc, workDoc)` bytes, which
+carry the peer's cumulative delete set. Candidate selection takes the membership
+row alone, so after a new document is discarded in a Work, a later Apply can fail
+`assertNoPendingIntegration` with pending Yjs dependencies
+([#753](https://github.com/haowjy/meridian-flow/issues/753), the manifest variant
+of [#738](https://github.com/haowjy/meridian-flow/issues/738)). Fix the authoring
+seam (journal the transaction's own update); keep the guard.
+Keep cumulative-delete closure: other producers and retained state-vector rows
+can still carry old branch deletions targeting live-base structs. Apply must
+show their operations before replaying those bytes. Delete ranges already
+present on the current live cut are excluded from this edge. Same-chat writes
+without a runtime rebuild still join through their same-client clock prefix;
+fresh-client-per-write ownership belongs to the thread-peer pool.
+
+### Draft writer client boundaries
+
+Only the review editor rotates the writer's content client across independent
+change boundaries (including disjoint untouched typing sites). Class membership
+comes from the server model's relative anchors, regardless of mark visibility;
+contiguous local typing stays together before a model refetch. Pauses and
+selection moves alone allocate nothing. The awareness owner follows the new
+identity, removing the old cursor and retaining current or suspended fields.
+This avoids the upstream provider/cursor assumption that awareness and content
+client IDs agree. Normal live editors keep their existing identity lifecycle.
+Browser Undo still introduces writer structs: its local `redone` link is not
+encoded in the transaction update, so it does not establish original AI
+attribution on cold replay. Do not infer authorship from matching text.
+
+### Surviving-text review anchors
+
+Within aligned blocks, pin common live/draft Yjs text identities before semantic
+text diffing the gaps. Text-only alignment may match an identical deleted full
+stop instead of the surviving one, producing a fictitious deletion without an
+author. Tombstone attribution must not invent an author for that survivor.
+Missing ownership preserves the complete hunk as `unclassified`, including wholly
+unattributed insertions/removals. The attribution index returns explicit coverage;
+partial deletion coverage drops all author spans, not any removed text. Every
+class touching such a hunk carries `canApplyOrDiscard: false`; both selectors
+refuse it as `incomplete_class`. Only document-level Apply/Discard can handle it.
+Preview diagnostics reach the domain's event-sink adapter as a warning with the
+document correlation and affected hunk count, never document content.
+
+`domain/draft-review-attribution.ts` owns replay, restoration aliases, range
+ownership and completeness. `domain/document-difference.ts` owns block alignment,
+identity-aware text gaps, clock ranges and anchors, without review authority.
+`domain/draft-review-hunks.ts` composes the raw difference with review attribution
+and restorative cancellation; publication consumes the raw difference directly.
+`domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
+that grouping unchanged; missing authorship never filters out a hunk.
+
+### Complete-effect terminal settlement
+
+No visible review operations is not permission to reset a draft. Empty settlement
+compares the visible ProseMirror tree (text deltas including marks, element types,
+attributes, and ordered children), ignoring Yjs identities/history. Unrepresented
+formatting remains pending for document-level Apply/Discard; cancelled history can
+still settle when its complete document effect equals live.
+
+### Preview-scoped selective Discard
+
+Apply and Discard share one operation-to-closure resolver, run inside their
+branch critical section and again on each snapshot-CAS retry. Per-change Discard now
+requires the displayed live/draft revision tokens; missing or changed tokens
+return `stale` without modifying the draft. Discard still expands a requested
+operation to its entire server-vended class; Apply requires all class members.
+Whole-document Discard remains unfenced.
+
+### Review read efficiency
+
+Review classes are opaque `closure:v1:` SHA-256 membership tokens, not encoded
+operation lists. One typed graph joins visible operation and journal-row nodes;
+physical rows always join their operation, while logical source rows join only
+when supplied in the journal cut. Dependency closure decodes each row once and indexes ranges
+per Yjs client; same-client prefix and overlapping-delete edges preserve the
+same connected components without pairwise row comparison. Block alignment
+peels matching ID prefixes and unambiguous suffixes before allocating an LCS
+matrix, retaining its duplicate-ID tie rule.
+
+Standalone live review reads capture revision, checkpoint and journal rows
+under the mutation lock, then replay into an owned private Y.Doc after commit.
+Command reads joined to an ambient transaction retain the caller's lock and
+revision fence. Callers destroy the returned document; no encoded snapshot
+round trip is needed. Draft lists bulk-resolve document paths with one document
+query and one shared folder graph, and expose persisted branch update times.

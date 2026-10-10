@@ -1,5 +1,9 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditModel,
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -11,6 +15,14 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import {
+  alignBlocks,
+  describeBlocks,
+  diffAlignedBlocks,
+  hunkDeletedRanges,
+  hunkInsertedRanges,
+} from "./document-difference.js";
+import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-review-attribution.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -62,25 +74,6 @@ export function journalAttributionByChangedBlock(input: {
       const after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
-      const owner =
-        row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
-        const prior = beforeByIdentity.get(identity);
-        const next = afterByIdentity.get(identity);
-        if (prior?.serialized === next?.serialized) continue;
-        const blockId = next?.hash ?? prior?.hash;
-        if (!blockId) continue;
-        const owners = ownersByBlock.get(blockId) ?? [];
-        if (
-          !owners.some(
-            (existing) =>
-              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
-          )
-        ) {
-          owners.push(owner);
-          ownersByBlock.set(blockId, owners);
-        }
-      }
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       if (deleted.length > 0 || inserted.length > 0) {
@@ -95,6 +88,35 @@ export function journalAttributionByChangedBlock(input: {
           journalRowIndex,
         });
       }
+    }
+    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
+    const operationIdsByBlock = draftOperationIdsByChangedBlock({
+      liveDoc: input.liveDoc,
+      draftDoc: scratch,
+      model: input.model,
+      draftUpdates: input.rows.map((row) => ({
+        id: row.id,
+        actorTurnId: row.turnId,
+        actorUserId: row.actorUserId,
+        updateData: row.updateData,
+        updateMeta: row.updateMeta,
+      })),
+    });
+    for (const [blockId, operationIds] of operationIdsByBlock) {
+      const owners: Array<{ threadId: ThreadId; turnId: TurnId } | null> = [];
+      for (const operationId of operationIds) {
+        const row = rowsById.get(operationId);
+        const owner =
+          row?.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
+        if (
+          !owners.some(
+            (existing) =>
+              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
+          )
+        )
+          owners.push(owner);
+      }
+      ownersByBlock.set(blockId, owners.length > 0 ? owners : [null]);
     }
     const operations: typeof journalOperations = [];
     for (let index = 0; index < journalOperations.length; index += 1) {
@@ -426,4 +448,32 @@ export function buildDurablePushTrail(input: {
     journalOwners,
     changes: input.prepared.trailChanges,
   };
+}
+
+/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+function draftOperationIdsByChangedBlock(input: {
+  liveDoc: Y.Doc;
+  draftDoc: Y.Doc;
+  model: AgentEditModel;
+  draftUpdates: readonly IndexedDraftUpdate[];
+}): Map<string, string[]> {
+  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
+  const rawHunks = diffAlignedBlocks(
+    alignBlocks(
+      describeBlocks(input.liveDoc, input.model),
+      describeBlocks(input.draftDoc, input.model),
+    ),
+    input.draftDoc,
+  );
+  const result = new Map<string, string[]>();
+  for (const hunk of rawHunks) {
+    const owners = attribution.attributeRanges({
+      insertedRanges: hunkInsertedRanges(hunk),
+      deletedRanges: hunkDeletedRanges(hunk),
+    });
+    result.set(hunk.blockKey, [
+      ...new Set([...(result.get(hunk.blockKey) ?? []), ...owners.operationIds]),
+    ]);
+  }
+  return result;
 }

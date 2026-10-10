@@ -1,39 +1,5 @@
-/** Collab-internal draft review model; route code maps this to wire DTOs. */
-
-export type DraftReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
-export type DraftReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
-
-export interface DraftReviewHunkSpanInternal {
-  anchorFrom: string;
-  anchorTo: string;
-  operationId: string;
-}
-
-type DraftReviewHunkBaseInternal = {
-  hunkId: string;
-  operationIds: string[];
-  mergeArtifact?: boolean;
-  anchor: {
-    relStart: string;
-    relEnd: string;
-  };
-};
-
-export type DraftReviewTextHunkInternal = DraftReviewHunkBaseInternal & {
-  kind: "text";
-  spans: DraftReviewHunkSpanInternal[];
-  deletedText?: string;
-};
-
-export type DraftReviewBlockDisplayInternal = { type: string; display: string };
-
-export type DraftReviewBlockHunkInternal = DraftReviewHunkBaseInternal & {
-  kind: "block";
-  insertedBlock?: DraftReviewBlockDisplayInternal;
-  deletedBlock?: DraftReviewBlockDisplayInternal;
-};
-
-export type DraftReviewHunkInternal = DraftReviewTextHunkInternal | DraftReviewBlockHunkInternal;
+/** Journal-extended public review operations; presentation types live in contracts. */
+import type { ReviewOperation } from "@meridian/contracts/drafts";
 
 declare const sourceUpdateIdBrand: unique symbol;
 declare const physicalSourceUpdateIdBrand: unique symbol;
@@ -53,17 +19,9 @@ export function asPhysicalSourceUpdateIds(updateIds: readonly number[]): Physica
   return [...updateIds] as PhysicalSourceUpdateIds;
 }
 
-export interface DraftReviewOperationInternal {
-  operationId: string;
-  closureClassId: string;
-  discardUpdateIds: PhysicalSourceUpdateIds;
+export type DraftReviewOperationInternal = ReviewOperation & {
   sourceUpdateIds: SourceUpdateIds;
-  actorTurnId?: string;
-  actorUserId?: string;
-  kind: "agent" | "writer";
-  contribution: DraftReviewOperationContribution;
-  classification: DraftReviewOperationClassification;
-  beforeExcerpt?: string;
-  afterExcerpt?: string;
-  hunkCount: number;
-}
+  closureUpdateIds: PhysicalSourceUpdateIds;
+};
+
+export type DraftReviewDiagnostic = { code: "unattributed_hunk"; hunkId: string };

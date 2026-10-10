@@ -1019,21 +1019,39 @@
   }
 }
 
-@keyframes subagent-block-reveal {
+@keyframes block-reveal {
   0%, 100% { outline-color: transparent; background-color: transparent; }
   20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }
 }
 
-.subagent-reveal-flash {
+.block-reveal-flash {
   outline: 2px solid transparent;
   outline-offset: 2px;
-  animation: subagent-block-reveal 1600ms ease-out;
+  animation: block-reveal 1600ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .subagent-reveal-flash {
+  .block-reveal-flash {
     outline-color: var(--color-primary);
     background-color: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    animation: none;
+  }
+}
+
+/* A change that arrived while the writer was reviewing: its row in the dock's
+   Changes list lights up once and settles. Its marks pulse in inline-review.css. */
+@keyframes review-row-arrive {
+  from {
+    background-color: var(--color-review-added-ring);
+  }
+}
+
+.meridian-review-row-arrived {
+  animation: review-row-arrive 1.3s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-review-row-arrived {
     animation: none;
   }
 }

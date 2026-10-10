@@ -1,14 +1,19 @@
 /** Route core for authenticated AI draft preview/Apply/Discard over Work-scoped draft documents. */
 
 import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
   DraftApplyResponse,
   DraftDiscardResponse,
   DraftPreviewResponse,
+  ReviewOperation,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type { DraftReviewOperationInternal } from "../domains/collab/domain/draft-review-types.js";
+import type { DraftDiscardCommand } from "../domains/collab/index.js";
 import type { FileGrant, FileNeed } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
@@ -96,7 +101,7 @@ export async function handleWorkDraftListRequest(
     userId: input.userId,
   });
   return {
-    drafts: visibleDrafts.map((draft) => serializeThreadDraft(draft, undefined)),
+    drafts: visibleDrafts.map((draft) => serializeThreadDraft(draft)),
   };
 }
 
@@ -117,9 +122,8 @@ export async function handleWorkDraftPreviewRequest(
   const base = {
     status: "active" as const,
     draftId: preview.draftId,
+    draftGeneration: preview.draftGeneration,
     reviewRoomName: preview.reviewRoomName,
-    live: preview.live,
-    preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
     ...(preview.notice ? { notice: preview.notice } : {}),
@@ -127,7 +131,7 @@ export async function handleWorkDraftPreviewRequest(
   };
   return {
     ...base,
-    inlineModelPresent: true,
+
     operations: preview.operations.map(toWireReviewOperation),
     hunks: preview.hunks,
   };
@@ -152,6 +156,22 @@ export async function handleApplyWorkDraftRequest(
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
+export async function handleApplyWorkDraftChangesRequest(
+  deps: DraftRouteServices,
+  input: DraftApplyChangesRequest & {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    userId: UserId;
+    signal?: AbortSignal;
+  },
+): Promise<DraftApplyChangesResponse> {
+  const grants = await draftGrants(deps, input, "edit", { live: true });
+  return withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(deps.documentSync.draftReview.applyWorkDraftChanges(input)),
+  );
+}
+
 export async function handleDiscardWorkDraftRequest(
   deps: DraftRouteServices,
   input: {
@@ -161,19 +181,30 @@ export async function handleDiscardWorkDraftRequest(
     draftId: string;
     userId: UserId;
     operationIds?: string[];
+    liveRevisionToken?: string;
+    draftRevisionToken?: string;
   },
 ): Promise<DraftDiscardResponse> {
+  const selection = parseDraftDiscardSelection(input);
+  if (selection.status === "stale") return { status: "stale", draftId: input.draftId };
   const grants = await draftGrants(deps, input, "edit");
   return withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input)),
+    callDraftReview(
+      deps.documentSync.draftReview.discardWorkDraft({
+        projectId: input.projectId,
+        workId: input.workId,
+        documentId: input.documentId,
+        draftId: input.draftId,
+        userId: input.userId,
+        ...selection.command,
+      }),
+    ),
   );
 }
 
-function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
-  operation: T,
-) {
+function toWireReviewOperation(operation: DraftReviewOperationInternal): ReviewOperation {
   const {
-    discardUpdateIds: _discardUpdateIds,
+    closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;
@@ -207,34 +238,26 @@ async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
   return input.drafts.filter((draft) => access.has(draft.documentId));
 }
 
-function serializeThreadDraft(
-  draft: {
-    draftId: string;
-    documentId: string;
-    documentName: string | null;
-    contextPath: string | null;
-    status: "active";
-    lastActorTurnId: string | null;
-    updatedAt: Date;
-    wordsAdded?: number | null;
-    wordsRemoved?: number | null;
-    createdDocument?: boolean;
-  },
-  lifecycle?: {
-    proposedOperationCount: number | null;
-  },
-): ThreadDraftListItem {
+function serializeThreadDraft(draft: {
+  draftId: string;
+  documentId: string;
+  documentName: string | null;
+  contextPath: string | null;
+  status: "active";
+  draftGeneration: number;
+  actorThreads: ThreadDraftListItem["actorThreads"];
+  updatedAt: Date;
+  createdDocument?: boolean;
+}): ThreadDraftListItem {
   return {
     draftId: draft.draftId,
     documentId: draft.documentId,
     documentName: draft.documentName,
     contextPath: draft.contextPath,
     status: draft.status,
-    lastActorTurnId: draft.lastActorTurnId,
+    draftGeneration: draft.draftGeneration,
+    actorThreads: draft.actorThreads,
     updatedAt: draft.updatedAt.toISOString(),
-    proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
-    wordsAdded: draft.wordsAdded ?? null,
-    wordsRemoved: draft.wordsRemoved ?? null,
     ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }
@@ -242,4 +265,41 @@ function serializeThreadDraft(
 function throwReadFailure(code: string): never {
   if (code === "not_found") throw createError({ statusCode: 404, message: "Document not found" });
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
+}
+
+/** Presence chooses selective Discard; malformed selections can never widen its scope. */
+export function parseDraftDiscardSelection(input: {
+  operationIds?: unknown;
+  liveRevisionToken?: unknown;
+  draftRevisionToken?: unknown;
+}): { status: "ready"; command: DraftDiscardCommand } | { status: "stale" } {
+  if (Object.hasOwn(input, "operationIds")) {
+    if (
+      !Array.isArray(input.operationIds) ||
+      input.operationIds.length === 0 ||
+      input.operationIds.some((id) => typeof id !== "string" || !id.trim())
+    )
+      throw createError({
+        statusCode: 400,
+        message: "operationIds must be a nonempty array of strings",
+      });
+    if (
+      typeof input.liveRevisionToken !== "string" ||
+      !input.liveRevisionToken ||
+      typeof input.draftRevisionToken !== "string" ||
+      !input.draftRevisionToken
+    )
+      return { status: "stale" };
+    return {
+      status: "ready",
+      command: {
+        operationIds: input.operationIds,
+        liveRevisionToken: input.liveRevisionToken,
+        draftRevisionToken: input.draftRevisionToken,
+      },
+    };
+  }
+  if (Object.hasOwn(input, "liveRevisionToken") || Object.hasOwn(input, "draftRevisionToken"))
+    throw createError({ statusCode: 400, message: "revision tokens require operationIds" });
+  return { status: "ready", command: {} };
 }

@@ -45,9 +45,15 @@ lifetime.
 - The registry alone reacts when the server refuses a live room's pending
   edits (4409): it drops the room, clearing its local copy. Hosts unbind while
   `whenRefusedRoomDropped` runs and reopen after; a refused review room is
-  rebuilt by its editor. A branch room whose last owner released during the
+  rebuilt by `useReviewRoomOwner`, which owns acquisition and replacement;
+  `EditorView` owns construction and paint readiness; the room owner keeps no
+  paint state. A branch room whose last owner released during the
   teardown drain is not reopened when the drain ends, so a rebuild cannot leave
-  an unowned session behind. Branch rooms live in `branch-room-pool.ts` and the
+  an unowned session behind. Retaining and releasing only record ownership
+  (`get` and `rebuild` open rooms), so one owner's release never reacquires a
+  room another owner still retains while it retires. Retirement notifies a
+  carry-only port after taking eligible bytes and installing teardown quarantine;
+  account close suppresses carries. Branch rooms live in `branch-room-pool.ts` and the
   private local-transfer facet in `local-document-session-transfers.ts`.
 - `createEditorExtensions()` is the only app-side extension assembly point for
   collaborative documents, and its TipTap schema must stay structurally equal to
@@ -76,10 +82,9 @@ lifetime.
   account/document/generation persistence; review rooms use the opaque,
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
-  Collaboration binds to a concrete Y.Doc/fragment at construction. A review
-  mount requires both `reviewDraftId` and `reviewRoomName`; neither selects the
-  live surface, while either one alone is invalid and must fail rather than
-  falling back to live.
+  Collaboration binds to a concrete Y.Doc/fragment at construction. The `review`
+  mount identity requires both `draftId` and `roomName`;
+  `EditorView` resolves this identity before handing it to `SessionEditor`.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:
   - `EditorMountIdentity` is a discriminated union over the two surfaces (live
@@ -122,7 +127,11 @@ lifetime.
   handshake SyncStep2 and every document Update sent on it. It is false on any
   local edit (including same-browser peer and IndexedDB replay, which the
   provider also sends), on disconnect, and in terminal states, and becomes true
-  again after each reconnect. For a live room the server journals each client
+  again after each reconnect. Snapshots emit on edges only: a change of status,
+  of `serverHasLocalChanges`, or of outbox presence (`hasUnacknowledgedEdits()`),
+  never per keystroke. The transport stores local bytes before it sends them,
+  so the first pending snapshot already shows the outbox
+  (`core/transport/.context/CONTEXT.md`). For a live room the server journals each client
   update (unless already contained), then applies it and replies `SyncStatus`,
   so an acknowledgement means applied and journaled; only the debounced
   full-document store is asynchronous, and the next handshake's state-vector
@@ -142,7 +151,13 @@ lifetime.
   either a qualified IndexedDB key or `none`. Admitted live keys include the
   authoritative generation; local resource keys include account and an exact
   persistence identity; branch/review sessions use `none`. A room-derived default
-  key is not permitted.
+  key is not permitted. Writer edits the server has not acknowledged therefore
+  survive a branch session's retirement only in its transport outbox: the pool
+  drains it on release or carries it on reset, and `BranchWriterHandoff`
+  replays a carry into the successor room
+  ([#731](https://github.com/haowjy/meridian-flow/issues/731)); a tab close or
+  sign-out before acknowledgement loses them
+  ([#739](https://github.com/haowjy/meridian-flow/issues/739)).
 - `local-content-initialization.ts` records exact-cache initialization in the
   existing y-indexeddb `custom` store. Its marker names the database and schema;
   the snapshot and marker append in one `updates` + `custom` transaction whose
@@ -676,15 +691,22 @@ commands, and the lightweight hunk model used by the plugin.
 - The plugin is the sole owner of decoration state. React talks to it via TipTap
   commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
   `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
+- Stepping scrolls the manuscript block from the plugin's cached hunk geometry,
+  independent of painted marks and without moving the writer's selection.
 - Anchor resolution routes through the shared `relative-position-runtime.ts`
   extraction of the y-prosemirror binding (`ySyncPluginKey` state).
   `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
-  RelativePositions; local writer typing maps the existing set through the
-  transaction. The extension has no optimistic attribution path — the next
-  server model owns writer attribution. Review dispositions never use browser
-  mutation origins or collaborative history; Ctrl+Z is not a review restore
+  RelativePositions. Pending writer ranges have their own coalesced relative-anchor
+  overlay, captured after the binding writes local edits. Local inserted ranges
+  paint gold immediately, even while marks are hidden; a model refresh retires
+  only the text it explicitly covers with writer attribution. Decorations are
+  output, never the source of pending attribution: a remote Yjs update rebuilds
+  the PM document as one whole-document replacement, which maps decoration
+  ranges away. Capture anchors after the binding writes; before `view.update`
+  the typed Yjs items do not exist.
+  Review dispositions never use browser mutation origins or collaborative history; Ctrl+Z is not a review restore
   mechanism.
 - Editor-side click seam: mousedown on any decoration DOM
   (`[data-review-operations]`) dispatches
@@ -700,7 +722,18 @@ lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
 than one per hunk, so nested authorship (a writer edit inside an AI
 insertion) renders in each owner's own color — gold inside green. Hunks with no
-resolvable spans fall back to whole-hunk coloring via `hunkKind`.
+resolvable spans fall back to whole-hunk coloring.
+
+Tone is decided once per hunk (`hunkTone` in `model.ts`), before text or block
+geometry: a merge artifact or an unclassified hunk is **neutral** (the dashed
+seam, a ring on a block, an unattributed struck removal and fold), never an
+invented AI colour. Anchors are resolved once per model and document into
+`ReviewGeometry` (`resolveGeometry`), kept in plugin state; focus, pulse, folds,
+the bar slot and a locale change repaint from it (`paintDecorations`) without
+resolving a position. Marks visibility gates only the view output, retaining
+the full projection. Remote rebuilds, a new model and a changed document re-resolve. The removal widget's copy is Lingui, drawn at
+render time. Widget reuse keys include exact removal text, segment attribution
+and emitted attributes; identical refetches retain unfolded state.
 
 ## Change-trail navigation
 
@@ -758,12 +791,11 @@ the writer's next edit or caret move. Remote Yjs transactions (`ySyncPluginKey`
 meta) do not clear it: they arrive constantly and would wipe the mark before it
 was read.
 
-## Selective Discard (dock Changes cards)
+## Selective Discard
 
-Each card's **Discard** is a server disposition command for its authoritative
-Discard class. It never edits the review Y.Doc from the browser. The review
-session's synchronous disposition lock serializes commands, and the awaited
-preview refetch replaces the projection and decorations before the lock releases.
+Discard is a server command for a closure class, never a browser edit to the
+review Y.Doc. The shared command record owns its claim; the executor retains
+that claim through refresh. See the [draft-review lifecycle reference](../../../features/draft-review/.context/draft-review.md) for command ordering.
 
 ## Math extension decision
 

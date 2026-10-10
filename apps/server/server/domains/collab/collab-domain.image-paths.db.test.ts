@@ -213,24 +213,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps one link snapshot when an image moves between preview serializations", async () => {
+    it("prepares preview links without whole-document serialization and fences a tree-only move", async () => {
       const links = createTestDocumentLinkScopes(db);
-      let moveAfterSerialization = false;
+      let scopes = 0;
       const collab = createTestCollab({
         ...links,
-        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) =>
-          links.within(key, async () => {
-            const result = await operation();
-            // The engine's live serialization completes before preview reads the draft.
-            if (moveAfterSerialization) {
-              moveAfterSerialization = false;
-              await db
-                .update(folders)
-                .set({ name: "art" })
-                .where(eq(folders.contextSourceId, SOURCE_ID));
-            }
-            return result;
-          }),
+        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) => {
+          scopes += 1;
+          return links.within(key, operation);
+        },
       });
       collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
@@ -240,16 +231,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         draftId: await currentDraftId(collab, DOC_ID),
       };
-      moveAfterSerialization = true;
+      scopes = 0;
       const preview = await collab.draftReview.preview(command);
-      if (preview.status !== "active") throw new Error("missing draft preview");
-      expect(preview.live).toContain("assets/map.png");
-      expect(preview.markdown).toContain("assets/map.png");
-      expect(preview.markdown).not.toContain("art/map.png");
+      expect(preview.status).toBe("active");
+      if (preview.status !== "active") throw new Error("expected active preview");
+      expect(preview).not.toHaveProperty("live");
+      expect(preview).not.toHaveProperty("markdown");
+      expect(scopes).toBe(1);
+      await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       const next = await collab.draftReview.preview(command);
-      if (next.status !== "active") throw new Error("missing draft preview");
-      expect(next.live).toContain("art/map.png");
-      expect(next.markdown).toContain("art/map.png");
+      expect(next.status).toBe("active");
+      if (next.status !== "active") throw new Error("expected active preview after move");
+      expect(next.draftRevisionToken).not.toBe(preview.draftRevisionToken);
+      const operation = preview.operations[0];
+      await expect(
+        collab.draftReview.applyWorkDraftChanges({
+          ...command,
+          userId: USER_ID as never,
+          operationIds: preview.operations
+            .filter((op) => op.closureClassId === operation.closureClassId)
+            .map((op) => op.operationId),
+          liveRevisionToken: preview.liveRevisionToken,
+          draftRevisionToken: preview.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "stale" });
     });
 
     it("accepts a draft on a chapter with an image", async () => {

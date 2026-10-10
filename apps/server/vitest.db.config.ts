@@ -16,6 +16,11 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
 const expectedSuites = [
+  "apps/server/server/domains/collab/undo-attribution.db.test.ts",
+  "apps/server/server/domains/collab/partial-apply.db.test.ts",
+  "apps/server/server/domains/collab/review-disposition.db.test.ts",
+  "apps/server/server/domains/collab/review-generation-replay.db.test.ts",
+  "apps/server/server/domains/collab/review-reopen.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
@@ -96,6 +101,7 @@ const expectedSuites = [
   "apps/server/server/lib/compose.live-reversal.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
   "apps/server/server/lib/model-tools/skills.db.test.ts",
+  "apps/server/server/lib/routes/yjs-generation-stale.db.test.ts",
   "apps/server/server/lib/routes/context-create-read.db.test.ts",
   "apps/server/server/lib/routes/context-thread-existing-document.db.test.ts",
   "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts",

@@ -1,0 +1,51 @@
+/**
+ * Where the focused change's bar sits. It never covers manuscript text, so it
+ * has exactly two homes: the right margin beside the change, aligned with the
+ * change's first line, or, when the margin is too narrow to hold it, a block of
+ * its own after the paragraph the change ends in, which pushes the following
+ * text down instead of overlapping it.
+ *
+ * Pure geometry in the manuscript overlay's coordinates (`manuscript-overlay`),
+ * so it is testable without a browser.
+ */
+import type { OverlayBox } from "../../chrome/manuscript-overlay";
+
+/** Air between the text column and the bar. */
+export const BAR_GAP_PX = 10;
+/** Air between the bar and the pane's edge. */
+export const BAR_EDGE_PX = 8;
+/** The bar wraps to two short rows; below this it would have to break its words. */
+export const BAR_MIN_WIDTH_PX = 132;
+/**
+ * "Discard with your edits" and Apply on one row need this much; narrower and
+ * Apply is pushed past the pane's edge.
+ */
+export const BAR_MIN_WIDTH_WITH_EDITS_PX = 200;
+/** Wider margins give the bar no more than its one-row width. */
+export const BAR_MAX_WIDTH_PX = 260;
+
+export type ReviewBarPlacement =
+  | { kind: "margin"; top: number; left: number; maxWidth: number }
+  | { kind: "below" };
+
+export function placeReviewBar(input: {
+  /** The change's first drawn element. Its top is the first line of the change. */
+  anchor: OverlayBox;
+  /** Right edge of the text column's content (padding excluded). */
+  columnRight: number;
+  /** Width of the scroll pane the manuscript is drawn in. */
+  paneWidth: number;
+  /** The change carries the writer's edits: its Discard button reads "Discard with your edits". */
+  includesWriterEdits?: boolean;
+}): ReviewBarPlacement {
+  const left = input.columnRight + BAR_GAP_PX;
+  const room = input.paneWidth - BAR_EDGE_PX - left;
+  const needed = input.includesWriterEdits ? BAR_MIN_WIDTH_WITH_EDITS_PX : BAR_MIN_WIDTH_PX;
+  if (room < needed) return { kind: "below" };
+  return {
+    kind: "margin",
+    top: Math.max(0, input.anchor.top),
+    left,
+    maxWidth: Math.min(room, BAR_MAX_WIDTH_PX),
+  };
+}

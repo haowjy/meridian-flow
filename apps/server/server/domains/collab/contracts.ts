@@ -5,6 +5,10 @@ import type {
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
+import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
+} from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -31,7 +35,6 @@ import type {
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
 import type {
-  ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
@@ -295,6 +298,10 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+export type DraftDiscardCommand =
+  | { operationIds?: never; liveRevisionToken?: never; draftRevisionToken?: never }
+  | { operationIds: string[]; liveRevisionToken: string; draftRevisionToken: string };
+
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   preview(input: {
@@ -302,9 +309,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<
-    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
-  >;
+  }): Promise<({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string }>;
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -313,24 +318,29 @@ export type DraftReviewApi = {
     userId: UserId;
     signal?: AbortSignal;
   }): Promise<DraftApplyResult>;
-  discardWorkDraft(input: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    operationIds?: string[];
-  }): Promise<DraftDiscardResult>;
-};
-
-export type DraftSessionStats = {
-  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  applyWorkDraftChanges(
+    input: DraftApplyChangesRequest & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      documentId: DocumentId;
+      userId: UserId;
+      signal?: AbortSignal;
+    },
+  ): Promise<DraftApplyChangesResponse>;
+  discardWorkDraft(
+    input: DraftDiscardCommand & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      threadId?: ThreadId;
+      documentId: DocumentId;
+      draftId: string;
+      userId?: UserId;
+    },
+  ): Promise<DraftDiscardResult>;
 };
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {

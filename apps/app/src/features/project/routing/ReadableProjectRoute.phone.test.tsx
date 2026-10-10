@@ -10,7 +10,7 @@ import { act, type ReactNode, useLayoutEffect } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { type ContextTab, ThreadStoreProvider, useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocumentStore } from "../dock/dock-document-store";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 import { useProjectLeaveGuard } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -163,12 +163,15 @@ async function phone(initial: string, run: () => Promise<void>) {
     },
   };
   const priorTabs = useContextTabsStore.getState();
-  const priorDock = useDockViewStore.getState();
+  const priorDock = useDockDocumentStore.getState();
   useContextTabsStore.setState({
     byProject: { [projectId]: { tabs: [tab], selectedTabIdByWork: { [workId]: tab.documentId } } },
     _workspaceHydrated: true,
   });
-  useDockViewStore.setState({ occupant: { projectId, screen: "chat", tab }, revision: 42 });
+  useDockDocumentStore.setState({
+    occupant: { projectId, screen: "chat", screenWorkId: null, tab, review: null },
+    revision: 42,
+  });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   try {
     await withReactRoot(
@@ -185,13 +188,19 @@ async function phone(initial: string, run: () => Promise<void>) {
       </I18nProvider>,
       run,
     );
-    expect(useDockViewStore.getState().occupant).toEqual({ projectId, screen: "chat", tab });
-    expect(useDockViewStore.getState().revision).toBe(42);
+    expect(useDockDocumentStore.getState().occupant).toEqual({
+      projectId,
+      screen: "chat",
+      tab,
+      review: null,
+      screenWorkId: null,
+    });
+    expect(useDockDocumentStore.getState().revision).toBe(42);
   } finally {
     client.clear();
     state.history.destroy();
     useContextTabsStore.setState(priorTabs);
-    useDockViewStore.setState(priorDock);
+    useDockDocumentStore.setState(priorDock);
   }
 }
 async function click(name: string) {

@@ -185,6 +185,7 @@ export function createBranchAgentEditCoordinator(input: {
                 sourceDoc: doc,
                 source: "agent",
                 wId: pending?.mutation?.wId ?? null,
+                toolCallId: pending?.mutation?.toolCallId ?? null,
                 threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
                 turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,

@@ -1,7 +1,7 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
-import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit/integration";
+import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -24,6 +24,7 @@ import {
 } from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
+import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -66,6 +67,7 @@ export type AppendBranchJournalInput = {
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;
+  toolCallId?: string | null;
   threadId?: ThreadId | null;
   turnId?: string | null;
   actorUserId?: string | null;
@@ -344,6 +346,7 @@ export function createBranchCoordinator(input: {
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
     updateToPublish?: (result: T) => Uint8Array,
     kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -351,6 +354,23 @@ export function createBranchCoordinator(input: {
         return await criticalSections.withBranches([branchId], async () => {
           const snapshot = await loadSnapshot(branchId);
           const { doc: cachedDoc } = await materialize(snapshot);
+          // A durable thread peer has already saved its writes into the Work draft.
+          // If the parent no longer contains them, a review retired their effect.
+          // Merging cannot remove those structs or undo their tombstones.
+          if (
+            snapshot.kind === "thread_peer" &&
+            upstream &&
+            !Y.snapshotContainsUpdate(Y.snapshot(upstream), snapshot.state)
+          ) {
+            const doc = cloneDoc(upstream);
+            try {
+              const result = await operation(snapshot, doc);
+              await persistReset(snapshot, upstream, snapshot.schemaVersion);
+              return result;
+            } finally {
+              doc.destroy();
+            }
+          }
           // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
@@ -484,6 +504,7 @@ export function createBranchCoordinator(input: {
         async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
         "pull",
+        upstream,
       );
     },
 
@@ -585,7 +606,7 @@ export function createBranchCoordinator(input: {
             }
             const { doc: cachedDoc } = await materialize(snapshot);
             const doc = cloneDoc(cachedDoc);
-            const updateData = yjsDeltaUpdate(inputJournal.sourceDoc, doc);
+            const updateData = journalSyncDelta(inputJournal.sourceDoc, doc);
             if (!updateData) return false;
             const semanticIr = inputJournal.semanticEditIr;
             if (inputJournal.source === "agent" && semanticIr) {
@@ -680,6 +701,12 @@ export function createBranchCoordinator(input: {
                     updateData: inputWriter.updateData,
                     source: "writer",
                     actorUserId: inputWriter.actorUserId,
+                    updateMeta: {
+                      restorationAliases: certifyWriterRestorations(
+                        currentDocument,
+                        inputWriter.updateData,
+                      ),
+                    },
                   },
                   currentDocument,
                 ),
@@ -727,4 +754,22 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
     merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
   return Y.encodeStateVector(new Map(merged));
+}
+
+/** Journal the effective sync transaction, not inherited source tombstones. */
+function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
+  const probe = cloneDoc(to);
+  const updates: Uint8Array[] = [];
+  probe.on("update", (update: Uint8Array) => updates.push(update));
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+    // A source peer includes the target's complete causal prefix. Never drop
+    // unresolved structs/deletes by journaling only the events that integrated.
+    if (probe.store.pendingStructs || probe.store.pendingDs) {
+      throw new Error("Branch sync delta has unresolved Yjs dependencies");
+    }
+    return updates.length > 0 ? Y.mergeUpdates(updates) : null;
+  } finally {
+    probe.destroy();
+  }
 }

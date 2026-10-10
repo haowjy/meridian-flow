@@ -2,7 +2,11 @@
 import { randomUUID } from "node:crypto";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow, CandidateBatch } from "./branch-push-contracts.js";
+import {
+  type BranchJournalRow,
+  BranchPushCommitConflictError,
+  type CandidateBatch,
+} from "./branch-push-contracts.js";
 import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 
 type CandidateSource = {
@@ -22,10 +26,37 @@ export function buildWholeBranchCandidates(input: {
         documentId: input.source.branch.documentId,
         rows: input.source.rows,
         kind: "content",
+        materialization: "whole",
       },
     ],
     receiptId: randomUUID(),
     ...(input.resetPolicy ? { resetPolicy: input.resetPolicy } : {}),
+    ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
+  };
+}
+
+export function buildSelectedRowCandidates(input: {
+  source: CandidateSource;
+  journalIds: readonly number[];
+  pushedByUserId?: UserId;
+}): CandidateBatch {
+  const selected = new Set(input.journalIds);
+  if (selected.size === 0) throw new Error("selective_push_requires_rows");
+  const rows = input.source.rows.filter((row) => selected.has(row.id));
+  if (rows.length !== selected.size) {
+    throw new BranchPushCommitConflictError(input.source.branch.branchId);
+  }
+  return {
+    candidates: [
+      {
+        branchId: input.source.branch.branchId,
+        documentId: input.source.branch.documentId,
+        rows,
+        kind: "content",
+        materialization: "selected_rows",
+      },
+    ],
+    receiptId: randomUUID(),
     ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
   };
 }
@@ -47,6 +78,7 @@ export function buildCompanionCandidates(input: {
         documentId: input.content.branch.documentId,
         rows: input.content.rows,
         kind: "content",
+        materialization: "whole",
       },
       ...(manifestRows.length > 0
         ? [
@@ -55,6 +87,7 @@ export function buildCompanionCandidates(input: {
               documentId: input.manifest.branch.documentId,
               rows: manifestRows,
               kind: "manifest" as const,
+              materialization: "selected_rows" as const,
             },
           ]
         : []),

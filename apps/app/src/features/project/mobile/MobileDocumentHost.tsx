@@ -1,8 +1,10 @@
 /**
- * MobileDocumentHost — read-only phone document/viewer host with route-owned binding.
+ * MobileDocumentHost — phone document/viewer host with route-owned binding.
  *
- * Mobile never lets users type into collaborative documents, but it keeps the
- * TipTap/Yjs binding alive so AI edits stream into the read-only editor. This
+ * The live document is read-only on a phone, but its TipTap/Yjs binding stays
+ * alive so AI edits stream into it. While the document is under inline review
+ * `MobileDocumentReview` wraps the editor with the review's header, bar and
+ * change list. This
  * host is the mobile binding owner: entering a document opens and binds exactly
  * that document; leaving the view releases it so sessions do not leak. Mobile route
  * navigation deliberately derives the active tab from the context tree instead
@@ -14,9 +16,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
+import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
@@ -26,6 +29,8 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
+import { useRequestedReview } from "../dock/editor-review-handoff";
+import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -35,7 +40,27 @@ export type MobileDocumentHostProps = {
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>;
 };
 
+/**
+ * One frame around whichever host the route resolves to, so the review being
+ * left stays painted over the document column while the next one opens (the
+ * hosts below swap, and a status line replaces the editor, as the route settles).
+ */
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
+  const name = props.localTab?.name ?? props.route.tab?.name;
+  return (
+    <PaintHold
+      status={name ? t`Opening ${name}` : t`Opening draft`}
+      className="relative h-full min-h-0"
+    >
+      <PaintCapture
+        surface={`${props.localTab ? "local" : props.route.tab?.kind === "tracked" && props.route.tab.draftOnly ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
+      />
+      <MobileDocumentHostForRoute {...props} />
+    </PaintHold>
+  );
+}
+
+function MobileDocumentHostForRoute(props: MobileDocumentHostProps) {
   if (props.localTab)
     return (
       <MobileLocalDocumentHost
@@ -61,14 +86,24 @@ function MobileDraftOnlyDocumentHost({
   // The route is bound to the draft's document, but never remembered or activated: its
   // path dies if the draft is discarded.
   useMobileRouteBinding({ projectId, workId: editorWorkId, route, activate: false });
+  const removal = useContextRemovalCoordinator();
   return (
-    <ContextEditorMountHost
-      projectId={projectId}
-      trackedTabs={[tab]}
-      activeTabId={tab.documentId}
-      active
-      readOnly
-    />
+    <MobileDocumentReview
+      documentId={tab.documentId}
+      // A draft-only document has no live version to return to: its review closes the document.
+      onCloseDraftOnly={() => {
+        const closing = removal.writerClose(projectId, tab.documentId);
+        if (closing instanceof Promise) closing.catch((error: unknown) => reportError(error));
+      }}
+    >
+      <ContextEditorMountHost
+        projectId={projectId}
+        trackedTabs={[tab]}
+        activeTabId={tab.documentId}
+        active
+        readOnly
+      />
+    </MobileDocumentReview>
   );
 }
 
@@ -216,8 +251,6 @@ function useMobileRouteBinding({
 
 function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
-  const projectionOwner = useRef({});
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
@@ -225,16 +258,12 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  const selectedReviewDraftId =
-    activeEditorDocumentId && controller.inlineReview?.documentId === activeEditorDocumentId
-      ? controller.inlineReview.draftId
-      : null;
-  const reviewRoomName =
-    activeEditorDocumentId && selectedReviewDraftId
-      ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
-      : null;
-  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
-
+  const selectedReviewDraftId = useRequestedReview({
+    container: "editor",
+    editorWorkId,
+    activeScheme: activeContextScheme,
+    documentId: activeEditorDocumentId,
+  });
   const live = useLiveDocumentBinding({
     projectId,
     documentId: activeTab?.editable ? activeTab.documentId : null,
@@ -246,34 +275,44 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     live.retry,
   );
 
-  useEffect(() => {
-    if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
-      setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-      return;
-    }
-    setActiveEditorDocumentId(
-      activeEditorDocumentId,
-      liveState.session,
-      Boolean(reviewDraftId),
-      projectionOwner.current,
-    );
-    return () => setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-  }, [activeEditorDocumentId, liveState, reviewDraftId, setActiveEditorDocumentId]);
+  const activeLive =
+    liveState.kind === "opened" && liveState.documentId === activeEditorDocumentId
+      ? liveState.session
+      : null;
+  useActiveReviewBinding({
+    documentId: activeLive ? activeEditorDocumentId : null,
+    liveSession: activeLive,
+    active: true,
+    inReview: Boolean(selectedReviewDraftId),
+  });
 
-  useEffect(() => {
-    if (
-      !selectedReviewDraftId ||
-      liveState.kind !== "opened" ||
-      liveState.documentId !== activeEditorDocumentId
-    )
-      return;
-    liveState.session.suspendPresence();
-    return () => liveState.session.resumePresence();
-  }, [activeEditorDocumentId, liveState, selectedReviewDraftId]);
-
+  const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
+  const opening = Boolean(
+    activeContextScheme &&
+      activeContextPath &&
+      (!activeTab
+        ? addressState === "pending" ||
+          (isFetching && !catalogResolved) ||
+          !(isError || catalogResolved)
+        : activeTab.editable && !failed && !bindableLiveSession),
+  );
+  const capture = (
+    <PaintCapture
+      state={opening ? "pending" : failed || isError ? "failed" : "painted"}
+      surface={
+        opening
+          ? "opening"
+          : failed || isError
+            ? "error"
+            : activeTab?.editable
+              ? "editor"
+              : "viewer"
+      }
+    />
+  );
   if (!activeContextScheme || !activeContextPath) {
     return (
-      <DocumentStatus tone="muted">
+      <DocumentStatus capture={capture} tone="muted">
         <Trans>Select a document.</Trans>
       </DocumentStatus>
     );
@@ -282,7 +321,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   if (!activeTab) {
     if (addressState === "pending" || (isFetching && !catalogResolved)) {
       return (
-        <DocumentStatus tone="muted">
+        <DocumentStatus capture={capture} tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           <Trans>Opening document…</Trans>
         </DocumentStatus>
@@ -290,18 +329,21 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     }
     if (isError || catalogResolved) {
       return (
-        <DocumentStatus tone="error">
+        <DocumentStatus capture={capture} tone="error">
           <AlertCircle className="size-4" aria-hidden />
           <Trans>Couldn't open this document.</Trans>
         </DocumentStatus>
       );
     }
-    return null;
+    return capture;
   }
 
   if (!activeTab.editable) {
     return (
-      <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+      <>
+        {capture}
+        <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+      </>
     );
   }
 
@@ -311,7 +353,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       : null;
   if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
     return (
-      <DocumentStatus tone="error">
+      <DocumentStatus capture={capture} tone="error">
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't open this document.</Trans>
       </DocumentStatus>
@@ -319,7 +361,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
   if (!liveSession) {
     return (
-      <DocumentStatus tone="muted">
+      <DocumentStatus capture={capture} tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
         <Trans>Opening document…</Trans>
       </DocumentStatus>
@@ -327,30 +369,35 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   return (
-    <div className="relative h-full min-h-0">
-      <PassageNotice documentId={activeTab.documentId} />
-      <EditorView
-        projectId={projectId}
-        documentId={activeTab.documentId}
-        session={liveSession}
-        schemaType={activeTab.schemaType}
-        editable={false}
-        showToolbar={false}
-        ariaLabel={t`Read-only live document`}
-        showCollaborationDecorations={false}
-        reviewDraftId={reviewDraftId}
-        reviewRoomName={reviewRoomName}
-        reviewWorkId={reviewDraftId ? controller.workId : null}
-        onReviewSessionUnavailable={controller.exitInlineReview}
-      />
-    </div>
+    <MobileDocumentReview documentId={activeTab.documentId}>
+      {capture}
+      <div className="relative min-h-0 flex-1">
+        <PassageNotice documentId={activeTab.documentId} />
+        <EditorView
+          projectId={projectId}
+          documentId={activeTab.documentId}
+          session={liveSession}
+          schemaType={activeTab.schemaType}
+          // Read-only under review as well: a tap must select a change, not raise the
+          // keyboard over its bar, and the phone has no editing chrome (the desktop's
+          // block grip would show). The desktop edits the draft while it reviews.
+          editable={false}
+          showToolbar={false}
+          ariaLabel={t`Read-only live document`}
+          showCollaborationDecorations={false}
+          reviewDraftId={selectedReviewDraftId}
+        />
+      </div>
+    </MobileDocumentReview>
   );
 }
 
 function DocumentStatus({
   children,
   tone,
+  capture,
 }: {
+  capture?: React.ReactNode;
   children: React.ReactNode;
   tone: "muted" | "error";
 }) {
@@ -362,6 +409,7 @@ function DocumentStatus({
           : "grid h-full place-items-center px-6 text-center text-sm text-muted-foreground"
       }
     >
+      {capture}
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );

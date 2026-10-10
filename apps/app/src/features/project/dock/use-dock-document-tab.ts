@@ -2,7 +2,7 @@
 import type { ContextTab } from "@/client/stores";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
-import type { DockDocument } from "./dock-view-store";
+import type { DockDocument } from "./dock-document-store";
 
 /**
  * The slot keeps the tab it was opened with. A rename or move elsewhere changes

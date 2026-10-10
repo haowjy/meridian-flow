@@ -245,7 +245,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
       links,
     ),
-    drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    drafts: createInMemoryDraftStub(),
     documentCreation,
   });
 }
@@ -317,22 +317,14 @@ function createInMemoryBranchPeerStub(
   };
 }
 
-function createInMemoryDraftStub(documents: {
-  readAsMarkdown(
-    documentId: string,
-  ): ReturnType<
-    import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
-  >;
-}): CollabDrafts {
+function createInMemoryDraftStub(): CollabDrafts {
   return {
     draftReview: {
       async list() {
         return [];
       },
       async preview(input) {
-        const live = await documents.readAsMarkdown(input.documentId);
-        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", draftId: input.draftId, live: live.value };
+        return { status: "gone", draftId: input.draftId };
       },
       async applyWorkDraft(input) {
         return {
@@ -340,16 +332,14 @@ function createInMemoryDraftStub(documents: {
           draftId: input.draftId,
         };
       },
+      async applyWorkDraftChanges(input) {
+        return { status: "gone", draftId: input.draftId };
+      },
       async discardWorkDraft(input) {
         return {
           status: "discarded",
           draftId: input.draftId,
         };
-      },
-    },
-    draftSessionStats: {
-      async listActiveDraftsByWork() {
-        return [];
       },
     },
   };

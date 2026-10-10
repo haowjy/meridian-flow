@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
-import { projectResourceLocation, resourceForDocumentIdentity } from "./resource-projection";
+import {
+  projectResourceLocation,
+  resourceForDocumentIdentity,
+  resourceVisibleInProject,
+} from "./resource-projection";
+import type { ResourceCatalogCheckpoint } from "./resource-records";
 import { planResourceLocation, reserveResourceDocument } from "./resource-state";
 
 it("projects only the requesting project's durable location intention", () => {
@@ -107,4 +112,33 @@ it("prefers a current server identity over another resource's obsolete remint al
   expect(resourceForDocumentIdentity([local], "conflicting-document")?.resource.handle).toBe(
     "local-resource",
   );
+});
+
+it("shows a document in a project only through that project's own catalogs or intents", () => {
+  // Reserved by another project, so only catalogs decide visibility in project-a.
+  const record = reserveResourceDocument({
+    projectId: "project-x",
+    handle: "resource",
+    documentId: "document",
+    databaseName: "content",
+    schema: "schema",
+    intentId: "create",
+    provisionalName: "Untitled",
+  }).next;
+  const checkpoint = (projectId: string, listed = true): ResourceCatalogCheckpoint =>
+    ({
+      projectId,
+      entries: listed ? [{ kind: "file", entryId: "document" }] : [],
+    }) as unknown as ResourceCatalogCheckpoint;
+
+  expect(resourceVisibleInProject("project-a", record, [checkpoint("project-a")])).toBe(true);
+  expect(resourceVisibleInProject("project-a", record, [checkpoint("project-b")])).toBe(false);
+  expect(resourceVisibleInProject("project-a", record, [checkpoint("project-a", false)])).toBe(
+    false,
+  );
+  // Subtree replacement removes entries. Another catalog may still list the document.
+  const catalogs = [checkpoint("project-a", false), checkpoint("project-a")];
+  expect(resourceVisibleInProject("project-a", record, catalogs)).toBe(true);
+  expect(resourceVisibleInProject("project-b", record, catalogs)).toBe(false);
+  expect(resourceVisibleInProject("project-x", record, [])).toBe(true);
 });

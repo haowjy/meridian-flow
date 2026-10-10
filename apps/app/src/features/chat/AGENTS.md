@@ -124,7 +124,7 @@ one row's anatomy and its navigation rules in
 composer mode, and review state live in
 [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
 [`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
-[`.context/draft-review.md`](.context/draft-review.md).
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md).
 
 ## Key rules
 
@@ -171,9 +171,27 @@ composer mode, and review state live in
 
 Inline review is the only draft-review surface. It uses server-backed
 Apply/Discard disposition commands; dispositions never ride browser mutation
-history, even though the review editor itself stays editable. See
-[`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
-preview, and projection contracts.
+history, even though the review editor itself stays editable. The review's
+provider, controller, command executor, refusal copy and file model are
+`features/draft-review`'s; Chat is a consumer (the composer's `DraftDock` strip,
+review-prose focus). See
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md)
+for the lifecycle, execution, preview, and projection contracts.
+
+**The strip is this chat's changes, not the Work's.** `useDraftDock(threadId)`
+lists the Work's drafts whose `actorThreads` name the chat, reads each one's
+preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
+chat. A chat with none shows no strip. Apply and Discard send one selection
+command per file (the union of this chat's actionable changes, never a whole
+draft) through creation-bound `useWorkDraftCommands` batches, which hide every file's selection at the
+click and returns each as its own command answers (the strip keeps no hide of
+its own); a refusal stays on its file. On a coarse pointer every strip command
+is a 44px target, and a dock too narrow for the summary and the commands wraps
+the commands under the summary rather than squeezing it. A new
+document is Review-only. The notes (a change tied to another chat's edit,
+changes only Apply draft or Discard draft handle, a new document) sit above the
+commands, collapsed or expanded. Work-wide lists and Apply all live on the Work
+page; the strip's last line is the shared `WorkChangesLink` to it.
 
 ## Transcript viewport (TurnList)
 
@@ -201,5 +219,5 @@ it scrolls the current chat into view without taking focus from search.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md)
-→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher
+→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md)
+→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the composer strip, the Work page's Changes to review, or the review launcher

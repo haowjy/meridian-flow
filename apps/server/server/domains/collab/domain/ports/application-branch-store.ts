@@ -72,3 +72,16 @@ export type WorkDraftDiscard = (input: {
   documentId: DocumentId;
   contentBranchId: string;
 }) => Promise<void>;
+
+/** Settles an empty review under the branch/live/Work fence, preserving pushed rows. */
+export type WorkDraftEmptySettlement = (input: {
+  workId: WorkId;
+  documentId: DocumentId;
+  branchId: string;
+  isEmpty(liveDoc: Y.Doc, draftDoc: Y.Doc): boolean;
+  disposition(
+    rows: readonly import("../branch-push-contracts.js").BranchJournalRow[],
+  ): "applied" | "discarded";
+}) => Promise<
+  { draftClosed: false } | { draftClosed: true; draftDisposition: "applied" | "discarded" }
+>;

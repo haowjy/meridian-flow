@@ -15,10 +15,18 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
-import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
+import {
+  createDocumentLastAddress,
+  createDocumentUrisResolver,
+} from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
+import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
+import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
+import {
+  createDrizzleEmptyDraftSettlement,
+  createDrizzleWorkDraftDiscard,
+} from "../adapters/drizzle-work-draft-discard.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -74,6 +82,7 @@ const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } =
 const {
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
+  createDraftReviewDiagnostics,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
@@ -614,6 +623,15 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    diagnostics: createDraftReviewDiagnostics(eventSink),
+    settleEmptyDraft: createDrizzleEmptyDraftSettlement(
+      db,
+      branchStore,
+      branchCoordinator,
+      branchCriticalSections,
+      liveCoordinator,
+      durableBranchJournalReadStore,
+    ),
     links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
@@ -628,12 +646,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
-    liveCoordinator,
-    documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
-    resolveDocumentUri,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    resolveDocumentUris: createDocumentUrisResolver(db),
+    resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
+    readLiveReviewCut: createDrizzleDraftReviewLive(db, persistence.journal),
   });
   const collab = {
     agentEdit: () => agentEdit,
@@ -1656,7 +1673,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     if (!discarded) throw new Error("discarded dependency row missing");
     await branchReview.discardSelected({
       branchId: branch.branchId,
-      journalIds: [discarded.id],
+      selectRows: async () => ({
+        journalIds: [discarded.id],
+        expectedLiveRevision: (
+          await createDrizzleDraftReviewLive(db, persistence.journal)(ALPHA_ID)
+        ).revision,
+      }),
       reviewedByUserId: USER_ID,
     });
 
@@ -1755,6 +1777,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
+      branchReview,
       runtime,
       links,
       branchPulls,
@@ -1767,6 +1790,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       branchStore,
       branchCoordinator,
       realBranchPush,
+      draftMarkdown: (branchId: string) =>
+        branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
       trailDelivery,
       hocuspocus,
       model,

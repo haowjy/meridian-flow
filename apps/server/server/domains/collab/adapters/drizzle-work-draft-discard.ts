@@ -7,15 +7,18 @@ import {
   documentBranches,
   documents,
 } from "@meridian/database/schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+import type { BranchJournalReadStore } from "../domain/branch-push-contracts.js";
 import type {
   ApplicationBranchStore,
   WorkDraftDiscard,
+  WorkDraftEmptySettlement,
 } from "../domain/ports/application-branch-store.js";
 
 export function createDrizzleWorkDraftDiscard(
@@ -106,4 +109,62 @@ export function createDrizzleWorkDraftDiscard(
         }),
     );
   };
+}
+
+/** Reuses full Discard's generation reset only after a fenced empty-review check. */
+export function createDrizzleEmptyDraftSettlement(
+  db: Database,
+  branches: ApplicationBranchStore,
+  coordinator: BranchCoordinator,
+  criticalSections: BranchCriticalSections,
+  liveCoordinator: { withDocument<T>(id: string, run: (doc: Y.Doc) => Promise<T>): Promise<T> },
+  journal: BranchJournalReadStore,
+): WorkDraftEmptySettlement {
+  return (command) =>
+    criticalSections.withBranches([command.branchId], (lease) =>
+      liveCoordinator.withDocument(command.documentId, async (liveDoc) => {
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            return await runInDrizzleSavepoint(db, async () => {
+              await requireLockedActiveWorks(db, [command.workId]);
+              const branch = await branches.getBranch(command.branchId);
+              if (
+                branch?.kind !== "work_draft" ||
+                branch.status !== "active" ||
+                branch.workId !== command.workId ||
+                branch.documentId !== command.documentId
+              )
+                return { draftClosed: false } as const;
+              const draftDoc = createCollabYDoc({ gc: false });
+              const frozenLive = createCollabYDoc({ gc: false });
+              try {
+                Y.applyUpdate(draftDoc, branch.state);
+                Y.applyUpdate(frozenLive, Y.encodeStateAsUpdate(liveDoc));
+                if (!command.isEmpty(frozenLive, draftDoc)) return { draftClosed: false } as const;
+                const history = await journal.listJournalRowsForBranch({
+                  branchId: branch.branchId,
+                  generation: branch.generation,
+                });
+                const draftDisposition = command.disposition(history);
+                const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
+                  branchId: branch.branchId,
+                  upstream: frozenLive,
+                  expectedGeneration: branch.generation,
+                  expectedState: branch.state,
+                  expectedStateVector: branch.stateVector,
+                  schemaVersion: branch.schemaVersion,
+                });
+                if (!reset) throw new BranchCasConflictError(branch.branchId);
+                return { draftClosed: true, draftDisposition } as const;
+              } finally {
+                draftDoc.destroy();
+                frozenLive.destroy();
+              }
+            });
+          } catch (error) {
+            if (!(error instanceof BranchCasConflictError) || attempt >= 3) throw error;
+          }
+        }
+      }),
+    );
 }

@@ -71,7 +71,7 @@ vi.mock("@/client/api/projects-api", async (original) => ({
   getProjectContextAvailability: (...args: unknown[]) => state.identity(...args),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
-  useWorkDrafts: () => ({ status: "ready", groups: [] }),
+  useWorkDrafts: () => ({ status: "ready", files: [] }),
 }));
 vi.mock("./chat-navigation", () => ({
   useProjectChatNavigation: () => ({ display: { kind: "empty" } }),

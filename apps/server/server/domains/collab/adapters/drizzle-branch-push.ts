@@ -23,6 +23,7 @@ import {
   type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
+  DraftChangeRefusal,
   type PreparedDiscardCommit,
   type PreparedPushCommit,
   type PushCommitStore,
@@ -35,6 +36,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -376,7 +378,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
           generation: documentBranches.generation,
+          updatedAt: documentBranches.updatedAt,
           journal: {
+            id: branchWriteJournal.id,
+            source: branchWriteJournal.source,
+            threadId: branchWriteJournal.threadId,
             turnId: branchWriteJournal.turnId,
             updateMeta: branchWriteJournal.updateMeta,
           },
@@ -407,6 +413,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             documentId: row.documentId,
             workId,
             generation: row.generation,
+            updatedAt: row.updatedAt,
           },
           rows: [],
         };
@@ -423,6 +430,13 @@ async function commitPreparedDiscard(
   input: PreparedDiscardCommit,
   now: Date,
 ): Promise<void> {
+  await lockDocumentMutation(db, input.branch.documentId);
+  if (
+    input.expectedLiveRevision !== undefined &&
+    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+  )
+    throw new DraftChangeRefusal("stale");
+
   const [casRow] = await db
     .update(documentBranches)
     .set({
@@ -557,6 +571,11 @@ async function commitPreparedPush(
   now: Date,
 ): Promise<typeof pushLineage.$inferSelect> {
   await lockDocumentMutation(db, input.branch.documentId);
+  if (
+    input.expectedLiveRevision !== undefined &&
+    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+  )
+    throw new DraftChangeRefusal("stale");
 
   const [casRow] = await db
     .update(documentBranches)
@@ -634,6 +653,7 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     branchId: row.branchId,
     generation: row.generation,
     wId: row.wId,
+    toolCallId: row.toolCallId,
     source: row.source,
     threadId: row.threadId,
     turnId: row.turnId,

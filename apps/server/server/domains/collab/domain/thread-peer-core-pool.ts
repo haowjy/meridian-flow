@@ -362,9 +362,10 @@ export function createThreadPeerCorePool(input: {
       threadId: context.threadId as ThreadId,
     });
     if (!pulled) return context;
-    if (!context.responseId) {
-      await core.invalidateThread(documentId, context.threadId);
-    }
+    // Fresh calls rebuild the runtime from the pulled peer. A previous reply's
+    // runtime may contain effects retired by review; Yjs merge cannot erase them.
+    // Calls with an already-staged response document returned above keep their edits.
+    await core.invalidateThread(documentId, context.threadId);
     return {
       ...context,
       interactionContext: {

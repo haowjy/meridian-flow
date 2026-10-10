@@ -9,7 +9,7 @@
  * changing only its persistent slot's grid-area.
  *
  * In the dock it renders through `DockShell`, which adds the chat switcher
- * header and can swap the body to the work-scoped Changes view. The shell is a
+ * header (and, on Work, the transient file view over the body). The shell is a
  * passthrough in `center` placement so this subtree keeps the same tree
  * position across center↔dock moves — the chat is never reconciled away.
  *
@@ -28,9 +28,6 @@ import { ChatScreen } from "./ChatScreen";
 
 /** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */
 export type ChatPlacement = "center" | "dock";
-
-/** Width of the docked chat — kept in sync with the content reflow padding. */
-export const CHAT_DOCK_WIDTH = "clamp(20rem,28vw,26rem)";
 
 export type ChatSurfaceProps = {
   projectId: string;

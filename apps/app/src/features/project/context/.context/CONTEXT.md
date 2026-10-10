@@ -79,8 +79,8 @@ ContextPaneController
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
-              │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
+              │     ├─ PassageNotice, ArchivedWorkNotice
+              │     └─ DocumentIdentityBar (breadcrumb + DraftReviewChip and painted DraftReviewBand)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)

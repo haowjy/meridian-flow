@@ -10,6 +10,7 @@ import type {
 export type PendingWorkDraft = {
   branch: WorkDraftPendingEvidence["branch"];
   rows: WorkDraftPendingRowEvidence[];
+  actorThreadIds: string[];
   manifestEntry?: {
     branchId: string;
     documentId: DocumentId;
@@ -35,7 +36,20 @@ export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftP
       const contentRows = rows.filter((row) => manifestMembershipRowDocumentId(row) === null);
       if (contentRows.length === 0) return [];
       const manifestEntry = manifestEntries.get(branch.documentId);
-      return [{ branch, rows: contentRows, ...(manifestEntry ? { manifestEntry } : {}) }];
+      const latestThreadRows = new Map<string, number>();
+      for (const row of contentRows) {
+        if (row.source !== "agent" || !row.threadId) continue;
+        latestThreadRows.set(
+          row.threadId,
+          Math.max(latestThreadRows.get(row.threadId) ?? 0, row.id),
+        );
+      }
+      const actorThreadIds = [...latestThreadRows]
+        .sort((a, b) => b[1] - a[1])
+        .map(([threadId]) => threadId);
+      return [
+        { branch, rows: contentRows, actorThreadIds, ...(manifestEntry ? { manifestEntry } : {}) },
+      ];
     });
   }
 

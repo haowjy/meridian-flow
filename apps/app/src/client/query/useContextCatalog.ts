@@ -4,6 +4,7 @@ import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
+  catalogScopeKey,
   contextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
@@ -662,13 +663,36 @@ export function useContextCatalogWake(
   );
 }
 
+/** The newest installed catalog revision each scope's hints have already re-read draft lists for. */
+const refreshedRevisions = new WeakMap<QueryClient, Map<string, bigint>>();
+
+/** Whether `applied` is a revision this scope's draft lists were not yet re-read for; records it when so. */
+function advancesDraftRefresh(
+  queryClient: QueryClient,
+  scope: CatalogScope,
+  applied: string,
+): boolean {
+  if (!/^\d+$/.test(applied)) return true;
+  const revision = BigInt(applied);
+  const refreshed = refreshedRevisions.get(queryClient) ?? new Map<string, bigint>();
+  refreshedRevisions.set(queryClient, refreshed);
+  const key = catalogScopeKey(scope);
+  const last = refreshed.get(key);
+  if (last !== undefined && revision <= last) return false;
+  refreshed.set(key, revision);
+  return true;
+}
+
 /**
  * Duplicate-tolerant wake hint handler; the hint never mutates cache state itself.
  *
  * A manifest change is also the one signal another page's Apply or Discard sends: a draft-only
  * document joins or never joins the manifest, and nothing else tells this page its Work's draft
  * list is out of date. Mounted draft lists re-read, which is what ends a review and settles a
- * draft-only tab whose draft was disposed elsewhere.
+ * draft-only tab whose draft was disposed elsewhere. A Work-scoped hint names its Work, so only
+ * that Work's list re-reads; a project-wide hint cannot, so every list of the project does. A hint
+ * that installs no revision newer than the last one handled re-reads nothing, and a user-scoped
+ * catalog holds no project drafts.
  */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
@@ -682,13 +706,19 @@ export function pullContextCatalogOnHint(
     .hintCatalog(projectId, requestedScope, hint.headRevision)
     .then((next) => {
       queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next);
-      void queryClient.invalidateQueries({
-        predicate: ({ queryKey }) =>
-          queryKey[0] === "projects" &&
-          queryKey[1] === projectId &&
-          queryKey[2] === "works" &&
-          queryKey[4] === "drafts",
-      });
+      if (requestedScope.kind === "user") return;
+      if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
+      void queryClient.invalidateQueries(
+        requestedScope.kind === "work"
+          ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
+          : {
+              predicate: ({ queryKey }) =>
+                queryKey[0] === "projects" &&
+                queryKey[1] === projectId &&
+                queryKey[2] === "works" &&
+                queryKey[4] === "drafts",
+            },
+      );
     })
     .catch(() => undefined);
 }

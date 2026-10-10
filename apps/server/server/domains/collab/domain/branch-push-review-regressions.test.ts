@@ -37,7 +37,9 @@ import type {
   PushLineageRow,
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
+import { BranchPushCommitConflictError, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
+import { createBranchReviewOperations } from "./branch-review-operations.js";
 import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
@@ -290,6 +292,7 @@ function serviceFixture(input: {
   };
   return {
     stores,
+    branchStore,
     service: createBranchPushService({
       links: input.links ?? createStaticDocumentLinkScopes(),
       criticalSections: input.criticalSections,
@@ -473,4 +476,76 @@ describe("branch push review regressions", () => {
       }),
     ).resolves.toMatchObject({ status: "pushed" });
   });
+});
+
+it("reselects Discard under the lock after a snapshot CAS conflict and refuses the changed cut", async () => {
+  const live = docFromMarkdown("Alpha base.");
+  const draft = cloneDoc(live);
+  const journal = createInMemoryJournal();
+  await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(live), { origin: "system", seq: 0 });
+  const before = Y.encodeStateVector(draft);
+  const block = model.getBlocks(toDocHandle(draft))[0];
+  model.applyTextEdit(toDocHandle(draft), block, { from: 11, to: 11 }, "ABC");
+  let branch = branchFromDoc("discard-retry", CONTENT_ID, draft);
+  const rows = [rowFor(branch, 1, Y.encodeStateAsUpdate(draft, before))];
+  const fixture = serviceFixture({
+    branches: [branch],
+    rows,
+    journal,
+    liveDocs: new Map([[CONTENT_ID, live]]),
+  });
+  fixture.branchStore.getBranch = async () => branch;
+  let locked = false;
+  let committed = false;
+  fixture.stores.commitDiscard = async () => {
+    if (rows.length > 1) {
+      committed = true;
+      return;
+    }
+    const cut = Y.encodeStateVector(draft);
+    model.applyTextEdit(toDocHandle(draft), block, { from: 12, to: 12 }, "X");
+    rows.push(rowFor(branch, 2, Y.encodeStateAsUpdate(draft, cut)));
+    branch = branchFromDoc(branch.branchId, CONTENT_ID, draft);
+    throw new BranchPushCommitConflictError(branch.branchId);
+  };
+  const sections = createBranchCriticalSections();
+  const review = createBranchReviewOperations({
+    branchStore: fixture.branchStore,
+    journalReadStore: fixture.stores,
+    commitStore: fixture.stores,
+    journal,
+    criticalSections: {
+      async withBranches(ids, run) {
+        return sections.withBranches(ids, async (lease) => {
+          locked = true;
+          try {
+            return await run(lease);
+          } finally {
+            locked = false;
+          }
+        });
+      },
+    },
+  });
+  const observedCuts: number[][] = [];
+  try {
+    await expect(
+      review.discardSelected({
+        branchId: branch.branchId,
+        selectRows: async (_snapshot, currentRows) => {
+          expect(locked).toBe(true);
+          observedCuts.push(currentRows.map((row) => row.id));
+          if (currentRows.length !== 1) throw new DraftChangeRefusal("stale");
+          return { journalIds: [1], expectedLiveRevision: "live-cut" };
+        },
+      }),
+    ).rejects.toMatchObject({ status: "stale" });
+    expect(observedCuts).toEqual([[1], [1, 2]]);
+    expect(committed).toBe(false);
+    expect(rows.map((row) => row.status)).toEqual(["active", "active"]);
+    expect(model.getText(model.getBlocks(toDocHandle(draft))[0])).toBe("Alpha base.AXBC");
+  } finally {
+    live.destroy();
+    draft.destroy();
+  }
 });

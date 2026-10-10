@@ -133,6 +133,8 @@ export {
   dependsOnRows,
   hasDependentLaterRows,
   rangeCovers,
+  rangesOverlap,
+  structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
 export type {

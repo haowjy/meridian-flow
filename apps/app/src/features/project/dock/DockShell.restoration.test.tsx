@@ -1,48 +1,42 @@
 // @vitest-environment jsdom
-/** Loading Changes must not rewrite the persisted choice or cancel the pending document. */
+/** Document restoration must not rewrite the persisted candidate or cancel the pending document. */
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { DockShell } from "./DockShell";
-import { useDockViewStore } from "./dock-view-store";
+import { useDockDocumentStore } from "./dock-document-store";
 
-vi.mock("@/features/chat/DraftReviewProvider", () => ({ useDraftReview: () => ({ groups: [] }) }));
 vi.mock("../DesktopProjectController", () => ({ usePresentedDockDocument: () => undefined }));
 vi.mock("./DockDocumentView", () => ({ DockDocumentView: () => null }));
-vi.mock("./DockChangesView", () => ({ DockChangesView: () => null }));
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-it("uses the primary view while Changes loads without committing a new intent", async () => {
-  useDockViewStore.setState(useDockViewStore.getInitialState(), true);
+it("uses the native occupant during restoration without committing a new intent", async () => {
+  useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   const restoring = {
+    review: null,
+    screenWorkId: null,
     projectId: "project",
     screen: "chat" as const,
     tab: { kind: "new" as const, documentId: "local", resourceHandle: "local", name: "Untitled" },
   };
-  useDockViewStore.setState({ byScreen: { chat: "changes" }, restoring });
-  const revision = useDockViewStore.getState().revision;
+  useDockDocumentStore.setState({ restoring });
+  const revision = useDockDocumentStore.getState().revision;
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
     await act(async () =>
       root.render(
-        <DockShell
-          projectId="project"
-          placement="dock"
-          screen="chat"
-          renderHeader={({ view }) => <span>{view}</span>}
-        >
+        <DockShell projectId="project" placement="dock" screen="chat" renderHeader={() => null}>
           <p>Recent</p>
         </DockShell>,
       ),
     );
-    expect(container.textContent).toContain("context");
-    expect(useDockViewStore.getState().byScreen.chat).toBe("changes");
-    expect(useDockViewStore.getState().restoring).toBe(restoring);
-    expect(useDockViewStore.getState().revision).toBe(revision);
+    expect(container.textContent).toBe("Recent");
+    expect(useDockDocumentStore.getState().restoring).toBe(restoring);
+    expect(useDockDocumentStore.getState().revision).toBe(revision);
   } finally {
     await act(async () => root.unmount());
-    useDockViewStore.setState(useDockViewStore.getInitialState(), true);
+    useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   }
 });

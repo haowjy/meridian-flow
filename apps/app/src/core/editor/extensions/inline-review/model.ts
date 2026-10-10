@@ -7,10 +7,31 @@
  *
  * Kept free of ProseMirror imports so it can be unit-tested without a DOM.
  */
-import type { ReviewBlockDisplay, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type {
+  ReviewBlockHunk,
+  ReviewHunk,
+  ReviewOperation,
+  ReviewTextHunk,
+} from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
+
+const UNATTRIBUTED_PREFIX = "unattributed:";
+
+/**
+ * The key a hunk with no owning operation is painted, focused and scrolled to
+ * by. Operations are how every other mark is found (`data-review-operations`),
+ * and an unclassified hunk has none, so the model gives it this stand-in. It is
+ * a client-side name only: it never reaches the server and no command takes it.
+ */
+export function unattributedHunkKey(hunkId: string): string {
+  return `${UNATTRIBUTED_PREFIX}${hunkId}`;
+}
+
+export function isUnattributedHunkKey(key: string): boolean {
+  return key.startsWith(UNATTRIBUTED_PREFIX);
+}
 
 /**
  * A per-operation piece of an inserted hunk. Every inserted character is
@@ -25,50 +46,23 @@ export interface ResolvedReviewSpan {
   to: Y.RelativePosition;
 }
 
-/** Anchor pair shared by both hunk kinds, decoded to runtime `Y.RelativePosition`. */
-interface ResolvedReviewHunkBase {
-  hunkId: string;
-  operationIds: string[];
-  /** Resolves to the start of the insertion / caret for a pure deletion. */
+/** Runtime anchors replace the wire-encoded anchor pair. */
+interface DecodedReviewAnchors {
   relStart: Y.RelativePosition;
-  /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
   relEnd: Y.RelativePosition;
-  /**
-   * the hunk is a CRDT merge artifact (spec §6.2) — concurrent writer
-   * + AI edits the CRDT combined in one text node. Painted with the neutral
-   * dashed merged decoration, overriding the hued authorship spans, so it reads
-   * as a "combined here, review" seam rather than an author's addition.
-   */
-  mergeArtifact?: boolean;
 }
 
-/** Word-diff hunk inside a paragraph/heading — inline spans + deletion widget. */
-export interface ResolvedTextReviewHunk extends ResolvedReviewHunkBase {
-  kind: "text";
-  /**
-   * Per-operation ordered, non-overlapping slices of this hunk's insertion
-   * range. Empty for pure deletions. The plugin renders one decoration per
-   * span (colored by its owning operation's kind) instead of a single
-   * whole-hunk decoration — this is what lets writer edits colored gold
-   * appear inside a green AI insertion.
-   */
+/** Text presentation is unchanged; only anchors and insertion spans are decoded. */
+export interface ResolvedTextReviewHunk
+  extends Omit<ReviewTextHunk, "anchor" | "spans" | "insertedText">,
+    DecodedReviewAnchors {
   spans: ResolvedReviewSpan[];
-  /** Present when the hunk shows text removed from live but absent in draft. */
-  deletedText?: string;
 }
 
-/**
- * Whole-block replace hunk for non-paragraph/heading blocks (lists, rules,
- * quotes, images). The anchor spans the inserted draft block, or collapses to
- * a zero-width caret at the delete site. Display payloads carry the server's
- * one-line rendering of each side so atom blocks (a horizontal rule, an
- * image) stay representable even though they have no text.
- */
-export interface ResolvedBlockReviewHunk extends ResolvedReviewHunkBase {
-  kind: "block";
-  insertedBlock?: ReviewBlockDisplay;
-  deletedBlock?: ReviewBlockDisplay;
-}
+/** Block presentation is unchanged; only its anchor pair is decoded. */
+export interface ResolvedBlockReviewHunk
+  extends Omit<ReviewBlockHunk, "anchor">,
+    DecodedReviewAnchors {}
 
 /** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
 export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHunk;
@@ -76,9 +70,9 @@ export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHun
 /** The full plugin input: hunks + operations + a revision token from the server. */
 export interface InlineReviewModel {
   /** Server-issued token identifying the live base the model was computed against. */
-  liveRevisionToken?: number;
+  liveRevisionToken?: string;
   /** Server-issued token identifying the draft state the model was computed against. */
-  draftRevisionToken: number;
+  draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ResolvedReviewHunk[];
 }
@@ -113,8 +107,8 @@ export function decodeAnchor(encoded: string): Y.RelativePosition | null {
  * crash review; it just means one hunk is invisible until the next refetch.
  */
 export function buildInlineReviewModel(input: {
-  liveRevisionToken?: number;
-  draftRevisionToken: number;
+  liveRevisionToken?: string;
+  draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
 }): InlineReviewModel {
@@ -125,9 +119,11 @@ export function buildInlineReviewModel(input: {
     if (!relStart || !relEnd) continue;
     const base = {
       hunkId: hunk.hunkId,
-      operationIds: hunk.operationIds,
+      operationIds:
+        hunk.operationIds.length > 0 ? hunk.operationIds : [unattributedHunkKey(hunk.hunkId)],
       relStart,
       relEnd,
+      ...(hunk.unclassified ? { unclassified: true } : {}),
       ...(hunk.mergeArtifact ? { mergeArtifact: true } : {}),
     };
     if (hunk.kind === "block") {
@@ -155,6 +151,7 @@ export function buildInlineReviewModel(input: {
       kind: "text",
       spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      ...(hunk.deletedSpans ? { deletedSpans: hunk.deletedSpans } : {}),
     });
   }
   return {
@@ -168,28 +165,69 @@ export function buildInlineReviewModel(input: {
 }
 
 /**
- * Kind of the first-listed operation for a hunk drives its highlight color.
- * When a hunk belongs to multiple operations (coalescence), agent kind wins
- * only if every contributing operation is agent — any writer contribution
- * paints the writer color so the writer instantly sees "I touched this."
+ * How a hunk's marks are drawn: an author's colour, or `neutral` when no
+ * author can be named. A merge artifact (concurrent edits the CRDT combined)
+ * and an unclassified hunk (no operation owns it) are neutral whatever their
+ * operations say, so text and block rendering share this one decision.
+ * Otherwise a hunk with a writer contribution paints the writer colour (the
+ * writer instantly sees "I touched this"), and any other known operation
+ * paints the AI's. A hunk whose operations are all unknown reads as the AI's,
+ * so the change is still seen.
  */
-export function hunkKind(
+export type ReviewTone = InlineReviewOperationKind | "neutral";
+
+export function hunkTone(
   hunk: ResolvedReviewHunk,
   operationsById: ReadonlyMap<string, ReviewOperation>,
-): InlineReviewOperationKind {
+): ReviewTone {
+  if (hunk.mergeArtifact === true || hunk.unclassified === true) return "neutral";
+  for (const opId of hunk.operationIds) {
+    if (operationsById.get(opId)?.kind === "writer") return "writer";
+  }
+  return "agent";
+}
+
+/** Who a removed stretch is drawn as: an author, or `unattributed` when the server could not say. */
+export type RemovalKind = InlineReviewOperationKind | "unattributed";
+
+/**
+ * Who removed the live block a block hunk shows struck. The preview carries no
+ * per-removal author for blocks, only the hunk's owning operations, so the
+ * removal is the writer's when every owning operation is the writer's and the
+ * AI's otherwise; unattributed when the hunk is neutral. (Text hunks say who
+ * removed each stretch: `deletedSpans`.)
+ */
+export function blockRemovalKind(
+  hunk: ResolvedBlockReviewHunk,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+): RemovalKind {
+  if (hunkTone(hunk, operationsById) === "neutral") return "unattributed";
   let sawWriter = false;
-  let sawAgent = false;
   for (const opId of hunk.operationIds) {
     const op = operationsById.get(opId);
-    if (!op) continue;
-    if (op.kind === "writer") sawWriter = true;
-    else sawAgent = true;
+    if (op?.kind === "writer") sawWriter = true;
+    else return "agent";
   }
-  if (sawWriter) return "writer";
-  if (sawAgent) return "agent";
-  // Fall back to agent — treats unknown attribution as AI to preserve the
-  // "green = something changed here" reading rather than showing nothing.
-  return "agent";
+  return sawWriter ? "writer" : "agent";
+}
+
+/**
+ * The operations that make up the one change the active operation belongs to.
+ * Operations sharing a server closure class overlap, so the writer sees and
+ * acts on them as a single change; focusing one focuses them all.
+ */
+export function changeOperationIds(
+  operations: readonly ReviewOperation[],
+  activeOperationId: string | null,
+): ReadonlySet<string> {
+  if (!activeOperationId) return new Set();
+  const active = operations.find((op) => op.operationId === activeOperationId);
+  const ids = new Set([activeOperationId]);
+  if (!active) return ids;
+  for (const op of operations) {
+    if (op.closureClassId === active.closureClassId) ids.add(op.operationId);
+  }
+  return ids;
 }
 
 export function indexOperations(

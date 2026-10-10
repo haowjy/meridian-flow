@@ -17,6 +17,7 @@ import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
+  createDocumentUrisResolver,
 } from "../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import type { FileAccess } from "../file-policy/index.js";
@@ -29,6 +30,7 @@ import {
   createBranchAgentEditDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
+  createDraftReviewDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
@@ -57,6 +59,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -66,7 +69,10 @@ import {
 } from "./adapters/drizzle-pending-settlement.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
-import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
+import {
+  createDrizzleEmptyDraftSettlement,
+  createDrizzleWorkDraftDiscard,
+} from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -440,6 +446,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.links,
   );
   const drafts = createWorkDraftReviewService({
+    diagnostics: createDraftReviewDiagnostics(deps.eventSink),
+    settleEmptyDraft: createDrizzleEmptyDraftSettlement(
+      deps.db,
+      branches,
+      branchCoordinator,
+      criticalSections,
+      liveCoordinator,
+      branchJournal,
+    ),
     links: deps.links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
@@ -454,12 +469,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush,
     branchReview,
     workDraftPending,
-    liveCoordinator,
-    documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
-    resolveDocumentUri: documentUriResolver,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    resolveDocumentUris: createDocumentUrisResolver(deps.db),
+    resolveThreadTitles: lookups.resolveThreadTitles,
+    readLiveReviewCut: createDrizzleDraftReviewLive(deps.db, persistence.journal),
   });
   const branchPeers = scopeBranchPeer(
     createEffectiveDocumentReader({

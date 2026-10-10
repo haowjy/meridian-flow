@@ -59,6 +59,7 @@ describe("Hocuspocus document transport isolation", () => {
     expect(firstStates.at(-1)).toEqual({
       kind: "reset",
       reason: "client-schema-superseded",
+      disposition: "schema",
       code: 4406,
     });
     expect(secondStates.at(-1)).toEqual({ kind: "connected" });

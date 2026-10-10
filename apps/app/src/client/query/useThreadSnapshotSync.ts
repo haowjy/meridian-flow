@@ -7,7 +7,7 @@
  */
 import { EventType, parseSeq } from "@meridian/contracts/protocol";
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { useLayoutEffect, useMemo } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import {
   deserializeThreadSnapshot,
   getThreadSnapshot,
@@ -38,6 +38,12 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
+  /**
+   * The thread's history is in the transcript store (or its load failed). Not
+   * merely fetched: a render can see the accepted snapshot a commit before its
+   * turns reach the store, and a reader that took that for "history is empty"
+   * would give up on a turn that is about to arrive.
+   */
   settled: boolean;
   isError: boolean;
   isFetching: boolean;
@@ -202,6 +208,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     data.thread.userId === accountId &&
     actions.acceptsThreadSnapshot(threadId, data.nextSeq);
   const snapshot = accepted ? data : null;
+  const [appliedThreadId, setAppliedThreadId] = useState<string | null>(null);
   useLayoutEffect(() => {
     if (!snapshot || accountSignal.aborted) return;
     actions.applyThreadSnapshot(
@@ -209,6 +216,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       snapshot.turns,
       toThreadSnapshotApplyOptions(snapshot),
     );
+    setAppliedThreadId(snapshot.thread.id);
   }, [accountSignal, actions, snapshot]);
 
   return {
@@ -217,7 +225,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     liveState: snapshot?.liveState ?? null,
     actionRequired: snapshot?.actionRequired ?? null,
     nextSeq: snapshot?.nextSeq ?? null,
-    settled: snapshot !== null || isError,
+    settled: appliedThreadId === threadId || isError,
     isError,
     isFetching,
     refetch: () => {

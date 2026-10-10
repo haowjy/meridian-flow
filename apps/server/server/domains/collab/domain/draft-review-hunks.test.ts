@@ -1,283 +1,40 @@
-/** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
-import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
-import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+/** Real-Yjs draft review behavioral coverage. */
+import { toDocHandle } from "@meridian/agent-edit/integration";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { alignBlocks } from "./document-difference.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { captureUpdate, cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
 
-const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
-const model = yProsemirrorModel(schema);
-
-const WRITER_OPERATION_ID = /^writer:\d+-[a-f0-9]+$/;
-
-describe("draft review hunk model", () => {
-  it("attributes deleted live text to the row whose delete set covers it", () => {
-    const live = createDoc(
-      "Alpha sword remains with enough unchanged surrounding text for inline review density.",
-    );
+describe("draft review hunks", () => {
+  it("uses a generic image label rather than exposing a stored source identity", () => {
+    const live = createDoc("Anchor.");
     const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, ""),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 21, actorTurnId: "turn-delete", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.hunks).toEqual([
-      expect.objectContaining({ operationIds: ["21"], deletedText: "sword " }),
-    ]);
-  });
-
-  it("keeps one row that genuinely deletes two regions linked to both hunks", () => {
-    const live = createDoc(
-      [
-        "Alpha target remains with enough unchanged surrounding text for attribution.",
-        "Beta target remains with enough unchanged surrounding text for attribution.",
-        "Gamma stays unchanged with enough surrounding text for attribution.",
-      ].join("\n\n"),
-    );
-    const draft = cloneDoc(live);
-    const [first, second] = model.getBlocks(toDocHandle(draft));
+    const image = new Y.XmlElement("image");
+    image.setAttribute("src", "asset:00000000-0000-4000-8000-000000000712");
     const update = captureUpdate(draft, () => {
-      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 13 }, "");
-      model.applyTextEdit(toDocHandle(draft), second, { from: 5, to: 12 }, "");
+      const fragment = draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      fragment.insert(fragment.length, [image]);
     });
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 171, actorTurnId: "turn-two-deletions", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "171",
-        contribution: "removed",
-        classification: "removal",
-        beforeExcerpt: "target",
-        sourceUpdateIds: [171],
-        discardUpdateIds: [171],
-        actorTurnId: "turn-two-deletions",
-        kind: "agent",
-        hunkCount: 2,
-      }),
-    ]);
-  });
-
-  it("keeps mixed agent and writer rows in one block as separate operations", () => {
-    const live = createDoc(
-      "Alpha target remains with enough unchanged surrounding text for attribution.",
-    );
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const agentUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, "agent"),
-    );
-    const writerUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 11, to: 11 }, " writer"),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 211, actorTurnId: "turn-agent", updateData: agentUpdate },
-        { id: 212, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
-      ],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    const writerOperationId = writerOperationIdForRow(result.operations, 212);
-    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["211", writerOperationId]),
-    );
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "211",
-        contribution: "rewrote",
-        classification: "rewrite",
-        beforeExcerpt: "target",
-        afterExcerpt: "agent writer",
-        sourceUpdateIds: [211],
-        discardUpdateIds: [211, 212],
-        actorTurnId: "turn-agent",
-        kind: "agent",
-        hunkCount: 1,
-      }),
-      expect.objectContaining({
-        operationId: writerOperationId,
-        contribution: "added",
-        classification: "rewrite",
-        beforeExcerpt: "target",
-        afterExcerpt: "agent writer",
-        sourceUpdateIds: [212],
-        discardUpdateIds: [211, 212],
-        actorUserId: "user-a",
-        kind: "writer",
-        hunkCount: 1,
-      }),
-    ]);
-  });
-
-  it("emits ordered inserted sub-spans remapped to stable writer operation ids", () => {
-    const live = createDoc("Alpha tail text for mixed insertion span ordering.");
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const agentUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 6 }, "green text"),
-    );
-    const writerUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 12, to: 12 }, "gold "),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 264, actorTurnId: "turn-agent", updateData: agentUpdate },
-        { id: 265, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
-      ],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    const [hunk] = result.hunks;
-    const writerOperation = result.operations.find((operation) => operation.kind === "writer");
-    expect(writerOperation?.operationId).toMatch(/^writer:265-/);
-    expect(hunk.kind).toBe("text");
-    if (hunk.kind !== "text") throw new Error("expected text hunk");
-    expect(hunk.spans.map((span) => span.operationId)).toContain(writerOperation?.operationId);
-
-    const positions = hunk.spans.map((span) => spanTextRange(draft, span));
-    expect(
-      positions.every((position, index) => index === 0 || positions[index - 1].to <= position.from),
-    ).toBe(true);
-    expect(positions.reduce((sum, position) => sum + position.to - position.from, 0)).toBe(
-      "green gold text".length,
-    );
-  });
-
-  it("surfaces writer edits inside unchanged-identity blocks untouched by the agent", () => {
-    const live = createDoc(
-      [
-        "Alpha remains unchanged with enough surrounding text for review attribution.",
-        "Beta target remains with enough unchanged surrounding text for agent attribution.",
-        "Gamma remains unchanged with enough surrounding text for review attribution.",
-        "Delta remains unchanged with enough surrounding text for writer attribution.",
-      ].join("\n\n"),
-    );
-    const draft = cloneDoc(live);
-    const [, second, , fourth] = model.getBlocks(toDocHandle(draft));
-    const agentUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), second, { from: 11, to: 11 }, " agent"),
-    );
-    const writerUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), fourth, { from: 5, to: 5 }, " writer"),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 241, actorTurnId: "turn-agent", updateData: agentUpdate },
-        { id: 242, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
-      ],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    const writerOperationId = writerOperationIdForRow(result.operations, 242);
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["241"], [writerOperationId]]);
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "241",
-        contribution: "added",
-        classification: "addition",
-        afterExcerpt: "agent",
-        sourceUpdateIds: [241],
-        discardUpdateIds: [241],
-        actorTurnId: "turn-agent",
-        kind: "agent",
-        hunkCount: 1,
-      }),
-      expect.objectContaining({
-        operationId: writerOperationId,
-        contribution: "added",
-        classification: "addition",
-        afterExcerpt: "writer",
-        sourceUpdateIds: [242],
-        discardUpdateIds: [242],
-        actorUserId: "user-a",
-        kind: "writer",
-        hunkCount: 1,
-      }),
-    ]);
-  });
-
-  it("drops opposite block delete/insert pairs from per-operation reject inverses", () => {
-    const live = createDoc(
-      [
-        "Alpha remains unchanged with enough surrounding text for review attribution.",
-        "- Placeholder outline beat one should be cut.",
-        "- Placeholder outline beat two should be cut.",
-        "Omega remains as an anchor after the restored writer block.",
-      ].join("\n\n"),
-    );
-    const draft = cloneDoc(live);
-    const [alpha, list] = model.getBlocks(toDocHandle(draft));
-    const rewrite = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 5 }, "Beta"),
-    );
-    const deleteList = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), list));
-    const rejectInverseInsert = captureUpdate(draft, () =>
-      model.insertBlocks(
-        toDocHandle(draft),
-        alpha,
-        codec.parse(
-          "- Placeholder outline beat one should be cut.\n- Placeholder outline beat two should be cut.",
-        ),
-      ),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 266, actorTurnId: "turn-rewrite", updateData: rewrite },
-        { id: 267, actorTurnId: "turn-delete-list", updateData: deleteList },
-        { id: 268, actorTurnId: null, actorUserId: "user-a", updateData: rejectInverseInsert },
-      ],
-    });
-
-    expect(result.hunks).toHaveLength(1);
-    expect(result.hunks[0]).toMatchObject({ kind: "text", operationIds: ["266"] });
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "266",
-        contribution: "rewrote",
-        classification: "rewrite",
-        hunkCount: 1,
-      }),
-    ]);
+    try {
+      const review = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: draft,
+        model,
+        draftUpdates: [{ id: 60, actorTurnId: "turn-image", updateData: update }],
+      });
+      expect(review.hunks).toContainEqual(
+        expect.objectContaining({
+          kind: "block",
+          insertedBlock: { type: "image", display: "Image" },
+        }),
+      );
+      expect(JSON.stringify(review)).not.toContain("asset:");
+    } finally {
+      draft.destroy();
+      live.destroy();
+    }
   });
 
   it("allows text and block hunks to coexist", () => {
@@ -311,53 +68,28 @@ describe("draft review hunk model", () => {
   });
 });
 
-function writerOperationIdForRow(
-  operations: readonly { operationId: string; kind: string }[],
-  rowId: number,
-): string {
-  const match = operations.find(
-    (operation) =>
-      operation.kind === "writer" && new RegExp(`^writer:${rowId}-`).test(operation.operationId),
-  );
-  expect(match?.operationId).toMatch(WRITER_OPERATION_ID);
-  if (!match) throw new Error(`missing writer operation for row ${rowId}`);
-  return match.operationId;
-}
-
-function createDoc(markdown: string): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  doc.clientID = 1;
-  const parsed = codec.parse(markdown);
-  const root = schema.node("doc", null, parsed.blocks);
-  prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
-  return doc;
-}
-
-function cloneDoc(source: Y.Doc): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  doc.clientID = 2;
-  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
-  return doc;
-}
-
-function captureUpdate(doc: Y.Doc, mutate: () => void): Uint8Array {
-  const before = Y.encodeStateVector(doc);
-  mutate();
-  return Y.encodeStateAsUpdate(doc, before);
-}
-
-function spanTextRange(
-  doc: Y.Doc,
-  span: { anchorFrom: string; anchorTo: string },
-): { from: number; to: number } {
-  const from = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(span.anchorFrom, "base64")),
-    doc,
-  );
-  const to = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(span.anchorTo, "base64")),
-    doc,
-  );
-  if (!from || !to || from.type !== to.type) throw new Error("expected span in one text node");
-  return { from: from.index, to: to.index };
-}
+describe("block alignment", () => {
+  it("aligns one changed ID in 8,000 blocks within half a second", () => {
+    const live = Array.from({ length: 8000 }, (_, i) => ({ id: String(i), text: "unchanged" }));
+    const draft = live.map((block) => ({ ...block }));
+    draft[4000].id = "changed";
+    const start = performance.now();
+    const result = alignBlocks(live, draft);
+    expect(result.filter((entry) => entry.kind !== "equal").map((entry) => entry.kind)).toEqual([
+      "delete",
+      "insert",
+    ]);
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+  it("retains the first duplicate surviving anchor under the LCS tie rule", () => {
+    const result = alignBlocks(
+      [{ id: "a" }, { id: "b" }],
+      [
+        { id: "b", text: "first" },
+        { id: "b", text: "last" },
+      ],
+    );
+    expect(result.map((entry) => entry.kind)).toEqual(["delete", "equal", "insert"]);
+    expect(result[1]).toMatchObject({ draft: { text: "first" } });
+  });
+});

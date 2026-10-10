@@ -20,7 +20,7 @@ import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
-import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";

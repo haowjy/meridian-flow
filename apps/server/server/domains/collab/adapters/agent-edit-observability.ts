@@ -16,6 +16,7 @@ import type { DocumentProjectionDiagnostics } from "../domain/document-projectio
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
+import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -415,5 +416,30 @@ function reversalNoticeFailedObserver(
         // Notice diagnostics cannot change the already-durable reversal outcome.
       }
     }
+  };
+}
+
+export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
+  return {
+    dispositionMaintenanceFailed({ documentId, draftId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.draft_review",
+        name: "disposition.maintenance_failed",
+        correlation: { documentId },
+        payload: { draftId, error: String(cause) },
+      });
+    },
+    unattributedHunks({ documentId, hunkIds }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_review",
+        name: "attribution.incomplete",
+        correlation: { documentId },
+        payload: { hunkCount: hunkIds.length },
+      });
+    },
   };
 }

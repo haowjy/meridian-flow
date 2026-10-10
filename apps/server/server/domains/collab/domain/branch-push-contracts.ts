@@ -43,6 +43,8 @@ export type BranchJournalRow = {
   branchId: string;
   generation: number;
   wId: number | null;
+  /** The model's tool call that made this write; null for writer rows and legacy rows. */
+  toolCallId?: string | null;
   source: "agent" | "writer";
   threadId: ThreadId | null;
   turnId: TurnId | null;
@@ -98,7 +100,14 @@ export type PushToLiveResult =
       reason: "no_active_rows";
     };
 
+export class DraftChangeRefusal extends Error {
+  constructor(readonly status: "stale" | "gone" | "draft_only" | "incomplete_class") {
+    super(status);
+  }
+}
+
 export type PreparedPushCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
@@ -159,7 +168,10 @@ export type TrailContributionReplacement = {
   documentTitles: ReadonlyMap<string, string>;
 };
 
+export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
+
 export type PreparedDiscardCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
@@ -173,13 +185,15 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
-  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
+  /** Selective content and manifest candidates replay only their selected rows. */
   kind: "content" | "manifest";
+  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
   candidates: PushCandidate[];
   receiptId: string;
+  expectedLiveRevision?: string;
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 };
@@ -252,6 +266,12 @@ export type BranchPushService = {
     signal?: AbortSignal;
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
+  }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
@@ -286,7 +306,7 @@ export type BranchTurnReversal =
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
-    journalIds: readonly number[];
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
   }): Promise<
     | { status: "discarded"; branchId: string; journalIds: number[] }

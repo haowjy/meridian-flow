@@ -294,6 +294,7 @@ it("does not label a transport-owned session offline when only the acknowledgeme
   vi.mocked(adoption.bindAndAdopt).mockImplementation(async (input) => {
     const result = await bind(input);
     created[0]?.attachTransport(() => ({
+      unacknowledgedUpdates: () => null,
       synced: true,
       whenSynced: Promise.resolve(),
       whenDurablySynced: Promise.resolve(),

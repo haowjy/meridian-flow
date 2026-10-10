@@ -3,7 +3,11 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
+import type {
+  ContextRouteRequest,
+  ContextRouteTarget,
+  ProjectRouteCommands,
+} from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -27,6 +31,7 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
+  openWork?: ProjectRouteCommands["openWork"];
   screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   capture?: () => () => boolean;
@@ -36,6 +41,7 @@ const ProjectNavigationContext = createContext<{
 export function ProjectNavigationProvider({
   children,
   openContextRoute,
+  openWork,
   captureNavigation,
   isCurrentContextRoute,
   screen,
@@ -46,6 +52,7 @@ export function ProjectNavigationProvider({
   screen?: ScreenKey;
   children: ReactNode;
   openContextRoute: OpenContextRoute;
+  openWork?: ProjectRouteCommands["openWork"];
   screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   captureNavigation?: () => () => boolean;
@@ -57,6 +64,7 @@ export function ProjectNavigationProvider({
       value={{
         screen,
         open: openContextRoute,
+        openWork,
         capture: captureNavigation,
         isCurrentContextRoute,
         registerLeaveGuard,
@@ -73,6 +81,11 @@ export function useOpenContextRoute(): OpenContextRoute | null {
   return useContext(ProjectNavigationContext)?.open ?? null;
 }
 
+/** Opens a Work's page (one route transition); null outside a project route. */
+export function useOpenWork(): ProjectRouteCommands["openWork"] | null {
+  return useContext(ProjectNavigationContext)?.openWork ?? null;
+}
+
 /** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
@@ -81,12 +94,6 @@ export function useCaptureProjectNavigation() {
 /** Whether the browser still shows a specific readable Editor destination. */
 export function useIsCurrentContextRoute() {
   return useContext(ProjectNavigationContext)?.isCurrentContextRoute;
-}
-
-export function useProjectScreen(): ScreenKey {
-  const screen = useContext(ProjectNavigationContext)?.screen;
-  if (!screen) throw new Error("Project screen navigation is required");
-  return screen;
 }
 
 /** Keep one registered decision owner while its metadata state changes. */
@@ -116,4 +123,10 @@ export function useScreenCommands() {
 }
 export function useIsCurrentNavigation() {
   return useContext(ProjectNavigationContext)?.isCurrentNavigation;
+}
+
+export function useProjectScreen(): ScreenKey {
+  const screen = useContext(ProjectNavigationContext)?.screen;
+  if (!screen) throw new Error("Project screen navigation is required");
+  return screen;
 }

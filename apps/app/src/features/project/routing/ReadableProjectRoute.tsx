@@ -62,7 +62,11 @@ import {
   projectAddressHref,
 } from "./project-address";
 import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import {
+  resolveLocalDocumentSelection,
+  selectEditorEntryTab,
+  useEditorContainerAddress,
+} from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -78,6 +82,7 @@ import {
   projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
+  type WorkDetailTarget,
 } from "./project-route";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
@@ -400,6 +405,13 @@ function ReadableProjectDestination({
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
+  const editorContainerAddress = useEditorContainerAddress({
+    active: activeScreen === "context",
+    accountId: user.userId,
+    address,
+    documentId: addressDocumentId ?? null,
+    workId,
+  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -467,8 +479,16 @@ function ReadableProjectDestination({
       ...address,
       destination: next,
       draftId: undefined,
-      workView: next.kind === "work" ? address.workView : undefined,
+      workView: undefined,
       worksView: undefined,
+    };
+  }
+  // A Work opens on its chats unless the target names Files: one address, so
+  // one transition and one history entry, whatever screen it leaves.
+  function workAddress(target: WorkDetailTarget): ProjectAddress {
+    return {
+      ...toDestination({ kind: "work", workId: target.workId }),
+      workView: target.view === "files" ? "files" : undefined,
     };
   }
   const contextDestination = useCallback(
@@ -545,10 +565,8 @@ function ReadableProjectDestination({
     if (result.kind === "failed") throw result.error;
   };
   const routeCommands: ProjectRouteCommands = {
-    openWork: (target, options) =>
-      goLegacy(toDestination({ kind: "work", workId: target.workId }), options),
-    workHref: (target) =>
-      projectAddressHref(toDestination({ kind: "work", workId: target.workId })),
+    openWork: (target, options) => goLegacy(workAddress(target), options),
+    workHref: (target) => projectAddressHref(workAddress(target)),
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       goLegacy({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
@@ -635,7 +653,13 @@ function ReadableProjectDestination({
       if (tab)
         return openContext(
           { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
-          options,
+          {
+            ...options,
+            ...(editorContainerAddress?.documentId === tab.documentId &&
+            editorContainerAddress.workId === workId
+              ? { draftId: editorContainerAddress.address.draftId }
+              : {}),
+          },
         );
     }
     return go(
@@ -672,6 +696,7 @@ function ReadableProjectDestination({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
+      openWork={routeCommands.openWork}
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
@@ -738,7 +763,7 @@ function ReadableProjectDestination({
                       replace: true,
                       // The coordinator relocates the document the address names,
                       // or falls back to another. Either way the review follows
-                      // the address until EditorReviewAddressOwner, which knows
+                      // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
                       draftId: address.draftId,
                     },

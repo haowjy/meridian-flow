@@ -1,13 +1,21 @@
 /** Drizzle-backed lookup functions used by collab service composition. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, turns } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { documents, threads, turns } from "@meridian/database/schema";
+import { eq, inArray } from "drizzle-orm";
+
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 export function createDrizzleCollabLookups(db: Database) {
   return {
-    /** Reads on the open transaction, if any: a document created in it has its row only there. */
+    async resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+      if (!threadIds.length) return new Map();
+      const rows = await db
+        .select({ id: threads.id, title: threads.title })
+        .from(threads)
+        .where(inArray(threads.id, threadIds as ThreadId[]));
+      return new Map(rows.map((row) => [row.id, row.title]));
+    },
     async resolveDocumentFiletype(documentId: string): Promise<string | null> {
       const [row] = await currentDrizzleDb(db)
         .select({ filetype: documents.fileType })

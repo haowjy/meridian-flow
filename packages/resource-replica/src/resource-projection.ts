@@ -107,10 +107,32 @@ export function resourceVisibleInProject(
     )
   )
     return true;
-  const documentId = record.resource.identity.documentId;
-  return catalogs.some(
-    (catalog) =>
-      catalog.projectId === projectId &&
-      catalog.entries.some((entry) => entry.kind === "file" && entry.entryId === documentId),
-  );
+  return catalogDocumentIds(catalogs, projectId).has(record.resource.identity.documentId);
+}
+
+// Visibility runs once per record over the same checkpoint array, so the
+// project's catalog files are indexed once per array instead of rescanned.
+const catalogDocumentIndex = new WeakMap<
+  readonly ResourceCatalogCheckpoint[],
+  Map<string, ReadonlySet<string>>
+>();
+
+function catalogDocumentIds(
+  catalogs: readonly ResourceCatalogCheckpoint[],
+  projectId: string,
+): ReadonlySet<string> {
+  let byProject = catalogDocumentIndex.get(catalogs);
+  if (!byProject) {
+    byProject = new Map();
+    catalogDocumentIndex.set(catalogs, byProject);
+  }
+  const cached = byProject.get(projectId);
+  if (cached) return cached;
+  const ids = new Set<string>();
+  for (const catalog of catalogs) {
+    if (catalog.projectId !== projectId) continue;
+    for (const entry of catalog.entries) if (entry.kind === "file") ids.add(entry.entryId);
+  }
+  byProject.set(projectId, ids);
+  return ids;
 }

@@ -56,7 +56,7 @@ import { answeredControlIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
-import { DraftDock, useDraftDock } from "./DraftDock";
+import { DraftDock } from "./DraftDock";
 import {
   canDeriveFrom,
   type TurnDerivation,
@@ -90,6 +90,7 @@ import {
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
@@ -338,7 +339,7 @@ export function ChatView({
   // producing draft edits" signal available client-side (per-turn draft lineage
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ generating });
+  const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     // Durable witness before display and dispatch: a displayed action survives

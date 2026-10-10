@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+- Keep an Editor tab’s review when closing the same document or review in the dock.
+
+- Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.
+
+- Development: name the shared draft-review scope for the presented document, not the Editor.
+
+- Keep pending writer text gold across remote collaborative edits and stale or partial draft-review refreshes.
+
+- Development: drive review command reads with controlled React scheduling so threaded full-suite runs stay quiet.
+
+- Development: share explicit snapshot commits and preview-fenced request construction across durable review tests.
+
+- Development: consolidate review session, shell and scheduling fixtures, keeping native writer-handoff histories explicit and retiring weaker duplicate traces.
+
+- Development: isolate review launch fixtures so their focus witnesses do not depend on test order.
+
+- Use one phone review header model for header, change bar and sheet without reparenting the manuscript.
+
+- Share active review projection and presence leases across desktop and phone while retaining each host's requested-versus-resolved review policy.
+
+- Bind review rooms through one editor adapter and one construction receipt with per-editor marks readiness; live editors mount no review runtime.
+
+- Simplify active draft previews to their required inline model, removing unreachable missing-model handling.
+
+- Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending. Offline batches refuse every file in the same admission turn.
+
+- Consolidate draft command admission and typed settlement; Work and chat lists use Work-bound commands without extra review controllers or editor-executor routing. Completion observation preserves covering-claim withdrawal notifications.
+
+- Development: drive native review handoff setup and carry resolution inside awaited React act boundaries, keeping the transport-ordering witness quiet.
+
+- A missing draft read stays observable while writer delivery protects review, so withdrawn delivery closes the missing review instead of leaving it stranded.
+
+- Document session snapshots update on pending-writing edges, not on every keystroke, while retaining review through remote Discard.
+
+- Draft review sees pending native-socket typing before an empty successor read, so remote Discard keeps surviving words visible as your changes.
+
+- Draft review stays open through a temporarily missing preview while your unacknowledged typing follows the draft into its replacement room.
+
+- Document switches keep the last finished page inert until the destination paints or fails, on desktop and phone.
+
+- Phone review confirmations stay inside the change sheet; each contributing-chat link has a 44px touch target.
+
+- Offline Work batches refuse every file immediately, even before network notifications catch up; they do not wait for refreshes or send later files on reconnect.
+
+- Stepping through draft changes works with marks hidden on desktop and phone, without showing the marks again.
+
+- Development: consolidate Work draft files into one catalog-labelled, stable-order projection and document lookup; remove draft grouping and recency competition.
+- Unacknowledged typing follows a draft into its replacement room when its anchors survive, including after Discard in the same tab. Leaving review does not cancel delivery; edits anchored in discarded text are not replayed.
+
+- Development: document transports retain unacknowledged writer updates across reconnects and freeze them at terminal resets. Shared reset dispositions distinguish superseded drafts, same-generation rebuilds, refused edits and schema fences.
+
+- Work batch commands say "Apply all changes" and "Discard all changes" without counting drafts. Discard confirmation covers every document in the Work; review refusal summaries count documents, not drafts.
+
+- Prune duplicate draft-review test tiers while retaining provider-backed generation, selection, refusal and persistence guards. Catalog document-list, Work-page and cold chat-link runtime probes.
+
+- Draft review shows a draft in the manuscript like suggestion mode. Added text is coloured by who wrote it (the AI, or you in gold, at once as you type), and removed text stays in place struck through in its remover's colour, even when one removal mixes both. Long removals fold to a "3 paragraphs removed" line you can open. Removed text cannot be selected or edited, and clicking it puts the caret where it stood. A change the server cannot attribute is shown without an author's colour, listed as "Unattributed", and is handled by Apply draft or Discard draft.
+- You can apply or discard one change at a time. Each change is the smallest set of edits that can go to live on its own: edits from different chats, and your own separate edits, stay separate, including edits in neighbouring paragraphs, while typing inside an AI change stays with it. Applying one puts only that change on live. If the draft or live document changed since you looked, the command refuses with "This change was updated. Check it and apply again." (or discard) instead of acting on something you did not see, and an empty or malformed selection never discards the whole draft.
+- A focused change has a small bar beside it in the margin (under the change when the margin is narrow) with every chat that wrote it, each linking to the turn that wrote it, plus Discard and Apply. Applying or discarding takes the change off the screen at once; new AI changes join as they arrive. After the last change, the review says "Applying" or "Discarding" until the server answers, then "No changes left" with Next draft (or Back to live), and a reload shows the live document. If a chat writes to the same document again after "No changes left", the open review shows the new changes in place, without a reload or leaving review. A draft whose only difference left is formatting says "Formatting changes remain" with Apply draft and Discard draft still available.
+- Draft review has one row: the path, the version chip, the list button, the stepper, Show changes, Discard draft and Apply draft share the row under the tab, tinted while you review a draft, and the page does not move when you enter or leave review. The chip is the same menu on a live document (Live) and in review (Draft): this document's live version and its draft, plus Rename. As the row narrows it gives up room in order and the chip, the list button, Discard and Apply always stay.
+- Each Work's changes are listed on its Files tab as "Changes to review": every draft file once, in one stable order, each opening in place to its changes in document order with Apply, Discard and the chats that wrote them. Its menu has Apply all changes and Discard all changes, without draft counts, for every document in the Work, whatever the search box shows (Discard all asks first). A document lists its own changes from the list button in its identity row (the change sheet on the phone), with "All changes in" the Work at its foot. The dock has no Changes view any more. The composer's draft strip and Next draft use the same file order.
+- The composer's draft strip shows only this chat's changes. Apply and Discard act on them alone; a change that also holds another chat's edit says so first, and Apply and Discard take both. A new document is Review only, a chat with no changes shows no strip, and its last line opens All changes in the Work (expand it first when several documents are listed). No Work has no Work-wide list.
+- Moving between drafts keeps the review you are leaving on screen until the next one has painted, then swaps in one step, on desktop and phone. The page being opened cannot be clicked or read by a screen reader until then, and the hold ends when you go elsewhere, the draft fails to load, or after ten seconds. The next draft is read ahead.
+- Draft review works on the phone: a Draft chip under the top bar opens a live document's draft, the review has a stepper and a change count, a selected change's bar sits above the keyboard, and the change sheet opens even when the draft has no listed changes, so the link to the Work's other changes is always there. Every control is a 44px target.
+- Apply, Discard, Apply all and Discard all explain what happened. Offline, they say so on the change or draft at once, send nothing (nothing applies later by itself), and keep you where you are. A server refusal gives its reason in your language when it is a known one, such as an archived Work. A lost answer says it couldn't confirm whether it applied. Apply all and Discard all finish every draft they can, name each one that did not apply with an Open button, and never move you. A refusal stays on the draft it belongs to after you move on.
+- Only one command runs per draft at a time, from the Editor or the Chat, and a draft open in two tabs stays in step within a second.
+- Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
+- Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
+- Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
 - Reloading keeps the document and view you had open in the side panel.
@@ -46,6 +114,11 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Development: remove the duplicate phone paint-hold fixture and redundant hold tag; keep the framework regression and capture-phase state.
+
+- A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.
+
+- Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
@@ -139,7 +212,7 @@
 - Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
 - The editor follows a room's access in place: an archived Work's draft review and scratch files turn read-only under the archived notice without a refresh, in the tab that archives at once and in other tabs when the server's 4409 arrives, and turn editable again after Unarchive once the server reconnects them read-write. Keystrokes the server refused at that moment are dropped, never replayed: a scratch file holding them drops its local copy and reopens from the server.
 - A tab that loaded while a Work was archived turns its draft review and scratch editors editable again when the Work is unarchived elsewhere, even if their room first connected after the unarchive.
-- An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
+- An archived Work's draft offers no Apply or Discard (the identity row, the composer strip, the change lists); Review draft still opens it read-only.
 - Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
 - Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
 
@@ -1695,8 +1768,6 @@
 - `apps/app`: settled assistant turns fold every tool row behind a per-segment
   deterministic activity digest while leaving prose, images, and resolved
   interrupt cards visible; folded reasoning no longer repeats icon chips.
-- `apps/app`: the dock hides Changes when it has no draft or review-receipt
-  rows, returning an emptied selected view to Chat.
 - `apps/app`: cancelled assistant turns now say and announce “Stopped” in the
   writer's voice.
 - `apps/app`: errored turns no longer show an unreachable Retry affordance.
@@ -1881,9 +1952,9 @@
   (works in dock and center). Region separation is tonal — no shell divider
   lines. Both rails carry faint floor atmosphere (shadow on the shelf,
   airlight on the dock). All rail text tiers verified ≥4.5:1.
-- The dock's Chat/Changes switch is a contained segmented track (recessed
+- The dock's view switch is a contained segmented track (recessed
   well, paper active segment); the dock header shares the dock's own surface.
-  Resize handles have no visible grip — cursor and focus ring only.
+  Resize handles have no visible grip, only a cursor and focus ring.
 - The centered chat header's title is a real tab now — the chat page rises
   into the band, same grammar as document tabs. The switcher dropdown uses
   pressed-neutral active rows (no jade wash on routine selection; agent
@@ -1892,8 +1963,6 @@
   could sit on a static "Chat" before), the rename field can't overlap the
   view switch, its hover pill isn't clipped anymore, and the dock can't be
   resized below usable width.
-- "No pending changes" in the dock is a proper empty state (icon, title,
-  caption) instead of a bare sentence.
 - Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use
   `card`/`muted`), `ink-strong` (use `prose-foreground`),
   `status-streaming-ring-strong` (one ring token), `gradient-mark`,
@@ -1944,9 +2013,6 @@
   hairline instead of flaring a glow ring, text selection inside fields is a
   light tint instead of a solid pill, and buttons show a focus ring only
   during keyboard navigation.
-- The dock's Chat/Changes and Context/Changes switch is now static tabs in the
-  same shape as document tabs — a recessed header band with the active view
-  surfacing out of it — and the redundant section title is gone.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including
@@ -2072,13 +2138,6 @@
   generation replays, uses semantic Yjs update detection instead of byte length,
   and leaves failed inline-review room entry recoverable with retry/exit.
 - `apps/server`: S1 branch peers now store their own snapshot schema version, keep hidden manifest identity rows out of manuscript content surfaces, and make the in-memory branch fixture enforce the same active-branch constraints as Postgres.
-- `apps/app`: `/proto/dock-tabs` v2 — dock header row with segmented switch
-  (replaces tab strip), chat thread select dropdown in center chat and dock,
-  anchored/titled header-mode proto toggle, dock-width 240/360 for narrow
-  testing; keeps Changes content, Review wiring, arrangement/badge toggles.
-- `apps/app`: `/proto/dock-tabs` mockup — tabbed right dock with work-scoped
-  Changes tab; chat-main vs context-main arrangements, badge on/off toggle,
-  Review/change-row navigation wired with hardcoded fixtures.
 - `apps/app`: agent identity is now name-forward — dropped the two-letter
   initials avatar and dissolved `AgentChip`, keeping each surface on the shared
   `Badge`/`Button` primitives it actually needs. The chat pane header shows a quiet
