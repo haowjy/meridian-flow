@@ -11,8 +11,13 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
+import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocumentTab } from "../dock/use-dock-document-tab";
+import { useDockPlacement } from "../dock/use-dock-placement";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -22,7 +27,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot. The
  * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
- *   project name (rename) · Chat/Work/Editor nav · file tree · library/account
+ *   project name (rename), Chat/Work/Editor nav, file tree, Scratch, library/account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
@@ -33,6 +38,8 @@ export type LeftSidebarProps = {
   titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
+  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  chatThreadId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
@@ -48,6 +55,7 @@ export function LeftSidebar({
   titleEdit,
   activeScreen,
   editorWorkId,
+  chatThreadId,
   contextLive,
   activeContextScheme,
   activeContextPath,
@@ -55,14 +63,29 @@ export function LeftSidebar({
   onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
+  // A tree click is a known file, so it enters at the dock's commit boundary: beside the
+  // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
+  // and the Editor path everywhere else (see `use-dock-placement`).
+  const placement = useDockPlacement();
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+    if (placement.besideChat) {
+      const tab = serverTabFromFile(scheme, file, {});
+      if (tab) {
+        placement.commit(tab);
+        return;
+      }
+    }
     if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       return;
     }
     void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
   };
+  // On the Chat screen the row to highlight is the document open in the dock.
+  const dockDocument = useDockDocument(activeScreen, projectId);
+  const projectedDock = useDockDocumentTab(projectId, dockDocument);
+  const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
 
   return (
     <nav
@@ -87,13 +110,23 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        scratch={
+          <RailScratchSection
+            projectId={projectId}
+            threadId={chatThreadId}
+            editorWorkId={editorWorkId}
+            resizable
+          />
+        }
       >
         {contextLive ? (
           <ContextTreePanel
             projectId={projectId}
             editorWorkId={editorWorkId}
-            activeScheme={activeContextScheme}
-            activePath={activeContextPath}
+            activeScheme={
+              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
+            }
+            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
             onSelectFile={handleSelectFile}
           />
         ) : null}

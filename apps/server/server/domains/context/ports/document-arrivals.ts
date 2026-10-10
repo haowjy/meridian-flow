@@ -1,6 +1,6 @@
 /**
  * Arrival hooks for ahead-ref settlement (contract §9.3–9.4). A document arrives when it
- * becomes live at an address: tracked create, upload, move-in, Work restore, or Apply.
+ * becomes live at an address: tracked create, upload, move-in, Work or lineage restore, or Apply.
  */
 import type { DocumentId } from "@meridian/contracts/runtime";
 

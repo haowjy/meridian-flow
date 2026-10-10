@@ -187,6 +187,7 @@ function ChatScreenLoaded({
           projectId={projectId}
           activeWork={activeWork}
           availableWorks={availableWorks}
+          rootThreadId={thread?.rootThreadId ?? null}
           onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView

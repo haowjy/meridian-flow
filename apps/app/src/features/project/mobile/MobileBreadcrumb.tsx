@@ -20,7 +20,7 @@ import { collapseBreadcrumbSegments } from "./context-location";
 
 export type MobileBreadcrumbSegment = {
   label: string;
-  /** Navigates to this ancestor. Omitted on the last (current) segment. */
+  /** Navigates to this ancestor. Omitted on the last (current) segment, and on a place with nowhere to go. */
   onSelect?: () => void;
   /** Interactive control that stands for the current segment (the chat switcher). */
   current?: ReactNode;
@@ -115,15 +115,22 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
               )}
             >
               {separator}
-              {/* -my-3 keeps the 44px target without growing the 20px trail row
-                  past the top bar's two-line band. */}
-              <button
-                type="button"
-                onClick={item.segment.onSelect}
-                className="focus-ring -my-3 flex h-11 min-w-0 max-w-24 items-center rounded-md px-1 text-sm text-muted-foreground active:scale-[0.98]"
-              >
-                <span className="truncate">{item.segment.label}</span>
-              </button>
+              {item.segment.onSelect ? (
+                // -my-3 keeps the 44px target without growing the 20px trail row
+                // past the top bar's two-line band.
+                <button
+                  type="button"
+                  onClick={item.segment.onSelect}
+                  className="focus-ring -my-3 flex h-11 min-w-0 max-w-24 items-center rounded-md px-1 text-sm text-muted-foreground active:scale-[0.98]"
+                >
+                  <span className="truncate">{item.segment.label}</span>
+                </button>
+              ) : (
+                // A place with nowhere to go (a chat's Scratch) names itself and is not a control.
+                <span className="flex min-w-0 max-w-24 items-center px-1 text-sm text-muted-foreground">
+                  <span className="truncate">{item.segment.label}</span>
+                </span>
+              )}
             </li>
           );
         })}

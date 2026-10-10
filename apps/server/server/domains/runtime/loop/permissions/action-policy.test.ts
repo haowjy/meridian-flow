@@ -9,6 +9,7 @@ function chain(...permissions: AgentPermission[]): AgentChain {
     threadId: `thread-${index}` as ThreadId,
     permission,
     threadWorkId: "work" as WorkId,
+    scratchOwner: { scope: "work", workId: "work" },
   }));
 }
 

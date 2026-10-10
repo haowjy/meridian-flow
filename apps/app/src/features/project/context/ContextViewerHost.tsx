@@ -3,16 +3,18 @@
  *
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
- * shared `ReadOnlyViewerFrame` at the host boundary. Desktop exports the
- * headered host; phone documents use the bare host because their top-bar
- * breadcrumb already owns filename chrome.
+ * shared `ReadOnlyViewerFrame` at the host boundary. The Editor uses the
+ * headered host; phone documents and the dock's document use the bare host
+ * because their own chrome (top-bar breadcrumb, title chip) already names the
+ * file. Only images, PDFs and binaries land here from the dock; a text file
+ * mounts the editor.
  */
 
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
@@ -25,15 +27,11 @@ export type ContextViewerHostProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
-  header?: ReadOnlyViewerHeader;
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
   return (
-    <ContextViewerContent
-      {...props}
-      header={props.header ?? { name: props.tab.name, path: props.tab.path }}
-    />
+    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
   );
 }
 
@@ -47,14 +45,16 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const workId = isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : editorWorkId;
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, { workId });
+  const owner = isWorkScopedProjectContextScheme(tab.scheme)
+    ? tabContextOwner(tab)
+    : { workId: editorWorkId };
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, owner);
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame header={header}>
         <div className="relative h-full" aria-busy>
           <DelayedContentSkeleton
-            key={JSON.stringify([projectId, tab.scheme, tab.path, workId])}
+            key={JSON.stringify([projectId, tab.scheme, tab.path, owner])}
             className="absolute inset-0"
           />
         </div>
@@ -74,7 +74,7 @@ function ContextViewerContent({
   }
 
   // Tracked-classified viewer tabs use the same read-only text preview in the
-  // dock and Editor hosts. Collaborative editing remains in the tracked editor
+  // Editor host. Collaborative editing remains in the tracked editor
   // mount and does not render through this component.
   const kind = previewKind(tab, read.data);
   const emptyMessage =

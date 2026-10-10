@@ -136,6 +136,11 @@ msgstr "{0} documents"
 msgid "{0} finished"
 msgstr "{0} finished"
 
+#. placeholder {0}: schemeLabel(locatedTab.scheme)
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "{0} for {ownerName}"
+msgstr "{0} for {ownerName}"
+
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
 msgid "{0} imported, but its link had moved on."
@@ -576,6 +581,11 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
+#. placeholder {0}: folder.title ?? folder.name
+#: src/components/app/DrillInMenu.tsx
+msgid "Back from {0}"
+msgstr "Back from {0}"
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Back online (all changes saved)"
 msgstr "Back online (all changes saved)"
@@ -584,12 +594,8 @@ msgstr "Back online (all changes saved)"
 msgid "Back to {title}"
 msgstr "Back to {title}"
 
-#: src/features/project/mobile/MobileProject.tsx
-msgid "Back to chat"
-msgstr "Back to chat"
-
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -843,8 +849,6 @@ msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/mobile/MobileResultViewerOverlay.tsx
-#: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -860,6 +864,10 @@ msgstr "Close artifact preview"
 #: src/features/project/mobile/MobileChatSheetHeader.tsx
 msgid "Close chat"
 msgstr "Close chat"
+
+#: src/features/project/dock/DockDocumentButtons.tsx
+msgid "Close document"
+msgstr "Close document"
 
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Close review"
@@ -1208,10 +1216,6 @@ msgstr "Couldn't load recent documents."
 msgid "Couldn't load references."
 msgstr "Couldn't load references."
 
-#: src/features/project/shell/RailSection.tsx
-msgid "Couldn't load results."
-msgstr "Couldn't load results."
-
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
@@ -1221,10 +1225,6 @@ msgstr "Couldn't load the conversation this fork continues."
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
-msgid "Couldn't load this result."
-msgstr "Couldn't load this result."
-
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr "Couldn't load Work."
@@ -1233,14 +1233,18 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Couldn’t open this document."
+msgstr "Couldn’t open this document."
 
 #: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
@@ -1618,10 +1622,6 @@ msgstr "Document"
 msgid "Document name and location"
 msgstr "Document name and location"
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Documents the AI reads in this chat appear here."
-msgstr "Documents the AI reads in this chat appear here."
-
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -1681,6 +1681,10 @@ msgstr "Duplicate"
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Earlier"
 msgstr "Earlier"
+
+#: src/features/project/context/menu-tree.ts
+msgid "Earlier notes"
+msgstr "Earlier notes"
 
 #: src/features/chat/UserTurn.tsx
 msgid "Edit"
@@ -1841,6 +1845,7 @@ msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
 #: src/features/project/context/use-create-entry-form.ts
+#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr "File name"
@@ -2262,14 +2267,6 @@ msgstr "Loading references…"
 msgid "Loading report…"
 msgstr "Loading report…"
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
-msgid "Loading result…"
-msgstr "Loading result…"
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Loading results…"
-msgstr "Loading results…"
-
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
@@ -2569,6 +2566,10 @@ msgstr "No messages yet."
 msgid "No model"
 msgstr "No model"
 
+#: src/features/project/context/use-catalog-menu-source.ts
+msgid "No notes yet. The AI keeps its notes for this chat here."
+msgstr "No notes yet. The AI keeps its notes for this chat here."
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr "No pending changes"
@@ -2585,10 +2586,6 @@ msgstr "No projects yet"
 #: src/features/chat/thread-report-renderer.tsx
 msgid "No report text was returned."
 msgstr "No report text was returned."
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "No results yet."
-msgstr "No results yet."
 
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes match “{search}”."
@@ -2631,6 +2628,10 @@ msgstr "Not reported"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
+
+#: src/components/app/DrillInMenu.tsx
+msgid "Nothing here yet."
+msgstr "Nothing here yet."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Nothing opened yet"
@@ -2693,17 +2694,9 @@ msgstr "Open {0} at this passage. {1}"
 msgid "Open {title}"
 msgstr "Open {title}"
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Open a chat to see what the AI referenced."
-msgstr "Open a chat to see what the AI referenced."
-
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open a project to see its results."
-msgstr "Open a project to see its results."
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open a Work to create an Untitled document"
@@ -2721,6 +2714,10 @@ msgstr "Open context files"
 msgid "Open conversation"
 msgstr "Open conversation"
 
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "Open document"
+msgstr "Open document"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr "Open existing"
@@ -2729,7 +2726,7 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
-#: src/features/project/dock/DockFileView.tsx
+#: src/features/project/dock/DockDocumentButtons.tsx
 msgid "Open in Editor"
 msgstr "Open in Editor"
 
@@ -2746,22 +2743,6 @@ msgstr "Open navigation"
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Open original"
 msgstr "Open original"
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open producing turn"
-msgstr "Open producing turn"
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open producing turn in {agentName}"
-msgstr "Open producing turn in {agentName}"
-
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open result {name}"
-msgstr "Open result {name}"
-
-#: src/features/project/mobile/MobileProject.tsx
-msgid "Open results"
-msgstr "Open results"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "Open source chat {name}"
@@ -3045,6 +3026,7 @@ msgstr "Removed"
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/IdentityChips.tsx
+#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -3108,6 +3090,10 @@ msgstr "Reset size"
 msgid "Resize right rail"
 msgstr "Resize right rail"
 
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Resize Scratch"
+msgstr "Resize Scratch"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"
 msgstr "Resize sidebar"
@@ -3129,12 +3115,6 @@ msgstr "Restore {0}"
 msgid "Restoring"
 msgstr "Restoring"
 
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/ContextSidebar.tsx
-#: src/features/project/shell/ResultsRailSection.tsx
-msgid "Results"
-msgstr "Results"
-
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
 msgstr "Resume where I left off on any device"
@@ -3148,7 +3128,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -3261,8 +3241,9 @@ msgstr "Saving…"
 msgid "scene break"
 msgstr "scene break"
 
+#: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr "Scratch"
@@ -3270,6 +3251,19 @@ msgstr "Scratch"
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Scratch for {chatTitle}"
+msgstr "Scratch for {chatTitle}"
+
+#: src/features/project/chat/use-chat-scratch-source.ts
+#: src/features/project/dock/use-dock-browse-scratch.ts
+msgid "Scratch for {workName}"
+msgstr "Scratch for {workName}"
+
+#: src/features/project/chat/use-chat-scratch-source.ts
+msgid "Scratch for this chat"
+msgstr "Scratch for this chat"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -4030,6 +4024,11 @@ msgstr "This selection holds blocks that keep their own block type."
 msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
 
+#: src/features/project/dock/DockDocumentButtons.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "This view couldn’t open."
+msgstr "This view couldn’t open."
+
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
@@ -4088,11 +4087,11 @@ msgstr "Top up any time. Extra usage carries over month to month."
 msgid "Try again"
 msgstr "Try again"
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Try again, or close this tab. The draft stays in your list."
 msgstr "Try again, or close this tab. The draft stays in your list."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
@@ -4248,7 +4247,6 @@ msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/dock/dock-view-store.ts
 msgid "Uploads"
 msgstr "Uploads"
 
@@ -4328,7 +4326,6 @@ msgstr "Withdraw compaction"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx

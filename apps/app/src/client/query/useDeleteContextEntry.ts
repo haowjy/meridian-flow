@@ -5,7 +5,7 @@ import type {
 import { useMutation } from "@tanstack/react-query";
 
 import { deleteContextEntry } from "@/client/api/projects-api";
-import { contextRequestOptionsForScheme } from "./context-request-options";
+import { type ContextOwner, contextRequestOptionsForScheme } from "./context-request-options";
 
 /**
  * Mutation hook for deleting a file or folder from a context scheme's tree.
@@ -15,12 +15,12 @@ import { contextRequestOptionsForScheme } from "./context-request-options";
  */
 export function useDeleteContextEntry(projectId: string, scheme: ProjectContextTreeScheme) {
   return useMutation({
-    mutationFn: (args: DeleteContextEntryRequest & { workId: string | null }) =>
+    mutationFn: (args: DeleteContextEntryRequest & ContextOwner) =>
       deleteContextEntry(
         projectId,
         scheme,
         { operationId: args.operationId, path: args.path, expected: args.expected },
-        contextRequestOptionsForScheme(scheme, args.workId),
+        contextRequestOptionsForScheme(scheme, args),
       ),
   });
 }

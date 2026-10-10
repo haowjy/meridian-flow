@@ -22,6 +22,11 @@ export async function resolveCatalogRoute(event: H3Event) {
       throwContextWorkUnavailableHttpError("work_missing");
     }
     scope = { kind, projectId, workId };
+  } else if (kind === "lineage") {
+    const rootThreadId = requireRequestId(query.rootThreadId, "rootThreadId");
+    if (!(await app.contextPorts.lineages.byId(projectId, rootThreadId)))
+      throw createError({ statusCode: 404, message: "Chat not found" });
+    scope = { kind, projectId, rootThreadId };
   } else {
     throw createError({ statusCode: 400, message: `Unsupported catalog scope: ${kind}` });
   }

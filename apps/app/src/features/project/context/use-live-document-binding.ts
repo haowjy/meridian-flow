@@ -24,7 +24,7 @@ export function useLiveDocumentBinding({
 }: {
   projectId: string;
   documentId: string | null;
-  owner: "desktop-server-tab" | "mobile-project-document-host";
+  owner: "desktop-document-host" | "mobile-project-document-host";
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);

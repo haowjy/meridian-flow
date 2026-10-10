@@ -7,5 +7,5 @@
       "@meridian/contracts/*": ["../../packages/contracts/src/*"]
     }
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../../apps/server/server/nitro-virtual.d.ts"]
 }

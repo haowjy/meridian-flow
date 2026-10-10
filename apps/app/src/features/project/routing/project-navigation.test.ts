@@ -214,3 +214,85 @@ it("address replacement neither prompts nor supersedes a pending writer navigati
   expect(changes.at(-1)).toContain("push:/p/550e8400-e29b-41d4-a716-446655440000/works");
   navigation.dispose();
 });
+
+it("writes the accepted native history entry before committing the workspace", async () => {
+  const source = "/p/550e8400-e29b-41d4-a716-446655440000/chats";
+  const destination = "/p/550e8400-e29b-41d4-a716-446655440000/editor";
+  let entry = { href: source, key: "source", state: {} as Record<string, unknown> };
+  let nativeHref = source;
+  let listener = () => {};
+  const navigation = createProjectNavigation(
+    {
+      read: () => entry,
+      subscribe: (next) => {
+        listener = next;
+        return () => {};
+      },
+      flush: () => {
+        nativeHref = entry.href;
+      },
+      settlePendingTraversal: () => undefined,
+      replaceEntry: (href, state) => {
+        entry = { ...entry, href, state };
+      },
+      navigate: async (href, { state }) => {
+        entry = { href, key: "destination", state: state ?? {} };
+        listener();
+      },
+    },
+    () => ({ work: { kind: "none" } }),
+  );
+  const result = await navigation.transition(
+    address(destination),
+    { replace: false },
+    {
+      isCurrent: () => true,
+      commit: () => expect(nativeHref).toBe(destination),
+    },
+  );
+  expect(result.kind).toBe("applied");
+  navigation.dispose();
+});
+
+it("a leave-guard exception settles before acceptance rather than rejecting the command", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  navigation.registerGuard({
+    request: () => {
+      throw new Error("Guard failed");
+    },
+    dirty: () => true,
+    cancel: () => undefined,
+  });
+  await expect(
+    navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
+      replace: false,
+    }),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "before-acceptance",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
+  navigation.dispose();
+});
+it("an accepted same-entry replacement reports a failed workspace commit at that destination", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  await expect(
+    navigation.transition(
+      address(history.location.href),
+      { replace: true },
+      {
+        isCurrent: () => true,
+        commit: () => {
+          throw new Error("Install failed");
+        },
+      },
+    ),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "workspace-commit",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
+  navigation.dispose();
+});

@@ -50,6 +50,7 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/context-catalog-repair.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
+  "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",
   "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
@@ -104,6 +105,7 @@ const expectedSuites = [
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
   "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
+  "apps/server/server/test-support/scratch-archive-migration.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {

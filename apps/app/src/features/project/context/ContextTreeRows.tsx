@@ -19,7 +19,11 @@ import {
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import { contextTreeRowClassName, contextTreeRowGrowClassName } from "./context-row-geometry";
+import {
+  contextTreeFileRowClassName,
+  contextTreeRowClassName,
+  contextTreeRowGrowClassName,
+} from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
 import { EntryNameField } from "./EntryNameField";
 import { LinkUpdateNote } from "./LinkUpdateNote";
@@ -91,7 +95,7 @@ export function TreeChildren({
   );
 }
 
-function rowPaddingLeft(depth: number): number {
+export function rowPaddingLeft(depth: number): number {
   return depth * 16;
 }
 
@@ -104,7 +108,7 @@ function activateOnKey(handler: () => void) {
   };
 }
 
-function Twistie({ expanded }: { expanded: boolean }) {
+export function Twistie({ expanded }: { expanded: boolean }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <ChevronRight
@@ -115,7 +119,7 @@ function Twistie({ expanded }: { expanded: boolean }) {
   );
 }
 
-function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
+export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <Icon aria-hidden className="size-3.5" />
@@ -272,14 +276,7 @@ function FileRow({
         tabIndex={0}
         onClick={select}
         onKeyDown={activateOnKey(select)}
-        className={cn(
-          "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm",
-          contextTreeRowGrowClassName,
-          /* Hover is inactive-only: the active row retains its stronger fill. */
-          active
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-foreground hover:bg-sidebar-accent/50",
-        )}
+        className={cn("focus-ring", contextTreeFileRowClassName(active))}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
@@ -330,7 +327,7 @@ function RenameRow({
   const env = useTreeEnv();
   const form = useRenameEntryForm({
     projectId: env.projectId,
-    workId: env.workId,
+    owner: { workId: env.workId ?? undefined },
     scheme: env.scheme,
     entryId,
     path,

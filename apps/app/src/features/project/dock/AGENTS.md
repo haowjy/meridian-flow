@@ -1,11 +1,15 @@
-# features/project/dock — Dock view container + Changes settle surface
+# features/project/dock — Dock view container, document slot, Changes settle surface
 
 ## Purpose
 
 The right dock is a **view container** that sits in the project shell's `dock`
 grid slot. It has per-screen view sets (Chat-main: Context | Changes;
-Work/Editor-main: Chat | Changes, with transient File on Work) and a single header row with a contained
-segmented switch.
+Work/Editor-main: Chat | Changes) and a single header row with a contained
+segmented switch. It can also hold **one document** on Work and Chat, shown in
+the standard editor and replacing the views (and their switch) until closed. Work
+Files notes open there on the Work screen; a note picked from the rail's Scratch section
+opens there on the Chat screen only (`use-open-scratch-note.ts`), as does a Recent
+row of the context rail (an id-keyed door through the navigation adapter).
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped into server-vended Discard-class cards carrying
 selective Discard. Document-level Apply all stays in the review header. It works on every
@@ -41,15 +45,14 @@ finds an active draft.
    placement change is a grid-area move, never a remount. If the dock occupant
    relies on a different wrapper for center vs. dock, the invariant is broken.
 
-2. **Primary body stays mounted when Changes is active.** Do not unmount
-   `children` when `view === "changes"` — hide it (opacity-0, inert). Chat state
-   and document sessions must survive a view switch.
+2. **Primary body stays mounted when Changes or a document covers it.** Do not
+   unmount `children` — hide it (opacity-0, inert). Chat state and document
+   sessions must survive a view switch.
 
-3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored, hasFile)`
+3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored)`
    is a pure function with no React dependency — testable in isolation. It defaults
-   to the occupant's native view when no stored choice exists, falls back when a
-   stored choice is invalid for the current screen's set, and adds a transient
-   File segment only while a Work file is available.
+   to the occupant's native view when no stored choice exists and falls back when a
+   stored choice is invalid for the current screen's set.
 
 4. **Session-only view store.** `useDockViewStore` has no `persist`. A fresh
    reload starts from defaults — no stale view survives. Placement, width, and
@@ -73,6 +76,21 @@ finds an active draft.
    `DockShell` uses its `hasDockChanges` wrapper for segment visibility, while
    `DockChangesView` renders the projected rows directly.
 
+8. **The dock document is the standard editor, not a viewer.** It mounts
+   `ContextDocumentHost` (the same host the Editor's tabs render through) and
+   `DocumentPaneChrome`, so session, saving, offline, archived and review behaviour
+   are the Editor's. Never give it a session, room, or capture of its own, and never
+   paint a background on it: the dock slot owns the material. It is never displayed on the
+   Editor screen (documents open as tabs there) or on the phone (full-screen editor).
+   A Chat occupant can remain parked in the store while another screen is in front.
+   Rail switches hand off only the visible document between Editor and Chat; Work
+   receives none. Capture at the click; commit only when navigation accepts the destination,
+   fenced by the dock claim. Peeks and Close do not change Editor tabs. X returns to the
+   panel's own view underneath (Recent unless left on Changes). Browser history and phone
+   navigation do not hand off. The slot and Editor tabs remain separate owners.
+   Picking a view on its screen replaces it; `DockShell` keeps the occupant mounted
+   and inert behind it.
+
 ## Anti-patterns
 
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
@@ -81,6 +99,9 @@ finds an active draft.
   in the composer DraftDock strip.
 - **Don't show an empty Changes segment.** When its final row disappears,
   `DockShell` returns to the occupant's native view.
+- **Don't give the dock document its own session or a viewer.** It is the
+  Editor's host and chrome; a read-only preview, a second Y.Doc, or a
+  `bg-background` shell around it are all bugs.
 - **Don't persist the dock view choice.** A stale view across reloads is worse
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the

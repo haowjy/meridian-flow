@@ -261,6 +261,7 @@ async function fixture(
     delivery,
     repos: {
       threads: repos.threads,
+      turns: repos.turns,
       subagentThreads: repos.threads,
       transaction: repos.transaction,
     },

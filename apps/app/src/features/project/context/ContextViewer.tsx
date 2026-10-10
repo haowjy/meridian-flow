@@ -7,6 +7,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import {
+  type ContextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -16,17 +17,14 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
-import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState, MissingDestination } from "./context-pane-state";
 import { schemeLabel } from "./context-schemes";
-import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
@@ -64,7 +62,7 @@ export type ContextViewerProps = {
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 };
 
 export function ContextViewer({
@@ -107,8 +105,12 @@ export function ContextViewer({
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
+  // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
   const activeFileInWork =
-    activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
+    activeTab &&
+    activeTab.kind !== "new" &&
+    isWorkScopedProjectContextScheme(activeTab.scheme) &&
+    activeTab.rootThreadId === undefined;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
@@ -150,38 +152,15 @@ export function ContextViewer({
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
       <div className="page-sheet relative">
-        {/* A jump that could not find its passage says so here, over the page
-            rather than in the layout. */}
-        <PassageNotice documentId={activeTabId} />
-        {/* Review banner — above the identity bar so it's the first chrome
-            the writer sees when entering review mode. */}
-        {activeTab && activeReviewDraftId ? (
-          <DraftReviewHeader
-            documentId={activeTab.documentId}
-            draftId={activeReviewDraftId}
-            onCloseDraftOnly={
-              activeTab.kind !== "new" && activeTab.draftOnly
-                ? () => onCloseTab(activeTab.documentId)
-                : undefined
-            }
-          />
-        ) : null}
-        {archivedEditorWork && editorFrozen ? (
-          <ArchivedWorkNotice
-            projectId={projectId}
-            work={archivedEditorWork}
-            className="px-4 pt-3"
-          />
-        ) : null}
-        {/* Identity bar — the top edge of the page every open document
-            shares. Keyed by document so edit state never crosses tabs. */}
         {activeTab ? (
-          <DocumentIdentityBar
-            key={activeTab.documentId}
+          <DocumentPaneChrome
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
-            readOnly={fileFrozen}
+            reviewDraftId={activeReviewDraftId}
+            archivedWork={editorFrozen ? archivedEditorWork : null}
+            identityReadOnly={fileFrozen}
+            onCloseTab={onCloseTab}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
