@@ -104,7 +104,7 @@ export function useWorkRoute({
   routeWork: RouteWorkResolution;
   workCatalog: WorkCatalog;
   rememberedWork: AddressableWork | null;
-  openRemembered: (onAccepted?: () => void) => Promise<void>;
+  openRemembered: () => Promise<import("./project-navigation").NavigationSettlement>;
 } {
   const accountId = useAccountId();
   const catalog = useWorkCatalog(projectId);
@@ -130,14 +130,13 @@ export function useWorkRoute({
     setRememberedId(activeWorkId);
   }, [accountId, activeWorkId, projectId]);
 
-  const openRemembered = useCallback(async (onAccepted?: () => void) => {
+  const openRemembered = useCallback(async () => {
     const { address, navigation, rememberedWork } = latest.current;
-    if (!navigation || !rememberedWork) return;
+    if (!navigation || !rememberedWork) return { kind: "superseded" as const };
     const destination: ProjectDestination = { kind: "work", workId: rememberedWork.id };
-    await navigation.navigate(
+    return navigation.navigate(
       { ...address, destination, workView: undefined, worksView: undefined },
       { replace: false },
-      onAccepted,
     );
   }, []);
 

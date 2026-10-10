@@ -253,3 +253,46 @@ it("writes the accepted native history entry before committing the workspace", a
   expect(result.kind).toBe("applied");
   navigation.dispose();
 });
+
+it("a leave-guard exception settles before acceptance rather than rejecting the command", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  navigation.registerGuard({
+    request: () => {
+      throw new Error("Guard failed");
+    },
+    dirty: () => true,
+    cancel: () => undefined,
+  });
+  await expect(
+    navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
+      replace: false,
+    }),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "before-acceptance",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
+  navigation.dispose();
+});
+it("an accepted same-entry replacement reports a failed workspace commit at that destination", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  await expect(
+    navigation.transition(
+      address(history.location.href),
+      { replace: true },
+      {
+        isCurrent: () => true,
+        commit: () => {
+          throw new Error("Install failed");
+        },
+      },
+    ),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "workspace-commit",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
+  navigation.dispose();
+});

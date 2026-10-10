@@ -28,6 +28,7 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { hasDockChanges } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
 
+import { usePresentedDockDocument } from "../DesktopProjectController";
 import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
 import { DockDocumentView } from "./DockDocumentView";
@@ -57,7 +58,9 @@ export function DockShell({
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView, document: dockDocument } = dockView;
+  const { setView } = dockView;
+  const presentedDocument = usePresentedDockDocument(screen);
+  const dockDocument = presentedDocument === undefined ? dockView.document : presentedDocument;
   const inDock = placement === "dock";
   const overlay = !inDock
     ? null

@@ -31,7 +31,6 @@ import { titleChipClass } from "../shell/title-chip";
 import { catalogSiblingNames } from "../work/work-files-model";
 import type { DockDocument } from "./dock-view-store";
 import { useDockBrowseScratch } from "./use-dock-browse-scratch";
-import { useDockDocumentTab } from "./use-dock-document-tab";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
 
 export function DockDocumentTitle({
@@ -41,7 +40,7 @@ export function DockDocumentTitle({
   projectId: string;
   document: DockDocument;
 }) {
-  const { tab } = useDockDocumentTab(projectId, dockDocument);
+  const tab = dockDocument.tab;
   return <DockTitleMenu projectId={projectId} tab={tab} />;
 }
 

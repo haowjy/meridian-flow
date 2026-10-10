@@ -14,7 +14,7 @@
  */
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { useAccountResourceReplica } from "../context/account-feature-context";
@@ -23,7 +23,6 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { type DockDocument, useDockViewStore } from "./dock-view-store";
-import { useDockDocumentTab } from "./use-dock-document-tab";
 
 const noopCommitted = () => undefined;
 
@@ -42,14 +41,10 @@ export function DockDocumentView({
   const { works } = useWorks(projectId);
   const { controller } = useDraftReview();
   const resources = useAccountResourceReplica();
-  const { tab, gone } = useDockDocumentTab(projectId, dockDocument);
-  useEffect(() => {
-    if (gone) closeDocument();
-  }, [gone, closeDocument]);
+  const tab = dockDocument.tab;
   const onUntitledBecameNonEmpty = useCallback(async () => {
     if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
   }, [resources, tab]);
-  if (gone) return null;
 
   const ownerWorkId = tab.kind === "new" ? null : tab.workId;
   const work = ownerWorkId ? works?.find((candidate) => candidate.id === ownerWorkId) : undefined;
@@ -76,9 +71,14 @@ export function DockDocumentView({
         onOpenExisting={(scheme, path, owner) => {
           const store = useDockViewStore.getState();
           const claim = store.claim();
-          openInEditor({ scheme, path, ...owner }, () => {
-            if (useDockViewStore.getState().isCurrent(claim)) closeDocument();
-          });
+          openInEditor(
+            { scheme, path, ...owner },
+            {
+              afterCommit: () => {
+                if (useDockViewStore.getState().isCurrent(claim)) closeDocument();
+              },
+            },
+          );
         }}
       />
       {tab.kind !== "viewer" ? (

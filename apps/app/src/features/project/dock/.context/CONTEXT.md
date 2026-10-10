@@ -56,51 +56,42 @@ screen, which the title menu browses); a sync to the same place is not an intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
 handling the slot has. Nothing is persisted across reloads.
 
-Rail screen switches (`ReadableProjectRoute.selectScreen`) call the dock's
-`switchScreen` seam, `useRailDocumentHandOff` assembly and `handOffVisibleDocument`.
-`ProjectView` owns the displayed-props decision (`resolveEditorPresentation`), including
-same-Work retention and whether the route boundary exposes the mounted pane. Its one
-`mountedEditorRoute` feeds the pane and rail callback; the route passes it through,
-never reconstructing it from the pending address. A retained pane carries its document;
-an error/unavailable/recovery overlay carries nothing.
-`resolveVisibleEditorTab` resolves tab identity from those displayed props, persisted
-selection and the matching removal binding, delegating to `resolveWorkspaceRoute`.
-The phone renders a route-resolved tab (or an explicit local tab), not desktop selection.
-Its local host uses `resolveWorkspaceRoute` only to settle a materialization binding, not
-to choose the document on screen.
+Desktop rail switches belong to `DesktopProjectController`, beside `DesktopProject`.
+It resolves the retained Editor presentation once through the Editor identity resolver
+and resource projection, and resolves the screen-scoped dock occupant once. The pane,
+dock body/header and transfer all consume these derived values. Collapse affects what
+can be carried, not the mounted document's lifetime. Error/unavailable/recovery boundaries
+and the Editor chooser carry nothing. The route exposes destination commands and owns
+addresses; no displayed Editor props travel back to it. Phone never enters this controller.
 
-On a hand-off:
-the Editor's visible route-owned tab replaces the Chat slot and reveals the dock; a visible
-Chat or Work dock document opens or focuses through `openDocumentInEditor`, the same path
-as the header's Open in Editor button. Work receives no document. A collapsed dock, an
-Editor chooser or an unresolved route carries nothing; the destination keeps its own state.
-The click captures the projected document and claims the dock. Only an accepted destination
-commits the hand-off through `project-navigation.transition`; cancellation or navigation failure
-leaves the slot alone, and a newer dock pick wins. Toward the Editor, acceptance (`onAccepted`)
-and the hand-off commit (`onCommitted`) are separate callbacks: `settleTab` installs the prepared
-tab first and consumes the dock document only after `openTab` succeeds, so a tab-admission
-failure is a destination failure that keeps the dock document. Native history is flushed before the
-accepted workspace commit; TanStack flush only writes the queued browser history entry.
-The hand-off uses the resource projection and the existing dock commit/claim boundary, so
-an earlier asynchronous open cannot overwrite it. Browser back/forward does not hand off.
+The Editor's visible tab replaces the Chat slot and reveals it. A visible Chat or Work
+Files document opens or focuses through `openDocumentInEditor`, also used by the header.
+Work receives no document. At the click, the transfer claims the existing dock revision.
+The pure `handOffVisibleDocument` policy binds one claim-gated `afterCommit` effect:
+after successful Editor tab installation it closes the dock, or after Chat acceptance
+it calls the shared `commitDockDocument` plus reveal boundary. Cancel/supersede and failed
+tab installation leave the dock alone; a newer dock intent suppresses only the transfer,
+not a valid destination navigation. Native history flush still precedes workspace commit.
+
+Navigation returns a typed settlement with a ticket and failure stage. The document-command
+boundary normalizes preparation failures; presentation never reconstructs acceptance via
+callbacks or exceptions. One opt-in failure owner keeps records by source control. Rail and
+header project pre-acceptance failures inline; their records expire with the source entry
+or dock revision. The route boundary projects accepted workspace failures on the destination
+and keeps Retry. Only rail and header actions opt in; ordinary document opens keep their
+own failure policy. Browser history never calls the desktop switch controller.
 Peeking and closing the dock never write Editor tabs. There is no third active-document
 store or continuous synchronization. An Untitled Editor tab can also be carried: the dock
 binds its existing resource session and marks it create-eligible on first input. Its title
 menu still browses from the root, without unavailable rename actions. Uploads navigate to
-the resource route without a prepared Editor tab. Rail and header opens share the route-owned
-failed-destination presentation via the opt-in `runDocumentSwitch` command, never a
-discarded promise rejection. If history has not moved, the document stays and the initiating
-control shows an inline error instead of masking the source page. Inline errors retire with
-their source: the rail's with its history entry or screen (`useRailSwitchFailure`), the
-header's with the dock revision it failed under, so any newer dock intent clears it. Only rail switches and
-the dock header opt into this policy; other `useOpenContextRoute` callers keep their own
+the resource route without a prepared Editor tab. Other context opens retain caller-owned
 failure handling. Chat switches, with or without a hand-off, use `showChatScreen` to choose
-the current chat (or its index) and forward the accepted commit through `go`.
+the current chat (or its index) and pass the named post-commit effect through its destination command.
 
 `dockDocumentOnScreen` is the single project/screen predicate for the dock slot.
 `useDockDocument` supplies it to view rendering and file/Scratch highlights. LeftSidebar
-resolves its highlighted path through `useDockDocumentTab`, just like the dock header; the imperative
-hand-off uses it too. Parked Chat documents must not highlight rows on Work or Editor.
+resolves its highlighted path through `useDockDocumentTab`, using the same resource-tab
+projection as the desktop presentation owner. Parked Chat documents must not highlight rows on Work or Editor.
 
 Where a document opens is decided once, in `use-dock-placement.ts`, which also owns the one commit
 into the dock (`commitDockDocument`, used by `useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on

@@ -24,7 +24,7 @@ import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
-import { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
+import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
@@ -36,6 +36,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
+  resolvedEditor: ReturnType<typeof resolveVisibleEditorTab>;
   editorWorkId: string;
   /** The Editor's Work; its archived state makes its files read-only. */
   editorWork: Work | null;
@@ -65,9 +66,9 @@ export type ContextViewerSurfaceControllerProps = {
 
 export function ContextViewerSurfaceController({
   projectId,
+  resolvedEditor,
   editorWorkId,
   editorWork,
-  localDocumentId,
   addressOwnsDocumentAdmission = false,
   activeContextScheme,
   activeContextPath,
@@ -86,26 +87,13 @@ export function ContextViewerSurfaceController({
   const resources = useAccountResourceReplica();
   const resourceProjection = useAccountResourceProjection(projectId);
 
-  const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
+  const { tabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
   const removalState = useContextRemovalProject(projectId);
-  const {
-    selectedDocumentId,
-    workspaceRoute,
-    tab: activeTab,
-  } = resolveVisibleEditorTab({
-    tabs,
-    selectedTabId: selectedTabIdByWork[routeWorkId],
-    selection: removalState.selection,
-    editorWorkId: routeWorkId,
-    localDocumentId,
-    activeContextScheme,
-    activeContextPath,
-    activeContextChat,
-  });
+  const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
   const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;

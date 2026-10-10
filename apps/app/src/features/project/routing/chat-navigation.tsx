@@ -24,6 +24,7 @@ import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ScreenKey } from "../shell/screens";
 import type { ProjectDestination } from "./project-address";
+import type { NavigationSettlement } from "./project-navigation";
 import type { NavigationOptions } from "./project-route";
 
 /**
@@ -65,7 +66,7 @@ export type ChatNavigation = {
   recoveringFirstSend: boolean;
   openChat: (threadId: string) => Promise<void>;
   /** The Chat screen: the current chat, or the index when there is none. */
-  showChatScreen: (onAccepted?: () => void) => Promise<void>;
+  showChatScreen: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
   /** The Chat screen's index; in the dock, an empty composer. */
   openNewChat: (workId?: string) => Promise<void>;
   openChatIndex: () => Promise<void>;
@@ -92,8 +93,7 @@ export type ChatNavigation = {
 type Go = (
   destination: ProjectDestination,
   options: NavigationOptions,
-  onAccepted?: () => void,
-) => Promise<unknown>;
+) => Promise<NavigationSettlement>;
 
 function computeChatDisplay(
   activeScreen: ScreenKey,
@@ -140,23 +140,26 @@ export function useProjectChatNavigation({
       setCurrentThreadId(threadId);
     };
     const onChatScreen = () => latest.current.activeScreen === "chat";
+    const go = async (destination: ProjectDestination, options: NavigationOptions) => {
+      const result = await latest.current.go(destination, options);
+      if (result.kind === "failed") throw result.error;
+    };
     const openChat = async (threadId: string) => {
       if (onChatScreen()) {
-        await latest.current.go({ kind: "chat", chatId: threadId }, { replace: false });
+        await go({ kind: "chat", chatId: threadId }, { replace: false });
         return;
       }
       remember(threadId);
       channels.dockReveal.request("chat");
     };
     const openChatIndex = async () => {
-      await latest.current.go({ kind: "chat-index" }, { replace: false });
+      await go({ kind: "chat-index" }, { replace: false });
     };
-    const showChatScreen = async (onAccepted?: () => void) => {
+    const showChatScreen = (options?: { afterCommit?: () => void }) => {
       const threadId = latest.current.currentThreadId;
-      await latest.current.go(
+      return latest.current.go(
         threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" },
-        { replace: false },
-        onAccepted,
+        { replace: false, ...options },
       );
     };
     const commands = {
@@ -175,8 +178,7 @@ export function useProjectChatNavigation({
       },
       acceptCreatedChat: (threadId: string) => {
         remember(threadId);
-        if (onChatScreen())
-          void latest.current.go({ kind: "chat", chatId: threadId }, { replace: false });
+        if (onChatScreen()) void go({ kind: "chat", chatId: threadId }, { replace: false });
       },
       forgetChat: (threadId: string) => {
         if (latest.current.currentThreadId === threadId) remember(null);
@@ -195,7 +197,7 @@ export function useProjectChatNavigation({
   useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
-    if (latest.current.urlChatId) void latest.current.go({ kind: "chat-index" }, { replace: true });
+    if (latest.current.urlChatId) void go({ kind: "chat-index" }, { replace: true });
   });
   // Opening a conversation reveals it where the writer already is: point the
   // dock at it and call the registered dock reveal, or navigate on the Chat

@@ -49,19 +49,14 @@ catalog-defined file classification so cached code never reopens as rich text.
 
 ## Visible Editor ownership
 
-`ProjectView` owns displayed props through `resolveEditorPresentation`: it selects the
-mounted pane (including the retained same-Work pane during pending admission) and
-whether the route boundary exposes it. The same `mountedEditorRoute` feeds the pane
-and the rail callback. A retained pane carries its document; an error/unavailable or
-recovery overlay carries nothing. The route does not rebuild this presentation.
-`resolveVisibleEditorTab` then combines those displayed props, the local-document
-pointer, persisted selection and matching removal-state binding. Both the pane and
-`captureRailDocumentHandOff` use it for tab identity, not for deciding which presentation
-is on screen.
-The phone renders an explicit local tab or a catalog-resolved `MobileDocumentRoute` tab,
-without selecting desktop tabs. Its local host uses `resolveWorkspaceRoute` only for
-materialization binding/redirect, not visible-tab selection.
-`resolveWorkspaceRoute` remains the exact identity/path ownership primitive below both.
+`DesktopProjectController` owns the displayed Editor value for `DesktopProject`.
+It selects the retained same-Work pane and boundary visibility once, then resolves
+its tab identity through `resolveVisibleEditorTab` (local pointer, persisted tab
+selection, and removal binding) and applies the current resource projection.
+The pane consumes that resolved result; the rail captures the same visible tab at
+the click. A retained pane carries itself; hidden error, unavailable, recovery and
+chooser presentations carry nothing. No route-shaped Editor props travel back to
+the route, and no separate active-document pointer is stored.
 
 ## Architecture
 
