@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import type { DraftReviewApi } from "./contracts.js";
+import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -173,11 +174,9 @@ describe("change trail (postgres)", () => {
       if (!draft) throw new Error(`missing draft for ${documentId}`);
       await expect(
         withDeadline(
-          fixture.collab.draftReview.applyWorkDraft({
-            projectId: PROJECT_ID as never,
+          applyDraftDocument(fixture.collab.draftReview, {
             workId: WORK_ID,
             documentId: documentId as never,
-            draftId: draft.draftId,
             userId: USER_ID as never,
           }),
         ),
@@ -384,11 +383,9 @@ describe("change trail (postgres)", () => {
       throw new Error("missing draft preview");
     }
 
-    const result = await fixture.collab.draftReview.applyWorkDraft({
-      projectId: PROJECT_ID as never,
+    const result = await applyDraftDocument(fixture.collab.draftReview, {
       workId: WORK_ID,
       documentId: ALPHA_ID,
-      draftId: preview.draftId,
       userId: USER_ID as never,
     });
 
@@ -473,11 +470,9 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: reviewed.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -581,11 +576,9 @@ describe("change trail (postgres)", () => {
       throw new Error("missing draft preview");
     }
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -666,11 +659,9 @@ describe("change trail (postgres)", () => {
       throw new Error("missing draft preview");
     }
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });

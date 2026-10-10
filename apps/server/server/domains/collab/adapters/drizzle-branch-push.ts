@@ -363,7 +363,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
       }
       return new Map([...documents].map(([workId, set]) => [workId, set.size]));
     },
-    async listDraftBranchEvidence(draftId) {
+    async listDraftBranchEvidence(draftId, documentIds) {
       const rows = await currentDrizzleDb(db)
         .select({
           branchId: documentBranches.id,
@@ -386,6 +386,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             eq(documentBranches.draftId, draftId),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
+            documentIds ? inArray(documentBranches.documentId, [...documentIds]) : undefined,
           ),
         )
         .orderBy(asc(documentBranches.id), asc(branchWriteJournal.id));

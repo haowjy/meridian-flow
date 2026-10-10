@@ -7,6 +7,7 @@ import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { testFileGrant } from "../../../test-support/file-grants.js";
+import { applyDraftDocument } from "./apply-draft-document.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -252,11 +253,9 @@ export async function runCrossWorkProbe(
       : null;
   const bResult =
     reviewedPreview?.status === "active"
-      ? await collab.draftReview.applyWorkDraft({
-          projectId: PROJECT_ID,
+      ? await applyDraftDocument(collab.draftReview, {
           workId: WORK_B_ID,
           documentId: ALPHA_ID,
-          draftId: reviewedPreview.draftId,
           userId: USER_ID as never,
         })
       : await realBranchPush.pushToLive({

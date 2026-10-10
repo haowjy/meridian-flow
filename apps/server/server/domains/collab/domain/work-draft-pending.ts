@@ -1,6 +1,6 @@
 /** Canonical pending-review predicate for Work draft branches. */
 import type { DraftId } from "@meridian/contracts";
-import type { WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
@@ -15,8 +15,8 @@ export type PendingWorkDraft = WorkDraftPendingEvidence;
 export type WorkDraftPending = {
   /** The draft's branches with reviewable rows. */
   list(draftId: DraftId): Promise<PendingWorkDraft[]>;
-  /** Every active branch of the draft, with or without rows: the review list's branch half. */
-  branches(draftId: DraftId): Promise<DraftBranchEvidence[]>;
+  /** Every active branch of the draft (these documents' when given), with or without rows. */
+  branches(draftId: DraftId, documentIds?: readonly DocumentId[]): Promise<DraftBranchEvidence[]>;
   /** Pending documents per Work: branches with rows plus its draft's change rows (§13.2). */
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
@@ -28,7 +28,7 @@ export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftP
         (evidence) => evidence.rows.length > 0,
       );
     },
-    branches: (draftId) => store.listDraftBranchEvidence(draftId),
+    branches: (draftId, documentIds) => store.listDraftBranchEvidence(draftId, documentIds),
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       return store.countPendingByWorkIds(workIds);

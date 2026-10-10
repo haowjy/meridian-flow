@@ -366,6 +366,12 @@ function createInMemoryDraftStub(documents: {
       async listItems() {
         return { draftId: null, drafts: [], items: [] };
       },
+      async items() {
+        return { draftId: null, items: [] };
+      },
+      async item() {
+        return null;
+      },
       async applyAll(input) {
         return { status: "gone", draftId: input.draftId };
       },
@@ -375,10 +381,7 @@ function createInMemoryDraftStub(documents: {
         return { status: "gone", draftId: input.draftId, live: live.value };
       },
       async applyWorkDraft(input) {
-        return {
-          status: "not_found",
-          draftId: input.draftId,
-        };
+        return { status: "not_found", draftId: input.item.draftBranchId ?? input.item.itemKey };
       },
       async discardWorkDraft(input) {
         return {
