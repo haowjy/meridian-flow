@@ -27,6 +27,9 @@ export function readDockSnapshot(
       !occupant ||
       typeof occupant.projectId !== "string" ||
       !occupant.projectId ||
+      (occupant.screen === "work"
+        ? typeof occupant.screenWorkId !== "string" || !occupant.screenWorkId
+        : occupant.screenWorkId !== null) ||
       typeof occupant.screen !== "string" ||
       (occupant.screen !== "chat" && occupant.screen !== "work")
     )
@@ -45,7 +48,13 @@ export function readDockSnapshot(
     return tab
       ? {
           accountId,
-          occupant: { projectId: occupant.projectId, screen: occupant.screen, tab, review },
+          occupant: {
+            projectId: occupant.projectId,
+            screen: occupant.screen,
+            screenWorkId: occupant.screenWorkId,
+            tab,
+            review,
+          },
         }
       : null;
   } catch {

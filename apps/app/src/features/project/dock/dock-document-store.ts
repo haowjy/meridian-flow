@@ -12,7 +12,7 @@ import {
 
 /**
  * The one document the dock shows in place of its views, until the writer
- * closes it. Work documents also close on leaving their Work screen. Its
+ * closes it. Work-screen slots also close on leaving their captured Work. Its
  * project prevents a document appearing in another project. On the Editor
  * screen documents open as tabs instead; a Chat document can stay parked.
  */
@@ -20,12 +20,14 @@ export type DockDocument = {
   projectId: string;
   screen: Exclude<ScreenKey, "context">;
   tab: ContextTab;
+  /** Work-screen lifetime, independent of the resource or review Work. */
+  screenWorkId: string | null;
   review: ReviewAddress | null;
 };
 
 type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
 
-/** Chat documents can stay parked; a Work's note belongs only to that Work's screen. */
+/** Slot lifetime fences Work departures independently of document resource ownership. */
 export function dockDocumentFitsScope(
   document: DockDocument | null,
   scope: DockScope | null,
@@ -37,7 +39,8 @@ export function dockDocumentFitsScope(
     (document.screen !== "work" ||
       (scope.screen === "work" &&
         document.tab.kind !== "new" &&
-        document.tab.workId === scope.workId))
+        document.screenWorkId === scope.workId &&
+        (document.tab.scheme !== "scratch" || document.tab.workId === scope.workId)))
   );
 }
 
@@ -130,7 +133,10 @@ export function createDockDocumentStore(
       isCurrent: (claim) => get().revision === claim,
       commit: (claim, document) => {
         if (get().revision !== claim) return false;
-        setOccupant(document);
+        const screenWorkId = document.screen === "work" ? get().workId : null;
+        setOccupant(
+          document.screenWorkId === screenWorkId ? document : { ...document, screenWorkId },
+        );
         return true;
       },
       claim: () => {
@@ -200,5 +206,5 @@ export function dockDocument(
     tab.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
       ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
       : review;
-  return { projectId, screen, tab, review: intrinsic };
+  return { projectId, screen, screenWorkId: null, tab, review: intrinsic };
 }

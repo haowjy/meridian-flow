@@ -85,26 +85,30 @@ const tab = {
   schemaType: "document",
 } as const;
 
-describe("ContextEditorMountHost draft-only review", () => {
-  review.reviewing = false;
-  it("opens no live room while reviewing, then opens the ordinary one once promoted", async () => {
-    const opener = {
-      open: vi.fn(async () => ({
-        kind: "opened",
-        admission: {
+function createOpener() {
+  return {
+    open: vi.fn(async () => ({
+      kind: "opened",
+      admission: {
+        projectId: "project-a",
+        documentId: "document-a",
+        generation: "1",
+        bind: async () => ({
           projectId: "project-a",
           documentId: "document-a",
           generation: "1",
-          bind: async () => ({
-            projectId: "project-a",
-            documentId: "document-a",
-            generation: "1",
-            session: liveSession,
-            release: vi.fn(),
-          }),
-        },
-      })),
-    };
+          session: liveSession,
+          release: vi.fn(),
+        }),
+      },
+    })),
+  };
+}
+
+describe("ContextEditorMountHost draft-only review", () => {
+  review.reviewing = false;
+  it("opens no live room while reviewing, then opens the ordinary one once promoted", async () => {
+    const opener = createOpener();
     let promote!: () => void;
     let startReview!: () => void;
 
@@ -165,23 +169,7 @@ describe("ContextEditorMountHost draft-only review", () => {
     review.reviewing = true;
     review.room = null;
     vi.mocked(liveSession.suspendPresence).mockClear();
-    const opener = {
-      open: vi.fn(async () => ({
-        kind: "opened",
-        admission: {
-          projectId: "project-a",
-          documentId: "document-a",
-          generation: "1",
-          bind: async () => ({
-            projectId: "project-a",
-            documentId: "document-a",
-            generation: "1",
-            session: liveSession,
-            release: vi.fn(),
-          }),
-        },
-      })),
-    };
+    const opener = createOpener();
     await withReactRoot(
       <PresentedDocumentContext.Provider value={presented}>
         <QueryClientProvider client={queryClient}>

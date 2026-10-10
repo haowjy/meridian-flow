@@ -2,7 +2,10 @@
 import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
-import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import {
+  useContextRemovalCoordinator,
+  useOptionalAccountEpochSignal,
+} from "@/features/project/context/account-feature-context";
 import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 
 export type DraftOnlyPresentation = DraftRef & { container: "editor" | "dock"; token: string };
@@ -40,73 +43,64 @@ function matches(tab: ContextTab, draft: DraftRef) {
   );
 }
 
+/** Exact occupant identity fences replacement instances; settlement never claims. */
+function settleDock(draft: DraftRef, promote: boolean): boolean {
+  const occupant = useDockDocumentStore.getState().occupant;
+  if (!occupant || occupant.projectId !== draft.projectId || !matches(occupant.tab, draft))
+    return false;
+  const {
+    draftOnly: _,
+    reviewWorkId: __,
+    reviewDraftId: ___,
+    tabInstanceToken: ____,
+    ...tab
+  } = occupant.tab as Extract<ContextTab, { kind: "tracked" }>;
+  useDockDocumentStore.setState((state) =>
+    state.occupant === occupant ? { occupant: promote ? { ...occupant, tab } : null } : state,
+  );
+  return true;
+}
+
 export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
+  const epoch = useOptionalAccountEpochSignal();
   const removal = useContextRemovalCoordinator();
-  return useMemo(() => {
-    const editor: DraftOnlyContainer = {
-      presentations: (project) =>
-        getContextTabs(project).tabs.flatMap((tab) => {
+  return useMemo(
+    () => ({
+      presentations: (project) => {
+        if (epoch?.aborted) return [];
+        const editor = getContextTabs(project).tabs.flatMap((tab) => {
           const value = presentation(project, tab, "editor");
           return value ? [value] : [];
-        }),
-      subscribe: (listener) => useContextTabsStore.subscribe(listener),
-      promote: async (draft) => {
-        const tab = getContextTabs(draft.projectId).tabs.find((tab) => matches(tab, draft));
-        return tab?.kind === "tracked" ? removal.promoteAppliedDraft(draft.projectId, tab) : false;
-      },
-      remove: (draft) => {
-        removal.discardDraft(draft.projectId, draft.workId, draft.documentId, draft.draftId);
-      },
-    };
-    const dock: DraftOnlyContainer = {
-      presentations: (project) => {
+        });
         const occupant = useDockDocumentStore.getState().occupant;
-        const value =
+        const dock =
           occupant?.projectId === project ? presentation(project, occupant.tab, "dock") : null;
-        return value ? [value] : [];
+        return dock ? [...editor, dock] : editor;
       },
-      subscribe: (listener) => useDockDocumentStore.subscribe(listener),
-      promote: async (draft) => {
-        const occupant = useDockDocumentStore.getState().occupant;
-        if (!occupant || occupant.projectId !== draft.projectId || !matches(occupant.tab, draft))
-          return false;
-        const {
-          draftOnly: _,
-          reviewWorkId: __,
-          reviewDraftId: ___,
-          tabInstanceToken: ____,
-          ...tab
-        } = occupant.tab as Extract<ContextTab, { kind: "tracked" }>;
-        // Exact occupant identity fences replacement instances. Settlement never claims.
-        useDockDocumentStore.setState((state) =>
-          state.occupant === occupant ? { occupant: { ...occupant, tab } } : state,
-        );
-        return true;
-      },
-      remove: (draft) => {
-        const occupant = useDockDocumentStore.getState().occupant;
-        if (!occupant || occupant.projectId !== draft.projectId || !matches(occupant.tab, draft))
-          return;
-        useDockDocumentStore.setState((state) =>
-          state.occupant === occupant ? { occupant: null } : state,
-        );
-      },
-    };
-    const containers = [editor, dock];
-    return {
-      presentations: (project) =>
-        containers.flatMap((container) => container.presentations(project)),
       subscribe: (listener) => {
-        const unsubscribe = containers.map((container) => container.subscribe(listener));
+        const stopEditor = useContextTabsStore.subscribe(listener);
+        const stopDock = useDockDocumentStore.subscribe(listener);
         return () => {
-          for (const stop of unsubscribe) stop();
+          stopEditor();
+          stopDock();
         };
       },
-      promote: async (draft) =>
-        (await Promise.all(containers.map((c) => c.promote(draft)))).some(Boolean),
-      remove: (draft) => {
-        for (const container of containers) container.remove(draft);
+      promote: async (draft) => {
+        if (epoch?.aborted) return false;
+        const tab = getContextTabs(draft.projectId).tabs.find((tab) => matches(tab, draft));
+        const editor =
+          tab?.kind === "tracked"
+            ? removal.promoteAppliedDraft(draft.projectId, tab)
+            : Promise.resolve(false);
+        const dock = settleDock(draft, true);
+        return (await editor) || dock;
       },
-    };
-  }, [removal, projectId]);
+      remove: (draft) => {
+        if (epoch?.aborted) return;
+        removal.discardDraft(draft.projectId, draft.workId, draft.documentId, draft.draftId);
+        settleDock(draft, false);
+      },
+    }),
+    [removal, epoch, projectId],
+  );
 }

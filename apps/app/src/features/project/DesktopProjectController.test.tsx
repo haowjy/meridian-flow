@@ -21,7 +21,7 @@ import {
   useDesktopProjectController,
 } from "./DesktopProjectController";
 import { DockOpenInEditor } from "./dock/DockDocumentButtons";
-import { useDockDocumentStore } from "./dock/dock-document-store";
+import { dockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./routing/chat-navigation";
 import {
@@ -286,6 +286,7 @@ async function setup(source: ScreenKey = "context") {
           projectId,
           screen: source === "work" ? "work" : "chat",
           review: null,
+          screenWorkId: null,
           tab,
         });
       }),
@@ -335,6 +336,7 @@ it("Work Files can follow the rail to Chat", async () => {
   expect(useDockDocumentStore.getState().occupant).toMatchObject({
     screen: "chat",
     review: null,
+    screenWorkId: null,
     tab: { documentId: "B" },
   });
 });
@@ -404,7 +406,7 @@ it("newer dock intent wins without blocking successful tab installation", async 
   rig.navigation.registerGuard({
     request: (intent) => {
       const store = useDockDocumentStore.getState();
-      store.commit(store.claim(), { projectId, screen: "chat", review: null, tab: A });
+      store.commit(store.claim(), dockDocument(projectId, "chat", A, null));
       intent.run();
     },
     dirty: () => true,
@@ -539,7 +541,7 @@ it("another project's parked occupant carries nothing", async () => {
   const rig = await setup("chat");
   await act(async () => {
     const store = useDockDocumentStore.getState();
-    store.commit(store.claim(), { projectId: "another", screen: "chat", review: null, tab: B });
+    store.commit(store.claim(), dockDocument("another", "chat", B, null));
   });
   await rig.click("Editor");
   expect(rig.history.location.pathname).toBe(`/p/${projectId}/editor`);
@@ -558,6 +560,7 @@ it("Work receives no document and leaves a parked Chat occupant alone", async ()
   expect(useDockDocumentStore.getState().occupant).toMatchObject({
     screen: "chat",
     review: null,
+    screenWorkId: null,
     tab: { documentId: "B" },
   });
 });

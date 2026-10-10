@@ -1,15 +1,22 @@
 // @vitest-environment jsdom
 /** Address ownership keeps inline review and Editor history on one document. */
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
+import { useDraftReviewScopeValue } from "@/features/draft-review/DraftReviewProvider";
+import { createReviewScopeFixture, listed, work } from "@/test-support/draft-review-scope";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
 import {
   type AiDraftLaunchTarget,
   EditorReviewHandoffProvider,
   useOpenEditorReview,
 } from "./dock/editor-review-handoff";
+import { resolvePresentedDocument } from "./presented-document";
 import { ReviewAddressOwner } from "./ReviewAddressOwner";
+import { gateLiveView } from "./routing/local-document-address";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 
 const draft: AiDraftLaunchTarget = {
@@ -243,6 +250,105 @@ describe("ReviewAddressOwner", () => {
       await act(async () => resolveAddress("document-b"));
       expect(exit).toHaveBeenCalledOnce();
     });
+    const fixture = createReviewScopeFixture();
+    const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    fixture.network.listWorkDrafts.mockResolvedValue({
+      drafts: [{ ...listed, contextPath: "/chapter.md", isNewDocument: true }],
+    });
+    fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
+    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    useContextTabsStore.getState().openTab(
+      "project-a",
+      contextTabFromDraftGroup({
+        workId: "work-a",
+        documentId: "document-a",
+        draftId: "draft-a",
+        contextPath: "/chapter.md",
+        isNewDocument: true,
+      })!,
+    );
+    let refresh!: () => void;
+    let selected!: ReturnType<typeof useDraftReviewScopeValue>;
+    let address: string | undefined;
+    function PendingAddress() {
+      const [fetching, setFetching] = useState(false);
+      const [draftId, setDraftId] = useState<string | undefined>("draft-a");
+      refresh = () => setFetching(true);
+      address = draftId;
+      const gate = gateLiveView(
+        {
+          kind: "current",
+          document: { kind: "available", documentId: "document-a" },
+        } as Parameters<typeof gateLiveView>[0],
+        "manuscript",
+        {
+          catalog: { normalized: { entries: new Map() } },
+          isComplete: true,
+          isFetching: fetching,
+          isError: false,
+        } as unknown as Parameters<typeof gateLiveView>[2],
+        {
+          status: "ready",
+          files: [{ documentId: "document-a", isNewDocument: true, draft: { draftId: "draft-a" } }],
+        } as Parameters<typeof gateLiveView>[3],
+        () => false,
+      );
+      const documentId =
+        gate.result && gate.result.kind !== "unavailable"
+          ? gate.result.document.documentId
+          : undefined;
+      const presented = resolvePresentedDocument({
+        phone: false,
+        screen: "context",
+        dock: null,
+        editor: {
+          workId: "work-a",
+          scheme: "manuscript",
+          path: "/chapter.md",
+          documentId,
+          draftId,
+          draftOnly: getContextTabs("project-a").tabs.some(
+            (tab) =>
+              tab.kind === "tracked" &&
+              tab.draftOnly &&
+              tab.documentId === documentId &&
+              tab.reviewWorkId === "work-a",
+          ),
+        },
+      });
+      selected = useDraftReviewScopeValue({ projectId: "project-a", work, presented });
+      return (
+        <ReviewAddressOwner
+          review={selected}
+          presented={presented}
+          port={{
+            write: (review) => setDraftId(review?.draftId),
+            admit: (target) =>
+              selected.controller.enterInlineReview(target.documentId, target.draftId),
+          }}
+        />
+      );
+    }
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={query}>
+          <PendingAddress />
+        </QueryClientProvider>,
+        async () => {
+          await vi.waitFor(() => expect(selected.controller.reviewRoomError).toBe(true));
+          expect(address).toBe("draft-a");
+          await act(async () => refresh());
+          expect(selected.controller.inlineReview?.draftId).toBe("draft-a");
+          expect(address).toBe("draft-a");
+          expect(
+            getContextTabs("project-a").tabs.find((tab) => tab.documentId === "document-a"),
+          ).toHaveProperty("draftOnly", true);
+        },
+      );
+    } finally {
+      fixture.dispose();
+      query.clear();
+    }
   });
 });
 

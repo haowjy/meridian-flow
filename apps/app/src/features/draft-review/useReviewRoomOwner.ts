@@ -1,4 +1,5 @@
 /** The review's acquisition, generation observations and retained session binding. */
+
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -7,6 +8,7 @@ import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { reviewChangesOfPreview } from "./review-changes";
 import { reviewRoomRef } from "./review-room-ref";
@@ -20,15 +22,16 @@ export function useReviewRoomOwner({
   review,
   dispatch,
   disposing,
-  draftOnly = false,
+  presented,
 }: {
   projectId: string;
   workId: string;
   review: InlineDraftReview | null;
   dispatch: Dispatch<DraftReviewAction>;
   disposing: boolean;
-  draftOnly?: boolean;
+  presented?: PresentedDocument | null;
 }) {
+  const draftOnly = presented?.draftOnly ?? false;
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
   const owner = useRef(`review-room:${++ownerSequence}`);
@@ -60,16 +63,20 @@ export function useReviewRoomOwner({
   const pendingWriterGeneration = pendingGenerations.length
     ? Math.max(...pendingGenerations)
     : null;
-  const kind = useRef({ target, queryClient, draftOnly, presentedDraftOnly: draftOnly });
+  const kind = useRef({ target, queryClient, draftOnly });
   if (kind.current.target !== target || kind.current.queryClient !== queryClient)
-    kind.current = { target, queryClient, draftOnly, presentedDraftOnly: draftOnly };
+    kind.current = { target, queryClient, draftOnly };
   const row = rows?.find((row) => row.draftId === draftId && row.documentId === documentId);
   // List omission after a close must not erase the draft-only destination's intent.
   if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
-  // A presentation loses its overlay only after confirmed Apply/catalog membership.
-  // That proof ends branch-only absence retention; list omission alone never does.
-  if (kind.current.presentedDraftOnly && !draftOnly) kind.current.draftOnly = false;
-  kind.current.presentedDraftOnly = draftOnly;
+  // Only a resolved live presentation of this exact review proves promotion.
+  // A pending or nonmatching address says nothing about its remaining overlay.
+  const promoted =
+    presented?.documentId === documentId &&
+    presented.review?.workId === workId &&
+    presented.review.draftId === draftId &&
+    !presented.draftOnly;
+  if (promoted) kind.current.draftOnly = false;
   const selected = useRef({ review, pendingWriterGeneration });
   selected.current = { review, pendingWriterGeneration };
   const observeAbsence = (terminal = false, absenceGeneration = generation) => {
@@ -126,6 +133,7 @@ export function useReviewRoomOwner({
     rows,
     preview,
     draftOnly,
+    promoted,
     pendingWriterGeneration,
     projectId,
     workId,

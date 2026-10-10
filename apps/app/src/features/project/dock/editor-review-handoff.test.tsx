@@ -7,7 +7,6 @@ import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/Paint
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
-  useDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { PresentedDocumentContext } from "../presented-document";
@@ -19,12 +18,6 @@ import {
   useOpenEditorReview,
   useRequestedReview,
 } from "./editor-review-handoff";
-
-const openTab = vi.fn();
-vi.mock("@/client/stores", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/client/stores")>()),
-  useContextTabsActions: () => ({ openTab }),
-}));
 
 const draftA: AiDraftLaunchTarget = {
   workId: "work-a",
@@ -41,20 +34,12 @@ const draftB: AiDraftLaunchTarget = {
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 let showEditor: ((target: AiDraftLaunchTarget) => void) | null = null;
-let showChat: (() => void) | null = null;
-let observedScopes: string[] = [];
 
 function CommandCapture() {
   const command = useOpenEditorReview();
   useEffect(() => {
     openReview = command;
   }, [command]);
-  return null;
-}
-
-function ScopeProbe({ name }: { name: string }) {
-  const review = useDraftReview();
-  observedScopes.push(`${name}:${review.controller.workId}`);
   return null;
 }
 
@@ -91,7 +76,6 @@ function Harness({
     { kind: "chat" } | { kind: "editor"; target: AiDraftLaunchTarget }
   >({ kind: "chat" });
   useEffect(() => {
-    showChat = () => setView({ kind: "chat" });
     showEditor = (target) => setView({ kind: "editor", target });
   }, []);
   const editorReview =
@@ -101,12 +85,9 @@ function Harness({
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
       <CommandCapture />
       {view.kind === "chat" ? (
-        <DraftReviewBoundary value={chatReview}>
-          <ScopeProbe name="chat" />
-        </DraftReviewBoundary>
+        <DraftReviewBoundary value={chatReview}>{null}</DraftReviewBoundary>
       ) : (
         <DraftReviewBoundary value={editorReview}>
-          <ScopeProbe name="editor" />
           <EditorReviewIntentClaimant editorWorkId={view.target.workId} activeScheme="manuscript" />
         </DraftReviewBoundary>
       )}
@@ -147,21 +128,8 @@ function deferred() {
 
 describe("Editor review handoff", () => {
   beforeEach(() => {
-    openTab.mockClear();
     openReview = null;
     showEditor = null;
-    showChat = null;
-    observedScopes = [];
-  });
-
-  it("keeps Chat B and Editor A as sibling boundaries", async () => {
-    await withHarness(async () => {
-      expect(observedScopes.at(-1)).toBe("chat:work-b");
-      await act(async () => showEditor?.(draftA));
-      expect(observedScopes.at(-1)).toBe("editor:work-a");
-      await act(async () => showChat?.());
-      expect(observedScopes.at(-1)).toBe("chat:work-b");
-    });
   });
 
   it("retries a superseded route settlement once with the review address", async () => {

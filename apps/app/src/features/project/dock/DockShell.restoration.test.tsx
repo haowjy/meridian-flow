@@ -15,6 +15,7 @@ it("uses the native occupant during restoration without committing a new intent"
   useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   const restoring = {
     review: null,
+    screenWorkId: null,
     projectId: "project",
     screen: "chat" as const,
     tab: { kind: "new" as const, documentId: "local", resourceHandle: "local", name: "Untitled" },

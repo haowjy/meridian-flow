@@ -29,7 +29,7 @@ contract the project shell relies on.
 ### Dock document slot
 
 `occupant` in the same browser-tab-local store is the one document the dock shows on Work or
-Chat: `{ projectId, screen, tab, review }`. `useDockDocument(screen, projectId)` returns
+Chat: `{ projectId, screen, screenWorkId, tab, review }`. `useDockDocument(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
 `DockDocumentView` and `DockHeader` shows a Close document button then the
@@ -37,7 +37,8 @@ title chip on the left, and Open in Editor (an expand button) then the collapse 
 replaces the first. `clearDocumentOn` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
-when the project changes, and a Work-screen document when leaving that Work or its screen; a
+when the project changes, and a Work-screen document when leaving its captured
+`screenWorkId` or screen (independent of its resource owner or review Work); a
 Chat-screen occupant survives screen and chat changes, but is only shown on Chat (the sync also records the Work on the Work
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
@@ -50,8 +51,8 @@ foreign account stamps drop the entire layout. Account switches also clear live
 state and invalidate prior claims. Version 1 remains unchanged because this shape
 has no released data. A fresh store puts the saved document in `restoring`,
 never directly in the visible slot. The pure `dockDocumentFitsScope` predicate
-fences both scope sync and restored installation, including a Work owner changed
-during validation. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
+fences both scope sync and restored installation. Scratch notes must also match
+their resource-owning Work after validation; project manuscripts need no Work owner. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
 to the dock-owned `useDockDocumentRestoration` hook; `restoreDockDocument` then
 reads the review Work’s draft list first. A new-document draft rebuilds its overlay
 from that row without consulting the live catalog. A missing draft row drops review
