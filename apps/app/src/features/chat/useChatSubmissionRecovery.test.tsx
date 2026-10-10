@@ -755,7 +755,10 @@ describe("rejected draft ownership", () => {
     ).toEqual(later.draft.doc);
   });
 
-  it("hands Retry to the journal immediately and preserves writing begun during its admission", async () => {
+  it.each([
+    false,
+    true,
+  ])("preserves authoring during Retry even when a remounted editor reuses its local revision (same snapshot: %s)", async (sameSnapshot) => {
     const gate = scenarioGate<SendMessageResponse>();
     const scenario = new ThreadRunScenario({ append: () => gate.promise });
     const state = await setupDraft(scenario);
@@ -771,7 +774,9 @@ describe("rejected draft ownership", () => {
     expect(
       new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft,
     ).toBeNull();
-    const later = serializeComposerDraft(plainComposerDoc("Writing during Retry"), 8);
+    const later = sameSnapshot
+      ? state.envelope
+      : serializeComposerDraft(plainComposerDoc("Writing during Retry"), 8);
     state.draft.updateDraft({ text: later.text, snapshot: later.draft });
     gate.resolve(defaultSendResponse());
     await act(() => retry);

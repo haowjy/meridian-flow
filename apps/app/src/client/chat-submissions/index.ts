@@ -101,7 +101,7 @@ export function settleChatSubmission(
     const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
     if (outcome === "rejected") {
       if (!owner.restoreRejected(entry.draft)) return false;
-    } else if (!owner.clearSubmitted(entry.draft)) return false;
+    } else if (!owner.acceptSubmitted()) return false;
   }
   return current.retire(accountId, submissionId, expectedEpoch);
 }
