@@ -96,7 +96,8 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   generation heads with mutations. A deleted request project or deleted backing
   source project returns `authority-unavailable/project_deleted`; restoring the
   backing project makes the same identity available again. Foreign identities
-  remain indistinguishable from missing IDs.
+  remain indistinguishable from missing IDs. The optional internal `view` reads
+  draft locations; omitted means live. Hidden rows outside the view are missing.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
   providing `stat`/`read`/`write`/`writeBinary`/`mkdir`/`list`/`search` for all
@@ -137,7 +138,9 @@ router resolves to exact project-scoped Work authority before dispatch.
   uploaded image becomes its own binary document under `manuscript://assets/`,
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
-  one chapter cannot disturb another that references the same asset.
+  one chapter cannot disturb another that references the same asset. Signed URL
+  reads default to live; the additive `?workId=` resolves that Work's draft view
+  for both file authorization and figure identity.
 - **Document-link scope adapter** (`adapters/document-link-scope.ts`) —
   implements collab's `DocumentLinkScopes` port. Each snapshot resolves its
   project, owner and personal project once (by project, document or thread)
@@ -279,7 +282,8 @@ browser address lookup all read through it.
 record each vacated file path. Successful file/folder claims consume the exact
 previous location. Failed inserts and rolled-back commands consume nothing.
 Bootstrap uses the same store; hidden manifest identities are outside this
-namespace. Project/Work restore changes availability, not file locations.
+namespace. Project/Work restore changes availability, not file locations; Work
+cascade delete and restore nevertheless advance document/folder location versions.
 
 The Context command transaction receives the complete resolved scheme/Work set.
 Personal User scopes first share the personal-project provisioning owner lock.

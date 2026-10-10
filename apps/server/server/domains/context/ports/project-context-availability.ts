@@ -5,9 +5,11 @@ import type {
   ProjectContextIdentityLookupResult,
 } from "@meridian/contracts/protocol";
 
+import type { TreeView } from "../tree/tree-view.js";
+
 export interface ProjectContextAvailabilityPort {
   lookup(
-    input: ProjectContextIdentityLookupRequest,
+    input: ProjectContextIdentityLookupRequest & { view?: TreeView },
     actor: { userId: string },
   ): Promise<ProjectContextIdentityLookupResult>;
 }

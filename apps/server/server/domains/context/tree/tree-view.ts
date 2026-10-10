@@ -48,8 +48,12 @@ import {
 
 export type { DocumentCoordinates, NodeAddress } from "./tree-addresses.js";
 export {
+  identityDocumentFields,
+  identityDocuments,
+  identityFolders,
   type VisibleDocumentsSubquery,
   type VisibleFoldersSubquery,
+  visibleDocumentFields,
   visibleDocuments,
   visibleDocumentsSql,
   visibleFolders,

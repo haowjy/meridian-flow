@@ -13,8 +13,7 @@ import {
   contextAvailabilityGeneration,
   contextAvailabilityHeads,
   contextSources,
-  documents,
-  folders,
+  type folders,
   projects,
   works,
 } from "@meridian/database/schema";
@@ -31,7 +30,13 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import {
+  identityDocumentFields,
+  identityDocuments,
+  identityFolders,
+  LIVE_TREE,
+} from "../tree/tree-view.js";
+import { type CatalogFileRow, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 
 const ADVANCE_STATE = {};
 type AdvanceState = { generation?: bigint; keys: Set<string>; publisherFenceHeld: boolean };
@@ -59,7 +64,7 @@ const advanceParticipant: DrizzleTransactionParticipant<AdvanceState> = {
   },
 };
 type AvailabilityRow = {
-  document: typeof documents.$inferSelect;
+  document: CatalogFileRow & { deletedAt?: Date | null; kind?: string };
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
@@ -84,7 +89,12 @@ export function classifyAuthoritativeIdentity(input: {
   actorUserId: string;
   projectGeneration: string;
   checkedGeneration: string;
-  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+  foldersById: ReadonlyMap<
+    string,
+    Pick<typeof folders.$inferSelect, "id" | "name" | "parentId" | "contextSourceId"> & {
+      deletedAt?: Date | null;
+    }
+  >;
 }): IdentityClassification {
   const { document, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
@@ -96,7 +106,11 @@ export function classifyAuthoritativeIdentity(input: {
   if (!rawProjectIsRequested && !rawWorkIsRequested && !isActorUserSource) {
     return { kind: "not-visible" };
   }
-  if (!source || document.kind !== "content" || !isContextUriScheme(source.slug)) {
+  if (
+    !source ||
+    (document.kind !== undefined && document.kind !== "content") ||
+    !isContextUriScheme(source.slug)
+  ) {
     return { kind: "inconsistent" };
   }
   const scheme = source.slug;
@@ -156,7 +170,7 @@ export function classifyAuthoritativeIdentity(input: {
     if (
       !folder ||
       folder.contextSourceId !== source.id ||
-      (document.deletedAt === null && source.deletedAt === null && folder.deletedAt !== null)
+      (!document.deletedAt && source.deletedAt === null && !!folder.deletedAt)
     ) {
       return { kind: "inconsistent" };
     }
@@ -285,6 +299,8 @@ export function createDrizzleProjectContextAvailability(
     },
 
     async lookup(input, actor) {
+      const documents = identityDocuments(input.view ?? LIVE_TREE);
+      const folders = identityFolders(input.view ?? LIVE_TREE);
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
       return runInRootDrizzleTransaction(
         db,
@@ -319,7 +335,7 @@ export function createDrizzleProjectContextAvailability(
           }
           const rows = await tx
             .select({
-              document: documents,
+              document: identityDocumentFields(documents),
               source: contextSources,
               sourceProject: projects,
               work: works,
