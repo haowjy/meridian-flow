@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** S-work: unopened selective commands and filtered whole-Work authority, independent of Editor A. */
+
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, type ReactNode, useState } from "react";
@@ -20,6 +21,7 @@ import {
   preview,
   workC,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 import { WorkChanges } from "./WorkChanges";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
@@ -97,19 +99,6 @@ const click = (label: string) =>
   });
 
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
-async function settled(check: () => void) {
-  for (let attempt = 0; ; attempt += 1) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (attempt === 19) throw error;
-    }
-  }
-}
 
 it("applies an unopened C row, then discards every C draft despite filtering without moving Editor A", async () => {
   const network = fixture.network;
@@ -129,13 +118,13 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   }));
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().third.files).toHaveLength(2));
+      await settleReact(() => expect(probe().third.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(2));
+      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       const editorReview = probe().editor.controller.inlineReview;
-      await settled(() => expect(retain).toHaveBeenCalled());
+      await settleReact(() => expect(retain).toHaveBeenCalled());
       await click("Changes in Chapter 13");
-      await settled(() =>
+      await settleReact(() =>
         expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
       );
       await act(async () =>
@@ -161,7 +150,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
-      await settled(() => expect(probe().third.commands.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
       await click("Filter files");
       expect(button("Changes in Filtered chapter")).toBeUndefined();
       await act(async () =>
@@ -173,13 +162,13 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(document.body.textContent).toContain("Discard all changes?");
       expect(network.discardDraft).not.toHaveBeenCalled();
       await click("Discard");
-      await settled(() =>
+      await settleReact(() =>
         expect(network.discardDraft.mock.calls).toEqual([
           ["project-a", "work-c", "document-b", { draftId: "draft-b" }],
           ["project-a", "work-c", "document-c", { draftId: "draft-c" }],
         ]),
       );
-      await settled(() => expect(probe().third.commands.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
         ["1"],

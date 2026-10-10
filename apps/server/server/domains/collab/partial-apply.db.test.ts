@@ -24,6 +24,7 @@ import {
   TURN_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { commitBranchEdit, fencedRequest } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetSettlementFixture(db));
@@ -98,12 +99,7 @@ describe("per-change Apply (postgres)", () => {
     if (preview.status !== "active") throw new Error("missing preview");
     const first = preview.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
     if (!first) throw new Error("missing first operation");
-    const request = {
-      ...command,
-      operationIds: [first.operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(command, preview, [first.operationId]);
     const result =
       action === "apply"
         ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
@@ -117,6 +113,18 @@ describe("per-change Apply (postgres)", () => {
     expect(after[0]).toHaveProperty("actorThreads", [
       { threadId: otherThreadId, title: "Other chat" },
     ]);
+    if (action === "apply") {
+      const remaining = await fixture.collab.draftReview.preview(command);
+      if (remaining.status !== "active") throw new Error("missing remaining preview");
+      const closed = await fixture.collab.draftReview.discardWorkDraft(
+        fencedRequest(
+          command,
+          remaining,
+          remaining.operations.map((op) => op.operationId),
+        ),
+      );
+      expect(closed).toMatchObject({ draftClosed: true, draftDisposition: "applied" });
+    }
   });
 
   it("includes cumulative earlier deletions in the class before applying a later insertion", async () => {
@@ -172,19 +180,17 @@ describe("per-change Apply (postgres)", () => {
     expect(await fixture.draftMarkdown(branch.branchId)).toBe(expectedDraft);
     const later = preview.operations.at(-1);
     if (!later) throw new Error("missing later operation");
-    const refused = await fixture.collab.draftReview.applyWorkDraftChanges({
-      ...command,
-      operationIds: [later.operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+    const refused = await fixture.collab.draftReview.applyWorkDraftChanges(
+      fencedRequest(command, preview, [later.operationId]),
+    );
     expect(refused).toMatchObject({ status: "incomplete_class" });
-    const result = await fixture.collab.draftReview.applyWorkDraftChanges({
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+    const result = await fixture.collab.draftReview.applyWorkDraftChanges(
+      fencedRequest(
+        command,
+        preview,
+        preview.operations.map((op) => op.operationId),
+      ),
+    );
     expect(result).toMatchObject({ status: "applied", draftClosed: true });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(expectedDraft);
     expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
@@ -234,12 +240,11 @@ describe("per-change Apply (postgres)", () => {
     });
     const preview = await fixture.collab.draftReview.preview(command);
     if (preview.status !== "active") throw new Error("missing preview");
-    const request = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(
+      command,
+      preview,
+      preview.operations.map((op) => op.operationId),
+    );
     const result =
       action === "apply"
         ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
@@ -279,42 +284,6 @@ describe("per-change Apply (postgres)", () => {
     expect(next.draftGeneration).toBe(branch.generation + 1);
     expect(next.reviewRoomName).toBe(reset.status === "active" ? reset.reviewRoomName : "");
     expect(next.operations).not.toHaveLength(0);
-  });
-
-  it.each([
-    "apply",
-    "discard",
-  ] as const)("non-last per-change %s keeps the draft open", async (action) => {
-    const { fixture, branch, command } = await setup("Alpha base.\n\nBeta base.", "non-last");
-    const firstId = await stageText(fixture, branch.branchId, 0, " First", "agent");
-    await stageText(fixture, branch.branchId, 1, " Second", "agent");
-    const preview = await fixture.collab.draftReview.preview(command);
-    if (preview.status !== "active") throw new Error("missing preview");
-    const first = preview.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
-    if (!first) throw new Error("missing first operation");
-    const request = {
-      ...command,
-      operationIds: [first.operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
-    const result =
-      action === "apply"
-        ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
-        : await fixture.collab.draftReview.discardWorkDraft(request);
-    expect(result).toMatchObject({ draftClosed: false });
-    expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
-    if (action === "apply") {
-      const remaining = await fixture.collab.draftReview.preview(command);
-      if (remaining.status !== "active") throw new Error("missing remaining preview");
-      const closed = await fixture.collab.draftReview.discardWorkDraft({
-        ...command,
-        operationIds: remaining.operations.map((op) => op.operationId),
-        liveRevisionToken: remaining.liveRevisionToken,
-        draftRevisionToken: remaining.draftRevisionToken,
-      });
-      expect(closed).toMatchObject({ draftClosed: true, draftDisposition: "applied" });
-    }
   });
 
   it.each([
@@ -407,12 +376,9 @@ describe("per-change Apply (postgres)", () => {
     const first = before.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
     if (!first) throw new Error("missing selected operation");
     await expect(
-      fixture.collab.draftReview.applyWorkDraftChanges({
-        ...command,
-        operationIds: [first.operationId],
-        liveRevisionToken: before.liveRevisionToken,
-        draftRevisionToken: before.draftRevisionToken,
-      }),
+      fixture.collab.draftReview.applyWorkDraftChanges(
+        fencedRequest(command, before, [first.operationId]),
+      ),
     ).resolves.toMatchObject({
       status: "applied",
       operationIds: [first.operationId],
@@ -477,12 +443,11 @@ describe("per-change Apply (postgres)", () => {
         .update(schema.works)
         .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, WORK_ID));
-    const request = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(
+      command,
+      preview,
+      preview.operations.map((op) => op.operationId),
+    );
     if (kind === "gone") {
       await fixture.collab.draftReview.discardWorkDraft(request);
       await expect(
@@ -518,12 +483,13 @@ describe("per-change Apply (postgres)", () => {
     if (preview.status !== "active") throw new Error("missing preview");
     expect(preview.isNewDocument).toBe(true);
     await expect(
-      fixture.collab.draftReview.applyWorkDraftChanges({
-        ...projectCommand,
-        operationIds: preview.operations.map((op) => op.operationId),
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-      }),
+      fixture.collab.draftReview.applyWorkDraftChanges(
+        fencedRequest(
+          projectCommand,
+          preview,
+          preview.operations.map((op) => op.operationId),
+        ),
+      ),
     ).resolves.toMatchObject({ status: "draft_only" });
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Proposed");
   });
@@ -536,12 +502,11 @@ describe("per-change Apply (postgres)", () => {
     if (preview.status !== "active") throw new Error("missing preview");
     expect(preview.operations).toHaveLength(2);
     expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
-    const request = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const request = fencedRequest(
+      command,
+      preview,
+      preview.operations.map((op) => op.operationId),
+    );
     await expect(
       fixture.collab.draftReview.applyWorkDraftChanges({
         ...request,
@@ -579,12 +544,9 @@ describe("per-change Apply (postgres)", () => {
     await stageText(fixture, branch.branchId, 0, " Writer", "writer");
     const preview = await fixture.collab.draftReview.preview(command);
     if (preview.status !== "active") throw new Error("missing preview");
-    await fixture.collab.draftReview.discardWorkDraft({
-      ...command,
-      operationIds: [preview.operations[0].operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+    await fixture.collab.draftReview.discardWorkDraft(
+      fencedRequest(command, preview, [preview.operations[0].operationId]),
+    );
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
     expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha base.\n");
@@ -637,12 +599,9 @@ describe("per-change Apply (postgres)", () => {
     if (preview.status !== "active") throw new Error("missing preview");
     expect(preview.hunks).toHaveLength(2);
     expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
-    await fixture.collab.draftReview.discardWorkDraft({
-      ...command,
-      operationIds: [preview.operations[0].operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+    await fixture.collab.draftReview.discardWorkDraft(
+      fencedRequest(command, preview, [preview.operations[0].operationId]),
+    );
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
     expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha base.\n\nBeta base.\n");
@@ -670,12 +629,9 @@ describe("per-change Apply (postgres)", () => {
     const selected = preview.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
     if (!selected) throw new Error("missing operation");
     await expect(
-      fixture.collab.draftReview.applyWorkDraftChanges({
-        ...command,
-        operationIds: [selected.operationId],
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-      }),
+      fixture.collab.draftReview.applyWorkDraftChanges(
+        fencedRequest(command, preview, [selected.operationId]),
+      ),
     ).rejects.toThrow("death after partial commit");
     expect(await journalStatuses(branch.branchId)).toEqual([
       { id: firstId, status: "pushed" },
@@ -721,12 +677,9 @@ describe("per-change Apply (postgres)", () => {
       operation.sourceUpdateIds.includes(discardedId as never),
     );
     if (!remaining) throw new Error("remaining review operation is unavailable");
-    await fixture.collab.draftReview.discardWorkDraft({
-      ...command,
-      operationIds: [remaining.operationId],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    });
+    await fixture.collab.draftReview.discardWorkDraft(
+      fencedRequest(command, preview, [remaining.operationId]),
+    );
     let live = await harness.liveMarkdown(ALPHA_ID);
     expect(live).toContain("Applied");
     expect(live).not.toContain("Discard-me");
@@ -753,33 +706,12 @@ async function stageText(
   source: "agent" | "writer",
   options: { clientId?: number; toolCallId?: string; threadId?: typeof THREAD_ID | null } = {},
 ): Promise<number> {
-  const { clientId, toolCallId, threadId = THREAD_ID } = options;
-  const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
-    const clone = createCollabYDoc({ gc: false });
-    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    return { clone, generation: snapshot.generation };
-  });
-  try {
-    if (clientId !== undefined) staged.clone.clientID = clientId;
-    const block = fixture.model.getBlocks(toDocHandle(staged.clone))[blockIndex];
+  await commitBranchEdit(fixture, branchId, { source, ...options }, (doc) => {
+    const block = fixture.model.getBlocks(toDocHandle(doc))[blockIndex];
     if (!block) throw new Error(`missing block ${blockIndex}`);
     const end = fixture.model.getText(block).length;
-    fixture.model.applyTextEdit(toDocHandle(staged.clone), block, { from: end, to: end }, suffix);
-    await fixture.branchCoordinator.commitSyncFromDoc({
-      branchId,
-      sourceDoc: staged.clone,
-      expectedGeneration: staged.generation,
-      source,
-      actorUserId: source === "writer" ? USER_ID : null,
-      threadId,
-      turnId: source === "agent" ? TURN_ID : null,
-      wId: null,
-      toolCallId: toolCallId ?? null,
-      updateMeta: null,
-    });
-  } finally {
-    staged.clone.destroy();
-  }
+    fixture.model.applyTextEdit(toDocHandle(doc), block, { from: end, to: end }, suffix);
+  });
   const rows = await db
     .select({ id: schema.branchWriteJournal.id })
     .from(schema.branchWriteJournal)

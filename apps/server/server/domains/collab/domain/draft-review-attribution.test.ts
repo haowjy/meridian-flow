@@ -15,6 +15,21 @@ import {
   type TextEditRow,
 } from "./draft-review-test-fixture.js";
 
+type SyntheticHunk = Parameters<typeof computeDraftReviewOperations>[0]["hunks"][number];
+function syntheticHunk(hunkId: string, raw: SyntheticHunk["raw"]): SyntheticHunk {
+  return {
+    raw,
+    review: {
+      kind: "text",
+      hunkId,
+      operationIds: [],
+      spans: [],
+      anchor: { relStart: "", relEnd: "" },
+      ...(raw.deletedText ? { deletedText: raw.deletedText } : {}),
+    },
+  };
+}
+
 const peers: Y.Doc[] = [];
 const fixtures: ReturnType<typeof createDraftReviewFixture>[] = [];
 afterEach(() => {
@@ -89,22 +104,12 @@ describe("draft review attribution", () => {
       baseDoc: live,
       updates: [{ id: 990, actorTurnId: "turn", updateData }],
       hunks: [
-        {
-          raw: {
-            insertedRanges,
-            deletedRanges: [{ client: 1, clock: 3, length: 5 }],
-            insertedText: "New ",
-            deletedText: "Alpha",
-          },
-          review: {
-            kind: "text",
-            hunkId: "test",
-            operationIds: [],
-            spans: [],
-            deletedText: "Alpha",
-            anchor: { relStart: "", relEnd: "" },
-          },
-        },
+        syntheticHunk("test", {
+          insertedRanges,
+          deletedRanges: [{ client: 1, clock: 3, length: 5 }],
+          insertedText: "New ",
+          deletedText: "Alpha",
+        }),
       ],
     });
     expect(result.hunks[0]).toMatchObject({
@@ -130,22 +135,12 @@ describe("draft review attribution", () => {
       baseDoc: live,
       updates: [{ id: 991, actorTurnId: "turn", updateData }],
       hunks: [
-        {
-          raw: {
-            insertedRanges: [],
-            deletedRanges: [...known, { client: Number.MAX_SAFE_INTEGER, clock: 3, length: 1 }],
-            insertedText: "",
-            deletedText: "Alpha?",
-          },
-          review: {
-            kind: "text",
-            hunkId: "partial",
-            operationIds: [],
-            spans: [],
-            deletedText: "Alpha?",
-            anchor: { relStart: "", relEnd: "" },
-          },
-        },
+        syntheticHunk("partial", {
+          insertedRanges: [],
+          deletedRanges: [...known, { client: Number.MAX_SAFE_INTEGER, clock: 3, length: 1 }],
+          insertedText: "",
+          deletedText: "Alpha?",
+        }),
       ],
     });
     expect(result.hunks[0]).toMatchObject({
@@ -167,22 +162,12 @@ describe("draft review attribution", () => {
         baseDoc: live,
         updates: [],
         hunks: [
-          {
-            raw: {
-              insertedRanges: kind === "insertion" ? [{ client: 1, clock: 3, length: 5 }] : [],
-              deletedRanges: kind === "removal" ? [{ client: 1, clock: 3, length: 5 }] : [],
-              insertedText: kind === "insertion" ? "Alpha" : "",
-              deletedText: kind === "removal" ? "Alpha" : "",
-            },
-            review: {
-              kind: "text",
-              hunkId: "test",
-              operationIds: [],
-              spans: [],
-              ...(kind === "removal" ? { deletedText: "Alpha" } : {}),
-              anchor: { relStart: "", relEnd: "" },
-            },
-          },
+          syntheticHunk("test", {
+            insertedRanges: kind === "insertion" ? [{ client: 1, clock: 3, length: 5 }] : [],
+            deletedRanges: kind === "removal" ? [{ client: 1, clock: 3, length: 5 }] : [],
+            insertedText: kind === "insertion" ? "Alpha" : "",
+            deletedText: kind === "removal" ? "Alpha" : "",
+          }),
         ],
       });
       expect(result.hunks).toHaveLength(1);

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** S-doc: document focus and selective commands through the real review band and provider. */
+
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
@@ -26,6 +27,7 @@ import {
   setModel,
   textHunk,
 } from "@/test-support/inline-review-editor";
+import { settleReact } from "@/test-support/react-dom-harness";
 import { DraftReviewBand } from "./DraftReviewBand";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
@@ -54,19 +56,6 @@ const open = () =>
   );
 
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
-async function settled(check: () => void) {
-  for (let attempt = 0; ; attempt += 1) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(25);
-    });
-    try {
-      check();
-      return;
-    } catch (error) {
-      if (attempt === 19) throw error;
-    }
-  }
-}
 
 it("focuses this document, then applies and discards its classes without closing the list", async () => {
   const network = fixture.network;
@@ -87,9 +76,9 @@ it("focuses this document, then applies and discards its classes without closing
   const navigate = vi.fn();
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().editor.files).toHaveLength(2));
+      await settleReact(() => expect(probe().editor.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(2));
+      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       await open();
       expect(list()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2);
       expect(list()?.textContent).not.toContain("Other chapter");
@@ -117,7 +106,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(probe().header.view.focused?.classId).toBe("class-2");
       await act(async () => answer.resolve(applied(false, "1")));
-      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
       await act(async () =>
         row("2")?.querySelector<HTMLButtonElement>('[aria-label="Discard"]')?.click(),
       );
@@ -136,7 +125,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(list()).not.toBeNull();
       expect(row("2")).toBeNull();
-      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(navigate).not.toHaveBeenCalled();
     },
     {
@@ -164,9 +153,9 @@ it.each([
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().editor.files).toHaveLength(1));
+      await settleReact(() => expect(probe().editor.files).toHaveLength(1));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(2));
+      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       await act(async () => {
         probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true);
         probe().editor.controller.setMarksVisible(false);
