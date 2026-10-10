@@ -38,7 +38,7 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
-import { runDocumentSwitch } from "./document-switch-failure";
+import { runDocumentSwitch, useRailSwitchFailure } from "./document-switch-failure";
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -678,8 +678,10 @@ export function ReadableProjectRoute({
     },
     [presentNavigationFailure],
   );
-  const [railSwitchFailed, setRailSwitchFailed] = useState<ScreenKey | null>(null);
-  useEffect(() => setRailSwitchFailed(null), [activeScreen]);
+  const [railSwitchFailed, setRailSwitchFailed] = useRailSwitchFailure(
+    location.state.__TSR_key ?? "",
+    activeScreen,
+  );
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
     if (!current.navigation) return;

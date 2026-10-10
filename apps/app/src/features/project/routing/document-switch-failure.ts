@@ -1,4 +1,6 @@
 /** Failure presentation only for an explicit rail switch or dock-header Editor jump. */
+import { useEffect, useState } from "react";
+import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectNavigationTicket } from "./project-navigation";
 
 export type RunDocumentSwitch = (
@@ -28,4 +30,11 @@ export async function runDocumentSwitch(
     // Navigation commands reject only genuine failures; cancel/supersede settle normally.
     present();
   }
+}
+
+/** Inline rail feedback belongs to the source location, not to the screen kind. */
+export function useRailSwitchFailure(entryKey: string, screen: ScreenKey) {
+  const [failed, setFailed] = useState<ScreenKey | null>(null);
+  useEffect(() => setFailed(null), [entryKey, screen]);
+  return [failed, setFailed] as const;
 }

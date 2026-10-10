@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { runDocumentSwitch } from "./document-switch-failure";
+import { runDocumentSwitch, useRailSwitchFailure } from "./document-switch-failure";
 import {
   type OpenContextRoute,
   ProjectNavigationProvider,
@@ -143,4 +143,28 @@ it("freezing a departure entry is not destination acceptance", async () => {
   );
   expect(rig.onSourceFailure).toHaveBeenCalledOnce();
   expect(rig.onDestinationFailure).not.toHaveBeenCalled();
+});
+
+it("retires a rail failure when another Work replaces its source entry", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  function Rail({ entryKey }: { entryKey: string }) {
+    const [failed, setFailed] = useRailSwitchFailure(entryKey, "work");
+    return (
+      <button type="button" onClick={() => setFailed("context")}>
+        {failed ?? "No failure"}
+      </button>
+    );
+  }
+  try {
+    await act(async () => root.render(<Rail entryKey="work-A" />));
+    await act(async () => container.querySelector("button")?.click());
+    expect(container.textContent).toBe("context");
+    await act(async () => root.render(<Rail entryKey="work-B" />));
+    expect(container.textContent).toBe("No failure");
+    await act(async () => root.render(<Rail entryKey="work-A" />));
+    expect(container.textContent).toBe("No failure");
+  } finally {
+    await act(async () => root.unmount());
+  }
 });
