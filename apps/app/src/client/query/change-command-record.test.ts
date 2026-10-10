@@ -37,7 +37,6 @@ function preview(): DraftPreviewResponse {
 
     liveRevisionToken: "l",
     draftRevisionToken: "t",
-
     operations: [op("1", "c1"), op("2", "c2"), op("3", "c2")],
     hunks: [
       {

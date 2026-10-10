@@ -24,7 +24,6 @@ export type DraftReviewPreview = {
   isNewDocument?: boolean;
   liveRevisionToken: string;
   draftRevisionToken: string;
-
   operations: DraftReviewOperationInternal[];
   hunks: ReviewHunk[];
   notice?: { code: "branch_corrupt_reset"; message: string };

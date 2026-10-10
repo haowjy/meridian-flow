@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use one phone review header model for header, change bar and sheet without reparenting the manuscript.
+
 - Share active review projection and presence leases across desktop and phone while retaining each host's requested-versus-resolved review policy.
 
 - Bind review rooms through one editor adapter and one construction receipt; live editors mount no review runtime.

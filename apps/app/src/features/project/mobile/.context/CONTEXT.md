@@ -94,9 +94,8 @@ and a pending new document) and adds the review's chrome while that document is
 under inline review. The column keeps one place in the tree whether or not a
 review is open, so entering and leaving never remounts the warm live editor;
 the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
-review state: the header runs `useReviewHeader`, the bar and sheet run
-`useReviewChanges`, both over the Editor scope's controller, the same hooks the
-desktop identity row and its change-list popover use. Optimistic Apply and
+review state: the stable wrapper obtains one `useReviewHeader` model and passes
+it to the header, bar and sheet. Sheet state and its toast stay phone-owned. Optimistic Apply and
 Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
 left" with Next draft are therefore the desktop's behaviour, not a copy of it.
 
