@@ -1,7 +1,5 @@
 /** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "./dev-db";
 import {
@@ -112,23 +110,6 @@ export async function runMigrations(input: {
         `db:migrate: refused inconsistent migration files\n${history.issues.map((issue) => `  - ${issue}`).join("\n")}`,
       );
     }
-    const migrations = readMigrationFiles({ migrationsFolder: input.migrationsDirectory });
-    if (history.entries.length !== migrations.length) {
-      throw new MigrationHistoryError(
-        "db:migrate: refused inconsistent migration files\n  - migration journal does not match the committed migration files",
-      );
-    }
-    const migrationsByTag = new Map<string, (typeof migrations)[number]>();
-    for (const [index, migration] of migrations.entries()) {
-      const entry = history.entries[index];
-      if (!entry || entry.when !== migration.folderMillis || entry.hash !== migration.hash) {
-        throw new MigrationHistoryError(
-          `db:migrate: refused inconsistent migration files\n  - migration journal entry ${index} does not match its SQL file`,
-        );
-      }
-      migrationsByTag.set(entry.tag, migration);
-    }
-
     const session = await client.reserve();
     try {
       await session`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
@@ -155,14 +136,10 @@ export async function runMigrations(input: {
         )
       `;
       for (const entry of plan.pending) {
-        const migration = migrationsByTag.get(entry.tag);
-        if (!migration) {
-          throw new MigrationHistoryError(
-            `db:migrate: refused inconsistent migration files\n  - migration ${entry.tag} is missing from Drizzle's journal`,
-          );
-        }
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
-        const content = normalizeMigrationSql(readFileSync(migrationPath, "utf8"));
+        const content = normalizeMigrationSql(
+          (history.sqlFiles.get(`${entry.tag}.sql`) as Buffer).toString("utf8"),
+        );
         const noTransaction = isNoTransactionMigration(content);
         // Reserved postgres.js sessions do not expose begin(); keep transaction
         // control on the same connection that owns the session advisory lock.
@@ -185,7 +162,7 @@ export async function runMigrations(input: {
           }
           await session.unsafe(
             `INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2)`,
-            [migration.hash, migration.folderMillis],
+            [entry.hash, entry.when],
           );
           if (!noTransaction) await session`COMMIT`;
         } catch (error) {
