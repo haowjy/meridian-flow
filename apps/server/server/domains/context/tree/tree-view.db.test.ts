@@ -153,6 +153,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [notes, scraps].sort(),
       );
       expect(await tree.findById(draft, notes)).toMatchObject({ clashesWith: [scraps] });
+
+      // Two storage tuples that render one filename hold one path, by path and by id.
+      const dotted = await scenario.seedLive("same.md");
+      const [literal] = await db
+        .insert(documents)
+        .values({ contextSourceId: manuscript, name: "same.md", extension: "" })
+        .returning({ id: documents.id });
+      if (!literal) throw new Error("Literal-name document was not inserted");
+      const same = await tree.resolvePath(LIVE_TREE, at("same.md"));
+      expect(same.kind === "ambiguous" && [...same.ids].sort()).toEqual(
+        [dotted, literal.id].sort(),
+      );
+      expect(await tree.findById(LIVE_TREE, dotted)).toMatchObject({ clashesWith: [literal.id] });
+      expect(await tree.findById(draft, literal.id)).toMatchObject({ clashesWith: [dotted] });
     });
 
     it("names identity per view and states a draft's tree with its conflicts (T-1b)", async () => {
@@ -235,19 +249,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await softDelete(scene, ["gone"]);
       const arc = await scenario.seedLive("arc/two.md");
       await softDelete(arc, ["arc"]);
+      // Deleted with its folder; a new live folder of that name now holds its path.
       const replaced = await scenario.seedLive("saga/three.md");
-      await softDelete(replaced);
+      await softDelete(replaced, ["saga"]);
       const occupant = await scenario.seedLive("saga/three.md");
+      const tale = await scenario.seedLive("tale/four.md");
+      await softDelete(tale, ["tale"]);
+      const taleFolder = await scenario.seedLiveFolder("tale/four.md");
       const quiet = await scenario.seedLive("notes.md");
 
       const state = new Map(
-        (await tree.treeState(first.id, [arc, replaced, quiet, harbor])).map((node) => [
+        (await tree.treeState(first.id, [arc, replaced, tale, quiet, harbor])).map((node) => [
           node.nodeId,
           node,
         ]),
       );
       expect([...state.keys()].sort()).toEqual(
-        [harbor, intro, coast, chapter, scene, arc, replaced, quiet].sort(),
+        [harbor, intro, coast, chapter, scene, arc, replaced, tale, quiet].sort(),
       );
       expect(state.get(harbor)).toMatchObject({
         origin: "created",
@@ -287,6 +305,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "clash",
         withNode: { kind: "document", id: occupant },
         at: "saga/three.md",
+      });
+      expect(state.get(tale)?.conflict).toEqual({
+        kind: "clash",
+        withNode: { kind: "folder", id: taleFolder },
+        at: "tale/four.md",
       });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
       // A tombstone is no longer the draft's item.
