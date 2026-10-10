@@ -30,7 +30,6 @@ export interface ContextDocument {
   folderId: string | null;
   name: string;
   extension: string;
-  markdown: string;
   fileType: DocumentFileType | null;
   filetype: Filetype | null;
   storageUrl: string | null;
@@ -101,6 +100,7 @@ export interface ContextDocumentStore {
   createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
+  readProjections(ids: string[]): Promise<Map<string, string>>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(folderId: string | null): Promise<ContextDocument[]>;
 }

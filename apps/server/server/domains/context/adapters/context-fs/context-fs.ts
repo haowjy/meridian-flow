@@ -168,7 +168,7 @@ function moveFiletypeTransition(
  * Owns path ↔ folder-tree resolution and folder auto-creation; delegates
  * single-node persistence to a {@link ContextDocumentStore}.
  *
- * Content is Yjs-canonical: folder tree and `markdown_projection` stay in the
+ * Content is Yjs-canonical: folder tree and Markdown projections stay in the
  * store, but read/write content flows through the collab domain. The store's
  * markdown is only a search/listing projection cache.
  *
@@ -345,7 +345,9 @@ export class ContextFS implements ContextSchemeAdapter {
       await this.documentCreation.repairDocumentAtomically({
         documentId: document.id as never,
         initializeContent: async () => {
-          if (document.markdown.length > 0) {
+          if (
+            ((await this.store.readProjections([document.id])).get(document.id) ?? "").length > 0
+          ) {
             const canonical = await this.documentSync.readAsMarkdown(document.id);
             if (!canonical.ok && canonical.error.code === "not_found") {
               throw new DocumentCreationFault(
@@ -804,6 +806,11 @@ export class ContextFS implements ContextSchemeAdapter {
       this.listVisibleDocuments(folderId, membership),
     ]);
 
+    const projections = options?.wordCounts
+      ? await this.store.readProjections(
+          documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
+        )
+      : new Map<string, string>();
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
       path: joinPath(path, folder.name),
       kind: "directory" as const,
@@ -826,8 +833,9 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
-              // The listing query already loaded the projection, so a count costs no query.
-              ...(options?.wordCounts ? { wordCount: countWords(doc.markdown) } : {}),
+              ...(options?.wordCounts
+                ? { wordCount: countWords(projections.get(doc.id) ?? "") }
+                : {}),
             }
           : {
               editable: false as const,

@@ -405,8 +405,8 @@ currently available to the request owner in the requested project.
   authority is unavailable. New non-empty content is parsed into a detached
   initialize-only checkpoint.
   An older row missing membership is repaired on its next tracked-document touch;
-  repair seeds absent Yjs state from the row projection and preserves existing
-  canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
+  repair creates empty Yjs state only when the separate Markdown projection is
+  empty and preserves existing canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
   through their Work and deliberately register in the live view, not a work-draft
   view: the ws live-room gate checks the live project manifest.
 - Work-scoped source provisioning and tree/content mutations lock and recheck the
@@ -466,3 +466,7 @@ Yjs authority, catalog, availability and identity-preserving move operations as
 Manuscript and KB. Its membership means not yet filed; a name alone does not
 change that membership. It has no Work qualifier and remains accessible to
 normal context tools and reference resolution.
+
+Markdown projections live in `document_markdown_projections`, not tree identity rows.
+Stores batch-read them through `readProjections` only when list word counts are requested.
+Text creation inserts the projection in its identity transaction; binary creation does not.

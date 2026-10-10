@@ -12,6 +12,7 @@ import {
   branchPushSettlementOutbox,
   contextSources,
   documentDerivations,
+  documentMarkdownProjections,
   documents,
   documentYjsUpdates,
   projects,
@@ -217,10 +218,10 @@ describe("branch-push durable projection", () => {
       .where(eq(documentYjsUpdates.documentId, documentId));
     expect(journalAfterFailure).toEqual([]);
     const [documentAfterFailure] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
-    expect(documentAfterFailure?.markdownProjection).toBe("");
+      .select({ markdownProjection: documentMarkdownProjections.markdown })
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    expect(documentAfterFailure).toBeUndefined();
     const [pending] = await db
       .select({
         pushId: branchPushSettlementOutbox.pushId,
@@ -262,9 +263,9 @@ describe("branch-push durable projection", () => {
       expect.objectContaining({ originType: "reconcile", actorTurnId: null }),
     ]);
     const [documentAfterRecovery] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
+      .select({ markdownProjection: documentMarkdownProjections.markdown })
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
     expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
     const [watermark] = await db
       .select()
@@ -316,9 +317,11 @@ describe("branch-push durable projection", () => {
       name: "chapter",
       extension: "md",
       fileType: "markdown",
-      markdownProjection: "stale projection",
       updatedAt: old,
     });
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId, markdown: "stale projection" });
     await db.insert(threads).values({
       rootThreadId: threadId,
       id: threadId,
@@ -418,10 +421,14 @@ describe("branch-push durable projection", () => {
 
     const [document] = await db
       .select({
-        markdownProjection: documents.markdownProjection,
+        markdownProjection: documentMarkdownProjections.markdown,
         updatedAt: documents.updatedAt,
       })
       .from(documents)
+      .leftJoin(
+        documentMarkdownProjections,
+        eq(documentMarkdownProjections.documentId, documents.id),
+      )
       .where(eq(documents.id, documentId));
     const [threadDocument] = await db
       .select({ lastTouchedAt: threadDocuments.lastTouchedAt })

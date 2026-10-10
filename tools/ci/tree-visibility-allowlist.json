@@ -109,11 +109,6 @@
       "path": "apps/server/server/domains/collab/adapters/drizzle-work-draft-discard.ts",
       "forms": ["read"],
       "reason": "pending: lane D; discard delegates to hidden-node lifecycle"
-    },
-    {
-      "path": "apps/server/scripts/phase4-smoke.ts",
-      "forms": ["read"],
-      "reason": "pending: lane P; smoke reads the separate Markdown projection table"
     }
   ]
 }

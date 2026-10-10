@@ -5,6 +5,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsHeads,
   projects,
@@ -122,13 +123,19 @@ export async function certifyDocumentDerivation(
   const [updated] = await tx
     .update(documents)
     .set({
-      markdownProjection: outputs.markdown,
       sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
       updatedAt: at,
     })
     .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
     .returning({ id: documents.id });
   if (!updated) return false;
+  await tx
+    .insert(documentMarkdownProjections)
+    .values({ documentId: cut.documentId, markdown: outputs.markdown, updatedAt: at })
+    .onConflictDoUpdate({
+      target: documentMarkdownProjections.documentId,
+      set: { markdown: outputs.markdown, updatedAt: at },
+    });
   await tx.delete(documentLinks).where(eq(documentLinks.sourceDocumentId, cut.documentId));
   if (outputs.links.length)
     await tx

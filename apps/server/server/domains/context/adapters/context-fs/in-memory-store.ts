@@ -56,6 +56,7 @@ export interface InMemoryContextDocumentStoreBacking {
   previousLocations: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
+  projections: Map<string, string>;
   clock: { value: number };
   availabilityGeneration: { value: bigint };
 }
@@ -70,6 +71,7 @@ export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocu
     previousLocations: new Map(),
     folders: new Map(),
     documents: new Map(),
+    projections: new Map(),
     clock: { value: 0 },
     availabilityGeneration: { value: 0n },
   };
@@ -226,6 +228,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       [...this.backing.documents].map(([id, row]) => [id, { ...row }] as const),
     );
     const previousLocationsSnapshot = new Map(this.backing.previousLocations);
+    const projectionsSnapshot = new Map(this.backing.projections);
     const clockSnapshot = this.backing.clock.value;
     try {
       return await operation();
@@ -235,6 +238,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       this.backing.documents.clear();
       for (const entry of documentsSnapshot) this.backing.documents.set(...entry);
       this.backing.previousLocations = previousLocationsSnapshot;
+      this.backing.projections = projectionsSnapshot;
       this.backing.clock.value = clockSnapshot;
       throw error;
     }
@@ -316,7 +320,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
-      markdown: input.markdown,
       fileType: null,
       filetype: input.filetype,
       storageUrl: null,
@@ -327,6 +330,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    this.backing.projections.set(doc.id, input.markdown);
     claimLocation(
       this.backing,
       doc.contextSourceId,
@@ -368,7 +372,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
-      markdown: input.markdown,
       fileType: null,
       filetype: input.filetype,
       storageUrl: null,
@@ -379,6 +382,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    this.backing.projections.set(doc.id, input.markdown);
     claimLocation(
       this.backing,
       doc.contextSourceId,
@@ -432,7 +436,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
-      markdown: "",
       fileType: input.fileType,
       filetype: null,
       storageUrl: input.storageUrl,
@@ -469,7 +472,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       if (!row) throw new Error(`Document row disappeared: ${existing.id}`);
       const updated: DocumentRow = {
         ...row,
-        markdown: "",
         fileType: input.fileType,
         filetype: null,
         storageUrl: input.storageUrl,
@@ -481,6 +483,15 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       return this.publicDocument(updated);
     }
     return this.createBinaryDocument(input);
+  }
+
+  async readProjections(ids: string[]): Promise<Map<string, string>> {
+    return new Map(
+      ids.flatMap((id) => {
+        const markdown = this.backing.projections.get(id);
+        return markdown === undefined ? [] : [[id, markdown] as const];
+      }),
+    );
   }
 
   async listFolders(parentId: string | null): Promise<ContextFolder[]> {

@@ -1,6 +1,13 @@
 /** ContextFS Drizzle-store shadow observer behavior. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
+import {
+  contextSources,
+  documentMarkdownProjections,
+  documents,
+  folders,
+  projects,
+  users,
+} from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
@@ -71,8 +78,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name,
         extension: "md",
         fileType: "markdown",
-        markdownProjection: name,
       });
+      await db.insert(documentMarkdownProjections).values({ documentId: id, markdown: name });
     }
 
     function createContextHarness() {
@@ -104,11 +111,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await db
               .update(documents)
               .set({
-                markdownProjection: markdown,
                 sizeBytes: Buffer.byteLength(markdown, "utf8"),
                 updatedAt: new Date(),
               })
               .where(eq(documents.id, documentId));
+            await db
+              .insert(documentMarkdownProjections)
+              .values({ documentId, markdown })
+              .onConflictDoUpdate({
+                target: documentMarkdownProjections.documentId,
+                set: { markdown },
+              });
             return Ok({ updateSeq: 1 });
           },
         } as never,
@@ -226,10 +239,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: documents.id,
             name: documents.name,
             extension: documents.extension,
-            markdown: documents.markdownProjection,
+            markdown: documentMarkdownProjections.markdown,
             filetype: documents.fileType,
           })
-          .from(documents),
+          .from(documents)
+          .leftJoin(
+            documentMarkdownProjections,
+            eq(documentMarkdownProjections.documentId, documents.id),
+          ),
       ).resolves.toEqual([
         {
           id: initial.value.documentId,

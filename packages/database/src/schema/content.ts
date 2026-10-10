@@ -248,7 +248,6 @@ export const documents = pgTable(
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
-    markdownProjection: text("markdown_projection").notNull().default(""),
     provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
@@ -280,14 +279,6 @@ export const documents = pgTable(
     index("documents_context_images")
       .on(table.contextSourceId)
       .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
-    index("documents_markdown_projection_fts").using(
-      "gin",
-      sql`to_tsvector('simple', ${table.markdownProjection})`,
-    ),
-    index("documents_markdown_projection_trgm").using(
-      "gin",
-      sql`${table.markdownProjection} gin_trgm_ops`,
-    ),
     index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
     index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
     check(
@@ -299,6 +290,26 @@ export const documents = pgTable(
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
     check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
+  ],
+);
+
+/** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
+export const documentMarkdownProjections = pgTable(
+  "document_markdown_projections",
+  {
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    markdown: text("markdown").notNull().default(""),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("document_markdown_projections_fts").using(
+      "gin",
+      sql`to_tsvector('simple', ${t.markdown})`,
+    ),
+    index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
   ],
 );
 

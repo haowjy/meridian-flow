@@ -3,8 +3,13 @@
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contentDocumentPredicate, documents, folders } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  contentDocumentPredicate,
+  documentMarkdownProjections,
+  documents,
+  folders,
+} from "@meridian/database/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
@@ -48,7 +53,6 @@ function mapDocument(row: DocumentRow): ContextDocument {
     folderId: row.folderId,
     name: row.name,
     extension: row.extension,
-    markdown: row.markdownProjection,
     fileType: isBinary ? (storedType as DocumentFileType) : null,
     filetype: isBinary ? null : (storedType as Filetype),
     storageUrl: row.storageUrl,
@@ -198,11 +202,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           name: input.name,
           extension: input.extension,
           fileType: input.filetype,
-          markdownProjection: input.markdown,
           sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
         })
         .returning();
       if (!row) throw new Error("Failed to insert document");
+      await this.db
+        .insert(documentMarkdownProjections)
+        .values({ documentId: row.id, markdown: input.markdown });
       await claimDocumentLocation(
         this.deps.db,
         this.sourceId,
@@ -237,7 +243,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           name: input.name,
           extension: input.extension,
           fileType: input.filetype,
-          markdownProjection: input.markdown,
           sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
           provisionalName: input.provisionalName ?? false,
           ...(input.metadata ? { metadata: input.metadata } : {}),
@@ -245,6 +250,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         .onConflictDoNothing()
         .returning();
       if (!row) return null;
+      await this.db
+        .insert(documentMarkdownProjections)
+        .values({ documentId: row.id, markdown: input.markdown });
       await claimDocumentLocation(
         this.deps.db,
         this.sourceId,
@@ -348,7 +356,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           storageUrl: input.storageUrl,
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
-          markdownProjection: "",
           ...(input.metadata ? { metadata: input.metadata } : {}),
         })
         .returning();
@@ -367,6 +374,15 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       await this.deps.arrivals?.settle([row.id as DocumentId]);
       return mapDocument(row);
     });
+  }
+
+  async readProjections(ids: string[]): Promise<Map<string, string>> {
+    if (!ids.length) return new Map();
+    const rows = await this.db
+      .select()
+      .from(documentMarkdownProjections)
+      .where(inArray(documentMarkdownProjections.documentId, ids));
+    return new Map(rows.map((row) => [row.documentId, row.markdown]));
   }
 
   async listFolders(parentId: string | null): Promise<ContextFolder[]> {

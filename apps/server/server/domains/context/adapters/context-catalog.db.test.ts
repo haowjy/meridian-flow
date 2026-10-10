@@ -6,6 +6,7 @@ import {
   contextCatalogCommits,
   contextCatalogEntries,
   contextSources,
+  documentMarkdownProjections,
   documents,
   folders,
   projects,
@@ -439,9 +440,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID]);
       const beforeContentWrite = await catalog.snapshot(scope);
       await db
-        .update(documents)
-        .set({ markdownProjection: "new words only" })
-        .where(eq(documents.id, contentDocumentId));
+        .insert(documentMarkdownProjections)
+        .values({ documentId: contentDocumentId, markdown: "new words only" })
+        .onConflictDoUpdate({
+          target: documentMarkdownProjections.documentId,
+          set: { markdown: "new words only" },
+        });
       const afterContentWrite = await catalog.snapshot(scope);
       expect(afterContentWrite.headRevision).toBe(beforeContentWrite.headRevision);
       await expect(catalog.changes(scope, beforeContentWrite.cursor)).resolves.toMatchObject({
