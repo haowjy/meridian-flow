@@ -12,12 +12,13 @@ export function createInMemoryDraftStore(): DraftStore {
     [...rows.values()]
       .filter((row) => row.originWorkId === workId)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
-  const activeForWork = async (workId: WorkId) =>
+  const activeOf = (workId: WorkId) =>
     byOrigin(workId).find((row) => row.status === "active") ?? null;
   return {
-    activeForWork,
+    activeForWork: async (workId) => activeOf(workId),
+    // Lookup and insert with no await between them: one critical section.
     async ensureActiveLocked(input) {
-      const existing = await activeForWork(input.workId);
+      const existing = activeOf(input.workId);
       if (existing) return existing;
       const draft: Draft = {
         id: crypto.randomUUID() as DraftId,
@@ -42,7 +43,18 @@ export function createInMemoryDraftStore(): DraftStore {
   };
 }
 
-/** No Work rows in memory: every Work is active and writes never interleave. */
-export const inMemoryDraftWriteBoundary: DraftWriteBoundary = {
-  withActiveWorkLocked: (_workId, operation) => operation(),
-};
+/** No Work rows in memory: every Work is active; a per-Work queue stands in for its row lock. */
+export function createInMemoryDraftWriteBoundary(): DraftWriteBoundary {
+  const tails = new Map<WorkId, Promise<unknown>>();
+  return {
+    withActiveWorkLocked(workId, operation) {
+      const run = (tails.get(workId) ?? Promise.resolve()).then(operation, operation);
+      const tail = run.catch(() => undefined);
+      tails.set(workId, tail);
+      void tail.then(() => {
+        if (tails.get(workId) === tail) tails.delete(workId);
+      });
+      return run;
+    },
+  };
+}
