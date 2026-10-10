@@ -4,11 +4,13 @@ import {
   parseRestorableComposerDraft,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { browserRecord, type StorageSource } from "./storage/browser-record";
+
 export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
-type StoragePort = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export class ComposerSessionDraft {
   readonly key: string;
+  private readonly record: ReturnType<typeof browserRecord<ComposerDraftSnapshot>>;
   private current: ComposerDraftSnapshot | null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
@@ -61,22 +63,14 @@ export class ComposerSessionDraft {
     );
   }
 
-  constructor(
-    private accountId: string,
-    scope: ComposerDraftScope,
-    private storage: () => StoragePort = () => window.sessionStorage,
-  ) {
+  constructor(accountId: string, scope: ComposerDraftScope, storage: StorageSource = "session") {
     this.key = `meridian:composer-draft:v1:${JSON.stringify([accountId, scope.kind, scope.id])}`;
-    let draft: ComposerDraftSnapshot | null = null;
-    try {
-      const raw = this.storage().getItem(this.key);
-      const record = raw ? JSON.parse(raw) : null;
-      if (record?.version === 1 && record.accountId === accountId)
-        draft = parseRestorableComposerDraft(record.draft);
-    } catch {
-      /* Storage is best effort; the live editor is always usable. */
-    }
-    this.current = draft;
+    this.record = browserRecord(
+      storage,
+      { key: this.key, version: 1, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
+      (value) => parseRestorableComposerDraft(value) ?? undefined,
+    );
+    this.current = this.record.read() ?? null;
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -103,18 +97,12 @@ export class ComposerSessionDraft {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     if (!this.dirty) return;
-    try {
-      const draft = this.current && parseRestorableComposerDraft(this.current);
-      if (!draft || !serializeComposerDraft(draft.doc).text) this.storage().removeItem(this.key);
-      else
-        this.storage().setItem(
-          this.key,
-          JSON.stringify({ version: 1, accountId: this.accountId, draft }),
-        );
-      this.dirty = false;
-    } catch {
-      /* A denied/quota-full store must not interrupt authoring or Send. */
-    }
+    const draft = this.current && parseRestorableComposerDraft(this.current);
+    const saved =
+      !draft || !serializeComposerDraft(draft.doc).text
+        ? this.record.write(undefined)
+        : this.record.write(draft);
+    if (saved) this.dirty = false;
   };
 }
 

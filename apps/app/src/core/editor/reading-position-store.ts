@@ -1,5 +1,7 @@
 /** Account-stamped device memory of document-relative places, bounded by LRU. */
+
 import * as Y from "yjs";
+import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
 
 export const READING_POSITION_STORAGE_KEY = "meridian:reading-position:v1";
 export const READING_POSITION_LIMIT = 300;
@@ -9,12 +11,6 @@ export type ReadingPosition = {
   selection: { anchor: ReadingAnchor; head: ReadingAnchor; node: boolean };
 };
 type Entry = { documentId: string; place: ReadingPosition; updatedAt: number; accessedAt: number };
-type Snapshot = { version: 1; accountId: string; entries: Entry[] };
-type StoragePort = Pick<Storage, "getItem" | "setItem">;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function validAnchor(value: unknown): value is ReadingAnchor {
   if (
@@ -40,7 +36,6 @@ function validPlace(value: unknown): value is ReadingPosition {
       validAnchor(viewport.block) &&
       (viewport.text === null || validAnchor(viewport.text)) &&
       typeof viewport.offset === "number" &&
-      Number.isFinite(viewport.offset) &&
       viewport.offset >= 0 &&
       viewport.offset <= 1 &&
       validAnchor(selection.anchor) &&
@@ -54,64 +49,51 @@ function validEntry(value: unknown): value is Entry {
     isRecord(value) &&
     typeof value.documentId === "string" &&
     validPlace(value.place) &&
-    typeof value.updatedAt === "number" &&
-    Number.isFinite(value.updatedAt) &&
-    typeof value.accessedAt === "number" &&
-    Number.isFinite(value.accessedAt)
+    [value.updatedAt, value.accessedAt].every(
+      (time) => typeof time === "number" && Number.isFinite(time),
+    )
   );
 }
 
 export class ReadingPositionStore {
-  constructor(
-    private readonly accountId: string,
-    private readonly storage: () => StoragePort = () => localStorage,
-  ) {}
-  private get key() {
-    return `${READING_POSITION_STORAGE_KEY}:${encodeURIComponent(this.accountId)}`;
-  }
-  private read(): Snapshot {
-    const empty: Snapshot = { version: 1, accountId: this.accountId, entries: [] };
-    try {
-      const value: unknown = JSON.parse(this.storage().getItem(this.key) ?? "null");
-      if (
-        !isRecord(value) ||
-        value.version !== 1 ||
-        value.accountId !== this.accountId ||
-        !Array.isArray(value.entries) ||
-        value.entries.length > READING_POSITION_LIMIT ||
-        !value.entries.every(validEntry) ||
-        new Set(value.entries.map((entry) => entry.documentId)).size !== value.entries.length
-      )
-        return empty;
-      return { version: 1, accountId: this.accountId, entries: value.entries };
-    } catch {
-      return empty;
-    }
-  }
-  private write(snapshot: Snapshot) {
-    try {
-      this.storage().setItem(this.key, JSON.stringify(snapshot));
-    } catch {
-      /* Storage cannot block writing. */
-    }
+  private readonly record: ReturnType<typeof browserRecord<Entry[]>>;
+  constructor(accountId: string, storage: StorageSource = "local") {
+    this.record = browserRecord<Entry[]>(
+      storage,
+      {
+        key: `${READING_POSITION_STORAGE_KEY}:${encodeURIComponent(accountId)}`,
+        version: 1,
+        accountId,
+      },
+      (value) => {
+        if (
+          !Array.isArray(value) ||
+          value.length > READING_POSITION_LIMIT ||
+          !value.every(validEntry) ||
+          new Set(value.map((entry) => entry.documentId)).size !== value.length
+        )
+          return undefined;
+        return value;
+      },
+    );
   }
   load(documentId: string): ReadingPosition | null {
-    const snapshot = this.read();
-    const entry = snapshot.entries.find((entry) => entry.documentId === documentId);
+    const entries = this.record.read() ?? [];
+    const entry = entries.find((entry) => entry.documentId === documentId);
     if (!entry) return null;
     entry.accessedAt = Date.now();
-    this.write(snapshot);
+    this.record.write(entries);
     return entry.place;
   }
   save(documentId: string, place: ReadingPosition, updatedAt: number): void {
-    const snapshot = this.read();
-    const previous = snapshot.entries.find((entry) => entry.documentId === documentId);
+    let entries = this.record.read() ?? [];
+    const previous = entries.find((entry) => entry.documentId === documentId);
     // A background view flushing an earlier gesture must not overwrite the last active view.
     if (previous && previous.updatedAt > updatedAt) return;
-    snapshot.entries = snapshot.entries.filter((entry) => entry.documentId !== documentId);
-    snapshot.entries.push({ documentId, place, updatedAt, accessedAt: updatedAt });
-    snapshot.entries.sort((a, b) => b.accessedAt - a.accessedAt);
-    snapshot.entries.length = Math.min(snapshot.entries.length, READING_POSITION_LIMIT);
-    this.write(snapshot);
+    entries = entries.filter((entry) => entry.documentId !== documentId);
+    entries.push({ documentId, place, updatedAt, accessedAt: updatedAt });
+    entries.sort((a, b) => b.accessedAt - a.accessedAt);
+    entries.length = Math.min(entries.length, READING_POSITION_LIMIT);
+    this.record.write(entries);
   }
 }

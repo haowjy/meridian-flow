@@ -178,7 +178,7 @@ it("bounds device memory, rejects foreign/malformed accounts, and preserves the 
   expect(new ReadingPositionStore("b").load("new")).toBeNull();
   localStorage.setItem(
     `${READING_POSITION_STORAGE_KEY}:a`,
-    JSON.stringify({ version: 1, accountId: "b", entries: [] }),
+    JSON.stringify({ version: 1, accountId: "b", payload: [] }),
   );
   expect(store.load("new")).toBeNull();
   for (const raw of [
@@ -187,11 +187,11 @@ it("bounds device memory, rejects foreign/malformed accounts, and preserves the 
     "42",
     '"snapshot"',
     "[]",
-    JSON.stringify({ version: 1, accountId: "a", entries: [null] }),
+    JSON.stringify({ version: 1, accountId: "a", payload: [null] }),
     JSON.stringify({
       version: 1,
       accountId: "a",
-      entries: [{ documentId: "new", place: { viewport: 42, selection: [] } }],
+      payload: [{ documentId: "new", place: { viewport: 42, selection: [] } }],
     }),
   ]) {
     localStorage.setItem(`${READING_POSITION_STORAGE_KEY}:a`, raw);
