@@ -1,6 +1,6 @@
 # Draft review
 
-This page defines the review session (controller, provider, command session), the
+This page defines the review state (controller, provider) and typed command executor, the
 pending projection, freshness, and draft-only-tab contracts. The code lives in
 `features/draft-review`; Chat consumes it.
 

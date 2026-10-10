@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending.
+- Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending. Offline batches refuse every file in the same admission turn.
 
 - Consolidate draft command admission and typed settlement; Work and chat lists use Work-bound commands without extra review controllers or editor-executor routing.
 
