@@ -287,11 +287,11 @@ Apply publishes that manifest as well as content.
 - [Runtime verification recipes](../../../../../../docs/qa/draft-review.md)
 
 [paint]: ../../../components/app/PaintHold.md
-[inline]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-inline-track-changes.md
-[editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md
-[authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md
-[confirmation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-apply-done-at-server-confirmation.md
-[follows]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/review-follows-presented-document.md
+[inline]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-inline-track-changes.md
+[editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md
+[authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-command-authority.md
+[confirmation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-apply-done-at-server-confirmation.md
+[follows]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/documents/review-follows-presented-document.md
 [handoff]: https://github.com/haowjy/meridian-flow/issues/731
 [admission]: https://github.com/haowjy/meridian-flow/issues/738
 [loss]: https://github.com/haowjy/meridian-flow/issues/739
