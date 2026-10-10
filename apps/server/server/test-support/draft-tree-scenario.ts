@@ -17,6 +17,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -354,8 +355,17 @@ export async function draftTreeScenario(
     };
   }
 
-  function livePort(): ContextPort {
-    return runtime().runtime.ports.contextPorts.forProject(projectId, userId, new Map());
+  const madeWorks: WorkId[] = [];
+
+  /** The writer's live port, resolving `@slug` for every Work this scenario made. */
+  async function livePort(): Promise<ContextPort> {
+    const { ports } = runtime().runtime;
+    const authorities = new Map<WorkSlug, ResolvedWorkAuthority>();
+    for (const workId of madeWorks) {
+      const authority = await ports.workAuthorityResolver.byId(projectId, workId);
+      if (authority?.workSlug) authorities.set(authority.workSlug, authority);
+    }
+    return ports.contextPorts.forProject(projectId, userId, authorities);
   }
 
   const writer: ScenarioWriter = {
@@ -377,7 +387,7 @@ export async function draftTreeScenario(
               userId,
               authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
             )
-          : livePort(),
+          : await livePort(),
         userId,
         scheme,
         ...(authority ? { authority } : {}),
@@ -395,17 +405,17 @@ export async function draftTreeScenario(
     async mkdir(path) {
       const { scheme, rel } = sourceOf(path);
       await createContextEntry({
-        port: livePort(),
+        port: await livePort(),
         userId,
         scheme,
         body: parseCreateContextEntryBody({ type: "folder", path: `/${rel}` }),
       });
     },
-    move(from, to) {
-      return livePort().commitWriterLocation(uri(from), uri(to), { origin: human() });
+    async move(from, to) {
+      return (await livePort()).commitWriterLocation(uri(from), uri(to), { origin: human() });
     },
     async delete(path) {
-      const port = livePort();
+      const port = await livePort();
       // stat answers files only; anything else at the path is the folder being deleted.
       const stat = await port.stat(uri(path));
       return port.delete(uri(path), {
@@ -592,6 +602,7 @@ export async function draftTreeScenario(
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
       const { threadId, turnId } = await insertThread(name, work.id);
+      madeWorks.push(work.id);
       return { id: work.id, slug, threadId, turnId, mode };
     },
     async thread(work) {
