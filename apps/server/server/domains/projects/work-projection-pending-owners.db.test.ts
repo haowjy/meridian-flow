@@ -7,6 +7,7 @@ import {
   contextSources,
   documentBranches,
   documents,
+  drafts,
   projects,
   users,
   works,
@@ -22,6 +23,7 @@ import {
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
+import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
@@ -44,6 +46,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SOURCE_ID = "00000000-0000-4000-8000-000000000944";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000945";
     const BRANCH_ID = "branch_work_projection_pending_owner";
+    const DRAFT_ID = "00000000-0000-4000-8000-00000000094b";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -78,11 +81,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
+      await db.insert(drafts).values({
+        id: DRAFT_ID,
+        projectId: PROJECT_ID,
+        originWorkId: WORK_ID,
+        createdBy: USER_ID,
+      });
       await db.insert(documentBranches).values({
         id: BRANCH_ID,
         documentId: DOCUMENT_ID,
         kind: "work_draft",
-        workId: WORK_ID,
+        draftId: DRAFT_ID,
         state: Buffer.from([0]),
         stateVector: Buffer.from([0]),
       });
@@ -127,7 +136,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("drives real discard, redo, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(db, undefined, projection);
+      const branches = createDrizzleBranchStore(db, {
+        workProjection: projection,
+        drafts: createDrizzleDraftStore(db),
+      });
       const appendJournal = (updateMeta: unknown) =>
         branches.appendJournal?.({
           branchId: BRANCH_ID,
@@ -152,6 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID as never,
         kind: "work_draft" as const,
         upstreamBranchId: null,
+        draftId: DRAFT_ID,
         workId: WORK_ID as never,
         threadId: null,
         generation: 1,

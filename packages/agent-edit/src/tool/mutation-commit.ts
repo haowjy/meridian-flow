@@ -301,6 +301,10 @@ export function createMutationCommit(deps: {
           lateSweep = applied.lateSweep;
           return null;
         },
+        // A thread-peer write commits to exactly the branch it was staged against.
+        input.interactionContext?.mode === "threadPeer"
+          ? { pinnedBranchId: input.interactionContext.branchId }
+          : undefined,
       );
     } catch (cause) {
       if (journalCommitKind) throw new AcceptedMutationSubmissionError(cause, journalCommitKind);

@@ -24,11 +24,20 @@ export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
 export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
 
 /** Why the save step left a document out of a reply (D29). */
-export type RefusedResponseDocument = {
-  documentId: DocumentId;
-  /** The policy's refusal under the save's locks; its copy is the tool's to write. */
-  denial: FileAccessDenied;
-};
+export type RefusedResponseDocument =
+  | {
+      documentId: DocumentId;
+      /** The policy's refusal under the save's locks; its copy is the tool's to write. */
+      denial: FileAccessDenied;
+    }
+  | {
+      documentId: DocumentId;
+      /**
+       * The draft its writes were pinned to moved on before the save (closed, or this
+       * document's draft applied or discarded): the save never re-drafts them (§2.5).
+       */
+      stale: true;
+    };
 
 /**
  * A model call's outcome. An undo or redo that reversed some of its writes but

@@ -10,6 +10,7 @@ import type {
   SetWorkPushPolicyResult,
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
+import type { Drafts } from "./drafts.js";
 import type { PendingWorkDraft, WorkDraftPending } from "./work-draft-pending.js";
 
 type ApplyPendingDraft = (input: {
@@ -20,6 +21,7 @@ type ApplyPendingDraft = (input: {
 export function createWorkPushPolicy(input: {
   workPushPolicyStore: WorkPushPolicyStore;
   workDraftPending: WorkDraftPending;
+  drafts: Pick<Drafts, "activeForWork">;
   applyPendingDraft: ApplyPendingDraft;
 }) {
   return {
@@ -31,7 +33,9 @@ export function createWorkPushPolicy(input: {
      */
     async setWorkPushPolicy(policyInput: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult> {
       if (policyInput.policy === "auto") {
-        const pendingDrafts = await input.workDraftPending.list(policyInput.workId);
+        // A Work with no active draft has nothing pending; the switch never makes one.
+        const draft = await input.drafts.activeForWork(policyInput.workId);
+        const pendingDrafts = draft ? await input.workDraftPending.list(draft.id) : [];
         if (pendingDrafts.length > 0 && !policyInput.pending) {
           return {
             status: "confirmation_required",

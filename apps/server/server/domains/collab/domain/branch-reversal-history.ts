@@ -11,6 +11,7 @@ import {
   type WriteMutationRow,
   writeHandle,
 } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
@@ -19,8 +20,8 @@ import { isBranchNotFoundError } from "./branch-resolver.js";
 
 export type BranchReversalScope = {
   branchId: string;
-  /** The Work whose draft holds this history. */
-  workId: string;
+  /** The draft that holds this history. */
+  draftId: DraftId;
   generation: number;
   state: Uint8Array;
   rows: BranchJournalRow[];
@@ -35,7 +36,10 @@ export type BranchReversalHistoryReader = {
     ): Promise<{ branchId: string; doc: Y.Doc }>;
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
+    ): Promise<Pick<
+      BranchSnapshot,
+      "upstreamBranchId" | "draftId" | "workId" | "generation" | "state"
+    > | null>;
   };
   branchRows: {
     listJournalRowsForBranch(input: {
@@ -78,7 +82,7 @@ export async function resolveBranchReversalScope(
   return ownsHistory
     ? {
         branchId: peerSnapshot.upstreamBranchId,
-        workId: workDraft.workId,
+        draftId: workDraft.draftId,
         generation: workDraft.generation,
         state: workDraft.state,
         rows,

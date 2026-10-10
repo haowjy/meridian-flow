@@ -58,6 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "runtime-settlement",
         aiWriteMode: "direct",
       });
+      // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+      await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -206,9 +210,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafts = await db
         .select({
           documentId: schema.documentBranches.documentId,
-          workId: schema.documentBranches.workId,
+          workId: schema.drafts.originWorkId,
         })
         .from(schema.documentBranches)
+        .innerJoin(schema.drafts, eq(schema.drafts.id, schema.documentBranches.draftId))
         .where(
           and(
             eq(schema.documentBranches.kind, "work_draft"),

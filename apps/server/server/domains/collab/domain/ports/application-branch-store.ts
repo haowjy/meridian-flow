@@ -11,28 +11,34 @@ export type ApplicationBranchStore = BranchStore &
       input: import("../branch-coordinator.js").AppendBranchJournalInput,
     ): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-    ensureWorkDraftBranch(input: {
+    /** The draft's branch on the document, made from `liveDoc` if absent. Never makes a draft. */
+    ensureDraftBranch(input: {
       documentId: DocumentId;
-      workId: WorkId;
+      draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
-    /** The Work's draft branch on a draft's new document, from its durable live state, in the caller's transaction. */
-    ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
+    /** The draft's branch on its new document, from its durable live state, in the caller's transaction. */
+    ensureCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<void>;
     /**
-     * Delete the Work's draft branch on a draft-created document and its thread peers,
+     * Delete the draft's branch on a document it created and that branch's thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).
      * `deleted` is exactly the branches removed, with each peer's thread.
      */
-    retractCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<
+    retractCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<
       | { outcome: "stands" }
       | {
           outcome: "retracted";
           deleted: readonly { branchId: string; threadId: ThreadId | null }[];
         }
     >;
+    /**
+     * The thread's peer of the draft's branch on the document. Takes the draft it is given,
+     * never ensures one; a draft that is no longer active is `BranchStaleUpdateError`.
+     */
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;
+      draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
     discardActiveThreadPeerBranches(input: {
@@ -43,9 +49,9 @@ export type ApplicationBranchStore = BranchStore &
       documentId: DocumentId,
       threadId: ThreadId,
     ): Promise<BranchState>;
-    resolveWorkDraftBranchForWork(input: {
+    resolveDraftBranch(input: {
       documentId: DocumentId;
-      workId: WorkId;
+      draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchState>;
   };

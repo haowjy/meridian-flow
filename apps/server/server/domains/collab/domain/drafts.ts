@@ -40,7 +40,7 @@ export interface Drafts {
   shareActive(draftId: DraftId): Promise<Draft | null>;
   /**
    * Caller's transaction, the draft locked by `lockActive` and every one of its branches
-   * leased: closes the draft and deletes its settlements.
+   * leased: closes the draft and its branches and deletes its settlements.
    */
   close(draftId: DraftId, at: Date): Promise<void>;
   /** No lock. These drafts, any status. */

@@ -69,6 +69,7 @@ function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): Br
     documentId,
     kind: "work_draft",
     upstreamBranchId: null,
+    draftId: "draft-1",
     workId: WORK_ID,
     threadId: null,
     status: "active",
@@ -314,8 +315,13 @@ function serviceFixture(input: {
         async countPendingByWorkIds() {
           throw new Error("review regression store does not support pending Work counts");
         },
-        async listReviewableEvidenceForWork() {
+        async listReviewableEvidenceForDraft() {
           throw new Error("review regression store does not support pending Work reads");
+        },
+      },
+      drafts: {
+        async activeForWork() {
+          throw new Error("review regression store does not resolve drafts");
         },
       },
       settlementStore: settlements,

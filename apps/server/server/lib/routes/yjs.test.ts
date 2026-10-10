@@ -71,6 +71,7 @@ describe("Yjs branch handshake route guard", () => {
           documentId: "document-1" as never,
           kind: "work_draft",
           upstreamBranchId: null,
+          draftId: "draft-1",
           workId: "work-1" as never,
           threadId: null,
           status: "active",
@@ -109,7 +110,6 @@ describe("Yjs branch handshake route guard", () => {
       branchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
-        ensureWorkDraftBranch: async () => ({ branchId: "branch_1" }),
         ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
       },
     });

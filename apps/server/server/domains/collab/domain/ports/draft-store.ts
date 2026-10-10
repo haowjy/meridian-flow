@@ -28,10 +28,7 @@ export interface DraftStore {
   lockActive(draftId: DraftId): Promise<Draft | null>;
   /** `FOR SHARE`: a writer that needs the draft to stay active without changing it. */
   shareActive(draftId: DraftId): Promise<Draft | null>;
-  /**
-   * Caller's transaction, draft locked: the row closes and its settlements go. Closing
-   * its branches joins this when branches key by draft (lane K).
-   */
+  /** Caller's transaction, draft locked: the row, its branches (both kinds) and its settlements close. */
   close(draftId: DraftId, at: Date): Promise<void>;
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
   /** Purge only: every draft whose origin is this Work, any status. */

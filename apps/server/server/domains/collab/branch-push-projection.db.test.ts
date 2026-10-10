@@ -40,6 +40,10 @@ import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -48,6 +52,7 @@ import {
 import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
+import { createDrafts } from "./domain/drafts.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -71,9 +76,16 @@ describe("branch-push durable projection", () => {
     },
     async recover() {},
   };
+  const drafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const branchStore = createDrizzleBranchStore(db, {
-    journal: persistence.journal,
-    lifecycle: persistence.lifecycle,
+    live: {
+      journal: persistence.journal,
+      lifecycle: persistence.lifecycle,
+    },
+    drafts,
   });
 
   afterAll(async () => {
@@ -179,9 +191,15 @@ describe("branch-push durable projection", () => {
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
-    const branch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
+    const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
+      projectId: projectId as never,
+      threadId: null,
+      userId: userId as never,
+    });
+    const branch = await branchStore.ensureDraftBranch({
+      documentId: documentId as never,
+      draftId: draft.id,
       liveDoc,
     });
     const branchDoc = createCollabYDoc({ gc: false });
@@ -201,6 +219,7 @@ describe("branch-push durable projection", () => {
       commitStore,
       workPushPolicyStore,
       workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
+      drafts,
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,
@@ -376,9 +395,15 @@ describe("branch-push durable projection", () => {
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
-    const branch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
+    const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
+      projectId: projectId as never,
+      threadId: null,
+      userId: userId as never,
+    });
+    const branch = await branchStore.ensureDraftBranch({
+      documentId: documentId as never,
+      draftId: draft.id,
       liveDoc,
     });
     const branchDoc = createCollabYDoc({ gc: false });
@@ -398,6 +423,7 @@ describe("branch-push durable projection", () => {
       commitStore,
       workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
       workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
+      drafts,
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,

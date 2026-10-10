@@ -594,11 +594,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ contextSourceId: source.id, name: "outline" })
         .returning();
       if (!document) throw new Error("Expected Work document");
+      const [draft] = await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.drafts.id });
+      if (!draft) throw new Error("Expected the Work's draft");
       await db.insert(schema.documentBranches).values({
         id: "work-delete-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        draftId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -785,7 +790,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "closed", deletedByWorkId: work.id }]);
+        "soft delete leaves the Work's draft untouched (§2.6)",
+      ).resolves.toMatchObject([{ status: "active" }]);
 
       await works.restore(work.id);
       await expect(
@@ -809,7 +815,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active", deletedByWorkId: null }]);
+      ).resolves.toMatchObject([{ status: "active" }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );
@@ -1192,11 +1198,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
+      const [draft] = await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.drafts.id });
+      if (!draft) throw new Error("Expected the Work's draft");
       await db.insert(schema.documentBranches).values({
         id: "purged-work-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        draftId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });

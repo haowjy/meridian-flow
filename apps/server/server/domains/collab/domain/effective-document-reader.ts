@@ -130,18 +130,23 @@ export function createEffectiveDocumentReader(input: {
       return fallback();
     }
     if (command.threadId) {
-      try {
-        const existingPeer = await input.branches.resolveThreadBranch(
-          command.documentId,
-          command.threadId,
-        );
-        existingPeer.doc.destroy();
-        await input.branchPulls.pullThreadPeer({
-          documentId: command.documentId,
-          threadId: command.threadId,
-        });
-      } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
+      // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has.
+      const view = await viewOf(command);
+      if (view.kind === "draft") {
+        try {
+          const existingPeer = await input.branches.resolveThreadBranch(
+            command.documentId,
+            command.threadId,
+          );
+          existingPeer.doc.destroy();
+          await input.branchPulls.pullThreadPeer({
+            documentId: command.documentId,
+            threadId: command.threadId,
+            draftId: view.draftId,
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
       }
       try {
         const branch = await input.branches.resolveThreadBranch(
@@ -211,9 +216,6 @@ export function createEffectiveDocumentReader(input: {
       } catch {
         return null;
       }
-    },
-    pullThreadPeer(command) {
-      return input.branchPulls.pullThreadPeer(command);
     },
     flushBranchLivePull(documentId) {
       return input.branchPulls.flushLivePull(documentId);

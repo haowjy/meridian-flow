@@ -27,7 +27,7 @@ export function createDrizzleDraftCreates(deps: {
         node,
         ensureEmptyContent: (documentId) => deps.documents.ensureDocument(documentId),
         ensureDraftBranch: (documentId) =>
-          deps.branches.ensureCreatedDraftBranch({ documentId, workId: draft.workId }),
+          deps.branches.ensureCreatedDraftBranch({ documentId, draftId: draft.id }),
       });
     },
     async retractCreate({ draft, documentId }) {
@@ -35,7 +35,7 @@ export function createDrizzleDraftCreates(deps: {
         draftId: draft.id,
         documentId,
         retractBranch: () =>
-          deps.branches.retractCreatedDraftBranch({ documentId, workId: draft.workId }),
+          deps.branches.retractCreatedDraftBranch({ documentId, draftId: draft.id }),
       });
       return retracted.retracted ? "retracted" : "stands";
     },

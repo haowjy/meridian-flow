@@ -171,6 +171,11 @@ export type InteractionContext =
       /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
       mode: "threadPeer";
       branchGeneration: number;
+      /**
+       * The host branch the write was staged against, captured with the fence. Its save
+       * resolves exactly this branch and never provisions another.
+       */
+      branchId: string;
     });
 
 /** Hidden host/session context; not part of the LLM command params. */

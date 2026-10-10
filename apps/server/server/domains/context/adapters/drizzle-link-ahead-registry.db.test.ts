@@ -610,7 +610,9 @@ if (!RUN) {
         await db.delete(linkAheadRefs).where(eq(linkAheadRefs.aheadId, flaky));
         const registry = createTestLinkAheadRegistry(db);
         const interrupted = createDraftBranchAheadRegistration({
-          branches: createBranchCoordinator({ store: createDrizzleBranchStore(db, undefined) }),
+          branches: createBranchCoordinator({
+            store: createDrizzleBranchStore(db, { drafts: scenario.drafts }),
+          }),
           drafts: scenario.drafts,
           registrar: {
             async register(rows) {

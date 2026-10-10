@@ -171,14 +171,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
   });
   const criticalSections = createBranchCriticalSections();
-  const branches = createDrizzleBranchStore(
-    deps.db,
-    {
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(deps.db),
+    boundary: createDrizzleDraftWriteBoundary(deps.db),
+  });
+  const branches = createDrizzleBranchStore(deps.db, {
+    live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    deps.workProjectionMutation,
-  );
+    ...(deps.workProjectionMutation ? { workProjection: deps.workProjectionMutation } : {}),
+    drafts: workDrafts,
+  });
   const branchCoordinator = createBranchCoordinator({
     store: branches,
     criticalSections,
@@ -301,10 +305,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.workProjectionMutation,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
-  const workDrafts = createDrafts({
-    store: createDrizzleDraftStore(deps.db),
-    boundary: createDrizzleDraftWriteBoundary(deps.db),
-  });
   const pushCommits = createDrizzlePushCommitStore(
     deps.db,
     stageSettlementBatchWithinTx,
@@ -323,6 +323,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     commitStore: pushCommits,
     workPushPolicyStore: workPushPolicy,
     workDraftPendingStore,
+    drafts: workDrafts,
     settlementStore: pendingSettlements,
     branchCoordinator,
     journal: persistence.journal,
@@ -361,10 +362,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
       journal: persistence.journal,
-      liveCoordinator,
       lifecycle: persistence.lifecycle,
       branches,
       branchCoordinator,
+      criticalSections,
       branchPulls,
       branchJournal,
       concurrentJournalWatermarks,
@@ -610,7 +611,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     branchPeers,
     drafts,
-    draftResolver: { drafts: workDrafts, draftLinks: draftBranchAheads },
+    draftResolver: {
+      drafts: workDrafts,
+      draftLinks: draftBranchAheads,
+      branchLeases: criticalSections,
+    },
     documentCreation,
   });
 }

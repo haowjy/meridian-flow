@@ -28,6 +28,7 @@ import {
 import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -274,13 +275,15 @@ export async function admitSettlementMemberWithinTx(
         .where(eq(documentBranches.id, staged.push.branchId))
         .limit(1)
     : [];
+  const [branchWork] = branchRow ? await draftBranchWorks(db, [branchRow.id]) : [];
   if (branchRow) {
     const branch: BranchSnapshot = {
       branchId: branchRow.id,
       documentId: branchRow.documentId,
       kind: branchRow.kind,
       upstreamBranchId: branchRow.upstreamBranchId,
-      workId: branchRow.workId,
+      draftId: branchRow.draftId,
+      workId: branchWork?.workId ?? null,
       threadId: branchRow.threadId,
       status: branchRow.status,
       generation: branchRow.generation,
@@ -308,7 +311,7 @@ export async function admitSettlementMemberWithinTx(
   await upsertHead(db, documentId, canonicalRow.id, stateVector);
   await deps.projectionEffects.applyPushCompletion({
     documentId,
-    ...(branchRow?.workId ? { workId: branchRow.workId } : {}),
+    ...(branchWork?.workId ? { workId: branchWork.workId } : {}),
     at: new Date(),
   });
 

@@ -6,7 +6,8 @@ import {
   type ReversalStore,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
@@ -14,14 +15,10 @@ import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
   listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-  ensureWorkDraftBranch(input: {
-    documentId: DocumentId;
-    workId: WorkId;
-    liveDoc: Y.Doc;
-  }): Promise<{ branchId: string }>;
   ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<{ branchId: string }>;
 };
@@ -31,7 +28,12 @@ export type BranchPullService = {
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+  /**
+   * Ensures the thread's peer in the given draft (never a draft) and pulls it current.
+   * `branchId` is the peer a staged write pins (contract §2.5).
+   */
+  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId; draftId: DraftId }): Promise<{
+    branchId: string;
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
@@ -236,7 +238,13 @@ export function createBranchPullService(input: {
             else await input.branchCoordinator.pullFromBranch(peer.branchId);
           });
           const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-          return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
+          return {
+            branchId: peer.branchId,
+            branchGeneration,
+            afterJournalId,
+            liveJournalSeq,
+            attributionBaseline,
+          };
         } finally {
           liveDoc.destroy();
         }

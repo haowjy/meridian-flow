@@ -491,6 +491,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   const workPushPolicy = createWorkPushPolicy({
     workPushPolicyStore: input.workPushPolicyStore,
     workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
+    drafts: input.drafts,
     applyPendingDraft: ({ draft, pushedByUserId }) =>
       draft.manifestEntry
         ? pushToLiveWithManifestEntry({

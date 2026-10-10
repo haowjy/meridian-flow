@@ -9,6 +9,7 @@ import {
 } from "@meridian/database/schema";
 import { unpackCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
+import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
 import { createBranchTurnReversalPlanner } from "../domain/branch-turn-reversal-plan.js";
@@ -102,7 +103,8 @@ async function branchStates(
       documentId: documentBranches.documentId,
       kind: documentBranches.kind,
       upstreamBranchId: documentBranches.upstreamBranchId,
-      workId: documentBranches.workId,
+      draftId: documentBranches.draftId,
+      workId: branchDraftWork.workId,
       threadId: documentBranches.threadId,
       status: documentBranches.status,
       generation: documentBranches.generation,
@@ -113,6 +115,7 @@ async function branchStates(
     })
     .from(branchWriteJournal)
     .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
     .where(
       and(
         eq(branchWriteJournal.threadId, threadId),

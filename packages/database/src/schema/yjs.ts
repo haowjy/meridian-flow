@@ -1,11 +1,11 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftId,
   ModelResponseId,
   ThreadId,
   TurnId,
   UserId,
-  WorkId,
 } from "@meridian/contracts";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
@@ -26,7 +26,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
-import { documents, works } from "./content";
+import { documents } from "./content";
+import { drafts } from "./drafts";
 import { users } from "./users";
 
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
@@ -60,12 +61,14 @@ export const documentBranches = pgTable(
         onDelete: "set null",
       },
     ),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "restrict" }),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
+    /**
+     * The draft this branch belongs to (decision 3: a draft is its own record). A thread
+     * peer carries its upstream Work-draft branch's draft.
+     */
+    draftId: uuid("draft_id")
+      .$type<DraftId>()
+      .notNull()
+      .references(() => drafts.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
@@ -82,14 +85,11 @@ export const documentBranches = pgTable(
   },
   (table) => [
     uniqueIndex("document_branches_active_work_draft")
-      .on(table.documentId, table.workId)
+      .on(table.documentId, table.draftId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_branches_active_work_draft_by_work")
-      .on(table.workId, table.id, table.generation)
+    index("document_branches_active_work_draft_by_draft")
+      .on(table.draftId, table.id, table.generation)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_branches_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("document_branches_active_thread_peer")
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
@@ -97,7 +97,7 @@ export const documentBranches = pgTable(
     check("document_branches_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_branches_owner_shape",
-      sql`(${table.kind} = 'work_draft' AND ${table.workId} IS NOT NULL AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
+      sql`(${table.kind} = 'work_draft' AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
     ),
   ],
 );

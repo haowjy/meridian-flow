@@ -267,6 +267,13 @@
       "when": 1791614536226,
       "tag": "0037_dark_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791619909619,
+      "tag": "0038_charming_tattoo",
+      "breakpoints": true
     }
   ]
 }

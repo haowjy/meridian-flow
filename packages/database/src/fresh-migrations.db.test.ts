@@ -131,13 +131,13 @@ if (!enabled || !databaseUrl) {
           SELECT indexname, indexdef
           FROM pg_indexes
           WHERE schemaname = 'public'
-            AND indexname = 'document_branches_active_work_draft_by_work'
+            AND indexname = 'document_branches_active_work_draft_by_draft'
         `;
         expect(indexes).toEqual([
           {
-            indexname: "document_branches_active_work_draft_by_work",
+            indexname: "document_branches_active_work_draft_by_draft",
             indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_work ON public.document_branches USING btree (work_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
+              "CREATE INDEX document_branches_active_work_draft_by_draft ON public.document_branches USING btree (draft_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {

@@ -60,4 +60,15 @@ export interface DocumentLockOptions {
   /** Maximum wait to acquire the lock. Callback duration is not timed. */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * The host branch a staged thread-peer write was pinned to (`InteractionContext.branchId`):
+   * the coordinator resolves exactly this one and never provisions another.
+   */
+  pinnedBranchId?: string;
+  /**
+   * A host lock the caller already holds over this document (a reply's save takes its
+   * branches' locks before its transaction); the coordinator runs under it instead of
+   * acquiring its own. Opaque to this package.
+   */
+  lease?: unknown;
 }

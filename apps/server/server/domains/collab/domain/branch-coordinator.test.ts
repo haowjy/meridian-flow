@@ -39,6 +39,7 @@ function branchSnapshot(input: {
     documentId: DOCUMENT_ID,
     kind: input.kind ?? "work_draft",
     upstreamBranchId: input.upstreamBranchId ?? null,
+    draftId: "draft-1",
     workId: WORK_ID,
     threadId: input.kind === "thread_peer" ? THREAD_ID : null,
     status: "active",

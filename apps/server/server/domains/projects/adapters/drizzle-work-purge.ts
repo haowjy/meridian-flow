@@ -5,8 +5,8 @@ import { workPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
-  documentBranches,
   documents,
+  drafts,
   eventJournal,
   projectResults,
   promptBakes,
@@ -142,7 +142,7 @@ export function createDrizzleWorkPurger(deps: {
         }),
       ];
 
-      // Results and journal history restrict conversation deletion; branches restrict Work deletion.
+      // Results and journal history restrict conversation deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {
         await activeDb
@@ -157,7 +157,8 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
-      await activeDb.delete(documentBranches).where(eq(documentBranches.workId, workId));
+      // F10: a purged Work's drafts go with it; their branches, tree rows and settlements cascade.
+      await activeDb.delete(drafts).where(eq(drafts.originWorkId, workId));
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))

@@ -62,7 +62,9 @@ export function createWorkDraftReviewService(input: {
   ): Promise<ReviewableDraft[]> {
     const draftOnlyDocumentIds = await createdDocumentIds(workId);
     const drafts: ReviewableDraft[] = [];
-    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
+    const draftId = await input.draftTree.activeDraftId(workId);
+    const pending = draftId ? await input.workDraftPending.list(draftId) : [];
+    for (const { branch, rows } of pending) {
       const uri = await input.resolveDocumentUri(branch.documentId);
       drafts.push({
         draftId: branch.branchId,
@@ -102,15 +104,18 @@ export function createWorkDraftReviewService(input: {
           markdown: await input.documents.serializeDocument(command.documentId, liveDoc, LIVE_VIEW),
         }),
       );
+      // The Work's active draft owns the branch; a Work with none has nothing to preview.
+      const activeDraftId = await input.draftTree.activeDraftId(command.workId);
+      if (!activeDraftId) throw new Error("draft_not_found");
       const liveDoc = createCollabYDoc({ gc: false });
       Y.applyUpdate(liveDoc, liveState.state);
       let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
       try {
         let branch: { branchId: string; generation: number; doc: Y.Doc };
         try {
-          branch = await input.branches.resolveWorkDraftBranchForWork({
+          branch = await input.branches.resolveDraftBranch({
             documentId: command.documentId,
-            workId: command.workId,
+            draftId: activeDraftId,
             liveDoc,
           });
         } catch (cause) {
@@ -123,9 +128,9 @@ export function createWorkDraftReviewService(input: {
             code: "branch_corrupt_reset",
             message: "Review state was repaired from the live document.",
           };
-          branch = await input.branches.resolveWorkDraftBranchForWork({
+          branch = await input.branches.resolveDraftBranch({
             documentId: command.documentId,
-            workId: command.workId,
+            draftId: activeDraftId,
             liveDoc,
           });
         }
