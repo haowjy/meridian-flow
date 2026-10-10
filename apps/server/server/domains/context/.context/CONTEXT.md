@@ -55,12 +55,15 @@ with content it discovers the candidate holding nothing, takes its live lease,
 and admits the content on a clone inside the reveal's transaction
 (`writeCollabMarkdownHeld`), applied to the warm room after commit. Create by id
 (`revealDocumentId`, link Create on an "in a draft" link) reveals only a hidden
-document of this project, locking its physical source; any other id conflicts
-and never mints. `documentId` is a mint (an upload's reservation, an untitled
+document of this project, locking its physical source; the identity lookup is
+project-scoped and never needs the destination source to exist. Any other id
+conflicts and never mints. `documentId` is a mint (an upload's reservation, an untitled
 create's client id). `retractCreate` reverses a create for a rolled-back reply
 or a failed create write: the router deletes a live create; a draft placement
 ends the draft's use unless another thread's committed text makes it stand, and
-collab retracts the draft's branch and retires its rooms and caches.
+collab deletes that Work's draft branch and its peers, then retires exactly those
+peers' rooms and thread state; another Work's peers on a shared hidden document
+are untouched.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 
