@@ -36,10 +36,10 @@ import {
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
 } from "../ports/link-ahead-registry.js";
+import type { DocumentCoordinates } from "../tree/tree-addresses.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   currentDocumentAddress,
-  type DocumentCoordinates,
   documentAt,
   listsThroughLiveManifest,
   resolveCanonicalAddress,

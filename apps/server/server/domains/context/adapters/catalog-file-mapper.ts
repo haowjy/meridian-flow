@@ -11,6 +11,14 @@ import { documentAliases } from "../document-metadata.js";
 
 const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
 
+/** Bytes in object storage rather than a Yjs document. */
+export function isStorageBackedDocument(document: {
+  fileType: string;
+  storageUrl: string | null;
+}): boolean {
+  return document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+}
+
 export type CatalogFileRow = {
   id: string;
   contextSourceId: string;
@@ -49,7 +57,7 @@ export function mapAuthoritativeFile(input: {
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...input.parentPath, filename];
   const classification = classifyFiletype(document.fileType);
-  const storageBacked = document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+  const storageBacked = isStorageBackedDocument(document);
   const persistedClassification =
     !storageBacked && classification.kind === "tracked"
       ? {
