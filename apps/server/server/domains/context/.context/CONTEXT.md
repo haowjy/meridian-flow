@@ -170,12 +170,21 @@ router resolves to exact project-scoped Work authority before dispatch.
   implements collab's `DocumentLinkScopes` port. Each snapshot resolves its
   project, owner and personal project once (by project, document or thread)
   and then loads only what each `prepare` names, skipping keys it already
-  holds: settlements by ahead id, rows by id, and every row at an exact or
-  extension-omitted address, each with the canonical URI its folder chain
-  spells now (deleted rows included). Readability comes from the file
-  policy's `listAccess` for the snapshot's reader; presence from the selected
-  live/draft SQL tree view. Images are documents: the `asset:` rule reads the same rows. Nothing is cached between
-  operations. ContextFS search binds its source document IDs to one snapshot;
+  holds: an ahead ref's meanings, rows by id, and every row at an exact or
+  extension-omitted address (in a draft view, also whatever that draft has
+  at the exact address). Each view (`live` or `draft:<draftId>`) reads the
+  tree view's `identityStatus`: where a document sits in that view, and for
+  a hidden one, `presence: "draft"` with the draft it reads "in a draft" in
+  (the reader's own if it uses it, else the oldest active one) and that
+  draft's path; a document that draft created is an ordinary occupant only
+  in its own view. An ahead ref reads, per holder, the holder's own binding
+  (`link_ahead_holder_bindings`, written by Apply), then the view's draft
+  settlement, then the live settlement; a reader door with no holder reads the
+  last two. `holderBinding` exposes the first, for copies (§10.6), and
+  `pinHolder` names the holder a reader door reads bindings for. Readability
+  comes from the file policy's `listAccess`, a hidden row's facts from the
+  draft it reads in. Images are documents: the `asset:` rule reads the same
+  rows. Nothing is cached between operations. ContextFS search binds its source document IDs to one snapshot;
   each chapter's read prepares its own document into it. The factory must
   receive the same scope instance as collab. Scope rules live in collab's
   [document authority notes](../../collab/.context/document-authority-and-schema.md).
@@ -210,7 +219,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant live document ID (a draft's hidden contents split off first and are never named); deleting an empty folder returns none. A move is the overwrite victim, then `tree/node-moves.ts`'s `moveNodes`. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (independent root transaction: each named draft `FOR SHARE`, then namespace keys only; with a `draftId`, idempotent per (ref, draft), so a ref already registered still settles on the draft's single occupant when it has no live settlement), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 
 ## Live folder operations and hidden nodes
@@ -304,6 +313,18 @@ A draft's hidden create is no arrival: it settles unsettled refs at its address
 in the draft only (`link_ahead_draft_settlements`). A reveal is an arrival at
 the creator's path, through the creation aggregate. Deleted rows are not
 arrivals.
+
+What a ref means in a draft has one writer, `adapters/link-ahead-draft-settlements.ts`,
+which owns the registry's address predicate: a draft's create settles the refs
+waiting at its address, the registry settles a ref registered with a `draftId`,
+and closing a draft or ending its use of a create drops what it meant. Refs in
+a draft's text register with its id: an agent's mint carries its holder's view
+(`AheadMint.view`); a writer's link typed in the review room registers after the
+room admits it, debounced; and Apply's prerequisite registers every ref in the
+branches it publishes before staging (collab's `draft-branch-ahead-registration.ts`).
+Apply binds each published holder's refs (`link_ahead_holder_bindings`) from the
+meanings it staged; a binding is never deleted, and one naming a tombstone reads
+gone.
 
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to

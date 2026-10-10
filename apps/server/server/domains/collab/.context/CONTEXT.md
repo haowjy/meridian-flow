@@ -69,6 +69,18 @@ policy: turn trail work never pushes, and a due work row settles `no_op`
 (`adapters/drizzle-turn-trail-work.ts`); a push or discard completes it
 through the journal trigger.
 
+A model call's link view is resolved where the pool routes it
+(`thread-peer-core-pool.ts`): a draft destination reads in its Work's active
+draft (`{ kind: "draft", draftId }`), a Work with no draft yet reads live, and a
+reply's pinned document keeps the view of its first write; `viewFor` and
+`scopeFor` stay synchronous and never resolve drafts. Refs in a draft's text are
+registered in the draft (`draft-branch-ahead-registration.ts`): a writer's
+review-room edit schedules it after admission, debounced like pulls, and Apply
+calls `prepareDraftLinkPublication` before staging, which registers the cut it
+read and returns it for staging to fence. A model copy out of a holder carries
+`doc:<id>` for each ref the holder's own binding answers
+(`LinkBinder.rebindHolderBoundRefs`).
+
 ## Pull and provisioning transactions
 
 Effective reads, and therefore `DocumentRevisions.current`, may run inside a
