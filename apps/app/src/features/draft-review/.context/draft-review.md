@@ -212,7 +212,9 @@ closes despite a stale row at R; a row is not a veto on that read.
 The observation carries cached preview and pending writer evidence, and the reducer decides
 against R, so a proposal that has not re-entered yet still counts as the draft being alive. A preview that lists changes
 also gets read afresh; a genuine external close (no proposal at R or above) ends the
-review (a draft-only missing read instead keeps its error destination).
+review. A draft-only destination whose preview read answers `gone` or 404 keeps its
+error destination instead; a list omission after a confirmed Discard (the server's
+empty reset) closes its tab as in remote disposition below.
 A terminal session, lost authorization or failed rebuild uses the same typed
 path with a terminal outcome: it cannot deliver through that session and keeps
 the existing live exit or draft-only error. Other fetch failures remain room errors.
