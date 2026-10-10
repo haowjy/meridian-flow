@@ -3,7 +3,12 @@
  * suites can interleave a reply's save with a draft's close. Production never installs
  * one; every point is a no-op then.
  */
-export type CollabHookPoint = "save.afterWorkLock" | "discard.afterLeases";
+const COLLAB_HOOK_POINTS = ["save.afterWorkLock", "discard.afterLeases"] as const;
+export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
+
+export function isCollabHookPoint(point: string): point is CollabHookPoint {
+  return (COLLAB_HOOK_POINTS as readonly string[]).includes(point);
+}
 
 const hooks = new Map<CollabHookPoint, () => Promise<void>>();
 

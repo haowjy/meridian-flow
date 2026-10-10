@@ -1,10 +1,15 @@
 /**
- * Controlled interleaving for DB tests (contract §16.1): run `a` until it reaches a tree
- * hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
- * Depends only on the tree's hook registry and the database's lock view.
+ * Controlled interleaving for DB tests (contract §16.1): run `a` until it reaches a tree or
+ * collab hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
+ * Depends only on the hook registries and the database's lock view.
  */
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
+import {
+  type CollabHookPoint,
+  isCollabHookPoint,
+  setCollabHook,
+} from "../domains/collab/domain/collab-test-hooks.js";
 import { setTreeHook, type TreeHookPoint } from "../domains/context/tree/test-hooks.js";
 import { currentDrizzleDb, isInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 
@@ -26,17 +31,19 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
 }
 
 /**
- * `b` runs to completion or to its first wait on `a` (at most five seconds) before `a` is
- * released. `bWaited` is true when a session that wasn't already waiting on `a` started
- * waiting on a lock `a`'s transaction holds. At a hook outside any transaction `a` holds
- * nothing, so nothing waits on it.
+ * `b` runs to completion or to its first wait on `a` (at most `waitMs`, five seconds by
+ * default) before `a` is released. `bWaited` is true when a session that wasn't already
+ * waiting on `a` started waiting on a lock `a`'s transaction holds. At a hook outside any
+ * transaction `a` holds no row lock, so nothing waits on it there; `bBlocked` is true when
+ * `b` had not settled at release, which is how a wait on an in-process lease shows.
  */
 export async function interleave<A, B>(
   db: Database,
   a: () => Promise<A>,
-  at: TreeHookPoint,
+  at: TreeHookPoint | CollabHookPoint,
   b: () => Promise<B>,
-): Promise<{ a: Settled<A>; b: Settled<B>; bWaited: boolean }> {
+  options: { waitMs?: number } = {},
+): Promise<{ a: Settled<A>; b: Settled<B>; bWaited: boolean; bBlocked: boolean }> {
   let reached!: (holder: number | null) => void;
   const atHook = new Promise<number | null>((resolve) => {
     reached = resolve;
@@ -45,7 +52,7 @@ export async function interleave<A, B>(
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const remove = setTreeHook(at, async () => {
+  const pause = async () => {
     // Only `a`'s first arrival waits; `b` passes the same point freely.
     remove();
     const [row] = isInDrizzleTransaction()
@@ -53,7 +60,8 @@ export async function interleave<A, B>(
       : [];
     reached(row ? Number(row.pid) : null);
     await gate;
-  });
+  };
+  const remove = isCollabHookPoint(at) ? setCollabHook(at, pause) : setTreeHook(at, pause);
   try {
     const aRun = settle(a);
     const first = await Promise.race([atHook.then((holder) => ({ holder })), aRun]);
@@ -61,7 +69,7 @@ export async function interleave<A, B>(
     const { holder } = first;
     const before = holder === null ? new Set<number>() : await blockedBy(db, holder);
     const bRun = settle(b);
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + (options.waitMs ?? 5_000);
     let bDone = false;
     void bRun.then(() => {
       bDone = true;
@@ -75,8 +83,9 @@ export async function interleave<A, B>(
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    const bBlocked = !bDone;
     release();
-    return { a: await aRun, b: await bRun, bWaited };
+    return { a: await aRun, b: await bRun, bWaited, bBlocked };
   } finally {
     remove();
     release();
@@ -91,7 +100,7 @@ export async function race<K extends string>(
   db: Database,
   runs: Record<K, () => Promise<unknown>>,
   first: K,
-  at: TreeHookPoint,
+  at: TreeHookPoint | CollabHookPoint,
 ): Promise<{ bWaited: boolean; by: Record<K, Settled<unknown>> }> {
   const [second] = (Object.keys(runs) as K[]).filter((name) => name !== first);
   if (second === undefined) throw new Error("A race needs two runs");
