@@ -69,7 +69,13 @@ async function restoreLiveTab(
   const validated = (await validateServerRoute(projectId, route)).tab;
   if (!validated || validated.kind === "new") return null;
   const scope = contextCatalogScope(projectId, validated.scheme, validated);
-  if (scope) await resources.acquireCatalog(projectId, scope);
+  if (scope) {
+    const catalog = await resources.acquireCatalog(projectId, scope);
+    // Availability can still resolve a discarded draft's reserved document ID.
+    // Only catalog membership proves a server-backed tab is live, including
+    // a saved draft-only tab that has already lost its review address.
+    if (catalog.entries.get(validated.documentId)?.kind !== "file") return null;
+  }
   const current = await resources.readProjection(projectId);
   const next = projectResourceTab(projectId, validated, current.records, current.folders);
   if (next.kind === "removed" || next.kind === "terminal") return null;

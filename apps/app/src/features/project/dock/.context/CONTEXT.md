@@ -60,7 +60,9 @@ and validates live identity (remote Apply restores live, Discard restores nothin
 A rejected drafts read leaves the candidate hidden. Otherwise it waits for the
 replica projection. It projects resource identity, rejects terminal/removed resources and missing local Untitleds, and
 resolves server-backed documents by stable ID with the Editor availability
-validator. Acquiring the resolved catalog before a final projection keeps a
+validator. The resolved catalog must contain the stable ID as a file before admitting a
+server-backed tab, even a review-less draft-only snapshot: availability alone
+can still resolve a discarded draft’s reserved document. Acquiring that catalog before a final projection keeps a
 rename/move and optimistic namespace intents coherent. Validation failure leaves
 only a hidden candidate, never an error-flashing document. `restore(expected, document)`
 only installs the still-current candidate and never changes the claim revision;

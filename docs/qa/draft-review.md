@@ -436,7 +436,11 @@ the review’s Work/draft address. Only the presenting host renders review.
 
 On Chat close the retained Editor tab, reload, and verify a dock-only review
 returns without a live-body or error frame. Apply and Discard remotely from a
-second tab; the dock promotes live or returns to Recent. Check dock Next draft
+second tab, each twice in fresh Works; the dock promotes live or returns to Recent,
+and reload preserves that result. Check no project boundary or maximum-depth
+console error occurs when an empty active preview/reset arrives before the
+settlement catalog. Hold that catalog read to widen the ordering, then release
+it; list omission must not re-admit the unchanged dock address. Check dock Next draft
 and auto-advance stay on Chat, Back to live survives reload, Close only closes
 the dock, and collapse/expand retains review. Capture screenshots with
 `page.screenshot()`, fresh API readback and console errors.

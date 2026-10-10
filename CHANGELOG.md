@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.
+
 - Development: name the shared draft-review scope for the presented document, not the Editor.
 
 - Keep pending writer text gold across remote collaborative edits and stale or partial draft-review refreshes.

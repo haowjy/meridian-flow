@@ -1,5 +1,6 @@
 /** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent. */
 import {
+  type CatalogCacheView,
   emptyCatalogView,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
@@ -80,9 +81,29 @@ function resources(snapshot = empty) {
     readWorkDrafts: vi.fn(async () => []),
     resources: {
       readProjection: vi.fn(async () => snapshot),
-      acquireCatalog: vi.fn(async () =>
-        emptyCatalogView({ kind: "project", projectId: "project" }),
-      ),
+      acquireCatalog: vi.fn(async (): Promise<CatalogCacheView> => {
+        const view = emptyCatalogView({ kind: "project", projectId: "project" });
+        return {
+          ...view,
+          entries: new Map([
+            [
+              "doc",
+              {
+                ...renamedAvailability.resolutions[0].entry,
+                kind: "file" as const,
+                scope: view.scope,
+                sourceId: "manuscript",
+                parentId: "manuscript",
+                aliases: [],
+                provisionalName: false,
+                editable: true as const,
+                filetype: "markdown" as const,
+                schemaType: "document" as const,
+              },
+            ],
+          ]),
+        };
+      }),
     },
   };
 }
@@ -358,7 +379,8 @@ it("reloads a draft-only review from its Work list, without catalog membership",
       tabInstanceToken: "old",
     },
   });
-  const candidate = second.getState().restoring!;
+  const candidate = second.getState().restoring;
+  if (!candidate) throw new Error("Expected a saved dock candidate");
   const replica = resources();
   const restored = await restoreDockDocument(candidate, {
     ...replica,
@@ -412,6 +434,26 @@ it("keeps a manuscript review while validating its renamed live identity", async
     review: null,
     tab: { documentId: "doc", path: "/New.md" },
   });
-  availability.mockResolvedValue({ resolutions: [{ kind: "deleted", documentId: "doc" }] });
+  // Discard leaves a reserved document ID that availability can still resolve,
+  // but neither a review-less draft-only snapshot nor a live-looking ghost may restore.
+  replica.resources.acquireCatalog.mockResolvedValue(
+    emptyCatalogView({ kind: "project", projectId: "project" }),
+  );
   expect(await restoreDockDocument({ ...document, review }, replica)).toBeNull();
+  expect(
+    await restoreDockDocument(
+      {
+        ...document,
+        tab: {
+          ...tab,
+          draftOnly: true,
+          reviewWorkId: "work",
+          reviewDraftId: "draft",
+          tabInstanceToken: "draft-instance",
+        },
+      },
+      replica,
+    ),
+  ).toBeNull();
+  expect(await restoreDockDocument(document, replica)).toBeNull();
 });
