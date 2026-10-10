@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 /** Rendered Composer send/stop behavior while an agent run is live. */
-import { act } from "react";
+import { type CatalogCacheView, emptyCatalogView } from "@meridian/resource-replica";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Composer, type ComposerSubmitEnvelope, type ComposerSubmitOutcome } from "./Composer";
+import {
+  Composer,
+  type ComposerHandle,
+  type ComposerSubmitEnvelope,
+  type ComposerSubmitOutcome,
+} from "./Composer";
 import type { ComposerChatCommand } from "./command";
 import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 
@@ -124,4 +130,134 @@ describe("Composer chat verbs", () => {
     await pressEnter();
     expect(onSubmit).toHaveBeenCalledOnce();
   });
+});
+
+it("clears accepted presentation without publishing an empty draft over another pane's writing", async () => {
+  let persistedWords = "New writing in another pane";
+  await act(() =>
+    root.render(
+      <Composer
+        initialDraft={draft("Submitted words")}
+        onDraftChange={(change) => {
+          persistedWords = change.text;
+        }}
+        onSubmit={(envelope) => ({
+          kind: "accepted",
+          submissionId: envelope.submissionId,
+          acceptedRevision: envelope.acceptedRevision,
+        })}
+      />,
+    ),
+  );
+  await pressEnter();
+  expect(editorElement()?.textContent).toBe("");
+  expect(persistedWords).toBe("New writing in another pane");
+});
+
+it("leaves rejected words visible without owning the lifecycle transfer", async () => {
+  const onDraftChange = vi.fn();
+  await act(() =>
+    root.render(
+      <Composer
+        initialDraft={draft("Keep these words")}
+        onDraftChange={onDraftChange}
+        onSubmit={(envelope) => ({
+          kind: "rejected",
+          submissionId: envelope.submissionId,
+          acceptedRevision: envelope.acceptedRevision,
+        })}
+      />,
+    ),
+  );
+  await pressEnter();
+  expect(editorElement()?.textContent).toBe("Keep these words");
+  expect(onDraftChange).not.toHaveBeenCalled();
+});
+
+it("does not prepend a rejected submission to the live draft edited during admission", async () => {
+  const ref = createRef<ComposerHandle>();
+  let reject: ((outcome: ComposerSubmitOutcome) => void) | undefined;
+  let sent: ComposerSubmitEnvelope | undefined;
+  await act(() =>
+    root.render(
+      <Composer
+        ref={ref}
+        initialDraft={draft("Original")}
+        onSubmit={(envelope) => {
+          sent = envelope;
+          return new Promise((resolve) => {
+            reject = resolve;
+          });
+        }}
+      />,
+    ),
+  );
+  await pressEnter();
+  await act(() => {
+    ref.current?.restoreSnapshot(draft("Original continued"));
+  });
+  await act(async () => {
+    if (!sent || !reject) throw new Error("Send was not dispatched");
+    reject({
+      kind: "rejected",
+      submissionId: sent.submissionId,
+      acceptedRevision: sent.acceptedRevision,
+    });
+  });
+  expect(editorElement()?.textContent).toBe("Original continued");
+});
+
+it("drops a restored missing reference only after successful catalog acquisition, keeping prose", async () => {
+  const accountId = "01900000-0000-7000-8000-000000000002";
+  const doc = plainComposerDoc("Keep the scene ");
+  doc.content?.[0]?.content?.push({
+    type: "composerReference",
+    attrs: {
+      reference: {
+        documentId: "01900000-0000-7000-8000-000000000001",
+        uri: "manuscript://removed.md",
+        authority: { kind: "project", projectId: accountId },
+        fileType: "markdown",
+        label: "removed.md",
+        imageCapable: false,
+        upload: null,
+      },
+    },
+  });
+  let acquire: ((view: CatalogCacheView) => void) | undefined;
+  const onDraftChange = vi.fn();
+  await act(() =>
+    root.render(
+      <Composer
+        initialDraft={serializeComposerDraft(doc).draft}
+        onSubmit={(envelope) => ({
+          kind: "accepted",
+          submissionId: envelope.submissionId,
+          acceptedRevision: envelope.acceptedRevision,
+        })}
+        onDraftChange={onDraftChange}
+        referenceCatalog={{
+          label: "References",
+          openContext: () => ({ warmScopes: [] }),
+          port: {
+            status: () => "loading",
+            read: () => null,
+            subscribe: () => () => {},
+            acquire: () =>
+              new Promise((resolve) => {
+                acquire = resolve;
+              }),
+          },
+        }}
+      />,
+    ),
+  );
+  expect(host.querySelector("[data-composer-reference]")?.textContent).toBe("removed.md");
+  await act(async () => {
+    if (!acquire) throw new Error("Catalog was not acquired");
+    acquire(emptyCatalogView({ kind: "project", projectId: accountId }));
+  });
+  expect(host.querySelector("[data-composer-reference]")).toBeNull();
+  expect(editorElement()?.textContent).toBe("Keep the scene ");
+  expect(onDraftChange.mock.calls.at(-1)?.[0].text).toBe("Keep the scene ");
 });

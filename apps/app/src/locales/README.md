@@ -1,20 +1,21 @@
 # `src/locales/` — Lingui i18n
 
 The app uses [LinguiJS](https://lingui.dev) v6 for runtime i18n. Today the
-only locale is **en-US**; the infrastructure is set up so a new locale is a
-drop-in change.
+supported locales are **English (`en`)** and **Chinese (`zh`)**. New locales
+are registered at the catalog seam and translated in their source catalogs.
 
 ## Layout
 
 ```
 src/locales/
 ├── README.md            ← you are here
-└── en/
-    ├── messages.po      ← source-of-truth catalog (translators edit this)
-    └── messages.ts      ← compiled runtime catalog (loaded by the app)
+├── en/
+│   ├── messages.po      ← source-of-truth catalog (translators edit this)
+│   └── messages.ts      ← compiled runtime catalog (loaded by the app)
+└── zh/                  ← Chinese source and compiled catalogs
 ```
 
-Both files are committed so a fresh clone works without an extra build step.
+Both catalogs and their compiled outputs are committed so a fresh clone works without an extra build step.
 
 ## How extraction works
 
@@ -72,7 +73,7 @@ beyond a regenerated header timestamp.
    ```
    This creates `src/locales/de/messages.po` populated with empty
    translation slots.
-3. Translate `src/locales/de/messages.po` (in-house or via your TMS).
+3. Provide real translations in `src/locales/de/messages.po` (in-house or via your TMS).
 4. Compile the runtime catalog:
    ```bash
    pnpm --filter @meridian/app lingui:compile
@@ -89,16 +90,14 @@ string already routes through a Lingui macro.
 
 ## Where the locale-resolution seam lives
 
-`src/lib/i18n.ts` exports `resolveLocale(request)`. Today it always returns
-`"en"`. When you wire up multi-locale support, that is the single function to
-change:
-
-- Read a cookie / `Accept-Language` header / URL segment on the server.
-- Validate against the `CATALOGS` keys.
-- Fall back to `DEFAULT_LOCALE` for anything unknown.
-
-Keep `resolveLocale` pure and synchronous so SSR + client agree on the active
-locale during hydration.
+`src/lib/i18n.ts` resolves the first browser locale from `?locale=`, the
+account-stamped first-paint cache, browser language and finally English. Server
+rendering begins in English. `AccountSettingsProvider` reconciles the account's
+language after load; a valid query locale is an initial browser-only override.
+An explicit language choice takes over for the current account session.
+Language changes belong to the shared account settings owner, not independent
+localStorage writes. Supported values come from `@meridian/contracts/preferences`
+and must have catalogs in `CATALOGS`.
 
 ## Date / number formatting
 

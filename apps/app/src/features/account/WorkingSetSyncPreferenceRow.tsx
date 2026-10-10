@@ -11,11 +11,11 @@ import { useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { useSharedWorkingSetSyncPreference } from "./WorkingSetSyncPreferenceProvider";
+import { useSharedAccountSettings } from "./AccountSettingsProvider";
 
 export function WorkingSetSyncPreferenceRow() {
   const router = useRouter();
-  const preference = useSharedWorkingSetSyncPreference();
+  const preference = useSharedAccountSettings().preference("workingSetSyncEnabled");
   const [retrying, setRetrying] = useState(false);
 
   async function retryUnavailable() {
@@ -32,7 +32,7 @@ export function WorkingSetSyncPreferenceRow() {
       <div className="flex items-center justify-between gap-6">
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">
-            <Trans>Resume where I left off on any device</Trans>
+            <Trans>Resume my documents on any device</Trans>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {!preference.available ? (
@@ -40,7 +40,7 @@ export function WorkingSetSyncPreferenceRow() {
                 Your saved preference is unavailable. Sync is paused until retry succeeds.
               </Trans>
             ) : (
-              <Trans>Reopens your last document and chat when you switch devices</Trans>
+              <Trans>Reopens the documents you had open when you switch devices.</Trans>
             )}
           </p>
         </div>
@@ -58,7 +58,7 @@ export function WorkingSetSyncPreferenceRow() {
             checked={preference.value}
             aria-busy={preference.pending || undefined}
             onCheckedChange={preference.change}
-            aria-label={t`Resume where I left off on any device`}
+            aria-label={t`Resume my documents on any device`}
           />
         )}
       </div>

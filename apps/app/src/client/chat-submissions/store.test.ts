@@ -1,5 +1,11 @@
 /** Durable unresolved-submission journal codec + account fence. */
+
 import { describe, expect, it } from "vitest";
+import { ComposerSessionDraft } from "@/client/composer-drafts";
+import {
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "@/components/app/composer/composer-document";
 import {
   CHAT_SUBMISSIONS_SCHEMA_VERSION,
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
@@ -55,14 +61,18 @@ describe("device chat submission journal", () => {
     const { storage, journal } = bound();
     storage.setItem(
       `${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:bad-version`,
-      JSON.stringify({ ...existingThread({ submissionId: "bad-version" }), schemaVersion: 99 }),
+      JSON.stringify({
+        payload: existingThread({ submissionId: "bad-version" }),
+        version: 99,
+        accountId: "account",
+      }),
     );
     storage.setItem(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:corrupt`, "{not json");
     storage.setItem(
       `${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:wrong-account`,
       JSON.stringify({
-        ...existingThread({ submissionId: "wrong-account" }),
-        schemaVersion: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+        payload: existingThread({ submissionId: "wrong-account" }),
+        version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
         accountId: "someone-else",
       }),
     );
@@ -108,4 +118,37 @@ describe("device chat submission journal", () => {
     expect(journal.retire("account", "sub-1", journal.epoch)).toBe(true);
     expect(journal.entries()).toEqual([]);
   });
+});
+
+it("two journal owners preserve the rejected fingerprint while drafts remain tab-local", () => {
+  const shared = memory();
+  const tabA = memory();
+  const tabB = memory();
+  const a = new DeviceChatSubmissionJournal(shared);
+  const b = new DeviceChatSubmissionJournal(shared);
+  a.setUser("account");
+  b.setUser("account");
+  const draftA = new ComposerSessionDraft("account", { kind: "chat", id: "thread-1" }, () => tabA);
+  const draftB = new ComposerSessionDraft("account", { kind: "chat", id: "thread-1" }, () => tabB);
+  const rejected = serializeComposerDraft(plainComposerDoc("Rejected words")).draft;
+  const next = serializeComposerDraft(plainComposerDoc("New tab B writing"));
+  draftA.updateDraft({ text: "Rejected words", snapshot: rejected });
+  a.record("account", existingThread({ text: "Rejected words", draft: rejected }));
+  draftA.handoffSubmitted(rejected);
+  draftB.updateDraft({ text: next.text, snapshot: next.draft });
+  const seen = b.get("sub-1") as ExistingThreadChatSubmission;
+  expect(draftB.restoreRejected(rejected)).toBe(false);
+  expect(b.record("account", { ...seen, state: "rejected" })).toBe(true);
+  expect(a.get("sub-1")).toMatchObject({
+    state: "rejected",
+    draft: rejected,
+    text: "Rejected words",
+  });
+  expect(
+    new ComposerSessionDraft("account", { kind: "chat", id: "thread-1" }, () => tabA).initialDraft,
+  ).toBeNull();
+  expect(
+    new ComposerSessionDraft("account", { kind: "chat", id: "thread-1" }, () => tabB).initialDraft
+      ?.doc,
+  ).toEqual(next.draft.doc);
 });

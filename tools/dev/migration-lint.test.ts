@@ -52,6 +52,64 @@ describe("migration lint", { timeout: 15_000 }, () => {
     expect(baseline.output).toContain("No issues found");
   });
 
+  it("requires a bounded lock for retired columns, without requiring an old server version", async () => {
+    const drop = 'ALTER TABLE "obsolete_preferences" DROP COLUMN "unused";';
+    const unsafe = await lintMigration("0001_retire.sql", drop, "--strict");
+    expect(unsafe.exitCode).toBe(1);
+    expect(unsafe.output).toContain("[DROP_COLUMN]");
+    const safe = await lintMigration(
+      "0001_retire.sql",
+      `SET LOCAL lock_timeout = '2s';\n${drop}`,
+      "--strict",
+    );
+    expect(safe.exitCode).toBe(0);
+    expect(
+      (
+        await lintMigration(
+          "0001_retire.sql",
+          `${drop}\nSET LOCAL lock_timeout = '2s';`,
+          "--strict",
+        )
+      ).exitCode,
+    ).toBe(1);
+    // A commented timeout or a zero timeout must not bless unbounded locking.
+    for (const prefix of [
+      "-- SET LOCAL lock_timeout = '2s';\n",
+      "SET LOCAL lock_timeout = '0';\n",
+      "SET LOCAL lock_timeout = '20s';\n",
+      "-- migration: no-transaction\nSET LOCAL lock_timeout = '2s';\n",
+    ]) {
+      expect((await lintMigration("0001_retire.sql", prefix + drop, "--strict")).exitCode).toBe(1);
+    }
+  });
+
+  it("invalidates a bounded timeout after overrides or transaction boundaries", async () => {
+    const drop = "ALTER TABLE obsolete DROP COLUMN unused;";
+    for (const override of [
+      "RESET lock_timeout;",
+      "RESET ALL;",
+      "SET lock_timeout = '0';",
+      "SET LOCAL lock_timeout TO '0';",
+      "SET SESSION lock_timeout TO DEFAULT;",
+      "COMMIT;",
+      "ROLLBACK;",
+      "END;",
+      "SAVEPOINT before_timeout; ROLLBACK TO before_timeout;",
+    ]) {
+      const result = await lintMigration(
+        "0001_override.sql",
+        `SET LOCAL lock_timeout = '2s';\n${override}\n${drop}`,
+        "--strict",
+      );
+      expect(result.exitCode, override).toBe(1);
+      expect(result.output).toContain("[DROP_COLUMN]");
+    }
+    expect(
+      (await lintMigration("0001_safe.sql", `SET LOCAL lock_timeout TO '3s';\n${drop}`, "--strict"))
+        .exitCode,
+    ).toBe(0);
+  });
+
   it("accepts a nullable add followed by a backfill and NOT NULL constraint", async () => {
     const result = await lintMigration(
       "0001_safe.sql",

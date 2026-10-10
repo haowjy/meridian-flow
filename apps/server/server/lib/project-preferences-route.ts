@@ -2,11 +2,9 @@
  * Project preferences route core: parses the locked preference PUT body and applies project ownership before reading or writing preferences.
  * Kept beside routes so HTTP handlers stay thin while tests can exercise authz-independent route behavior without booting Nitro.
  */
-import {
-  type ProjectPreferencesResponse,
-  THREAD_GROUP_BY_VALUES,
-  type ThreadGroupBy,
-  type UpdateProjectPreferencesRequest,
+import type {
+  ProjectPreferencesResponse,
+  UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
 import { createError } from "nitro/h3";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
@@ -22,10 +20,6 @@ export interface ProjectPreferencesRouteInput {
   userId: string;
 }
 
-function isThreadGroupBy(value: unknown): value is ThreadGroupBy {
-  return (THREAD_GROUP_BY_VALUES as readonly string[]).includes(String(value));
-}
-
 export function parseUpdateProjectPreferencesRequest(
   raw: unknown,
 ): UpdateProjectPreferencesRequest {
@@ -35,28 +29,8 @@ export function parseUpdateProjectPreferencesRequest(
 
   const body = raw as Record<string, unknown>;
   const parsed: UpdateProjectPreferencesRequest = {};
-
-  if (body.threadGroupBy !== undefined) {
-    if (!isThreadGroupBy(body.threadGroupBy)) {
-      throw createError({
-        statusCode: 400,
-        message: "`threadGroupBy` must be 'work', 'date', or 'flat'",
-      });
-    }
-    parsed.threadGroupBy = body.threadGroupBy;
-  }
-
-  if (body.pinnedThreadIds !== undefined) {
-    if (
-      !Array.isArray(body.pinnedThreadIds) ||
-      body.pinnedThreadIds.some((threadId) => typeof threadId !== "string")
-    ) {
-      throw createError({
-        statusCode: 400,
-        message: "`pinnedThreadIds` must be an array of strings",
-      });
-    }
-    parsed.pinnedThreadIds = [...body.pinnedThreadIds];
+  if (Object.keys(body).some((key) => key !== "autoResume")) {
+    throw createError({ statusCode: 400, message: "Unknown project preference" });
   }
 
   if (body.autoResume !== undefined) {

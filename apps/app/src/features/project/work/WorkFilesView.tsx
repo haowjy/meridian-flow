@@ -10,13 +10,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import { useTreeExpansion } from "../context/use-tree-expansion";
 import { RuledList, type RuledRow } from "../RuledList";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkDrafts } from "./WorkDrafts";
@@ -83,7 +84,6 @@ export function WorkFilesView({
   files: WorkFiles;
 }) {
   const { scratch, intake } = files;
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const scratchDelete = useDeleteConfirmation({ projectId, workId: work.id, scheme: "scratch" });
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
@@ -92,23 +92,34 @@ export function WorkFilesView({
           .children(scratchRoot)
           .filter((node): node is CatalogDirectory => node.kind === "dir")
       : [];
+  const folderIds = useMemo(
+    () =>
+      scratch.catalog && scratch.isComplete
+        ? scratch.catalog
+            .children(scratch.catalog.root.entryId)
+            .filter((node) => node.kind === "dir")
+            .map((node) => node.entryId)
+        : null,
+    [scratch.catalog, scratch.isComplete],
+  );
+  const { isExpanded, toggleEntry } = useTreeExpansion(
+    projectId,
+    `work-files:scratch:${work.id}`,
+    folderIds,
+  );
+  const expandedPaths = scratchFolders
+    .filter((folder) => isExpanded(folder.entryId))
+    .map((folder) => folder.path);
   const scratchFiles =
     scratch.catalog
       ?.files()
       .filter(
         (file) =>
           file.parentId === scratchRoot ||
-          [...expanded].some((path) => file.path.startsWith(`${path}/`)),
+          expandedPaths.some((path) => file.path.startsWith(`${path}/`)),
       ) ?? [];
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
-  const toggleFolder = (path: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
 
   const scratchRows = inTreeOrder([
     ...visible.map((node) => ({
@@ -118,8 +129,8 @@ export function WorkFilesView({
         node.kind === "dir" ? (
           <FolderRow
             folder={node}
-            open={expanded.has(node.path)}
-            onToggle={() => toggleFolder(node.path)}
+            open={isExpanded(node.entryId)}
+            onToggle={() => toggleEntry(node.entryId)}
           />
         ) : (
           <ScratchFileRow
