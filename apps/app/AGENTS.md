@@ -54,3 +54,7 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   do in `client/query/work-command-store.ts`), never in the mutation cache.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).
+
+- Account display settings and working-set sync have one account-lifetime owner
+  (`AccountSettingsProvider`). Appearance libraries only project its values;
+  they do not persist independent preferences. Text size stays device-local.

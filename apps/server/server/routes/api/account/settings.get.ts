@@ -6,5 +6,5 @@ import { requireAppUser } from "../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  return serializeTransport(await handleGetAccountSettings(app.users, user.userId));
+  return serializeTransport(await handleGetAccountSettings(app.accountSettings, user.userId));
 });

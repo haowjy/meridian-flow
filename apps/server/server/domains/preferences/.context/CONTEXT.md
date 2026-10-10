@@ -1,49 +1,16 @@
-# domains/preferences — project preferences
+# domains/preferences
 
-Manages per-project user preferences for thread grouping, pinned threads, and
-auto-resume settings. Copy-on-write merge semantics
-keep in-memory and Drizzle adapters behaviorally identical.
+Owns account display preferences and the per-project runtime auto-resume policy.
 
-## What it owns
-
-- **`ProjectPreferencesRepository` port** — `read` / `upsert` with
-  `defaultProjectPreferences()` fallback.
-- **Domain helpers** — `copyProjectPreferences` (defensive copy),
-  `mergeProjectPreferences` (patch application),
-  `defaultProjectPreferences` (canonical defaults).
-- **Contract types** — `ProjectPreferences`, `UpdateProjectPreferencesRequest`
-  from `@meridian/contracts/preferences`.
-
-## Ports
-
-| Port | Surface |
-|---|---|
-| `ProjectPreferencesRepository` | Reads/upserts UI preferences. |
-
-## Adapters
-
-- **Drizzle** (production) — persists to `project_user_preferences` and is
-  wired in the server composition root.
-- **In-memory** (test/local reference) — `Map`-backed store used by fast
-  conformance coverage and isolated callers.
-
-## Decision: persisted production preferences
-
-Project preferences are durable in the app schema via
-`project_user_preferences`. The production surface uses
-`createDrizzleProjectPreferencesRepository`; the in-memory adapter remains for
-hermetic tests and local reference behavior.
-
-## Invariants
-
-- **Copy-on-write.** `mergeProjectPreferences` always returns a new object;
-  default arrays (`pinnedThreadIds`) are copied, not shared.
-- **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
-  via `UpdateProjectPreferencesRequest`.
-- **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
-
-## Cross-domain dependencies
-
-- **Consumed by `domains/runtime`** — orchestrator reads auto-resume behavior.
-- **Depends on `@meridian/contracts/preferences`** — `ProjectPreferences` type
-  and defaults.
+- `AccountSettingsRepository` reads and atomically patches language, theme and
+  Stats for nerds in `user_preferences.preferences`. Working-set sync remains
+  in `users.working_set_sync_enabled`; the same repository owns both, locking
+  the account row while patching and reading the resulting snapshot.
+- `AccountSettings` is the complete GET/PATCH response. PATCH accepts nonempty
+  partial absolute-set changes, validated against shared contract value sets.
+- `ProjectPreferencesRepository` retains `read` / `upsert` for `autoResume`.
+  The runtime orchestrator consumes it. GET/PUT project preference routes have
+  no current client reader; they remain available for this runtime policy.
+  Thread grouping and pinned thread IDs are retired, not compatibility fields.
+- Production uses Drizzle adapters; in-memory adapters implement the same ports.
+  Domain copy/merge helpers keep auto-resume defaults independent.

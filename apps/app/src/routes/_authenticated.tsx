@@ -1,3 +1,4 @@
+import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
@@ -22,9 +23,9 @@ import {
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
-import { WorkingSetSyncPreferenceProvider } from "@/features/account/WorkingSetSyncPreferenceProvider";
 
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
@@ -106,6 +107,7 @@ export const Route = createFileRoute("/_authenticated")({
     }
     const currentUser = {
       ...authMe.user,
+      accountSettings: settingsResult.status === "fulfilled" ? settingsResult.value : null,
       workingSetSyncEnabled:
         settingsResult.status === "fulfilled"
           ? (settingsResult.value?.workingSetSyncEnabled ?? null)
@@ -145,7 +147,11 @@ function AuthenticatedAccountProviderTree({
   user,
 }: {
   now: number;
-  user: { userId: string; workingSetSyncEnabled: boolean | null };
+  user: {
+    userId: string;
+    workingSetSyncEnabled: boolean | null;
+    accountSettings: AccountSettings | null;
+  };
 }) {
   const queryClient = useQueryClient();
   const repairProjectCatalog = useCallback(
@@ -157,9 +163,9 @@ function AuthenticatedAccountProviderTree({
   );
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
-      <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
+      <AccountSettingsProvider serverValue={user.accountSettings}>
         <AuthenticatedProviderTree now={now} user={user} />
-      </WorkingSetSyncPreferenceProvider>
+      </AccountSettingsProvider>
     </AccountFeatureComposition>
   );
 }
@@ -169,7 +175,11 @@ function AuthenticatedProviderTree({
   user,
 }: {
   now: number;
-  user: { userId: string; workingSetSyncEnabled: boolean | null };
+  user: {
+    userId: string;
+    workingSetSyncEnabled: boolean | null;
+    accountSettings: AccountSettings | null;
+  };
 }) {
   const resources = useOptionalAccountResourceReplica();
 

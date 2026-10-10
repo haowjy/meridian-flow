@@ -1,5 +1,5 @@
 /**
- * Project preferences persistence port for project UI settings.
+ * Project preferences persistence port for the runtime auto-resume policy.
  */
 import type {
   ProjectPreferences,

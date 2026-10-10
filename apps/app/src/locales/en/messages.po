@@ -512,6 +512,10 @@ msgstr "All chats"
 msgid "All Work"
 msgstr "All Work"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "All your devices"
+msgstr "All your devices"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
@@ -1102,6 +1106,7 @@ msgstr "Couldn't check Work"
 msgid "Couldn't compact"
 msgstr "Couldn't compact"
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
@@ -1320,6 +1325,7 @@ msgstr "Couldn’t save the goal. Try again."
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
@@ -3776,6 +3782,14 @@ msgstr "Theme"
 #: src/core/editor/images/image-uploads.ts
 msgid "There is nowhere left to put that picture."
 msgstr "There is nowhere left to put that picture."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences follow your account wherever you sign in."
+msgstr "These preferences follow your account wherever you sign in."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences stay on this device to suit your screen."
+msgstr "These preferences stay on this device to suit your screen."
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
