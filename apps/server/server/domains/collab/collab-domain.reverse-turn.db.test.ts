@@ -35,6 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsReversals,
       documentYjsUpdates,
       documents,
+      documentMarkdownProjections,
       modelResponses,
       works,
     } = await import("@meridian/database/schema");
@@ -106,10 +107,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ok: true,
         });
         const [row] = await db
-          .select()
+          .select({
+            sizeBytes: documents.sizeBytes,
+            markdown: documentMarkdownProjections.markdown,
+          })
           .from(documents)
+          .leftJoin(
+            documentMarkdownProjections,
+            eq(documentMarkdownProjections.documentId, documents.id),
+          )
           .where(eq(documents.id, created.value.documentId));
-        expect(row?.markdownProjection).toBe("Current café.\n");
+        expect(row?.markdown).toBe("Current café.\n");
         expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
       } finally {
         await collab.documentDerivations.stop();

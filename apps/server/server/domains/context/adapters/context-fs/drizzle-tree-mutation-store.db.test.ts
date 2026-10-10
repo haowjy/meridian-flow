@@ -8,6 +8,7 @@ import {
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
+  documentMarkdownProjections,
   documentPreviousLocations,
   documents,
   documentYjsUpdates,
@@ -87,8 +88,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name,
         extension: "md",
         fileType: "markdown",
-        markdownProjection: name,
       });
+      await db.insert(documentMarkdownProjections).values({ documentId: id, markdown: name });
     }
 
     it("keeps file and folder namespace claims exclusive in either order", async () => {

@@ -9,6 +9,7 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  documentMarkdownProjections,
   documents,
   linkAheadRefs,
   projects,
@@ -392,12 +393,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 contextSourceId: source?.id ?? "",
                 name: "half",
                 extension: "md",
-                markdownProjection: surviving,
               });
+              await db
+                .insert(documentMarkdownProjections)
+                .values({ documentId: half, markdown: surviving });
               const repaired = await port.ensureTrackedDocument("manuscript://half.md");
               expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
-              const [kept] = await db.select().from(documents).where(eq(documents.id, half));
-              expect(kept?.markdownProjection).toBe(surviving);
+              const [kept] = await db
+                .select()
+                .from(documentMarkdownProjections)
+                .where(eq(documentMarkdownProjections.documentId, half));
+              expect(kept?.markdown).toBe(surviving);
               expect((await createDrizzleJournal(db).read(half)).checkpoint).toBeFalsy();
               return half;
             },

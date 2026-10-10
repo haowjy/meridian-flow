@@ -6,6 +6,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   folders,
@@ -85,8 +86,10 @@ describe("durable document derivations", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      markdownProjection: "last good",
     });
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId: documentId, markdown: "last good" });
     await persistence.lifecycle.ensureDocument(documentId);
   });
   afterAll(async () => {
@@ -102,8 +105,11 @@ describe("durable document derivations", () => {
     });
   }
   async function projection() {
-    const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
-    return row?.markdownProjection;
+    const [row] = await db
+      .select()
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    return row?.markdown;
   }
 
   it("refuses writer and agent bytes checked before a restore while queued on the mutation lock", async () => {

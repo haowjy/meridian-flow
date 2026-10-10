@@ -493,7 +493,6 @@ export function createDrizzleBranchStore(
         name: ".manifest",
         extension: "json",
         fileType: "json",
-        markdownProjection: "",
       })
       .onConflictDoNothing({
         target: documents.contextSourceId,

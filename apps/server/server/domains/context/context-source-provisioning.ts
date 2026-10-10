@@ -294,6 +294,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.recordDocumentMembership(documentId));
   }
 
+  async readProjections(ids: string[]): Promise<Map<string, string>> {
+    const store = await this.readableSourceStore();
+    return store ? store.readProjections(ids) : new Map();
+  }
+
   async createDocument(input: CreateDocumentInput) {
     return this.mutate((store) => store.createDocument(input));
   }

@@ -278,3 +278,7 @@ Image and figure `src` attributes are occurrences with their own `ref`. Derive
 and the view-revision digest share it. It is the Yjs twin of
 `walkLinkOccurrences`, which ref assignment walks; a parity row in agent-edit's
 `assign-refs.test.ts` pins the two to the same sequence. Nothing rewrites stored links.
+
+Certified derivation retains its location CAS on `documents` and upserts
+`document_markdown_projections` only on a hit, in the same transaction as links and
+watermarks. Location-only writes therefore leave the projection GIN indexes alone.
