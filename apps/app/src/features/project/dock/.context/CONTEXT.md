@@ -26,26 +26,15 @@ The primary body stays **mounted** while the file view shows. It is hidden via
 lose chat state, force reconnection on return, and break the surface-parking
 contract the project shell relies on.
 
-### `resolveDockView` pure function
-
-`resolveDockView(screen: ScreenKey, stored: DockView | undefined)` is a pure function:
-
-- If `stored` is a valid view for the screen's set, it is the active view.
-- Otherwise, the screen's `default` is used (the occupant's native view).
-- The screen's view set and primary view are always returned alongside.
-
-This is deliberately separated from the React hook (`useDockView`) so it is
-unit-testable. The hook only adds the Zustand binding.
-
 ### Dock document slot
 
 `occupant` in the same browser-tab-local store is the one document the dock shows on Work or
-Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
+Chat: `{ projectId, screen, tab, review }`. `useDockDocument(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` and `DockHeader` swaps the view switch for a Close document button then the
+`DockDocumentView` and `DockHeader` shows a Close document button then the
 title chip on the left, and Open in Editor (an expand button) then the collapse toggle on the right. Opening a second one
-replaces the first. `setDockView` on its screen clears it, so revealing
+replaces the first. `clearDocumentOn` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
 when the project changes, and a Work-screen document when leaving that Work or its screen; a
@@ -53,23 +42,26 @@ Chat-screen occupant survives screen and chat changes, but is only shown on Chat
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
-handling opens have. `dock-persistence.ts` stores `{ accountId, byScreen, occupant }` under
+handling opens have. `dock-persistence.ts` stores `{ accountId, occupant }` under
 `meridian:dock:v1` in sessionStorage, reusing the Editor tab codec. Reads, parsing
 and writes degrade silently if storage is unavailable. The dock-owned restoration
 hook binds the authenticated account before admitting a snapshot; missing or
 foreign account stamps drop the entire layout. Account switches also clear live
 state and invalidate prior claims. Version 1 remains unchanged because this shape
-has no released data. `dock-views.ts` owns the shared view policy used by rendering
-and snapshot validation. A fresh store puts the saved document in `restoring`,
+has no released data. A fresh store puts the saved document in `restoring`,
 never directly in the visible slot. The pure `dockDocumentFitsScope` predicate
 fences both scope sync and restored installation, including a Work owner changed
 during validation. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
 to the dock-owned `useDockDocumentRestoration` hook; `restoreDockDocument` then
-waits for the replica projection. It projects resource identity, rejects terminal/removed resources and missing local Untitleds, and
+reads the review Work’s draft list first. A new-document draft rebuilds its overlay
+from that row without consulting the live catalog. A missing draft row drops review
+and validates live identity (remote Apply restores live, Discard restores nothing).
+A rejected drafts read leaves the candidate hidden. Otherwise it waits for the
+replica projection. It projects resource identity, rejects terminal/removed resources and missing local Untitleds, and
 resolves server-backed documents by stable ID with the Editor availability
 validator. Acquiring the resolved catalog before a final projection keeps a
 rename/move and optimistic namespace intents coherent. Validation failure leaves
-only a hidden candidate, never an error-flashing document. `restore(expected, tab)`
+only a hidden candidate, never an error-flashing document. `restore(expected, document)`
 only installs the still-current candidate and never changes the claim revision;
 a writer intent clears it immediately. Persisting an intermediate scope sync
 retains the hidden candidate until validation or cancellation finishes.
@@ -82,7 +74,7 @@ can be carried, not the mounted document's lifetime. Error/unavailable/recovery 
 and the Editor chooser carry nothing. The route exposes destination commands and owns
 addresses; no displayed Editor props travel back to it. Phone never enters this controller.
 
-The Editor's visible tab replaces the Chat slot and reveals it. A visible Chat or Work
+The Editor’s visible tab and Work-qualified review address replace the Chat slot and reveals it. A visible Chat or Work
 Files document opens or focuses through `openDocumentInEditor`, also used by the header.
 Work receives no document. At the click, the transfer claims the existing dock revision.
 The pure `handOffVisibleDocument` policy binds one claim-gated `afterCommit` effect:
@@ -191,21 +183,26 @@ undo stack; the contract is in
 ("Two editors can share one session"). The dock's part is to pass its visibility as
 the host's `active`, which is what makes it the front or back view.
 
-`useAiDraftLauncher` takes `screen` from the route-owned
-`ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
-recreate the removed project query grammar to choose a dock view.
+`PresentedDocument` resolves review lifetime once in ProjectView: the Editor
+address on Context, the dock’s stored address on desktop Chat/Work, independent
+of collapse. One controller and room owner follow its Work. Only the presenting
+container requests the selected review; a pending address holds paint.
+`ReviewAddressOwner` writes/restores through Editor-route or dock-admission ports.
+The dock’s launch adapter keeps chip, Next draft and auto-advance inside the dock;
+the composer strip and Work list still launch into Editor.
 
-### Dock view store
+### Dock document store
 
-`useDockViewStore` is a Zustand store holding the account-bound document slot:
+`useDockDocumentStore` is a Zustand store holding the account-bound document slot:
 
 - **Browser-tab-local persistence.** `dock-persistence.ts` is the only
-  sessionStorage boundary. Reload retains explicit choices and the document;
+  sessionStorage boundary. Reload retains the document and its review address;
   a separate browser tab starts with its own layout, like Editor tabs.
 - **No placement data.** Width, collapse, and grid placement are owned by the
   surface-prefs store (`layout/surface-prefs-store.ts`), not here.
-- **Explicit choice only.** The store only records writer-initiated view switches;
-  the default is not written to the store.
+- **Address annotations are not intents.** Review writes and draft-only settlement
+  preserve the revision and an in-flight writer open. Native occupants are fixed
+  by screen, not persisted choices.
 
 ### Slot material contract
 
@@ -214,13 +211,8 @@ The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 file view, occupant body) must not paint a hardcoded background — the slot
 paints the material. Transparent/surface-subtle fills are correct, and tonal
 steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
-(`bg-sidebar`). One bounded exception: `DockViewSwitch` (shared by `DockHeader`
-and the phone chat sheet's `MobileChatSheetHeader`) is a contained segmented
-track (a recessed ink-mix well) whose active segment surfaces paper
-(`bg-background`) — the paper stays inside the track's boundary, so the dock
-still reads as one chrome surface. The document's editor shell takes the slot's
-material too (`editorClassName="bg-transparent"`). Any other `bg-background` or
-`bg-card` in the dock is a bug (the dock is a sidebar).
+(`bg-sidebar`). The document editor also takes the slot’s material
+(`editorClassName="bg-transparent"`).
 
 ### Claim-based inline-review editor registration
 
@@ -309,7 +301,7 @@ stable and the browser from wasting layout work on hidden content.
 
 The writer should return to what was open, not rebuild the side panel after
 reload. SessionStorage follows the Editor workspace's browser-tab boundary:
-reload retains the layout without sharing another tab's choices. Dock peeks
+reload retains the document without sharing another tab’s layout. Dock peeks
 remain outside the URL and history. Validation, not a fresh-start default,
 prevents missing or terminal documents from flashing on screen.
 

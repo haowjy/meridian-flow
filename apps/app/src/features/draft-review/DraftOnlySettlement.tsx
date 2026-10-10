@@ -1,43 +1,47 @@
-/** One project lifecycle owner settles remote dispositions for every Work with draft-only tabs. */
+/** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftCommandPendingIn, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { type ContextTab, getContextTabs, useContextTabs } from "@/client/stores";
+import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
 import {
-  useContextRemovalCoordinator,
-  useOptionalAccountResourceReplica,
-} from "@/features/project/context/account-feature-context";
+  type DraftOnlyContainer,
+  useDraftOnlyLifecycle,
+  useDraftOnlyPresentations,
+} from "./draft-only-lifecycle";
 
-export function DraftOnlyTabSettlement({ projectId }: { projectId: string }) {
-  const tabs = useContextTabs(projectId).tabs;
-  const works = new Map<string, ContextTab[]>();
-  for (const tab of tabs) {
-    if (tab.kind !== "tracked" || !tab.draftOnly || !tab.reviewWorkId) continue;
-    const owned = works.get(tab.reviewWorkId) ?? [];
-    owned.push(tab);
-    works.set(tab.reviewWorkId, owned);
-  }
-  return [...works].map(([workId, ownedTabs]) => (
-    <WorkSettlement key={workId} projectId={projectId} workId={workId} ownedTabs={ownedTabs} />
+export function DraftOnlySettlement({ projectId }: { projectId: string }) {
+  const lifecycle = useDraftOnlyLifecycle(projectId);
+  const presentations = useDraftOnlyPresentations(lifecycle, projectId);
+  const works = new Set(presentations.map((draft) => draft.workId));
+  return [...works].map((workId) => (
+    <WorkSettlement
+      key={workId}
+      projectId={projectId}
+      workId={workId}
+      lifecycle={lifecycle}
+      membership={JSON.stringify(presentations.filter((draft) => draft.workId === workId))}
+    />
   ));
 }
 
 function WorkSettlement({
   projectId,
   workId,
-  ownedTabs,
+  lifecycle,
+  membership,
 }: {
   projectId: string;
   workId: string;
-  ownedTabs: readonly ContextTab[];
+  lifecycle: DraftOnlyContainer;
+  membership: string;
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
-  const contextRemoval = useContextRemovalCoordinator();
   const drafts = useWorkDrafts(projectId, workId);
   const records = useDraftCommandRecords();
   const disposing = draftCommandPendingIn(records, { projectId, workId });
@@ -47,13 +51,10 @@ function WorkSettlement({
   useEffect(() => {
     if (!resources || !projectId || !workId || disposing) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const isOrphan = (tab: ContextTab, activeDrafts: readonly ThreadDraftListItem[]) =>
-      tab.kind === "tracked" &&
-      tab.draftOnly &&
-      tab.reviewWorkId === workId &&
-      !activeDrafts.some((draft) => draft.draftId === tab.reviewDraftId);
+    const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
+      draft.workId === workId && !activeDrafts.some((row) => row.draftId === draft.draftId);
     const activeDrafts = drafts.drafts ?? [];
-    if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
+    if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
     const scope = contextCatalogScope(projectId, "manuscript", { workId: null }) ?? {
       kind: "project" as const,
@@ -72,15 +73,10 @@ function WorkSettlement({
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
           ) ?? [];
-        for (const tab of getContextTabs(projectId).tabs) {
-          if (tab.kind !== "tracked" || !isOrphan(tab, currentDrafts)) continue;
-          if (catalog.findDocument(tab.documentId)) {
-            void contextRemoval.promoteAppliedDraft(projectId, tab);
-            continue;
-          }
-          const draftId = tab.reviewDraftId;
-          if (!draftId) continue;
-          contextRemoval.discardDraft(projectId, workId, tab.documentId, draftId);
+        for (const draft of lifecycle.presentations(projectId)) {
+          if (!isOrphan(draft, currentDrafts)) continue;
+          if (catalog.findDocument(draft.documentId)) void lifecycle.promote(draft);
+          else lifecycle.remove(draft);
         }
       })
       // A failed membership check must leave the tab intact rather than guess
@@ -88,9 +84,9 @@ function WorkSettlement({
       .catch(() => undefined);
     return () => attempt.abort();
   }, [
-    contextRemoval,
+    lifecycle,
     disposing,
-    ownedTabs,
+    membership,
     drafts.drafts,
     drafts.status,
     projectId,

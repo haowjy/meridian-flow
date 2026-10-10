@@ -10,6 +10,7 @@ import {
   useDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { PresentedDocumentContext } from "../presented-document";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
@@ -221,6 +222,7 @@ it("a warm destination requests review before passive admission, and an admitted
   const exposed: string[] = [];
   function Destination() {
     const requested = useRequestedReview({
+      container: "editor",
       editorWorkId: "work-a",
       activeScheme: "manuscript",
       documentId: draftA.documentId,
@@ -252,12 +254,23 @@ it("a warm destination requests review before passive admission, and an admitted
         >)
       : null;
     return (
-      <DraftReviewBoundary value={value}>
-        <PaintHold status="Opening">
-          <Destination />
-        </PaintHold>
-        <EditorReviewIntentClaimant editorWorkId="work-a" activeScheme="manuscript" />
-      </DraftReviewBoundary>
+      <PresentedDocumentContext.Provider
+        value={{
+          container: "editor",
+          documentId: draftA.documentId,
+          scheme: "manuscript",
+          path: draftA.contextPath,
+          review: null,
+          draftOnly: false,
+        }}
+      >
+        <DraftReviewBoundary value={value}>
+          <PaintHold status="Opening">
+            <Destination />
+          </PaintHold>
+          <EditorReviewIntentClaimant editorWorkId="work-a" activeScheme="manuscript" />
+        </DraftReviewBoundary>
+      </PresentedDocumentContext.Provider>
     );
   }
   await withReactRoot(
@@ -288,6 +301,7 @@ it("clears a draft-only request when routing fails before admission", async () =
   let requested: string | null = null;
   function Destination() {
     requested = useRequestedReview({
+      container: "editor",
       editorWorkId: "work-a",
       activeScheme: "manuscript",
       documentId: draftA.documentId,
@@ -298,9 +312,20 @@ it("clears a draft-only request when routing fails before admission", async () =
   await withReactRoot(
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={() => route.promise}>
       <CommandCapture />
-      <DraftReviewBoundary value={value}>
-        <Destination />
-      </DraftReviewBoundary>
+      <PresentedDocumentContext.Provider
+        value={{
+          container: "editor",
+          documentId: draftA.documentId,
+          scheme: "manuscript",
+          path: draftA.contextPath,
+          review: null,
+          draftOnly: false,
+        }}
+      >
+        <DraftReviewBoundary value={value}>
+          <Destination />
+        </DraftReviewBoundary>
+      </PresentedDocumentContext.Provider>
     </EditorReviewHandoffProvider>,
     async () => {
       let done!: Promise<void>;
@@ -314,6 +339,49 @@ it("clears a draft-only request when routing fails before admission", async () =
         await done;
       });
       expect(requested).toBeNull();
+    },
+  );
+});
+
+it("a hidden Editor host cannot request the dock's selected review", async () => {
+  const value = reviewValue("work-a");
+  value.controller.inlineReview = {
+    documentId: draftA.documentId,
+    draftId: draftA.draftId,
+  } as NonNullable<typeof value.controller.inlineReview>;
+  const requests: Record<string, string | null> = {};
+  function Hosts() {
+    requests.editor = useRequestedReview({
+      container: "editor",
+      editorWorkId: "work-a",
+      activeScheme: "manuscript",
+      documentId: draftA.documentId,
+    });
+    requests.dock = useRequestedReview({
+      container: "dock",
+      editorWorkId: "work-a",
+      activeScheme: "manuscript",
+      documentId: draftA.documentId,
+    });
+    return null;
+  }
+  await withReactRoot(
+    <PresentedDocumentContext.Provider
+      value={{
+        container: "dock",
+        documentId: draftA.documentId,
+        scheme: "manuscript",
+        path: draftA.contextPath,
+        review: { workId: "work-a", draftId: draftA.draftId },
+        draftOnly: true,
+      }}
+    >
+      <DraftReviewBoundary value={value}>
+        <Hosts />
+      </DraftReviewBoundary>
+    </PresentedDocumentContext.Provider>,
+    () => {
+      expect(requests).toEqual({ editor: null, dock: draftA.draftId });
     },
   );
 });

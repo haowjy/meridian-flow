@@ -11,7 +11,7 @@ It is the single local contract reference; this file maps ownership.
 
 | Concern | Owner |
 |---|---|
-| Persistent Editor review scope | `DraftReviewProvider.tsx`, composed by `ProjectView.tsx` |
+| Presented-document review scope | `DraftReviewProvider.tsx`, composed by `ProjectView.tsx` |
 | Selected review, shown generation, retained completion, focus | `draft-review-session.ts` reducer |
 | View transitions and explicit navigation effects | `useDraftReviewController.ts` |
 | Claims, queues, failures, batch leases and read fences | `client/query/draft-command-record.ts` |
@@ -21,8 +21,8 @@ It is the single local contract reference; this file maps ownership.
 | Review composition, construction receipt and paint readiness | `features/editor/EditorView.tsx` |
 | Common editor construction | `features/editor/SessionEditor.tsx` |
 | Active editor projection and live presence lease | `useActiveReviewBinding.ts` |
-| Remote draft-only settlement | `DraftOnlyTabSettlement.tsx` |
-| Exact tab removal/promotion and route repair | `features/project/context/context-removal-coordinator.ts` |
+| Remote draft-only settlement | `DraftOnlySettlement.tsx` |
+| Cross-container promotion/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
 | Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
 | Change grouping and attribution | `review-changes.ts`, `change-attribution.ts` |
 | Claim-to-review completion projection | `useReviewCommandCompletion.ts` |

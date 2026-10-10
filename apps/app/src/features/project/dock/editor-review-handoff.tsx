@@ -18,6 +18,7 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+import { type PresentedDocument, usePresentedDocument } from "../presented-document";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
 
@@ -249,15 +250,23 @@ export function admissible(
   );
 }
 export function useRequestedReview(host: {
+  container: PresentedDocument["container"];
   editorWorkId: string | null;
   activeScheme: string | null;
   documentId: string | null;
 }) {
   const { controller } = useDraftReview();
   const intent = useContext(EditorReviewIntentContext)?.intent;
-  return controller.inlineReview?.documentId === host.documentId
+  const presented = usePresentedDocument();
+  const presenting =
+    presented?.container === host.container &&
+    (presented.documentId === host.documentId ||
+      (!presented.documentId && host.container === "editor"));
+  return presenting && controller.inlineReview?.documentId === host.documentId
     ? controller.inlineReview.draftId
-    : intent && admissible(intent, host)
+    : host.container === "editor" && intent && admissible(intent, host)
       ? intent.draftId
-      : null;
+      : presenting && presented?.documentId === host.documentId
+        ? (presented.review?.draftId ?? null)
+        : null;
 }

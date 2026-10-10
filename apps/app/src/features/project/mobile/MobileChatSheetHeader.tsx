@@ -12,20 +12,12 @@ import type { ReactNode } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 
-import { DockViewSwitch, type DockViewSwitchProps } from "../dock/DockHeader";
-
-export type MobileChatSheetHeaderProps = DockViewSwitchProps & {
+export type MobileChatSheetHeaderProps = {
   onClose?: () => void;
   threadSelect?: ReactNode;
 };
 
-export function MobileChatSheetHeader({
-  view,
-  views,
-  onSelectView,
-  onClose,
-  threadSelect,
-}: MobileChatSheetHeaderProps) {
+export function MobileChatSheetHeader({ onClose, threadSelect }: MobileChatSheetHeaderProps) {
   return (
     <header
       className="mobile-top-bar flex h-14 shrink-0 items-stretch border-b border-border-subtle"
@@ -35,10 +27,7 @@ export function MobileChatSheetHeader({
       }}
     >
       {/* Relative: a refused chat rename floats under the header from here. */}
-      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
-        {view === "chat" ? threadSelect : null}
-      </div>
-      <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
+      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">{threadSelect}</div>
       {onClose ? (
         <div
           className="flex shrink-0 items-center pl-1"

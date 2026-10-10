@@ -11,6 +11,7 @@ import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
+import { dockDocument, useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import type { ProjectSearch } from "@/features/project/routing/project-route";
 import {
@@ -86,6 +87,7 @@ async function open(p: () => ScopeProbe) {
 beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
+  useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   useContextTabsStore.setState({
     byProject: {},
     _reviewOverlayByProject: {},
@@ -159,7 +161,11 @@ it.each([
   );
 });
 
-it("draft-only Discard closes its tab and repairs the route immediately; refusal never resurrects it", async () => {
+it("draft-only Discard closes both containers and repairs the route; refusal never resurrects either", async () => {
+  useDockDocumentStore.setState({
+    occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
+  });
+  const claim = useDockDocumentStore.getState().claim();
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.discardDraft>>>();
   fixture.network.discardDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
@@ -169,6 +175,8 @@ it("draft-only Discard closes its tab and repairs the route immediately; refusal
       done = p().editor.controller.discard("document-a", "draft-a");
     });
     expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
+    expect(useDockDocumentStore.getState().occupant).toBeNull();
+    expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
     expect(search.path).toBe("/live-neighbor.md");
     expect(writes).toBe(1);
     await act(async () => {
@@ -237,7 +245,16 @@ it("a lost whole Apply keeps the draft-only tab and review, apart from a server 
   });
 });
 
-it("confirmed Apply promotes the draft-only tab and ends review despite lagging catalog", async () => {
+it.each([
+  "both",
+  "dock",
+] as const)("confirmed Apply promotes %s despite lagging catalog", async (container) => {
+  useDockDocumentStore.setState({
+    occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
+  });
+  if (container === "dock")
+    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+  const claim = useDockDocumentStore.getState().claim();
   fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
@@ -246,9 +263,13 @@ it("confirmed Apply promotes the draft-only tab and ends review despite lagging 
     });
     expect(p().editor.controller.inlineReview).toBeNull();
     const live = tabs().find((tab) => tab.documentId === "document-a");
-    expect(live).toBeDefined();
-    expect(live).not.toHaveProperty("draftOnly");
-    expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs).toEqual([]);
+    if (container === "both") {
+      expect(live).toBeDefined();
+      expect(live).not.toHaveProperty("draftOnly");
+      expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs).toEqual([]);
+    } else expect(tabs()).toEqual([]);
+    expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+    expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
   });
 });
 

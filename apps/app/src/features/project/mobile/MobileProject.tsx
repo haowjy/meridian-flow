@@ -13,13 +13,11 @@ import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
-import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import {
   chatSurfaceThreadId,
-  type DockReveal,
   displayedChatThreadId,
   useChatNavigation,
   useDockReveal,
@@ -44,18 +42,16 @@ type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
   const { recoveringFirstSend } = useChatNavigation();
-  const setDockView = useDockViewStore((state) => state.setDockView);
   // The sheet is the phone's dock: it opens over Work or Editor only. On the
   // Chat screen the chat is already the page. A first send recovering after a
   // reload opens it at mount.
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = (view: DockReveal = "chat") => {
-    if (view === "chat") setDockView(props.activeScreen, view);
+  const openChatSheet = () => {
     setChatOpen(true);
   };
-  useDockReveal((view) => openChatSheet(view));
+  useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);

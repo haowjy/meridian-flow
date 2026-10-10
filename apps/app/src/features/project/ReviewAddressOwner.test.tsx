@@ -4,13 +4,13 @@ import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
 import {
   type AiDraftLaunchTarget,
   EditorReviewHandoffProvider,
   useOpenEditorReview,
-} from "./editor-review-handoff";
+} from "./dock/editor-review-handoff";
+import { ReviewAddressOwner } from "./ReviewAddressOwner";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 
 const draft: AiDraftLaunchTarget = {
   workId: "work-1",
@@ -44,9 +44,15 @@ function Harness({
   exitInlineReview,
   openContextRoute,
   listed = true,
+  container = "editor",
+  draftOnly = false,
+  admit = vi.fn(),
 }: {
   /** The Work's draft list still names the reviewed document. */
   listed?: boolean;
+  container?: "editor" | "dock";
+  draftOnly?: boolean;
+  admit?: (target: AiDraftLaunchTarget) => void;
   requestedDraftId?: string;
   activeScreen?: "chat" | "work" | "context";
   activeScheme?: "manuscript" | null;
@@ -97,20 +103,32 @@ function Harness({
   return (
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
       <CommandCapture />
-      <EditorReviewAddressOwner
+      <ReviewAddressOwner
         review={review}
-        requestedDraftId={requestedDraftId}
-        activeScreen={activeScreen}
-        activeScheme={activeScheme}
-        activePath={activePath}
-        activeDocumentId={activeDocumentId}
-        onSetDraftId={onSetDraftId}
+        presented={
+          activeScreen === "context" || container === "dock"
+            ? {
+                container,
+                documentId: activeDocumentId ?? null,
+                scheme: activeScheme,
+                path: activePath,
+                draftOnly,
+                review: requestedDraftId
+                  ? { workId: draft.workId, draftId: requestedDraftId }
+                  : null,
+              }
+            : null
+        }
+        port={{
+          write: (address) => onSetDraftId(address?.draftId ?? null),
+          admit: container === "dock" ? admit : (target) => openReview?.(target),
+        }}
       />
     </EditorReviewHandoffProvider>
   );
 }
 
-describe("EditorReviewAddressOwner", () => {
+describe("ReviewAddressOwner", () => {
   beforeEach(() => {
     openReview = null;
     setInline = null;
@@ -284,4 +302,35 @@ describe("EditorReviewAddressOwner", () => {
       expect(exit).toHaveBeenCalledOnce();
     });
   });
+});
+
+it.each([
+  false,
+  true,
+])("dock admission and Back to live respect intrinsic draft-only=%s", async (draftOnly) => {
+  const admit = vi.fn();
+  const write = vi.fn();
+  const route = vi.fn(async () => ({ kind: "applied" as const }));
+  await withReactRoot(
+    <Harness
+      container="dock"
+      draftOnly={draftOnly}
+      activeScreen="chat"
+      activeDocumentId={draft.documentId}
+      requestedDraftId={draft.draftId}
+      admit={admit}
+      onSetDraftId={write}
+      openContextRoute={route}
+    />,
+    async () => {
+      expect(admit).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: draft.documentId, draftId: draft.draftId }),
+      );
+      expect(route).not.toHaveBeenCalled();
+      await act(async () => setInline?.({ documentId: draft.documentId, draftId: draft.draftId }));
+      await act(async () => setInline?.(null));
+      if (draftOnly) expect(write).not.toHaveBeenCalledWith(null);
+      else expect(write).toHaveBeenLastCalledWith(null);
+    },
+  );
 });

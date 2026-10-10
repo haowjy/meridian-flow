@@ -1,6 +1,7 @@
-/** Browser-tab-local view choices and the document slot for the project dock. */
+/** Browser-tab-local, account-stamped document slot for the project dock. */
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
+import type { ReviewAddress } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import {
   browserDockStorage,
@@ -8,7 +9,6 @@ import {
   readDockSnapshot,
   writeDockSnapshot,
 } from "./dock-persistence";
-import { type DockView, type ResolvedDockView, resolveDockView } from "./dock-views";
 
 /**
  * The one document the dock shows in place of its views, until the writer
@@ -20,6 +20,7 @@ export type DockDocument = {
   projectId: string;
   screen: Exclude<ScreenKey, "context">;
   tab: ContextTab;
+  review: ReviewAddress | null;
 };
 
 type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
@@ -40,18 +41,16 @@ export function dockDocumentFitsScope(
   );
 }
 
-type DockViewState = {
+type DockDocumentState = {
   accountId: string | null;
   /** Restore once per authenticated account; a foreign account's layout is never admitted. */
   rehydrate: (accountId: string) => void;
-  byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
   /** Hidden until resource validation finishes; every writer intent cancels restoration. */
   restoring: DockDocument | null;
-  restore: (expected: DockDocument, tab: ContextTab | null) => void;
+  restore: (expected: DockDocument, document: DockDocument | null) => void;
   /**
-   * Bumps on every new intent: an open requested or made, a close, a view
-   * choice, and a move to another project, screen or Work. A slow open claims
+   * Bumps on every new intent: an open requested or made, a close, a native reveal, and a move to another project, screen or Work. A slow open claims
    * a revision when it starts and commits only if it is still the latest.
    */
   revision: number;
@@ -59,8 +58,9 @@ type DockViewState = {
   scope: DockScope | null;
   /** The Work on the Work screen (null elsewhere): the Work whose Scratch the dock menu browses. */
   workId: string | null;
-  /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
-  setDockView: (screen: ScreenKey, view: DockView) => void;
+  clearDocumentOn: (screen: ScreenKey) => void;
+  /** Address updates and remote settlement are not writer intents. */
+  setDocumentReview: (review: ReviewAddress | null) => void;
   /** Start an open: bumps the revision and returns it. Every async dock attempt claims first. */
   claim: () => number;
   /** Whether `claim` is still the latest intent. */
@@ -72,12 +72,12 @@ type DockViewState = {
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export function createDockViewStore(
+export function createDockDocumentStore(
   storage: () => DockStorage | null = browserDockStorage,
   accountId: string | null = null,
 ) {
   const snapshot = readDockSnapshot(storage, accountId);
-  const store = create<DockViewState>((set, get) => {
+  const store = create<DockDocumentState>((set, get) => {
     const setOccupant = (occupant: DockDocument | null) =>
       set((state) => ({ occupant, restoring: null, revision: state.revision + 1 }));
     return {
@@ -88,7 +88,6 @@ export function createDockViewStore(
         const snapshot = readDockSnapshot(storage, accountId);
         set({
           accountId,
-          byScreen: snapshot?.byScreen ?? {},
           occupant: null,
           restoring: dockDocumentFitsScope(snapshot?.occupant ?? null, state.scope)
             ? (snapshot?.occupant ?? null)
@@ -97,13 +96,11 @@ export function createDockViewStore(
           revision: state.revision + (state.accountId === null ? 0 : 1),
         });
       },
-      byScreen: snapshot?.byScreen ?? {},
       occupant: null,
       restoring: snapshot?.occupant ?? null,
-      restore: (expected, tab) => {
+      restore: (expected, document) => {
         if (get().restoring !== expected) return;
         // A restore is not a new intent and must never supersede a writer's claim.
-        const document = tab ? { ...expected, tab } : null;
         set({
           restoring: null,
           occupant: dockDocumentFitsScope(document, get().scope) ? document : null,
@@ -112,13 +109,24 @@ export function createDockViewStore(
       revision: 0,
       scope: null,
       workId: null,
-      setDockView: (screen, view) =>
+      clearDocumentOn: (screen) =>
         set((state) => ({
-          byScreen: { ...state.byScreen, [screen]: view },
           restoring: null,
           occupant: state.occupant?.screen === screen ? null : state.occupant,
           revision: state.revision + 1,
         })),
+      setDocumentReview: (review) =>
+        set((state) => {
+          const document = state.occupant;
+          if (!document || (document.tab.kind === "tracked" && document.tab.draftOnly && !review))
+            return state;
+          if (
+            document.review?.workId === review?.workId &&
+            document.review?.draftId === review?.draftId
+          )
+            return state;
+          return { occupant: { ...document, review } };
+        }),
       isCurrent: (claim) => get().revision === claim,
       commit: (claim, document) => {
         if (get().revision !== claim) return false;
@@ -155,39 +163,18 @@ export function createDockViewStore(
     if (
       state.accountId === previous.accountId &&
       state.occupant === previous.occupant &&
-      state.restoring === previous.restoring &&
-      state.byScreen === previous.byScreen
+      state.restoring === previous.restoring
     )
       return;
     writeDockSnapshot(storage, {
       accountId: state.accountId,
-      byScreen: state.byScreen,
       occupant: state.occupant ?? state.restoring,
     });
   });
   return store;
 }
 
-export const useDockViewStore = createDockViewStore();
-
-/** Resolve the active dock view for a screen and bind the switch action. */
-export function useDockView(
-  screen: ScreenKey,
-  projectId: string,
-): ResolvedDockView & {
-  setView: (view: DockView) => void;
-  /** The document replacing the views on this screen, if any. */
-  document: DockDocument | null;
-} {
-  const stored = useDockViewStore((state) => state.byScreen[screen]);
-  const setDockView = useDockViewStore((state) => state.setDockView);
-  const occupant = useDockDocument(screen, projectId);
-  return {
-    ...resolveDockView(screen, stored),
-    setView: (next) => setDockView(screen, next),
-    document: occupant,
-  };
-}
+export const useDockDocumentStore = createDockDocumentStore();
 
 /** One scope predicate for rendering, highlighting and imperative hand-offs. */
 export function dockDocumentOnScreen(
@@ -199,5 +186,19 @@ export function dockDocumentOnScreen(
 }
 
 export function useDockDocument(screen: ScreenKey, projectId: string): DockDocument | null {
-  return useDockViewStore((state) => dockDocumentOnScreen(state.occupant, screen, projectId));
+  return useDockDocumentStore((state) => dockDocumentOnScreen(state.occupant, screen, projectId));
+}
+
+/** Overlay identity is intrinsic; callers cannot carry a draft-only tab as live. */
+export function dockDocument(
+  projectId: string,
+  screen: DockDocument["screen"],
+  tab: ContextTab,
+  review: ReviewAddress | null,
+): DockDocument {
+  const intrinsic =
+    tab.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
+      ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
+      : review;
+  return { projectId, screen, tab, review: intrinsic };
 }

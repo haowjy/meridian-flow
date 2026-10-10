@@ -424,3 +424,17 @@ the status line announces the destination, focus returns to the pane, copied ids
 absent and the 10-second bound does not restart on another move. Scope the pane by
 screen visibility: route/session acquisition temporarily deactivates input but
 must not withdraw the painted frame from capture.
+
+## Review follows its document (desktop)
+
+From this worktree’s mock stack, seed one new-document draft and one draft over
+an existing manuscript with `./mf`. For each, review in Editor, switch to Chat
+and back: the dock retains marks, change bar and commands, and returning opens
+the review’s Work/draft address. Only the presenting host renders review.
+
+On Chat close the retained Editor tab, reload, and verify a dock-only review
+returns without a live-body or error frame. Apply and Discard remotely from a
+second tab; the dock promotes live or returns to Recent. Check dock Next draft
+and auto-advance stay on Chat, Back to live survives reload, Close only closes
+the dock, and collapse/expand retains review. Capture screenshots with
+`page.screenshot()`, fresh API readback and console errors.

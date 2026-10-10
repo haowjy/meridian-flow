@@ -288,7 +288,7 @@ selection. Editor boundaries re-provide it; `EditorReviewScope` offers its
 presentation to outside lists. Chat and Work lists compose the existing Work
 drafts query with creation-bound `useWorkDraftCommands`, without review state
 or executor arbitration. Commands publish addressed records for the open
-review to observe. `DraftOnlyTabSettlement` is the project lifecycle owner
+review to observe. `DraftOnlySettlement` is the project lifecycle owner
 for remote settlement across the Works represented by draft-only tabs.
 An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
