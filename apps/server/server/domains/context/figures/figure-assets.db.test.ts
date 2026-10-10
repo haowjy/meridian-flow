@@ -103,11 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         documentSync: collab,
         drafts: collab.drafts,
-        manifestMembership: {
-          async recordManifestDocumentCreated() {},
-          async recordManifestDocumentDeleted() {},
-          async transferLiveManifestMembership() {},
-        },
       });
       const service = createFigureAssetService({
         objectStore,

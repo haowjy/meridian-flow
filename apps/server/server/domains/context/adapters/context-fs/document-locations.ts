@@ -183,7 +183,7 @@ export async function readTreeLocations(
     SELECT d.id::text, p.path || '/' || d.name ||
       CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS path, 'file' AS kind
     FROM documents d JOIN paths p ON d.folder_id = p.id
-    WHERE d.context_source_id = ${source.sourceId} AND d.deleted_at IS NULL AND d.kind = 'content'
+    WHERE d.context_source_id = ${source.sourceId} AND d.deleted_at IS NULL
   `);
 }
 

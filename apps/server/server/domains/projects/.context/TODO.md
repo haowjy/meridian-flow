@@ -4,7 +4,7 @@
 
 `ensureDefaultBootstrapReady` runs one transaction under the per-user advisory
 lock that provisions the project and context sources, then awaits document
-creation. That includes manifest membership, Yjs seeding, and post-write hooks
+creation. That includes Yjs seeding and post-write hooks
 (`index.ts` `ensureDocument`). If any of those awaits never resolves, the
 transaction stays idle in transaction with the lock held. Every later request
 for that user then waits, and so does `pnpm db:reset`. Observed in dev

@@ -46,6 +46,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Development: retire the live Yjs manifest and its document-kind column. Project visibility, moves, bootstrap and room admission use the SQL tree without membership registration or reconciliation.
+
 - Development: settlement regression pins cover tentative publication rollback, retained retirement locks, staged thread-peer replies and another owner recovering held text without admitting or resetting it.
 
 - Development: catch quoted and schema-qualified tree tables in raw SQL checks without confusing longer relation names with documents or folders.

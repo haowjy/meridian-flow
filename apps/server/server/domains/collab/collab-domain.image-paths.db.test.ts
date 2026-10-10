@@ -287,7 +287,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       let collab = start();
       await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
-      await collab.reconcileProjectManifest(PROJECT_ID as never);
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
       // The Work's draft created this chapter: a hidden row and the draft's created row,

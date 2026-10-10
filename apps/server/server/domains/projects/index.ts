@@ -10,19 +10,12 @@ import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type {
-  BranchPeerShadowAccess,
-  DocumentCreationAggregate,
-  MarkdownDocumentStore,
-} from "../collab/index.js";
+import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
 import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
-import {
-  ensureProjectManifestSource,
-  nextProjectSlug,
-} from "./adapters/project-repository/shared.js";
+import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
@@ -75,8 +68,7 @@ export type ProjectBootstrapRepository = {
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
-    Pick<DocumentCreationAggregate, "createDocumentAtomically"> &
-    Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
+    Pick<DocumentCreationAggregate, "createDocumentAtomically">;
   catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
@@ -173,7 +165,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
 
   async function ensureDocument(
     tx: BootstrapDb,
-    projectId: ProjectId,
     contextSourceId: ContextSourceId,
   ): Promise<DocumentId> {
     async function seedDocument(documentId: DocumentId): Promise<void> {
@@ -203,7 +194,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         ),
       )
       .limit(1);
-    // Identity, content and membership commit together, so an existing row is whole.
+    // Identity and content commit together, so an existing row is whole.
     if (existing) return existing.id;
 
     const documentId = randomUUID() as DocumentId;
@@ -212,12 +203,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         const claimed = await new DrizzleContextDocumentStore({
           db,
           contextSourceId,
-          // The live manifest's writer until lane M retires it.
-          membershipObserver: {
-            documentCreated: (id) =>
-              deps.documents.recordManifestDocumentCreated(id as DocumentId, { projectId }),
-            documentDeleted: async () => {},
-          },
         }).createDocumentRecordIfAbsent({
           id: documentId,
           folderId: null,
@@ -253,9 +238,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
-      const manuscriptSourceId = await ensureProjectManifestSource(db, projectId);
+      const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
       await ensureWorkContextSource(db, noWorkId, "uploads");
-      const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
+      const documentId = await ensureDocument(tx, manuscriptSourceId);
 
       const result = {
         projectId,

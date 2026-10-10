@@ -108,14 +108,6 @@ that safe:
   the caller may already hold it. It resolves committed Work membership, not a
   caller's uncommitted rebind. Callers release live/branch access before taking
   the thread lock (they pass detached snapshots); pull callbacks never take it.
-- **Referenced rows commit first.** `ensureProjectManifest` creates manifest
-  identity and its durable live head in a root transaction, so a root-committed
-  peer never references a row only the caller's transaction can see. Live
-  manifest writes (`mutateLiveManifest`, `reconcileProjectManifest`) instead
-  call `loadProjectManifest` in the caller's transaction: during cold project
-  bootstrap the project and source are uncommitted, and identity, content, and
-  membership must roll back together. Live-only membership reads use that same
-  ambient loader to see the caller's writes. Neither path provisions a root peer.
 - **FK references must not wait on the caller's locks.** A root insert that
   references a row the caller locked waits on a transaction that is itself
   awaiting the root in JavaScript; Postgres never detects that cycle. Work
@@ -261,7 +253,7 @@ that keep failing rotate through instead of starving the rest.
 ## Reference map
 
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
-- [Branch model, provenance, manifests, and durable records](branch-model-and-records.md)
+- [Branch model, provenance, and durable records](branch-model-and-records.md)
 - [Reversal](reversal.md)
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)

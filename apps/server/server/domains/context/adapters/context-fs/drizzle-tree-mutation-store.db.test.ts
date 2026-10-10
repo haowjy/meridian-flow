@@ -28,14 +28,12 @@ import {
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
 import { createDrizzleCollabPersistence } from "../../../collab/adapters/drizzle-journal.js";
-import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createDocumentAddressResolver } from "../../document-address.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { createDrizzleDocumentAddressStore } from "../document-address.js";
 import { createDrizzleProjectContextAvailability } from "../project-context-availability.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
-import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -52,7 +50,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000712";
     const NON_EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000713";
-    const DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
+    const _DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
     const DOC_STALE_DELETE_ID = "00000000-0000-4000-8000-000000000715";
     const DOC_ROLLBACK_DELETE_ID = "00000000-0000-4000-8000-000000000716";
 
@@ -303,7 +301,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const binaryId = "00000000-0000-4000-8000-000000000732";
       const customId = "00000000-0000-4000-8000-000000000733";
       const nestedId = "00000000-0000-4000-8000-000000000734";
-      const manifestId = "00000000-0000-4000-8000-000000000735";
       await db.insert(folders).values([
         { id: EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "empty" },
         { id: NON_EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "occupied" },
@@ -348,22 +345,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "md",
           fileType: "markdown",
         },
-        {
-          id: manifestId,
-          kind: "manifest",
-          contextSourceId: SOURCE_ID,
-          folderId: nestedFolderId,
-          name: ".manifest",
-          extension: "json",
-          fileType: "json",
-        },
       ]);
       const availability = createDrizzleProjectContextAvailability(db);
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
       await catalog.refreshSources([SOURCE_ID]);
-      const tree = new DrizzleContextTreeMutationStore(db, undefined, catalog);
+      const tree = new DrizzleContextTreeMutationStore(db, catalog);
       const empty = await tree.inspect(SOURCE_ID, "empty");
       const occupied = await tree.inspect(SOURCE_ID, "occupied");
       if (!empty || !occupied) throw new Error("expected folder tokens");
@@ -393,18 +381,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ deletedAt: documents.deletedAt })
         .from(documents)
         .where(eq(documents.contextSourceId, SOURCE_ID));
-      expect(tombstones).toHaveLength(5);
+      expect(tombstones).toHaveLength(4);
       expect(new Set(tombstones.map((row) => row.deletedAt?.toISOString()))).toHaveLength(1);
     });
 
     it("returns no receipt when delete CAS becomes stale or the transaction rolls back", async () => {
       await insertDocument(DOC_STALE_DELETE_ID, "stale-delete");
       await insertDocument(DOC_ROLLBACK_DELETE_ID, "rollback-delete");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        createDrizzleContextCatalog(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, createDrizzleContextCatalog(db));
       const stale = await tree.inspect(SOURCE_ID, "stale-delete.md");
       const rollbackToken = await tree.inspect(SOURCE_ID, "rollback-delete.md");
       if (!stale || !rollbackToken) throw new Error("expected file tokens");
@@ -449,7 +433,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const publish = vi.fn();
       const catalog = createDrizzleContextCatalog(db, { publish });
       const failure = new Error(failurePoint);
-      const callbacks: string[] = [];
       const failingCatalog = {
         refreshProject: (projectId: string) => catalog.refreshProject(projectId),
         async refreshSources(sourceIds: readonly string[], invalidatedRootIds?: readonly string[]) {
@@ -457,16 +440,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw failure;
         },
       };
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        {
-          documentCreated: () => undefined,
-          documentDeleted: (id) => {
-            callbacks.push(id);
-          },
-        },
-        failingCatalog,
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, failingCatalog);
       const token = await tree.inspect(SOURCE_ID, folderId);
       if (!token) throw new Error("expected folder token");
 
@@ -508,131 +482,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(contextAvailabilityHeads)
           .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_SCOPE_KEY)),
       ).toEqual([]);
-      expect(callbacks).toEqual([]);
       expect(publish).not.toHaveBeenCalled();
-    });
-
-    it("keeps the committed receipt when post-commit membership delivery fails", async () => {
-      const callbackFolderId = "00000000-0000-4000-8000-000000000736";
-      const successfulCallbackId = "00000000-0000-4000-8000-000000000737";
-      await db.insert(folders).values({
-        id: callbackFolderId,
-        contextSourceId: SOURCE_ID,
-        name: "callback-folder",
-      });
-      await db.insert(documents).values([
-        {
-          id: DOC_CALLBACK_FAILURE_ID,
-          contextSourceId: SOURCE_ID,
-          folderId: callbackFolderId,
-          name: "callback-failure",
-        },
-        {
-          id: successfulCallbackId,
-          contextSourceId: SOURCE_ID,
-          folderId: callbackFolderId,
-          name: "callback-success",
-        },
-      ]);
-      const callbackFailure = new Error("membership delivery failed");
-      const evidence = createInMemoryEventSink();
-      const callbacks: string[] = [];
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        {
-          documentCreated: () => undefined,
-          documentDeleted: (documentId) => {
-            callbacks.push(documentId);
-            if (documentId === DOC_CALLBACK_FAILURE_ID) throw callbackFailure;
-          },
-        },
-        createDrizzleContextCatalog(db),
-        evidence,
-      );
-      const token = await tree.inspect(SOURCE_ID, "callback-folder");
-      if (!token) throw new Error("expected file token");
-
-      const receipt = await tree.commitRecursiveDelete({ root: token, mode: "recursive" });
-      expect(receipt).toMatchObject({
-        ok: true,
-        value: { deletedDocumentIds: [DOC_CALLBACK_FAILURE_ID, successfulCallbackId].sort() },
-      });
-      expect(callbacks).toEqual([DOC_CALLBACK_FAILURE_ID, successfulCallbackId].sort());
-      const committed = await db
-        .select({ deletedAt: documents.deletedAt })
-        .from(documents)
-        .where(eq(documents.folderId, callbackFolderId));
-      expect(committed.every((row) => row.deletedAt instanceof Date)).toBe(true);
-      expect(evidence.events).toHaveLength(1);
-      expect(evidence.events[0]).toMatchObject({
-        name: "PostCommitCallbackFailure",
-        payload: {
-          callbackKind: "documentDeleted",
-          documentId: DOC_CALLBACK_FAILURE_ID,
-          commandId: expect.any(String),
-        },
-      });
-    });
-
-    it("joins the ambient command transaction and dispatches observers only after its commit", async () => {
-      await insertDocument(DOC_AMBIENT_DELETE_ID, "ambient-delete");
-      const events: string[] = [];
-      const observer: ContextDocumentMembershipObserver = {
-        documentCreated: () => undefined,
-        documentDeleted: () => {
-          events.push("deleted");
-        },
-      };
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        observer,
-        createDrizzleContextCatalog(db),
-      );
-      const token = await tree.inspect(SOURCE_ID, "ambient-delete.md");
-      expect(token?.kind).toBe("file");
-
-      await expect(
-        runInDrizzleTransaction(db, async () => {
-          await expect(
-            tree.commitRecursiveDelete({
-              root: token as NonNullable<typeof token>,
-              mode: "recursive",
-            }),
-          ).resolves.toMatchObject({
-            ok: true,
-            value: {
-              deletedDocumentIds: [DOC_AMBIENT_DELETE_ID],
-              availabilityGeneration: expect.not.stringMatching(/^0$/),
-            },
-          });
-          expect(events).toEqual([]);
-          throw new Error("outer rollback");
-        }),
-      ).rejects.toThrow("outer rollback");
-      expect(events).toEqual([]);
-      const [rolledBack] = await db
-        .select({ deletedAt: documents.deletedAt })
-        .from(documents)
-        .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
-      expect(rolledBack?.deletedAt).toBeNull();
-
-      const retryToken = await tree.inspect(SOURCE_ID, "ambient-delete.md");
-      await runInDrizzleTransaction(db, async () => {
-        await expect(
-          tree.commitRecursiveDelete({
-            root: retryToken as NonNullable<typeof retryToken>,
-            mode: "recursive",
-          }),
-        ).resolves.toMatchObject({
-          ok: true,
-          value: {
-            deletedDocumentIds: [DOC_AMBIENT_DELETE_ID],
-            availabilityGeneration: expect.not.stringMatching(/^0$/),
-          },
-        });
-        expect(events).toEqual([]);
-      });
-      expect(events).toEqual(["deleted"]);
     });
   });
 

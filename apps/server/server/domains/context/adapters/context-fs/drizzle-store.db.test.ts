@@ -9,8 +9,7 @@ import {
   users,
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import {
   deleteDrizzleRows,
@@ -22,29 +21,26 @@ import { createTestDocumentLinkScopes } from "../../../collab/test-support/docum
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
-import {
-  type ContextDocumentMembershipObserver,
-  DrizzleContextDocumentStore,
-} from "./drizzle-store.js";
+import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("ContextFS Drizzle membership dispatch (postgres)", () => {});
+  describe.skip("ContextFS Drizzle persistence (postgres)", () => {});
 } else {
-  describe("ContextFS Drizzle membership dispatch (postgres)", () => {
+  describe("ContextFS Drizzle persistence (postgres)", () => {
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000703";
-    const DOC_CREATE_ID = "00000000-0000-4000-8000-000000000704";
-    const DOC_DELETE_ID = "00000000-0000-4000-8000-000000000705";
-    const DOC_MOVE_SOURCE_ID = "00000000-0000-4000-8000-000000000706";
-    const DOC_MOVE_TARGET_ID = "00000000-0000-4000-8000-000000000707";
+    const _DOC_CREATE_ID = "00000000-0000-4000-8000-000000000704";
+    const _DOC_DELETE_ID = "00000000-0000-4000-8000-000000000705";
+    const _DOC_MOVE_SOURCE_ID = "00000000-0000-4000-8000-000000000706";
+    const _DOC_MOVE_TARGET_ID = "00000000-0000-4000-8000-000000000707";
     const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
-    const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
+    const _DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
@@ -263,15 +259,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
-      const observer = {
-        documentCreated: vi.fn(),
-        documentDeleted: vi.fn(),
-      } satisfies ContextDocumentMembershipObserver;
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        observer,
-        createDrizzleContextCatalog(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, createDrizzleContextCatalog(db));
       const source = await tree.inspect(SOURCE_ID, "rollback-source.md");
       const target = await tree.inspect(SOURCE_ID, "rollback-target.md");
       expect(source?.kind).toBe("file");
@@ -310,124 +298,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
       });
       expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
-      expect(observer.documentDeleted).toHaveBeenCalledWith(DOC_ROLLBACK_TARGET_ID);
-    });
-
-    it("dispatches create, delete, and overwrite-move membership events exactly once after commit", async () => {
-      await insertDocument(DOC_DELETE_ID, "delete-me");
-      await insertDocument(DOC_MOVE_SOURCE_ID, "move-source");
-      await insertDocument(DOC_MOVE_TARGET_ID, "move-target");
-      const events: string[] = [];
-      const observerWork: Promise<void>[] = [];
-      const observer: ContextDocumentMembershipObserver = {
-        documentCreated(documentId) {
-          events.push(`created:${documentId}`);
-        },
-        documentDeleted(documentId) {
-          events.push(`deleted:${documentId}`);
-          const work = (async () => {
-            const [row] = await db
-              .select({ deletedAt: documents.deletedAt })
-              .from(documents)
-              .where(eq(documents.id, documentId));
-            expect(row?.deletedAt).toBeInstanceOf(Date);
-          })();
-          observerWork.push(work);
-          return work;
-        },
-      };
-      const contentStore = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: SOURCE_ID,
-        membershipObserver: observer,
-      });
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        observer,
-        createDrizzleContextCatalog(db),
-      );
-
-      await contentStore.createDocument({
-        id: DOC_CREATE_ID,
-        folderId: null,
-        name: "created",
-        extension: "md",
-        markdown: "created",
-        filetype: "markdown",
-      });
-      const deleteToken = await tree.inspect(SOURCE_ID, "delete-me.md");
-      expect(deleteToken?.kind).toBe("file");
-      await expect(
-        tree.commitRecursiveDelete({
-          root: deleteToken as NonNullable<typeof deleteToken>,
-          mode: "recursive",
-        }),
-      ).resolves.toMatchObject({
-        ok: true,
-        value: {
-          deletedDocumentIds: [DOC_DELETE_ID],
-          availabilityGeneration: expect.not.stringMatching(/^0$/),
-        },
-      });
-      const moveSource = await tree.inspect(SOURCE_ID, "move-source.md");
-      const moveTarget = await tree.inspect(SOURCE_ID, "move-target.md");
-      expect(moveSource?.kind).toBe("file");
-      expect(moveTarget?.kind).toBe("file");
-      await expect(
-        tree.commitMove({
-          source: moveSource as Extract<NonNullable<typeof moveSource>, { kind: "file" }>,
-          destinationSourceId: SOURCE_ID,
-          destinationPath: "move-target.md",
-          expectedTarget: {
-            state: "occupied",
-            token: moveTarget as Extract<NonNullable<typeof moveTarget>, { kind: "file" }>,
-          },
-          overwrite: true,
-          graduateProvisionalName: false,
-          destinationFiletype: "markdown",
-        }),
-      ).resolves.toEqual({
-        ok: true,
-        value: { movedNodeId: DOC_MOVE_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
-      });
-      await Promise.all(observerWork);
-
-      expect(events).toEqual([
-        `created:${DOC_CREATE_ID}`,
-        `deleted:${DOC_DELETE_ID}`,
-        `deleted:${DOC_MOVE_TARGET_ID}`,
-      ]);
-    });
-
-    it("defers document-create observers until the ambient transaction commits", async () => {
-      const events: string[] = [];
-      const observer: ContextDocumentMembershipObserver = {
-        documentCreated: (documentId) => {
-          events.push(`created:${documentId}`);
-        },
-        documentDeleted: () => undefined,
-      };
-      const store = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: SOURCE_ID,
-        membershipObserver: observer,
-      });
-      let sawObserverInsideTransaction = false;
-
-      await runInDrizzleTransaction(db, async () => {
-        await store.createDocument({
-          id: DOC_AMBIENT_CREATE_ID,
-          folderId: null,
-          name: "ambient-create",
-          extension: "md",
-          filetype: "markdown",
-          markdown: "ambient-create",
-        });
-        sawObserverInsideTransaction = events.length > 0;
-      });
-
-      expect(sawObserverInsideTransaction).toBe(false);
-      expect(events).toEqual([`created:${DOC_AMBIENT_CREATE_ID}`]);
     });
   });
 }

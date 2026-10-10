@@ -156,11 +156,6 @@ export function scopeBranchPeer(
     flushBranchLivePull: access.flushBranchLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
-    resolveManifestMembership: access.resolveManifestMembership,
-    reconcileProjectManifest: access.reconcileProjectManifest,
-    transferLiveManifestMembership: access.transferLiveManifestMembership,
-    recordManifestDocumentCreated: access.recordManifestDocumentCreated,
-    recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
     ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
     retractCreatedDraftBranch: access.retractCreatedDraftBranch,
     readEffectiveHashlines: (command) =>

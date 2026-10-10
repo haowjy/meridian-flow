@@ -1,6 +1,6 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
@@ -51,7 +51,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../drizzle-document-activity.js"
     );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
-    const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
@@ -127,26 +126,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     let db = database.current;
     let livePersistence = createDrizzleCollabPersistence(db);
-    const liveDocs = new Map<string, Y.Doc>();
-    const liveCoordinator = {
-      async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-        let doc = liveDocs.get(docId);
-        if (!doc) {
-          doc = createCollabYDoc({ gc: false });
-          const snapshot = await livePersistence.journal.read(docId);
-          if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-          for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-          liveDocs.set(docId, doc);
-        }
-        return fn(doc);
-      },
-      async recover() {},
-    };
     function createBranchStore() {
       return createDrizzleBranchStore(db, {
         journal: livePersistence.journal,
         lifecycle: livePersistence.lifecycle,
-        coordinator: liveCoordinator,
       });
     }
 
@@ -209,12 +192,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
       store = createBranchStore();
-      await store.reconcileProjectManifest(PROJECT_ID as never);
-    });
-
-    afterEach(() => {
-      for (const doc of liveDocs.values()) doc.destroy();
-      liveDocs.clear();
     });
 
     it("reseeds a clean thread peer under the reassigned primary Work", async () => {
@@ -354,10 +331,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: live,
       });
-
-      await expect(
-        store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-      ).resolves.toMatchObject({ members: [DOC_ID] });
     });
 
     it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {

@@ -8,7 +8,7 @@ over its owner-gated operations.
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
   idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Uploads source. Bootstrap creates no thread.
-- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
+- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a catalog source before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
@@ -64,13 +64,11 @@ translate those to `title` and `description` in `ProjectDto`.
   additional email canonicalization.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
-- The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
-  membership, No Work Uploads source, and readiness flag commit in one ambient
+- The project, locked No Work, chapter row, initialize-only canonical seed, No Work Uploads source, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning treats the durable readiness flag as authoritative; legacy
   data repair belongs to a future import, not a process-local readiness overlay.
-- Readiness becomes true only after document authority and manifest membership
-  are durable, rather than merely after row existence.
+- Readiness becomes true only after document authority is durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked
   No Work as primary. Only the writer's Chat rebind changes a chat's Work; the
   model's `work switch` never rebinds ([rule](../../runtime/.context/tools.md#permissions)).

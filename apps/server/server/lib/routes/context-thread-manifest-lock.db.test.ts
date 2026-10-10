@@ -92,7 +92,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         documentSync: collab,
         drafts: collab.drafts,
-        manifestMembership: collab,
       });
       const routeDeps = {
         contextPorts,

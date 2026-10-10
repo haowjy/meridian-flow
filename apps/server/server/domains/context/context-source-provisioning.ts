@@ -21,10 +21,7 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
-import {
-  type ContextDocumentMembershipObserver,
-  DrizzleContextDocumentStore,
-} from "./adapters/context-fs/drizzle-store.js";
+import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -100,7 +97,7 @@ export async function findNoWorkId(db: Database, projectId: string): Promise<str
 /**
  * Whether a project-scoped source is stored in the writer's personal project
  * rather than the project being browsed. Its documents belong to that
- * project's manifest, not this one's.
+ * project's live tree, not this one's.
  */
 function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
   return scheme === "user";
@@ -233,7 +230,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly db: Database,
     private readonly ensureSourceId: () => Promise<string>,
     private readonly findSourceId: () => Promise<string | null>,
-    private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly workId?: string | (() => Promise<string>),
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly beforeWrite?: () => Promise<void>,
@@ -278,7 +274,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: sourceId,
-      membershipObserver: this.membershipObserver,
       catalogMutations: this.catalogMutations,
       arrivals: this.arrivals,
     });
@@ -396,7 +391,6 @@ export function createProjectContextDocumentStore(
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
-  membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
@@ -404,7 +398,6 @@ export function createProjectContextDocumentStore(
     db,
     () => ensureProjectContextSource(db, projectId, scheme, userId),
     () => findProjectContextSource(db, projectId, scheme, userId),
-    membershipObserver,
     undefined,
     catalogMutations,
     undefined,
@@ -416,7 +409,6 @@ export function createWorkContextDocumentStore(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
-  membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
@@ -424,7 +416,6 @@ export function createWorkContextDocumentStore(
     db,
     () => ensureWorkContextSource(db, workId, scheme),
     () => findWorkContextSource(db, workId, scheme),
-    membershipObserver,
     workId,
     catalogMutations,
     undefined,
@@ -436,7 +427,6 @@ export function createNoWorkContextDocumentStore(
   db: Database,
   projectId: string,
   scheme: "uploads",
-  membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
@@ -452,7 +442,6 @@ export function createNoWorkContextDocumentStore(
       const workId = await findNoWorkId(db, projectId);
       return workId ? findWorkContextSource(db, workId, scheme) : null;
     },
-    membershipObserver,
     resolveWorkId,
     catalogMutations,
     undefined,
@@ -465,7 +454,6 @@ export function createLineageContextDocumentStore(
   db: Database,
   projectId: string,
   rootThreadId: string,
-  membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
@@ -489,7 +477,6 @@ export function createLineageContextDocumentStore(
     db,
     () => lifecycle.ensureSource(projectId, rootThreadId),
     find,
-    membershipObserver,
     undefined,
     catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),

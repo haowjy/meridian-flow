@@ -173,11 +173,8 @@ router resolves to exact project-scoped Work authority before dispatch.
   holds: settlements by ahead id, rows by id, and every row at an exact or
   extension-omitted address, each with the canonical URI its folder chain
   spells now (deleted rows included). Readability comes from the file
-  policy's `listAccess` for the snapshot's reader; presence from `deleted_at`
-  plus the manifest membership ContextFS lists through, read only when a
-  manifest-governed row needs it (the live set, then a draft view's, which
-  includes draft-created and same-response staged documents). Images are
-  documents: the `asset:` rule reads the same rows. Nothing is cached between
+  policy's `listAccess` for the snapshot's reader; presence from the selected
+  live/draft SQL tree view. Images are documents: the `asset:` rule reads the same rows. Nothing is cached between
   operations. ContextFS search binds its source document IDs to one snapshot;
   each chapter's read prepares its own document into it. The factory must
   receive the same scope instance as collab. Scope rules live in collab's
@@ -215,7 +212,6 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
 | `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
-| `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
 ## Moves and the link note
 
@@ -230,13 +226,11 @@ Inside the transaction the move row-locks every mutated document (moved
 identities plus any overwrite victim), sorted, `FOR NO KEY UPDATE`
 (`lockMovedDocumentRows`). The weaker lock keeps journal FK insertion compatible
 while ordering the move against derive certification. After all DML and history
-a cross-project move (personal to project or back) moves the documents' live
-manifest membership to the destination project, then it settles ahead refs at the
+the new source row determines project membership. The move settles ahead refs at the
 destinations once (a folder move settles against its final tree), then
 `countIncomingLinks` sums `document_links` occurrences whose `doc:` ref names a
 moved document or whose `ahead:` ref is settled on one, from live content holders
-in the request project. A drafted holder is live only while the project's live
-manifest holds it. A moved holder's own links to unmoved documents are not
+in the request project. Hidden draft holders are excluded by the live tree view. A moved holder's own links to unmoved documents are not
 counted; personal and other-project holders are not counted. The receipt shape
 stays `linkUpdate: { links, documents }`.
 
@@ -289,10 +283,10 @@ it. Arrival hooks, each once against the operation's final tree:
 | Arrival | Where | Locks already held |
 |---|---|---|
 | Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
-| Binary upload, figure upload | `createBinaryDocument`, after publishing live membership in the same transaction | the store transaction's namespace keys |
-| Move-in (file, overwrite, folder) | tree store, once after all DML and any cross-project membership transfer | every participating namespace |
+| Binary upload, figure upload | `createBinaryDocument`, after persisting the live identity in the same transaction | the store transaction's namespace keys |
+| Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
-| Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
+| Draft Apply (warm and recovery) | push completion that reveals tree nodes: Work → arriving namespaces → holder lock | as listed |
 
 A draft's hidden create is no arrival: it settles unsettled refs at its address
 in the draft only (`link_ahead_draft_settlements`). A reveal is an arrival at
@@ -302,9 +296,7 @@ arrivals.
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to
 storage coordinates (project, scheme, Work, No Work lock coordinate, path), the
-document at an exact address (rendered path compared byte for byte), and
-`listsThroughLiveManifest(scheme)`, the one rule for which sources are live only
-through the project manifest. A document under a deleted folder reads as deleted
+document at an exact address (rendered path compared byte for byte). A document under a deleted folder reads as deleted
 at its address. The link scope, the ahead-ref registry, the move note, and the
 browser address lookup all read through it.
 
@@ -313,8 +305,7 @@ browser address lookup all read through it.
 `document_previous_locations` is direct-to-identity bookmark and chat history. Moves capture only their file/subtree before DML and
 record each vacated file path. Successful file/folder claims consume the exact
 previous location. Failed inserts and rolled-back commands consume nothing.
-Bootstrap uses the same store; hidden manifest identities are outside this
-namespace. Project/Work restore changes availability, not file locations; Work
+Bootstrap uses the same store. Project/Work restore changes availability, not file locations; Work
 cascade delete and restore nevertheless advance document/folder location versions.
 
 The Context command transaction receives the complete resolved scheme/Work set.
@@ -436,7 +427,7 @@ currently available to the request owner in the requested project.
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
   boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
-  installs an empty Yjs authority, and records manifest membership in one
+  and installs an empty Yjs authority in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID
   across every project scheme and authorized Work authority and return
@@ -444,25 +435,18 @@ currently available to the request owner in the requested project.
   distinct from a true allocation conflict. Response `name` is always the full
   basename including extension. A successful basename change clears the flag in
   the shared tree-mutation store, while path-only moves preserve it.
-- Production text creation is one aggregate transaction: the context row, initial
-  Yjs authority/content, and effective manifest membership either all commit or
-  all roll back. Warm-room publication follows commit, so rollback cannot expose
-  checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
-  manifest-aware view consistently, and observations fail closed when membership
-  authority is unavailable. New non-empty content is parsed into a detached
-  initialize-only checkpoint.
-  An older row missing membership is repaired on its next tracked-document touch;
-  repair creates empty Yjs state only when the separate Markdown projection is
-  empty and preserves existing canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
-  through their Work and deliberately register in the live view, not a work-draft
-  view: the ws live-room gate checks the live project manifest.
+- Production text creation commits the context row and initial Yjs authority/content
+  together. Warm-room publication follows commit. Reads and listings use the selected
+  SQL tree view. Draft creation records a hidden live identity and the draft's tree use,
+  and never seeds live Yjs. Scratch and uploads are live Work-owned rows; the live-room
+  gate checks their tree identity and access, with no registration or repair step.
 - Work-scoped source provisioning and tree/content mutations lock and recheck the
   owning Work in their transaction. Work deletion takes the same lifecycle lock,
   while read paths never provision a missing source and instead return empty/not-found.
   so it cannot commit between authorization and a new scratch/upload mutation.
-- Cross-source moves preserve document identity and therefore preserve the same live
-  project-manifest membership; source scope is storage location, not a second
-  manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.
+- Cross-source moves preserve document identity. The destination row determines
+  project visibility; no separate membership state moves. The move commit must not
+  rewrite document Yjs authority or journal rows.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
@@ -484,8 +468,7 @@ currently available to the request owner in the requested project.
   internal exact-file cleanup; there is no path-only file-delete contract.
   Files contribute their one committed `documents.id`; recursive folder deletion
   contributes every committed descendant document ID, while an empty folder
-  contributes none. Post-commit membership callback failure is diagnostic; the
-  committed receipt remains successful.
+  contributes none.
 
 ## Deleted (cleanse removal)
 

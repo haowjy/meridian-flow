@@ -320,7 +320,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const realBranchStore = createDrizzleBranchStore(db, {
     journal: persistence.journal,
     lifecycle: persistence.lifecycle,
-    coordinator: liveCoordinator,
   });
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
@@ -674,7 +673,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     ),
     draftTree: createDrizzleDraftTreeReviewBridge(db, {
       drafts: workDrafts,
-      recordLiveMembership: (documentId) => branchStore.recordManifestDocumentCreated(documentId),
     }),
     branches: branchStore,
     branchCoordinator,

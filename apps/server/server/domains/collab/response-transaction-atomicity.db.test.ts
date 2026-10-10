@@ -187,10 +187,6 @@ describe("change trail (postgres)", () => {
         ),
       ).resolves.toMatchObject({ status: "applied" });
     }
-
-    await expect(
-      fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-    ).resolves.toMatchObject({ members: expect.arrayContaining([...created]) });
     for (const [index, documentId] of created.entries()) {
       await expect(harness.liveMarkdown(documentId as never)).resolves.toContain(
         `Created document ${index + 1}.`,

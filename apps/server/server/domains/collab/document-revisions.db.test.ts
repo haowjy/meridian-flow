@@ -81,7 +81,6 @@ async function fixture(
       seq: 0,
     });
   });
-  await f.branchStore.reconcileProjectManifest(PROJECT_ID);
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
   const effective = scopeBranchPeer(

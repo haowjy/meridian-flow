@@ -84,8 +84,7 @@ Composer reference removal never calls the separate upload-delete route.
 Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
 editor links carry a stable ref and never consult them. Every successful namespace claim consumes the exact old
-alias in the same transaction; source provisioning and hidden manifests are not
-path claims.
+alias in the same transaction; source provisioning is not a path claim.
 
 Metadata browsing uses the sibling catalog routes: complete compact snapshot,
 whole-commit changes, direct children, and stable-ID/canonical-URI lookup. Every
@@ -118,8 +117,7 @@ re-spells on read. Moves flush durable link derivation (which also registers
 client-minted ahead refs) before namespace locking, then row-lock every mutated
 document (moved identities and any overwrite victim) with
 `lockMovedDocumentRows`, sorted, `FOR NO KEY UPDATE`. Never use `FOR UPDATE`
-there: journal FK inserts must remain compatible. After the DML a cross-project
-move carries live manifest membership to its destination project, then the move
+there: journal FK inserts must remain compatible. After the DML the move
 settles ahead refs waiting at its destinations (move-in arrival), then counts the
 note's `linkUpdate`: occurrences in the request project's live holders (visible in the live tree view) whose ref names a moved document
 (`links/move-link-count.ts`). Hidden draft holders are excluded by tree identity status.

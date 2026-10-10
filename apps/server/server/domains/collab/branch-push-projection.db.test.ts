@@ -74,7 +74,6 @@ describe("branch-push durable projection", () => {
   const branchStore = createDrizzleBranchStore(db, {
     journal: persistence.journal,
     lifecycle: persistence.lifecycle,
-    coordinator: liveCoordinator,
   });
 
   afterAll(async () => {

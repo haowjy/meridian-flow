@@ -17,7 +17,6 @@ export type DocumentDerivationCut = {
   watermark: DerivationWatermark;
   state: Uint8Array;
   holderUri: string | null;
-  kind: "content" | "manifest";
 };
 export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;

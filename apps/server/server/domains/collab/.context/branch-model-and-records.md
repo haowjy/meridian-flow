@@ -17,7 +17,7 @@ shared lifecycle row lock before durable mutation, and take the row through
 drafts are frozen: captured evidence stays, and nothing writes, applies or
 discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
-new write. Draft-only Discard removes only that document’s manifest entry and
+new write. Draft-only Discard ends that draft’s use of the hidden document and
 resets its content branch in one Work-locked transaction. Branch reset
 notifications publish after commit; rolled-back resets never advance a room.
 
@@ -120,23 +120,9 @@ text equality is never continuity evidence.
 Restoration length is validated independently at both the certification and the
 writer boundary; neither check assumes the other ran.
 
-## Live manifest membership
+## Pending publication
 
-The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. Ordinary `resolveManifestMembership` calls never reconcile or
-append membership history. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
-self-heal command: it seeds missing active database content rows, but never
-rewrites an existing key or removes an entry. The WebSocket gate invokes it once
-after a membership miss. Manifest write-intent paths do not run this broad SQL
-reconciliation; draft-scoped creation (`workId` or `threadId`) must not allow
-unstaged document rows to enter live membership. Creation and deletion flow
-through `recordManifestDocument{Created,Deleted}`, with SQL
-soft-delete committed before the deletion notification. Preserve every no-op guard:
-setting an equal Y.Map value still creates Yjs history. See
-[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/manifest/manifest-membership-port.md)
-for the cross-domain port decision and self-healing rationale.
-
-Manifest membership rows are branch bookkeeping, not writer-reviewable prose.
+The pipeline’s remaining manifest companion rows are branch bookkeeping, not writer-reviewable prose.
 `domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
 review lists, counts, and Auto-apply confirmation: it requires current-generation
 reviewable rows loaded through the `WorkDraftPendingStore` seam and excludes
@@ -149,13 +135,11 @@ Auto-apply publishes new-document content and live membership atomically. A
 reusable manifest Work-draft branch may remain `active` after its content
 companions settle; that status alone is not pending-review evidence.
 
-`domain/document-creation.ts` owns tracked-document materialization
-transactions. Context and bootstrap supply the row, initial-content, and
-manifest operations; the aggregate commits them together. Repair uses the same
-boundary so a row cannot become visible before its Yjs authority is usable.
-Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
-after the enclosing Drizzle transaction commits. Work/thread manifest mutations
-persist their branch state inside that transaction; they never push live (D59).
+`domain/document-creation.ts` owns tracked-document materialization transactions.
+Context and bootstrap supply the row and initial content. They commit together;
+warm-room publication follows the enclosing transaction's commit. Tree presence
+comes from context's live/draft SQL views, never a Yjs manifest. The pipeline
+companion above remains until tree publication replaces it.
 
 ## Durable records
 

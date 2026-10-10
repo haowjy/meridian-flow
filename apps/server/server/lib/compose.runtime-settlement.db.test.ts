@@ -160,9 +160,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD_ID,
       });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
-      });
       const responseId = await runtimes.insertModelResponse(THREAD);
       await bindEditAgent(runtime, THREAD_ID);
 

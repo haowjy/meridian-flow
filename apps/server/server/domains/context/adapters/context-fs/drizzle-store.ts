@@ -11,7 +11,6 @@ import { documentMarkdownProjections, documents } from "@meridian/database/schem
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
-  runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
@@ -49,9 +48,6 @@ import {
   hasOppositeContextEntry,
   lockContextSources,
 } from "./document-locations.js";
-import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
-
-export type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -91,32 +87,8 @@ function mapDocument(row: DocumentRow): ContextDocument {
 export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
-  /** The live manifest's writer, until the manifest is retired (lane M). */
-  membershipObserver?: ContextDocumentMembershipObserver;
   catalogMutations?: ContextCatalogMutationPort;
   arrivals?: DocumentArrivals;
-}
-
-export async function notifyMembershipObserver(
-  observer: ContextDocumentMembershipObserver | undefined,
-  method: keyof ContextDocumentMembershipObserver,
-  documentId: string,
-): Promise<void> {
-  if (!observer) return;
-  let deferred = false;
-  const completed = new Promise<void>((resolve, reject) => {
-    deferred = runAfterDrizzleCommit(async () => {
-      try {
-        await observer[method](documentId);
-        resolve();
-      } catch (cause) {
-        reject(cause);
-        if (deferred) throw cause;
-      }
-    });
-    if (deferred) resolve();
-  });
-  await completed;
 }
 
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
@@ -217,12 +189,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     const created = await this.claimLive(input, { kind: "any" });
     if (!created) throw new ContextEntryConflictError();
-    // Direct creates tell the live manifest once they commit.
-    await notifyMembershipObserver(
-      this.deps.membershipObserver,
-      "documentCreated",
-      created.document.id,
-    );
     return created.document;
   }
 
@@ -230,13 +196,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     input: CreateDocumentInput,
     claim: LiveClaim = { kind: "any" },
   ): Promise<LiveDocumentCreation | null> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      const created = await this.claimLive(input, claim);
-      // The creation aggregate's membership commits with the identity, until lane M
-      // retires the live manifest.
-      if (created) await this.deps.membershipObserver?.documentCreated(created.document.id);
-      return created;
-    });
+    return this.claimLive(input, claim);
   }
 
   /** Reveal the hidden document at the path, or insert the live row, under `claim`. Null when taken. */
@@ -360,9 +320,8 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       if (!row) throw new Error("Failed to create binary document");
       await claimLiveLocation(this.deps.db, this.sourceId, input);
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      // The upload is an arrival (contract §9.3): its membership and the settlement of a ref
+      // The upload is an arrival (contract §9.3): its live identity and the settlement of a ref
       // waiting at this address publish together, under the namespace key this command holds.
-      await this.deps.membershipObserver?.documentCreated(row.id);
       await this.deps.arrivals?.settle([row.id]);
       const document = await this.findDocument(
         LIVE_TREE,

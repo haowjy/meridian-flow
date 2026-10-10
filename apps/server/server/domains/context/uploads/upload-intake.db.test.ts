@@ -110,7 +110,6 @@ if (!RUN) {
             db,
             documentSync: collab,
             drafts: collab.drafts,
-            manifestMembership: collab,
             catalogMutations: catalog,
           });
           return createUploadIntake({
@@ -287,7 +286,6 @@ if (!RUN) {
         db: database.current,
         documentSync: collab,
         drafts: collab.drafts,
-        manifestMembership: collab,
         catalogMutations: catalog,
       });
       const service = createUploadIntake({

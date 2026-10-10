@@ -65,7 +65,7 @@ const advanceParticipant: DrizzleTransactionParticipant<AdvanceState> = {
   },
 };
 type AvailabilityRow = {
-  document: CatalogFileRow & { deletedAt?: Date | null; kind?: string };
+  document: CatalogFileRow & { deletedAt?: Date | null };
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
@@ -108,11 +108,7 @@ export function classifyAuthoritativeIdentity(input: {
   if (!rawProjectIsRequested && !rawWorkIsRequested && !isActorUserSource) {
     return { kind: "not-visible" };
   }
-  if (
-    !source ||
-    (document.kind !== undefined && document.kind !== "content") ||
-    !isContextUriScheme(source.slug)
-  ) {
+  if (!source || !isContextUriScheme(source.slug)) {
     return { kind: "inconsistent" };
   }
   const scheme = source.slug;

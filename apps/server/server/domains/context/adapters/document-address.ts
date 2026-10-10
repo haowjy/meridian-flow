@@ -5,15 +5,9 @@
  * Addresses are spelled by the tree owner (`tree/tree-addresses.ts`); a caller asking
  * where a document lives now treats `deleted` as "no address".
  *
- * Presence here is SQL presence. Manifest liveness belongs to the sources
- * `listsThroughLiveManifest` names; callers consult the manifest for those.
  */
 import { type DocumentId, hasFileExtension, type ProjectId } from "@meridian/contracts";
-import {
-  type ContextUriScheme,
-  isProjectScopedScheme,
-  parseContextUri,
-} from "@meridian/contracts/context-uri";
+import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentPreviousLocations, projects, threads, works } from "@meridian/database/schema";
@@ -22,7 +16,6 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { isDrafted } from "../../file-policy/index.js";
 import type { DocumentAddressStore } from "../ports/document-address.js";
 import {
   type DocumentAddress,
@@ -31,15 +24,6 @@ import {
   presentSourceId,
 } from "../tree/tree-addresses.js";
 import { DrizzleContextTreeMutationStore } from "./context-fs/drizzle-tree-mutation-store.js";
-
-/**
- * Drafted sources stored in the project list through its live manifest, so a
- * draft-only row is not live and a draft-deleted one still is (D14). User files
- * live in the personal project and list their live rows.
- */
-export function listsThroughLiveManifest(scheme: ContextUriScheme): boolean {
-  return isDrafted(scheme) && scheme !== "user";
-}
 
 export const sameCoordinates = (
   a: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,

@@ -1,6 +1,6 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 import { createHash, randomUUID } from "node:crypto";
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -132,17 +132,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       const racing = new DrizzleContextDocumentStore({
         db,
         contextSourceId: manuscript.id,
-        membershipObserver: {
-          async documentCreated(documentId) {
-            await ports.documentSync.recordManifestDocumentCreated(documentId as DocumentId, {
-              projectId: projectId as never,
-            });
+        arrivals: {
+          lockNamespaces: (ids) => realArrivals.lockNamespaces(ids),
+          async settle(ids) {
             published();
             await gate;
+            return realArrivals.settle(ids);
           },
-          documentDeleted: () => undefined,
         },
-        arrivals: realArrivals,
       });
       const binary = { fileType: "image", mimeType: "image/png", sizeBytes: 1 } as const;
       const uploading = racing.createBinaryDocument({
@@ -174,13 +171,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         new DrizzleContextDocumentStore({
           db,
           contextSourceId: manuscript.id,
-          membershipObserver: {
-            documentCreated: (documentId) =>
-              ports.documentSync.recordManifestDocumentCreated(documentId as DocumentId, {
-                projectId: projectId as never,
-              }),
-            documentDeleted: () => undefined,
-          },
           arrivals: Object.assign({}, realArrivals, {
             settle: unavailable,
             settleCommitted: unavailable,
@@ -260,14 +250,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       const castRef = await register("kb://cast.md");
       const cast = await create("user://cast.md");
       expect(await port.move("user://cast.md", "kb://cast.md")).toMatchObject({ ok: true });
-      const [personal] = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(eq(projects.userId, userId), eq(projects.isPersonal, true)));
-      const members = async (id: string | undefined) =>
-        (await ports.documentSync.resolveManifestMembership({ projectId: id as never })).members;
-      expect(await members(projectId)).toContain(cast);
-      expect(await members(personal?.id)).not.toContain(cast);
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.

@@ -9,9 +9,6 @@
  * A draft is a `UNION ALL`: live rows the draft says nothing about, plus the draft's
  * change rows at the draft's location. Folders have no change rows yet, so a draft's
  * folders are the live ones plus the hidden ones its documents sit under.
- *
- * `kind = 'content'` keeps the live manifest row out of every relation until lane M
- * deletes the manifest and the column.
  */
 import type {
   ContextSourceId,
@@ -107,11 +104,9 @@ const folderColumns = sql.raw(
 );
 
 /** The predicate: a document row in the live tree. */
-const liveDocument = sql.raw("d.deleted_at IS NULL AND NOT d.hidden AND d.kind = 'content'");
+const liveDocument = sql.raw("d.deleted_at IS NULL AND NOT d.hidden");
 /** A document the draft has a change row for, in the draft's view (PR 3 adds `AND NOT c.deleted`). */
-const draftDocument = sql.raw(
-  "d.deleted_at IS NULL AND d.kind = 'content' AND (NOT d.hidden OR c.created)",
-);
+const draftDocument = sql.raw("d.deleted_at IS NULL AND (NOT d.hidden OR c.created)");
 /** Where the draft has the document: its own location when it sets one, else the row's. */
 const draftFolderId = sql.raw(
   "CASE WHEN c.context_source_id IS NULL THEN d.folder_id ELSE c.parent_folder_id END",
@@ -362,7 +357,7 @@ export async function loadDocumentIdentityRows(
   if (ids.length === 0) return [];
   const rows = await currentDrizzleDb(db).execute<RawIdentityRow>(sql`
     SELECT ${identityColumns} FROM documents d
-    WHERE d.kind = 'content' AND d.id IN (${uuidList(ids)})`);
+    WHERE d.id IN (${uuidList(ids)})`);
   return rows.map(identityRow);
 }
 
@@ -439,7 +434,7 @@ export async function loadDraftCreatedDocuments(
       c.name AS c_name, c.extension AS c_extension
     FROM draft_tree_changes c
     CROSS JOIN LATERAL (
-      SELECT * FROM documents d WHERE d.id = c.node_id AND d.kind = 'content' OFFSET 0
+      SELECT * FROM documents d WHERE d.id = c.node_id OFFSET 0
     ) d
     WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.created
     ORDER BY c.created_at, c.node_id`);
@@ -486,7 +481,7 @@ export function identityDocuments(view: TreeView) {
     JOIN documents d ON d.id = shown.id
     UNION ALL
     SELECT ${fields(false)} FROM documents d
-    WHERE NOT d.hidden AND (d.deleted_at IS NOT NULL OR d.kind <> 'content')`;
+    WHERE NOT d.hidden AND d.deleted_at IS NOT NULL`;
   return subquery(query, columns, "document_identities");
 }
 
@@ -565,7 +560,7 @@ export async function loadHiddenDocumentCandidates(
         WHERE u.node_kind = 'document' AND u.node_id = d.id AND u.created
           AND r.status = 'active') AS active_uses
     FROM documents d
-    WHERE d.hidden AND d.deleted_at IS NULL AND d.kind = 'content' AND ${textDocument}
+    WHERE d.hidden AND d.deleted_at IS NULL AND ${textDocument}
       AND (
         (d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
           AND d.name = ${slot.name} AND d.extension = ${slot.extension})

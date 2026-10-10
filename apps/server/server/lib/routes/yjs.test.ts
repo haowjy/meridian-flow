@@ -496,8 +496,6 @@ describe("Yjs room access", () => {
     const allowAll = createAllowAllFileAccess();
     const documentSync = {
       bindHocuspocus: vi.fn(),
-      resolveManifestMembership: vi.fn(async () => ({ members: [liveRoom] })),
-      reconcileProjectManifest: vi.fn(async () => undefined),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),
       admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),

@@ -4,7 +4,7 @@
  * one at the draft's location before its text is pushed. Lane E replaces the reveal with
  * the tree step inside one publication; lane D replaces the discard half.
  */
-import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -22,8 +22,6 @@ export function createDrizzleDraftTreeReviewBridge(
   deps: {
     drafts: Pick<Drafts, "activeForWork" | "lockActive">;
     arrivals?: DocumentArrivals;
-    /** The live manifest's writer until lane M retires it. */
-    recordLiveMembership(documentId: DocumentId): Promise<void>;
   },
 ): DraftTreeReviewBridge {
   const tree = createTreeReader(db);
@@ -74,7 +72,6 @@ export function createDrizzleDraftTreeReviewBridge(
           );
         }
         await dropDocumentRows(db, { draftId: draft.id, documentIds: [documentId] });
-        await deps.recordLiveMembership(documentId);
         await deps.arrivals?.settle([documentId]);
       });
     },

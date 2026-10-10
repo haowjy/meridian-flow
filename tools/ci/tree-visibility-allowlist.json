@@ -42,8 +42,8 @@
     },
     {
       "path": "apps/server/server/domains/collab/adapters/drizzle-branches.ts",
-      "forms": ["read", "write"],
-      "reason": "Branch ownership by id (draftable source, project of a document)"
+      "forms": ["read"],
+      "reason": "Branch ownership by id (draftable source)"
     },
     {
       "path": "apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts",

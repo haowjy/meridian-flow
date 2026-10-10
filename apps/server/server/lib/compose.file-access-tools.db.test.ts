@@ -119,11 +119,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD.threadId,
       });
-      for (const documentId of [CHAPTER_ID, NOTES_ID]) {
-        await runtime.ports.documentSync.recordManifestDocumentCreated(documentId as never, {
-          projectId: PROJECT_ID as never,
-        });
-      }
       return runtimes.script(runtime, THREAD);
     }
 

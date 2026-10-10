@@ -418,25 +418,6 @@ export type BranchPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
-  /** The live manifest's members, for its remaining live readers until lane M retires it. */
-  resolveManifestMembership(input: {
-    projectId: ProjectId;
-  }): Promise<{ documentId: DocumentId; members: string[] }>;
-  reconcileProjectManifest(projectId: ProjectId): Promise<void>;
-  /** A cross-project move's live membership, inside the move transaction. */
-  transferLiveManifestMembership(
-    documentIds: readonly DocumentId[],
-    projects: { from: ProjectId; to: ProjectId },
-  ): Promise<void>;
-  recordManifestDocumentCreated(
-    documentId: DocumentId,
-    view?: { projectId: ProjectId },
-  ): Promise<void>;
-  /** The documents.deleted_at transaction must commit before this notification. */
-  recordManifestDocumentDeleted(
-    documentId: DocumentId,
-    view?: { projectId: ProjectId },
-  ): Promise<void>;
   /**
    * The Work's draft branch on a document a draft just created or joined, seeded from its
    * live document (empty: a draft create never seeds live Yjs), in the caller's

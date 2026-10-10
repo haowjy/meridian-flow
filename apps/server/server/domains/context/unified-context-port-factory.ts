@@ -12,7 +12,7 @@ import {
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
@@ -30,7 +30,6 @@ import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.
 import type { ContextPlacement } from "./adapters/context-fs/create-placement.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
 import { createDrizzleDraftCreates } from "./adapters/context-fs/drizzle-draft-creates.js";
-import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
@@ -61,7 +60,6 @@ import type {
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import type { DraftCreatePort } from "./ports/draft-create.js";
-import type { LiveMembership } from "./ports/live-membership.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -111,17 +109,6 @@ interface ContextStoreResolvers {
   resolveMutationStore(
     projectId?: string,
   ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
-}
-
-/** The live manifest's writers, until lane M retires it; nothing reads it for visibility. */
-export interface ManifestMembershipPort {
-  recordManifestDocumentCreated(documentId: string, view: { projectId: string }): Promise<void>;
-  recordManifestDocumentDeleted(documentId: string, view: { projectId: string }): Promise<void>;
-  /** A cross-project move carries live membership to its destination project (§9.3). */
-  transferLiveManifestMembership(
-    documentIds: readonly DocumentId[],
-    projects: { from: ProjectId; to: ProjectId },
-  ): Promise<void>;
 }
 
 /** What every adapter of one port shares: storage, collab, and the reading thread. */
@@ -426,23 +413,9 @@ function createInMemoryStoreResolvers(
 
 function createProductionStoreResolvers(
   db: Database,
-  manifestMembership: ManifestMembershipPort,
   catalogMutations: ContextCatalogMutationPort,
-  eventSink?: EventSink,
   arrivals?: DocumentArrivals,
 ): ContextStoreResolvers {
-  // The live manifest's writer until lane M retires it; a draft's create never reaches it.
-  const membershipObserverFor = (projectId: string): ContextDocumentMembershipObserver => ({
-    documentCreated: (documentId) =>
-      manifestMembership.recordManifestDocumentCreated(documentId, { projectId }),
-    documentDeleted: (documentId) =>
-      manifestMembership.recordManifestDocumentDeleted(documentId, { projectId }),
-  });
-  const liveMembership: LiveMembership = {
-    transfer: (documentIds, projects) =>
-      manifestMembership.transferLiveManifestMembership(documentIds, projects),
-  };
-
   return {
     lineages: createDrizzleScratchLineages(db),
     resolveLineageStore(projectId, rootThreadId) {
@@ -450,7 +423,6 @@ function createProductionStoreResolvers(
         db,
         projectId,
         rootThreadId,
-        membershipObserverFor(projectId),
         catalogMutations,
         arrivals,
       );
@@ -461,45 +433,23 @@ function createProductionStoreResolvers(
         projectId,
         scheme,
         userId,
-        membershipObserverFor(projectId),
         catalogMutations,
         arrivals,
       );
     },
-    resolveWorkStore(workId, scheme, projectId) {
-      return createWorkContextDocumentStore(
-        db,
-        workId,
-        scheme,
-        projectId ? membershipObserverFor(projectId) : undefined,
-        catalogMutations,
-        arrivals,
-      );
+    resolveWorkStore(workId, scheme, _projectId) {
+      return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals);
     },
     resolveNoWorkStore(projectId, scheme) {
-      return createNoWorkContextDocumentStore(
-        db,
-        projectId,
-        scheme,
-        membershipObserverFor(projectId),
-        catalogMutations,
-        arrivals,
-      );
+      return createNoWorkContextDocumentStore(db, projectId, scheme, catalogMutations, arrivals);
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);
       if (!workId) throw new Error(`No Work missing for project ${projectId}`);
       return workId;
     },
-    resolveMutationStore(projectId) {
-      return new DrizzleContextTreeMutationStore(
-        db,
-        projectId ? membershipObserverFor(projectId) : undefined,
-        catalogMutations,
-        eventSink,
-        arrivals,
-        liveMembership,
-      );
+    resolveMutationStore(_projectId) {
+      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals);
     },
   };
 }
@@ -560,7 +510,6 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: ContextFSDeps["documentSync"] &
     DocumentCreationAggregate &
     Pick<BranchPeerShadowAccess, "ensureCreatedDraftBranch" | "retractCreatedDraftBranch">;
-  manifestMembership: ManifestMembershipPort;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
@@ -578,9 +527,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     });
   const storeResolvers = createProductionStoreResolvers(
     options.db,
-    options.manifestMembership,
     catalogMutations,
-    options.eventSink,
     options.arrivals,
   );
 
