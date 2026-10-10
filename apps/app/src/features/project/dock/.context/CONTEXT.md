@@ -78,7 +78,11 @@ boundary normalizes preparation failures; presentation never reconstructs accept
 callbacks or exceptions. One opt-in failure owner keeps records by source control. Rail and
 header project pre-acceptance failures inline; their records expire with the source entry
 or dock revision. The route boundary projects accepted workspace failures on the destination
-and keeps Retry. Only rail and header actions opt in; ordinary document opens keep their
+and keeps Retry. Both shells use `useRailScreenSwitch` for the same-screen guard and ticket-checked
+rail settlement policy. `WorkspaceNavBody` projects inline rail failures directly
+from this shell-neutral failure owner. Desktop composes its captured document transfer
+into that command; phone only invokes destination commands and never claims the dock.
+Only rail and header actions opt in; ordinary document opens keep their
 own failure policy. Browser history never calls the desktop switch controller.
 Peeking and closing the dock never write Editor tabs. There is no third active-document
 store or continuous synchronization. An Untitled Editor tab can also be carried: the dock
