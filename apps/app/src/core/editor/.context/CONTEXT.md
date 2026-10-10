@@ -676,9 +676,11 @@ commands, and the lightweight hunk model used by the plugin.
   `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
-  RelativePositions; local writer typing maps the existing set through the
-  transaction. Local inserted ranges paint gold immediately, even while marks
-  are hidden; an authoritative server model replaces that pending attribution.
+  RelativePositions. Pending writer ranges have their own coalesced relative-anchor
+  overlay, captured after the binding writes local edits. Local inserted ranges
+  paint gold immediately, even while marks are hidden; a model refresh retires
+  only the text it explicitly covers with writer attribution. Decorations are
+  output, never the source of pending attribution.
   Review dispositions never use browser mutation origins or collaborative history; Ctrl+Z is not a review restore
   mechanism.
 - Editor-side click seam: mousedown on any decoration DOM
