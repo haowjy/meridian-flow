@@ -127,6 +127,37 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       items: [{ itemKey: keyOf(notes), status: "applied" }],
     });
     expect.soft(await s.draftStatuses(ascension)).toEqual(["closed"]);
+
+    // 5a's dependency (E-R2): A is held at dep/a.md; B needs dep/b.md, which only A's move
+    // back would free, so B is held too; independent C applies. Never a whole-batch stale.
+    const cove = await s.work("Cove", "draft");
+    const a = await s.model(cove).create("dep/a.md", "A, drafted.");
+    await s.writer.create("dep/a.md", { content: "Writer's A." });
+    expect.soft(await s.writer.move("dep/a.md", "dep/b.md")).toMatchObject({ ok: true });
+    const x = await s.writer.createDocument("dep/a.md", "X.");
+    const b = await s.model(cove).create("dep/b.md", "B, drafted.");
+    const c = await s.model(cove).create("dep/c.md", "C, drafted.");
+    const chain = await s.items(cove);
+    const held = (documentId: DocumentId, path: string) => ({
+      itemKey: itemFor(chain, documentId).itemKey,
+      status: "held",
+      reason: { code: "path_taken", path: `manuscript://${path}` },
+    });
+    expect
+      .soft(await s.applyAll(cove, { items: [itemFor(chain, b)] }), "B alone: A stays at b.md")
+      .toMatchObject({ status: "applied", items: [held(b, "dep/b.md")] });
+    expect.soft(await s.applyAll(cove), "A and what only A frees stay").toMatchObject({
+      status: "applied",
+      draftClosed: false,
+      items: expect.arrayContaining([
+        held(a, "dep/a.md"),
+        held(b, "dep/b.md"),
+        { itemKey: itemFor(chain, c).itemKey, status: "applied", notes: [] },
+      ]),
+    });
+    expect.soft(await live.idAt("dep/c.md"), "C applied").toBe(c);
+    expect.soft(await live.idAt("dep/b.md"), "A still at b.md").toBe(a);
+    expect.soft(await live.idAt("dep/a.md"), "X kept").toBe(x);
   });
 
   it("applies the whole draft through the same command when D40 switches to auto-apply (E-7b)", async () => {
