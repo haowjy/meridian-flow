@@ -9,6 +9,7 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  linkAheadHolderBindings,
   linkAheadRefs,
   projects,
   threads,
@@ -16,6 +17,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -421,6 +423,29 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             }),
           ),
         ).rejects.toBeInstanceOf(LinkBindingInsideTransactionError);
+
+        // A copy out of the holder (contract §10.6): a ref its own binding answers carries
+        // the bound document; one only a settlement answers keeps its ahead ref.
+        const bound = await bindMarkdown({
+          holder: { documentId: holder as never },
+          markdown: "[S](soon.md) and [L](later.md)",
+          against: "current",
+        });
+        const later = walkLinkOccurrences(bound.blocks)[1]?.attrs.ref ?? null;
+        expect(later).toMatch(/^ahead:/);
+        await db.insert(linkAheadHolderBindings).values({
+          aheadId: (soon ?? "").slice("ahead:".length),
+          holderDocumentId: holder as never,
+          documentId: target as never,
+        });
+        const copied = await ports.documentSync.rebindHolderBoundRefs(bound.blocks, {
+          holderId: holder as never,
+          view: { kind: "live" },
+        });
+        expect(walkLinkOccurrences(copied).map((each) => each.attrs.ref)).toEqual([
+          targetRef,
+          later,
+        ]);
       } finally {
         await app.shutdown();
       }

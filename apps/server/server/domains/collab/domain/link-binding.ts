@@ -26,13 +26,13 @@ import {
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, PMNode } from "@meridian/markup";
 import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import type { Schema } from "prosemirror-model";
+import { Fragment, type Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { aheadRegistrations } from "./document-links-port.js";
 import {
@@ -106,6 +106,16 @@ export interface LinkBinder {
    * the content names anything.
    */
   bindStatic(markdown: string, filetype?: string | null): BoundWrite;
+  /**
+   * Blocks copied out of a holder (contract §10.6): every `ahead:` ref whose meaning there
+   * came from the holder's own binding (a published ref) becomes `doc:<bound id>`, since
+   * the binding stays with the holder. A ref only a draft's or the live settlement answers
+   * means the same wherever it lands in the view, so it is kept. Outside any transaction.
+   */
+  rebindHolderBoundRefs(
+    nodes: readonly PMNode[],
+    holder: { holderId: DocumentId; view: LinkView },
+  ): Promise<readonly PMNode[]>;
 }
 
 export class LinkBindingInsideTransactionError extends Error {
@@ -216,6 +226,26 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       return deps.links.within(key, () => bind(input));
     },
 
+    async rebindHolderBoundRefs(nodes, { holderId, view }) {
+      const aheadIds = new Set(
+        walkLinkOccurrences(nodes).flatMap((occurrence) => {
+          const ref = occurrence.attrs.ref === null ? null : parseLinkRef(occurrence.attrs.ref);
+          return ref?.kind === "ahead" ? [ref.aheadId] : [];
+        }),
+      );
+      if (aheadIds.size === 0) return nodes;
+      const bound = await deps.links.within({ documentId: holderId }, async () => {
+        await deps.links.prepare({ holders: [{ documentId: holderId, view }], stored: nodes });
+        const out = new Map<string, string>();
+        for (const aheadId of aheadIds) {
+          const documentId = deps.links.holderBinding({ holderDocumentId: holderId, aheadId });
+          if (documentId) out.set(`ahead:${aheadId}`, `doc:${documentId}`);
+        }
+        return out;
+      });
+      return bound.size === 0 ? nodes : nodes.map((node) => withRefs(node, bound));
+    },
+
     bindStatic(markdown, filetype = null) {
       const schemaType = schemaTypeOf(filetype);
       const holder: BoundHolder = { kind: "static" };
@@ -235,4 +265,32 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       return boundWrite({ holder, fresh: true, blocks, markdown, schemaType });
     },
   };
+}
+
+/** The node with each stored ref `refs` names replaced; untouched subtrees are reused. */
+function withRefs(node: PMNode, refs: ReadonlyMap<string, string>): PMNode {
+  if (node.isText) {
+    let changed = false;
+    const marks = node.marks.map((mark) => {
+      const next = mark.type.name === "link" ? refs.get(String(mark.attrs.ref)) : undefined;
+      if (!next) return mark;
+      changed = true;
+      return mark.type.create({ ...mark.attrs, ref: next });
+    });
+    return changed ? node.mark(marks) : node;
+  }
+  const children: PMNode[] = [];
+  let changed = false;
+  node.forEach((child) => {
+    const next = withRefs(child, refs);
+    if (next !== child) changed = true;
+    children.push(next);
+  });
+  const ref = typeof node.attrs.ref === "string" ? refs.get(node.attrs.ref) : undefined;
+  if (!changed && !ref) return node;
+  return node.type.create(
+    ref ? { ...node.attrs, ref } : node.attrs,
+    changed ? Fragment.fromArray(children) : node.content,
+    node.marks,
+  );
 }
