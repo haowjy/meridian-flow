@@ -123,11 +123,18 @@ it("releases every queued selection when a batch sender throws synchronously", a
     draft: { documentId: id, draftId: id },
     selection: { classIds: [id], operationIds: [id] },
   }));
-  await expect(
-    runDraftBatch(scope, items, () => {
-      throw new Error("injected");
-    }),
-  ).rejects.toThrow("injected");
-  for (const { draft } of items)
-    expect(hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...draft }).size).toBe(0);
+  const send = vi.fn(() => {
+    throw new Error("injected");
+  });
+  await expect(runDraftBatch(scope, items, send)).rejects.toThrow("injected");
+  expect(send).toHaveBeenCalledExactlyOnceWith(items[0]);
+  expect(
+    hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...items[0].draft }).size,
+  ).toBe(0);
+  expect(
+    hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...items[1].draft }).size,
+  ).toBe(0);
+  const retry = vi.fn().mockResolvedValue({ kind: "blocked" });
+  await expect(runDraftBatch(scope, items, retry)).resolves.toHaveLength(2);
+  expect(retry).toHaveBeenCalledTimes(2);
 });

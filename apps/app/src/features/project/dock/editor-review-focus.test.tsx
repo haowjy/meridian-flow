@@ -7,6 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import { useOpenReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
@@ -25,14 +26,7 @@ type Model = {
 
 // The preview read is the one boundary that needs a query client; the claimant
 // is what these tests drive.
-const model = vi.hoisted(() => ({ current: null as unknown as Model }));
-vi.mock("@/features/draft-review/useReviewChanges", () => ({
-  useOpenReviewChanges: () => ({
-    preview: model.current.preview,
-    active: model.current.preview?.status === "active" ? model.current.preview : null,
-    changes: model.current.changes,
-  }),
-}));
+vi.mock("@/features/draft-review/useReviewChanges", () => ({ useOpenReviewChanges: vi.fn() }));
 
 const target: AiDraftLaunchTarget = {
   workId: "work-1",
@@ -79,7 +73,11 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
     });
     const [mounted, setMounted] = useState(!delayedAdmission);
     const [addressed, setAddressed] = useState(false);
-    model.current = state;
+    vi.mocked(useOpenReviewChanges).mockReturnValue({
+      preview: state.preview,
+      active: state.preview?.status === "active" ? state.preview : null,
+      changes: state.changes,
+    } as unknown as ReturnType<typeof useOpenReviewChanges>);
     fixture.update = (next) => setState((previous) => ({ ...previous, ...next }));
     fixture.mountEditor = () => setMounted(true);
     fixture.nameDraftInAddress = () => setAddressed(true);
@@ -125,13 +123,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
       </EditorReviewHandoffProvider>
     );
   }
-  return {
-    ...fixture,
-    Harness,
-    get controls() {
-      return fixture;
-    },
-  };
+  return { Harness, controls: fixture };
 }
 
 async function launch(
@@ -234,7 +226,7 @@ describe("opening a review on given operations", () => {
 describe("a launch whose route settles before the Editor mounts the document", () => {
   it("focuses the change it named once the Editor has the document", async () => {
     const fixture = createLaunchFixture({}, true);
-    const { enterInlineReview, focusReviewChange, route } = fixture;
+    const { enterInlineReview, focusReviewChange, route } = fixture.controls;
     enterInlineReview.mockImplementation((documentId: string, draftId: string) =>
       fixture.controls.update({ inline: { documentId, draftId, shown: false } }),
     );
