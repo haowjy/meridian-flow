@@ -201,8 +201,22 @@ export function createInMemoryPendingSettlementStore(options?: {
     },
 
     // This store models no publication steps: every check proceeds.
-    async checkPublication() {
-      return { kind: "proceed" as const, hold: [] };
+    async checkPublication(input) {
+      return { kind: "proceed" as const, hold: [], payloads: input.payloads };
+    },
+
+    async prepareBranchLeases() {
+      return [];
+    },
+
+    async loadRecoveryScope(batchId) {
+      const batch = batches.get(batchId);
+      return {
+        payloads: new Map(),
+        memberBranchIds: (batch?.members ?? []).flatMap(({ pending }) =>
+          pending.push.branchId ? [pending.push.branchId] : [],
+        ),
+      };
     },
 
     async listRecoverableBatchIds() {

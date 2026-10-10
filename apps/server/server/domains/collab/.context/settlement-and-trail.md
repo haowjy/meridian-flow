@@ -72,24 +72,41 @@
   against a shared turn trail were quadratic and dominated a 40-chapter batch.
 - **Publication steps are the ordered extension point**
   (`domain/ports/settlement-publication.ts`, contract §11.1): a step owns a
-  payload `kind`, plans from immutable inputs (the scope's pushes, the payloads
-  staged with the batch, each member's lock-cut state vector) and names extra
-  Works, namespace documents, explicit namespace sources and document locks.
-  `adapters/drizzle-settlement-publication.ts` plans and locks in the global
-  order (Works, one sorted namespace acquisition over documents' sources and
-  explicit sources, documents), and both the pre-staging check and completion
-  call it, so they lock the same set in the same order.
+  payload `kind` and plans from immutable inputs: the scope's members
+  (`PublicationMember` before staging; `StagedPublicationMember`, with its push
+  id, reconstructed from lineage for completion), the payloads staged with the
+  batch, each member's lock-cut state vector, and at completion the items
+  already held. It names extra Works, namespace documents, explicit namespace
+  sources and document locks. `adapters/drizzle-settlement-publication.ts`
+  plans and locks in the global order (Works, one sorted namespace acquisition
+  over documents' sources and explicit sources, documents); the pre-staging
+  check and completion both call it, so they lock the same set in the same
+  order.
+  - **Outer leases first:** a step's `prepare(payload)` names the branches whose
+    critical-section leases the batch needs. Warm execution (with the pushed
+    drafts) and recovery (with the members' branches, read from the staged rows
+    before any claim) acquire them before coordinator leases and any
+    transaction. Completion asks again under its locks; a grown set answers
+    `rediscover`, hands the batch back, and the next owner discovers again.
+    Leases are never taken from `beforeAdmission`.
   - **Check before staging:** `checkPublication` runs every step's `check()` in
-    one short transaction under the coordinator leases. `refuse` stages
-    nothing; held candidates leave the batch before staging.
+    one short transaction under those leases. `refuse` stages nothing. Holds are
+    per item (`itemKey`, with the text member's `documentId` when it has one):
+    a holding step returns its payload refined to exclude them, the refined
+    payload is what is staged, the held items' text leaves the batch, and the
+    holds are staged as `branch_push_settlement_holds` rows. Completion never
+    sees an excluded item, so it can't promote one. Payloads never change once
+    staged.
   - **Decide in completion:** `beforeAdmission` returns `proceed` (optionally
-    holding members, each with a reason) or `refuse`. A held member is withdrawn
-    in the same transaction: no admission, trail contribution retired, notices
-    retracted, lineage and outbox gone, journal rows `active` again, no warm
-    room, no recheck, no auto reset. A refusal rolls completion back and
-    `abandonBatch` withdraws every member the same way in a new transaction
-    under the owner predicate and ends the batch `abandoned` (terminal; never
-    listed for recovery). `afterAdmission` receives the admitted documents.
+    holding more items) or `refuse`. A held member is withdrawn in the same
+    transaction (no admission, trail contribution retired, notices retracted,
+    lineage and outbox gone, journal rows `active` again, no warm room, no
+    recheck, no auto reset) and its hold is written. A refusal rolls
+    completion back and `abandonBatch` withdraws every member the same way in
+    a new transaction under the owner predicate and ends the batch `abandoned`
+    (terminal; never listed for recovery). `afterAdmission` receives the
+    admitted documents. Every hold of the batch, branchless items included,
+    comes back with the result and survives recovery as rows.
   - **Payloads:** `branch_push_settlement_payloads` rows are staged with the
     batch and loaded on every claim; a batch with payloads and no pushes (a
     branchless Apply) stages and settles through the same order.

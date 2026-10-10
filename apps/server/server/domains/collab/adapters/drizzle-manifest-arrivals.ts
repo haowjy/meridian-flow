@@ -28,7 +28,7 @@ export function manifestArrivalPublication(
         async plan(batch) {
           const arriving = await arrivingDocumentIds(
             db,
-            batch.pushes.flatMap((push) => push.journalIds),
+            batch.members.flatMap((member) => member.journalIds),
           );
           if (arriving.length === 0) return null;
           return {

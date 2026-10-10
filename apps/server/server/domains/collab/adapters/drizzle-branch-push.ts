@@ -257,7 +257,13 @@ export function createDrizzlePushCommitStore(
               notices,
             );
           }
-          await stageSettlementBatchWithinTx(txDb, input.settlement, staged, input.payloads);
+          await stageSettlementBatchWithinTx(
+            txDb,
+            input.settlement,
+            staged,
+            input.payloads,
+            input.holds,
+          );
           return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
         }),
       ).catch(async (error: unknown) => {

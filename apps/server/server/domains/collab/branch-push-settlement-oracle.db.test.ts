@@ -280,21 +280,47 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     recoverer.destroyWarmState();
   });
 
-  it("a held member stays out of live and reviewable while the rest admit", async () => {
-    const reason = { code: "path_taken", detail: { path: "beta.md" } };
+  it("held items stay held: a pre-staging hold survives its blocker leaving, completion holds more, the rest admit", async () => {
+    const pathTaken = (path: string) => ({ code: "path_taken", detail: { path } });
+    // Live conflicts as the step would compute them: beta and the cover image are blocked
+    // at the check; the blockers leave before completion, where gamma is newly blocked.
+    let blocked: Record<string, string> = { beta: BETA_ID, cover: "" };
+    const completionItems: unknown[] = [];
     const admittedSeen: DocumentId[][] = [];
     const vectorsSeen: number[] = [];
+    const holdsFor = (items: readonly string[]) =>
+      items
+        .filter((item) => item in blocked)
+        .map((item) => ({
+          itemKey: item,
+          ...(blocked[item] ? { documentId: blocked[item] as DocumentId } : {}),
+          reason: pathTaken(`${item}.md`),
+        }));
     let harness!: ReturnType<typeof createHarness>;
     harness = createHarness(db, {
+      afterDurableCommit: async () => {
+        blocked = { gamma: GAMMA_ID };
+      },
       publicationSteps: [
         {
-          kind: "test_hold",
+          kind: "test_tree",
           async plan(scope) {
             vectorsSeen.push(scope.liveStateVectors.size);
+            const { items } = scope.payloads.get("test_tree") as { items: string[] };
             return {
               documentIds: [BETA_ID],
+              async check() {
+                const hold = holdsFor(items);
+                const held = new Set(hold.map(({ itemKey }) => itemKey));
+                return {
+                  kind: "proceed" as const,
+                  hold,
+                  payload: { items: items.filter((item) => !held.has(item)) },
+                };
+              },
               async beforeAdmission() {
-                return { kind: "proceed" as const, hold: [{ documentId: BETA_ID, reason }] };
+                completionItems.push([...items]);
+                return { kind: "proceed" as const, hold: holdsFor(items) };
               },
               async afterAdmission(admitted) {
                 admittedSeen.push([...admitted]);
@@ -308,68 +334,97 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const generations = await Promise.all(
       [alpha, beta, gamma].map((id) => harness.branchGeneration(id)),
     );
-    const [betaBefore] = await liveDurableState(db, [BETA_ID]);
-    const betaMarkdown = await harness.liveMarkdown(BETA_ID);
+    const heldBefore = await liveDurableState(db, [BETA_ID, GAMMA_ID]);
+    const heldMarkdown = await Promise.all(
+      [BETA_ID, GAMMA_ID].map((id) => harness.liveMarkdown(id)),
+    );
     const broadcastsBefore = harness.liveRoomBroadcasts().length;
 
-    const result = await harness.pushBranches([alpha, beta, gamma], "auto");
+    const result = await harness.pushBranches([alpha, beta, gamma], "auto", {
+      test_tree: { items: ["alpha", "beta", "gamma", "cover"] },
+    });
 
     expect(result.items).toEqual([
       expect.objectContaining({
         status: "pushed",
         push: expect.objectContaining({ branchId: alpha }),
       }),
-      { status: "held", branchId: beta, documentId: BETA_ID, reason },
-      expect.objectContaining({
-        status: "pushed",
-        push: expect.objectContaining({ branchId: gamma }),
-      }),
+      { status: "held", branchId: beta, documentId: BETA_ID, reason: pathTaken("beta.md") },
+      { status: "held", branchId: gamma, documentId: GAMMA_ID, reason: pathTaken("gamma.md") },
     ]);
-    expect(admittedSeen).toEqual([[ALPHA_ID, GAMMA_ID]]);
-    expect(vectorsSeen).toEqual([3, 3]);
-    expect(await liveDurableState(db, [BETA_ID])).toEqual([betaBefore]);
-    await expect(harness.liveMarkdown(BETA_ID)).resolves.toBe(betaMarkdown);
-    expect(harness.liveRoomBroadcasts().slice(broadcastsBefore)).not.toContain(BETA_ID);
-    for (const documentId of [ALPHA_ID, GAMMA_ID]) {
-      await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
-    }
-    expect((await journalStatuses([beta]))[0]).toEqual(["active"]);
+    expect(result.heldItems).toEqual([
+      { itemKey: "beta", documentId: BETA_ID, reason: pathTaken("beta.md") },
+      { itemKey: "cover", reason: pathTaken("cover.md") },
+      { itemKey: "gamma", documentId: GAMMA_ID, reason: pathTaken("gamma.md") },
+    ]);
+    // The staged payload is the refined one: completion never sees an excluded item.
+    expect(completionItems).toEqual([["alpha", "gamma"]]);
+    expect(await db.select().from(schema.branchPushSettlementPayloads)).toEqual([
+      expect.objectContaining({ stepKind: "test_tree", payload: { items: ["alpha", "gamma"] } }),
+    ]);
     expect(
-      (await db.select().from(schema.pushLineage)).map(({ documentId }) => documentId).sort(),
-    ).toEqual([ALPHA_ID, GAMMA_ID]);
-    expect((await pushTraces()).trailDocuments).toEqual([ALPHA_ID, GAMMA_ID]);
+      (await db.select().from(schema.branchPushSettlementHolds))
+        .map(({ itemKey, decidedIn }) => `${itemKey}:${decidedIn}`)
+        .sort(),
+    ).toEqual(["beta:check", "cover:check", "gamma:completion"]);
+    expect(admittedSeen).toEqual([[ALPHA_ID]]);
+    expect(vectorsSeen).toEqual([3, 2]);
+    expect(await liveDurableState(db, [BETA_ID, GAMMA_ID])).toEqual(heldBefore);
+    await expect(
+      Promise.all([BETA_ID, GAMMA_ID].map((id) => harness.liveMarkdown(id))),
+    ).resolves.toEqual(heldMarkdown);
+    expect(new Set(harness.liveRoomBroadcasts().slice(broadcastsBefore))).toEqual(
+      new Set([ALPHA_ID]),
+    );
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toBe("Survivor.\n");
+    expect((await journalStatuses([beta, gamma])).flat()).toEqual(["active", "active"]);
+    expect(
+      (await db.select().from(schema.pushLineage)).map(({ documentId }) => documentId),
+    ).toEqual([ALPHA_ID]);
+    expect((await pushTraces()).trailDocuments).toEqual([ALPHA_ID]);
     expect(
       await Promise.all([alpha, beta, gamma].map((id) => harness.branchGeneration(id))),
-    ).toEqual([(generations[0] as number) + 1, generations[1], (generations[2] as number) + 1]);
+    ).toEqual([(generations[0] as number) + 1, generations[1], generations[2]]);
     harness.destroyWarmState();
   });
 
-  it("a payload-only batch survives a crash after staging and recovery settles it", async () => {
-    const payload = { documentId: ALPHA_ID, object: "images/cover.png" };
-    const imageStep = (seen: unknown[]) => ({
+  it("a payload-only batch takes its declared leases, survives a crash after staging, and recovery settles it under them", async () => {
+    const seeding = createHarness(db);
+    const alphaBranch = await seeding.seedDestructivePush("payload-lease", ALPHA_ID);
+    seeding.destroyWarmState();
+    const payload = { documentId: ALPHA_ID, object: "images/cover.png", branchId: alphaBranch };
+    const leased = (harness: ReturnType<typeof createHarness>) =>
+      harness.criticalSections.withBranches([alphaBranch], async () => false).catch(() => true);
+    const imageStep = (seen: unknown[], probe: () => Promise<boolean>) => ({
       kind: "test_image",
+      async prepare(staged: unknown) {
+        return { branchIds: [(staged as typeof payload).branchId] };
+      },
       async plan(scope: { payloads: ReadonlyMap<string, unknown> }) {
         const staged = scope.payloads.get("test_image");
         if (staged === undefined) return null;
         return {
           namespaceSourceIds: [SOURCE_ID],
           async afterAdmission(admitted: readonly DocumentId[]) {
-            seen.push({ staged, admitted: [...admitted] });
+            seen.push({ staged, admitted: [...admitted], leased: await probe() });
           },
         };
       },
     });
     const seenWarm: unknown[] = [];
-    const crashing = createHarness(db, {
+    let warmLeased: boolean | undefined;
+    let crashing!: ReturnType<typeof createHarness>;
+    crashing = createHarness(db, {
       afterDurableCommit: async () => {
+        warmLeased = await leased(crashing);
         throw new Error("injected process death after staging");
       },
-      publicationSteps: [imageStep(seenWarm)],
+      publicationSteps: [imageStep(seenWarm, () => leased(crashing))],
     });
     await expect(crashing.pushBranches([], undefined, { test_image: payload })).rejects.toThrow(
       "injected process death",
     );
-    expect(seenWarm).toEqual([]);
+    expect({ seenWarm, warmLeased }).toEqual({ seenWarm: [], warmLeased: true });
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "pending" }),
     ]);
@@ -381,9 +436,10 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
     await expireAllPendingClaims(db);
     const seen: unknown[] = [];
-    const recoverer = createHarness(db, { publicationSteps: [imageStep(seen)] });
+    let recoverer!: ReturnType<typeof createHarness>;
+    recoverer = createHarness(db, { publicationSteps: [imageStep(seen, () => leased(recoverer))] });
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
-    expect(seen).toEqual([{ staged: payload, admitted: [] }]);
+    expect(seen).toEqual([{ staged: payload, admitted: [], leased: true }]);
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "completed" }),
     ]);

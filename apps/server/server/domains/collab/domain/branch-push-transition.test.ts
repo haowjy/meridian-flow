@@ -183,6 +183,7 @@ function fixture() {
         documentIds: [documentId],
         prepare: async () => ({
           kind: "push",
+          leasedBranchIds: [],
           pushes: [prepared],
           afterDurableCommit,
           onConflict: () => "conflict",

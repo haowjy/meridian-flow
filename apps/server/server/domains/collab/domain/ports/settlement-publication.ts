@@ -35,30 +35,60 @@ import type { JsonValue } from "@meridian/contracts/threads";
 
 export type PublicationRefusal = { code: string; detail?: JsonValue };
 
-/** A member whose text must not admit, and why: its result reports the reason. */
-export type PublicationHold = { documentId: DocumentId; reason: PublicationRefusal };
+/**
+ * An item a step keeps out of live, and why. Items are the step's own units
+ * (lane E: a draft item key); `documentId` names the text member that must not
+ * admit with it, absent for a branchless item (an image). Holds are durable:
+ * staged with the batch when decided at the check, written in completion when
+ * decided there, and reported per item either way.
+ */
+export type PublicationItemHold = {
+  itemKey: string;
+  documentId?: DocumentId;
+  reason: PublicationRefusal;
+};
 
 export type PublicationAdmission =
-  | { kind: "proceed"; hold?: readonly PublicationHold[] }
+  | { kind: "proceed"; hold?: readonly PublicationItemHold[] }
   | { kind: "refuse"; reason: PublicationRefusal };
 
-/** A text member as a step sees it; before staging it has no push yet (`pushId` null). */
-export type SettlementScopePush = {
-  pushId: number | null;
-  branchId: string | null;
+/**
+ * The pre-staging decision. A step that holds items must return its payload
+ * refined to exclude them: that refined payload is what is staged, so
+ * completion never sees, and can never promote, an excluded item.
+ */
+export type PublicationCheckAdmission =
+  | { kind: "proceed"; hold?: readonly PublicationItemHold[]; payload?: JsonValue }
+  | { kind: "refuse"; reason: PublicationRefusal };
+
+/** A text member, known before staging and reconstructed from its push for completion. */
+export type PublicationMember = {
   documentId: DocumentId;
+  branchId: string | null;
+  workId: WorkId | null;
   journalIds: readonly number[];
 };
 
-/** The batch being checked or settled, as a publication step sees it. */
-export type SettlementBatchScope = {
+/** A member after staging: lineage-specific data lives only here. */
+export type StagedPublicationMember = PublicationMember & { pushId: number };
+
+type ScopeInputs = {
   batchId: string;
-  pushes: readonly SettlementScopePush[];
-  /** Durable step inputs staged with the batch, by step kind. */
+  /** Step inputs by step kind; at completion, exactly what was staged (immutable). */
   payloads: ReadonlyMap<string, JsonValue>;
   /** Each member's live state vector at its coordinator lease (its lock cut), for text tokens. */
   liveStateVectors: ReadonlyMap<DocumentId, Uint8Array>;
 };
+
+/** The batch being checked before staging, or settled after it, as a step sees it. */
+export type SettlementBatchScope =
+  | (ScopeInputs & { stage: "check"; members: readonly PublicationMember[] })
+  | (ScopeInputs & {
+      stage: "completion";
+      members: readonly StagedPublicationMember[];
+      /** Items already held for this batch (at the check), never promoted. */
+      held: readonly PublicationItemHold[];
+    });
 
 export type SettlementPublicationPlan = {
   /** Works this step changes, locked with the batch's own before anything else. */
@@ -70,7 +100,7 @@ export type SettlementPublicationPlan = {
   /** Documents whose mutation locks join the batch's sorted set. */
   documentIds?: readonly DocumentId[];
   /** No writes: the same decision `beforeAdmission` makes, run before staging. */
-  check?(): Promise<PublicationAdmission>;
+  check?(): Promise<PublicationCheckAdmission>;
   /** Vacate and install; absent means `proceed`. */
   beforeAdmission?(): Promise<PublicationAdmission>;
   /** Settle arrivals and record history, given the members whose text admitted. */
@@ -81,6 +111,15 @@ export type SettlementPublicationPlan = {
 export type SettlementPublicationStep = {
   /** The payload kind this step owns (`"draft_tree"`); recovery finds its input by it. */
   kind: string;
+  /**
+   * The outer preparation, from the step's payload: the branch ids whose
+   * critical-section leases the batch needs (lane E: every branch of the draft
+   * an Apply may close). Warm execution and recovery both acquire them before
+   * coordinator leases and any database transaction; completion calls it again
+   * under its locks, and a set that grew sends the batch back to discovery.
+   * Never take leases from `beforeAdmission`.
+   */
+  prepare?(payload: JsonValue): Promise<{ branchIds: readonly string[] }>;
   /**
    * Plans this step for one batch from durable, immutable inputs, before any
    * lock is taken. The check and recovery plan again, so a plan never depends
