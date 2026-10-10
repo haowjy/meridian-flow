@@ -26,11 +26,14 @@ export type LineageOwnerRef = {
 /** Enough to ask for a catalog, a document or a request. */
 export type ContextOwner = WorkOwnerRef | LineageOwnerRef;
 
+/** Complete owner of a resolved document (No Work's persisted id included). */
+export type ResolvedContextOwner = (WorkOwnerRef & { workId: string | null }) | LineageOwnerRef;
+
 /** The owner two separate nullable pieces name: the lineage when there is one, else the Work. */
 export function contextOwner(
   workId: string | null | undefined,
   rootThreadId?: string | null,
-): ContextOwner {
+): ResolvedContextOwner {
   return rootThreadId ? { rootThreadId } : { workId: workId ?? null };
 }
 

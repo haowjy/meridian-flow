@@ -37,17 +37,15 @@
  */
 
 import {
-  formatParsedContextUri,
   type LinkHolder,
   type LinkResolution,
-  parseContextUri,
   parseLinkRef,
+  qualifyContextUriByHolder,
   resolveDocumentHref,
   spellStoredLink,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { DocumentLinkScope } from "@meridian/markup";
 import { UNSPELLED_UPLOAD } from "@meridian/markup/links";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
@@ -89,23 +87,7 @@ function linkHrefAddress(href: string, holderUri: string | null): string | null 
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, holderUri);
   if (!resolved) return null;
-  return storedHref(qualifiedByHolder(resolved.uri, holderUri), resolved.suffix);
-}
-
-function qualifiedByHolder(uri: string, holderUri: string | null): string {
-  const parsed = parseContextUri(uri);
-  const holder = holderUri ? parseContextUri(holderUri) : null;
-  if (!parsed.ok || parsed.value.authority.kind !== "contextual" || !holder?.ok) return uri;
-  const { authority } = holder.value;
-  if (!isWorkScopedProjectContextScheme(holder.value.scheme) || authority.kind === "contextual")
-    return uri;
-  if (!isWorkScopedProjectContextScheme(parsed.value.scheme)) return uri;
-  // A lineage owns Scratch, not Uploads: those still belong to No Work.
-  const owner =
-    authority.kind === "lineage" && parsed.value.scheme === "uploads"
-      ? { kind: "none" as const }
-      : authority;
-  return formatParsedContextUri(parsed.value.scheme, parsed.value.path, owner);
+  return storedHref(qualifyContextUriByHolder(resolved.uri, holderUri), resolved.suffix);
 }
 
 /**
@@ -303,7 +285,15 @@ function sourceResolution(
     // so the other fields are neutral fillers, not facts about the document.
     return {
       kind: "document",
-      document: { documentId, projectId, uri, presence: "live", readable: true, nameable: true },
+      document: {
+        documentId,
+        owner: { workId: null },
+        projectId,
+        uri,
+        presence: "live",
+        readable: true,
+        nameable: true,
+      },
       inDraft: false,
     };
   }

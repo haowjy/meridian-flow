@@ -17,6 +17,7 @@ import {
   splitDocumentHrefSuffix,
 } from "./document-href.js";
 import { parseLinkRef } from "./document-ref.js";
+import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
 export type LinkView =
   | { kind: "live"; responseId?: string }
@@ -26,15 +27,13 @@ export interface LinkHolder {
   /** Canonical URI of the holder in this view; null for chat (no holder). */
   uri: string | null;
   projectId: string;
-  /** First-chat handle when this reader owns No Work lineage Scratch. */
-  scratchRootThreadRef?: string | null;
   view: LinkView;
 }
 
 export interface CatalogDocument {
   documentId: string;
-  /** Storage owner for a lineage Scratch document; absent for other schemes. */
-  rootThreadId?: string | null;
+  /** Resolved storage owner; project and personal documents have a null Work owner. */
+  owner: ResolvedContextOwner;
   projectId: string;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
@@ -216,26 +215,17 @@ export function spellStoredLink(
   grammar: "holder" | "manuscript-root",
 ): SpelledHref {
   const base = grammar === "holder" ? holder.uri : MANUSCRIPT_ROOT_HOLDER;
-  const spell = (uri: string) => {
-    const target = parseContextUri(uri);
-    if (
-      target.ok &&
-      target.value.authority.kind === "lineage" &&
-      target.value.authority.rootThreadRef === holder.scratchRootThreadRef
-    ) {
-      return spellDocumentHref(null, `scratch://${target.value.path}`);
-    }
-    return spellDocumentHref(base, uri);
-  };
   switch (resolution.kind) {
     case "document":
       return {
-        href: spell(resolution.document.uri) + splitDocumentHrefSuffix(link.href).suffix,
+        href:
+          spellDocumentHref(base, resolution.document.uri) +
+          splitDocumentHrefSuffix(link.href).suffix,
         address: resolution.document.uri,
       };
     case "ahead":
       return {
-        href: spell(resolution.uri) + resolution.suffix,
+        href: spellDocumentHref(base, resolution.uri) + resolution.suffix,
         address: resolution.uri,
       };
     case "gone":
