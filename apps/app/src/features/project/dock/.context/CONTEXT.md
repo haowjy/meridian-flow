@@ -1,6 +1,6 @@
 # features/project/dock — Contracts, architecture, rationale
 
-Reference depth for the dock view container. Read [`AGENTS.md`](../AGENTS.md) first.
+Reference depth for the dock container. Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## Contracts
 
@@ -15,12 +15,12 @@ same nesting level (inside the same `relative flex min-h-0 flex-1` div). When th
 occupant moves between center↔dock in the grid, React's reconciliation sees the
 same component at the same position.
 
-The primary body stays **mounted** while the file view shows. It is hidden via
+The native occupant stays **mounted** while a document covers it. It is hidden via
 `opacity-0 pointer-events-none` + the `inert` attribute. This means:
 
-- Chat state (WebSocket, scroll, composer draft) survives a view switch.
-- Document sessions survive a view switch.
-- The body does not reflow — the file view overlays it with `absolute inset-0`.
+- Chat state (WebSocket, scroll, composer draft) survives opening and closing a document.
+- Document sessions survive the same.
+- The body does not reflow — the document overlays it with `absolute inset-0`.
 
 **Violation consequence:** unmounting `children` while the file shows would
 lose chat state, force reconnection on return, and break the surface-parking
@@ -155,9 +155,9 @@ Scratch.
 
 `DockDocumentView` follows the resource projection (`useDockDocumentTab`): a rename
 elsewhere updates the name and path the header and identity bar show, and a removed
-or terminal document closes the slot. It reads `DraftReviewProvider` from wherever
-`DockShell` is mounted (the chat scope), so review claims follow the editor that is
-in front: the Editor tab's editor and the dock's are never both `active`.
+or terminal document closes the slot. It reads the project's one review value
+(`useEditorDraftReview`), the same one the Editor uses, so review claims follow the
+editor that is in front: the Editor tab's editor and the dock's are never both `active`.
 
 The menu browses the tab's real scheme: a note moved out of Scratch to Manuscript or
 KB still gets its own area's tree and Rename. "Earlier notes" belongs to the chat's
@@ -189,8 +189,10 @@ address on Context, the dock’s stored address on desktop Chat/Work, independen
 of collapse. One controller and room owner follow its Work. Only the presenting
 container requests the selected review; a pending address holds paint.
 `ReviewAddressOwner` writes/restores through Editor-route or dock-admission ports.
-The dock’s launch adapter keeps chip, Next draft and auto-advance inside the dock;
-the composer strip and Work list still launch into Editor.
+The dock’s launch adapter (`ReviewLaunchContext`) keeps chip, Next draft and
+auto-advance inside the dock; the composer strip and Work list still launch into
+Editor. Both are writer-unconfirmed defaults; flipping the first changes only that
+adapter ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/review-follows-presented-document.md)).
 
 ### Dock document store
 

@@ -438,3 +438,16 @@ second tab; the dock promotes live or returns to Recent. Check dock Next draft
 and auto-advance stay on Chat, Back to live survives reload, Close only closes
 the dock, and collapse/expand retains review. Capture screenshots with
 `page.screenshot()`, fresh API readback and console errors.
+
+Also check three fences. On a Work screen, open a manuscript in the dock through
+its path menu, open its review from the Draft chip, and reload on the same Work:
+the review returns; leaving the Work closes it. In the Editor, keep a draft-only
+review whose preview is gone open while a catalog refresh runs: the review and
+its error destination stay (no Apply, no exit). After a remote Apply, the dock's
+draft-only review is released to live.
+
+An Apply right after Discard of a new document in the same Work can return 500
+`manifest_membership_push left pending Yjs dependencies`
+([#753](https://github.com/haowjy/meridian-flow/issues/753)). It is a server
+authoring defect, not a review-follows-document failure: use a fresh Work for
+Apply cases that follow a new-document Discard, and record the 500 if you hit it.

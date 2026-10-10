@@ -702,7 +702,10 @@ commands, and the lightweight hunk model used by the plugin.
   overlay, captured after the binding writes local edits. Local inserted ranges
   paint gold immediately, even while marks are hidden; a model refresh retires
   only the text it explicitly covers with writer attribution. Decorations are
-  output, never the source of pending attribution.
+  output, never the source of pending attribution: a remote Yjs update rebuilds
+  the PM document as one whole-document replacement, which maps decoration
+  ranges away. Capture anchors after the binding writes; before `view.update`
+  the typed Yjs items do not exist.
   Review dispositions never use browser mutation origins or collaborative history; Ctrl+Z is not a review restore
   mechanism.
 - Editor-side click seam: mousedown on any decoration DOM

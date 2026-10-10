@@ -33,6 +33,12 @@ Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
 
+Leave a shared checkout as you found it. To compare against an older revision,
+extract its modules with `git show` into a scratch directory outside the
+checkout, or point a scratch test config at them; never substitute files in the
+checkout, even briefly. Check `git status` before reporting, and never report a
+change you made as pre-existing.
+
 ## Before you call it a defect
 
 Three harness artifacts have produced false defects. Rule them out first.

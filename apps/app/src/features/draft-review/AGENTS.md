@@ -12,6 +12,7 @@ It is the single local contract reference; this file maps ownership.
 | Concern | Owner |
 |---|---|
 | Presented-document review scope | `DraftReviewProvider.tsx`, composed by `ProjectView.tsx` |
+| Presented document and per-container review address | `features/project/presented-document.ts`, `features/project/ReviewAddressOwner.tsx` |
 | Selected review, shown generation, retained completion, focus | `draft-review-session.ts` reducer |
 | View transitions and explicit navigation effects | `useDraftReviewController.ts` |
 | Claims, queues, failures, batch leases and read fences | `client/query/draft-command-record.ts` |
@@ -53,7 +54,10 @@ Paths outside this directory are relative to `apps/app/src`.
 - Unattributed hunks and non-actionable classes remain visible and count toward
   completion coverage. Synthetic class keys never reach the server.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion
-  makes one durable; a gone/404 read is not remote-Discard evidence.
+  makes one durable; a gone/404 read is not remote-Discard evidence. Apply and
+  Discard settle every container through `draft-only-lifecycle.ts`; Close and
+  Back to live stay with the container used. Promotion needs a resolved live
+  presentation of the same document, Work and draft, never a flag transition.
 - Presentational components receive props and callbacks, not controllers.
   Layout belongs to components; pane continuity belongs to shared `PaintHold`.
 

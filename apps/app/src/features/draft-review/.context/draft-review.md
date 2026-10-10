@@ -6,9 +6,12 @@ Paths below are relative to `apps/app/src` unless otherwise noted.
 
 ## Scope and review evidence
 
-The project shell composes one persistent Editor review value through
-`DraftReviewProvider`. Chat and Work lists compose `useWorkDrafts` and
-`useWorkDraftCommands`; they own no review reducer, room or focus observer.
+The project shell composes one persistent review value through
+`DraftReviewProvider`, for the presented document (`features/project/presented-document.ts`):
+the Editor on Context, the dock document on desktop Chat/Work. Its Work is the
+presented review's Work, falling back to the Editor route Work. Chat and Work
+lists compose `useWorkDrafts` and `useWorkDraftCommands`; they own no review
+reducer, room or focus observer, and there is no per-list review scope.
 A scope change hides the departed selection in render before layout clears it,
 so an old draft cannot attach to a new Work or account-query scope.
 
@@ -179,8 +182,8 @@ arrival. It is re-observed when writer evidence clears without another HTTP
 read. Old absence cannot cancel a newer proposal; fresh gone at R is not vetoed
 by a stale list row at R. A draft-only gone/404 keeps its error destination.
 Terminal session failure uses terminal absence; other fetch failures are room
-errors. `EditorReviewAddressOwner` exits only when the address leaves the document,
-not when a list behind the current proposal omits it.
+errors. `ReviewAddressOwner` exits only when the presented address leaves the
+document, not when a list behind the current proposal omits it.
 
 ## Review adapter, room owner and delivery
 
@@ -278,7 +281,9 @@ Apply publishes that manifest as well as content.
 - [Inline review product decision][inline]
 - [Editable branch authority][editable]
 - [Server command authority][authority]
-- [Apply is done at server confirmation][confirmation]
+- [Apply is done at server confirmation][confirmation] (admission, the one
+  executor and its rejected layouts)
+- [Review follows its document into the dock][follows]
 - [Runtime verification recipes](../../../../../../docs/qa/draft-review.md)
 
 [paint]: ../../../components/app/PaintHold.md
@@ -286,6 +291,7 @@ Apply publishes that manifest as well as content.
 [editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md
 [authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md
 [confirmation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-apply-done-at-server-confirmation.md
+[follows]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/review-follows-presented-document.md
 [handoff]: https://github.com/haowjy/meridian-flow/issues/731
 [admission]: https://github.com/haowjy/meridian-flow/issues/738
 [loss]: https://github.com/haowjy/meridian-flow/issues/739

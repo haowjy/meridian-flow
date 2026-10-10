@@ -320,7 +320,14 @@ Thread-peer publication also captures the effective sync transaction on a
 provisional target clone before admission. It must not regenerate durable Work
 journal rows with a raw source state-vector diff, which reintroduces the
 tombstones. An unresolved sync dependency is an integrity failure, never a
-partially journaled update.
+partially journaled update. Manifest membership mutations in
+`adapters/drizzle-branches.ts` still journal `sync(peerDoc, workDoc)` bytes, which
+carry the peer's cumulative delete set. Candidate selection takes the membership
+row alone, so after a new document is discarded in a Work, a later Apply can fail
+`assertNoPendingIntegration` with pending Yjs dependencies
+([#753](https://github.com/haowjy/meridian-flow/issues/753), the manifest variant
+of [#738](https://github.com/haowjy/meridian-flow/issues/738)). Fix the authoring
+seam (journal the transaction's own update); keep the guard.
 Keep cumulative-delete closure: other producers and retained state-vector rows
 can still carry old branch deletions targeting live-base structs. Apply must
 show their operations before replaying those bytes. Delete ranges already
