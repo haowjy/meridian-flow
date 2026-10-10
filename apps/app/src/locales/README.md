@@ -92,7 +92,8 @@ string already routes through a Lingui macro.
 `src/lib/i18n.ts` resolves the first browser locale from `?locale=`, the
 account-stamped first-paint cache, browser language and finally English. Server
 rendering begins in English. `AccountSettingsProvider` reconciles the account's
-language after load; a valid query locale remains a browser-only override.
+language after load; a valid query locale is an initial browser-only override.
+An explicit language choice takes over for the current account session.
 Language changes belong to the shared account settings owner, not independent
 localStorage writes. Supported values come from `@meridian/contracts/preferences`
 and must have catalogs in `CATALOGS`.

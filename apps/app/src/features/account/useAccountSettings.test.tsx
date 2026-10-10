@@ -171,7 +171,10 @@ describe("useWorkingSetSyncPreference", () => {
 
   it("retries the exact failed intent instead of the inverse of the current value", async () => {
     mocks.updateAccountSettings.mockRejectedValueOnce(new HttpResponseError("bad", 400, {}));
-    mocks.updateAccountSettings.mockResolvedValueOnce({ workingSetSyncEnabled: true });
+    mocks.updateAccountSettings.mockResolvedValueOnce({
+      ...DEFAULT_ACCOUNT_APPEARANCE,
+      workingSetSyncEnabled: true,
+    });
     await mount(false, async ({ read }) => {
       await act(async () => read().change(true));
       await waitFor(() => expect(read().error).not.toBeNull());
@@ -384,5 +387,51 @@ it("does not let an older cross-tab confirmation overwrite the newest one", asyn
     );
     expect(read().confirmed).toBe(false);
     expect(read().value).toBe(false);
+  });
+});
+
+it("uses the complete save response when the initial account read was unavailable", async () => {
+  const settings: AccountSettings = {
+    language: "zh",
+    theme: "dark",
+    statsForNerds: true,
+    workingSetSyncEnabled: true,
+  };
+  mocks.updateAccountSettings.mockResolvedValue(settings);
+  await mount(null, async ({ readAll }) => {
+    await act(async () => readAll().preference("theme").change("dark"));
+    await waitFor(() => expect(readAll().preference("theme").pending).toBe(false));
+    expect(readAll().value).toEqual(settings);
+    expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(true);
+    expect(readAll().preference("workingSetSyncEnabled").available).toBe(true);
+  });
+});
+it("adopts untouched fields from an older successful intent while retaining the latest failed choice", async () => {
+  const first = deferred<AccountSettings>();
+  const second = deferred<AccountSettings>();
+  mocks.updateAccountSettings
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  await mount(null, async ({ readAll }) => {
+    await act(async () => readAll().preference("theme").change("dark"));
+    await act(async () => readAll().preference("theme").change("ink-jade"));
+    await act(async () =>
+      first.resolve({
+        language: "zh",
+        theme: "dark",
+        statsForNerds: true,
+        workingSetSyncEnabled: true,
+      }),
+    );
+    await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
+    await act(async () => second.reject(new HttpResponseError("rejected", 400, {})));
+    await waitFor(() => expect(readAll().preference("theme").error?.kind).toBe("rejected"));
+    expect(readAll().value).toEqual({
+      language: "zh",
+      theme: "ink-jade",
+      statsForNerds: true,
+      workingSetSyncEnabled: true,
+    });
+    expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(true);
   });
 });

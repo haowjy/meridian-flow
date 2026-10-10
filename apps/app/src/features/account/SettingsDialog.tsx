@@ -34,9 +34,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { useTextSize } from "@/hooks/use-text-size";
-import { useUiTheme } from "@/hooks/use-ui-theme";
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
 import { UI_THEMES, type UiTheme } from "@/lib/ui-theme";
@@ -315,13 +313,14 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
 }
 
 function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
-  const { i18n } = useLingui();
+  // Translated control labels react to the active locale, independently of account values.
+  useLingui();
   const settings = useSharedAccountSettings();
   const language = settings.preference("language");
   const theme = settings.preference("theme");
-  const currentLocale = i18n.locale as SupportedLocale;
+  const currentLocale = language.value;
   const currentTextSize = useTextSize();
-  const currentUiTheme = useUiTheme();
+  const currentUiTheme = theme.value;
   const stacked = presentation === "phone";
   const rowClassName = cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6");
   const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
@@ -427,7 +426,7 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
 /** Account-level display preference with an error beside its control. */
 function StatsForNerdsRow() {
   const preference = useSharedAccountSettings().preference("statsForNerds");
-  const enabled = useStatsForNerds();
+  const enabled = preference.value;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-6">
