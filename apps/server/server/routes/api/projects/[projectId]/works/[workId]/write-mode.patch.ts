@@ -1,10 +1,8 @@
 /** PATCH /api/projects/:projectId/works/:workId/write-mode: updates Work-owned AI write mode. */
 import { serializeTransport } from "@meridian/contracts/protocol";
-import type { ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
-import { scheduleDraftCatalogRefresh } from "../../../../../../lib/draft-review-route.js";
 import {
   handleWorkWriteModeRequest,
   selectWorkWriteModeServices,
@@ -24,10 +22,6 @@ export default defineEventHandler(async (event) => {
     aiWriteMode: body.aiWriteMode,
     pending: body.pending,
   });
-  // Applying the pending draft can reveal and restore documents.
-  if (body.pending === "apply") {
-    scheduleDraftCatalogRefresh(app, projectId as ProjectId, event.waitUntil.bind(event));
-  }
 
   return serializeTransport(result);
 });
