@@ -202,6 +202,10 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
+    // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
+    if (!(await drafts.shareActive(input.draftId))) {
+      throw new BranchStaleUpdateError(`draft:${input.draftId}`);
+    }
     await assertDraftableInDraft(input.documentId, input.draftId);
     const seed = await replicatedSnapshotFrom(input.liveDoc);
     // A draft create's ensure and a thread peer's racing root ensure get one branch.
@@ -641,11 +645,23 @@ export function createDrizzleBranchStore(
     },
 
     async resolveDraftBranch(input): Promise<BranchState> {
-      const row = await ensureDraftBranch(input);
+      const [row] = await selectBranch(currentDrizzleDb(db))
+        .where(
+          and(
+            eq(documentBranches.id, input.draftBranchId),
+            eq(documentBranches.documentId, input.documentId),
+            eq(documentBranches.draftId, input.draftId),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .limit(1);
+      if (!row) throw new BranchNotFoundError(input.documentId, "" as ThreadId);
+      const branch = mapBranch(row);
       return {
-        branchId: row.branchId,
-        doc: materializeBranch(row, "" as ThreadId),
-        generation: row.generation,
+        branchId: branch.branchId,
+        doc: materializeBranch(branch, "" as ThreadId),
+        generation: branch.generation,
       };
     },
 
