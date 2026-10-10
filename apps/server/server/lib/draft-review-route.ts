@@ -25,7 +25,10 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import { DraftLinkRegistrationFailedError } from "../domains/collab/domain/draft-publication.js";
+import {
+  DraftLinkRegistrationFailedError,
+  DuplicateApplyItemError,
+} from "../domains/collab/domain/draft-publication.js";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
@@ -372,6 +375,9 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   } catch (cause) {
     if (cause instanceof DraftLinkRegistrationFailedError) {
       throw createError({ statusCode: 503, message: cause.message });
+    }
+    if (cause instanceof DuplicateApplyItemError) {
+      throw createError({ statusCode: 400, message: cause.message });
     }
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
