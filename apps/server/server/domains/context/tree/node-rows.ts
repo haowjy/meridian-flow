@@ -7,10 +7,13 @@ import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts"
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections, documents, folders } from "@meridian/database/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { claimDocumentLocation } from "../adapters/context-fs/document-locations.js";
+import {
+  bumpLocationVersions,
+  claimDocumentLocation,
+} from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
 import type { DocumentSlot } from "./tree-view-sql.js";
@@ -97,13 +100,17 @@ export async function tombstoneDocuments(db: Database, ids: readonly DocumentId[
   if (ids.length === 0) return;
   await currentDrizzleDb(db)
     .update(documents)
-    .set({ deletedAt: new Date(), locationVersion: sql`${documents.locationVersion} + 1` })
+    .set({ deletedAt: new Date() })
     .where(inArray(documents.id, [...ids]));
+  await bumpLocationVersions(db, { documentIds: ids });
 }
 
-export async function tombstoneFolder(db: Database, id: FolderId): Promise<void> {
+export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): Promise<void> {
+  if (ids.length === 0) return;
+  const now = new Date();
   await currentDrizzleDb(db)
     .update(folders)
-    .set({ deletedAt: new Date(), locationVersion: sql`${folders.locationVersion} + 1` })
-    .where(eq(folders.id, id));
+    .set({ deletedAt: now, updatedAt: now })
+    .where(inArray(folders.id, [...ids]));
+  await bumpLocationVersions(db, { folderIds: ids });
 }
