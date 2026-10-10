@@ -83,7 +83,6 @@ export function EditorView(props: EditorViewProps) {
     identity !== null &&
     liveSession !== null &&
     (closed || (completion?.phase === "pending" && completion.mode === "discard"));
-  const marksReady = review?.previewIdentity !== undefined;
   const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);
   const reviewSession = identity && !settled ? roomOwner.session : null;
   const reviewKey =
@@ -91,11 +90,14 @@ export function EditorView(props: EditorViewProps) {
   const [constructed, setConstructed] = useState<{
     key: string;
     editor: Editor;
+    modelReady: boolean;
   } | null>(null);
   const constructionTarget = useRef(reviewKey);
   constructionTarget.current = reviewKey;
   const reviewEditor = constructed?.key === reviewKey ? constructed.editor : null;
   const reviewPainted = reviewEditor !== null;
+  // Cached preview availability does not certify a replacement editor's projection.
+  const marksReady = constructed?.key === reviewKey && constructed.modelReady;
   // The editor existing is not enough: the review shows with its marks, in one
   // frame, so the writer never sees the draft text unmarked.
   const reviewVisible = reviewPainted && (marksReady || marksWaitOverFor === reviewKey);
@@ -193,11 +195,22 @@ export function EditorView(props: EditorViewProps) {
                 if (!editor) {
                   setConstructed((current) => (current?.key === reviewKey ? null : current));
                 } else if (constructionTarget.current === reviewKey) {
-                  setConstructed({ key: reviewKey, editor });
+                  setConstructed({ key: reviewKey, editor, modelReady: false });
                 }
               }}
             />
-            <ReviewRuntime review={review} editor={reviewEditor} />
+            <ReviewRuntime
+              review={review}
+              editor={reviewEditor}
+              onModelAvailable={(identity, documentId, draftId) => {
+                setConstructed((current) =>
+                  current?.key === reviewKey && !current.modelReady
+                    ? { ...current, modelReady: true }
+                    : current,
+                );
+                controller.inlineReviewModelAvailable(identity, documentId, draftId);
+              }}
+            />
           </div>
         </PaintScope>
       ) : null}
@@ -250,7 +263,15 @@ function ReviewError({ props }: { props: EditorViewProps }) {
 }
 
 /** Only a review mounts subscriptions and claims the controller's runtime slot. */
-function ReviewRuntime({ review, editor }: { review: InlineDraftReview; editor: Editor | null }) {
+function ReviewRuntime({
+  review,
+  editor,
+  onModelAvailable,
+}: {
+  review: InlineDraftReview;
+  editor: Editor | null;
+  onModelAvailable: (identity: string, documentId: string, draftId: string) => void;
+}) {
   const { controller } = useDraftReview();
   const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
@@ -271,7 +292,7 @@ function ReviewRuntime({ review, editor }: { review: InlineDraftReview; editor: 
     documentId: review.documentId,
     draftId: review.draftId,
     draftGeneration: review.draftGeneration,
-    onInlineModelAvailable: controller.inlineReviewModelAvailable,
+    onInlineModelAvailable: onModelAvailable,
   });
   useInlineReviewFocus({
     editor,

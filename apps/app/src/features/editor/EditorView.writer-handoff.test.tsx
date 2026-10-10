@@ -71,7 +71,14 @@ vi.mock("@/features/links", async () => ({
 vi.mock("@/features/editor/references/useReferenceBrowserCatalog", () => ({
   useReferenceBrowserCatalog: () => null,
 }));
-vi.mock("@/features/editor/useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
+vi.mock("@/features/editor/useInlineReviewSync", () => ({
+  useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
+    useEffect(() => {
+      if (options.editor)
+        options.onInlineModelAvailable?.("preview-1", options.documentId, options.draftId);
+    }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
+  },
+}));
 vi.mock("@/features/editor/useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("@/features/editor/SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("@/features/editor/chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
@@ -81,17 +88,11 @@ const { EditorView } = await import("@/features/editor/EditorView");
 const documentId = "document-a";
 let review: ReturnType<typeof useDraftReview> | null = null;
 
-/** The editor host's part: hand `EditorView` the review the controller has open, and report the marks. */
+/** The editor host's part: hand `EditorView` the requested review; its runtime reports marks. */
 function Host() {
   const value = useDraftReview();
   review = value;
-  const { inlineReview, reviewRoomName, inlineReviewModelAvailable } = value.controller;
-  useEffect(() => {
-    // `useInlineReviewSync` reports this once the review's marks have arrived.
-    if (inlineReview && reviewRoomName) {
-      inlineReviewModelAvailable("preview-1", inlineReview.documentId, inlineReview.draftId);
-    }
-  }, [inlineReview, reviewRoomName, inlineReviewModelAvailable]);
+  const { inlineReview } = value.controller;
   return (
     <EditorView
       documentId={documentId}

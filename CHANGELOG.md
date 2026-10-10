@@ -6,7 +6,7 @@
 
 - Share active review projection and presence leases across desktop and phone while retaining each host's requested-versus-resolved review policy.
 
-- Bind review rooms through one editor adapter and one construction receipt; live editors mount no review runtime.
+- Bind review rooms through one editor adapter and one construction receipt with per-editor marks readiness; live editors mount no review runtime.
 
 - Simplify active draft previews to their required inline model, removing unreachable missing-model handling.
 
