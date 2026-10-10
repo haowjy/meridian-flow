@@ -3,6 +3,8 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { currentDrizzleDb, runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
+import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import type { SettlementBatchScope } from "./domain/ports/settlement-publication.js";
 import {
   ALPHA_ID,
@@ -29,7 +31,10 @@ import {
   stallAfterFirstUpdate,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
-import { runOutsideDrizzleTransaction } from "./test-support/change-trail-postgres-harness.js";
+import {
+  runOutsideDrizzleTransaction,
+  WORK_ID,
+} from "./test-support/change-trail-postgres-harness.js";
 import { settlementOracle } from "./test-support/durable-settlement-oracle.js";
 
 const BATCH = [ALPHA_ID, BETA_ID, GAMMA_ID] as const;
@@ -273,6 +278,70 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
   it("a refusal abandons the staged batch in completion's own transaction, or not at all", async () => {
     const reason = { code: "stale", detail: { itemKeys: ["alpha"] } };
+    const deferred: string[] = [];
+    const workPublication = createWorkProjectionMutation({
+      db,
+      availability: {
+        async advance() {
+          deferred.push("availability");
+          return "0";
+        },
+        async reserve() {
+          throw new Error("unused");
+        },
+        async publishReserved() {
+          throw new Error("unused");
+        },
+      },
+      catalog: {
+        async upsertWorkAuthorities() {
+          deferred.push("catalog");
+        },
+        async refreshProject() {
+          throw new Error("unused");
+        },
+      },
+    });
+    const [draft] = await db
+      .insert(schema.drafts)
+      .values({ projectId: PROJECT_ID, createdBy: USER_ID })
+      .returning({ id: schema.drafts.id });
+    const draftId = draft?.id as string;
+    const marker = "00000000-0000-4000-8000-000000000f01";
+    const proceedingStep = {
+      kind: "test_write",
+      async plan() {
+        return {
+          workIds: [WORK_ID],
+          draftIds: [draftId],
+          namespaceSourceIds: [SOURCE_ID],
+          documentIds: [...BATCH],
+          async beforeAdmission() {
+            await currentDrizzleDb(db)
+              .insert(schema.drafts)
+              .values({ projectId: PROJECT_ID, createdBy: USER_ID, id: marker });
+            runAfterDrizzleCommit(() => {
+              deferred.push("commit");
+            });
+            await workPublication.publishWorks([WORK_ID]);
+            return { kind: "proceed" as const };
+          },
+        };
+      },
+    };
+    const assertRolledBack = async () => {
+      expect((await db.select().from(schema.drafts)).filter(({ id }) => id === marker)).toEqual([]);
+      expect(deferred).toEqual([]);
+    };
+    const locksSeen: boolean[][] = [];
+    const rowLocked = (table: "works" | "drafts", id: string) =>
+      runOutsideDrizzleTransaction(() =>
+        db.execute(sql`select id from ${sql.identifier(table)} where id = ${id} for update nowait`),
+      ).then(
+        () => false,
+        (cause: { code?: string; cause?: { code?: string } }) =>
+          (cause.cause?.code ?? cause.code) === "55P03",
+      );
     const refusingStep = {
       kind: "test_gate",
       async plan() {
@@ -291,6 +360,20 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     let harness!: ReturnType<typeof createHarness>;
     harness = createHarness(db, {
       async duringWithdrawal() {
+        const rowLocks = [await rowLocked("works", WORK_ID), await rowLocked("drafts", draftId)];
+        const advisory = await runOutsideDrizzleTransaction(() =>
+          db.execute(sql`
+          select pg_try_advisory_xact_lock(hashtextextended(key, 0::bigint)) as acquired
+          from unnest(ARRAY[${sql.join(
+            [
+              `context-project:${PROJECT_ID}:none:manuscript`,
+              ...BATCH.map((id) => `document-mutation:${id}`),
+            ].map((key) => sql`${key}`),
+            sql`, `,
+          )}]::text[]) as keys(key)
+        `),
+        );
+        locksSeen.push([...rowLocks, ...advisory.map((row) => !row.acquired)]);
         const fault = withdrawalFault;
         withdrawalFault = null;
         if (fault === "expire") {
@@ -299,7 +382,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         }
         if (fault === "fail") throw new Error("injected failure before abandonment");
       },
-      publicationSteps: [refusingStep],
+      publicationSteps: [proceedingStep, refusingStep],
     });
     const branchIds = await seedBatch(harness);
     const liveBefore = await liveDurableState(db, BATCH);
@@ -313,6 +396,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
     // The expiry rolled the whole attempt back; the next attempt abandoned the batch.
     expect(expired).toBe(true);
+    await assertRolledBack();
+    expect(locksSeen).toEqual([Array(6).fill(true), Array(6).fill(true)]);
     expect(result.refused).toEqual(reason);
     expect(result.items).toEqual(
       BATCH.map((documentId, index) => ({
@@ -343,17 +428,20 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect((await journalStatuses(branchIds)).flat()).toEqual(["pushed", "pushed", "pushed"]);
     expect(await db.select().from(schema.pushLineage)).toHaveLength(3);
     expect(await liveDurableState(db, BATCH)).toEqual(liveBefore);
+    await assertRolledBack();
+    expect(locksSeen.at(-1)).toEqual(Array(6).fill(true));
     harness.destroyWarmState();
 
     // The next owner decides again and abandons it whole; recovery never returns to it.
     await expireAllPendingClaims(db);
-    const recoverer = createHarness(db, { publicationSteps: [refusingStep] });
+    const recoverer = createHarness(db, { publicationSteps: [proceedingStep, refusingStep] });
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
     expect((await batchStates()).map(({ state }) => state)).toEqual(["abandoned", "abandoned"]);
     expect((await journalStatuses(branchIds)).flat()).toEqual(["active", "active", "active"]);
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
     await expireAllPendingClaims(db);
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(0);
+    await assertRolledBack();
     recoverer.destroyWarmState();
   });
 
@@ -487,13 +575,89 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(
       await Promise.all([alpha, beta, gamma].map((id) => harness.branchGeneration(id))),
     ).toEqual([(generations[0] as number) + 1, generations[1], generations[2]]);
+    // A second batch crashes after staging. The check's text hold and refined
+    // payload must reconstruct under another owner, even after the blocker leaves.
+    const peer = await harness.stagePeerReply(BETA_ID, "held-cold-peer");
+    const peerBefore = await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID, peer);
+    expect(peerBefore).toContain("Outstanding peer reply.");
+    const betaBefore = await harness.branchMarkdown(beta);
+    const coldSeen: unknown[] = [];
+    const coldStep = {
+      kind: "test_cold_text",
+      async prepare() {
+        return { branchIds: [peer] };
+      },
+      async plan(scope: SettlementBatchScope) {
+        const payload = scope.payloads.get("test_cold_text");
+        return {
+          async check() {
+            return {
+              kind: "proceed" as const,
+              hold: [{ itemKey: "beta", documentId: BETA_ID, reason: pathTaken("beta.md") }],
+              payload: { items: ["gamma"] },
+            };
+          },
+          async beforeAdmission() {
+            coldSeen.push({ payload, held: scope.stage === "completion" ? scope.held : [] });
+            return { kind: "proceed" as const };
+          },
+          async afterAdmission(admitted: readonly DocumentId[]) {
+            coldSeen.push([...admitted]);
+          },
+        };
+      },
+    };
+    const crashing = createHarness(db, {
+      publicationSteps: [coldStep],
+      async afterDurableCommit() {
+        throw new Error("cold text handoff");
+      },
+    });
+    await expect(
+      crashing.pushBranches([beta, gamma], "auto", {
+        test_cold_text: { items: ["beta", "gamma"] },
+      }),
+    ).rejects.toThrow("cold text handoff");
+    crashing.destroyWarmState();
+    expect(coldSeen).toEqual([]);
+    expect(await db.select().from(schema.branchPushSettlementPayloads)).toContainEqual(
+      expect.objectContaining({ stepKind: "test_cold_text", payload: { items: ["gamma"] } }),
+    );
+    expect(await db.select().from(schema.branchPushSettlementHolds)).toContainEqual(
+      expect.objectContaining({ itemKey: "beta", documentId: BETA_ID, decidedIn: "check" }),
+    );
+    await expireAllPendingClaims(db);
+    const cold = createHarness(db, { publicationSteps: [coldStep] });
+    const betaWarmBeforeRecovery = await cold.liveMarkdown(BETA_ID);
+    const recoveryBroadcastsBefore = cold.liveRoomBroadcasts().length;
+    await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+    expect(coldSeen).toEqual([
+      {
+        payload: { items: ["gamma"] },
+        held: [{ itemKey: "beta", documentId: BETA_ID, reason: pathTaken("beta.md") }],
+      },
+      [GAMMA_ID],
+    ]);
+    expect(await liveDurableState(db, [BETA_ID])).toEqual(heldBefore.slice(0, 1));
+    expect(await cold.branchMarkdown(beta)).toBe(betaBefore);
+    expect(await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID, peer)).toBe(peerBefore);
+    expect(await cold.branchGeneration(beta)).toBe(generations[1]);
+    expect((await journalStatuses([beta])).flat()).toEqual(["active"]);
+    expect((await pushTraces()).trailDocuments).toEqual([ALPHA_ID, GAMMA_ID].sort());
+    expect(await cold.liveMarkdown(BETA_ID)).toBe(betaWarmBeforeRecovery);
+    expect(cold.liveRoomBroadcasts().slice(recoveryBroadcastsBefore)).not.toContain(BETA_ID);
+    expect(
+      (await db.select().from(schema.pushLineage)).map(({ documentId }) => documentId).sort(),
+    ).toEqual([ALPHA_ID, GAMMA_ID].sort());
+    cold.destroyWarmState();
     harness.destroyWarmState();
   });
 
   it("a payload-only batch hands off when its lease set grows; another owner recovers its refined payload and holds", async () => {
     const seeding = createHarness(db);
-    const alphaBranch = await seeding.seedDestructivePush("payload-lease", ALPHA_ID);
-    const betaBranch = await seeding.seedDestructivePush("payload-lease-grown", BETA_ID);
+    const alphaBranch = await seeding.stagePeerReply(ALPHA_ID, "payload-lease");
+    const betaBranch = await seeding.stagePeerReply(BETA_ID, "payload-lease-grown");
+    const journalBefore = await db.select().from(schema.branchWriteJournal);
     seeding.destroyWarmState();
     const posterHeld = { itemKey: "poster", reason: { code: "path_taken" } };
     const payload = { items: ["cover", "poster"], leases: [alphaBranch] };
@@ -542,6 +706,13 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       },
       publicationSteps: [imageStep(seenWarm, () => warm)],
     });
+    expect(await warm.stagePeerReply(ALPHA_ID, "payload-outstanding")).toBe(alphaBranch);
+    const stagedPeerBefore = await warm.stagedReplyMarkdown(
+      "payload-outstanding",
+      ALPHA_ID,
+      alphaBranch,
+    );
+    expect(stagedPeerBefore).toContain("Outstanding peer reply.");
     await expect(warm.pushBranches([], undefined, { test_image: payload })).rejects.toThrow(
       "needs branch leases its caller doesn't hold",
     );
@@ -557,7 +728,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       expect.objectContaining({ itemKey: "poster", decidedIn: "check" }),
     ]);
     expect(await db.select().from(schema.branchPushSettlementOutbox)).toEqual([]);
-    warm.destroyWarmState();
+    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID, alphaBranch)).toBe(
+      stagedPeerBefore,
+    );
 
     await expireAllPendingClaims(db);
     const seen: unknown[] = [];
@@ -570,6 +743,11 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "completed" }),
     ]);
+    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID, alphaBranch)).toBe(
+      stagedPeerBefore,
+    );
+    warm.destroyWarmState();
+    expect(await db.select().from(schema.branchWriteJournal)).toEqual(journalBefore);
     recoverer.destroyWarmState();
   });
 

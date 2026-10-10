@@ -1796,6 +1796,49 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
+    /** An outstanding tool reply on a real thread peer, not a journaled Work draft. */
+    async stagePeerReply(documentId: DocumentId, responseId: string) {
+      const context = {
+        grant: testFileGrant(DRAFT_DESTINATION),
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+      };
+      const file = `${documentName(documentId)}.md`;
+      await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file,
+            documentId,
+            content: "Outstanding peer reply.",
+          },
+          context,
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      const [peer] = await db
+        .select()
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "thread_peer"),
+            eq(schema.documentBranches.documentId, documentId),
+            eq(schema.documentBranches.threadId, THREAD_ID),
+          ),
+        );
+      if (!peer) throw new Error("staged reply has no thread peer");
+      return peer.id;
+    },
+    stagedReplyMarkdown: (responseId: string, documentId: DocumentId, peerId: string) =>
+      branchCoordinator.readBranch(peerId, (doc) =>
+        agentEdit.withResponseDocument(responseId, documentId, toDocHandle(doc), async (staged) =>
+          markupCodec.serialize(model.projectBlocks(staged), UNSCOPED_DOCUMENT_LINKS),
+        ),
+      ),
+    branchMarkdown: (branchId: string) =>
+      branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
     seedSweepClassificationPush,
     seedMatrixPush,
     seedPendingDependencyPush,

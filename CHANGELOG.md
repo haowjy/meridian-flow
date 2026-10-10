@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Development: settlement regression pins cover tentative publication rollback, retained retirement locks, staged thread-peer replies and another owner recovering held text without admitting or resetting it.
+
 - Development: catch quoted and schema-qualified tree tables in raw SQL checks without confusing longer relation names with documents or folders.
 
 - Development: enforce the tree query boundary in `pnpm check` with a self-testing TypeScript AST guard, explicit read/write allowlist and a non-overridable hidden-column rule.
