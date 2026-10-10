@@ -11,6 +11,7 @@
 
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ComposerDraftSnapshot,
   parseRestorableComposerDraft,
@@ -41,6 +42,7 @@ type ChatSubmissionBase = {
 
 export type ExistingThreadChatSubmission = ChatSubmissionBase & {
   kind: "existing-thread";
+  state?: "rejected";
   /** Structured authoring ownership while admission is unresolved. Absent for non-composer sends. */
   draft?: ComposerDraftSnapshot;
 };
@@ -110,22 +112,19 @@ function parseCommon(
   };
 }
 
-function parseSubmission(raw: string, accountId: string): ChatSubmission | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
+function parseSubmission(parsed: unknown): ChatSubmission | null {
   if (!isObject(parsed)) return null;
-  if (parsed.schemaVersion !== CHAT_SUBMISSIONS_SCHEMA_VERSION || parsed.accountId !== accountId) {
-    return null;
-  }
   const common = parseCommon(parsed);
   if (!common) return null;
   if (common.kind === "existing-thread") {
+    if (parsed.state !== undefined && parsed.state !== "rejected") return null;
     const draft = parseRestorableComposerDraft(parsed.draft);
-    return { ...common, kind: "existing-thread", ...(draft ? { draft } : {}) };
+    return {
+      ...common,
+      kind: "existing-thread",
+      ...(parsed.state === "rejected" ? { state: "rejected" } : {}),
+      ...(draft ? { draft } : {}),
+    };
   }
   if (common.kind === "first-send") {
     if (
@@ -184,8 +183,7 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
-        const raw = this.storage.getItem(key);
-        const parsed = raw ? parseSubmission(raw, accountId) : null;
+        const parsed = this.recordFor(accountId, key).read();
         if (parsed) found.push(parsed);
       }
     } catch {
@@ -202,8 +200,9 @@ export class DeviceChatSubmissionJournal {
     const accountId = this.state?.accountId;
     if (!accountId) return null;
     try {
-      const raw = this.storage.getItem(chatSubmissionStorageKey(accountId, submissionId));
-      return raw ? parseSubmission(raw, accountId) : null;
+      return (
+        this.recordFor(accountId, chatSubmissionStorageKey(accountId, submissionId)).read() ?? null
+      );
     } catch {
       return null;
     }
@@ -211,15 +210,17 @@ export class DeviceChatSubmissionJournal {
 
   record(accountId: string, entry: ChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
-    try {
-      this.storage.setItem(
-        chatSubmissionStorageKey(accountId, entry.submissionId),
-        JSON.stringify({ schemaVersion: CHAT_SUBMISSIONS_SCHEMA_VERSION, accountId, ...entry }),
-      );
-      return true;
-    } catch {
-      return false;
-    }
+    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.submissionId)).write(
+      entry,
+    );
+  }
+
+  private recordFor(accountId: string, key: string) {
+    return browserRecord(
+      () => this.storage,
+      { key, version: CHAT_SUBMISSIONS_SCHEMA_VERSION, accountId },
+      (value) => parseSubmission(value) ?? undefined,
+    );
   }
 
   /**
@@ -230,11 +231,8 @@ export class DeviceChatSubmissionJournal {
   retire(accountId: string, submissionId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
-    try {
-      this.storage.removeItem(chatSubmissionStorageKey(accountId, submissionId));
-    } catch {
-      // The in-memory boundary already refuses a foreign retire.
-    }
-    return true;
+    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, submissionId)).write(
+      undefined,
+    );
   }
 }

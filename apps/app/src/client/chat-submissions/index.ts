@@ -58,6 +58,20 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
+export function readChatSubmission(accountId: string, submissionId: string): ChatSubmission | null {
+  const current = browserJournal();
+  return current?.accountId === accountId ? current.get(submissionId) : null;
+}
+
+/** A rejected witness is durable, but no longer awaits admission lookup or replay. */
+export function readUnresolvedSubmission(
+  accountId: string,
+  submissionId: string,
+): ChatSubmission | null {
+  const entry = readChatSubmission(accountId, submissionId);
+  return entry?.kind === "existing-thread" && entry.state === "rejected" ? null : entry;
+}
+
 export function readFirstSendSubmission(
   accountId: string,
   threadId: string,
@@ -71,12 +85,7 @@ export function readFirstSendSubmission(
 }
 
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
-  const recorded = browserJournal()?.record(accountId, entry) ?? false;
-  if (recorded && entry.kind === "existing-thread" && entry.draft)
-    composerSessionDraft(accountId, { kind: "chat", id: entry.threadId }).handoffSubmitted(
-      entry.draft,
-    );
-  return recorded;
+  return browserJournal()?.record(accountId, entry) ?? false;
 }
 
 export function retireChatSubmission(
@@ -97,11 +106,13 @@ export function settleChatSubmission(
   const current = browserJournal();
   if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
   const entry = current.get(submissionId);
-  if (entry?.kind === "existing-thread" && entry.draft) {
+  if (!entry) return false;
+  if (entry.kind === "existing-thread") {
     const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
     if (outcome === "rejected") {
-      if (!owner.restoreRejected(entry.draft)) return false;
-    } else if (!owner.acceptSubmitted()) return false;
+      if (!entry.draft || !owner.restoreRejected(entry.draft))
+        return current.record(accountId, { ...entry, state: "rejected" });
+    } else if (entry.draft && !owner.acceptSubmitted()) return false;
   }
   return current.retire(accountId, submissionId, expectedEpoch);
 }

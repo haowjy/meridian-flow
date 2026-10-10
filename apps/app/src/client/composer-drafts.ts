@@ -30,19 +30,44 @@ export class ComposerSessionDraft {
 
   /** Transfer rejection ownership before the journal is retired. Never replace later authoring. */
   restoreRejected(snapshot: ComposerDraftSnapshot): boolean {
-    if (!this.current) {
-      this.current = snapshot;
-      this.dirty = true;
-      this.publish();
+    const text = this.current && serializeComposerDraft(this.current.doc).text;
+    if (text) {
+      this.flush();
+      return false;
     }
+    this.current = snapshot;
+    this.dirty = true;
+    this.publish();
     this.flush();
     return !this.dirty;
   }
 
-  /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
-  handoffSubmitted(snapshot: ComposerDraftSnapshot): void {
-    if (this.matches(snapshot)) this.handoff();
+  /** Writer-directed Edit prepends the rejected document without flattening reference atoms. */
+  editRejected(snapshot: ComposerDraftSnapshot): boolean {
+    const later = this.current;
+    const edited =
+      later && serializeComposerDraft(later.doc).text
+        ? {
+            ...snapshot,
+            revision: Math.max(snapshot.revision, later.revision) + 1,
+            doc: {
+              type: "doc",
+              content: [...(snapshot.doc.content ?? []), ...(later.doc.content ?? [])],
+            },
+            ownedUploads: [...snapshot.ownedUploads, ...later.ownedUploads],
+          }
+        : snapshot;
+    if (!this.record.write(edited)) return false;
+    this.current = edited;
+    this.dirty = false;
+    this.publish();
+    return true;
   }
+
+  /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
+  handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
+    if (this.matches(snapshot)) this.handoff();
+  };
 
   /** Every authoring update after journal hand-off is newer, even with identical words/revision. */
   acceptSubmitted(): boolean {

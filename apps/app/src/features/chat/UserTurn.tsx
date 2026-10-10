@@ -27,7 +27,7 @@ export type UserTurnRecovery =
   | {
       kind: "rejected";
       onRetry: () => void;
-      /** Focus the draft already returned by submission settlement, if one was submitted. */
+      /** Move rejected words into the composer without replacing newer writing. */
       onEdit?: () => void;
     };
 
