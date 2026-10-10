@@ -308,7 +308,7 @@ it. Arrival hooks, each once against the operation's final tree:
 | Binary upload, figure upload | `createBinaryDocument`, after persisting the live identity in the same transaction | the store transaction's namespace keys |
 | Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
-| Draft Apply (warm and recovery) | push completion that reveals tree nodes: Work → arriving namespaces → holder lock | as listed |
+| Draft Apply (warm and recovery) | the draft tree step's `afterAdmission`, once for every reveal, restore and relocation of the batch | Work → draft → current and final namespaces → document locks |
 
 A draft's hidden create is no arrival: it settles unsettled refs at its address
 in the draft only (`link_ahead_draft_settlements`). A reveal is an arrival at
@@ -326,9 +326,10 @@ a draft's text register with its id: an agent's mint carries its holder's view
 (`AheadMint.view`); a writer's link typed in the review room registers after the
 room admits it, debounced; and Apply's prerequisite registers every ref in the
 branches it publishes before staging (collab's `draft-branch-ahead-registration.ts`).
-Apply binds each published holder's refs (`link_ahead_holder_bindings`) from the
-meanings it staged; a binding is never deleted, and one naming a tombstone reads
-gone.
+Apply binds each published holder's refs (`link_ahead_holder_bindings`, one
+writer: `adapters/link-ahead-holder-bindings.ts`) from the meanings it staged,
+read at staging through `draftMeaningsOf`; a binding is never deleted, and one
+naming a tombstone reads gone.
 
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to

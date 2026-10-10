@@ -863,20 +863,23 @@ The points below are the ones that change how you reason about edits here.
     create no reviewable edit, and they publish the delta to an open review
     room through the normal branch update publisher.
     <span class="ref"><code>domain/branch-coordinator.ts</code> <code>pullFromDoc</code></span></li>
-  <li><strong>Apply publishes the whole current branch.</strong>
-    <code>DraftApplyRequest</code> is <code>{ draftId }</code>. The server pushes
-    every reviewable row of the current generation, including writer edits made
-    after the preview was rendered. Preview revisions are evidence, not command
-    scope. A new document drafted only in the Work is pushed together with its
-    project-manifest entry in one batch.
-    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>applyWorkDraft</code>, <code>domain/branch-push.ts</code> <code>pushToLiveWithManifestEntry</code></span></li>
-  <li><strong>No stale-Apply refusal on this checkout.</strong> Apply carries no
-    live-head token; a push integrates through Yjs against whatever live holds
-    at the lock cut. The settlement fence protects concurrent writer edits from
-    being lost, not the writer from applying against a live they have not seen.</li>
+  <li><strong>Apply is one publication.</strong> Every Apply (one document,
+    Apply all, D40's switch) calls <code>applyItems</code>: the link cut is
+    registered first, then the selected branches push whole as one batch with
+    the <code>draft_tree</code> payload. The tree step reveals still-hidden
+    creates, restores documents deleted live and names relocated creates back,
+    all with the text in the batch's completion transaction; a 5a clash is held
+    per item and stays in the draft.
+    <span class="ref"><code>domain/draft-publication.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code></span></li>
+  <li><strong>Apply refuses a stale review.</strong> Each review item carries
+    the tokens it was rendered from (location version, the live full-state
+    fingerprint, the branch generation); Apply compares them before staging and
+    again in completion and answers <code>stale</code>. A request without
+    tokens (the legacy per-document Apply) compares nothing.
+    <span class="ref"><code>domain/draft-review-items.ts</code>, <code>lib/draft-review-route.ts</code></span></li>
   <li><strong>Discard has two shapes.</strong> Full Discard resets the content
-    branch to live in one Work-locked transaction (and removes a draft-only
-    document's manifest entry); it bumps the branch generation, records the
+    branch to live in one Work-locked transaction (and ends the draft's use of a
+    document it created); it bumps the branch generation, records the
     discarded state vector, and requires the Work to be active. Selective
     Discard removes the rows of server-vended discard classes chosen from the
     preview; the client never reconstructs turns.

@@ -132,24 +132,19 @@ writer boundary; neither check assumes the other ran.
 
 ## Pending publication
 
-The pipeline’s remaining manifest companion rows are branch bookkeeping, not writer-reviewable prose.
 `domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
-review lists, counts, and Auto-apply confirmation: it requires current-generation
-reviewable rows loaded through the `WorkDraftPendingStore` seam and excludes
-`manifest_membership` rows. Its Drizzle adapter loads all evidence in one joined
-query and projects only the classification fields (`turnId` and `updateMeta`);
-ordinary counts and lists must not read full Yjs payloads. Counts are reviewable
-content branches (one per document), never raw journal-row totals. The authority
-still associates an excluded manifest entry with its content draft so confirmed
-Auto-apply publishes new-document content and live membership atomically. A
-reusable manifest Work-draft branch may remain `active` after its content
-companions settle; that status alone is not pending-review evidence.
+review lists, counts, and Auto-apply confirmation: current-generation reviewable
+rows loaded through the `WorkDraftPendingStore` seam, one joined query that
+projects only `turnId`. Counts are distinct pending documents per Work: the
+active draft's branches with reviewable rows plus its change rows (a created
+document is pending with no text yet), never raw journal-row totals. The review
+list (`domain/draft-review-items.ts`) is the draft's tree state merged with those
+branches; Apply is `domain/draft-publication.ts`.
 
 `domain/document-creation.ts` owns tracked-document materialization transactions.
 Context and bootstrap supply the row and initial content. They commit together;
 warm-room publication follows the enclosing transaction's commit. Tree presence
-comes from context's live/draft SQL views, never a Yjs manifest. The pipeline
-companion above remains until tree publication replaces it.
+comes from context's live/draft SQL views, never a Yjs manifest.
 
 ## Durable records
 

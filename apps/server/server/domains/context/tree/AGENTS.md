@@ -57,13 +57,14 @@ holds the locks named below:
   descendant owns its own subtree), every final slot checked for occupancy, the
   split from original coordinates. Install and record consume only that plan; a
   temporary vacate name never outlives install. The live mover's single moves use
-  it; Apply's relocation calls the phases separately.
+  it; Apply's draft tree step (`collab/adapters/drizzle-draft-tree-step.ts`) calls
+  prepare, vacate and install before text admission and record after it.
 - `test-hooks.ts`: test-only hook points (`setTreeHook`) the DB suites use to
   interleave these fences; a no-op in production.
 
 Tree writes don't refresh the catalog: `place`, `createLive` and
 `ensureLiveFolderPath` return what they placed, and their callers refresh (the store in
-its transaction; the mover and Apply after their own writes).
+its transaction; the mover after its own writes; Apply's routes after commit).
 
 **The one rule: the hidden predicate lives here only.** Only `tree-view-sql.ts` reads
 `documents.hidden` / `folders.hidden`, and only the lifecycle files above (`node-rows.ts`

@@ -7,10 +7,9 @@
   cycles) and do not split push/coordinator mutexes (that creates inversion).
   Callers acquire branch locks in branch-id order, then live coordinator locks
   in document-id order.
-- **One push commit seam**: whole-content and manifest-companion builders
-  produce a `CandidateBatch` consumed by the single pipeline in
-  `branch-push.ts`. Content candidates always materialize the whole current
-  branch. Only the internal manifest candidate selects membership rows. Locked
+- **One push commit seam**: `buildWholeBranchCandidates` produces a
+  `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
+  Candidates always materialize the whole current branch. Locked
   preparation in `branch-push-preparation.ts` computes one block diff from the
   live lock cut; `branch-trail-projection.ts` turns it into the sole durable
   publication record, while typed `push_lineage.branch_generation` supports
@@ -121,9 +120,13 @@
   - **Payloads:** `branch_push_settlement_payloads` rows are staged with the
     batch and loaded on every claim; a batch with payloads and no pushes (a
     branchless Apply) stages and settles through the same order.
-  - Today's manifest companion is the one production step
-    (`adapters/drizzle-manifest-arrivals.ts`); Apply's tree step replaces it.
-    Lane E's draft tree step declares its draft in `draftIds`.
+  - The one production step is Apply's draft tree step
+    (`adapters/drizzle-draft-tree-step.ts`, kind `draft_tree`). It declares its
+    draft in `draftIds` and every current and final source in
+    `namespaceSourceIds`, and refines its payload at the check (held items out,
+    holder meanings in). Completion's text tokens are each member's lock cut
+    plus every admission that joined it since staging, so a writer's change
+    after the cut (a deletion too) refuses a stale Apply.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -181,24 +184,20 @@
   `auto` since D59, so every claim settles `no_op` and drafts wait for the
   writer's Apply. This depends on the read model never rewriting a failed
   turn's status (see the threads read-model projector).
-- **Apply settles ahead refs per completion because drafts cannot move documents**
-  (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
-  live and settles in the tree store's move transaction. So the only documents an
-  Apply brings to an address are draft creates the manifest push publishes, their
-  SQL address is already final, and the manifest arrival publication step
-  (`adapters/drizzle-manifest-arrivals.ts`) settles them after text admission
-  in the batch's completion transaction, under Work → namespace → holder locks. Draft-held moves would break that: a
-  document's address would depend on the view. Building them changes
-  `context/adapters/document-address.ts` (current address and exact occupant
-  become view-dependent), `context/adapters/document-link-scope.ts` (per-view
-  URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
-  the publication step here (moved documents become arrivals, and their old and
-  new namespaces both lock).
-- **Writer Apply is branch-scoped, not preview-scoped**:
-  `DraftApplyRequest` names only the draft. The server pushes the
-  complete current branch, including writer rows created after preview.
-  Preview operations and revision tokens are presentation evidence, not command
-  selection or freshness authority.
+- **Apply settles arrivals once, against the final tree** (contract §11.2). The
+  draft tree step's `beforeAdmission` places every document the Apply brings to
+  an address (a reveal, a restore, a relocation named back) before text admits;
+  its `afterAdmission` settles them in one `arrivals.settle` call, then binds
+  each admitted holder's ahead refs from the meanings staged in the payload,
+  never from the draft's settlement table: a target discarded after staging
+  still binds and reads gone. All under Work → draft → namespace → document
+  locks taken once by `planAndLock`.
+- **Writer Apply is item-scoped and token-fenced**: a request names items
+  (`${draftId}:${documentId}`) with the tokens their review rendered; the
+  server pushes each item's complete current branch, including writer rows
+  created after preview, when the tokens still match, else answers `stale`.
+  The legacy numeric revision tokens on the preview are presentation evidence
+  only.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
