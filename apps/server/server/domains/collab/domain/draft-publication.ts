@@ -7,8 +7,6 @@
  * Every Apply caller goes through here: the per-document route, Apply all and D40's switch.
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
 import type { BranchPushService } from "./branch-push-contracts.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type {
@@ -17,15 +15,24 @@ import type {
   DraftLinkRegistrationFailure,
 } from "./draft-branch-ahead-registration.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
+import {
+  DRAFT_TREE_STEP,
+  type DraftItemKey,
+  type DraftTreePayload,
+  encodeDraftTreePayload,
+  type HeldReason,
+  readDraftTreeHold,
+  readDraftTreeRefusal,
+} from "./draft-tree-payload.js";
 import type { Drafts } from "./drafts.js";
 import type { PublicationRefusal } from "./ports/settlement-publication.js";
 
-/** `${DraftId}:${DocumentId}`: one key for every item, text or binary (F12). */
-export type DraftItemKey = string;
-
-export function draftItemKey(draftId: DraftId, documentId: DocumentId): DraftItemKey {
-  return `${draftId}:${documentId}`;
-}
+export {
+  DRAFT_TREE_STEP,
+  type DraftItemKey,
+  draftItemKey,
+  type HeldReason,
+} from "./draft-tree-payload.js";
 
 /**
  * What the writer was shown of one item. Tokens absent: the legacy per-document Apply
@@ -43,7 +50,6 @@ export type ApplySelection =
   /** D40's switch: the writer confirmed a count; every item pending now. */
   | { kind: "all_pending" };
 
-export type HeldReason = { code: "path_taken"; path: string };
 export type ApplyNote =
   | { code: "rename_replaced"; replacedPath: string; path: string }
   | { code: "restored"; path: string };
@@ -59,49 +65,6 @@ export type ApplyResult =
     }
   | { status: "stale"; draftId: DraftId; staleItemKeys: readonly DraftItemKey[] }
   | { status: "gone"; draftId: DraftId };
-
-/** The tree step's payload kind; recovery finds the step by it. */
-export const DRAFT_TREE_STEP = "draft_tree";
-
-/** One selected item as staged. */
-export type DraftTreePayloadItem = {
-  itemKey: DraftItemKey;
-  documentId: DocumentId;
-  /** The text member's branch; null for a branchless item (a created image). */
-  draftBranchId: string | null;
-  origin: "created" | "edited";
-  locationToken?: string;
-  liveTextToken?: string;
-  branchGenerationToken?: string;
-};
-
-/**
- * The `draft_tree` step's durable input (§11.2), immutable once staged. `items` keeps
- * only the items eligible at the pre-staging check; `holderMeanings` is filled there,
- * with the link cut fenced, so completion and recovery bind from this snapshot.
- */
-export type DraftTreePayload = {
-  draftId: DraftId;
-  closeWhenEmpty: boolean;
-  linkCut: DraftLinkCut;
-  items: readonly DraftTreePayloadItem[];
-  holderMeanings: readonly {
-    holderDocumentId: DocumentId;
-    refs: readonly { aheadId: string; documentId: DocumentId }[];
-  }[];
-};
-
-export function parseDraftTreePayload(payload: JsonValue | undefined): DraftTreePayload | null {
-  if (payload === undefined || payload === null || typeof payload !== "object") return null;
-  return payload as unknown as DraftTreePayload;
-}
-
-/** The step's refusal codes: `stale` names the items; `link_cut_changed` reruns the prerequisite. */
-export const APPLY_REFUSAL = {
-  stale: "stale",
-  gone: "gone",
-  linkCutChanged: "link_cut_changed",
-} as const;
 
 /** A selection that names an item twice: refused before anything registers or stages. */
 export class DuplicateApplyItemError extends Error {
@@ -203,7 +166,7 @@ export function createDraftPublication(deps: {
         };
         const pushed = await deps.push.pushBranchesToLive({
           branchIds,
-          payloads: { [DRAFT_TREE_STEP]: payload as unknown as JsonValue },
+          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload) },
           ...(input.userId ? { pushedByUserId: input.userId } : {}),
           ...(input.signal ? { signal: input.signal } : {}),
         });
@@ -223,7 +186,7 @@ export function createDraftPublication(deps: {
           items: selected.map(({ item }): ApplyItemResult => {
             const reason = held.get(item.itemKey);
             return reason
-              ? { itemKey: item.itemKey, status: "held", reason: heldReason(reason, item) }
+              ? { itemKey: item.itemKey, status: "held", reason: heldReason(reason) }
               : { itemKey: item.itemKey, status: "applied", notes: notesFor(item) };
           }),
         };
@@ -239,30 +202,24 @@ function refusalOutcome(
   selected: readonly { ref: ApplyItemRef }[],
   attempt: number,
 ): ApplyResult | "again" {
-  if (reason.code === APPLY_REFUSAL.gone) return { status: "gone", draftId };
-  if (reason.code === APPLY_REFUSAL.linkCutChanged && attempt === 0) return "again";
-  if (reason.code === APPLY_REFUSAL.stale || reason.code === APPLY_REFUSAL.linkCutChanged) {
-    const named = staleKeysIn(reason);
-    return {
-      status: "stale",
-      draftId,
-      staleItemKeys: named.length > 0 ? named : selected.map(({ ref }) => ref.itemKey),
-    };
+  const refusal = readDraftTreeRefusal(reason);
+  switch (refusal?.kind) {
+    case "gone":
+      return { status: "gone", draftId };
+    case "link_cut_changed":
+      if (attempt === 0) return "again";
+      return { status: "stale", draftId, staleItemKeys: selected.map(({ ref }) => ref.itemKey) };
+    case "stale":
+      return { status: "stale", draftId, staleItemKeys: refusal.itemKeys };
+    default:
+      throw new Error(`Apply was refused: ${reason.code}`);
   }
-  throw new Error(`Apply was refused: ${reason.code}`);
 }
 
-function staleKeysIn(reason: PublicationRefusal): DraftItemKey[] {
-  const detail = reason.detail;
-  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return [];
-  const keys = (detail as { itemKeys?: unknown }).itemKeys;
-  return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
-}
-
-function heldReason(reason: PublicationRefusal, item: DraftReviewItem): HeldReason {
-  const detail = reason.detail as { path?: unknown } | undefined;
-  const path = typeof detail?.path === "string" ? detail.path : (item.path ?? "");
-  return { code: "path_taken", path };
+function heldReason(reason: PublicationRefusal): HeldReason {
+  const held = readDraftTreeHold(reason);
+  if (!held) throw new Error(`Apply held an item for a reason it doesn't know: ${reason.code}`);
+  return held;
 }
 
 /** The receipt notes for an applied item, from what the writer reviewed (§11.2). */
