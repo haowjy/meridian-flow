@@ -10,7 +10,7 @@
 
 import { i18n } from "@lingui/core";
 import { captureUndoRestorationClaims } from "@meridian/prosemirror-schema";
-import { Extension } from "@tiptap/core";
+import { type Command, Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
@@ -117,55 +117,22 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
   },
 
   addCommands() {
+    const command =
+      (meta: PluginMeta): Command =>
+      ({ tr, dispatch }) => {
+        if (dispatch) {
+          tr.setMeta(draftInlineReviewPluginKey, meta).setMeta("addToHistory", false);
+          dispatch(tr);
+        }
+        return true;
+      };
     return {
-      setInlineReviewModel:
-        (model) =>
-        ({ tr, dispatch }) => {
-          if (!dispatch) return true;
-          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-model", model });
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
-          return true;
-        },
-      setInlineReviewActiveOperation:
-        (operationId) =>
-        ({ tr, dispatch }) => {
-          if (!dispatch) return true;
-          tr.setMeta(draftInlineReviewPluginKey, {
-            kind: "set-active-operation",
-            operationId,
-          });
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
-          return true;
-        },
-      setInlineReviewMarksVisible:
-        (visible) =>
-        ({ tr, dispatch }) => {
-          if (!dispatch) return true;
-          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-marks-visible", visible });
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
-          return true;
-        },
-      setInlineReviewPulse:
-        (operationIds) =>
-        ({ tr, dispatch }) => {
-          if (!dispatch) return true;
-          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-pulse", operationIds });
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
-          return true;
-        },
-      setInlineReviewBarSlot:
-        (open) =>
-        ({ tr, dispatch }) => {
-          if (!dispatch) return true;
-          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-bar-slot", open });
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
-          return true;
-        },
+      setInlineReviewModel: (model) => command({ kind: "set-model", model }),
+      setInlineReviewActiveOperation: (operationId) =>
+        command({ kind: "set-active-operation", operationId }),
+      setInlineReviewMarksVisible: (visible) => command({ kind: "set-marks-visible", visible }),
+      setInlineReviewPulse: (operationIds) => command({ kind: "set-pulse", operationIds }),
+      setInlineReviewBarSlot: (open) => command({ kind: "set-bar-slot", open }),
       scrollInlineReviewOperationIntoView:
         (operationId) =>
         ({ view }) => {
@@ -350,69 +317,32 @@ export function buildInlineReviewPlugin({
         // can arrive before the binding has any mapping entries at all.
         const ySyncChangeOrigin = isRemoteDocumentRebuild(tr);
 
-        let {
-          model,
-          activeOperationId,
-          marksVisible,
-          expandedRemovals,
-          pulsedOperationIds,
-          barSlot,
-        } = previous;
-        let mustRebuild = false;
-        let pendingWriterRanges = previous.pendingWriterRanges;
+        const next = { ...previous };
+        const mustRebuild = Boolean(
+          ySyncChangeOrigin || (meta && meta.kind !== "set-marks-visible"),
+        );
         let refocusRemoval: string | null = null;
-
-        if (meta?.kind === "set-model") {
-          model = meta.model;
-          mustRebuild = true;
-        } else if (meta?.kind === "set-active-operation") {
-          activeOperationId = meta.operationId;
-          mustRebuild = true;
-        } else if (meta?.kind === "set-pulse") {
-          pulsedOperationIds = new Set(meta.operationIds);
-          mustRebuild = true;
-        } else if (meta?.kind === "set-bar-slot") {
-          if (meta.open === barSlot) return previous;
-          barSlot = meta.open;
-          mustRebuild = true;
-        } else if (meta?.kind === "relocalize") {
-          mustRebuild = true;
-        } else if (meta?.kind === "set-marks-visible") {
-          marksVisible = meta.visible;
-        } else if (meta?.kind === "removal-click") {
-          activeOperationId = meta.operationId;
+        if (meta?.kind === "set-model") next.model = meta.model;
+        else if (meta?.kind === "set-active-operation") next.activeOperationId = meta.operationId;
+        else if (meta?.kind === "set-pulse") next.pulsedOperationIds = new Set(meta.operationIds);
+        else if (meta?.kind === "set-bar-slot") {
+          if (meta.open === previous.barSlot) return previous;
+          next.barSlot = meta.open;
+        } else if (meta?.kind === "set-marks-visible") next.marksVisible = meta.visible;
+        else if (meta?.kind === "removal-click") {
+          next.activeOperationId = meta.operationId;
           if (meta.toggle !== null) {
-            const next = new Set(expandedRemovals);
-            if (!next.delete(meta.toggle)) next.add(meta.toggle);
-            expandedRemovals = next;
+            const expanded = new Set(previous.expandedRemovals);
+            if (!expanded.delete(meta.toggle)) expanded.add(meta.toggle);
+            next.expandedRemovals = expanded;
             if (meta.keyboard) refocusRemoval = meta.toggle;
           }
-          mustRebuild = true;
-        } else if (meta?.kind === "capture-writer") {
-          pendingWriterRanges = meta.ranges;
-          mustRebuild = true;
-        } else if (ySyncChangeOrigin) {
-          // Remote edit or first binding pass — re-anchor from
-          // RelativePositions so we don't drift on the initial sync frame
-          // or on concurrent AI/collab writes.
-          mustRebuild = true;
-        }
+        } else if (meta?.kind === "capture-writer") next.pendingWriterRanges = meta.ranges;
 
-        const next: InlineReviewPluginState = {
-          model,
-          activeOperationId,
-          pulsedOperationIds,
-          marksVisible,
-          expandedRemovals,
-          barSlot,
-          pendingWriterRanges,
-          geometry: previous.geometry,
-          decorations: previous.decorations,
-        };
         const runtime = relativePositionRuntimeFromState(newState);
         if (mustRebuild && runtime) {
           next.pendingWriterRanges = coalesced(
-            pendingWriterRanges.flatMap((range) => {
+            next.pendingWriterRanges.flatMap((range) => {
               const resolved = range.anchors && resolveRelativeRange(runtime, range.anchors);
               return !resolved
                 ? [range]
@@ -421,9 +351,9 @@ export function buildInlineReviewPlugin({
                   : [];
             }),
           );
-        } else if (tr.docChanged) {
+        } else if (tr.docChanged && !ySyncChangeOrigin) {
           next.pendingWriterRanges = coalesced([
-            ...pendingWriterRanges.map((range) => ({
+            ...next.pendingWriterRanges.map((range) => ({
               from: tr.mapping.map(range.from, 1),
               to: tr.mapping.map(range.to, -1),
             })),
@@ -432,7 +362,7 @@ export function buildInlineReviewPlugin({
         }
         if (mustRebuild) {
           next.geometry = geometryFor(
-            model,
+            next.model,
             previous.geometry,
             newState,
             ySyncChangeOrigin || meta?.kind === "capture-writer",
