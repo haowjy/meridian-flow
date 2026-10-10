@@ -81,7 +81,10 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     const admissionBlocked = new Promise<void>((resolve) => {
       releaseAdmission = resolve;
     });
-    const commitWriterUpdate = vi.fn(async () => admissionBlocked);
+    const commitWriterUpdate = vi.fn(async () => {
+      await admissionBlocked;
+      return { admitted: true };
+    });
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchCoordinator: { commitWriterUpdate } as never,
@@ -187,7 +190,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const before = Y.encodeStateVector(roomDoc);
     roomDoc.getText("content").insert(roomDoc.getText("content").length, "!");
     const humanUpdate = Y.encodeStateAsUpdate(roomDoc, before);
-    const commitWriterUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => ({ admitted: true }));
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
@@ -282,7 +285,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         getBranch: async () => snapshot,
         updateBranchSnapshot: async () => true,
       },
-      branchCoordinator: { commitWriterUpdate: vi.fn(async () => undefined) } as never,
+      branchCoordinator: { commitWriterUpdate: vi.fn(async () => ({ admitted: true })) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,

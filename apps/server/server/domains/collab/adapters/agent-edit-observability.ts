@@ -13,6 +13,7 @@ import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js"
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
+import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
@@ -26,6 +27,23 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
         source: "collab.branch_pull",
         name: "background.failed",
         correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+export function createDraftBranchAheadDiagnostics(
+  eventSink?: EventSink,
+): DraftBranchAheadDiagnostics {
+  return {
+    registrationFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_links",
+        name: "registration.failed",
+        correlation: { branchId },
         payload: unknownToEventPayload(cause),
       });
     },

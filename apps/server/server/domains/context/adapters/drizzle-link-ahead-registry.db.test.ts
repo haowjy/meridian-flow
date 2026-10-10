@@ -1,6 +1,7 @@
 /**
  * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS,
- * and registration in a draft: idempotent per (ref, draft) (L-2).
+ * and registration in a draft: idempotent per (ref, draft) (L-2), and the writer's own
+ * links registered from the review room, never outliving a closed draft (L-3).
  */
 
 import type { DraftId } from "@meridian/contracts";
@@ -16,9 +17,14 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import * as Y from "yjs";
+import {
+  runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
@@ -480,6 +486,95 @@ if (!RUN) {
           .soft(await meanings(liveMinted), "minted live")
           .toEqual({ registered: true, live: null, drafted: [] });
       });
+
+      it("registers the writer's link typed in the draft's review room, and leaves no row past a close it waited on (L-3)", async () => {
+        const { runtime, scenario, work, kael, draft } = await start();
+        const chapter = await scenario.model(work).create("chapter-two.md", "The forge was cold.");
+        // The client mints the ahead ref as the writer types; the server has never seen it.
+        const typeLink = (aheadId: string) => (doc: Y.Doc) => {
+          const paragraph = new Y.XmlElement("paragraph");
+          const text = new Y.XmlText();
+          text.insert(0, "Kael", { link: { href: KAEL, ref: `ahead:${aheadId}`, title: null } });
+          paragraph.insert(0, [text]);
+          doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+        };
+        const draftLinks = runtime.ports.documentSync.draftLinks;
+        const typed = crypto.randomUUID();
+        await scenario.writer.editDraft(work, chapter, typeLink(typed));
+        await draftLinks.flush();
+        expect
+          .soft(await meanings(typed), "after the debounce, the draft reads it")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+
+        // Apply right after typing, before the debounce: its prerequisite registers the cut.
+        const applied = crypto.randomUUID();
+        const { branchId } = await scenario.writer.editDraft(work, chapter, typeLink(applied));
+        const cut = await draftLinks.prepareDraftLinkPublication({
+          draftId: draft.id,
+          branchIds: [branchId],
+        });
+        expect.soft(cut, "the cut Apply's staging fences").toEqual({
+          draftId: draft.id,
+          branches: [
+            {
+              branchId,
+              documentId: chapter,
+              generation: expect.any(Number),
+              lastJournalId: expect.any(Number),
+            },
+          ],
+        });
+        expect
+          .soft(await meanings(applied), "registered in the draft before staging")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+        await draftLinks.flush();
+
+        // A close holds the draft while the registration of another typed link waits on it.
+        const late = crypto.randomUUID();
+        await scenario.writer.editDraft(work, chapter, typeLink(late));
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let locked!: () => void;
+        const lockTaken = new Promise<void>((resolve) => {
+          locked = resolve;
+        });
+        const closing = runInRootDrizzleTransaction(db, async () => {
+          await scenario.drafts.lockActive(draft.id);
+          await scenario.drafts.close(draft.id, new Date());
+          locked();
+          await held;
+        });
+        await lockTaken;
+        const before = await lockWaiters();
+        const registering = draftLinks.flush();
+        const waited = await waitFor(async () => (await lockWaiters()) > before);
+        release();
+        await closing;
+        await registering;
+        expect.soft(waited, "the registration queued behind the close").toBe(true);
+        expect
+          .soft(await meanings(late), "registered, naming no closed draft")
+          .toEqual({ registered: true, live: null, drafted: [] });
+        expect
+          .soft((await meanings(typed)).drafted, "the close dropped the earlier meaning too")
+          .toEqual([]);
+      });
+
+      async function lockWaiters(): Promise<number> {
+        const [row] = await db.execute<{ waiting: number }>(sql`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`);
+        return Number(row?.waiting ?? 0);
+      }
+      async function waitFor(condition: () => Promise<boolean>): Promise<boolean> {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          if (await condition()) return true;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return false;
+      }
     });
   });
 }

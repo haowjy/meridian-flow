@@ -29,6 +29,7 @@ import {
   createBranchAgentEditDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
+  createDraftBranchAheadDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
@@ -57,6 +58,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftBranchJournalHead } from "./adapters/drizzle-draft-branch-journal-head.js";
 import { createDrizzleDraftTreeReviewBridge } from "./adapters/drizzle-draft-tree-review-bridge.js";
 import {
   createDrizzleDraftStore,
@@ -104,6 +106,7 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
+import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
@@ -401,6 +404,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     deps.links,
   );
+  const draftBranchAheads = createDraftBranchAheadRegistration({
+    branches: branchCoordinator,
+    journal: createDrizzleDraftBranchJournalHead(deps.db),
+    drafts: workDrafts,
+    registrar: deps.aheadRefs,
+    outsideTransaction: runOutsideDrizzleTransaction,
+    diagnostics: createDraftBranchAheadDiagnostics(deps.eventSink),
+    // The writer's own links follow the pull cadence: soon after typing, never per keystroke.
+    ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
+  });
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: persistence.journal,
@@ -419,6 +432,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branchPulls.scheduleLivePull(documentId);
       derivations.schedule(documentId);
     },
+    onBranchWriterUpdateAdmitted: (branchId) => draftBranchAheads.schedule(branchId),
     offlineReconciliation,
   });
   writerIngress.bind(hocuspocusPersistence.writerIngressBarrier);
@@ -535,7 +549,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
-    lifecycle: { dispose: () => branchPulls.cancelScheduledPulls() },
+    lifecycle: {
+      dispose: () => {
+        branchPulls.cancelScheduledPulls();
+        draftBranchAheads.cancelScheduled();
+      },
+    },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,
@@ -592,7 +611,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     branchPeers,
     drafts,
-    draftResolver: { drafts: workDrafts },
+    draftResolver: { drafts: workDrafts, draftLinks: draftBranchAheads },
     documentCreation,
   });
 }

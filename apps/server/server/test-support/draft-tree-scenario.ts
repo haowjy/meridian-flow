@@ -19,6 +19,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -38,6 +39,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -119,6 +121,16 @@ export interface ScenarioWriter {
   move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
   /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
   delete(path: string): ReturnType<ContextPort["delete"]>;
+  /**
+   * The writer types in the Work draft's review room for this document: `edit` changes a
+   * copy of the branch, and its update goes through the room's durable admission.
+   * Returns the branch.
+   */
+  editDraft(
+    work: ScenarioWork,
+    documentId: DocumentId,
+    edit: (doc: Y.Doc) => void,
+  ): Promise<{ branchId: string; generation: number }>;
 }
 
 /** What a reader sees through ContextFS: a writer's live port, or a Work thread's. */
@@ -462,6 +474,35 @@ export async function draftTreeScenario(
           ? { kind: "file", documentId: stat.value.documentId ?? "" }
           : { kind: "folder" },
       });
+    },
+    async editDraft(work, documentId, edit) {
+      const sync = runtime().runtime.ports.documentSync;
+      const item = (await sync.draftReview.list({ projectId, workId: work.id })).find(
+        (candidate) => candidate.documentId === documentId,
+      );
+      if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
+      const preview = await sync.draftReview.preview({
+        projectId,
+        workId: work.id,
+        documentId,
+        draftId: item.draftId,
+      });
+      if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
+      const room = parseYjsRoomName(preview.reviewRoomName);
+      if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
+      const document = new Y.Doc({ gc: false });
+      const loaded = await sync.loadHocuspocusBranchState(room.branchId, room.generation);
+      if (loaded) Y.applyUpdate(document, loaded.state);
+      const before = Y.encodeStateVector(document);
+      edit(document);
+      await sync.admitBranchWriterUpdate({
+        branchId: room.branchId,
+        expectedGeneration: room.generation,
+        update: Y.encodeStateAsUpdate(document, before),
+        origin: { type: "user", userId },
+        document,
+      });
+      return { branchId: room.branchId, generation: room.generation };
     },
   };
 
