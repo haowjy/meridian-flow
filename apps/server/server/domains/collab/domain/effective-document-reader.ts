@@ -44,6 +44,9 @@ export function createEffectiveDocumentReader(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
+  /** Closes a branch's review rooms (Hocuspocus), for branches a retraction deleted. */
+  closeBranchRoom(branchId: string): void;
+  deferUntilCommit(callback: () => Promise<void>): boolean;
 }): BranchPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   function viewOf(command: EffectiveReadInput): LinkView {
@@ -255,6 +258,19 @@ export function createEffectiveDocumentReader(input: {
     },
     ensureCreatedDraftBranch(command) {
       return input.branches.ensureCreatedDraftBranch(command);
+    },
+    async retractCreatedDraftBranch(command) {
+      const { outcome, branchIds } = await input.branches.retractCreatedDraftBranch(command);
+      if (outcome === "retracted" && branchIds.length > 0) {
+        // Rooms and pooled cores hold the deleted branches' state; they go once the
+        // deletion is durable, never before (an abort keeps the branches).
+        const retire = async () => {
+          for (const branchId of branchIds) input.closeBranchRoom(branchId);
+          await input.agentEdit.invalidateThread(command.documentId, "");
+        };
+        if (!input.deferUntilCommit(retire)) await retire();
+      }
+      return outcome;
     },
   };
 }

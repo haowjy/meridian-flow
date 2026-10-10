@@ -18,6 +18,14 @@ export type ApplicationBranchStore = BranchStore &
     }): Promise<BranchSnapshot>;
     /** The Work's draft branch on a draft's new document, from its durable live state, in the caller's transaction. */
     ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
+    /**
+     * Delete the Work's draft branch on a draft-created document and its thread peers,
+     * unless any of them holds a journal row that isn't discarded (a contribution).
+     */
+    retractCreatedDraftBranch(input: {
+      documentId: DocumentId;
+      workId: WorkId;
+    }): Promise<{ outcome: "retracted" | "stands"; branchIds: readonly string[] }>;
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;

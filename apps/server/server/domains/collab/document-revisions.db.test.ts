@@ -95,6 +95,8 @@ async function fixture(
       model: f.runtime.model,
       codec: f.runtime.codec,
       links,
+      closeBranchRoom: () => {},
+      deferUntilCommit: () => false,
     }),
     links,
   );
