@@ -112,7 +112,8 @@ The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocat
 return the operation id issued at admission; `LinkUpdateNote` reads that receipt
 through `settledNamespaceReceipt` and shows "Updated N links" on its own line under
 the name in the tree, drawer and Work Files rows, inline in the phone listing, or
-after the identity path in the identity bar (for renames made there). It mounts and
+after the open document's identity path. The operation registry is keyed by document,
+so a file renamed or moved from any list shows the note in both places. It mounts and
 watches nothing until a rename returns an operation id, lives until the receipt's
 own deadline (settlement plus four seconds, however often its row remounts), ends
 its watch there, and announces once per operation through the app's polite region.
