@@ -400,7 +400,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       );
       setLocked(false);
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
+        // Admission already settled authoring ownership. This presentation clear
+        // must not publish an empty draft over another pane's newer writing.
+        suppressDraftChangeRef.current = true;
         editor.commands.clearContent(true);
+        suppressDraftChangeRef.current = false;
       }
       editor.commands.focus(undefined, { scrollIntoView: false });
     },
