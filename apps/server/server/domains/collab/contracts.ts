@@ -40,9 +40,9 @@ import type {
 
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
-import type { BranchCriticalSections } from "./domain/branch-critical-sections.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
+import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
@@ -370,11 +370,8 @@ export type CollabDraftResolver = {
    * for the debounced registration of writers' review-room edits (§10.7).
    */
   draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication" | "flush">;
-  /**
-   * The in-process branch leases every branch writer shares. Closing a draft takes every
-   * one of its branches' leases before its transaction (§2.1, §14), as a reply's save does.
-   */
-  branchLeases: BranchCriticalSections;
+  /** Every branch of a draft leased before its transaction: what closing the draft needs. */
+  draftLeases: DraftBranchLeases;
 };
 
 export type TurnLiveLineageAccess = {

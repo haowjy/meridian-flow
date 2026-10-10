@@ -42,6 +42,7 @@ import {
   partitionByBlockCoverage,
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
+import { collabHook } from "./collab-test-hooks.js";
 import type { ResponseCommitParticipant } from "./response-transaction.js";
 
 export { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
@@ -153,15 +154,13 @@ export function createBranchAgentEditCoordinator(input: {
     ): Promise<T> {
       const branchId =
         options?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
-      const lease = options?.lease as BranchLockLease | undefined;
-      const transient = (run: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>) =>
-        lease
-          ? coordinator.withBranchTransientWithLease(lease, branchId, run)
-          : coordinator.withBranchTransient(branchId, run);
-      let result: T;
-      try {
-        result = await access.run({ docId, branchId, lease }, () =>
-          transient(async (doc, snapshot) => {
+      // One acquisition of the peer and its draft branch, in the order a save and a close
+      // take them (§14): a save hands its leases down; any other access takes them here,
+      // before any transaction, and every read or commit nested in it runs under them.
+      const owned = options?.lease as BranchLockLease | undefined;
+      const underLease = (lease: BranchLockLease) =>
+        access.run({ docId, branchId, lease }, () =>
+          coordinator.withBranchTransientWithLease(lease, branchId, async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
             const pendingBatch =
@@ -178,11 +177,10 @@ export function createBranchAgentEditCoordinator(input: {
               if (mutation?.mode !== "threadPeer") {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
-              const sourceHasBranchDelta = await sourceDocHasBranchDelta(
-                coordinator,
+              const sourceHasBranchDelta = await coordinator.readBranchWithLease(
                 lease,
                 workDraftBranchId,
-                doc,
+                async (branchDoc) => Boolean(yjsDeltaUpdate(doc, branchDoc)),
               );
               if (!sourceHasBranchDelta) {
                 input.diagnostics?.stagedWriteNoop({
@@ -211,9 +209,7 @@ export function createBranchAgentEditCoordinator(input: {
                 updateMeta: pending?.meta ?? null,
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               };
-              const committed = lease
-                ? await coordinator.commitSyncFromDocWithLease(lease, sync)
-                : await coordinator.commitSyncFromDoc(sync);
+              const committed = await coordinator.commitSyncFromDocWithLease(lease, sync);
               if (!committed) return result;
               advanceConcurrentJournalWatermark(
                 concurrentJournalWatermarks,
@@ -238,6 +234,14 @@ export function createBranchAgentEditCoordinator(input: {
             return result;
           }),
         );
+      let result: T;
+      try {
+        result = owned
+          ? await underLease(owned)
+          : await coordinator.withLeases(await accessBranchIds(input, branchId), async (lease) => {
+              await collabHook("access.afterLeases");
+              return underLease(lease);
+            });
       } catch (cause) {
         concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
         throw cause;
@@ -656,8 +660,17 @@ export function createBranchPendingJournalEntries(
   };
 }
 
-/** One document access of the thread core: its resolved branch and, under a save, its lease. */
-type DocumentAccess = { docId: string; branchId: string; lease: BranchLockLease | undefined };
+/** One document access of the thread core: its peer and the lease over it and its draft branch. */
+type DocumentAccess = { docId: string; branchId: string; lease: BranchLockLease };
+
+/** The peer and its draft branch: what one thread-core access leases. */
+async function accessBranchIds(
+  input: { branches: BranchLookupWithSnapshots },
+  peerBranchId: string,
+): Promise<string[]> {
+  const peer = await input.branches.getBranch(peerBranchId);
+  return peer?.upstreamBranchId ? [peerBranchId, peer.upstreamBranchId] : [peerBranchId];
+}
 
 function readUnder<T>(
   branchCoordinator: BranchCoordinator,
@@ -668,26 +681,6 @@ function readUnder<T>(
   return lease
     ? branchCoordinator.readBranchWithLease(lease, branchId, fn)
     : branchCoordinator.readBranch(branchId, fn);
-}
-
-async function sourceDocHasBranchDelta(
-  branchCoordinator: BranchCoordinator,
-  lease: BranchLockLease | undefined,
-  branchId: string,
-  sourceDoc: Y.Doc,
-): Promise<boolean> {
-  return readUnder(branchCoordinator, lease, branchId, async (branchDoc) =>
-    Boolean(yjsDeltaUpdate(sourceDoc, branchDoc)),
-  );
-}
-
-function _emptyDocState(): Uint8Array {
-  const doc = new Y.Doc({ gc: false });
-  try {
-    return Y.encodeStateAsUpdate(doc);
-  } finally {
-    doc.destroy();
-  }
 }
 
 /**

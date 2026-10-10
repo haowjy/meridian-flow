@@ -6,10 +6,12 @@
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
  * the other project sources, or `user://` for the writer's personal source.
  */
+import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import * as Y from "yjs";
+import { collabHook } from "../domains/collab/domain/collab-test-hooks.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -20,7 +22,9 @@ import {
   createContextEntry,
   parseCreateContextEntryBody,
 } from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
-import type { useComposedRuntimes } from "./composed-runtime.js";
+import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
+import { requireLockedActiveWorks } from "../shared/work-lifecycle-lock.js";
+import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
 import { type DraftTreeWorld, type ScenarioWork, sourceOf } from "./draft-tree-seeds.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
@@ -36,6 +40,8 @@ export interface ScenarioReply {
 
 export interface ScenarioModel {
   reply(): Promise<ScenarioReply>;
+  /** One tool call outside any reply: a write commits at once (the pool's `commitNow`). */
+  now(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
   /** One reply that creates `path` with `text` and saves; the created document's id. */
   create(path: string, text: string): Promise<DocumentId>;
   /** One reply that copies `from` to `to` and saves. */
@@ -93,6 +99,12 @@ export interface DraftTreeCommands {
   discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
   /** Apply these documents from the Work's draft through the review command (lane E's seam). */
   apply(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
+  /**
+   * Close the Work's active draft whole, as Discard all will (§2.1): every branch of the
+   * draft leased first (hook `discard.afterLeases`), then the Work, the draft, the close.
+   * Lane D's `discardItems` (whole) replaces this with the full kernel (§12.1).
+   */
+  closeDraft(work: ScenarioWork): Promise<void>;
   /** The Work draft's branch of this document, as its review room names it. */
   draftBranch(
     work: ScenarioWork,
@@ -133,6 +145,14 @@ export function draftTreeCommands(
     }
     return {
       reply,
+      async now(name, args) {
+        const { runtime } = composed();
+        await bindEditAgent(runtime, work.threadId);
+        return runtime.app.toolExecutor.executeTool(
+          { id: randomUUID(), name, arguments: args },
+          { threadId: work.threadId, turnId: work.turnId, agentSlug: null },
+        );
+      },
       async create(path, text) {
         const turn = await reply();
         const created = await succeed(
@@ -311,11 +331,26 @@ export function draftTreeCommands(
     }
   }
 
+  async function closeDraft(work: ScenarioWork) {
+    const { drafts, draftLeases } = ports().documentSync;
+    const draft = await drafts.activeForWork(work.id);
+    if (!draft) throw new Error(`${work.slug} has no active draft to close`);
+    await draftLeases.withDraftBranches(draft.id, async () => {
+      await collabHook("discard.afterLeases");
+      await runInDrizzleTransaction(world.db, async () => {
+        await requireLockedActiveWorks(world.db, [work.id]);
+        if (!(await drafts.lockActive(draft.id))) return;
+        await drafts.close(draft.id, new Date());
+      });
+    });
+  }
+
   return {
     model,
     writer,
     view,
     draftBranch,
+    closeDraft,
     discard: (work, documentIds) =>
       eachItem(work, documentIds, "discard", ({ documentId, draftId }) =>
         ports().documentSync.draftReview.discardWorkDraft({

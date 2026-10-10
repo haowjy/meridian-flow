@@ -2,27 +2,23 @@
  * A reply's drafted writes and the draft they land in (contract §2.5, ledger K-1, K-2): a
  * read never makes a draft or a peer, the first write does; a save whose draft closed
  * under it refuses that document stale and never provisions a new draft (B9); and a save
- * and a whole-draft close serialize on their branch leases, in both orders, without
- * deadlock (V2-H2).
+ * or an immediate write and a whole-draft close serialize on their branch leases, in both
+ * orders, without deadlock (V2-H2, §14).
  */
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { branchWriteJournal, documentBranches, drafts, users } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { useComposedRuntimes } from "../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
   draftTreeScenario,
   type ScenarioReply,
-  type ScenarioRuntime,
   type ScenarioWork,
 } from "../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
-import { collabHook } from "./domain/collab-test-hooks.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -42,35 +38,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [users]);
     });
 
-    let leases: ScenarioRuntime["ports"]["documentSync"]["branchLeases"];
-
     async function start() {
       const runtime = await runtimes.compose();
-      leases = runtime.ports.documentSync.branchLeases;
       return draftTreeScenario(db, { runtime, runtimes });
-    }
-
-    /**
-     * Close the Work's active draft whole, as Discard all will (§2.1): every branch of the
-     * draft leased first (hook `discard.afterLeases`), then the Work, the draft, the close.
-     */
-    async function closeDraft(scenario: DraftTreeScenario, work: ScenarioWork) {
-      const draft = await scenario.drafts.activeForWork(work.id);
-      if (!draft) throw new Error(`${work.slug} has no active draft to close`);
-      const branchIds = (
-        await db
-          .select({ id: documentBranches.id })
-          .from(documentBranches)
-          .where(and(eq(documentBranches.draftId, draft.id), eq(documentBranches.status, "active")))
-      ).map(({ id }) => id);
-      await leases.withBranches(branchIds, async () => {
-        await collabHook("discard.afterLeases");
-        await runInDrizzleTransaction(db, async () => {
-          await requireLockedActiveWorks(db, [work.id]);
-          if (!(await scenario.drafts.lockActive(draft.id))) return;
-          await scenario.drafts.close(draft.id, new Date());
-        });
-      });
     }
 
     /** A live chapter the writer made, with one paragraph. */
@@ -202,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch notes.",
       });
       expect(notes.isError, JSON.stringify(notes.output)).toBeFalsy();
-      await closeDraft(scenario, closedFirst);
+      await scenario.closeDraft(closedFirst);
       const saved = await reply.save();
       expect.soft(refusedIn(saved), "the drafted document refuses stale").toEqual([chapter]);
       expect
@@ -226,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const waitingSave = await staged(scenario, leasedByClose, "close-leases-first.md");
       const closeThenSave = await interleave(
         db,
-        () => closeDraft(scenario, leasedByClose),
+        () => scenario.closeDraft(leasedByClose),
         "discard.afterLeases",
         () => waitingSave.save(),
         { waitMs: 300 },
@@ -250,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         () => holdingSave.save(),
         "save.afterWorkLock",
-        () => closeDraft(scenario, leasedBySave),
+        () => scenario.closeDraft(leasedBySave),
         { waitMs: 300 },
       );
       expect.soft(saveThenClose.a, "the save finishes").toMatchObject({ ok: true });
@@ -265,6 +235,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(await draftsOf(leasedBySave), "which the close then closed")
         .toEqual([{ id: draftBefore?.id, status: "closed" }]);
+
+      // §14: an immediate write takes its peer's and draft branch's leases in the close's
+      // order, so either may hold them first and the other waits; neither waits in a cycle.
+      for (const first of ["write", "close"] as const) {
+        const work = await scenario.work(`Immediate, ${first} first`, "draft");
+        const name = `immediate-${first}-first.md`;
+        const chapter = await liveChapter(scenario, name);
+        await (await staged(scenario, work, name)).save();
+        const write = () =>
+          scenario.model(work).now("write", {
+            command: "replace",
+            path: `manuscript://${name}`,
+            find: "Staged draft.",
+            content: "Immediate draft.",
+          });
+        const close = () => scenario.closeDraft(work);
+        const run =
+          first === "write"
+            ? await interleave(db, write, "access.afterLeases", close, { waitMs: 300 })
+            : await interleave(db, close, "discard.afterLeases", write, { waitMs: 300 });
+        expect.soft(run.bBlocked, `${first} first: the other waits on its leases`).toBe(true);
+        const wrote = first === "write" ? run.a : run.b;
+        const closed = first === "write" ? run.b : run.a;
+        expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });
+        expect
+          .soft(wrote, `${first} first: the write finishes without landing in the closed draft`)
+          .toMatchObject({ ok: true, value: { isError: true } });
+        expect
+          .soft(await draftsOf(work), `${first} first: the draft closes, none is made`)
+          .toEqual([{ id: expect.any(String), status: "closed" }]);
+        expect
+          .soft(
+            (await branchesOf(chapter)).map(({ status }) => status),
+            `${first} first: no branch outlives the close`,
+          )
+          .toEqual(["closed", "closed"]);
+      }
     });
   });
 }

@@ -267,7 +267,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
     draftResolver: {
       drafts,
-      branchLeases: createBranchCriticalSections(),
+      // No draft branches in memory: a whole draft leases nothing.
+      draftLeases: {
+        withDraftBranches: (_draftId, run) =>
+          createBranchCriticalSections().withBranches([], (lease) => run(lease, [])),
+      },
       // No draft branches in memory: nothing to register, and no publication to prepare.
       draftLinks: {
         prepareDraftLinkPublication: async () => {

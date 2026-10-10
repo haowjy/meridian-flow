@@ -106,6 +106,7 @@ import {
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
+import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
@@ -614,7 +615,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftResolver: {
       drafts: workDrafts,
       draftLinks: draftBranchAheads,
-      branchLeases: criticalSections,
+      draftLeases: createDraftBranchLeases({ branches, criticalSections }),
     },
     documentCreation,
   });
