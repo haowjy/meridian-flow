@@ -27,11 +27,7 @@ export type UserTurnRecovery =
   | {
       kind: "rejected";
       onRetry: () => void;
-      /**
-       * Focus or restore the retained draft. Absent when only Retry is honest:
-       * a structured rejection whose live draft is gone cannot be rebuilt from
-       * its text without admitting a different message.
-       */
+      /** Focus the draft already returned by submission settlement, if one was submitted. */
       onEdit?: () => void;
     };
 

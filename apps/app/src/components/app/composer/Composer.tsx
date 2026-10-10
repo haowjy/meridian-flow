@@ -402,15 +402,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
         editor.commands.clearContent(true);
       }
-      // Send never removed the live document. A rejection leaves the writer's
-      // edits intact; prepending the submitted snapshot would duplicate words.
-      if (outcome.kind === "rejected") {
-        const retained = snapshot();
-        onDraftChange?.({ text: serializeComposerDraft(retained.doc).text, snapshot: retained });
-      }
       editor.commands.focus(undefined, { scrollIntoView: false });
     },
-    [editor, onDraftChange, snapshot],
+    [editor],
   );
 
   async function submit() {
