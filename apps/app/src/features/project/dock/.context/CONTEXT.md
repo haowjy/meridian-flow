@@ -29,27 +29,149 @@ contract the project shell relies on.
 
 ### `resolveDockView` pure fallback
 
-`resolveDockView(screen: ScreenKey, stored: DockView | undefined, hasFile: boolean)`
-is a pure function:
+`resolveDockView(screen: ScreenKey, stored: DockView | undefined)` is a pure function:
 
 - If `stored` is a valid view for the screen's set, it is the active view.
 - Otherwise, the screen's `default` is used (the occupant's native view).
-- The Work file segment is inserted while a transient Work file is available.
 - The screen's view set and primary view are always returned alongside.
 
 This is deliberately separated from the React hook (`useDockView`) so the
 fallback logic is unit-testable. The hook only adds the Zustand binding.
 
-On Work, `workFile` is a separate transient `{ workId, tab, active }` slot in
-the same session-only store. While populated, `file` joins the Chat/Changes
-segments. Opening a file activates its view without changing the writer's
-explicit Chat/Changes choice; selecting either of those parks the file view,
-and selecting File again reactivates it. Closing the slot returns to the last
-explicit view (or Chat by default). Chat remains mounted and inert underneath
-the viewer. `ProjectView` owns route reconciliation and calls `enterWork` or
-`leaveWork` to clear a stale slot on Work change, the Work collection, or any
-other destination. Pending creation routes use their client Work identity too.
-No file view is persisted across reloads.
+### Dock document slot
+
+`occupant` in the same session-only store is the one document the dock shows on Work or
+Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
+it only for its own screen and project.
+While it is set, `DockShell` covers the occupant (mounted, inert) with
+`DockDocumentView` and `DockHeader` swaps the view switch for a Close document button then the
+title chip on the left, and Open in Editor (an expand button) then the collapse toggle on the right. Opening a second one
+replaces the first. `setDockView` on its screen clears it, so revealing
+the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat, unless the writer left it on Changes.
+`ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
+when the project changes, and a Work-screen document when leaving that Work or its screen; a
+Chat-screen occupant survives screen and chat changes, but is only shown on Chat (the sync also records the Work on the Work
+screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
+`claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
+came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
+handling the slot has. Nothing is persisted across reloads.
+
+Desktop rail switches belong to `DesktopProjectController`, beside `DesktopProject`.
+It resolves the retained Editor presentation once through the Editor identity resolver
+and resource projection, and resolves the screen-scoped dock occupant once. The pane,
+dock body/header and transfer all consume these derived values. Collapse affects what
+can be carried, not the mounted document's lifetime. Error/unavailable/recovery boundaries
+and the Editor chooser carry nothing. The route exposes destination commands and owns
+addresses; no displayed Editor props travel back to it. Phone never enters this controller.
+
+The Editor's visible tab replaces the Chat slot and reveals it. A visible Chat or Work
+Files document opens or focuses through `openDocumentInEditor`, also used by the header.
+Work receives no document. At the click, the transfer claims the existing dock revision.
+The pure `handOffVisibleDocument` policy binds one claim-gated `afterCommit` effect:
+after successful Editor tab installation it closes the dock, or after Chat acceptance
+it calls the shared `commitDockDocument` plus reveal boundary. Cancel/supersede and failed
+tab installation leave the dock alone; a newer dock intent suppresses only the transfer,
+not a valid destination navigation. Native history flush still precedes workspace commit.
+
+Navigation returns a typed settlement with a ticket and failure stage. The document-command
+boundary normalizes preparation failures; presentation never reconstructs acceptance via
+callbacks or exceptions. One opt-in failure owner keeps records by source control. Rail and
+header project pre-acceptance failures inline; their records expire with the source entry
+or dock revision. The route boundary projects accepted workspace failures on the destination
+and keeps Retry. Both shells use `useRailScreenSwitch` for the same-screen guard and ticket-checked
+rail settlement policy. `WorkspaceNavBody` projects inline rail failures directly
+from this shell-neutral failure owner. Desktop composes its captured document transfer
+into that command; phone only invokes destination commands and never claims the dock.
+Only rail and header actions opt in; ordinary document opens keep their
+own failure policy. Browser history never calls the desktop switch controller.
+Peeking and closing the dock never write Editor tabs. There is no third active-document
+store or continuous synchronization. An Untitled Editor tab can also be carried: the dock
+binds its existing resource session and marks it create-eligible on first input. Its title
+menu still browses from the root, without unavailable rename actions. Uploads navigate to
+the resource route without a prepared Editor tab. Other context opens retain caller-owned
+failure handling. Chat switches, with or without a hand-off, use `showChatScreen` to choose
+the current chat (or its index) and pass the named post-commit effect through its destination command.
+
+`dockDocumentOnScreen` is the single project/screen predicate for the dock slot.
+`useDockDocument` supplies it to view rendering and file/Scratch highlights. LeftSidebar
+resolves its highlighted path through `useDockDocumentTab`, using the same resource-tab
+projection as the desktop presentation owner. Parked Chat documents must not highlight rows on Work or Editor.
+
+Where a document opens is decided once, in `use-dock-placement.ts`, which also owns the one commit
+into the dock (`commitDockDocument`, used by `useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on
+purpose: a chat or Scratch pick goes *beside the chat* (`opensBesideChat`: the Chat screen, wide), and
+Work Files plus the dock's own title menu may also replace the dock document on the Work screen
+(`dockHoldsDocument`). The Editor screen and the phone never hold a dock document, so those picks open
+an Editor tab or route (`useOpenDocumentInDock`, `useOpenScratchNote`). `DockReveal` is
+`"chat" | "document"`: a document reveal only opens the dock, the slot already holds the document.
+
+An id-keyed door (a Recent row, a chat door) resolves through the navigation adapter's `open`, the
+one resolution operation (replica first, then the server); images, PDFs and binaries open as viewer
+tabs through the viewer host, and an unresolvable id announces an error. A known catalog file (a title
+menu pick, a left-tree click, a Scratch row) enters at the commit boundary directly. The phone has no
+context rail, so a phone never opens a Recent row here.
+
+With no document open, the Chat screen's rail header shows the same chip, "Open document", through `DockTitleMenu` (one component for both states): it opens at the root list without a heading or actions, and a pick opens in the dock like any other. On that screen the left project tree's
+file clicks are chat doors too (`LeftSidebar` commits the known file to the dock, images, PDFs and
+binaries included since the dock's viewer host shows them) and the tree's highlighted row follows the
+dock document; on the Editor and Work screens and the phone a tree click is unchanged.
+
+Chat doors (link chips, receipt rows, passage and tool-result doors, `@` references) open
+through `useOpenChatDocument` (`../context/open-chat-document.ts`), the one wrapper they share
+over `useOpenProjectDocument`. It claims the dock at the start of the intent and offers the resolved
+tab to `BesideChatContext`, which `ChatDocumentsBesideProvider` fills only when the chat is in the
+middle (`opensBesideChat`: Chat screen, not phone): the tab then opens in the dock slot and the
+address stays on the chat.
+The adapter's `beside` request hook does this before any route change, so the same open
+result (and its session admission for passage and change-trail landing) is returned. On the
+Editor and Work screens (the chat is the dock) and on the phone nothing is registered and doors
+open Editor tabs and routes as before; a new-tab gesture keeps its background tab. The route-request
+door (`ProjectChatContextNavigationProvider`) resolves its document in the catalog first, spelling a
+bare `scratch://x` with the chat's owner handle, claims the dock before that lookup, hands the
+resolved file straight to passage handling (no second lookup) and falls back to the route only when
+the document is actually absent. The title menu's root Scratch is the one on screen
+(`use-dock-browse-scratch.ts`: the displayed chat's, resolved by `useDisplayedThread` so a subagent
+keeps its Scratch, or the Work-screen route's Work), separate from the open document's own area.
+
+`useOpenScratchNote()` is the way in for a note picked from the rail's Scratch section
+(`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
+the chat is in the middle; an Editor tab from the Work and Editor screens, where the
+chat is the dock and a dock document would cover it; the full-screen document on a
+phone. The note's owner (a Work or a lineage) travels with its tab, so the dock
+document's catalog, rename and Open in Editor follow it. A Chat-screen note stays
+open when the writer switches chats; its title menu keeps listing its own owner's
+Scratch.
+
+`DockDocumentView` follows the resource projection (`useDockDocumentTab`): a rename
+elsewhere updates the name and path the header and identity bar show, and a removed
+or terminal document closes the slot. It reads `DraftReviewProvider` from wherever
+`DockShell` is mounted (the chat scope), so review claims follow the editor that is
+in front: the Editor tab's editor and the dock's are never both `active`.
+
+The menu browses the tab's real scheme: a note moved out of Scratch to Manuscript or
+KB still gets its own area's tree and Rename. "Earlier notes" belongs to the chat's
+Scratch source alone.
+
+The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) at the document's own folder.
+Back rows climb through the folders to the area's top and one more to a root listing of the project's
+areas: Manuscript, Knowledge Base, User, Unfiled and the Scratch in view (the on-screen chat's on the
+Chat screen, the Work's on the Work screen), with no root heading; Rename follows at every
+level (Open in Editor is the header button). The tree comes from `useProjectMenuSource`
+(`../context/use-catalog-menu-source.ts`), built by the pure `../context/menu-tree.ts` from the
+same catalogs the left tree reads; a document in an area the root does not offer (Uploads, or a
+Scratch left behind) opens in an unlisted area. `useCatalogMenuSource` is the single-area form the
+rail's Scratch section draws; the menu takes a tree source and an action list.
+The phone has no dock document, so no menu there.
+
+### Two views of one document
+
+The Editor's warm tabs and the dock's document can be bound to one session at once.
+The registry reference-counts bindings per owner, so closing either view leaves the
+other bound. The caret has one publisher per session and each view keeps its own
+undo stack; the contract is in
+[`core/editor/.context/CONTEXT.md`](../../../../core/editor/.context/CONTEXT.md)
+("Two editors can share one session"). The dock's part is to pass its visibility as
+the host's `active`, which is what makes it the front or back view.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
@@ -85,8 +207,9 @@ steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
 and the phone chat sheet's `MobileChatSheetHeader`) is a contained segmented
 track (a recessed ink-mix well) whose active segment surfaces paper
 (`bg-background`) — the paper stays inside the track's boundary, so the dock
-still reads as one chrome surface. Any other `bg-background` or `bg-card` in
-the dock is a bug (the dock is a sidebar).
+still reads as one chrome surface. The document's editor shell takes the slot's
+material too (`editorClassName="bg-transparent"`). Any other `bg-background` or
+`bg-card` in the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
@@ -123,7 +246,8 @@ flowchart LR
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
 DockShell -->|dock: view=changes| Changes[DockChangesView]
-DockShell -->|Work view=file| File[ContextViewerBareHost]
+DockShell -->|document set| Doc[DockDocumentView]
+    Doc --> DocHost[ContextDocumentHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per Discard class]

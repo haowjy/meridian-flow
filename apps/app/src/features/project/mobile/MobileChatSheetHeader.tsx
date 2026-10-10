@@ -12,9 +12,9 @@ import type { ReactNode } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 
-import { type DockHeaderSlotArgs, DockViewSwitch } from "../dock/DockHeader";
+import { DockViewSwitch, type DockViewSwitchProps } from "../dock/DockHeader";
 
-export type MobileChatSheetHeaderProps = DockHeaderSlotArgs & {
+export type MobileChatSheetHeaderProps = DockViewSwitchProps & {
   onClose?: () => void;
   threadSelect?: ReactNode;
 };

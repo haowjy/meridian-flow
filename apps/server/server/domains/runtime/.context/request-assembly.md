@@ -148,3 +148,8 @@ live in the [gateway context](../gateway/.context/CONTEXT.md).
 
 [kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
 [kb-cache-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/prefix-cache-state.md
+
+No Work context explains bare Scratch as this chat's lineage notes, shared with
+forks and subagents at the first-chat handle. Named-Work Scratch remains the
+Work's. Writer rebind persists a Work-switch Notice naming the previous Scratch
+root, including No Work transitions; it never moves notes or rebakes the prompt.

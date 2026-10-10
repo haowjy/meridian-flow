@@ -17,9 +17,11 @@ export {
   type ReviewOverlayTabIdentity,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
+  replaceOwner,
   type ServerContextTab,
+  type TabOwner,
+  tabContextOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
-  viewerTabForCatalogFile,
 } from "./context-tabs-store";

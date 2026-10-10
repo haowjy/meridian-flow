@@ -46,7 +46,7 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
     .map((route) => ({
       ...route,
       documentId: requireRequestId(route.documentId, "recentRoutes[].documentId"),
-      ...(isWorkScopedRoute(route) && route.workId !== null
+      ...(isWorkScopedRoute(route) && typeof route.workId === "string"
         ? { workId: requireRequestId(route.workId, "recentRoutes[].workId") }
         : {}),
     }))
@@ -74,7 +74,7 @@ export async function handlePutWorkingSetRequest(
 
   for (const route of input.body.recentRoutes) {
     if (!isWorkScopedRoute(route)) continue;
-    if (route.workId === null) continue;
+    if (typeof route.workId !== "string") continue;
     const work = await deps.works.findById(route.workId);
     if (!work || work.projectId !== input.projectId) {
       throw createError({

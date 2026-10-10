@@ -84,7 +84,7 @@ document.
 
 When the resource boundary returns an exact initialized local session, it also
 returns verified-local readiness through `ContextTabSessionBoundary` and
-`ContextEditorMountHost`. `EditorView` may bind that content without waiting for
+`ContextDocumentHost`. `EditorView` may bind that content without waiting for
 first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
@@ -156,11 +156,11 @@ opened as blank documents.
 
 ## Editor versus chat resources
 
-Editor trees list project document schemes; Scratch documents also open in
-Editor tabs through links and Work Files, with resolved Work ownership.
-No Work has no Scratch tree. Uploads remain storage and reference/tool resources;
-their direct URLs show the viewing-not-available state. The deferred chat-launched
-pane overlay is recorded in [TODO](TODO.md).
+Editor trees list project document schemes only. Scratch documents open in
+Editor tabs through links, Work Files and a chat's Scratch section, owned by their
+Work or, for a No Work chat, by their lineage; nothing in the Editor browses
+Scratch, and a Scratch crumb links nowhere. Uploads remain storage and
+reference/tool resources; their direct URLs show the viewing-not-available state.
 
 Eligibility is enforced at live workspace transitions, including bootstrap,
 adoption and availability updates. Hiding a row alone must not leave an

@@ -44,13 +44,14 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { chatLineageId } from "./chat-scratch-owner";
 import { answeredControlIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
@@ -141,7 +142,7 @@ export function ChatView({
   composerStrip,
   active = true,
 }: ChatViewProps) {
-  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openReferenceDocument = useOpenChatDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
@@ -203,6 +204,7 @@ export function ChatView({
     projectId,
     activeWork?.id,
     t`Reference a file`,
+    chatLineageId({ thread: activeThread, work: activeWork }),
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const activity = useThreadActivity({

@@ -195,6 +195,15 @@ describe("planCatalogInstallation", () => {
         view: view("document", "scratch://@some-work/chapter.md"),
       }),
     ).toThrow("Catalog file URI");
+    // A lineage catalog holds only that chat's Scratch: no Work spelling, no missing handle.
+    for (const uri of ["scratch://@drafting/notes.md", "scratch://@/"])
+      expect(() =>
+        planCatalogInstallation({
+          projectId,
+          records: [],
+          view: scopedView({ kind: "lineage", projectId, rootThreadId: "root-id" }, "scratch", uri),
+        }),
+      ).toThrow();
   });
 
   it.each([
@@ -206,9 +215,15 @@ describe("planCatalogInstallation", () => {
     },
     {
       scope: { kind: "work", projectId, workId: "no-work-id" } as const,
+      scheme: "uploads" as const,
+      uri: "uploads://@/notes.md",
+      expected: { scheme: "uploads", workId: "no-work-id" },
+    },
+    {
+      scope: { kind: "lineage", projectId, rootThreadId: "root-id" } as const,
       scheme: "scratch" as const,
-      uri: "scratch://@/notes.md",
-      expected: { scheme: "scratch", workId: "no-work-id" },
+      uri: "scratch://@/c12/notes.md",
+      expected: { scheme: "scratch", workId: null, rootThreadId: "root-id", rootThreadRef: "c12" },
     },
     {
       scope: { kind: "work", projectId, workId: "work-id" } as const,

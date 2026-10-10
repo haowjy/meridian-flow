@@ -92,11 +92,12 @@ lifetime.
     `EditorView` adds the session's Y.Doc `guid` to the key; together they
     make a session swap arrive with a new mount.
   - `useMountedEditor()` freezes one construction bundle on first render:
-    extension configuration, initial options, and the witness's document,
-    horizon-degradation flag, and report callback. It manually constructs TipTap
-    in its own effect. One synchronous block snapshots the Y.Doc, arms the
-    schema-repair witness in its open phase, calls `new Editor`, and flips the
-    witness to live before yielding. The hook also owns destruction. Surface
+    extension configuration, initial options, the owning session,
+    and horizon-degradation flag. It manually constructs TipTap in its own
+    effect through the session's `bindEditor()` seam, which lazily snapshots
+    the Y.Doc and arms its one schema-repair witness before `new Editor`,
+    then flips it to live before yielding. Later mounts attach attribution
+    to the existing live witness. The hook also owns destruction. Surface
     changes are reconciled onto the live instance with `setOptions()` and
     `setEditable()`; they never become construction dependencies or alter the
     armed witness.
@@ -159,8 +160,14 @@ lifetime.
   verified `localContentReady` sessions do not wait for first server sync. Other
   attached sessions wait under the existing five-second overall timeout; expiry
   permits binding with degraded evidence, not upload authorization.
-- `schema-repair-witness.ts` owns one Y.Doc update listener across open and live
-  phases. Open-phase local delete-only normalization is classified
+- `DocumentSession.bindEditor()` owns one `schema-repair-witness.ts` witness
+  per session Y.Doc, with one update listener across open and live phases.
+  It takes the pre-bind snapshot immediately before the first construction.
+  Every view supplies PM lifecycle attribution to this shared witness, including
+  writer transactions from the warm Editor tab or dock. Peer binding callbacks
+  cannot replace the originating writer's active attribution. Releasing either
+  view removes only its PM callbacks; session destruction removes the witness.
+  Later views subscribe to session verdicts instead of duplicating observation. Open-phase local delete-only normalization is classified
   synchronously during construction and resolved against the pre-bind snapshot
   by Y item identity; structural boundary tokens keep separate removed passages
   from being concatenated. In live mode, `beforeAllTransactions` and
@@ -184,8 +191,8 @@ lifetime.
   Verdicts append to
   `DocumentSessionSnapshot.schemaRepairs`; they do not raise a schema fence,
   write quarantine, change connection status, or pause editing.
-  Reporting is per replica: a client reports only a repair performed by its own
-  binding. Several replicas can therefore report the same arriving invalid
+  Reporting is per session replica, not per mounted view: a client reports once
+  for a repair performed by any of its bindings. Several replicas can therefore report the same arriving invalid
   content, while a replica that only receives another replica's remote repair
   reports nothing. There is no room-level reporter or suppression protocol.
 - Live peer marks are the session projection of durable trail changes. Their
@@ -250,6 +257,21 @@ lifetime.
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
+- **Two editors can share one session** (an Editor tab kept warm behind the screen,
+  and the dock's document). Presence is the session's, but each editor's cursor
+  plugin clears a caret it did not place whenever its own view updates unfocused,
+  so two bound editors ping-pong awareness writes and peers see the caret flap.
+  `useMountedEditor` therefore hands each editor `gateCaretPresence(session.presence,
+  () => surface.publishPresence)`: only its `cursor` writes through `caretProvider`
+  are arbitrated (pass while the editor is `active`, dropped otherwise). Every other
+  field, image-upload announcements and their clears included, passes through
+  ungated, because that work belongs to the session whether or not the view shows.
+  When an editor goes to the back it calls `retire()` once, which clears the caret
+  it still owns, meaning it is the session's current caret publisher
+  (`LocalPresence.caretPublisher`, one slot set by each accepted cursor write), never by
+  comparing cursor values, so retire-then-publish and publish-then-retire with equal
+  cursors both leave the front view's caret. Undo needs no such rule: stacks are per editor and both track every
+  local edit.
 - The account resource replica durably reserves metadata before exact content
   opening. Content opening awaits account authority readiness and initializes
   the reserved database before exposing an editable handle. A failure may leave

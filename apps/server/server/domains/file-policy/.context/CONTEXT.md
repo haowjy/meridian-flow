@@ -18,8 +18,9 @@ level = min(person term, lifecycle term, agent term)
   files (manuscript, kb, user, unfiled) never take a Work's lifecycle.
 - **Agent:** `uploads://` is `read` for every agent. Each link of the
   delegation chain (`AgentChain`, the calling thread up to the root) caps the
-  result: a `read` link may edit only the scratch of its own thread's current
-  Work, No Work included. The minimum over the chain wins.
+  result: a `read` link may edit only its own Scratch owner, selected by
+  `scratchOwnerFor`: the current named Work or the No Work chat's lineage.
+  An `edit` chain may write another lineage by its canonical URI. The minimum over the chain wins.
 
 `domain/policy.ts` is pure. `SOURCE_RULES` there says which sources are
 drafted (`scratch://` and `uploads://` never are) and each source's agent cap.

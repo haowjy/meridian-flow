@@ -91,8 +91,14 @@ function parseTab(value: unknown): ContextTab | null {
     typeof tab.path !== "string" ||
     tab.path.length === 0 ||
     !optionalString(tab.workId) ||
+    !optionalString(tab.rootThreadId) ||
+    !optionalString(tab.rootThreadRef) ||
     tab.workId === "" ||
-    (isWorkScopedProjectContextScheme(tab.scheme) && !tab.workId)
+    tab.rootThreadId === "" ||
+    // A chat's Scratch names its lineage and handle instead of a Work.
+    (tab.rootThreadId !== undefined &&
+      (tab.scheme !== "scratch" || tab.workId !== undefined || !tab.rootThreadRef)) ||
+    (isWorkScopedProjectContextScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
   if (tab.kind === "tracked" && tab.editable === true) {
@@ -163,9 +169,9 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   return { tabs: parsedTabs, selectedTabIdByWork: selections };
 }
 
-function withoutWork(tab: ContextTab): ContextTab {
-  if (tab.kind === "new" || !("workId" in tab)) return tab;
-  const { workId: _work, ...rest } = tab;
+function withoutOwner(tab: ContextTab): ContextTab {
+  if (tab.kind === "new") return tab;
+  const { workId: _work, rootThreadId: _lineage, rootThreadRef: _handle, ...rest } = tab;
   return rest as ContextTab;
 }
 
@@ -225,7 +231,8 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
       (right.kind !== "new" &&
         left.scheme === right.scheme &&
         left.path === right.path &&
-        left.workId === right.workId)) &&
+        left.workId === right.workId &&
+        left.rootThreadId === right.rootThreadId)) &&
     leftDraft?.reviewDraftId === rightDraft?.reviewDraftId &&
     leftDraft?.tabInstanceToken === rightDraft?.tabInstanceToken
   );
@@ -465,10 +472,10 @@ export function reduceEditorWorkspace(
           );
     const index = sameDocumentIndex >= 0 ? sameDocumentIndex : occupiedLocatorIndex;
     const existing = index >= 0 ? workspace.tabs[index] : undefined;
-    // The opened tab states its Work: a Scratch tab opened with none is No
-    // Work's, and must not keep a Work a stale tab for the document carried.
+    // The opened tab states its owner: a stale tab for the document must not
+    // keep a Work or lineage the opened tab no longer names.
     const existingWithoutResourceOwnership = existing
-      ? withoutWork(withoutResourceOwnership(existing))
+      ? withoutOwner(withoutResourceOwnership(existing))
       : undefined;
     const merged = existing
       ? ({

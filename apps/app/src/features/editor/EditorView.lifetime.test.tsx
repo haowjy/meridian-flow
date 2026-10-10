@@ -4,18 +4,14 @@
 import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
-import type {
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
   DocumentSession,
-  DocumentSessionConnectionState,
-  DocumentSessionSnapshot,
-  SchemaFence,
+  type DocumentSessionConnectionState,
+  type DocumentSessionSnapshot,
+  type SchemaFence,
 } from "@/core/editor/document-session";
-import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
-import { SessionMarkerStore } from "@/core/editor/session-marker-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
 import { type EditorScope, useEditorScope } from "./editor-scope";
@@ -45,6 +41,10 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 const sessions = new Map<string, DocumentSession>();
+const createdSessions: DocumentSession[] = [];
+afterAll(async () => {
+  for (const session of createdSessions) await session.destroy();
+});
 const sessionSnapshots = new Map<string, DocumentSessionSnapshot>();
 const sessionListeners = new Map<string, Set<(snapshot: DocumentSessionSnapshot) => void>>();
 const sessionHorizons = new Map<
@@ -55,8 +55,13 @@ const sessionHorizons = new Map<
 function sessionFor(roomKey: string): DocumentSession {
   const existing = sessions.get(roomKey);
   if (existing) return existing;
-  const doc = new Y.Doc({ gc: false });
-  const awareness = new Awareness(doc);
+  // Real document/binding lifetime, with only transport/status controlled below.
+  const session = new DocumentSession({
+    roomKey: crypto.randomUUID(),
+    persistence: { kind: "none" },
+    ownUserId: "writer",
+  });
+  createdSessions.push(session);
   const snapshot: DocumentSessionSnapshot = {
     documentId: roomKey,
     roomKey,
@@ -73,12 +78,8 @@ function sessionFor(roomKey: string): DocumentSession {
   const listeners = new Set<(next: DocumentSessionSnapshot) => void>();
   sessionSnapshots.set(roomKey, snapshot);
   sessionListeners.set(roomKey, listeners);
-  const session = {
+  Object.assign(session, {
     roomKey,
-    document: doc,
-    awareness,
-    presence: createLocalPresence(awareness),
-    markerStore: new SessionMarkerStore("writer"),
     refusedLocalEdits: () => refusedRooms.has(roomKey),
     whenLocalPersistenceSynced: () =>
       sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),
@@ -95,7 +96,7 @@ function sessionFor(roomKey: string): DocumentSession {
       listener(sessionSnapshots.get(roomKey) ?? snapshot);
       return () => listeners.delete(listener);
     },
-  } as unknown as DocumentSession;
+  });
   sessions.set(roomKey, session);
   return session;
 }

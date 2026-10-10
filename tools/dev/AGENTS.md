@@ -34,13 +34,22 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` ensure the worktree database and extensions through `prepare-db.ts`, then `db:migrate` applies committed migrations and SQL functions; `db:push` is for disposable local experiments only and never carries `--force`.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
-  `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
+  `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline. A
+  `migration-lint: skip` must hold on populated tables; "the tables are empty"
+  is never its reason. Add a rule to the one `RULES` list, never a second
+  mechanism.
 - **The migration runner owns applied history.** Every schema-migration path goes
-  through `runMigrations`; it matches both hash and journal timestamp before it
-  applies anything, serializes concurrent runners with a transaction-scoped
-  advisory lock, and refuses structurally invalid, divergent, or out-of-order
-  history. Only reset a database owned by the current dev checkout. Shared and
-  deployed database history requires human repair, never a reset.
+  through `runMigrations`. It matches hash and journal timestamp before applying
+  anything, refuses structurally invalid, divergent or out-of-order history,
+  executes the normalized SQL snapshot whose raw bytes supplied that identity,
+  holds one session advisory lock for the whole run, and commits each ordinary
+  migration separately with its history row. A `-- migration: no-transaction`
+  file autocommits and is recorded only after every statement succeeds; before
+  it runs, the runner drops INVALID remnants of its concurrent builds and never
+  a valid index. Authoring rules live in
+  [`packages/database`](../../packages/database/.context/CONTEXT.md). Only reset a
+  database owned by the current dev checkout; shared and deployed resets
+  require explicit owner authorization.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.

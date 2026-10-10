@@ -22,12 +22,14 @@ export {
   type ReviewOverlayTabIdentity,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
+  replaceOwner,
   type ServerContextTab,
   serverContextTabLocatorKey,
+  type TabOwner,
+  tabContextOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
-  viewerTabForCatalogFile,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {

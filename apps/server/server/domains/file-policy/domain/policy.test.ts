@@ -38,6 +38,11 @@ const link = (permission: "read" | "edit", workId: string): AgentLink => ({
   threadId: `t-${permission}-${workId}`,
   permission,
   threadWorkId: workId,
+  scratchOwner: { scope: "work", workId },
+});
+const lineageLink = (rootThreadId: string): AgentLink => ({
+  ...link("read", "no-work"),
+  scratchOwner: { scope: "lineage", projectId: PROJECT, rootThreadId },
 });
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
@@ -66,6 +71,9 @@ describe("file policy", () => {
     // Own scratch follows the thread's current named Work.
     ["a read agent edits its Work's scratch", agent(link("read", "a")), file("scratch", A), "edit", null],
     ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
+    // A No Work agent's Scratch is its lineage's: shared with its family, read-only elsewhere.
+    ["a read agent edits its lineage's scratch", agent(lineageLink("root")), file("scratch", null, { ownerRootThreadId: "root" }), "edit", null],
+    ["a read agent reads another lineage's scratch", agent(lineageLink("other")), file("scratch", null, { ownerRootThreadId: "root" }), "read", "agent_read_only"],
     // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],

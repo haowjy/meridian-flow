@@ -10,6 +10,8 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** Runs only after successful destination workspace installation. */
+  afterCommit?: () => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   draftId?: string;
   isCurrent?: () => boolean;
@@ -25,6 +27,8 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
+  screenCommands?: ScreenCommands;
+  isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   capture?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
@@ -36,10 +40,14 @@ export function ProjectNavigationProvider({
   isCurrentContextRoute,
   screen,
   registerLeaveGuard,
+  screenCommands,
+  isCurrentNavigation,
 }: {
   screen?: ScreenKey;
   children: ReactNode;
   openContextRoute: OpenContextRoute;
+  screenCommands?: ScreenCommands;
+  isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   captureNavigation?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
@@ -52,6 +60,8 @@ export function ProjectNavigationProvider({
         capture: captureNavigation,
         isCurrentContextRoute,
         registerLeaveGuard,
+        screenCommands,
+        isCurrentNavigation,
       }}
     >
       {children}
@@ -93,4 +103,17 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
       }),
     [register],
   );
+}
+
+/** Opt-in presentation for the dock header; ordinary document opens keep their own policy. */
+
+export type ScreenCommands = {
+  showEditor: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
+  showWork: () => Promise<NavigationSettlement>;
+};
+export function useScreenCommands() {
+  return useContext(ProjectNavigationContext)?.screenCommands;
+}
+export function useIsCurrentNavigation() {
+  return useContext(ProjectNavigationContext)?.isCurrentNavigation;
 }

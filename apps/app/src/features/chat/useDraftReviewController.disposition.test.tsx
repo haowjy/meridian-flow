@@ -84,7 +84,7 @@ const addressedTab = contextTabFromFile(
     resourceHandle: "resource-a",
     resourceState: "acknowledged",
   },
-  "work-a",
+  { workId: "work-a" },
 );
 
 const neighborTab = contextTabFromFile(
@@ -102,7 +102,7 @@ const neighborTab = contextTabFromFile(
     filetype: "markdown",
     schemaType: "document",
   },
-  "work-a",
+  { workId: "work-a" },
 );
 
 let controller: DraftReviewController | null = null;

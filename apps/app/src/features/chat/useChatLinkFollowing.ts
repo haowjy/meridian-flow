@@ -4,8 +4,9 @@
  * `ChatView` provides the returned navigation to transcript references and
  * renders the returned dialog props.
  *
- * Scope: the thread's Work, with no base URI (so relative links are text). It
- * is pending only while the thread or the Works snapshot is loading; a click
+ * Scope: the thread's Work, and its lineage while the thread is on No Work (a
+ * bare `scratch://` is the lineage's), with no base URI (so relative links are
+ * text). It is pending only while the thread or the Works snapshot is loading; a click
  * then waits, showing checking, and is never answered from a guessed Work.
  * A null thread binding remains pending rather than guessing No Work. A No
  * Work thread uses the locked row id whichever snapshot names it first, so
@@ -52,7 +53,7 @@ import {
   useLinkableDocuments,
   useLinkFollower,
 } from "@/features/links";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -62,18 +63,29 @@ function chatLinkScope({
   projectId,
   activeWork,
   thread,
+  rootThreadId,
+  noWorkId,
   worksSettled,
 }: {
   projectId: string;
   /** The thread's Work from the Works snapshot; null when unknown or missing. */
   activeWork: Pick<Work, "id"> | null;
   thread: Pick<Thread, "workId"> | null;
+  /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
+  rootThreadId: string | null;
+  noWorkId: string | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  if (activeWork) return { projectId, workId: activeWork.id, baseUri: null };
+  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
-  return { projectId, workId: thread.workId, baseUri: null };
+  // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
+  return {
+    projectId,
+    workId: thread.workId,
+    rootThreadId: thread.workId === noWorkId ? rootThreadId : null,
+    baseUri: null,
+  };
 }
 
 export function useChatLinkFollowing({
@@ -92,24 +104,29 @@ export function useChatLinkFollowing({
   references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
 } {
-  const { status: worksStatus } = useWorks(projectId);
+  const { status: worksStatus, noWork } = useWorks(projectId);
   const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
+  const noWorkId = noWork?.id ?? null;
+  // The first chat's id: a No Work chat's Scratch is its lineage's.
+  const lineageId = activeThread?.rootThreadId ?? null;
   const scope = useMemo(
     () =>
       chatLinkScope({
         projectId,
         activeWork,
         thread: threadKnown ? { workId: threadWorkId } : null,
+        rootThreadId: activeWork?.isNoWork || threadWorkId === noWorkId ? lineageId : null,
+        noWorkId,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
       }),
-    [activeWork, projectId, threadKnown, threadWorkId, worksStatus],
+    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
-  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openReferenceDocument = useOpenChatDocument(projectId);
   const open = useCallback<LinkDestination>(
     (document, gesture) =>
       openReferenceDocument({
@@ -164,6 +181,7 @@ export function useChatLinkFollowing({
     dialog: {
       outcome,
       projectId,
+      scratchRootThreadId: scope === "pending" ? null : (scope.rootThreadId ?? null),
       onClose: follower.dismiss,
       onRetry: follower.retry,
       onOpen: (document) => open(document, "current"),

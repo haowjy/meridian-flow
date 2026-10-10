@@ -29,7 +29,8 @@ host, where the kernel could not see it.
 is not decoration: `ContextEditorMountHost` keeps up to six editors mounted and
 hides the inactive ones with `hidden`, which works for the manuscript (it is
 inside the hidden element) and does nothing at all for chrome (it portals to
-the body). Without the flag, a warm editor's menu, dialog, or selection-persistent
+the body). The dock's document is the same: a collapsed dock keeps it mounted,
+so the dock passes its visibility as `active`. Without the flag, a warm editor's menu, dialog, or selection-persistent
 object row paints over the document the writer is reading, anchored to a rect
 in a pane nobody can see.
 

@@ -174,7 +174,7 @@ export function useDraftReviewScopeValue({
     const activeDrafts = drafts.drafts ?? groups.map((group) => group.draft);
     if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
 
-    const scope = contextCatalogScope(projectId, "manuscript", null) ?? {
+    const scope = contextCatalogScope(projectId, "manuscript", { workId: null }) ?? {
       kind: "project" as const,
       projectId,
     };

@@ -9,13 +9,15 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
 import { installCanonicalRefresh } from "./resource-namespace";
-import type {
-  ResourceCatalogCheckpoint,
-  ResourceDescriptor,
-  ResourceLocation,
-  ResourceRecord,
-  ResourceWrite,
+import {
+  type ResourceCatalogCheckpoint,
+  type ResourceDescriptor,
+  type ResourceLocation,
+  type ResourceRecord,
+  type ResourceWrite,
+  sameOwner,
 } from "./resource-records";
+import { resourceLineageOwner } from "./resource-work-authority";
 
 export type CatalogObservationFence = Readonly<{
   /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
@@ -76,6 +78,16 @@ export function catalogEntryLocation(
   }
   if (!isWorkScopedProjectContextScheme(scheme))
     throw new Error("Catalog file URI is not Work scoped");
+  if (view.scope.kind === "lineage") {
+    if (scheme !== "scratch" || authority.kind !== "lineage")
+      throw new Error("Catalog file URI has invalid chat authority");
+    return {
+      scheme,
+      path: displayedPath(path),
+      name: entry.name,
+      ...resourceLineageOwner(view.scope, authority.rootThreadRef),
+    };
+  }
   if (authority.kind === "none") {
     return {
       scheme,
@@ -104,8 +116,7 @@ export function sameResourceLocation(
     left.scheme === right.scheme &&
     left.path === right.path &&
     left.name === right.name &&
-    left.workId === right.workId &&
-    left.workSlug === right.workSlug
+    sameOwner(left, right)
   );
 }
 

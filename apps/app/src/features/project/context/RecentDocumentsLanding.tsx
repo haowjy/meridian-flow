@@ -274,7 +274,6 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
     },
 
     work: { kind: "absent" },
-    results: false,
   });
 }
 

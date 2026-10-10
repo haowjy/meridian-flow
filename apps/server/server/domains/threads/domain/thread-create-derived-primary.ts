@@ -1,8 +1,9 @@
 /**
  * Internal primary-thread derivation for handoff and fork agent swaps. A
  * derivation is a SIBLING of its source, never the source's child: it takes
- * the source's `parentThreadId`, `rootThreadId`, and `spawnDepth` as its own,
- * so it shares the source's lineage instead of extending it. The fork-source
+ * the source's `parentThreadId` and `spawnDepth` as its own. Forks keep
+ * the source lineage; handoffs start a fresh lineage,
+ * while preserving their source provenance. The fork-source
  * relationship itself is carried by `originTurnId` (the anchor turn lives on
  * the source thread), never by `parentThreadId`.
  */
@@ -49,7 +50,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     parentThreadId: input.source.parentThreadId,
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,
-    rootThreadId: input.source.rootThreadId,
+    rootThreadId: input.originType === "handoff" ? input.id : input.source.rootThreadId,
     spawnDepth: input.source.spawnDepth,
     spawnStatus: null,
     totalCostUsd: "0",

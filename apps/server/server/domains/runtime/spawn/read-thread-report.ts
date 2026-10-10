@@ -9,7 +9,7 @@ export async function readThreadReport(input: {
   callerThreadId: ThreadId;
   ref: string;
   run?: number;
-  repos: Pick<ThreadRepositories, "threads" | "executionReports" | "readSnapshot">;
+  repos: Pick<ThreadRepositories, "threads" | "turns" | "executionReports" | "readSnapshot">;
 }): Promise<ThreadReportResult> {
   return input.repos.readSnapshot(async () => {
     const caller = await input.repos.threads.findById(input.callerThreadId);
@@ -18,6 +18,7 @@ export async function readThreadReport(input: {
       caller,
       ref: input.ref,
       threads: input.repos.threads,
+      turns: input.repos.turns,
     });
     if (!resolved.ok) return resolved;
     const child = resolved.target;

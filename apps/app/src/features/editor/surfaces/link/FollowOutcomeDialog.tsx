@@ -23,7 +23,7 @@ import { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   const surface = useLinkSurface(editor);
   const { follow } = useLinkSurfaceState(editor);
-  const { projectId } = useEditorScope();
+  const { projectId, rootThreadId } = useEditorScope();
   const open = useEditorLinkDestination();
 
   // Mounted only while there is something to say. A dialog that sat closed in
@@ -50,6 +50,7 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
       <FollowOutcomeContent
         outcome={follow}
         projectId={projectId}
+        scratchRootThreadId={rootThreadId}
         onClose={() => surface.dismissFollow()}
         onRetry={() => surface.retryFollow()}
         onOpen={(document) => open(document, "current")}
