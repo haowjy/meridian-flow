@@ -76,7 +76,10 @@ as the header's Open in Editor button. Work receives no document. A collapsed do
 Editor chooser or an unresolved route carries nothing; the destination keeps its own state.
 The click captures the projected document and claims the dock. Only an accepted destination
 commits the hand-off through `project-navigation.transition`; cancellation or navigation failure
-leaves the slot alone, and a newer dock pick wins. Native history is flushed before the
+leaves the slot alone, and a newer dock pick wins. Toward the Editor, acceptance (`onAccepted`)
+and the hand-off commit (`onCommitted`) are separate callbacks: `settleTab` installs the prepared
+tab first and consumes the dock document only after `openTab` succeeds, so a tab-admission
+failure is a destination failure that keeps the dock document. Native history is flushed before the
 accepted workspace commit; TanStack flush only writes the queued browser history entry.
 The hand-off uses the resource projection and the existing dock commit/claim boundary, so
 an earlier asynchronous open cannot overwrite it. Browser back/forward does not hand off.
@@ -87,7 +90,9 @@ menu still browses from the root, without unavailable rename actions. Uploads na
 the resource route without a prepared Editor tab. Rail and header opens share the route-owned
 failed-destination presentation via the opt-in `runDocumentSwitch` command, never a
 discarded promise rejection. If history has not moved, the document stays and the initiating
-control shows an inline error instead of masking the source page. Only rail switches and
+control shows an inline error instead of masking the source page. Inline errors retire with
+their source: the rail's with its history entry or screen (`useRailSwitchFailure`), the
+header's with the dock revision it failed under, so any newer dock intent clears it. Only rail switches and
 the dock header opt into this policy; other `useOpenContextRoute` callers keep their own
 failure handling. Chat switches, with or without a hand-off, use `showChatScreen` to choose
 the current chat (or its index) and forward the accepted commit through `go`.
