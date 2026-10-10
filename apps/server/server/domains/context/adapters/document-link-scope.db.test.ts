@@ -57,6 +57,7 @@ const CREST = id(21);
 const THREAD = id(22);
 const UNKNOWN_THREAD = id(23);
 const MISSING_ASSET = id(24);
+const WRECK = id(26);
 const LIVE = { kind: "live" } as const;
 
 const schema = buildDocumentSchema();
@@ -134,6 +135,13 @@ if (!RUN) {
         row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
         row(OLD_CREST, "crest", { extension: "png", fileType: "image", deletedAt: new Date() }),
         row(CREST, "crest", { extension: "png", fileType: "image" }),
+        // A discarded draft's picture: a hidden tombstone, never a live or deleted image.
+        row(WRECK, "wreck", {
+          extension: "png",
+          fileType: "image",
+          hidden: true,
+          deletedAt: new Date(),
+        }),
         { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
       ]);
       await db.insert(works).values({
@@ -200,6 +208,7 @@ if (!RUN) {
               `asset:${OLD_CREST}`,
               `asset:${MISSING_ASSET}`,
               `asset:${FOREIGN}`,
+              `asset:${WRECK}`,
             ]),
           ],
           addresses: [
@@ -247,6 +256,7 @@ if (!RUN) {
         for (const [asset, what] of [
           [MISSING_ASSET, "missing asset"],
           [FOREIGN, "another project's id"],
+          [WRECK, "a hidden tombstone"],
         ] as const)
           expect
             .soft(scope.spellSource({ src: `asset:${asset}`, ref: null }), what)
@@ -254,6 +264,7 @@ if (!RUN) {
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
+        expect.soft(scope.assetFor("wreck.png"), "a hidden tombstone holds no path").toBeNull();
       });
       // A key that names no project (a non-UUID grant) still mints under the holder
       // row's own project, and registration keeps the project the mint recorded.
