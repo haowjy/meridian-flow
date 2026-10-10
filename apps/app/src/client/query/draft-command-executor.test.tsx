@@ -5,8 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { resetDraftCommandRecords } from "./draft-command-record";
-import { DraftCommandOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
+import { runDraftBatch, startDraftCommand } from "./draft-command-executor";
+import {
+  currentChangeCommandRecords,
+  hiddenOperationIds,
+  resetDraftCommandRecords,
+} from "./draft-command-record";
 import { useWorkDrafts } from "./useWorkDrafts";
 
 const api = vi.hoisted(() => ({
@@ -44,10 +48,8 @@ type Harness = {
 
 async function withHarness(run: (harness: Harness) => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let mutate!: ReturnType<typeof useApplyDraft>["mutateAsync"];
   let drafts: string[] = [];
   function Capture() {
-    mutate = useApplyDraft().mutateAsync;
     drafts = (useWorkDrafts("project-a", "work-a").drafts ?? []).map((draft) => draft.draftId);
     return null;
   }
@@ -58,17 +60,19 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
     () =>
       run({
         apply: () =>
-          mutate(input).then(
-            () => "applied",
-            (error: unknown) => error,
-          ),
+          startDraftCommand(queryClient, {
+            target: "all",
+            draft: input,
+            mode: "apply",
+            generation: 1,
+          }).outcome,
         listed: () => drafts,
         queryClient,
       }),
   );
 }
 
-describe("useApplyDraft", () => {
+describe("draft command executor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetDraftCommandRecords();
@@ -80,7 +84,7 @@ describe("useApplyDraft", () => {
       await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
       api.applyDraft.mockRejectedValue(lost());
       api.listWorkDrafts.mockResolvedValue(listing());
-      await act(async () => expect(await apply()).toBeInstanceOf(DraftCommandOutcomeUnknownError));
+      await act(async () => expect(await apply()).toEqual({ kind: "apply-outcome-unknown" }));
       await vi.waitFor(() => expect(listed()).toEqual([]));
     });
   });
@@ -110,4 +114,20 @@ describe("useApplyDraft", () => {
       expect(listed()).toEqual([]);
     });
   });
+});
+
+it("releases every queued selection when a batch sender throws synchronously", async () => {
+  resetDraftCommandRecords();
+  const scope = { projectId: "p", workId: "w" };
+  const items = ["1", "2"].map((id) => ({
+    draft: { documentId: id, draftId: id },
+    selection: { classIds: [id], operationIds: [id] },
+  }));
+  await expect(
+    runDraftBatch(scope, items, () => {
+      throw new Error("injected");
+    }),
+  ).rejects.toThrow("injected");
+  for (const { draft } of items)
+    expect(hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...draft }).size).toBe(0);
 });

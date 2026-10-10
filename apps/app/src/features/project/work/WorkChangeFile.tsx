@@ -26,7 +26,7 @@ import { NewBadge } from "@/components/app/NewBadge";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
-import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
+import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { workFileRowClass } from "./WorkFileRows";
@@ -42,28 +42,18 @@ export function WorkChangeFile({
   workId: string;
   file: ReviewFileTarget;
   /** The scope that sends this file's per-change commands. */
-  controller: DraftReviewController;
+  controller: WorkDraftCommands;
   touch: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { openAiDraft } = useAiDraftLauncher();
+  const { openReviewFile } = useAiDraftLauncher();
   const records = useDraftCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
   const refused = draftCommandFailure(records, draft);
   const name = file.documentName || file.contextPath || t`Untitled manuscript`;
 
-  const review = (focusOperationIds?: readonly string[]) => {
-    if (!file.contextPath) return;
-    openAiDraft({
-      workId,
-      documentId: file.documentId,
-      draftId: file.draft.draftId,
-      contextPath: file.contextPath,
-      documentName: file.documentName ?? undefined,
-      isNewDocument: file.isNewDocument,
-      ...(focusOperationIds?.length ? { focusOperationIds } : {}),
-    });
-  };
+  const review = (focusOperationIds?: readonly string[]) =>
+    openReviewFile(file, workId, focusOperationIds);
 
   return (
     <>
@@ -126,7 +116,7 @@ function FileChanges({
 }: {
   draft: { projectId: string; workId: string; documentId: string; draftId: string };
   isNewDocument: boolean;
-  controller: DraftReviewController;
+  controller: WorkDraftCommands;
   touch: boolean;
   onSelect: (operationIds: readonly string[]) => void;
 }) {

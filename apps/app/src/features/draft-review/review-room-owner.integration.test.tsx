@@ -92,10 +92,10 @@ it.each([
   const slow = deferredReviewAnswer<ReturnType<typeof proposal>>();
   fixture.network.getDraftPreview.mockReturnValueOnce(slow.promise);
   await fixture.render(async (probe) => {
-    const controller = horizon === "Work" ? probe().chat.controller : probe().editor.controller;
+    const controller = probe().editor.controller;
     await act(async () => controller.enterInlineReview("document-a", "draft-a"));
     if (horizon === "Work") {
-      await probe().moveChatToWork(workC);
+      await probe().moveEditorToWork(workC);
       expect(
         fixture.network.getDraftPreview.mock.calls.some(
           ([, requestedWork]) => requestedWork === workC.id,
@@ -110,12 +110,8 @@ it.each([
       });
     }
     await act(async () => slow.resolve(proposal(7, "9")));
-    await settled(() =>
-      expect(
-        (horizon === "Work" ? probe().chat : probe().editor).controller.inlineReview,
-      ).toBeNull(),
-    );
-    expect((horizon === "Work" ? probe().chat : probe().editor).roomOwner.session).toBeNull();
+    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    expect(probe().editor.roomOwner.session).toBeNull();
   });
 });
 

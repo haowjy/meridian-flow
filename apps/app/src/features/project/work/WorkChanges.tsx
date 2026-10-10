@@ -2,9 +2,7 @@
  * WorkChanges — the Work page's "Changes to review": every draft file of the
  * Work in the one file order (`sortDraftFiles`), each expandable in place to its
  * changes (`WorkChangeFile`). The group's `…` menu holds Apply all and Discard
- * all, the whole-draft batch (`disposeDrafts`, with its `batchStarted` and
- * `batchSettled` lifecycle) run by the scope that covers this Work
- * (`useWorkReviewScope`). They act on every draft of the Work whatever the
+ * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
  * search box filters, new documents and formatting-only drafts included, and
  * only a change row uses the per-change selection
  * commands. Discard all asks first, inline, in the menu's place.
@@ -14,9 +12,10 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,34 +24,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
-import { useWorkReviewScope } from "./useWorkReviewScope";
 import { WorkChangeFile } from "./WorkChangeFile";
 import { WorkFileGroup } from "./WorkFileGroup";
 import type { WorkFileSearch } from "./work-files-model";
 
 export function WorkChanges({
   projectId,
-  workId,
+  work,
   matchesSearch,
 }: {
   projectId: string;
-  workId: ParsedRequestId;
+  work: Work;
   matchesSearch: WorkFileSearch;
 }) {
-  const scope = useWorkReviewScope(workId);
+  const workId = work.id;
+  const controller = useWorkDraftCommands({ projectId, work });
+  const drafts = useWorkDrafts(projectId, workId);
   const touch = usePhoneShell() === true;
-  const files = scope?.files ?? [];
+  const files = drafts.files ?? [];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
     if (!hasFiles) setConfirmingDiscard(false);
   }, [hasFiles]);
-  // A null scope is the route Work still resolving: nothing to review yet.
-  if (!scope) return null;
-
-  const { controller, drafts } = scope;
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextPath || ""),
   );

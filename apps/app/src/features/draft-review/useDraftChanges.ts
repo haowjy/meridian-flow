@@ -5,8 +5,7 @@
  * what failed on each, and Apply and Discard of one change.
  *
  * No focus, no stepping, no completion, and it never joins a review room.
- * Commands go through `useChangeCommandRunner`, so a draft that is the Editor's
- * open review runs in the Editor's controller. For that draft the view is the
+ * Commands are bound to the caller’s Work. For the open draft the view is the
  * Editor's own (`useReviewChanges`), so the rows agree with the manuscript's
  * marks.
  */
@@ -23,9 +22,8 @@ import {
 } from "./draft-changes";
 import type { ReviewChange } from "./review-changes";
 import { reviewChangesOfPreview } from "./review-changes";
-import { useChangeCommandRunner } from "./useChangeCommandRunner";
-import type { DraftReviewController } from "./useDraftReviewController";
 import { useReviewChanges } from "./useReviewChanges";
+import type { WorkDraftCommands } from "./useWorkDraftCommands";
 
 export type DraftChangesTarget = {
   projectId: string;
@@ -41,13 +39,13 @@ export function useDraftChanges(
   target: DraftChangesTarget,
   options: {
     /** The caller's own scope: runs the commands of a draft the Editor does not have open. */
-    controller: DraftReviewController;
+    controller: Pick<WorkDraftCommands, "applyChanges" | "discardChanges" | "dispositionLocked">;
     enabled?: boolean;
   },
 ): DraftChangesView {
   const { controller, enabled = true } = options;
   const editor = useEditorDraftReview().controller;
-  const runner = useChangeCommandRunner(controller);
+  const runner = controller;
   const open = editor.inlineReview;
   const inEditor =
     enabled &&

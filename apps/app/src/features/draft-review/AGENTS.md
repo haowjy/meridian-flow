@@ -53,7 +53,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   them (`useReviewCommandCompletion`; a review that opens mid-command adopts the
   pending completion), whoever sent it. Nothing of the answer outlives the claim:
   the server reuses a closed draft's id for its next proposal. Surfaces send through
-  `useChangeCommandRunner(callerController)` using the caller's Work-bound ports.
+  `useWorkDraftCommands` using creation-bound Work capabilities.
   Reviews observe addressed completion and toast outcomes; no sender selects the
   Editor as executor. `runDraftBatch` owns selection batches and whole-draft
   `disposeDrafts`, pins their starting Work, and keeps that Work busy until every
@@ -234,14 +234,14 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   stays open. A last Apply keeps the review editor, marks gone, until the answer
   (live has no change in it before).
 - **Offline is a refusal of the click, never a queue.** The Apply and Discard
-  mutations (`useDraftReviewMutations`) run with `networkMode: "always"` and
-  refuse with `DraftCommandNotSentError` when the browser or `onlineManager`
-  reports offline. A command not sent needs no server refresh, so its refusal
+  executor (`draft-command-executor`) admits the claim and both connectivity
+  signals before optimistic navigation or draft-only removal. TanStack requests
+  run with `networkMode: "always"`; either offline signal refuses the click. A command not sent needs no server refresh, so its refusal
   settles immediately and every batch file refuses in the same offline pass: the change comes back as `offline` ("Couldn't apply/discard. Check
   your connection and try again.") and a whole-draft command is held on its
   draft (`apply-offline`, `discard-offline`). Apply draft and Discard draft
   move to the next draft only when the command is sent: an offline click
-  keeps the writer on the draft, where its refusal shows. TanStack's
+  keeps the writer on the draft, where its refusal shows, including draft-only tabs. TanStack's
   default would pause the mutation and fire it on reconnect with the change
   gone from the screen meanwhile. Nothing fires when the network returns; the
   writer acts again.
@@ -256,7 +256,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
 - Unknown outcomes are held, not guessed. A per-change Apply or Discard that got
   no answer is held on its change as `unknown` ("Couldn't confirm whether this
   applied." / "...was discarded. Check what is left before you try again."),
-  apart from a refusal (`offline`); both run through one flow in the session. A
+  apart from a refusal (`offline`); both run through the typed executor. A
   whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-offline`, `apply-refused`, `apply-server-error`) and shown

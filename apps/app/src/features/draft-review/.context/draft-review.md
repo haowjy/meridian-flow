@@ -17,17 +17,12 @@ messages. The shared draft-command record is the sole pending-command source,
 including its Work-wide batch lease. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
 `DraftReviewProvider` is the convenience boundary for one Project + Work owner.
-The project shell uses its lower-level split directly: it creates one persistent
-Chat value (with thread authority) and one persistent Editor value (without
-thread authority), then re-provides those values at sibling boundaries. The
-stable Chat surface and Chat context dock share the same Chat value; viewer and
-editor surfaces receive only the Editor value. A boundary never creates a
-controller, and the two scope owners are never nested.
-`ProjectView` also mounts a third scope, unconditionally, for the Work page's
-Work when neither the Editor nor the chat has it (`work: null` otherwise): its
-own local state owner, it lists and runs commands and never enters a review.
-`useWorkReviewScope(workId)` picks Editor, then chat, then the third. The command
-record stays the one authority across all three; there is no Work-page lock.
+The project shell owns one persistent Editor review value and re-provides it
+at editor boundaries. Chat and Work lists compose `useWorkDrafts` with
+`useWorkDraftCommands`; neither constructs a review state machine, room owner
+or focus observer. Commands publish addressed outcomes independently of the
+open review. `DraftOnlyTabSettlement` is the single project lifecycle owner,
+with one settlement observer per Work represented by a draft-only tab.
 A Work/project/account-query scope change hides the departed selection in the
 render before layout clears it. No focus reader or room acquisition can attach
 the old draft to the new scope in the interval before effects run.
@@ -35,12 +30,12 @@ the old draft to the new scope in the interval before effects run.
 Every draft has one synchronous command claim (`client/query/draft-command-record`,
 below): while a whole-draft Apply or Discard, or a per-change Apply or Discard,
 is in flight, all mutating controls disable (`controller.isDisposing` reads the
-Work's records, so the Editor's and the Chat's scopes see each other's commands)
+Work's records, so every surface sees the same commands)
 and a second command is refused rather than clearing the in-flight state. A
 per-change Discard routes to the server discard mutation with the change's
 `operationIds` and the preview's revision tokens; the server performs
-reversal-peer sync. Whole-draft Discard sends neither. The mutation awaits the
-draft-list and preview refreshes before the session releases its claim, so no
+reversal-peer sync. Whole-draft Discard sends neither. The executor awaits selective
+draft-list and preview refreshes before releasing its claim, so no
 second preview-settlement timer or local pending copy is needed.
 
 ### Change row text is DOM-only
@@ -65,13 +60,12 @@ or Discard draft handles them.
 
 ### Per-change commands
 
-`DraftReviewSession.applySelection` and `discardSelection` run a selection of
-changes (`ChangeSelection`: whole closure classes and every operation they
-hold; one change is a selection of one class). The controller exposes them as
-`applyChanges(draft, selection)` and `discardChanges(draft, selection)` for any
-draft of its Work (`useSelectionCommands`): they read that draft's cached preview
-for the two revision tokens and the draft's generation (with no active preview the
-selection is refused `stale` without sending). Whether the command handles the draft's last changes
+`draft-command-executor` runs typed whole-draft and selection commands.
+`useWorkDraftCommands` exposes `applyChanges(draft, selection)` and
+`discardChanges(draft, selection)` for any draft of its creation-bound Work.
+Selection preparation reads the cached preview's tokens and generation; no
+active preview refuses `stale` without sending.
+Whether the command handles the draft's last changes
 (`completesDraft`) and the server's `draftClosed` answer are recorded on the
 draft's command claim, so any review showing the draft follows them
 (`useReviewCommandCompletion`, synchronously from the record store): a review
@@ -93,7 +87,7 @@ it to a review of that generation and to no other (rows C1-C5 below).
 The claim, not the sender, owns this (completion dispatched by the sending
 controller was lost when the writer opened the draft mid-command); a refused
 duplicate never begins it.
-`useChangeCommandRunner` sends through the caller's creation-bound Work ports.
+`useWorkDraftCommands` sends through creation-bound Work capabilities.
 The open review observes addressed completion and toast outcomes, whoever sent
 them; no command routes to the Editor solely to make its answer visible.
 `runDraftBatch` owns selective and whole-draft batches. It captures the starting
@@ -103,7 +97,7 @@ its turn after a refusal. Whole-draft batches preclaim their targets; selection
 batches queue visibility until each target's claim begins. A refused selection
 returns immediately, without waiting for later files. The one draft record
 (`client/query/draft-command-record`) carries the command's all-versus-selection
-target, mode, generation and preview basis, with held selection outcomes matched
+target, mode and generation, with held selection outcomes matched
 by class or operation overlap:
 
 
@@ -122,13 +116,22 @@ by class or operation overlap:
   list membership; the next preview that no longer lists the change drops it),
   `stale` ("This change was updated. Check it and apply again." / "...discard
   again.") or `draft-only`, shown on its bar and row. Both commands share one flow
-  (`DraftReviewSession.changeCommand`) and one lost-answer rule
-  (`DraftCommandOutcomeUnknownError`). A whole-draft Discard is unfenced and has
+  (`draft-command-executor`) and classify a lost HTTP answer directly as unknown. A whole-draft Discard is unfenced and has
   no `unknown`: a lost answer is `discard-offline`.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
 
-Apply and Discard are not queued offline: their mutations run with `networkMode: "always"` and throw `DraftCommandNotSentError` when `navigator.onLine` or `onlineManager` reports offline, so the click is refused on the change (or the draft) at once and nothing fires on reconnect. A batch issued while offline therefore refuses every file in one pass. A transport failure while both signals still say online is not that refusal: the request left, its error path refreshes the draft reads (a whole Discard still shows `discard-offline`), and `runDraftBatch`, serial by design, attempts every remaining draft once that settles, possibly after reconnect.
+Apply and Discard are not queued offline: admission checks the claim and both
+`navigator.onLine` and `onlineManager` before optimistic UI effects. The
+executor returns `CommandStart.sent` to the caller that navigates; the header
+never predicts admission. Offline refuses on the addressed change or draft,
+without sending, removing a draft-only tab, refreshing, or replaying on
+reconnect. Accepted requests use TanStack `networkMode: "always"`. Batches
+keep their starting Work and attempt independent drafts serially after refusals.
+A transport failure while both signals say online refreshes reads and records
+unknown for Apply or selection commands; unfenced whole Discard retains
+`discard-offline`.
+
 
 Apply and Discard send the live and draft revision tokens of the cached preview
 the writer saw (opaque strings), so a change updated under them is refused,
@@ -137,9 +140,9 @@ the draft's claim (`answerDraftCommandClosed`); a `stale` Discard says nothing a
 The toast ("Applied", "Discarded", "That change is no longer in the draft.") is
 controller state (`toast`), rendered by `ReviewToast`. The server closes a draft
 in the command that handles its last change (the response carries `draftClosed`
-and `draftDisposition`), so the draft leaves the Work's list. The controller
-settles the review from that answer, ahead of the list and preview re-reads
-(`onAnswered` on the mutation), through `inlineReview.completion`:
+and `draftDisposition`), so the draft leaves the Work's list. The executor publishes the typed answer before cache refresh. The review
+observes the shared `draftClaim` projection through one addressed
+`completionObserved` action and retains `inlineReview.completion`:
 `pending` from the click when the command handles the last change (a last
 Discard also holds the finished text inert), `closed` on `draftClosed: true`,
 withdrawn on `draftClosed: false` or a command that did not land. The last
@@ -484,7 +487,7 @@ admission may enrich only the overlay with resolved live-resource metadata.
   inline review, and the command returns `applied`, so a bulk Apply advances at
   once. Promoting a draft-only overlay to a durable tab
   (`promoteAppliedDraft`: keep the tab, drop the marker) and repairing the route
-  run on after that and never decide the result; the provider's remote
+  run on after that and never decide the result; the project lifecycle owner's remote
   classification promotes a tab that was missed. The ordinary live-document host
   then shows "Connecting", its own disconnect state, or its retryable open
   error, exactly as for any document.
@@ -498,16 +501,16 @@ admission may enrich only the overlay with resolved live-resource metadata.
     scope's synchronous lock or a pending record in the controller's own Work, so
     every surface of that Work disables while other Works and projects stay
     enabled, and a second command for the same draft returns `blocked` instead of
-    being sent. The session releases the claim whenever it ends without a
+    being sent. The executor releases the claim whenever it ends without a
     confirmation or a held failure, including when an optimistic callback throws
     before anything is dispatched.
-  - `confirmed`: set by `useApplyDraft` at server confirmation. Draft-list reads
+  - `confirmed`: set by `draft-command-executor` at server confirmation. Draft-list reads
     that started before it (`readDraftsAfterCommands`, applied in
     `useWorkDrafts`'s query function) cannot bring the draft back; a read that
     starts later is authoritative, since the server reuses a draft id for a
     branch's next generation. The record is dropped once no earlier read is still
     in flight. The list then refreshes in the background.
-  - `failed`: a rejected Apply (`apply-failed`), a refused Discard
+  - `failed`: a rejected Apply (`apply-offline`, `apply-refused`, `apply-server-error`), a refused Discard
     (`discard-offline`), a lost Apply response (`apply-unknown`), or a Review launch that could not open
     (`review-failed`, recorded by the editor handoff and never over a pending
     command), shown on the draft by the header (the open draft's own line, or
@@ -528,17 +531,16 @@ admission may enrich only the overlay with resolved live-resource metadata.
   draft-only tab; only the catalog observation below decides that tab. When the
   draft is gone the row simply stops rendering, review exits, and the document
   view shows whatever is live.
-- **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
-  command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
+- **Optimistic Discard.** An admitted whole-draft Discard calls `discardDraft` before dispatch. It closes the tab with the ordinary adjacent-tab/empty-Editor
   fallback and repairs the address in place. A refused Discard never reopens
   the tab and never navigates: the draft is still pending, so the error shows
   on the draft itself (below). Header, composer-strip, and bulk Discard share
   this lifecycle.
-- **Confirmed and remote Discard** call the same `discardDraft`, even when no
-  local tab remains (a no-op then). It never creates or restores a tab.
+- **Remote Discard** calls the same `discardDraft`; a locally admitted Discard
+  has already removed its tab. Neither settlement creates or restores a tab.
 - When a draft-only tab's draft leaves the active list without a local
   disposition (another browser applied or discarded it, or an Apply response was
-  lost), the provider takes a live-manuscript catalog observation that starts
+  lost), `DraftOnlyTabSettlement` takes a live-manuscript catalog observation that starts
   after it saw the draft leave (`acquireCatalogAfter`; joining an older in-flight
   acquisition could report the pre-Apply tree). Membership means the document is
   live and the tab is promoted; absence means a Discard and the tab closes. A
@@ -554,7 +556,7 @@ admission may enrich only the overlay with resolved live-resource metadata.
   the next visit. Only Apply promotion drops the marker; a later `openTab` for
   the same document enriches the overlay instead. The coordinator repairs the
   route when disposition removes the route-active tab.
-- While a local disposition is in flight the provider does not classify
+- While a local disposition is in flight the lifecycle owner does not classify
   remote ones.
 
 Server-side twin: discarding a new-document draft also removes its entry from
