@@ -511,22 +511,37 @@ export function createDrizzleDocumentLinkScopes(deps: {
       return snapshot.bindings.get(pairKey(holderDocumentId, aheadId));
     },
     async pinHolder({ view, documentId, uri }) {
-      const treeView = treeViewOf(view);
+      // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
+      const snapshot = storage.getStore();
+      if (!snapshot?.open || !snapshot.projectId) return null;
+      let candidate: string | null = null;
       if (documentId !== undefined) {
-        const status = (await tree.identityStatus(treeView, [documentId as DocumentId])).get(
-          documentId as DocumentId,
-        );
-        return status?.kind === "visible" ? { documentId, uri: status.address.uri } : null;
+        candidate = isUuid(documentId) ? documentId : null;
+      } else if (uri !== null) {
+        const [coordinates] = await coordinatesOf(snapshot.projectId as ProjectId, [uri]);
+        const [occupants = []] = coordinates
+          ? (await tree.occupantsAt(treeViewOf(view), [coordinates])).values()
+          : [];
+        candidate = occupants.length === 1 ? (occupants[0] ?? null) : null;
       }
-      const projectId = storage.getStore()?.projectId;
-      if (uri === null || !projectId) return null;
-      const [coordinates] = await coordinatesOf(projectId as ProjectId, [uri]);
-      if (!coordinates) return null;
-      const [occupants = []] = (await tree.occupantsAt(treeView, [coordinates])).values();
-      const [only] = occupants;
-      return only && occupants.length === 1 ? { documentId: only, uri } : null;
+      if (candidate === null) return null;
+      // A holder is a document this reader may name and read, by the catalog's own rule:
+      // an id alone is no capability, so an unreachable one stays unresolved and unspelled.
+      await prepare({ holders: [], refs: [`doc:${candidate}`], views: [view] });
+      const document = snapshotCatalog(snapshot, view, null, () => {}).document(candidate);
+      const status = snapshot.views.get(viewKey(view))?.statuses.get(candidate as DocumentId);
+      return document && reachable(document) && status?.kind === "visible"
+        ? { documentId: candidate, uri: status.address.uri }
+        : null;
     },
   };
+}
+
+/** A document the reader may name, read and reach: the one authorization boundary. */
+function reachable(document: CatalogDocument | null): document is CatalogDocument {
+  return (
+    document !== null && document.presence !== "deleted" && document.readable && document.nameable
+  );
 }
 
 function remember(snapshot: Snapshot, row: Row) {
@@ -609,8 +624,6 @@ function snapshotCatalog(
     };
   };
   const occupies = (row: Row) => statusOf(row)?.kind === "visible";
-  const reachable = (document: CatalogDocument | null): document is CatalogDocument =>
-    document !== null && document.presence !== "deleted" && document.readable && document.nameable;
   const atAddress = (uri: string, stems: boolean) => {
     const index = snapshot.views.get(key);
     if (!index) {

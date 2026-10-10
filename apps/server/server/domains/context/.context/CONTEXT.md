@@ -181,7 +181,8 @@ router resolves to exact project-scoped Work authority before dispatch.
   (`link_ahead_holder_bindings`, written by Apply), then the view's draft
   settlement, then the live settlement; a reader door with no holder reads the
   last two. `holderBinding` exposes the first, for copies (§10.6), and
-  `pinHolder` names the holder a reader door reads bindings for. Readability
+  `pinHolder` names the holder a reader door reads bindings for, only one the
+  reader may name and read by the catalog's rule (an id alone is no capability). Readability
   comes from the file policy's `listAccess`, a hidden row's facts from the
   draft it reads in. Images are documents: the `asset:` rule reads the same
   rows. Nothing is cached between operations. ContextFS search binds its source document IDs to one snapshot;
@@ -315,9 +316,12 @@ the creator's path, through the creation aggregate. Deleted rows are not
 arrivals.
 
 What a ref means in a draft has one writer, `adapters/link-ahead-draft-settlements.ts`,
-which owns the registry's address predicate: a draft's create settles the refs
-waiting at its address, the registry settles a ref registered with a `draftId`,
-and closing a draft or ending its use of a create drops what it meant. Refs in
+which owns the policy (a ref takes a draft's meaning only while it has no live
+settlement, and keeps the first one) and the registry's address predicate: a
+draft's create settles the refs waiting at its address, a registration with a
+`draftId` settles each ref on the draft's single occupant (the registry keeps
+its root transaction and locks and calls in), and closing a draft or ending its
+use of a create drops what it meant. Refs in
 a draft's text register with its id: an agent's mint carries its holder's view
 (`AheadMint.view`); a writer's link typed in the review room registers after the
 room admits it, debounced; and Apply's prerequisite registers every ref in the

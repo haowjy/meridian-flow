@@ -61,7 +61,9 @@ import { createProjectContextDocumentStore } from "../domains/context/context-so
 import { createDocumentLinkResolver } from "../domains/context/document-link-resolution.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import { setTreeHook, type TreeHookPoint } from "../domains/context/tree/test-hooks.js";
-import { createAllowAllFileAccess } from "../domains/file-policy/index.js";
+import { createDrizzleFileFacts } from "../domains/file-policy/adapters/drizzle-file-facts.js";
+import { createOwnerFileGrants } from "../domains/file-policy/adapters/owner-file-grants.js";
+import { createFileAccess } from "../domains/file-policy/file-access.js";
 import {
   createDrizzleProjectRepository,
   createDrizzleProjectWorkAuthorityResolver,
@@ -121,6 +123,8 @@ export interface ScenarioWriter {
   move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
   /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
   delete(path: string): ReturnType<ContextPort["delete"]>;
+  /** The writer saves the whole document live, as the editor's Markdown save does. */
+  write(path: string, markdown: string): Promise<void>;
   /**
    * The writer types in the Work draft's review room for this document: `edit` changes a
    * copy of the branch, and its update goes through the room's durable admission.
@@ -181,6 +185,11 @@ export interface DraftTreeScenario {
     baseUri: string | null;
     holderDocumentId?: DocumentId;
   }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }>;
+  /** The Work draft's branch of this document, as its review room names it. */
+  draftBranch(
+    work: ScenarioWork,
+    documentId: DocumentId,
+  ): Promise<{ branchId: string; generation: number }>;
   /** The Work's active draft, made at the write boundary if absent. */
   draftOf(work: ScenarioWork): Promise<Draft>;
   /** Another thread whose primary Work is `work`. */
@@ -475,21 +484,15 @@ export async function draftTreeScenario(
           : { kind: "folder" },
       });
     },
+    async write(path, markdown) {
+      const written = await (await livePort()).write(uri(path), markdown, {
+        origin: human(),
+      });
+      if (!written.ok) throw new Error(JSON.stringify(written.error));
+    },
     async editDraft(work, documentId, edit) {
       const sync = runtime().runtime.ports.documentSync;
-      const item = (await sync.draftReview.list({ projectId, workId: work.id })).find(
-        (candidate) => candidate.documentId === documentId,
-      );
-      if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
-      const preview = await sync.draftReview.preview({
-        projectId,
-        workId: work.id,
-        documentId,
-        draftId: item.draftId,
-      });
-      if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
-      const room = parseYjsRoomName(preview.reviewRoomName);
-      if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
+      const room = await draftBranch(work, documentId);
       const document = new Y.Doc({ gc: false });
       const loaded = await sync.loadHocuspocusBranchState(room.branchId, room.generation);
       if (loaded) Y.applyUpdate(document, loaded.state);
@@ -505,6 +508,24 @@ export async function draftTreeScenario(
       return { branchId: room.branchId, generation: room.generation };
     },
   };
+
+  async function draftBranch(work: ScenarioWork, documentId: DocumentId) {
+    const review = runtime().runtime.ports.documentSync.draftReview;
+    const item = (await review.list({ projectId, workId: work.id })).find(
+      (candidate) => candidate.documentId === documentId,
+    );
+    if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
+    const preview = await review.preview({
+      projectId,
+      workId: work.id,
+      documentId,
+      draftId: item.draftId,
+    });
+    if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
+    const room = parseYjsRoomName(preview.reviewRoomName);
+    if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
+    return { branchId: room.branchId, generation: room.generation };
+  }
 
   function view(of: ScenarioWork | "live"): ScenarioView {
     const portFor = async (): Promise<ContextPort> => {
@@ -667,6 +688,12 @@ export async function draftTreeScenario(
   }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }> {
     const catalog = createDrizzleContextCatalog(db);
     const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
+    // The product's file policy: the project owner reads its own documents, no one else's.
+    const fileAccess = createFileAccess({
+      facts: createDrizzleFileFacts(db),
+      grants: createOwnerFileGrants(),
+      readAgentChain: async () => [],
+    });
     const response: ResolveDocumentLinksResponse = await handleDocumentLinkResolveRequest(
       {
         projectRepo: createDrizzleProjectRepository({
@@ -683,11 +710,11 @@ export async function draftTreeScenario(
         }),
         linkScopes: createDrizzleDocumentLinkScopes({
           db,
-          fileAccess: createAllowAllFileAccess(),
+          fileAccess,
           observer: createLinkScopeObserver(),
         }),
         workAuthorityResolver,
-        fileAccess: createAllowAllFileAccess(),
+        fileAccess,
         drafts,
       },
       {
@@ -756,6 +783,7 @@ export async function draftTreeScenario(
       return leaf;
     },
     draftOf,
+    draftBranch,
     linkAnswer,
     async seedAhead(path, aheadOptions = {}) {
       const { scheme, rel } = sourceOf(path);

@@ -12,7 +12,6 @@ import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentLinks,
-  linkAheadDraftSettlements,
   linkAheadRefs,
   projects,
   works,
@@ -40,19 +39,14 @@ import {
   RegistrationInsideTransactionError,
 } from "../ports/link-ahead-registry.js";
 import type { DocumentCoordinates } from "../tree/tree-addresses.js";
-import {
-  coordinatesKey,
-  createTreeReader,
-  LIVE_TREE,
-  visibleDocuments,
-} from "../tree/tree-view.js";
+import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   currentDocumentAddress,
   resolveCanonicalAddress,
   sameCoordinates,
 } from "./document-address.js";
-import { atAddress } from "./link-ahead-draft-settlements.js";
+import { atAddress, settleRegisteredInDrafts } from "./link-ahead-draft-settlements.js";
 
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
@@ -140,59 +134,15 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           const documentId = await this.liveDocumentAt(address);
           if (documentId) await this.settle(address, documentId, aheadId);
         }
-        await this.settleInDrafts(resolved);
+        // What each ref means in its draft is the settlement module's to decide and write.
+        await settleRegisteredInDrafts(
+          this.db,
+          resolved.flatMap(({ aheadId, address, draftId }) =>
+            draftId ? [{ aheadId, draftId, address }] : [],
+          ),
+        );
       }),
     );
-  }
-
-  /**
-   * Settles each drafted ref in its draft's view (12a rule 1): only one with no live
-   * settlement, onto the single document the draft has at its address. A ref the draft
-   * already settled keeps its first meaning.
-   */
-  private async settleInDrafts(
-    resolved: readonly { aheadId: string; address: Address; draftId: DraftId | null }[],
-  ): Promise<void> {
-    const drafted = resolved.filter(
-      (each): each is (typeof resolved)[number] & { draftId: DraftId } => each.draftId !== null,
-    );
-    if (drafted.length === 0) return;
-    const tx = currentDrizzleDb(this.db);
-    const liveSettled = new Set(
-      (
-        await tx
-          .select({ aheadId: linkAheadRefs.aheadId })
-          .from(linkAheadRefs)
-          .where(
-            and(
-              inArray(
-                linkAheadRefs.aheadId,
-                drafted.map((each) => each.aheadId),
-              ),
-              isNotNull(linkAheadRefs.settledDocumentId),
-            ),
-          )
-      ).map((row) => row.aheadId),
-    );
-    const tree = createTreeReader(this.db);
-    const settlements: { aheadId: string; draftId: DraftId; documentId: DocumentId }[] = [];
-    for (const draftId of new Set(drafted.map((each) => each.draftId))) {
-      const refs = drafted.filter(
-        (each) => each.draftId === draftId && !liveSettled.has(each.aheadId),
-      );
-      if (refs.length === 0) continue;
-      const occupants = await tree.occupantsAt(
-        { kind: "draft", draftId },
-        refs.map((each) => each.address),
-      );
-      for (const { aheadId, address } of refs) {
-        const ids = occupants.get(coordinatesKey(address)) ?? [];
-        const [only] = ids;
-        if (only && ids.length === 1) settlements.push({ aheadId, draftId, documentId: only });
-      }
-    }
-    if (settlements.length === 0) return;
-    await tx.insert(linkAheadDraftSettlements).values(settlements).onConflictDoNothing();
   }
 
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
