@@ -46,7 +46,8 @@ lifetime.
   edits (4409): it drops the room, clearing its local copy. Hosts unbind while
   `whenRefusedRoomDropped` runs and reopen after; a refused review room is
   rebuilt by `useReviewRoomOwner`, which owns acquisition and replacement;
-  the editor only reports paint. A branch room whose last owner released during the
+  `EditorView` owns construction and paint readiness; the room owner keeps no
+  paint state. A branch room whose last owner released during the
   teardown drain is not reopened when the drain ends, so a rebuild cannot leave
   an unowned session behind. Retaining and releasing only record ownership
   (`get` and `rebuild` open rooms), so one owner's release never reacquires a
@@ -81,10 +82,9 @@ lifetime.
   account/document/generation persistence; review rooms use the opaque,
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
-  Collaboration binds to a concrete Y.Doc/fragment at construction. A review
-  mount requires both `reviewDraftId` and `reviewRoomName`; neither selects the
-  live surface, while either one alone is invalid and must fail rather than
-  falling back to live.
+  Collaboration binds to a concrete Y.Doc/fragment at construction. The `review`
+  mount identity requires both `draftId` and `roomName`;
+  `EditorView` resolves this identity before handing it to `SessionEditor`.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:
   - `EditorMountIdentity` is a discriminated union over the two surfaces (live
@@ -764,12 +764,11 @@ the writer's next edit or caret move. Remote Yjs transactions (`ySyncPluginKey`
 meta) do not clear it: they arrive constantly and would wipe the mark before it
 was read.
 
-## Selective Discard (dock Changes cards)
+## Selective Discard
 
-Each card's **Discard** is a server disposition command for its authoritative
-Discard class. It never edits the review Y.Doc from the browser. The review
-session's synchronous disposition lock serializes commands, and the awaited
-preview refetch replaces the projection and decorations before the lock releases.
+Discard is a server command for a closure class, never a browser edit to the
+review Y.Doc. The shared command record owns its claim; the executor retains
+that claim through refresh. See the [draft-review lifecycle reference](../../../features/draft-review/.context/draft-review.md) for command ordering.
 
 ## Math extension decision
 
