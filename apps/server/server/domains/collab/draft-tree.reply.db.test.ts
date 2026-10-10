@@ -2,8 +2,8 @@
  * A reply's drafted writes and the draft they land in (contract §2.5, ledger K-1, K-2): a
  * read never makes a draft or a peer, the first write does; a save whose draft closed
  * under it refuses that document stale and never provisions a new draft (B9); and a save
- * or an immediate write and a whole-draft close serialize on their branch leases, in both
- * orders, without deadlock (V2-H2, §14).
+ * or an immediate write and Discard all serialize on their branch leases, in both orders,
+ * without deadlock (V2-H2, §14), the losing write refusing as a stale save does.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -172,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch notes.",
       });
       expect(notes.isError, JSON.stringify(notes.output)).toBeFalsy();
-      await scenario.closeDraft(closedFirst);
+      await scenario.discard(closedFirst, "all");
       const saved = await reply.save();
       expect.soft(refusedIn(saved), "the drafted document refuses stale").toEqual([chapter]);
       expect
@@ -196,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const waitingSave = await staged(scenario, leasedByClose, "close-leases-first.md");
       const closeThenSave = await interleave(
         db,
-        () => scenario.closeDraft(leasedByClose),
+        () => scenario.discard(leasedByClose, "all"),
         "discard.afterLeases",
         () => waitingSave.save(),
         { waitMs: 300 },
@@ -220,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         () => holdingSave.save(),
         "save.afterWorkLock",
-        () => scenario.closeDraft(leasedBySave),
+        () => scenario.discard(leasedBySave, "all"),
         { waitMs: 300 },
       );
       expect.soft(saveThenClose.a, "the save finishes").toMatchObject({ ok: true });
@@ -250,7 +250,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             find: "Staged draft.",
             content: "Immediate draft.",
           });
-        const close = () => scenario.closeDraft(work);
+        const close = () => scenario.discard(work, "all");
         const run =
           first === "write"
             ? await interleave(db, write, "access.afterLeases", close, { waitMs: 300 })
@@ -261,7 +261,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });
         expect
           .soft(wrote, `${first} first: the write finishes without landing in the closed draft`)
-          .toMatchObject({ ok: true, value: { isError: true } });
+          .toMatchObject({
+            ok: true,
+            value: { isError: true, result: { status: "invalid_write" } },
+          });
+        expect
+          .soft(
+            wrote.ok && JSON.stringify(wrote.value),
+            `${first} first: and tells the model its draft was closed, not a crash`,
+          )
+          .toContain("draft changed");
         expect
           .soft(await draftsOf(work), `${first} first: the draft closes, none is made`)
           .toEqual([{ id: expect.any(String), status: "closed" }]);

@@ -1,6 +1,6 @@
 /** Branch capabilities consumed by collab application services. */
 import type { DraftId } from "@meridian/contracts";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
@@ -64,14 +64,3 @@ export type ApplicationBranchStore = BranchStore &
       draftId: DraftId;
     }): Promise<BranchState>;
   };
-
-/**
- * Discards one Work draft without applying content to live; a document the Work's draft
- * created ends that draft's use (bridge until lane D's `discardItems`).
- */
-export type WorkDraftDiscard = (input: {
-  createdBy?: DraftId;
-  workId: WorkId;
-  documentId: DocumentId;
-  contentBranchId: string;
-}) => Promise<void>;

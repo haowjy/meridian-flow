@@ -1,12 +1,25 @@
 /**
  * Node row writes: the one `documents` insert (hidden or live, text or binary), folder
- * inserts, tombstones, and document locks in id order. Hidden nodes are tombstoned, never
- * hard-deleted. Every function runs in its caller's transaction.
+ * inserts, tombstones with their storage release, and document locks in id order. Hidden
+ * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents, folders } from "@meridian/database/schema";
+import {
+  agentEditMutations,
+  documentBranches,
+  documentDerivations,
+  documentLinks,
+  documentMarkdownProjections,
+  documents,
+  documentYjsCheckpoints,
+  documentYjsHeads,
+  documentYjsReversalOps,
+  documentYjsReversals,
+  documentYjsUpdates,
+  folders,
+} from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -113,4 +126,31 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
     .set({ deletedAt: now, updatedAt: now })
     .where(inArray(folders.id, [...ids]));
   await bumpLocationVersions(db, { folderIds: ids });
+}
+
+/**
+ * A tombstoned hidden document's storage goes (R8, contract §12.2 step 4): its live Yjs,
+ * every branch on it (their journals and trail rows cascade; by the caller's revalidation
+ * no draft uses one), its derived rows and its own outgoing link rows. The row itself and
+ * every record pointing at it stay: a bound link or ahead ref still resolves it to gone.
+ */
+export async function releaseDocumentStorage(
+  db: Database,
+  ids: readonly DocumentId[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  const tx = currentDrizzleDb(db);
+  const list = [...ids];
+  await tx.delete(documentYjsReversalOps).where(inArray(documentYjsReversalOps.documentId, list));
+  await tx.delete(documentYjsReversals).where(inArray(documentYjsReversals.documentId, list));
+  await tx.delete(agentEditMutations).where(inArray(agentEditMutations.documentId, list));
+  await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
+  await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
+  await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));
+  await tx.delete(documentBranches).where(inArray(documentBranches.documentId, list));
+  await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
+  await tx
+    .delete(documentMarkdownProjections)
+    .where(inArray(documentMarkdownProjections.documentId, list));
+  await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
 }

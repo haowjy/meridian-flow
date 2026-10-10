@@ -274,6 +274,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
         withDraftBranches: (_draftId, run) =>
           createBranchCriticalSections().withBranches([], (lease) => run(lease, [])),
       },
+      // No drafts in memory: a purged Work has none to dispose of.
+      workDraftDisposal: {
+        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
+      },
       // No draft branches in memory: nothing to register, and no publication to prepare.
       draftLinks: {
         prepareDraftLinkPublication: async () => {
@@ -388,6 +392,9 @@ function createInMemoryDraftStub(documents: {
           status: "discarded",
           draftId: input.draftId,
         };
+      },
+      async discardAll(input) {
+        return { status: "gone", draftId: input.draftId };
       },
     },
     draftSessionStats: {

@@ -8,14 +8,19 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
-import type { DraftApplyAllResponse, DraftReviewItemWire } from "@meridian/contracts/drafts";
+import type {
+  DraftApplyAllResponse,
+  DraftDiscardAllResponse,
+  DraftDiscardResponse,
+  DraftReviewItemWire,
+} from "@meridian/contracts/drafts";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
-import { branchPushSettlementBatches } from "@meridian/database/schema";
+import { branchPushSettlementBatches, works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { collabHook } from "../domains/collab/domain/collab-test-hooks.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -26,6 +31,8 @@ import {
   type DraftApplyRouteResult,
   handleApplyAllWorkDraftRequest,
   handleApplyWorkDraftRequest,
+  handleDiscardAllWorkDraftRequest,
+  handleDiscardWorkDraftRequest,
   handleWorkDraftListRequest,
   selectDraftRouteServices,
 } from "../lib/draft-review-route.js";
@@ -33,8 +40,6 @@ import {
   createContextEntry,
   parseCreateContextEntryBody,
 } from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
-import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../shared/work-lifecycle-lock.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
 import { type DraftTreeWorld, type ScenarioWork, sourceOf } from "./draft-tree-seeds.js";
 import { expirePendingSettlementClaims } from "./settlement-claims.js";
@@ -113,10 +118,19 @@ export interface DraftTreeCommands {
   writer: ScenarioWriter;
   view(of: ScenarioWork | "live"): ScenarioView;
   /**
-   * Discard these documents from the Work's draft through the review command (lane D
-   * replaces what it calls with `discardItems`).
+   * Discard through the route cores: `"all"` is Discard all for the Work's active draft
+   * (or `draftId`); a list is the per-document Discard of each, in order.
    */
-  discard(work: ScenarioWork, documentIds: readonly DocumentId[]): Promise<void>;
+  discard(
+    work: ScenarioWork,
+    items: "all" | readonly DocumentId[],
+    options?: { draftId?: string },
+  ): Promise<DraftDiscardAllResponse | DraftDiscardResponse[]>;
+  /**
+   * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
+   * the purge sweep runs.
+   */
+  purge(work: ScenarioWork): Promise<number>;
   /** The Work's review list through its route core: the legacy `drafts` and the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleWorkDraftListRequest>;
   /** The review list's `items` only. */
@@ -157,12 +171,6 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     options?: { items?: readonly DraftReviewItemWire[]; draftId?: string },
   ): Promise<DraftApplyAllResponse>;
-  /**
-   * Close the Work's active draft whole, as Discard all will (§2.1): every branch of the
-   * draft leased first (hook `discard.afterLeases`), then the Work, the draft, the close.
-   * Lane D's `discardItems` (whole) replaces this with the full kernel (§12.1).
-   */
-  closeDraft(work: ScenarioWork): Promise<void>;
   /** The Work draft's branch of this document, as its review room names it. */
   draftBranch(
     work: ScenarioWork,
@@ -450,18 +458,46 @@ export function draftTreeCommands(
     return handleWorkDraftListRequest(routes(), { projectId, workId: work.id, userId });
   }
 
-  async function closeDraft(work: ScenarioWork) {
-    const { drafts, draftLeases } = ports().documentSync;
-    const draft = await drafts.activeForWork(work.id);
-    if (!draft) throw new Error(`${work.slug} has no active draft to close`);
-    await draftLeases.withDraftBranches(draft.id, async () => {
-      await collabHook("discard.afterLeases");
-      await runInDrizzleTransaction(world.db, async () => {
-        await requireLockedActiveWorks(world.db, [work.id]);
-        if (!(await drafts.lockActive(draft.id))) return;
-        await drafts.close(draft.id, new Date());
+  async function discard(
+    work: ScenarioWork,
+    items: "all" | readonly DocumentId[],
+    options: { draftId?: string } = {},
+  ) {
+    if (items === "all") {
+      const draftId =
+        options.draftId ?? (await ports().documentSync.drafts.activeForWork(work.id))?.id;
+      if (!draftId) throw new Error(`${work.slug} has no draft to discard`);
+      return handleDiscardAllWorkDraftRequest(routes(), {
+        projectId,
+        workId: work.id,
+        userId,
+        request: { draftId },
       });
+    }
+    const results: DraftDiscardResponse[] = [];
+    await eachItem(work, items, "discard", async ({ documentId, draftId }) => {
+      results.push(
+        await handleDiscardWorkDraftRequest(routes(), {
+          projectId,
+          workId: work.id,
+          documentId,
+          draftId,
+          userId,
+        }),
+      );
     });
+    return results;
+  }
+
+  async function purge(work: ScenarioWork) {
+    const { runtime } = composed();
+    await runtime.ports.workRepo.softDelete(work.id);
+    // Past the purge cutoff (30 days).
+    await world.db
+      .update(works)
+      .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+      .where(eq(works.id, work.id));
+    return runtime.app.recovery.purgeWorks();
   }
 
   return {
@@ -469,17 +505,8 @@ export function draftTreeCommands(
     writer,
     view,
     draftBranch,
-    closeDraft,
-    discard: (work, documentIds) =>
-      eachItem(work, documentIds, "discard", ({ documentId, draftId }) =>
-        ports().documentSync.draftReview.discardWorkDraft({
-          projectId,
-          workId: work.id,
-          documentId,
-          draftId,
-          userId,
-        }),
-      ),
+    discard,
+    purge,
     review,
     items: async (work) => (await review(work)).items,
     async draftStatuses(work) {

@@ -51,6 +51,7 @@ import {
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
+  createHiddenNodeRepair,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
@@ -205,7 +206,11 @@ import {
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
 import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
-import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
+import {
+  createObjectRelease,
+  type LocalObjectStoreAdapter,
+  type ObjectStorePort,
+} from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
@@ -532,10 +537,23 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
+  // A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
+  const releasedObjects = createObjectRelease({
+    objectStore,
+    onFailure(key, error) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "context.hidden-node",
+        name: "object_delete.failed",
+        payload: { key, error },
+      });
+    },
+  });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
     observer: createLinkScopeObserver(eventSink),
+    repair: createHiddenNodeRepair({ db, eventSink, objects: releasedObjects }),
   });
   const documentSync = createCollabDomain({
     db,
@@ -548,6 +566,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
+    objects: releasedObjects,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -861,6 +880,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
+    drafts: ports.documentSync.workDraftDisposal,
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,

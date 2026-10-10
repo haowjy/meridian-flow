@@ -306,6 +306,7 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
+export type { WorkDraftDisposal } from "./ports/work-draft-disposal.js";
 export type { WorkDraftPendingCounts } from "./ports/work-draft-pending-counts.js";
 export {
   type CreateWorkInput,

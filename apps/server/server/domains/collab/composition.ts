@@ -26,6 +26,7 @@ import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
+import type { ObjectRelease } from "../storage/index.js";
 import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
@@ -61,6 +62,10 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import {
+  createDrizzleDraftDiscard,
+  createDrizzleWorkDraftDisposal,
+} from "./adapters/drizzle-draft-discard.js";
 import { createDrizzleDraftTreeStep } from "./adapters/drizzle-draft-tree-step.js";
 import {
   createDrizzleDraftStore,
@@ -75,7 +80,6 @@ import {
 } from "./adapters/drizzle-pending-settlement.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
-import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -110,6 +114,7 @@ import {
 } from "./domain/document-projection-refresher.js";
 import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
+import { createDraftDiscard } from "./domain/draft-discard.js";
 import { createDraftPublication } from "./domain/draft-publication.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
@@ -164,6 +169,8 @@ type CollabDomainDeps = {
   catalogMutations: ContextCatalogMutationPort;
   /** Registers client-minted ahead refs after certified derives, and recovers failures (§11.3). */
   aheadRegistrations?: AheadRegistrationRecovery;
+  /** Deletes a discarded hidden image's stored object after commit (§12.2 step 4). */
+  objects?: Pick<ObjectRelease, "storageUrls">;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -505,16 +512,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reviewItems,
     publication,
   });
+  const draftLeases = createDraftBranchLeases({ branches, criticalSections });
+  const discardStore = createDrizzleDraftDiscard(deps.db, {
+    drafts: workDrafts,
+    branches,
+    coordinator: branchCoordinator,
+    workProjection: deps.workProjectionMutation,
+  });
+  const discard = createDraftDiscard({
+    drafts: workDrafts,
+    reviewItems,
+    draftLeases,
+    criticalSections,
+    liveCoordinator,
+    store: discardStore,
+    invalidateThread: (documentId, threadId) => agentEdit.invalidateThread(documentId, threadId),
+    releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
+  });
   const drafts = createWorkDraftReviewService({
     links: deps.links,
-    discardWorkDraft: createDrizzleWorkDraftDiscard(
-      deps.db,
-      branches,
-      branchCoordinator,
-      criticalSections,
-      liveCoordinator,
-      workDrafts,
-    ),
+    discard,
     branches,
     branchCoordinator,
     branchJournal,
@@ -652,7 +669,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftResolver: {
       drafts: workDrafts,
       draftLinks: draftBranchAheads,
-      draftLeases: createDraftBranchLeases({ branches, criticalSections }),
+      draftLeases,
+      workDraftDisposal: createDrizzleWorkDraftDisposal(deps.db, {
+        drafts: workDrafts,
+        criticalSections,
+      }),
     },
     documentCreation,
   });

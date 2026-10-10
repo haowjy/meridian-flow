@@ -20,6 +20,7 @@ import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transa
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { renderFilename } from "../context/paths.js";
+import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import {
   chainPrefix,
   type DocumentCoordinates,
@@ -267,7 +268,14 @@ function folderPath(chain: readonly FolderLink[] | undefined, filename: string):
   return chainPrefix(chain ?? []) + filename;
 }
 
-export function createTreeReader(db: Database): TreeReader {
+/**
+ * `repair`: where `identityStatus` sends a hidden, live document no active draft uses (an
+ * inconsistent row it answers `gone` for) to be tombstoned after the read (§12.4).
+ */
+export function createTreeReader(
+  db: Database,
+  options: { repair?: Pick<HiddenNodeRepair, "schedule"> } = {},
+): TreeReader {
   const tx = (): DrizzleDb => currentDrizzleDb(db);
 
   async function documentRows(
@@ -494,6 +502,7 @@ export function createTreeReader(db: Database): TreeReader {
       | { kind: "deleted"; location: NodeLocation }
       | { kind: "gone" };
     const decided = new Map<DocumentId, Pending>();
+    const unused: DocumentId[] = [];
     for (const id of unique) {
       const row = rows.get(id);
       const shown = visible.get(id);
@@ -526,12 +535,14 @@ export function createTreeReader(db: Database): TreeReader {
               }
             : { kind: "gone" },
         );
+        if (!chosen) unused.push(id);
       } else if (row.deleted) {
         decided.set(id, { kind: "deleted", location: rowLocation(row) });
       } else {
         decided.set(id, { kind: "gone" });
       }
     }
+    options.repair?.schedule(unused);
     const spellable = [...decided.entries()].flatMap(([id, pending]) =>
       pending.kind === "gone" ? [] : [{ id, location: pending.location }],
     );

@@ -39,6 +39,7 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
+import type { HiddenNodeRepair } from "../tree/hidden-node-repair.js";
 import {
   type DocumentAddressSelection,
   type DocumentCoordinates,
@@ -124,9 +125,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
   fileAccess: Pick<FileAccess, "listAccess">;
   observer: LinkScopeObserver;
+  /** Repair on touch (§12.4): an inconsistent hidden node a resolve meets is tombstoned after it. */
+  repair?: Pick<HiddenNodeRepair, "schedule">;
 }): DocumentLinkScopes {
   const { db, observer } = deps;
-  const tree = createTreeReader(db);
+  const tree = createTreeReader(db, deps.repair ? { repair: deps.repair } : {});
   const storage = new AsyncLocalStorage<Snapshot>();
 
   async function resolveProject(key: LinkScopeKey, threadId: string | null) {

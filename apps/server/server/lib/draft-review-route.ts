@@ -1,7 +1,8 @@
 /**
  * Route core for authenticated AI draft review over a Work's draft: the list (legacy
  * branch items plus the additive `items`), preview, Apply (per document and Apply all,
- * one publication each) and Discard. Wire changes are additive (F14, contract §13.4).
+ * one publication each) and Discard (per document and Discard all, one kernel). Wire
+ * changes are additive (F14, contract §13.4).
  */
 
 import type { DraftId } from "@meridian/contracts";
@@ -13,6 +14,8 @@ import type {
   DraftApplyResponse,
   DraftApplyResponseAdditions,
   DraftApplyTokens,
+  DraftDiscardAllRequest,
+  DraftDiscardAllResponse,
   DraftDiscardResponse,
   DraftListResponseAdditions,
   DraftPreviewAdditions,
@@ -273,7 +276,8 @@ export async function handleApplyAllWorkDraftRequest(
  * The edit grants an Apply needs (TM "Authorization", §13.3): the draft's grant on each
  * item (its location in the draft is where it lands), and the live grant on one live
  * readers see. A document deleted live isn't in the draft's view: it authorizes at its
- * final location's source through the draft's destination (F9).
+ * final location's source through the draft's destination (F9). A Discard changes only
+ * the draft, so it needs the draft's grants alone (`live: false`).
  */
 async function applyGrants(
   deps: DraftRouteServices,
@@ -283,6 +287,7 @@ async function applyGrants(
     userId: UserId;
     items: readonly DraftReviewItem[];
   },
+  options: { live: boolean } = { live: true },
 ): Promise<FileGrant<"edit">[]> {
   const grants: FileGrant<"edit">[] = [];
   for (const item of input.items) {
@@ -292,7 +297,7 @@ async function applyGrants(
     }
     grants.push(
       ...(await draftGrants(deps, { ...input, documentId: item.documentId }, "edit", {
-        live: !item.isNew,
+        live: options.live && !item.isNew,
       })),
     );
   }
@@ -321,6 +326,10 @@ async function restoreGrant(
   return grant;
 }
 
+/**
+ * The per-document Discard: the whole item through the one kernel (§12.3), or #713's
+ * operation classes. A document deleted live authorizes through the draft (§13.3).
+ */
 export async function handleDiscardWorkDraftRequest(
   deps: DraftRouteServices,
   input: {
@@ -332,10 +341,50 @@ export async function handleDiscardWorkDraftRequest(
     operationIds?: string[];
   },
 ): Promise<DraftDiscardResponse> {
-  const grants = await draftGrants(deps, input, "edit");
+  await requireDraftWorkAccess(deps, input);
+  const found = await deps.documentSync.draftReview.item({
+    workId: input.workId,
+    documentId: input.documentId,
+  });
+  const item = found?.item.draftBranchId === input.draftId ? found.item : null;
+  const grants = item
+    ? await applyGrants(deps, { ...input, items: [item] }, { live: false })
+    : await draftGrants(deps, input, "edit");
   return withEditGrants(deps.fileAccess, grants, () =>
     callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input)),
   );
+}
+
+/**
+ * Discard all (§12.3): the whole draft, one server command; it always closes the draft.
+ * The request's draft must be the Work's active one (else `gone`); every status is a 200.
+ */
+export async function handleDiscardAllWorkDraftRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    userId: UserId;
+    request: DraftDiscardAllRequest;
+  },
+): Promise<DraftDiscardAllResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const draftId = input.request.draftId as DraftId;
+  if (listed.draftId !== draftId) return { status: "gone", draftId };
+  const grants = await applyGrants(deps, { ...input, items: listed.items }, { live: false });
+  const result = await withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(
+      deps.documentSync.draftReview.discardAll({
+        workId: input.workId,
+        draftId,
+        userId: input.userId,
+      }),
+    ),
+  );
+  return result.status === "gone"
+    ? { status: "gone", draftId: result.draftId }
+    : { status: "discarded", draftId: result.draftId, draftClosed: true };
 }
 
 function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
