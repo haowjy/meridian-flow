@@ -1,50 +1,17 @@
-/**
- * DockHeader — the desktop dock's single header row.
- *
- * The header is part of the dock's ONE uniform chrome surface — it paints
- * nothing of its own (the dock slot owns the material) and carries no bottom
- * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
- * slot hosts the chat select/rename dropdown while Chat is active; the view
- * switch carries the view identity, so there is no separate section title. The
- * switch exists only when two views do (the Work page's chat and its transient
- * file); otherwise the header is the occupant's own, the chat's or the context
- * rail's, because a single segment cannot select anything. The left slot truncates before the switch or close
- * ever compress.
- *
- * While the dock holds a document, the header is the document's: its title
- * chip and menu take the left slot, the view switch steps aside, and a Close
- * document button sits before the collapse toggle. Closing returns to the view
- * the writer last chose.
- *
- * Desktop-only: the phone chat sheet supplies its own header
- * (`mobile/MobileChatSheetHeader.tsx`), built from `MobileTopBar`'s
- * status-bar-aware chrome instead of branching this one. `DockShell` takes
- * either as a header slot.
- *
- * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
- * and the canonical `PanelToggleButton` close, so the collapse control still
- * lands on the shared toggle column.
- */
+/** The desktop dock header names its document or the screen’s native occupant. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import type { ScreenKey } from "../shell/screens";
 import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
 import { DockDocumentTitle, DockTitleMenu } from "./DockDocumentTitle";
-import type { DockDocument } from "./dock-view-store";
-import type { DockView } from "./dock-views";
+import type { DockDocument } from "./dock-document-store";
 
-export type DockViewSwitchProps = {
-  view: DockView;
-  views: readonly DockView[];
-  onSelectView: (view: DockView) => void;
-};
-
-export type DockHeaderSlotArgs = DockViewSwitchProps & {
+export type DockHeaderSlotArgs = {
+  screen: ScreenKey;
   projectId: string;
   /** The document that replaces the views while the dock shows one. */
   document: DockDocument | null;
@@ -58,9 +25,7 @@ export type DockHeaderProps = DockHeaderSlotArgs & {
 
 export function DockHeader({
   projectId,
-  view,
-  views,
-  onSelectView,
+  screen,
   document: dockDocument,
   onClose,
   threadSelect,
@@ -84,17 +49,14 @@ export function DockHeader({
         ) : (
           <>
             {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
-            {view === "context" ? <DockTitleMenu projectId={projectId} tab={null} /> : null}
-            {view === "chat" ? threadSelect : null}
-            {view === "chat" && threadId ? (
+            {screen === "chat" ? <DockTitleMenu projectId={projectId} tab={null} /> : null}
+            {screen !== "chat" ? threadSelect : null}
+            {screen !== "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
             ) : null}
           </>
         )}
       </div>
-      {dockDocument ? null : (
-        <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
-      )}
       {onClose || dockDocument ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
@@ -108,29 +70,4 @@ export function DockHeader({
       ) : null}
     </header>
   );
-}
-
-/** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
-export function DockViewSwitch({ view, views, onSelectView }: DockViewSwitchProps) {
-  if (views.length <= 1) return null;
-  return (
-    <SegmentedTabs
-      label={t`Dock view`}
-      value={view}
-      onChange={onSelectView}
-      options={views.map((segment) => ({
-        value: segment,
-        label: <DockViewLabel view={segment} />,
-      }))}
-    />
-  );
-}
-
-function DockViewLabel({ view }: { view: DockView }) {
-  switch (view) {
-    case "chat":
-      return <Trans>Chat</Trans>;
-    case "context":
-      return <Trans>Context</Trans>;
-  }
 }

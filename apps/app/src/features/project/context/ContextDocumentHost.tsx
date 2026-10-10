@@ -40,6 +40,7 @@ export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }
 
 export type ContextDocumentHostProps = {
   projectId: string;
+  container: "editor" | "dock";
   tab: EditableContextTab;
   /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
   mountEditor?: boolean;
@@ -56,6 +57,7 @@ export type ContextDocumentHostProps = {
 
 export function ContextDocumentHost({
   projectId,
+  container,
   tab,
   mountEditor = true,
   shown = true,
@@ -71,6 +73,7 @@ export function ContextDocumentHost({
   const bindingKeys = useRef(new WeakMap<object, string>());
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
   const requestedReview = useRequestedReview({
+    container,
     editorWorkId: controller.workId,
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,

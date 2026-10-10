@@ -11,10 +11,10 @@ import { Maximize2, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { useDockEditorJump } from "../DesktopProjectController";
 import { headerFailure, useDocumentSwitchFailures } from "../routing/document-switch-failure";
-import { type DockDocument, useDockViewStore } from "./dock-view-store";
+import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 
 export function DockDocumentClose() {
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
+  const closeDocument = useDockDocumentStore((state) => state.closeDocument);
   return (
     <IconButton size="sm" tooltip={t`Close document`} onClick={closeDocument}>
       <X className="size-4" aria-hidden />
@@ -26,7 +26,7 @@ export function DockOpenInEditor({ document }: { projectId: string; document: Do
   const tab = document.tab;
   const open = useDockEditorJump();
   const { failures } = useDocumentSwitchFailures();
-  const revision = useDockViewStore((state) => state.revision);
+  const revision = useDockDocumentStore((state) => state.revision);
   return (
     <div className="flex items-center gap-2">
       {headerFailure(failures, revision) && (

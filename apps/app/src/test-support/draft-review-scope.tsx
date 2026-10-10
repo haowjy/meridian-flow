@@ -9,7 +9,7 @@ import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { DraftOnlyTabSettlement } from "@/features/draft-review/DraftOnlyTabSettlement";
+import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -230,7 +230,7 @@ export async function renderReviewScopes(
     current.third = third;
     return (
       <EditorReviewScope value={editor}>
-        <DraftOnlyTabSettlement projectId={options.projectId ?? "project-a"} />
+        <DraftOnlySettlement projectId={options.projectId ?? "project-a"} />
         <DraftReviewBoundary value={editor}>
           <HeaderProbe />
         </DraftReviewBoundary>

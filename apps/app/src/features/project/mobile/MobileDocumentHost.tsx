@@ -259,6 +259,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   const selectedReviewDraftId = useRequestedReview({
+    container: "editor",
     editorWorkId,
     activeScheme: activeContextScheme,
     documentId: activeEditorDocumentId,

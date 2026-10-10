@@ -237,29 +237,33 @@ New-document drafts have server document/Yjs state but no live-manuscript
 membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` in
 the review overlay, never durable workspace identity. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
-Close review closes the tab without discarding the draft; it can be reopened.
+Close review closes only the container used, without discarding the draft; it can be reopened.
 Readable-address admission enriches/absorbs the overlay rather than hiding a
 durable tab beneath it. Another Work cannot resolve that overlay.
 
-`ContextRemovalCoordinator` owns exact-instance, Work-addressed removal and
-promotion plus adjacent/empty destination and route repair:
+`draft-only-lifecycle.ts` defines promotion/removal once over Editor-tab and dock
+adapters. Both containers settle; Close is container-local. The Editor adapter
+delegates exact-instance removal, promotion and route repair to
+`ContextRemovalCoordinator`; the dock adapter settles its stored occupant without
+claiming a revision. Hidden restore candidates are not lifecycle presentations:
 
 - Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and
   opens ordinary live hosting. Promotion/route failures never undo server success.
 - Admitted whole Discard removes through `discardDraft` before dispatch. Later
   refusal stays on the draft row and never restores its tab or navigates back.
   Not-sent admission refusal does not remove it.
-- `DraftOnlyTabSettlement` is one project owner with one observer per represented
+- `DraftOnlySettlement` is one project owner with one observer per represented
   Work, even if neither Editor nor chat currently selects it. After list omission,
   `acquireCatalogAfter` starts a fresh live catalog observation (never joins an
   older pre-Apply read): membership promotes; absence means remote Discard and
-  closes. Failed catalog reads leave tabs intact. Active local commands suppress
+  closes. Failed catalog reads leave presentations intact. Active local commands suppress
   remote classification; disposal aborts settlement. Settlement creates no tab.
 - A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
   destination with Retry/Close. Remote confirmed-Discard omission plus fresh
   catalog absence closes it.
-- Draft-only tabs are never persisted/restored and are skipped by durable route
-  continuity. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
+- Editor overlay tabs are never persisted and are skipped by durable route
+  continuity. The dock persists its review address and rebuilds the overlay from
+  the Work’s draft list. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
   changes so another page can classify remote Apply/Discard without reload.
 
 Server Discard of a new document also removes its Work-manifest entry; subsequent

@@ -16,7 +16,6 @@ import {
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { type ThreadDraftsStatus, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-import { getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
@@ -96,11 +95,13 @@ export function useDraftReviewScopeValue({
   work,
   stateOwner,
   threadId = null,
+  draftOnly = false,
 }: {
   projectId: string | null;
   /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
   work: Work | null;
   stateOwner?: DraftReviewStateOwner;
+  draftOnly?: boolean;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
 }): DraftReviewContextValue {
@@ -130,14 +131,7 @@ export function useDraftReviewScopeValue({
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
     disposing: controller.isDisposing,
-    draftOnly: getContextTabs(effectiveProjectId).tabs.some(
-      (tab) =>
-        tab.kind === "tracked" &&
-        tab.draftOnly &&
-        tab.documentId === controller.inlineReview?.documentId &&
-        tab.reviewDraftId === controller.inlineReview?.draftId &&
-        tab.reviewWorkId === workId,
-    ),
+    draftOnly,
   });
   useReconcileReviewFocus(controller);
 

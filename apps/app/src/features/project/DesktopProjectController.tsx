@@ -15,10 +15,15 @@ import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-visible-editor-tab";
 import { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { type DockDocument, useDockView, useDockViewStore } from "./dock/dock-view-store";
+import {
+  type DockDocument,
+  useDockDocument,
+  useDockDocumentStore,
+} from "./dock/dock-document-store";
 import { handOffVisibleDocument } from "./dock/hand-off-visible-document";
 import { commitDockDocument } from "./dock/use-dock-placement";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
+import { usePresentedDocument } from "./presented-document";
 import { useChatNavigation } from "./routing/chat-navigation";
 import { useDocumentSwitchFailures, useRailScreenSwitch } from "./routing/document-switch-failure";
 import {
@@ -50,6 +55,7 @@ export function useDesktopProjectController<
   issue?: ProjectRouteIssue;
 }) {
   const { projectId, screen } = input;
+  const presented = usePresentedDocument();
   const editorPresentation = useDesktopEditorPresentation(input);
   const dockDocument = useDesktopDockPresentation(projectId, screen);
   const collapsed = useProjectSurfacePrefsStore((state) => state.slotPrefs.dock.collapsed);
@@ -62,15 +68,24 @@ export function useDesktopProjectController<
   const failure = useDocumentSwitchFailures();
   const selectRailScreen = useRailScreenSwitch(screen, isCurrent);
   const transfer = (source: ScreenKey, destination: ScreenKey, tab: ContextTab | null) => {
-    const store = useDockViewStore.getState();
+    const store = useDockDocumentStore.getState();
     return handOffVisibleDocument({
       source,
       destination,
       tab,
+      review:
+        presented && presented.documentId === tab?.documentId
+          ? presented.review
+          : dockDocument?.tab.documentId === tab?.documentId
+            ? (dockDocument?.review ?? null)
+            : tab?.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
+              ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
+              : null,
       claim: store.claim,
       isCurrent: store.isCurrent,
-      transfer: (to, document, claim) => {
-        if (to === "chat") commitDockDocument(projectId, "chat", document, chat.revealDock, claim);
+      transfer: (to, document, claim, review) => {
+        if (to === "chat")
+          commitDockDocument(projectId, "chat", document, chat.revealDock, claim, review);
         else store.closeDocument();
       },
     });
@@ -86,7 +101,7 @@ export function useDesktopProjectController<
     if (!commands || !open) return;
     selectRailScreen(next, () => {
       const plan = transfer(screen, next, screen === "context" ? editorTab : dockTab);
-      const options = plan ? { afterCommit: plan.afterCommit } : undefined;
+      const options = plan ? { afterCommit: plan.afterCommit, review: plan.review } : undefined;
       return next === "chat"
         ? chat.showChatScreen(options)
         : next === "work"
@@ -101,11 +116,14 @@ export function useDesktopProjectController<
     failure.clear("header");
     const plan = transfer(screen, "context", tab);
     if (!plan) return;
-    const claim = useDockViewStore.getState().revision;
-    void present(openDocumentInEditor(open, tab, { afterCommit: plan.afterCommit }), {
-      kind: "header",
-      claim,
-    });
+    const claim = useDockDocumentStore.getState().revision;
+    void present(
+      openDocumentInEditor(open, tab, { afterCommit: plan.afterCommit, review: plan.review }),
+      {
+        kind: "header",
+        claim,
+      },
+    );
   };
   return {
     editorPresentation,
@@ -175,11 +193,11 @@ export function useDesktopEditorPresentation<
   };
 }
 export function useDesktopDockPresentation(projectId: string, screen: ScreenKey) {
-  const { document } = useDockView(screen, projectId);
+  const document = useDockDocument(screen, projectId);
   const { records, folders } = useAccountResourceProjection(projectId);
   const projected = document ? projectResourceTab(projectId, document.tab, records, folders) : null;
   const gone = projected?.kind === "removed" || projected?.kind === "terminal";
-  const close = useDockViewStore((state) => state.closeDocument);
+  const close = useDockDocumentStore((state) => state.closeDocument);
   useEffect(() => {
     if (gone) close();
   }, [gone, close]);

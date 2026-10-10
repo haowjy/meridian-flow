@@ -7,12 +7,34 @@ import {
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
-import { EditorReviewHandoffProvider, EditorReviewIntentClaimant } from "./editor-review-handoff";
+import { ReviewAddressOwner } from "../ReviewAddressOwner";
+import {
+  EditorReviewHandoffProvider,
+  EditorReviewIntentClaimant,
+  useOpenEditorReview,
+} from "./editor-review-handoff";
 
 const documentId = "document-a";
 const draftId = "draft-a";
 const workId = "work-1";
+
+function Restore({ review }: { review: DraftReviewContextValue }) {
+  const admit = useOpenEditorReview();
+  return (
+    <ReviewAddressOwner
+      review={review}
+      presented={{
+        container: "editor",
+        documentId,
+        scheme: "manuscript",
+        path: "chapters/renamed.md",
+        draftOnly: false,
+        review: { workId, draftId },
+      }}
+      port={{ write: vi.fn(), admit }}
+    />
+  );
+}
 
 describe("review restoration after a rename", () => {
   it("enters review at a renamed address although the draft list still names the old path", async () => {
@@ -42,15 +64,7 @@ describe("review restoration after a rename", () => {
     await withReactRoot(
       <EditorReviewHandoffProvider projectId="project-1" openContextRoute={navigate}>
         <DraftReviewBoundary value={review}>
-          <EditorReviewAddressOwner
-            review={review}
-            requestedDraftId={draftId}
-            activeScreen="context"
-            activeScheme="manuscript"
-            activePath="chapters/renamed.md"
-            activeDocumentId={documentId}
-            onSetDraftId={vi.fn()}
-          />
+          <Restore review={review} />
           <EditorReviewIntentClaimant editorWorkId={workId} activeScheme="manuscript" />
         </DraftReviewBoundary>
       </EditorReviewHandoffProvider>,

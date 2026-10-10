@@ -21,12 +21,12 @@ import {
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { getContextTabs } from "@/client/stores";
-import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
   useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
+import { useDraftOnlyLifecycle } from "./draft-only-lifecycle";
 import type { DraftReviewSelection } from "./draft-review-session";
 
 export type WorkDraftCommands = ReturnType<typeof useWorkDraftCommands>;
@@ -42,7 +42,7 @@ export function useWorkDraftCommands({
 }) {
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
-  const contextRemoval = useContextRemovalCoordinator();
+  const lifecycle = useDraftOnlyLifecycle(projectId);
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const records = useDraftCommandRecords();
@@ -80,19 +80,19 @@ export function useWorkDraftCommands({
         threadId,
         reserved,
         () => {
-          if (mode === "discard")
-            contextRemoval.discardDraft(projectId, workId, draft.documentId, draft.draftId);
+          if (mode === "discard") lifecycle.remove(target);
         },
       );
       return {
         ...start,
         outcome: start.outcome.then((outcome) => {
-          if (outcome.kind === "applied" && tab?.kind === "tracked") {
+          if (outcome.kind === "applied") {
             const newest = newestKnownProposal(queryClient, target);
             if (newest === undefined || (generation !== undefined && newest <= generation)) {
               void (async () => {
                 try {
-                  if (tab.draftOnly) await contextRemoval.promoteAppliedDraft(projectId, tab);
+                  await lifecycle.promote(target);
+                  if (tab?.kind !== "tracked") return;
                   const route = routeTargetForTab(tab, workId);
                   if (openContextRoute && isCurrentContextRoute?.(route))
                     await openContextRoute(route, {
@@ -159,7 +159,7 @@ export function useWorkDraftCommands({
     threadId,
     frozen,
     queryClient,
-    contextRemoval,
+    lifecycle,
     openContextRoute,
     isCurrentContextRoute,
   ]);

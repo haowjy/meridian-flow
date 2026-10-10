@@ -6,8 +6,13 @@ import {
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
+import { listed } from "@/test-support/draft-review-scope";
+import {
+  createDockDocumentStore,
+  type DockDocument,
+  dockDocumentFitsScope,
+} from "./dock-document-store";
 import { DOCK_STORAGE_KEY, type DockStorage } from "./dock-persistence";
-import { createDockViewStore, type DockDocument, dockDocumentFitsScope } from "./dock-view-store";
 import { restoreDockDocument } from "./restore-dock-document";
 
 const availability = vi.hoisted(() => vi.fn());
@@ -26,7 +31,7 @@ const tab: ContextTab = {
   filetype: "markdown",
   schemaType: "document",
 };
-const document: DockDocument = { projectId: "project", screen: "chat", tab };
+const document: DockDocument = { projectId: "project", screen: "chat", tab, review: null };
 function storage(): DockStorage {
   const values = new Map<string, string>();
   return {
@@ -38,16 +43,20 @@ function storage(): DockStorage {
 }
 function reload(occupant = document) {
   const disk = storage();
-  const first = createDockViewStore(() => disk, "account");
-  first.getState().setDockView("chat", "context");
+  const first = createDockDocumentStore(() => disk, "account");
   first.getState().commit(first.getState().claim(), occupant);
-  return createDockViewStore(() => disk, "account");
+  return createDockDocumentStore(() => disk, "account");
 }
 const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
 function resources(snapshot = empty) {
   return {
-    readProjection: vi.fn(async () => snapshot),
-    acquireCatalog: vi.fn(async () => emptyCatalogView({ kind: "project", projectId: "project" })),
+    readWorkDrafts: vi.fn(async () => []),
+    resources: {
+      readProjection: vi.fn(async () => snapshot),
+      acquireCatalog: vi.fn(async () =>
+        emptyCatalogView({ kind: "project", projectId: "project" }),
+      ),
+    },
   };
 }
 function localRecord(): ResourceRecord {
@@ -77,16 +86,15 @@ function localRecord(): ResourceRecord {
     ],
   };
 }
-it("round-trips the document and per-screen view in a fresh store", () => {
+it("round-trips the account-stamped document in a fresh store", () => {
   const second = reload();
   const restored = second.getState().restoring;
   if (!restored) throw new Error("Expected a restore candidate");
   expect(restored).toEqual(document);
   expect(second.getState().occupant).toBeNull();
   const revision = second.getState().revision;
-  second.getState().restore(restored, restored.tab);
+  second.getState().restore(restored, restored);
   expect(second.getState().occupant).toEqual(document);
-  expect(second.getState().byScreen).toEqual({ chat: "context" });
   expect(second.getState().revision).toBe(revision);
 });
 it("does not restore a Work document onto another Work or project", () => {
@@ -113,7 +121,9 @@ it("rechecks the Work fence when validation moves a note to another Work", () =>
   second.getState().syncOccupantScope("project", "work", "work");
   const restored = second.getState().restoring;
   if (!restored) throw new Error("Expected a restore candidate");
-  second.getState().restore(restored, { ...tab, scheme: "scratch", workId: "other" });
+  second
+    .getState()
+    .restore(restored, { ...restored, tab: { ...tab, scheme: "scratch", workId: "other" } });
   expect(second.getState().occupant).toBeNull();
 });
 it("a pick during replica hydration wins without the restore cancelling its claim", async () => {
@@ -123,10 +133,13 @@ it("a pick during replica hydration wins without the restore cancelling its clai
   let hydrate!: (snapshot: ResourceProjectionSnapshot) => void;
   const pending = restoreDockDocument(restored, {
     ...resources(),
-    readProjection: () =>
-      new Promise((resolve) => {
-        hydrate = resolve;
-      }),
+    resources: {
+      ...resources().resources,
+      readProjection: () =>
+        new Promise((resolve) => {
+          hydrate = resolve;
+        }),
+    },
   });
   expect(second.getState().occupant).toBeNull();
   const claim = second.getState().claim();
@@ -167,7 +180,7 @@ it("a renamed server document follows its ID to its new path", async () => {
     ],
   });
   const restored = await restoreDockDocument(document, resources());
-  expect(restored).toMatchObject({ documentId: "doc", path: "/New.md", name: "New.md" });
+  expect(restored).toMatchObject({ tab: { documentId: "doc", path: "/New.md", name: "New.md" } });
 });
 it("a terminal replica document restores as nothing without acquiring it", async () => {
   const record = localRecord();
@@ -186,7 +199,7 @@ it("Untitled restores only while its hydrated local resource exists", async () =
   expect(await restoreDockDocument(untitled, resources())).toBeNull();
   expect(
     await restoreDockDocument(untitled, resources({ ...empty, records: [localRecord()] })),
-  ).toMatchObject({ kind: "new", resourceHandle: "local" });
+  ).toMatchObject({ tab: { kind: "new", resourceHandle: "local" } });
 });
 it("throwing storage getters, reads and writes leave the live dock usable", () => {
   for (const disk of [
@@ -208,9 +221,8 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
       },
     }),
   ]) {
-    const store = createDockViewStore(disk, "account");
+    const store = createDockDocumentStore(disk, "account");
     expect(store.getState().restoring).toBeNull();
-    store.getState().setDockView("chat", "context");
     expect(store.getState().commit(store.getState().claim(), document)).toBe(true);
     expect(store.getState().occupant).toEqual(document);
   }
@@ -222,20 +234,18 @@ it.each([
 ])("ignores invalid storage: %s", (raw) => {
   const disk = storage();
   disk.setItem(DOCK_STORAGE_KEY, raw);
-  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
+  expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
 });
-it("reloads the production singleton with its saved document and view", async () => {
+it("reloads the production singleton with its saved document", async () => {
   vi.stubGlobal("window", { sessionStorage: storage() });
   try {
     vi.resetModules();
-    const first = (await import("./dock-view-store")).useDockViewStore;
+    const first = (await import("./dock-document-store")).useDockDocumentStore;
     first.getState().rehydrate("account");
-    first.getState().setDockView("chat", "context");
     first.getState().commit(first.getState().claim(), document);
     vi.resetModules();
-    const second = (await import("./dock-view-store")).useDockViewStore;
+    const second = (await import("./dock-document-store")).useDockDocumentStore;
     second.getState().rehydrate("account");
-    expect(second.getState().byScreen).toEqual({ chat: "context" });
     expect(second.getState().restoring).toEqual(document);
   } finally {
     vi.unstubAllGlobals();
@@ -257,19 +267,16 @@ it.each([
   expect(dockDocumentFitsScope(note, scope)).toBe(stays);
   expect(dockDocumentFitsScope(document, scope)).toBe(scope.projectId === "project");
 });
-it("does not restore another account's resource handles or view choices", () => {
+it("does not restore another account's resource handles", () => {
   const disk = storage();
-  const first = createDockViewStore(() => disk, "account-a");
-  first.getState().setDockView("chat", "context");
+  const first = createDockDocumentStore(() => disk, "account-a");
   first.getState().commit(first.getState().claim(), document);
-  const second = createDockViewStore(() => disk, "account-b");
+  const second = createDockDocumentStore(() => disk, "account-b");
   expect(second.getState().restoring).toBeNull();
-  expect(second.getState().byScreen).toEqual({});
 });
 it("stamps the snapshot and makes same-account hydration idempotent", () => {
   const disk = storage();
-  const store = createDockViewStore(() => disk, "account");
-  store.getState().setDockView("chat", "context");
+  const store = createDockDocumentStore(() => disk, "account");
   store.getState().commit(store.getState().claim(), document);
   expect(JSON.parse(disk.getItem(DOCK_STORAGE_KEY) ?? "null").accountId).toBe("account");
   const revision = store.getState().revision;
@@ -279,31 +286,25 @@ it("stamps the snapshot and makes same-account hydration idempotent", () => {
 });
 it("account changes clear live state and invalidate the previous account's claim", () => {
   const disk = storage();
-  const store = createDockViewStore(() => disk, "account-a");
-  store.getState().setDockView("chat", "context");
+  const store = createDockDocumentStore(() => disk, "account-a");
   store.getState().commit(store.getState().claim(), document);
   const claim = store.getState().claim();
   store.getState().rehydrate("account-b");
   expect(store.getState().occupant).toBeNull();
   expect(store.getState().restoring).toBeNull();
-  expect(store.getState().byScreen).toEqual({});
   expect(store.getState().commit(claim, document)).toBe(false);
 });
 it("rejects an unstamped snapshot instead of assigning its resource handles to the current account", () => {
   const disk = storage();
-  disk.setItem(
-    DOCK_STORAGE_KEY,
-    JSON.stringify({ version: 1, byScreen: { chat: "context" }, occupant: document }),
-  );
-  const store = createDockViewStore(() => disk, "account");
+  disk.setItem(DOCK_STORAGE_KEY, JSON.stringify({ version: 1, occupant: document }));
+  const store = createDockDocumentStore(() => disk, "account");
   expect(store.getState().restoring).toBeNull();
-  expect(store.getState().byScreen).toEqual({});
 });
 it("deferred account hydration obeys the scope already synced by the shell without claiming", () => {
   const disk = storage();
-  const first = createDockViewStore(() => disk, "account");
+  const first = createDockDocumentStore(() => disk, "account");
   first.getState().commit(first.getState().claim(), document);
-  const second = createDockViewStore(() => disk);
+  const second = createDockDocumentStore(() => disk);
   second.getState().syncOccupantScope("other-project", "chat", null);
   const revision = second.getState().revision;
   second.getState().rehydrate("account");
@@ -311,27 +312,110 @@ it("deferred account hydration obeys the scope already synced by the shell witho
   expect(second.getState().revision).toBe(revision);
 });
 it.each([
-  { chat: "chat" },
-  { work: "context" },
-  { invented: "context" },
-])("rejects view choices outside the shared screen policy: %o", (byScreen) => {
-  const disk = storage();
-  disk.setItem(
-    DOCK_STORAGE_KEY,
-    JSON.stringify({ version: 1, accountId: "account", byScreen, occupant: document }),
-  );
-  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
-});
-it("rejects a non-string occupant screen even if it coerces to a valid policy key", () => {
+  { screen: ["work"] },
+  { review: undefined },
+  { review: {} },
+  { review: { workId: "", draftId: "draft" } },
+])("rejects malformed occupant identity: %o", (invalid) => {
   const disk = storage();
   disk.setItem(
     DOCK_STORAGE_KEY,
     JSON.stringify({
       version: 1,
       accountId: "account",
-      byScreen: {},
-      occupant: { ...document, screen: ["work"] },
+      occupant: { ...document, ...invalid },
     }),
   );
-  expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
+  expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
+});
+
+it("reloads a draft-only review from its Work list, without catalog membership", async () => {
+  const review = { workId: "work", draftId: "draft" };
+  const second = reload({
+    ...document,
+    review,
+    tab: {
+      ...tab,
+      draftOnly: true,
+      reviewWorkId: "work",
+      reviewDraftId: "draft",
+      tabInstanceToken: "old",
+    },
+  });
+  const candidate = second.getState().restoring!;
+  const replica = resources();
+  const restored = await restoreDockDocument(candidate, {
+    ...replica,
+    resources: replica.resources,
+    readWorkDrafts: async () => [
+      {
+        ...listed,
+        documentId: "doc",
+        draftId: "draft",
+        isNewDocument: true,
+        contextPath: "/Current.md",
+      },
+    ],
+  });
+  expect(replica.resources.readProjection).not.toHaveBeenCalled();
+  await expect(
+    restoreDockDocument(candidate, {
+      ...replica,
+      readWorkDrafts: async () => {
+        throw new Error("offline");
+      },
+    }),
+  ).rejects.toThrow("offline");
+  expect(second.getState().restoring).toBe(candidate);
+  expect(second.getState().occupant).toBeNull();
+  expect(restored).toMatchObject({
+    review,
+    tab: {
+      documentId: "doc",
+      draftOnly: true,
+      reviewWorkId: "work",
+      reviewDraftId: "draft",
+      path: "/Current.md",
+    },
+  });
+});
+it("keeps a manuscript review while validating its renamed live identity", async () => {
+  availability.mockResolvedValue({
+    resolutions: [
+      {
+        kind: "available",
+        documentId: "doc",
+        authority: { kind: "project", projectId: "project" },
+        entry: {
+          kind: "file",
+          entryId: "doc",
+          editable: true,
+          schemaType: "document",
+          name: "New.md",
+          path: ["New.md"],
+          uri: "manuscript://New.md",
+          filetype: "markdown",
+        },
+      },
+    ],
+  });
+  const review = { workId: "work", draftId: "draft" };
+  const replica = resources();
+  const restored = await restoreDockDocument(
+    { ...document, review },
+    {
+      ...replica,
+      resources: replica.resources,
+      readWorkDrafts: async () => [
+        { ...listed, documentId: "doc", draftId: "draft", isNewDocument: false },
+      ],
+    },
+  );
+  expect(restored).toMatchObject({ review, tab: { documentId: "doc", path: "/New.md" } });
+  expect(await restoreDockDocument({ ...document, review }, replica)).toMatchObject({
+    review: null,
+    tab: { documentId: "doc", path: "/New.md" },
+  });
+  availability.mockResolvedValue({ resolutions: [{ kind: "deleted", documentId: "doc" }] });
+  expect(await restoreDockDocument({ ...document, review }, replica)).toBeNull();
 });

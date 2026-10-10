@@ -2,6 +2,7 @@
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import type { ReviewAddress } from "../presented-document";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 
 type EditorDocument =
@@ -11,23 +12,29 @@ type EditorDocument =
 export function openDocumentInEditor(
   open: OpenContextRoute,
   target: EditorDocument,
-  options: { afterCommit?: () => void } = {},
+  options: { afterCommit?: () => void; review?: ReviewAddress | null } = {},
 ) {
+  const { review, ...routeOptions } = options;
   const tab = "kind" in target && isEditorContextTab(target) ? target : undefined;
   if ("kind" in target && target.kind === "new")
     return open(
       { scheme: "unfiled", path: "", documentId: target.documentId },
-      { replace: false, tab, ...options },
+      { replace: false, tab, ...routeOptions },
     );
   return open(
     {
       scheme: target.scheme,
       path: target.path,
-      workId: target.workId ?? undefined,
+      workId: review?.workId ?? target.workId ?? undefined,
       ...(tab ? { documentId: tab.documentId } : {}),
       ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
     },
-    { replace: false, ...options, ...(tab ? { tab } : {}) },
+    {
+      replace: false,
+      ...routeOptions,
+      ...(tab ? { tab } : {}),
+      ...(review ? { draftId: review.draftId } : {}),
+    },
   );
 }
 

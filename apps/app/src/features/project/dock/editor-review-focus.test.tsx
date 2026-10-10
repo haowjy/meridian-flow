@@ -9,7 +9,7 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
+import { ReviewAddressOwner } from "../ReviewAddressOwner";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -107,14 +107,25 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
       <EditorReviewHandoffProvider projectId="project-1" openContextRoute={route}>
         <CommandCapture />
         {delayedAdmission && (
-          <EditorReviewAddressOwner
+          <ReviewAddressOwner
             review={review}
-            requestedDraftId={addressed ? target.draftId : undefined}
-            activeScreen="context"
-            activeScheme="manuscript"
-            activePath={target.contextPath}
-            activeDocumentId={target.documentId}
-            onSetDraftId={vi.fn()}
+            presented={{
+              container: "editor",
+              documentId: target.documentId,
+              scheme: "manuscript",
+              path: target.contextPath,
+              draftOnly: false,
+              review: (addressed ? target.draftId : undefined)
+                ? {
+                    workId: review.controller.workId,
+                    draftId: (addressed ? target.draftId : undefined)!,
+                  }
+                : null,
+            }}
+            port={{
+              write: (address) => vi.fn()(address?.draftId ?? null),
+              admit: (target) => fixture.openReview?.(target),
+            }}
           />
         )}
         <DraftReviewBoundary value={review}>

@@ -6,8 +6,9 @@ import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
+import { dockDocument, useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { DraftOnlyTabSettlement } from "./DraftOnlyTabSettlement";
+import { DraftOnlySettlement } from "./DraftOnlySettlement";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -41,6 +42,7 @@ const draft = { draftId: "draft-a", documentId: "document-a", status: "active" }
 describe("DraftReviewProvider remote settlement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
@@ -61,11 +63,29 @@ describe("DraftReviewProvider remote settlement", () => {
     mocks.resources.acquireCatalogAfter.mockResolvedValue({ documents: ["document-a"] });
   });
 
-  it("promotes the tab of a remote Apply even while an older catalog read is in flight", async () => {
+  it.each([
+    ["editor", "apply"],
+    ["dock", "apply"],
+    ["both", "apply"],
+    ["dock", "discard"],
+    ["both", "discard"],
+  ] as const)("settles remote %s %s from a catalog read after omission", async (container, mode) => {
+    const tab = useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs[0];
+    if (!tab) throw new Error("Missing draft overlay");
+    if (container !== "editor")
+      useDockDocumentStore.setState({
+        occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", draftId: "draft-a" }),
+      });
+    if (container === "dock")
+      useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    mocks.resources.acquireCatalogAfter.mockResolvedValue({
+      documents: mode === "apply" ? ["document-a"] : [],
+    });
+    const claim = useDockDocumentStore.getState().claim();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await withReactRoot(
       <QueryClientProvider client={queryClient}>
-        <DraftOnlyTabSettlement projectId="project-a" />
+        <DraftOnlySettlement projectId="project-a" />
       </QueryClientProvider>,
       async () => {
         await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());
@@ -77,8 +97,20 @@ describe("DraftReviewProvider remote settlement", () => {
           await queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
         });
 
-        await vi.waitFor(() => expect(mocks.coordinator.promoteAppliedDraft).toHaveBeenCalled());
-        expect(mocks.coordinator.discardDraft).not.toHaveBeenCalled();
+        await vi.waitFor(() => {
+          if (container !== "dock")
+            expect(
+              mode === "apply"
+                ? mocks.coordinator.promoteAppliedDraft
+                : mocks.coordinator.discardDraft,
+            ).toHaveBeenCalled();
+          if (container !== "editor") {
+            if (mode === "apply")
+              expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+            else expect(useDockDocumentStore.getState().occupant).toBeNull();
+          }
+        });
+        expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
         expect(mocks.resources.acquireCatalog).not.toHaveBeenCalled();
       },
     );

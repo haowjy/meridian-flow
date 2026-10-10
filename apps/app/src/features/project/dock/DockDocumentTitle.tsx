@@ -29,7 +29,7 @@ import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { PaneTitle } from "../PaneTitle";
 import { titleChipClass } from "../shell/title-chip";
 import { catalogSiblingNames } from "../work/work-files-model";
-import type { DockDocument } from "./dock-view-store";
+import type { DockDocument } from "./dock-document-store";
 import { useDockBrowseScratch } from "./use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
 

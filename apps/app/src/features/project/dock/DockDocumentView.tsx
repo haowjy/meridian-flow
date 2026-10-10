@@ -26,9 +26,14 @@ import {
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { type DockDocument, useDockViewStore } from "./dock-view-store";
+import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
+import type { AiDraftLaunchTarget } from "./editor-review-handoff";
+import { commitDockDocument } from "./use-dock-placement";
+import { ReviewLaunchContext } from "./useAiDraftLauncher";
 
 const noopCommitted = () => undefined;
 
@@ -38,18 +43,35 @@ export function DockDocumentView(props: {
   visible: boolean;
 }) {
   const review = useEditorDraftReview();
+  const { revealDock } = useChatNavigation();
+  // Q1: every review control inside this container uses this one launch adapter.
+  const launch = useCallback(
+    (target: AiDraftLaunchTarget) => {
+      const store = useDockDocumentStore.getState();
+      const claim = store.claim();
+      const tab = contextTabFromDraftGroup(target);
+      if (tab)
+        commitDockDocument(props.projectId, props.document.screen, tab, revealDock, claim, {
+          workId: target.workId,
+          draftId: target.draftId,
+        });
+    },
+    [props.projectId, props.document.screen, revealDock],
+  );
   return (
-    <DraftReviewBoundary value={review}>
-      <PaintScope active={props.visible}>
-        <PaintHold
-          status={t`Opening ${props.document.tab.name}`}
-          className="relative flex min-h-0 flex-1 flex-col"
-        >
-          <PaintCapture surface={props.document.tab.documentId} />
-          <DockDocumentBody {...props} />
-        </PaintHold>
-      </PaintScope>
-    </DraftReviewBoundary>
+    <ReviewLaunchContext.Provider value={launch}>
+      <DraftReviewBoundary value={review}>
+        <PaintScope active={props.visible}>
+          <PaintHold
+            status={t`Opening ${props.document.tab.name}`}
+            className="relative flex min-h-0 flex-1 flex-col"
+          >
+            <PaintCapture surface={props.document.tab.documentId} />
+            <DockDocumentBody {...props} />
+          </PaintHold>
+        </PaintScope>
+      </DraftReviewBoundary>
+    </ReviewLaunchContext.Provider>
   );
 }
 
@@ -63,7 +85,7 @@ function DockDocumentBody({
   /** Whether the dock is on screen; a hidden dock's editor chrome stands down. */
   visible: boolean;
 }) {
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
+  const closeDocument = useDockDocumentStore((state) => state.closeDocument);
   const openInEditor = useOpenDocumentInEditor();
   const { works } = useWorks(projectId);
   const resources = useAccountResourceReplica();
@@ -92,13 +114,13 @@ function DockDocumentBody({
         // The projection above follows a rename; the dock keeps no tab to patch.
         onCommitted={noopCommitted}
         onOpenExisting={(scheme, path, owner) => {
-          const store = useDockViewStore.getState();
+          const store = useDockDocumentStore.getState();
           const claim = store.claim();
           openInEditor(
             { scheme, path, ...owner },
             {
               afterCommit: () => {
-                if (useDockViewStore.getState().isCurrent(claim)) closeDocument();
+                if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
               },
             },
           );
@@ -107,6 +129,7 @@ function DockDocumentBody({
       {tab.kind !== "viewer" ? (
         <div className="relative min-h-0 flex-1">
           <ContextDocumentHost
+            container="dock"
             key={tab.documentId}
             projectId={projectId}
             tab={tab}

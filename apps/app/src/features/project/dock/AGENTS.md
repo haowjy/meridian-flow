@@ -19,7 +19,7 @@ in the composer, identity row, phone sheet and Work page, not a Changes view.
   on accepted navigation, install the Editor tab before consuming the panel.
   Browser history and phone navigation never hand off. Peeks create no tabs
   and stay outside the URL; Close returns to the native occupant.
-- The document shares the existing Editor review scope. Do not recreate a
+- The document shares the single presented-document review scope. Do not recreate a
   third controller or any deleted review props.
 - The dock slot owns its material. Keep document shells transparent. Do not
   stack custom `border-border-subtle` with another border-color class in `cn`.
@@ -30,8 +30,8 @@ for review ownership.
 
 ## Review launch
 
-The selected review, or an admissible launch intent, is the requested review on
-both shells: same Work, manuscript scheme, same document. Admission does not
+Only the presenting container requests the selected review or pending address;
+Editor hosts may also request an admissible launch intent: same Work, manuscript scheme, same document. Admission does not
 wait for the draft list; the review's fresh entry read owns absence. The launch
 and address owners own no paint state. Pane continuity belongs to
 [`PaintHold`](../../../components/app/PaintHold.md); navigation stays outside it.

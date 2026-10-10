@@ -866,7 +866,6 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/project/dock/DockHeader.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
@@ -1137,8 +1136,8 @@ msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Context"
-msgstr ""
+#~ msgid "Context"
+#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1853,8 +1852,8 @@ msgid "Divider"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Dock view"
-msgstr ""
+#~ msgid "Dock view"
+#~ msgstr ""
 
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
