@@ -13,9 +13,10 @@ import { parseRequestId } from "@meridian/contracts/request-id";
 import { decodeWorkSlug } from "@meridian/contracts/works";
 import { formatMarkdownLink } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
-import { mergeAttributes, Node } from "@tiptap/core";
+import { getSchema, mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
+import StarterKit from "@tiptap/starter-kit";
 import type { AuthoritativeReference } from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
 import {
@@ -52,33 +53,6 @@ export type ComposerSubmitEnvelope = Readonly<{
   draft: ComposerDraftSnapshot;
   activatedSkillSlugs: readonly string[];
 }>;
-
-function jsonNodeSize(node: JSONContent): number {
-  if (node.type === "text") return node.text?.length ?? 0;
-  if (!node.content) return 1;
-  return 2 + node.content.reduce((size, child) => size + jsonNodeSize(child), 0);
-}
-
-/** Preserve a failed submitted document before everything authored after it. */
-export function mergeComposerDraftSnapshots(
-  submitted: ComposerDraftSnapshot,
-  later: ComposerDraftSnapshot,
-): ComposerDraftSnapshot {
-  const prefix = [...(submitted.doc.content ?? []), { type: "paragraph" }];
-  const offset = prefix.reduce((size, child) => size + jsonNodeSize(child), 0);
-  const uploads = new Map(
-    [...submitted.ownedUploads, ...later.ownedUploads].map((upload) => [upload.intakeId, upload]),
-  );
-  return {
-    revision: Math.max(submitted.revision, later.revision) + 1,
-    doc: { type: "doc", content: [...prefix, ...(later.doc.content ?? [])] },
-    selection: {
-      anchor: later.selection.anchor + offset,
-      head: later.selection.head + offset,
-    },
-    ownedUploads: [...uploads.values()],
-  };
-}
 
 export type ComposerReferenceAttrs = AuthoritativeReference & {
   /** Per-occurrence prose, independent of the catalog title and stable identity. */
@@ -458,4 +432,68 @@ export function plainComposerDoc(text: string): JSONContent {
       },
     ],
   };
+}
+
+let restorableDraftSchema: ReturnType<typeof getSchema> | null = null;
+
+/** Validate stored authoring state, excluding uploads whose bytes lived in memory. */
+export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnapshot | null {
+  try {
+    if (!value || typeof value !== "object") return null;
+    const snapshot = value as ComposerDraftSnapshot;
+    if (
+      !Number.isSafeInteger(snapshot.revision) ||
+      snapshot.revision < 0 ||
+      !snapshot.selection ||
+      !Number.isSafeInteger(snapshot.selection.anchor) ||
+      !Number.isSafeInteger(snapshot.selection.head) ||
+      !Array.isArray(snapshot.ownedUploads) ||
+      snapshot.doc?.type !== "doc"
+    )
+      return null;
+    const clean = (node: JSONContent): JSONContent | null => {
+      if (!node || typeof node !== "object" || typeof node.type !== "string")
+        throw new Error("Invalid node");
+      if (node.type === "composerUpload") return null;
+      if (node.type === "composerReference") {
+        const reference = parseClipboardReference(JSON.stringify(node.attrs?.reference));
+        if (!reference) throw new Error("Invalid reference");
+        const upload = node.attrs?.reference?.upload as ComposerOwnedUpload | null;
+        if (
+          upload &&
+          (typeof upload.intakeId !== "string" ||
+            upload.documentId !== reference.documentId ||
+            upload.uri !== reference.uri ||
+            typeof upload.locationRevision !== "string")
+        )
+          throw new Error("Invalid upload");
+        return composerReferenceContent({ ...reference, upload });
+      }
+      if (node.type === "composerSkill" && !parseClipboardSkill(JSON.stringify(node.attrs)))
+        throw new Error("Invalid skill");
+      return {
+        ...node,
+        ...(node.content
+          ? {
+              content: node.content
+                .map(clean)
+                .filter((child): child is JSONContent => child !== null),
+            }
+          : {}),
+      };
+    };
+    const doc = clean(snapshot.doc);
+    if (!doc) return null;
+    restorableDraftSchema ??= getSchema([
+      StarterKit,
+      ComposerReferenceNode,
+      ComposerSkillNode,
+      ComposerUploadNode,
+    ]);
+    const parsed = restorableDraftSchema.nodeFromJSON(doc);
+    parsed.check();
+    return serializeComposerDraft(parsed.toJSON(), snapshot.revision, snapshot.selection).draft;
+  } catch {
+    return null;
+  }
 }
