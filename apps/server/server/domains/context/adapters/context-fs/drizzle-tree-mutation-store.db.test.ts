@@ -979,11 +979,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual([1n, 1n]);
     });
 
-    it("splits a nested hidden document off a folder moved out of the project or into a Work's source (F-3)", async () => {
-      // Personal ↔ project (§8.3), and a Work-owned source, which no draft ever holds.
-      for (const destination of ["user://world", "scratch://@/world"] as const) {
+    it("splits a nested hidden document off a folder moved out of the project or into a Work's Scratch (F-3)", async () => {
+      // Personal ↔ project (§8.3), and a Work's Scratch, which no draft ever holds.
+      for (const into of ["user", "scratch"] as const) {
         const scenario = await start();
-        const ascension = await scenario.work(`Ascension ${destination}`, "draft");
+        const ascension = await scenario.work(`Ascension ${into}`, "draft");
+        const destination =
+          into === "user"
+            ? "user://world"
+            : `scratch://@${(await scenario.work("Notes", "direct")).slug}/world`;
         const map = await scenario.seedLive("world/places/map.md");
         const places = await scenario.seedLiveFolder("world/places");
         const harbor = await scenario.model(ascension).create("world/places/harbor.md", "Harbor.");
