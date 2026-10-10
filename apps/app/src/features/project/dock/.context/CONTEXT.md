@@ -58,8 +58,8 @@ handling opens have. `dock-persistence.ts` stores `{ byScreen, occupant }` under
 `meridian:dock:v1` in sessionStorage, reusing the Editor tab codec. Reads, parsing
 and writes degrade silently if storage is unavailable. A fresh store puts the
 saved document in `restoring`, never directly in the visible slot. Scope sync
-fences both slots. `ProjectView` waits for `_workspaceHydrated` (the Editor signal),
-then `restoreDockDocument` waits for the replica projection. It projects resource
+fences both slots. `ProjectView` supplies `_workspaceHydrated` (the Editor signal) to the dock-owned
+`useDockDocumentRestoration` hook; `restoreDockDocument` then waits for the replica projection. It projects resource
 identity, rejects terminal/removed resources and missing local Untitleds, and
 resolves server-backed documents by stable ID with the Editor availability
 validator. Acquiring the resolved catalog before a final projection keeps a
