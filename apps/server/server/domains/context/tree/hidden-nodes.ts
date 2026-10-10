@@ -29,7 +29,7 @@ import { renderFilename } from "../context/paths.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { dropDocumentRows, recordCreated } from "./draft-tree-store.js";
-import { spellNodeAddresses } from "./tree-addresses.js";
+import { loadFolderChains, spellNodeAddresses } from "./tree-addresses.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -802,20 +802,28 @@ export async function endUse(
     ending.map((row) => row.id),
   );
   tombstoned.push(...ending.map((row) => ({ kind: "document" as const, id: row.id })));
-  const visited = new Set<FolderId>();
-  for (const row of ending) {
-    let folderId = row.folderId;
-    while (folderId !== null && !visited.has(folderId)) {
-      visited.add(folderId);
-      if (!(await isUnusedHiddenFolder(tx, folderId))) break;
-      const parent = await parentOf(db, folderId);
-      await currentDrizzleDb(db)
-        .update(folders)
-        .set({ deletedAt: new Date(), locationVersion: sql`${folders.locationVersion} + 1` })
-        .where(eq(folders.id, folderId));
-      tombstoned.push({ kind: "folder", id: folderId });
-      folderId = parent;
-    }
+  // Every ancestor of every ended document, deepest first: a folder is judged only after
+  // all of the batch's folders beneath it, so a sibling still alive at first glance never
+  // leaves its parent behind.
+  const chains = await loadFolderChains(
+    tx,
+    ending.map((row) => row.folderId),
+  );
+  const depthOf = new Map<FolderId, number>();
+  for (const chain of chains.values()) {
+    chain.forEach((folder, index) => {
+      const depth = chain.length - index;
+      depthOf.set(folder.id, Math.max(depthOf.get(folder.id) ?? 0, depth));
+    });
+  }
+  const deepestFirst = [...depthOf.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  for (const folderId of deepestFirst) {
+    if (!(await isUnusedHiddenFolder(tx, folderId))) continue;
+    await currentDrizzleDb(db)
+      .update(folders)
+      .set({ deletedAt: new Date(), locationVersion: sql`${folders.locationVersion} + 1` })
+      .where(eq(folders.id, folderId));
+    tombstoned.push({ kind: "folder", id: folderId });
   }
   return {
     tombstoned,
