@@ -31,7 +31,7 @@ import {
   vacateMoves,
 } from "../../context/tree/node-moves.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
-import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
+import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchSnapshot, BranchStore } from "../domain/branch-coordinator.js";
 import { branchCutOf } from "../domain/draft-branch-ahead-registration.js";
@@ -140,7 +140,55 @@ export function createDrizzleDraftTreeStep(
           }
         }
         if (stale.length > 0) return refuse(draftTreeRefusal.stale(stale));
-        return { kind: "proceed", holds, apply };
+        return holdUntilPlaceable({ holds, apply });
+      }
+
+      /**
+       * 5a against the final live tree (E-R2): an item publishes only where the live tree
+       * will be free once the other publishing items have moved. A live occupant stays
+       * unless it is a publishing item moving away, so holding a mover keeps its slot
+       * taken; holds propagate until nothing else is blocked. Clashes among the draft's own
+       * items are already holds in its view, so only staying live nodes block here.
+       */
+      async function holdUntilPlaceable(decided: {
+        holds: PublicationItemHold[];
+        apply: Eligible[];
+      }): Promise<Decided> {
+        const needs = new Map(decided.apply.map((eligible) => [eligible, slotsOf(eligible.node)]));
+        const slots = [
+          ...new Map([...needs.values()].flat().map((slot) => [slot.key, slot] as const)).values(),
+        ];
+        const found = await tree.occupancy(LIVE_TREE, slots);
+        const occupied = new Map(slots.map((slot, index) => [slot.key, found[index]]));
+        let apply = decided.apply;
+        const holds = [...decided.holds];
+        for (;;) {
+          const movers = new Set(
+            apply
+              .filter(({ node }) => node.conflict.kind === "relocated")
+              .map(({ node }) => node.nodeId),
+          );
+          const blocked = apply.flatMap((eligible) => {
+            const at = (needs.get(eligible) ?? []).find((slot) => {
+              const there = occupied.get(slot.key);
+              const staying = there?.documents.some(
+                (id) => id !== eligible.node.nodeId && !movers.has(id),
+              );
+              return staying || (slot.target && (there?.folders.length ?? 0) > 0);
+            });
+            return at ? [{ eligible, at }] : [];
+          });
+          if (blocked.length === 0) return { kind: "proceed", holds, apply };
+          for (const { eligible, at } of blocked) {
+            holds.push({
+              itemKey: eligible.item.itemKey,
+              ...(eligible.item.draftBranchId ? { documentId: eligible.item.documentId } : {}),
+              reason: draftTreeHold(uriIn(eligible.node, at.path)),
+            });
+          }
+          const out = new Set(blocked.map(({ eligible }) => eligible));
+          apply = apply.filter((eligible) => !out.has(eligible));
+        }
       }
 
       function tokensMoved(
@@ -310,6 +358,24 @@ export function createDrizzleDraftTreeStep(
       };
     },
   };
+}
+
+/**
+ * The live slots an item needs, root first: each ancestor folder's path (a document there
+ * blocks it) and its own path (any other node there blocks it), in its target source.
+ */
+function slotsOf(node: TreeStateNode) {
+  const { contextSourceId, dir, path } = node.target;
+  return [
+    ...dir.map((_, depth) => ({ path: dir.slice(0, depth + 1).join("/"), target: false })),
+    { path, target: true },
+  ].map((slot) => ({ ...slot, contextSourceId, key: `${contextSourceId}\u0000${slot.path}` }));
+}
+
+/** A path in the node's target source, spelled as its target is. */
+function uriIn(node: TreeStateNode, path: string): string {
+  const { uri, path: targetPath } = node.target;
+  return uri?.endsWith(targetPath) ? uri.slice(0, uri.length - targetPath.length) + path : path;
 }
 
 /** What placing or moving this node does, as the writer's receipt says it. */

@@ -196,6 +196,14 @@ export interface TreeReader {
     view: TreeView,
     at: { contextSourceId: ContextSourceId; parentId: FolderId | null; filename: string },
   ): Promise<PathResolution<NodeRef>>;
+  /**
+   * What this view shows at each source-relative path, in input order: the documents and
+   * the folders there (more than one of either when they clash).
+   */
+  occupancy(
+    view: TreeView,
+    at: readonly { contextSourceId: ContextSourceId; path: string }[],
+  ): Promise<{ documents: DocumentId[]; folders: FolderId[] }[]>;
   /** An id names one node; other visible ids at its address in this view are `clashesWith`. */
   findById(
     view: TreeView,
@@ -757,9 +765,21 @@ export function createTreeReader(db: Database): TreeReader {
     };
   }
 
+  async function occupancy(
+    view: TreeView,
+    at: readonly { contextSourceId: ContextSourceId; path: string }[],
+  ) {
+    if (at.length === 0) return [];
+    return (await pathOccupants(view, at)).map(({ documents, folders }) => ({
+      documents,
+      folders,
+    }));
+  }
+
   return {
     resolvePath,
     childAt,
+    occupancy,
     findById,
     findFolderById,
     identityStatus,
