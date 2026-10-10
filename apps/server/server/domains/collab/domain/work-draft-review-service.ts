@@ -46,10 +46,11 @@ export function createWorkDraftReviewService(input: {
   /** The Work's active draft and its items; none when the Work has no active draft. */
   async function workItems(
     workId: WorkId,
+    options: { liveTextTokens?: boolean } = {},
   ): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }> {
     const draft = await input.drafts.activeForWork(workId);
     if (!draft) return { draftId: null, items: [] };
-    return { draftId: draft.id, items: await input.reviewItems.list(draft.id) };
+    return { draftId: draft.id, items: await input.reviewItems.list(draft.id, options) };
   }
 
   /** The legacy list: branch items with reviewable rows, hidden creates included. */
@@ -76,7 +77,11 @@ export function createWorkDraftReviewService(input: {
   }
 
   async function itemOf(workId: WorkId, documentId: DocumentId) {
-    return (await workItems(workId)).items.find((item) => item.documentId === documentId) ?? null;
+    return (
+      (await workItems(workId, { liveTextTokens: false })).items.find(
+        (item) => item.documentId === documentId,
+      ) ?? null
+    );
   }
 
   async function previewWorkDraftBranch(command: {
@@ -100,7 +105,7 @@ export function createWorkDraftReviewService(input: {
       if (!activeDraft) throw new Error("draft_not_found");
       const activeDraftId = activeDraft.id;
       const draftView: LinkView = { kind: "draft", draftId: activeDraftId };
-      const item = (await input.reviewItems.list(activeDraftId)).find(
+      const item = (await input.reviewItems.list(activeDraftId, { liveTextTokens: false })).find(
         (candidate) => candidate.documentId === command.documentId,
       );
       const liveDoc = createCollabYDoc({ gc: false });
@@ -219,7 +224,7 @@ export function createWorkDraftReviewService(input: {
     const notFound = { status: "not_found" as const, draftId: command.draftId };
     const active = await resolveActiveWorkDraft(command);
     if (!active) return notFound;
-    const item = (await input.reviewItems.list(active.draftId)).find(
+    const item = (await input.reviewItems.list(active.draftId, { liveTextTokens: false })).find(
       (candidate) =>
         candidate.documentId === command.documentId &&
         candidate.draftBranchId === active.branch.branchId,
@@ -290,10 +295,13 @@ export function createWorkDraftReviewService(input: {
   return {
     draftReview: {
       async list(command) {
-        return legacyDrafts(command.workId, (await workItems(command.workId)).items);
+        const { items } = await workItems(command.workId, { liveTextTokens: false });
+        return legacyDrafts(command.workId, items);
       },
       async listItems(command) {
-        const { draftId, items } = await workItems(command.workId);
+        const { draftId, items } = await workItems(command.workId, {
+          liveTextTokens: command.liveTextTokens !== false,
+        });
         return { draftId, drafts: legacyDrafts(command.workId, items), items };
       },
       async preview(command) {
@@ -318,7 +326,8 @@ export function createWorkDraftReviewService(input: {
     },
     draftSessionStats: {
       async listActiveDraftsByWork(command) {
-        return legacyDrafts(command.workId, (await workItems(command.workId)).items);
+        const { items } = await workItems(command.workId, { liveTextTokens: false });
+        return legacyDrafts(command.workId, items);
       },
     },
   };

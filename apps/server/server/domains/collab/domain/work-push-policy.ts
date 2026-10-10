@@ -30,7 +30,9 @@ export function createWorkPushPolicy(input: {
       if (policyInput.policy === "auto") {
         // A Work with no active draft has nothing pending; the switch never makes one.
         const draft = await input.drafts.activeForWork(policyInput.workId);
-        const pending = draft ? await input.reviewItems.list(draft.id) : [];
+        const pending = draft
+          ? await input.reviewItems.list(draft.id, { liveTextTokens: false })
+          : [];
         if (pending.length > 0 && !policyInput.pending) {
           return {
             status: "confirmation_required",

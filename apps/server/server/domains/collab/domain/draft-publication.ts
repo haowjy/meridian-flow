@@ -141,7 +141,7 @@ export function createDraftPublication(deps: {
     async applyItems(input) {
       const { draftId } = input;
       if (!(await activeDraft(draftId, input.workId))) return { status: "gone", draftId };
-      const current = await deps.reviewItems.list(draftId);
+      const current = await deps.reviewItems.list(draftId, { liveTextTokens: false });
       const byKey = new Map(current.map((item) => [item.itemKey, item]));
       const refs: ApplyItemRef[] =
         input.selection.kind === "all_pending"
