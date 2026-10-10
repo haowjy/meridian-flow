@@ -51,7 +51,11 @@ export type DraftReviewItem = {
 };
 
 export interface DraftReviewItems {
-  list(draftId: DraftId): Promise<DraftReviewItem[]>;
+  /**
+   * The draft's items. `liveTextTokens` (the review list) reads each live document's
+   * fingerprint under its lease; Apply and authorization lists skip it (null tokens).
+   */
+  list(draftId: DraftId, options?: { liveTextTokens?: boolean }): Promise<DraftReviewItem[]>;
 }
 
 export function createDraftReviewItems(deps: {
@@ -62,7 +66,7 @@ export function createDraftReviewItems(deps: {
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
   return {
-    async list(draftId) {
+    async list(draftId, options = {}) {
       const branches = await deps.branches(draftId);
       const branchOf = new Map(branches.map((evidence) => [evidence.branch.documentId, evidence]));
       const edited = branches
@@ -73,7 +77,12 @@ export function createDraftReviewItems(deps: {
         nodes.map(async (node) => {
           const evidence = branchOf.get(node.nodeId);
           // Live text exists only for a document live readers see.
-          const liveText = evidence && !node.hidden && !node.live.deleted && !node.binary;
+          const liveText =
+            options.liveTextTokens !== false &&
+            evidence &&
+            !node.hidden &&
+            !node.live.deleted &&
+            !node.binary;
           return toItem(draftId, node, evidence, {
             liveTextToken: liveText ? await deps.liveFingerprint(node.nodeId) : null,
           });

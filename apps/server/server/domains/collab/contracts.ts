@@ -330,7 +330,7 @@ export type DraftReviewApi = {
   /** The legacy list: branch items with reviewable rows (`draftId` is the branch id). */
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   /** One read of the Work's active draft: its items (§13.1) and the legacy list from them. */
-  listItems(input: { workId: WorkId }): Promise<{
+  listItems(input: { workId: WorkId; liveTextTokens?: boolean }): Promise<{
     draftId: DraftId | null;
     drafts: ReviewableDraft[];
     items: DraftReviewItem[];

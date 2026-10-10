@@ -186,7 +186,10 @@ export async function handleApplyWorkDraftRequest(
   },
 ): Promise<DraftApplyRouteResult> {
   await requireDraftWorkAccess(deps, input);
-  const { items } = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const { items } = await deps.documentSync.draftReview.listItems({
+    workId: input.workId,
+    liveTextTokens: false,
+  });
   const item = items.find(
     (candidate) =>
       candidate.documentId === input.documentId && candidate.draftBranchId === input.draftId,
@@ -243,7 +246,10 @@ export async function handleApplyAllWorkDraftRequest(
   },
 ): Promise<DraftApplyAllResponse> {
   await requireDraftWorkAccess(deps, input);
-  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const listed = await deps.documentSync.draftReview.listItems({
+    workId: input.workId,
+    liveTextTokens: false,
+  });
   const draftId = input.request.draftId as DraftId;
   if (listed.draftId !== draftId) return { status: "gone", draftId };
   // The grants of what is still an item; one that isn't answers stale from the service.
