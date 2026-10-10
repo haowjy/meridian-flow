@@ -27,10 +27,12 @@ const mocks = vi.hoisted(() => ({
   updateAccountSettings: vi.fn(),
   getAccountSettings: vi.fn(),
   invalidate: vi.fn(() => Promise.resolve()),
+  generation: 0,
   account: { id: "account-a", controller: new AbortController() },
 }));
 
 vi.mock("@/client/api/account-api", () => ({
+  nextAccountSettingsGeneration: () => ++mocks.generation,
   updateAccountSettings: mocks.updateAccountSettings,
   getAccountSettings: mocks.getAccountSettings,
 }));
@@ -79,7 +81,8 @@ type Harness = {
   read: () => WorkingSetSyncPreference;
   readAll: () => ReturnType<typeof useAccountSettings>;
   rerender: () => Promise<void>;
-  setServerValue: (value: boolean | null) => Promise<void>;
+  renders: AccountSettings[];
+  setServerValue: (value: boolean | null, generation?: number) => Promise<void>;
 };
 
 async function mount(
@@ -89,6 +92,8 @@ async function mount(
   let latest!: ReturnType<typeof useAccountSettings>;
   let force: (() => void) | null = null;
   let serverValue = initialServerValue;
+  let serverGeneration = 0;
+  const renders: AccountSettings[] = [];
   function Probe() {
     const [, setTick] = useState(0);
     force = () => setTick((n) => n + 1);
@@ -99,7 +104,8 @@ async function mount(
           : { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: serverValue },
       [serverValue],
     );
-    latest = useAccountSettings(seed);
+    latest = useAccountSettings(seed, serverGeneration);
+    renders.push(latest.value);
     return null;
   }
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -115,6 +121,7 @@ async function mount(
   });
   try {
     await run({
+      renders,
       read: () => latest.preference("workingSetSyncEnabled"),
       readAll: () => latest,
       rerender: async () => {
@@ -122,7 +129,8 @@ async function mount(
           force?.();
         });
       },
-      setServerValue: async (value) => {
+      setServerValue: async (value, generation = ++mocks.generation) => {
+        serverGeneration = generation;
         serverValue = value;
         await act(async () => {
           force?.();
@@ -137,6 +145,7 @@ async function mount(
 
 afterEach(() => {
   localStorage.clear();
+  mocks.generation = 0;
   mocks.updateAccountSettings.mockReset();
   mocks.getAccountSettings.mockReset();
   mocks.invalidate.mockClear();
@@ -434,4 +443,70 @@ it("adopts untouched fields from an older successful intent while retaining the 
     });
     expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(true);
   });
+});
+
+it("never relays this tab's rejected optimistic overlay into the confirmed cache", async () => {
+  const { readAccountSettingsCache } = await import("@/lib/account-settings-cache");
+  mocks.updateAccountSettings.mockRejectedValue(new HttpResponseError("bad", 400, {}));
+  await mount(false, async ({ readAll }) => {
+    await act(async () => readAll().preference("theme").change("dark"));
+    await waitFor(() => expect(readAll().preference("theme").error).not.toBeNull());
+    expect(readAll().value.theme).toBe("dark");
+    expect(readAccountSettingsCache("account-a")?.theme).toBe("ink-jade");
+  });
+});
+it("reconciles all unowned fields from a cross-tab server read", async () => {
+  const { writeAccountSettingsCache, ACCOUNT_SETTINGS_CACHE_PREFIX } = await import(
+    "@/lib/account-settings-cache"
+  );
+  mocks.getAccountSettings.mockResolvedValue({
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    workingSetSyncEnabled: false,
+  });
+  await mount(false, async ({ readAll }) => {
+    writeAccountSettingsCache("account-a", {
+      ...DEFAULT_ACCOUNT_APPEARANCE,
+      theme: "dark",
+      workingSetSyncEnabled: true,
+    });
+    await act(async () =>
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: ACCOUNT_SETTINGS_CACHE_PREFIX + "account-a" }),
+      ),
+    );
+    await flush();
+    expect(readAll().value).toEqual({
+      ...DEFAULT_ACCOUNT_APPEARANCE,
+      workingSetSyncEnabled: false,
+    });
+  });
+});
+it("accepts a newer loader after settlement but rejects a loader that began before settlement", async () => {
+  mocks.updateAccountSettings.mockResolvedValue({
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    workingSetSyncEnabled: true,
+  });
+  await mount(false, async ({ read, setServerValue }) => {
+    const staleReadGeneration = ++mocks.generation;
+    await act(async () => read().change(true));
+    await waitFor(() => expect(read().pending).toBe(false));
+    await setServerValue(null);
+    await setServerValue(false, staleReadGeneration);
+    expect(read().value).toBe(true);
+    await setServerValue(null);
+    await setServerValue(false);
+    expect(read().value).toBe(false);
+    expect(read().confirmed).toBe(false);
+  });
+});
+it("renders the known server seed without first rendering a conflicting cached theme", async () => {
+  const { writeAccountSettingsCache } = await import("@/lib/account-settings-cache");
+  writeAccountSettingsCache("account-a", {
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    theme: "dark",
+    workingSetSyncEnabled: true,
+  });
+  await mount(false, async ({ renders }) =>
+    expect(renders.every((value) => value.theme === "ink-jade")).toBe(true),
+  );
 });
