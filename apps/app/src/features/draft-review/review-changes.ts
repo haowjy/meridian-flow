@@ -127,7 +127,7 @@ export function reviewChanges(
     .map(({ change }) => change);
 }
 
-type ActivePreview = Extract<DraftPreviewResponse, { status: "active"; inlineModelPresent: true }>;
+type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
 const changesOfPreview = new WeakMap<ActivePreview, ReviewChange[]>();
 

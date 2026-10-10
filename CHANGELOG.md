@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Simplify active draft previews to their required inline model, removing unreachable missing-model handling.
+
 - Keep draft review and draft-only tabs in place when either connectivity signal refuses a command before sending. Offline batches refuse every file in the same admission turn.
 
 - Consolidate draft command admission and typed settlement; Work and chat lists use Work-bound commands without extra review controllers or editor-executor routing. Completion observation preserves covering-claim withdrawal notifications.

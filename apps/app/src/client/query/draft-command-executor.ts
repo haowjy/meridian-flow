@@ -101,9 +101,7 @@ export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): 
     .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(draft.projectId, draft.workId))
     ?.find((item) => item.draftId === draft.draftId);
   const known = [
-    cached?.status === "active" &&
-    cached.inlineModelPresent &&
-    reviewChangesOfPreview(cached).length > 0
+    cached?.status === "active" && reviewChangesOfPreview(cached).length > 0
       ? cached.draftGeneration
       : undefined,
     row?.draftGeneration,

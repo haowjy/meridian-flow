@@ -48,7 +48,6 @@ type ActiveDraftPreviewBase = {
 
 export type DraftPreviewResponse =
   | (ActiveDraftPreviewBase & {
-      inlineModelPresent: true;
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })

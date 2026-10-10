@@ -110,8 +110,6 @@ export type EditorViewProps = {
   reviewRoomName?: string | null;
   /** Work that owns the draft review — required to query the hunk model when reviewing. */
   reviewWorkId?: string | null;
-  /** Called when the active draft session becomes terminal/unavailable. */
-  onReviewSessionUnavailable?: () => void;
 };
 
 /**
@@ -412,7 +410,6 @@ function ActiveSessionEditorView({
   active: hostActive = true,
   ariaLabel,
   reviewWorkId = null,
-  onReviewSessionUnavailable,
   session,
   held = false,
   onPainted,
@@ -604,7 +601,6 @@ function ActiveSessionEditorView({
         ? controller.inlineReview.draftGeneration
         : undefined,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
-    onReviewSessionUnavailable,
   });
 
   useInlineReviewFocus({

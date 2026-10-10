@@ -379,7 +379,7 @@ it stands at, on the clicked side for a removed block, so typing lands there whi
 the removal stays untouchable), and the focused change (all operations sharing a
 closure class) emphasized. Typing paints gold at once; the next model replaces
 it. `setInlineReviewMarksVisible` hides all marks without remounting. An active
-preview without a model is an invariant violation, logged loudly and ignored safely.
+preview always includes its inline model; gone previews have no model.
 
 The server reviewable list emits only current-generation drafts with reviewable
 content. `pendingReviewDrafts` is the shared client presentation seam that

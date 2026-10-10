@@ -175,7 +175,7 @@ export function useReviewRoomOwner({
           documentId,
           draftId,
           draftGeneration: answer.draftGeneration,
-          proposal: answer.inlineModelPresent && reviewChangesOfPreview(answer).length > 0,
+          proposal: reviewChangesOfPreview(answer).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
         });
@@ -328,7 +328,7 @@ export function reviewRoomObservations(
     preview?.status === "active"
       ? {
           draftGeneration: preview.draftGeneration,
-          proposal: preview.inlineModelPresent && reviewChangesOfPreview(preview).length > 0,
+          proposal: reviewChangesOfPreview(preview).length > 0,
         }
       : null;
   if (evidence) actions.push({ type: "generationObserved", ...draft, ...evidence });

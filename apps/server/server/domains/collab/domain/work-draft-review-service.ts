@@ -214,7 +214,7 @@ export function createWorkDraftReviewService(input: {
             isNewDocument: await isDraftOnlyManifestDocument(command),
             liveRevisionToken: liveState.revision,
             draftRevisionToken: draftReviewRevision(branch.generation, branch.doc, rows, scope),
-            inlineModelPresent: true as const,
+
             operations,
             hunks: review.hunks,
             ...(notice ? { notice } : {}),
