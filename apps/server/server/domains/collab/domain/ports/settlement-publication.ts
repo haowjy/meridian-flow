@@ -12,10 +12,12 @@
  * 5. trail settlement and text admission of every member;
  * 6. `afterAdmission` of every plan (settle arrivals, record history once);
  * 7. the warm-state recheck, then commit;
- * 8. after commit: warm rooms, then every plan's `afterCommit` (catalog refresh, wake hints).
+ * 8. after commit: warm rooms, then every plan's `afterCommit` (catalog refresh,
+ *    wake hints), each awaited before the next; a failing effect is logged and
+ *    the later ones still run, since the batch is already durable.
  *
- * Steps run in registration order inside each phase and join the ambient
- * transaction. A batch with no text members (a tree-only Apply) passes through
+ * Steps run in registration order inside each phase and join the completion
+ * transaction, which the settlement owns (it is never an ambient one). A batch with no text members (a tree-only Apply) passes through
  * the same order with phase 5 empty.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";

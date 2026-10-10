@@ -67,8 +67,8 @@ import {
   findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
-import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
+import { joinAdmissionWithinTx } from "./drizzle-settlement-member.js";
 
 type JournalDb = Pick<
   Database,

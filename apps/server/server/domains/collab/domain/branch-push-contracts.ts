@@ -124,6 +124,9 @@ export type PreparedPush = {
 /** The durable identity a batch of staged pushes settles under, minted before its commit. */
 export type SettlementBatchIdentity = { batchId: string; claimToken: string };
 
+/** The committer's warm claim is the batch's first epoch; every later claim increments it. */
+export const FIRST_CLAIM_EPOCH = 1;
+
 /** One staged push of a settlement batch, as completion and recovery load it. */
 export type PendingLiveSettlement = {
   push: PushLineageRow;

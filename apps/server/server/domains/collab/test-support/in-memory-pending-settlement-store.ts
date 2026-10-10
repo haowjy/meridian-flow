@@ -5,7 +5,6 @@ import type {
   PendingLiveSettlement,
   PendingSettlementBatch,
   SettlementClaim,
-  TrailContributionReplacement,
 } from "../domain/branch-push-contracts.js";
 import type {
   PendingSettlementStore,
@@ -16,9 +15,7 @@ const LEASE_MS = 30_000;
 
 type MemberState = {
   pending: PendingLiveSettlement;
-  classifiedJoinVersion: number;
   joinedSources: Set<string>;
-  replacement?: TrailContributionReplacement;
 };
 
 type BatchState = {
@@ -58,7 +55,6 @@ export function createInMemoryPendingSettlementStore(options?: {
           .sort((left, right) => left.push.documentId.localeCompare(right.push.documentId))
           .map((member) => ({
             pending: { ...member, postCutUpdates: [], joinVersion: 0 },
-            classifiedJoinVersion: 0,
             joinedSources: new Set(),
           })),
         state: "pending",
@@ -98,10 +94,14 @@ export function createInMemoryPendingSettlementStore(options?: {
       }
     },
 
-    async loadSettlementBatch(batchId) {
+    async loadSettlementBatch({ batchId, owner }) {
       const batch = batches.get(batchId);
-      if (batch?.state !== "pending") {
-        throw new Error(`Pending settlement batch ${batchId} is unavailable`);
+      if (
+        batch?.state !== "pending" ||
+        batch.claim?.token !== owner.token ||
+        batch.claim.epoch !== owner.epoch
+      ) {
+        return null;
       }
       return snapshot(batch);
     },
@@ -190,11 +190,6 @@ export function createInMemoryPendingSettlementStore(options?: {
           throw new Error("Batch settlement recheck must return synchronously");
         }
         if (decision === "retry") return decision;
-        for (const member of batch.members) {
-          const settled = input.members.find(({ push }) => push.id === member.pending.push.id);
-          member.classifiedJoinVersion = member.pending.joinVersion;
-          member.replacement = settled?.replacement;
-        }
         batch.state = "completed";
         batch.claim = null;
         return "commit" as const;

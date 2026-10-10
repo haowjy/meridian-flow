@@ -35,7 +35,10 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import type { StageSettlementBatchWithinTx } from "./drizzle-pending-settlement.js";
+import {
+  assertRootOwnedSettlement,
+  type StageSettlementBatchWithinTx,
+} from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -220,6 +223,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitPushBatch(input) {
+      assertRootOwnedSettlement("Branch push staging");
       const branchIds = input.pushes.map(({ branch }) => branch.branchId);
       const firstCommitted = async () => {
         for (const prepared of sortPushesByDocumentId(input.pushes)) {

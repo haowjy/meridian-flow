@@ -5,6 +5,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
+import { createDrizzlePendingSettlementStore } from "../adapters/drizzle-pending-settlement.js";
 import {
   type createHarness,
   ALPHA_ID as DEFAULT_ALPHA_ID,
@@ -57,6 +58,63 @@ export async function expirePendingClaims(
         inArray(schema.branchPushSettlementBatches.id, batches),
       ),
     );
+}
+
+/** A store for claim and load probes only; completion needs the harness's dependencies. */
+export function claimProbeStore(db: Database) {
+  return createDrizzlePendingSettlementStore(
+    db,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+}
+
+/**
+ * The database, except that the first UPDATE of `table` runs `hook` after it
+ * resolves and before its caller continues: a stall right after the UPDATE.
+ */
+export function stallAfterFirstUpdate(
+  db: Database,
+  table: unknown,
+  hook: () => Promise<void>,
+): Database {
+  let armed = true;
+  const afterResolve = <T extends object>(builder: T): T =>
+    new Proxy(builder, {
+      get(target, key) {
+        const value = Reflect.get(target, key);
+        if (key === "then" && typeof value === "function") {
+          return (resolve: (value: unknown) => void, reject: (cause: unknown) => void) =>
+            (target as unknown as PromiseLike<unknown>)
+              .then(async (result) => {
+                await hook();
+                return result;
+              })
+              .then(resolve, reject);
+        }
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          const next = value.apply(target, args);
+          return next && typeof next === "object" ? afterResolve(next) : next;
+        };
+      },
+    });
+  return new Proxy(db, {
+    get(target, key) {
+      const value = Reflect.get(target, key);
+      if (key === "update") {
+        return (updated: unknown) => {
+          const builder = target.update(updated as never);
+          if (!armed || updated !== table) return builder;
+          armed = false;
+          return afterResolve(builder);
+        };
+      }
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 /** Lets any recoverer claim every pending batch at once. */

@@ -24,6 +24,7 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
 
 const { createDb } = await import("@meridian/database");
@@ -85,7 +86,9 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
+const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
+  "../domain/branch-trail-projection.js"
+);
 const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
 const { createDocumentWriteHookRunner } = await import(
@@ -268,6 +271,8 @@ export type ChangeTrailHarnessOptions = {
   afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
   /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
+  /** Publication steps after the manifest arrival step, in the order they run. */
+  publicationSteps?: readonly SettlementPublicationStep[];
 };
 
 export type MatrixDraftStep = {
@@ -405,7 +410,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
     undefined,
-    options.arrivals ? manifestArrivalPublication(db, options.arrivals) : undefined,
+    {
+      ...(options.arrivals ? { namespaces: options.arrivals } : {}),
+      steps: [
+        ...(options.arrivals ? manifestArrivalPublication(db, options.arrivals).steps : []),
+        ...(options.publicationSteps ?? []),
+      ],
+    },
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -1753,8 +1764,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         true,
       ),
     push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
-    pushBranches: (branchIds: readonly string[]) =>
-      realBranchPush.pushBranchesToLive({ branchIds }),
+    pushBranches: (branchIds: readonly string[], resetPolicy?: "auto") =>
+      realBranchPush.pushBranchesToLive({ branchIds, ...(resetPolicy ? { resetPolicy } : {}) }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
@@ -1843,6 +1854,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         });
       }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
+    /**
+     * Drives every ownership-fenced settlement operation with a stale claim and
+     * otherwise valid input: the current owner's batch, members and join versions.
+     */
     async probeStaleSettlementClaim(claim: {
       token: string;
       epoch: number;
@@ -1854,7 +1869,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .from(schema.branchPushSettlementOutbox)
         .where(eq(schema.branchPushSettlementOutbox.documentId, ALPHA_ID));
       if (!row) throw new Error("settlement row is unavailable");
+      const [owner] = await db
+        .select()
+        .from(schema.branchPushSettlementBatches)
+        .where(eq(schema.branchPushSettlementBatches.id, row.batchId));
+      if (!owner?.claimToken) throw new Error("the probe needs a current owner");
+      const batch = await durableSettlementStore.loadSettlementBatch({
+        batchId: row.batchId,
+        owner: { token: owner.claimToken, epoch: owner.claimEpoch },
+      });
+      if (!batch) throw new Error("the current owner lost its batch");
+      const liveRows = async () =>
+        (
+          await db
+            .select({ id: schema.documentYjsUpdates.id })
+            .from(schema.documentYjsUpdates)
+            .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+        ).length;
+      const liveRowsBefore = await liveRows();
       let completionCallbackRan = false;
+      let afterCommitRan = false;
       const renewed = await durableSettlementStore.renewClaim({ batchId: row.batchId, claim });
       const failureRecorded = await durableSettlementStore.recordFailure({
         batchId: row.batchId,
@@ -1864,14 +1898,28 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const completion = await durableSettlementStore.completeBatch({
         batchId: row.batchId,
         claim,
-        members: [],
+        members: batch.members.map((member) => ({
+          push: member.push,
+          joinVersion: member.joinVersion,
+          trail: member.trail,
+          replacement: trailContributionReplacement(member.trail, member.push),
+        })),
         recheck() {
           completionCallbackRan = true;
           return "commit";
         },
-        afterCommit() {},
+        afterCommit() {
+          afterCommitRan = true;
+        },
       });
-      return { renewed, failureRecorded, completion: completion.status, completionCallbackRan };
+      return {
+        renewed,
+        failureRecorded,
+        completion: completion.status,
+        completionCallbackRan,
+        afterCommitRan,
+        liveRowsUnchanged: (await liveRows()) === liveRowsBefore,
+      };
     },
     async attemptSnapshotReplacement() {
       const [checkpoint] = await db
