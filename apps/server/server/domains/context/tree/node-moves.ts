@@ -309,7 +309,8 @@ export async function installMoves(
       dir: move.to.dir,
     });
     if (!ensured.ok) return Err({ code: "conflict", node: move.node });
-    const parentId = ensured.value;
+    // The mover's caller refreshes the catalog over every source the moves touch.
+    const parentId = ensured.value.folderId;
     const now = new Date();
     if (move.node.kind === "document") {
       await tx

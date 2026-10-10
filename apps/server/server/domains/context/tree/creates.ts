@@ -16,7 +16,6 @@ import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { recordCreated } from "./draft-tree-store.js";
 import type {
   BinaryNode,
@@ -35,7 +34,7 @@ import {
   lockDocuments,
   tombstoneDocuments,
 } from "./node-rows.js";
-import { place, walkFolders } from "./placement.js";
+import { type PlaceResult, place, walkFolders } from "./placement.js";
 import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { spellNodeAddresses } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
@@ -222,8 +221,9 @@ export async function findRevealIdentity(
     : { kind: "unusable" };
 }
 
+/** What a live create did; its caller refreshes the catalog from it. */
 export type LiveCreateOutcome =
-  | { kind: "revealed"; documentId: DocumentId }
+  | { kind: "revealed"; documentId: DocumentId; placed: PlaceResult }
   | { kind: "inserted"; documentId: DocumentId };
 
 export type LiveCreateFault =
@@ -253,7 +253,6 @@ export async function createLive(
   input: {
     slot: DocumentSlot;
     claim: LiveClaim;
-    catalog?: ContextCatalogMutationPort;
     insert: LiveInsert;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
@@ -296,14 +295,13 @@ export async function createLive(
         mode: "reveal",
       },
     ],
-    catalog: input.catalog,
   });
   if (!placed.ok) {
     return Err(
       placed.error.code === "stale" ? { code: "candidate_changed" } : { code: "conflict" },
     );
   }
-  return Ok({ kind: "revealed", documentId: chosen.id });
+  return Ok({ kind: "revealed", documentId: chosen.id, placed: placed.value });
 }
 
 /**

@@ -3,7 +3,8 @@
  * `place` reveals a hidden node or restores a soft-deleted one at its final location with
  * its ancestors; `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
- * walk draft and live creates share.
+ * walk draft and live creates share. Both are tree writes only: they return what they
+ * placed, and their callers refresh the catalog.
  *
  * Every function runs in its caller's transaction, which holds the namespaces of every
  * source involved and the document locks of every target document.
@@ -16,7 +17,6 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { claimDocumentLocation } from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
 import { insertFolder } from "./node-rows.js";
@@ -83,16 +83,12 @@ export async function walkFolders(
  * visible folder is used; a hidden live folder at the path is revealed in place (its
  * ancestors are visible: the walk comes from the root); otherwise, after the live
  * opposite-kind check, a visible folder is inserted and its location claimed. The caller
- * holds the source's namespace lock.
+ * holds the source's namespace lock. `placed`: the folders revealed or inserted.
  */
 export async function ensureLiveFolderPath(
   db: Database,
-  input: {
-    contextSourceId: ContextSourceId;
-    dir: readonly string[];
-    catalog?: ContextCatalogMutationPort;
-  },
-): Promise<Result<FolderId | null, CreateFault>> {
+  input: { contextSourceId: ContextSourceId; dir: readonly string[] },
+): Promise<Result<{ folderId: FolderId | null; placed: readonly FolderId[] }, CreateFault>> {
   const { contextSourceId } = input;
   const created: FolderId[] = [];
   const walk = await walkFolders(db, LIVE_TREE, contextSourceId, input.dir, async (gap) => {
@@ -109,8 +105,7 @@ export async function ensureLiveFolderPath(
     return folderId;
   });
   if (walk.kind !== "walked") return Err({ code: "conflict" });
-  if (created.length > 0) await input.catalog?.refreshSources([contextSourceId], created);
-  return Ok(walk.folderId);
+  return Ok({ folderId: walk.folderId, placed: created });
 }
 
 export type LiveLocation = {
@@ -138,7 +133,7 @@ export type PlaceResult = {
   /** Hidden ancestors folded into the visible folder that already held their path. */
   absorbed: readonly FolderId[];
   restored: readonly NodeRef[];
-  /** For the catalog refresh. */
+  /** The sources the catalog refresh covers, with `placed` as its invalidated roots. */
   sourceIds: readonly ContextSourceId[];
 };
 
@@ -154,7 +149,7 @@ export type PlaceFault =
  */
 export async function place(
   db: Database,
-  input: { targets: readonly PlaceTarget[]; catalog?: ContextCatalogMutationPort },
+  input: { targets: readonly PlaceTarget[] },
 ): Promise<Result<PlaceResult, PlaceFault>> {
   const tree = createTreeReader(db);
   const placed: NodeRef[] = [];
@@ -213,8 +208,6 @@ export async function place(
     if (target.mode === "restore") restored.push(target.node);
     sourceIds.add(target.at.contextSourceId);
   }
-  const ids = placed.map((node) => node.id);
-  if (input.catalog && sourceIds.size > 0) await input.catalog.refreshSources([...sourceIds], ids);
   return Ok({ placed, absorbed, restored, sourceIds: [...sourceIds] });
 }
 
