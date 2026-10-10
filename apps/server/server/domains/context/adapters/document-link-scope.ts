@@ -38,11 +38,8 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
-import {
-  type DocumentAddressSelection,
-  listsThroughLiveManifest,
-  loadDocumentAddresses,
-} from "./document-address.js";
+import { type DocumentAddressSelection, loadDocumentAddresses } from "../tree/tree-addresses.js";
+import { listsThroughLiveManifest } from "./document-address.js";
 
 /** Manifest membership of one view (the resolver ContextFS lists through). */
 export type LinkScopeMembership = (input: {

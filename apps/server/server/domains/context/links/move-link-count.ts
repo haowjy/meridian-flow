@@ -3,8 +3,9 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { listsThroughLiveManifest, loadDocumentAddresses } from "../adapters/document-address.js";
+import { listsThroughLiveManifest } from "../adapters/document-address.js";
 import type { LiveMembership } from "../ports/live-membership.js";
+import { loadDocumentAddresses } from "../tree/tree-addresses.js";
 
 /**
  * Sums `document_links` occurrences whose target is a moved document or whose ahead ref is settled

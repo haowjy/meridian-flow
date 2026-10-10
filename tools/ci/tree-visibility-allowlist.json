@@ -1,6 +1,11 @@
 {
   "entries": [
     {
+      "path": "apps/server/server/domains/context/tree/**",
+      "forms": ["read", "write"],
+      "reason": "The tree view and hidden-node lifecycle: the one owner of the hidden predicate"
+    },
+    {
       "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts",
       "forms": ["read", "write"],
       "reason": "Live and hidden creation writer: inserts and updates rows; every read goes through the view"
@@ -19,11 +24,6 @@
       "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
       "forms": ["read"],
       "reason": "pending: lane C; switch catalog reads to the live tree view"
-    },
-    {
-      "path": "apps/server/server/domains/context/adapters/document-address.ts",
-      "forms": ["read"],
-      "reason": "pending: lane T; move addresses to the tree owner (view arguments in lane C)"
     },
     {
       "path": "apps/server/server/domains/context/adapters/document-link-scope.ts",
