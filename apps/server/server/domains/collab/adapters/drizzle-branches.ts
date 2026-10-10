@@ -663,6 +663,14 @@ export function createDrizzleBranchStore(
       return rows.map((row) => row.id);
     },
 
+    async listActiveDraftBranchIds(draftId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .where(and(eq(documentBranches.draftId, draftId), eq(documentBranches.status, "active")));
+      return rows.map((row) => row.id);
+    },
+
     ensureDraftBranch(input) {
       return runInDrizzleTransaction(db, () => ensureDraftBranch(input));
     },

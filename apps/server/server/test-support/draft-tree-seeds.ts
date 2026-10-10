@@ -68,6 +68,8 @@ export type ScenarioWork = {
 };
 
 export interface DraftTreeWorld {
+  /** The database the world lives in. */
+  db: Database;
   project: { id: ProjectId; userId: UserId; sources: Record<ScenarioSource, ContextSourceId> };
   /** The production drafts resolver over this scenario's database. */
   drafts: Drafts;
@@ -311,6 +313,7 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
   }
 
   return {
+    db,
     project: { id: projectId, userId, sources },
     drafts,
     works: () => madeWorks,

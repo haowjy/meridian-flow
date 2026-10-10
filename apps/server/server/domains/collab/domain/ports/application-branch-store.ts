@@ -11,6 +11,8 @@ export type ApplicationBranchStore = BranchStore &
       input: import("../branch-coordinator.js").AppendBranchJournalInput,
     ): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
+    /** Every active branch of the draft, both kinds. */
+    listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;
     /** The draft's branch on the document, made from `liveDoc` if absent. Never makes a draft. */
     ensureDraftBranch(input: {
       documentId: DocumentId;

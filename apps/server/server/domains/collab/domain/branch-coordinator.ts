@@ -151,6 +151,14 @@ export type BranchCoordinator = {
   ): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   checkpointBranch(branchId: string): Promise<void>;
+  /**
+   * These branches' leases in one ordered acquisition, for an operation that touches
+   * several (a peer and its draft branch) and runs every step under the one lease.
+   */
+  withLeases<T>(
+    branchIds: readonly string[],
+    run: (lease: BranchLockLease) => Promise<T>,
+  ): Promise<T>;
   withBranchTransient<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
@@ -573,6 +581,8 @@ export function createBranchCoordinator(input: {
     },
 
     readBranchWithLease: readUnder,
+
+    withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
 
     withBranchTransient(branchId, fn) {
       return criticalSections.withBranches([branchId], (lease) =>
