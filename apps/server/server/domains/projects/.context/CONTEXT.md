@@ -86,7 +86,8 @@ translate those to `title` and `description` in `ProjectDto`.
   threads, plus live Work context sources/documents/folders, closes active Work
   draft branches, and marks each child with `deletedByWorkId`. That marker is
   the exact restore set; separately
-  trashed children remain trashed. Existing child read paths hide the cascade
+  trashed children remain trashed. Document and folder cascade delete/restore increment `location_version`.
+  Existing child read paths exclude the cascade
   using their normal soft-delete/active-branch predicates. A trashed thread
   cannot be restored independently while its Work remains deleted.
 - Restore clears only children marked by that Work deletion and is available
@@ -99,7 +100,7 @@ translate those to `title` and `description` in `ProjectDto`.
   deletes turns before threads, and lets owner cascades remove prompt bakes and
   image decisions. Provenance deletion stays forbidden outside purge.
   A fork or handoff rebound to another Work retains its source turns and bake:
-  purge leaves that source Work hidden while the external reference exists,
+  purge leaves that source Work soft-deleted while the external reference exists,
   rather than cascading into the other Work's chat. `purge.retained` records the
   dependency. Keyset paging passes retained sources and still removes up to 100
   eligible Works per sweep. References can extend storage retention beyond the

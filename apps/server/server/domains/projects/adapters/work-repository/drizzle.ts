@@ -36,7 +36,7 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { hideWorkOwnedRows, unhideWorkOwnedRows } from "../work-cascade.js";
+import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
@@ -88,7 +88,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
 
-  async function workHiddenDocumentIds(workId: WorkId): Promise<DocumentId[]> {
+  async function workCascadedDocumentIds(workId: WorkId): Promise<DocumentId[]> {
     const rows = await currentDrizzleDb(db)
       .select({ id: documents.id })
       .from(documents)
@@ -323,7 +323,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
         const deletedAt = now();
-        const deletedThreadIds = await hideWorkOwnedRows(db, {
+        const deletedThreadIds = await cascadeDelete(db, {
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -354,7 +354,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           }
           // Thread forest → Work above, then the namespaces the restore re-occupies, before
           // any row reappears (contract §9.3). Individually deleted rows stay deleted.
-          const arriving = deps.arrivals ? await workHiddenDocumentIds(id) : [];
+          const arriving = deps.arrivals ? await workCascadedDocumentIds(id) : [];
           if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
           const restoredAt = now();
           const [row] = await currentDrizzleDb(db)
@@ -367,7 +367,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
-          await unhideWorkOwnedRows(db, {
+          await cascadeRestore(db, {
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,
