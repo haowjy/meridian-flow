@@ -19,6 +19,7 @@ import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../context/document-uri-resolver.js";
+import type { ContextCatalogMutationPort } from "../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
@@ -160,6 +161,8 @@ type CollabDomainDeps = {
   livePullDebounceMs?: number;
   /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
   arrivals?: DocumentArrivals;
+  /** Catalog reconciliation inside Apply's completion, warm or recovered (F23). */
+  catalogMutations: ContextCatalogMutationPort;
   /** Registers client-minted ahead refs after certified derives, and recovers failures (§11.3). */
   aheadRegistrations?: AheadRegistrationRecovery;
 };
@@ -322,6 +325,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           pending: workDraftPendingStore,
           ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
           workProjection: deps.workProjectionMutation,
+          catalog: deps.catalogMutations,
         }),
       ],
     },

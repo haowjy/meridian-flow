@@ -20,6 +20,7 @@ import * as Y from "yjs";
 import { Ok } from "../../../shared/result.js";
 import { draftMeaningsOf } from "../../context/adapters/link-ahead-draft-settlements.js";
 import { bindHolderRefs } from "../../context/adapters/link-ahead-holder-bindings.js";
+import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import {
@@ -70,6 +71,8 @@ export function createDrizzleDraftTreeStep(
       Pick<ApplicationBranchStore, "listActiveDraftBranchIds">;
     pending: Pick<WorkDraftPendingStore, "listDraftBranchEvidence">;
     workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
+    /** Catalog reconciliation in the completion transaction, so its replay sees the tree (F23). */
+    catalog: ContextCatalogMutationPort;
     arrivals?: DocumentArrivals;
   },
 ): SettlementPublicationStep {
@@ -221,6 +224,8 @@ export function createDrizzleDraftTreeStep(
         apply: Eligible[];
         moves: PreparedMoves | null;
         arrived: DocumentId[];
+        /** Every source a node left or reached, and the nodes placed or moved. */
+        catalog: { sourceIds: ReadonlySet<string>; roots: readonly string[] };
       } | null = null;
 
       return {
@@ -311,6 +316,7 @@ export function createDrizzleDraftTreeStep(
           });
           const placed = targets.length > 0 ? await place(db, { targets }) : null;
           if (placed && !placed.ok) return staleRefusal(decided.apply);
+          const placedRefs = placed?.ok ? placed.value.placed : [];
           installed = {
             apply: decided.apply,
             moves,
@@ -318,6 +324,19 @@ export function createDrizzleDraftTreeStep(
               ...placing.map(({ node }) => node.nodeId),
               ...(moves ? movedDocumentIds(moves) : []),
             ],
+            catalog: {
+              sourceIds: new Set([
+                ...(placed?.ok ? placed.value.sourceIds : []),
+                ...relocating.flatMap(({ node }) => [
+                  node.live.contextSourceId,
+                  node.target.contextSourceId,
+                ]),
+              ]),
+              roots: [
+                ...placedRefs.map((ref) => ref.id),
+                ...relocating.map(({ node }) => node.nodeId),
+              ],
+            },
           };
           return {
             kind: "proceed",
@@ -343,6 +362,14 @@ export function createDrizzleDraftTreeStep(
             payload.holderMeanings.filter((meaning) => admittedSet.has(meaning.holderDocumentId)),
           );
           if (moves) await recordMoves(db, moves);
+          // In this transaction, warm or recovered: a replica replaying from a cursor taken
+          // before the Apply learns of every node it revealed, restored or named back.
+          if (installed.catalog.sourceIds.size > 0) {
+            await deps.catalog.refreshSources(
+              [...installed.catalog.sourceIds],
+              installed.catalog.roots,
+            );
+          }
           await deps.workProjection.mutatePendingDraft([payload.draftId], async () => {
             await dropDocumentRows(db, {
               draftId: payload.draftId,

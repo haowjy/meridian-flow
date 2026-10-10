@@ -540,6 +540,7 @@ export async function createProductionAppPorts(input: {
   const documentSync = createCollabDomain({
     db,
     arrivals,
+    catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,

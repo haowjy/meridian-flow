@@ -145,8 +145,8 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(preview.item?.isNew, "the preview's item").toBe(false);
   });
 
-  it("applies at the right path after a live folder rename absorbed the draft's hidden folder (E-4)", async () => {
-    const { s } = await start();
+  it("applies at the right path after a live folder rename absorbed the draft's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {
+    const { runtime, s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const notes = await s.model(ascension).create("ideas/kael/notes.md", "Notes.");
     const plan = await s.writer.createDocument("drafts/plan.md", "Plan.");
@@ -177,6 +177,24 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       .from(folders)
       .where(and(eq(folders.name, "ideas"), sql`${folders.deletedAt} IS NULL`));
     expect.soft(ideas, "one live ideas folder").toHaveLength(1);
+
+    // A reveal that recovery publishes reaches the catalog's delta stream: a replica
+    // replaying from a cursor taken before the Apply learns of the file (F23, E-R4).
+    const { contextCatalog } = runtime.ports;
+    const scope = { kind: "project" as const, projectId: s.project.id };
+    const fresh = await s.model(ascension).create("catalog/new.md", "Drafted catalog file.");
+    const before = await contextCatalog.snapshot(scope);
+    const remove = setCollabHook("applyItems.afterStaging", async () => {
+      remove();
+      throw new Error("injected process death after staging");
+    });
+    await expect(s.applyAll(ascension)).rejects.toThrow("process death");
+    await s.expirePendingClaims();
+    await expect(s.recover()).resolves.toBe(1);
+    const replayed = await contextCatalog.changes(scope, before.cursor);
+    expect
+      .soft(JSON.stringify(replayed), "the file replays from the pre-Apply cursor")
+      .toContain(fresh);
   });
 
   it("restores an edited document deleted live with its folder, and holds one whose path a new document took (E-8)", async () => {

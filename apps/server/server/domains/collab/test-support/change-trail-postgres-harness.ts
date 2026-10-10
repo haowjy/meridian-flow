@@ -457,6 +457,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           drafts: workDrafts,
           // The harness publishes no Work projection; pending changes just run.
           workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+          // The harness keeps no catalog.
+          catalog: { refreshSources: async () => "" },
           branches: branchStore,
           pending: durableWorkDraftPendingStore,
           ...(options.arrivals ? { arrivals: options.arrivals } : {}),

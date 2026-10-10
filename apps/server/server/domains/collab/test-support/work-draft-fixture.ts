@@ -20,7 +20,7 @@ import {
   deleteDrizzleRows,
 } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-
+import { createDrizzleContextCatalog } from "../../context/adapters/context-catalog.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
@@ -50,6 +50,7 @@ export function createWorkDraftFixture(db: Database) {
       fileAccess: createAllowAllFileAccess(),
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),
+      catalogMutations: createDrizzleContextCatalog(db),
     });
     collabs.push(collab);
     return collab;

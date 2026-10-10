@@ -96,12 +96,13 @@ Catalog files preserve persisted tracked or binary classification. The context
 domain emits best-effort truth-free wake hints after commit through the existing
 authenticated thread socket; focus and bounded polling repair dropped hints.
 The catalog is the live tree view, the same one ContextFS reads: a draft's
-hidden rows and folders never reach it. Draft Apply and Discard reconcile the
-project catalog after a reveal or end of use so mounted trees receive a wake
-hint; the route schedules that refresh after its response
-(`scheduleDraftCatalogRefresh` in `server/lib/draft-review-route.ts`), never
-inside the Apply or Discard transaction. Source refreshes publish in the
-mutating transaction.
+hidden rows and folders never reach it. Draft Apply reconciles every source
+its tree step placed into or moved out of inside the completion transaction,
+warm or recovered (collab's `drizzle-draft-tree-step.ts`, F23), so a replica
+replaying from a pre-Apply cursor learns the revealed, restored and renamed
+nodes. Discard still schedules a project refresh after its response
+(`scheduleDraftCatalogRefresh` in `server/lib/draft-review-route.ts`) until it
+moves into its own kernel. Source refreshes publish in the mutating transaction.
 Routes authenticate and translate transport only; catalog transaction and replay
 policy live in the context domain.
 
