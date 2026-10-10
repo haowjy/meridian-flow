@@ -96,8 +96,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const harness = createHarness(db, { links: createTestDocumentLinkScopes(db) });
       try {
         const branches = harness.crossWorkProbeFixture().branchStore;
-        await branches.recordManifestDocumentCreated(namedOnly, { projectId: p, workId: a });
-        await branches.recordManifestDocumentCreated(noWorkOnly, { projectId: p, workId: noWork });
+        await branches.recordManifestDocumentCreated(namedOnly, { projectId: p });
+        await branches.recordManifestDocumentCreated(noWorkOnly, { projectId: p });
         const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
           listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
         };

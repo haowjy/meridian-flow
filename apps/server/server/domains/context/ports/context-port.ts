@@ -233,11 +233,6 @@ export interface ContextWriteOptions {
   origin?: WriteProvenance;
   /** Stable identity reserved by an authoritative aggregate before content creation. */
   documentId?: string;
-  /**
-   * Create only the context row for a tracked document; the caller must ensure
-   * the live Y.Doc before committed content is applied.
-   */
-  deferDocumentSync?: boolean;
   /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
   metadata?: DocumentCreationMetadata;
 }
@@ -325,6 +320,14 @@ export interface ContextPort {
     uri: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
+
+  /**
+   * Reverse a create this port made, for a rolled-back reply or a failed create write
+   * (contract §12.5): a live create is deleted; a draft's create ends the draft's use of
+   * the document unless the draft's branch already holds committed text. A draft-mode
+   * port's `delete` never reverses a draft's create.
+   */
+  retractCreate(uri: string, options: { documentId: string }): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

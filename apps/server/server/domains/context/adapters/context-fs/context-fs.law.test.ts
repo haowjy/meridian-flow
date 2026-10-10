@@ -288,11 +288,11 @@ describe("ContextFS write and read", () => {
 });
 
 describe("ContextFS ensureTrackedDocument", () => {
-  it("materializes new tracked documents atomically even when response staging defers later writes", async () => {
+  it("materializes new tracked documents empty and atomically", async () => {
     const { documentSync, ensured, seeded } = documentSyncProbe();
     const fs = manuscriptFs(documentSync);
 
-    const created = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
+    const created = await fs.ensureTrackedDocument("chapter-1.md");
     if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
     expect(created.value.created).toBe(true);
     expect(ensured).toEqual([created.value.documentId]);

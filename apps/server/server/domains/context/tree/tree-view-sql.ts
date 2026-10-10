@@ -508,3 +508,140 @@ export function identityDocumentFields(relation: ReturnType<typeof identityDocum
     Object.keys(columns).map((key) => [key, relation[key as keyof typeof columns]]),
   ) as typeof columns;
 }
+
+/** A hidden, live document matched at one location, with how many active drafts use it. */
+export type HiddenDocumentCandidate = {
+  id: DocumentId;
+  createdAt: Date;
+  /** Active drafts with a `created` row on it; zero is an inconsistent row (repair on touch). */
+  activeUses: number;
+};
+
+/** Where a create puts a document: (source, folder, name, extension). */
+export type DocumentSlot = {
+  contextSourceId: ContextSourceId;
+  folderId: FolderId | null;
+  name: string;
+  extension: string;
+};
+
+const textDocument = sql.raw(
+  "d.storage_url IS NULL AND d.file_type NOT IN ('docx', 'image', 'pdf', 'binary')",
+);
+
+/**
+ * Hidden, live text documents at `slot`, matched by any active draft's `created` row
+ * location or by the row's own location, excluding the documents `excludeDraftId`
+ * already uses (§6.2 step 3). Binaries are never candidates (12b-Q2). `ids` narrows the
+ * match to rows already locked, for revalidation under their locks.
+ */
+export async function loadHiddenDocumentCandidates(
+  db: DrizzleDb,
+  slot: DocumentSlot,
+  options: { excludeDraftId?: DraftId; ids?: readonly DocumentId[] } = {},
+): Promise<HiddenDocumentCandidate[]> {
+  if (options.ids && options.ids.length === 0) return [];
+  const sameFolder = (column: string) =>
+    slot.folderId === null
+      ? sql`${sql.raw(column)} IS NULL`
+      : sql`${sql.raw(column)} = ${slot.folderId}::uuid`;
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    created_ms: number;
+    active_uses: number;
+  }>(sql`
+    SELECT d.id::text AS id, (extract(epoch FROM d.created_at) * 1000)::float8 AS created_ms,
+      (SELECT count(*)::int FROM draft_tree_changes u JOIN drafts r ON r.id = u.draft_id
+        WHERE u.node_kind = 'document' AND u.node_id = d.id AND u.created
+          AND r.status = 'active') AS active_uses
+    FROM documents d
+    WHERE d.hidden AND d.deleted_at IS NULL AND d.kind = 'content' AND ${textDocument}
+      AND (
+        (d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
+          AND d.name = ${slot.name} AND d.extension = ${slot.extension})
+        OR EXISTS (SELECT 1 FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
+          WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
+            AND r.status = 'active' AND c.context_source_id = ${slot.contextSourceId}::uuid
+            AND ${sameFolder("c.parent_folder_id")} AND c.name = ${slot.name}
+            AND c.extension = ${slot.extension}))
+      ${
+        options.excludeDraftId
+          ? sql`AND NOT EXISTS (SELECT 1 FROM draft_tree_changes x
+              WHERE x.draft_id = ${options.excludeDraftId}::uuid AND x.node_kind = 'document'
+                AND x.node_id = d.id)`
+          : sql``
+      }
+      ${options.ids ? sql`AND d.id IN (${uuidList(options.ids)})` : sql``}
+    ORDER BY d.created_at, d.id`);
+  return rows.map((row) => ({
+    id: row.id as DocumentId,
+    createdAt: new Date(Number(row.created_ms)),
+    activeUses: Number(row.active_uses),
+  }));
+}
+
+/** The oldest hidden, live folder at (source, parent, name), else null. */
+export async function findHiddenFolder(
+  db: DrizzleDb,
+  at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
+): Promise<FolderId | null> {
+  const [row] = await currentDrizzleDb(db).execute<{ id: string }>(sql`
+    SELECT f.id::text AS id FROM folders f
+    WHERE f.hidden AND f.deleted_at IS NULL AND f.context_source_id = ${at.contextSourceId}::uuid
+      AND ${at.parentId === null ? sql`f.parent_id IS NULL` : sql`f.parent_id = ${at.parentId}::uuid`}
+      AND f.name = ${at.name}
+    ORDER BY f.created_at, f.id
+    LIMIT 1`);
+  return (row?.id ?? null) as FolderId | null;
+}
+
+/** A folder row by id, whatever its visibility: what placement and end of use decide from. */
+export type FolderIdentityRow = {
+  id: FolderId;
+  hidden: boolean;
+  deleted: boolean;
+  contextSourceId: ContextSourceId;
+  parentId: FolderId | null;
+  name: string;
+};
+
+export async function loadFolderIdentityRows(
+  db: DrizzleDb,
+  ids: readonly FolderId[],
+): Promise<FolderIdentityRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    hidden: boolean;
+    deleted: boolean;
+    context_source_id: string;
+    parent_id: string | null;
+    name: string;
+  }>(sql`
+    SELECT f.id::text AS id, f.hidden, f.deleted_at IS NOT NULL AS deleted,
+      f.context_source_id::text AS context_source_id, f.parent_id::text AS parent_id, f.name
+    FROM folders f WHERE f.id IN (${uuidList(ids)})`);
+  return rows.map((row) => ({
+    id: row.id as FolderId,
+    hidden: row.hidden,
+    deleted: row.deleted,
+    contextSourceId: row.context_source_id as ContextSourceId,
+    parentId: row.parent_id as FolderId | null,
+    name: row.name,
+  }));
+}
+
+/**
+ * Whether a hidden, live folder is unused: nothing live under it (no non-deleted
+ * document or folder) and no draft's change row names it as a parent (§12.2 step 5).
+ */
+export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): Promise<boolean> {
+  const [row] = await currentDrizzleDb(db).execute<{ unused: boolean }>(sql`
+    SELECT (f.hidden AND f.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM draft_tree_changes t WHERE t.parent_folder_id = f.id)
+    ) AS unused
+    FROM folders f WHERE f.id = ${folderId}::uuid`);
+  return row?.unused === true;
+}

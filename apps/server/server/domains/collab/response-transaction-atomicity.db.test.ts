@@ -99,6 +99,16 @@ describe("change trail (postgres)", () => {
       "00000000-0000-4000-8000-0000000008d1",
       "00000000-0000-4000-8000-0000000008d2",
     ] as const;
+    // The Work's draft created both: hidden rows and the draft's `created` rows.
+    const [draft] = await db
+      .insert(schema.drafts)
+      .values({
+        projectId: PROJECT_ID as never,
+        originWorkId: WORK_ID,
+        createdBy: USER_ID as never,
+      })
+      .returning({ id: schema.drafts.id });
+    if (!draft) throw new Error("draft not inserted");
     await db.insert(schema.documents).values(
       created.map((id, index) => ({
         id: id as never,
@@ -106,6 +116,19 @@ describe("change trail (postgres)", () => {
         name: `new-${index + 1}`,
         extension: "md",
         fileType: "markdown" as const,
+        hidden: true,
+      })),
+    );
+    await db.insert(schema.draftTreeChanges).values(
+      created.map((id, index) => ({
+        draftId: draft.id,
+        nodeKind: "document" as const,
+        nodeId: id,
+        created: true,
+        contextSourceId: SOURCE_ID as never,
+        parentFolderId: null,
+        name: `new-${index + 1}`,
+        extension: "md",
       })),
     );
     for (const [index, documentId] of created.entries()) {
@@ -130,11 +153,6 @@ describe("change trail (postgres)", () => {
         threadId: THREAD_ID,
       });
       content.destroy();
-      await fixture.branchStore.recordManifestDocumentCreated(documentId as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        threadId: THREAD_ID,
-      });
     }
 
     const drafts = await fixture.collab.draftReview.list({

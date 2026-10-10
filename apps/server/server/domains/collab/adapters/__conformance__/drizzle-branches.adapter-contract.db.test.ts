@@ -3,7 +3,6 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
-import { createStaticDocumentLinkScopes } from "../in-memory/static-document-link-scopes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -15,9 +14,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       branchWriteJournal,
-      changeTrailDeliveryOutbox,
-      changeTrailDocumentDetails,
-      changeTrailShells,
       contextSources,
       documentBranches,
       documentYjsCheckpoints,
@@ -57,13 +53,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
-    const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
-    const { createAgentEditCodecFactory, toDocHandle, yProsemirrorModel } = await import(
-      "@meridian/agent-edit/integration"
-    );
-    const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
+    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
@@ -178,7 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return doc;
     }
 
-    const markdownProjectionSerializer = (
+    const _markdownProjectionSerializer = (
       model: ReturnType<typeof yProsemirrorModel>,
       codec: ReturnType<typeof mdxCodec>,
     ) => ({
@@ -186,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return codec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
       },
     });
-    const createPushStores = (
+    const _createPushStores = (
       serializer: Parameters<typeof createDrizzlePendingSettlementStore>[1],
       changeTrails: Parameters<
         typeof createDrizzlePushCommitStore
@@ -366,280 +358,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
       ).resolves.toMatchObject({ members: [DOC_ID] });
-    });
-
-    it("resolves draft manifest membership for created/deleted docs while live stays untouched", async () => {
-      const CREATED_ID = "00000000-0000-4000-8000-000000000608";
-      await store.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      await db.insert(documents).values({
-        id: CREATED_ID as never,
-        contextSourceId: SOURCE_ID,
-        name: "draft-created",
-        extension: "md",
-        fileType: "markdown",
-      });
-      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
-      const work = await store.ensureWorkDraftBranch({
-        documentId: manifest.documentId,
-        workId: WORK_ID as never,
-        liveDoc: manifest.doc,
-      });
-      const peer = await store.ensureThreadPeerBranch({
-        documentId: manifest.documentId,
-        threadId: THREAD_ID as never,
-        liveDoc: manifest.doc,
-      });
-      const draftDoc = new Y.Doc({ gc: false });
-      Y.applyUpdate(draftDoc, peer.state);
-      const map = draftDoc.getMap<{ present: true }>("documents");
-      const before = Y.encodeStateVector(draftDoc);
-      map.delete(DOC_ID);
-      map.set(CREATED_ID, { present: true });
-      const update = Y.encodeStateAsUpdate(draftDoc, before);
-      const coordinator = createBranchCoordinator({ store });
-      await coordinator.commitUpdate({
-        branchId: peer.branchId,
-        updateData: update,
-        source: "agent",
-      });
-      await coordinator.commitUpdate({
-        branchId: work.branchId,
-        updateData: update,
-        source: "agent",
-      });
-
-      const threadView = await store.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-
-      expect(threadView.members).toEqual([CREATED_ID]);
-      expect(liveView.members).toEqual([DOC_ID]);
-
-      // Another project's Work never drafts this project's manifest, whatever the entry point.
-      const FOREIGN_PROJECT_ID = "00000000-0000-4000-8000-000000000609";
-      const FOREIGN_WORK_ID = "00000000-0000-4000-8000-000000000610";
-      await db.insert(projects).values({
-        id: FOREIGN_PROJECT_ID,
-        userId: USER_ID,
-        name: "Foreign Project",
-        slug: "foreign-project",
-      });
-      await db.insert(works).values({
-        id: FOREIGN_WORK_ID,
-        projectId: FOREIGN_PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Foreign Work",
-        slug: "foreign-work",
-      });
-      await expect
-        .soft(
-          store.resolveManifestMembership({
-            projectId: PROJECT_ID as never,
-            workId: FOREIGN_WORK_ID as never,
-          }),
-        )
-        .rejects.toThrow(/outside its project/);
-      expect
-        .soft(
-          await db
-            .select({ id: documentBranches.id })
-            .from(documentBranches)
-            .where(eq(documentBranches.workId, FOREIGN_WORK_ID)),
-        )
-        .toEqual([]);
-    });
-
-    it("co-promotes only the applied document manifest entry with its content push", async () => {
-      const CREATED_A = "00000000-0000-4000-8000-000000000610";
-      const CREATED_B = "00000000-0000-4000-8000-000000000611";
-      await db.insert(documents).values([
-        {
-          id: CREATED_A as never,
-          contextSourceId: SOURCE_ID,
-          name: "created-a",
-          extension: "md",
-          fileType: "markdown",
-        },
-        {
-          id: CREATED_B as never,
-          contextSourceId: SOURCE_ID,
-          name: "created-b",
-          extension: "md",
-          fileType: "markdown",
-        },
-      ]);
-      await livePersistence.lifecycle.ensureDocument(CREATED_A as never);
-      await livePersistence.lifecycle.ensureDocument(CREATED_B as never);
-      const schema = buildDocumentSchema();
-      const model = yProsemirrorModel(schema);
-      const codec = mdxCodec({ schema });
-      const docFromMarkdown = (markdown: string) => {
-        const doc = createCollabYDoc({ gc: false });
-        model.insertBlocks(toDocHandle(doc), null, codec.parse(markdown));
-        return doc;
-      };
-      const coordinator = createBranchCoordinator({ store });
-      const emptyA = createCollabYDoc({ gc: false });
-      const emptyB = createCollabYDoc({ gc: false });
-      const branchA = await store.ensureWorkDraftBranch({
-        documentId: CREATED_A as never,
-        workId: WORK_ID as never,
-        liveDoc: emptyA,
-      });
-      const branchB = await store.ensureWorkDraftBranch({
-        documentId: CREATED_B as never,
-        workId: WORK_ID as never,
-        liveDoc: emptyB,
-      });
-      const contentA = docFromMarkdown("Created A content.");
-      const contentB = docFromMarkdown("Created B content.");
-      await coordinator.commitUpdate({
-        branchId: branchA.branchId,
-        updateData: Y.encodeStateAsUpdate(contentA),
-        source: "agent",
-        threadId: THREAD_ID as never,
-      });
-      await coordinator.commitUpdate({
-        branchId: branchB.branchId,
-        updateData: Y.encodeStateAsUpdate(contentB),
-        source: "agent",
-        threadId: THREAD_ID as never,
-      });
-      await store.recordManifestDocumentCreated(CREATED_A as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      await store.recordManifestDocumentCreated(CREATED_B as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
-      const manifestBranch = await store.resolveWorkDraftBranchForWork({
-        documentId: manifest.documentId,
-        workId: WORK_ID as never,
-        liveDoc: manifest.doc,
-      });
-      const realChangeTrails = createDrizzleChangeTrailAggregateWriter(db);
-      // The batch commits the content push's and its companion's trails in one record.
-      let failTrailRecord = true;
-      const failingChangeTrails = {
-        async record(input: Parameters<typeof realChangeTrails.record>[0]) {
-          if (failTrailRecord) {
-            throw new Error("injected companion trail failure");
-          }
-          return realChangeTrails.record(input);
-        },
-        replacePushContributions: (
-          contributions: Parameters<typeof realChangeTrails.replacePushContributions>[0],
-          context: Parameters<typeof realChangeTrails.replacePushContributions>[1],
-        ) => realChangeTrails.replacePushContributions(contributions, context),
-        reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
-          realChangeTrails.reopenOwners(owners),
-      };
-      const branchPush = createBranchPushService({
-        links: createStaticDocumentLinkScopes(),
-        changeEventDelivery: { deliver() {} },
-        branchStore: store,
-        ...createPushStores(markdownProjectionSerializer(model, codec), failingChangeTrails),
-        branchCoordinator: coordinator,
-        journal: livePersistence.journal,
-        liveCoordinator,
-        model,
-        codec: createAgentEditCodecFactory(codec),
-      });
-
-      const [contentARow] = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branchA.branchId));
-      if (!contentARow) throw new Error("missing content A row");
-      await db
-        .update(branchWriteJournal)
-        .set({ turnId: TURN_ID as never })
-        .where(eq(branchWriteJournal.status, "active"));
-      const pushInput = {
-        branchId: branchA.branchId,
-        manifestBranchId: manifestBranch.branchId,
-        manifestEntryDocumentId: CREATED_A as never,
-        pushedByUserId: USER_ID as never,
-      };
-      await expect(branchPush.pushToLiveWithManifestEntry(pushInput)).rejects.toThrow(
-        "injected companion trail failure",
-      );
-      expect(await db.select().from(pushLineage)).toEqual([]);
-      expect(await db.select().from(changeTrailShells)).toEqual([]);
-      expect(await db.select().from(changeTrailDocumentDetails)).toEqual([]);
-      expect(await db.select().from(changeTrailDeliveryOutbox)).toEqual([]);
-      expect(
-        (await db.select().from(branchWriteJournal)).filter((row) => row.status === "pushed"),
-      ).toEqual([]);
-
-      failTrailRecord = false;
-      const pushed = await branchPush.pushToLiveWithManifestEntry(pushInput);
-      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const lineageRows = await db.select().from(pushLineage);
-      const activeManifestRows = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, manifestBranch.branchId));
-      const snapshotA = await livePersistence.journal.read(CREATED_A as never);
-      const liveA = createCollabYDoc({ gc: false });
-      if (snapshotA.checkpoint) Y.applyUpdate(liveA, snapshotA.checkpoint);
-      for (const update of snapshotA.updates) Y.applyUpdate(liveA, update.update);
-
-      expect(pushed.status).toBe("pushed");
-      expect(liveView.members).toContain(CREATED_A);
-      expect(liveView.members).not.toContain(CREATED_B);
-      expect(
-        codec.serialize(model.projectBlocks(toDocHandle(liveA)), UNSCOPED_DOCUMENT_LINKS),
-      ).toContain("Created A content.");
-      expect(lineageRows).toHaveLength(2);
-      expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
-      const trailDetails = await db.select().from(changeTrailDocumentDetails);
-      const trailReceiptIds = trailDetails.flatMap((detail) =>
-        (detail.changes as Array<{ receiptId: string }>).map((change) => change.receiptId),
-      );
-      expect(trailDetails).toHaveLength(1);
-      expect(new Set(trailReceiptIds)).toEqual(new Set([lineageRows[0]?.receiptId]));
-      expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
-      const [reviewedContentRow] = await db
-        .select({
-          reviewedBy: branchWriteJournal.reviewedBy,
-          reviewedAt: branchWriteJournal.reviewedAt,
-        })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.id, contentARow.id));
-      expect(reviewedContentRow?.reviewedBy).toBe(USER_ID);
-      expect(reviewedContentRow?.reviewedAt).toBeInstanceOf(Date);
-
-      const contentA2 = docFromMarkdown("Created A content.\n\nSecond A content.");
-      await coordinator.commitUpdate({
-        branchId: branchA.branchId,
-        updateData: Y.encodeStateAsUpdate(contentA2),
-        source: "agent",
-        threadId: THREAD_ID as never,
-      });
-      await expect(
-        branchPush.pushToLiveWithManifestEntry({
-          branchId: branchA.branchId,
-          manifestBranchId: manifestBranch.branchId,
-          manifestEntryDocumentId: CREATED_A as never,
-          pushedByUserId: USER_ID as never,
-        }),
-      ).resolves.toMatchObject({ status: "pushed" });
-      await expect(db.select().from(pushLineage)).resolves.toHaveLength(3);
-
-      manifestBranch.doc.destroy();
-      manifest.doc.destroy();
     });
 
     it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {

@@ -227,7 +227,7 @@ async function harness(
     threadId: crypto.randomUUID(),
     draftWork: null,
   });
-  call.context = { port, livePort: () => port, resolution: {} as never };
+  call.context = { port, resolution: {} as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&

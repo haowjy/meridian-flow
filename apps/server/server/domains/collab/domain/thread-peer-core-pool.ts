@@ -618,17 +618,6 @@ export function createThreadPeerCorePool(input: {
         Promise.resolve(null)
       );
     },
-    responseDocuments(responseId, threadId) {
-      const record = responses.get(responseId);
-      const staged = new Set<string>();
-      const created = new Set<string>();
-      for (const core of record?.participants ?? []) {
-        const documents = core.responseDocuments(responseId, threadId);
-        for (const documentId of documents.staged) staged.add(documentId);
-        for (const documentId of documents.created) created.add(documentId);
-      }
-      return { staged: [...staged], created: [...created] };
-    },
     async rollbackResponse(responseId) {
       const record = responses.get(responseId);
       return input.responseTransactions.run(

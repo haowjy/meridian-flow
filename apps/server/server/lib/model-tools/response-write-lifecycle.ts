@@ -57,17 +57,17 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
-export async function deleteCreatedTrackedDocument(input: {
+/**
+ * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
+ * its draft's use of the document, unless another thread's committed text makes it stand.
+ */
+export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
 }): Promise<void> {
-  const deleted = await input.port.delete(input.path, {
-    expected: { kind: "file", documentId: input.documentId },
-  });
-  if (!deleted.ok && deleted.error.code !== "not_found" && deleted.error.code !== "stale_target") {
-    throw new Error(contextErrorMessage(deleted.error));
-  }
+  const retracted = await input.port.retractCreate(input.path, { documentId: input.documentId });
+  if (!retracted.ok) throw new Error(contextErrorMessage(retracted.error));
 }
 
 export function createAgentEditResponseWriteLifecycle(
@@ -83,7 +83,7 @@ export function createAgentEditResponseWriteLifecycle(
     const discarded = new Set(discardedDocumentIds);
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
-      await deleteCreatedTrackedDocument(record);
+      await retractCreatedTrackedDocument(record);
     }
   }
 

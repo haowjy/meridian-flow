@@ -57,6 +57,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftTreeReviewBridge } from "./adapters/drizzle-draft-tree-review-bridge.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -175,7 +176,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       lifecycle: persistence.lifecycle,
       coordinator: liveCoordinator,
     },
-    criticalSections,
     deps.workProjectionMutation,
   );
   const branchCoordinator = createBranchCoordinator({
@@ -446,6 +446,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     deps.links,
   );
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(deps.db),
+    boundary: createDrizzleDraftWriteBoundary(deps.db),
+  });
   const drafts = createWorkDraftReviewService({
     links: deps.links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
@@ -454,7 +458,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branchCoordinator,
       criticalSections,
       liveCoordinator,
+      workDrafts,
     ),
+    draftTree: createDrizzleDraftTreeReviewBridge(deps.db, {
+      drafts: workDrafts,
+      ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
+      recordLiveMembership: (documentId) => branches.recordManifestDocumentCreated(documentId),
+    }),
     branches,
     branchCoordinator,
     branchJournal,
@@ -556,6 +566,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      withLiveDocument: runtime.markdownDocuments.withLiveDocument,
+      writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },
@@ -578,12 +590,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     branchPeers,
     drafts,
-    draftResolver: {
-      drafts: createDrafts({
-        store: createDrizzleDraftStore(deps.db),
-        boundary: createDrizzleDraftWriteBoundary(deps.db),
-      }),
-    },
+    draftResolver: { drafts: workDrafts },
     documentCreation,
   });
 }

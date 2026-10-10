@@ -1,5 +1,6 @@
 /** Drizzle adapter for authoritative catalog snapshots, replay, and mutation reconciliation. */
 import { randomUUID } from "node:crypto";
+import type { ContextSourceId } from "@meridian/contracts";
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogChange,
@@ -21,8 +22,6 @@ import {
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
-  documents,
-  folders,
   projects,
   threads,
   works,
@@ -30,7 +29,6 @@ import {
 import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
-  deferUntilDrizzleCommit,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -46,10 +44,7 @@ import type {
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
-import {
-  type ManifestMembershipResolver,
-  resolveCatalogDocumentMembership,
-} from "../visible-document-membership.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { type CatalogRepairRequest, createCatalogRepairQueue } from "./catalog-repair-queue.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -191,11 +186,8 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
     .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
 }
 
-async function buildScopeEntries(
-  db: CatalogDb,
-  scope: CatalogScope,
-  manifestMembership?: ManifestMembershipResolver,
-): Promise<CatalogEntry[]> {
+/** The catalog is the live tree: hidden rows and folders never reach it (contract §3.4). */
+async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<CatalogEntry[]> {
   if (scope.kind !== "user") {
     const [activeProject] = await db
       .select({ id: projects.id })
@@ -219,56 +211,43 @@ async function buildScopeEntries(
     }
   }
   const sourceRows = await sourcesForScope(db, scope);
-  const sourceIds = sourceRows.map((row) => row.id);
+  const sourceIds = sourceRows.map((row) => row.id as ContextSourceId);
+  const vf = visibleFolders(LIVE_TREE);
+  const vd = visibleDocuments(LIVE_TREE);
   const folderRows =
     sourceIds.length === 0
       ? []
       : await db
-          .select()
-          .from(folders)
-          .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)));
-  let documentRows =
+          .select({
+            id: vf.id,
+            contextSourceId: vf.contextSourceId,
+            parentId: vf.parentId,
+            name: vf.name,
+            description: vf.description,
+            sortOrder: vf.sortOrder,
+            createdAt: vf.createdAt,
+            updatedAt: vf.updatedAt,
+          })
+          .from(vf)
+          .where(inArray(vf.contextSourceId, sourceIds));
+  const documentRows =
     sourceIds.length === 0
       ? []
       : await db
           .select({
-            id: documents.id,
-            contextSourceId: documents.contextSourceId,
-            folderId: documents.folderId,
-            name: documents.name,
-            extension: documents.extension,
-            fileType: documents.fileType,
-            storageUrl: documents.storageUrl,
-            mimeType: documents.mimeType,
-            metadata: documents.metadata,
-            provisionalName: documents.provisionalName,
+            id: vd.id,
+            contextSourceId: vd.contextSourceId,
+            folderId: vd.folderId,
+            name: vd.name,
+            extension: vd.extension,
+            fileType: vd.fileType,
+            storageUrl: vd.storageUrl,
+            mimeType: vd.mimeType,
+            metadata: vd.metadata,
+            provisionalName: vd.provisionalName,
           })
-          .from(documents)
-          .where(
-            and(
-              inArray(documents.contextSourceId, sourceIds),
-              eq(documents.kind, "content"),
-              isNull(documents.deletedAt),
-            ),
-          );
-  if (scope.kind === "project" && manifestMembership) {
-    const manuscriptSourceIds = new Set(
-      sourceRows.filter((source) => source.slug === "manuscript").map((source) => source.id),
-    );
-    if (manuscriptSourceIds.size > 0) {
-      const visibleMembership = await resolveCatalogDocumentMembership({
-        projectId: scope.projectId,
-        resolver: manifestMembership,
-      });
-      if (visibleMembership) {
-        documentRows = documentRows.filter(
-          (document) =>
-            !manuscriptSourceIds.has(document.contextSourceId) ||
-            visibleMembership.has(document.id),
-        );
-      }
-    }
-  }
+          .from(vd)
+          .where(inArray(vd.contextSourceId, sourceIds));
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -398,7 +377,6 @@ export function createDrizzleContextCatalog(
   options: {
     retainedCommitsPerScope?: number;
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
-    manifestMembership?: ManifestMembershipResolver;
     eventSink?: EventSink;
     delay?: (milliseconds: number) => Promise<void>;
     /** Owns the post-commit repair so shutdown and test resets can drain it. */
@@ -532,7 +510,7 @@ export function createDrizzleContextCatalog(
         .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
         .limit(1);
       if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-      const authoritative = await buildScopeEntries(tx, scope, options.manifestMembership);
+      const authoritative = await buildScopeEntries(tx, scope);
       const existing = await tx
         .select()
         .from(contextCatalogEntries)
@@ -628,7 +606,7 @@ export function createDrizzleContextCatalog(
             .where(eq(contextCatalogScopeHeads.scopeKey, catalogScopeKey(scope)))
             .limit(1);
           if (!head) throw new Error(`Catalog head disappeared: ${catalogScopeKey(scope)}`);
-          const entries = await buildScopeEntries(tx as never, scope, options.manifestMembership);
+          const entries = await buildScopeEntries(tx as never, scope);
           return {
             scope,
             generation: head.generation,
@@ -753,13 +731,6 @@ export function createDrizzleContextCatalog(
               .leftJoin(projects, eq(contextSources.projectId, projects.id))
               .leftJoin(works, eq(contextSources.workId, works.id))
               .where(inArray(contextSources.id, [...new Set(sourceIds)] as never));
-      const manifestBackedProjectIds = new Set(
-        options.manifestMembership
-          ? ownershipRows.flatMap((row) =>
-              row.sourceSlug === "manuscript" && row.projectId ? [row.projectId] : [],
-            )
-          : [],
-      );
       const projectIds = [
         ...new Set(
           ownershipRows.flatMap(
@@ -779,23 +750,6 @@ export function createDrizzleContextCatalog(
       const orderedScopes = [...scopes.values()].sort((a, b) =>
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
       );
-      if (manifestBackedProjectIds.size > 0) {
-        const availabilityGeneration = await availabilityMutations.reserve();
-        const request: CatalogRepairRequest = {
-          scopes: orderedScopes,
-          invalidatedRootIds,
-          availabilityGeneration,
-          projectIds,
-          userIds,
-          sourceIds,
-        };
-        const launchRepair = () => {
-          void enqueueRepair(request).catch(() => undefined);
-        };
-        if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
-        await enqueueRepair(request);
-        return availabilityGeneration;
-      }
       const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
       for (const scope of orderedScopes) {
         await refreshScope(scope, invalidatedRootIds, commitId);

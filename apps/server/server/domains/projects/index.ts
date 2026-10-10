@@ -75,7 +75,7 @@ export type ProjectBootstrapRepository = {
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
-    Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
+    Pick<DocumentCreationAggregate, "createDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
   catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
@@ -203,23 +203,21 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         ),
       )
       .limit(1);
-    if (existing) {
-      await deps.documents.repairDocumentAtomically({
-        documentId: existing.id,
-        initializeContent: () => seedDocument(existing.id),
-        persistMembership: () =>
-          deps.documents.recordManifestDocumentCreated(existing.id, { projectId }),
-      });
-      return existing.id;
-    }
+    // Identity, content and membership commit together, so an existing row is whole.
+    if (existing) return existing.id;
 
     const documentId = randomUUID() as DocumentId;
     const created = await deps.documents.createDocumentAtomically({
-      documentId,
       persistIdentity: async () => {
-        const document = await new DrizzleContextDocumentStore({
+        const claimed = await new DrizzleContextDocumentStore({
           db,
           contextSourceId,
+          // The live manifest's writer until lane M retires it.
+          membershipObserver: {
+            documentCreated: (id) =>
+              deps.documents.recordManifestDocumentCreated(id as DocumentId, { projectId }),
+            documentDeleted: async () => {},
+          },
         }).createDocumentRecordIfAbsent({
           id: documentId,
           folderId: null,
@@ -228,13 +226,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           filetype: "markdown",
           markdown: "",
         });
-        return Boolean(document);
+        return (claimed?.document.id ?? null) as DocumentId | null;
       },
-      persistMembership: () =>
-        deps.documents.recordManifestDocumentCreated(documentId, { projectId }),
-      initializeContent: async () => {
-        await seedDocument(documentId);
-      },
+      initializeContent: (claimedId) => seedDocument(claimedId),
     });
     if (!created.created) {
       throw new Error("Failed to claim default chapter document path");

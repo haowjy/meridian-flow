@@ -1,8 +1,8 @@
 /** Branch capabilities consumed by collab application services. */
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
-import type { BranchLockLease } from "../branch-critical-sections.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
 
 export type ApplicationBranchStore = BranchStore &
@@ -10,19 +10,14 @@ export type ApplicationBranchStore = BranchStore &
     appendJournal(
       input: import("../branch-coordinator.js").AppendBranchJournalInput,
     ): Promise<void>;
-    removeWorkManifestEntryForDraftDiscard(input: {
-      lease: BranchLockLease;
-      manifestBranchId: string;
-      manifestDocumentId: DocumentId;
-      workId: WorkId;
-      documentId: DocumentId;
-    }): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
     ensureWorkDraftBranch(input: {
       documentId: DocumentId;
       workId: WorkId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
+    /** The Work's draft branch on a draft's new document, from its durable live state, in the caller's transaction. */
+    ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;
@@ -47,8 +42,6 @@ export type ApplicationBranchStore = BranchStore &
     }>;
     resolveManifestMembership(input: {
       projectId: ProjectId;
-      workId?: WorkId | null;
-      threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
     reconcileProjectManifest(projectId: ProjectId): Promise<void>;
     transferLiveManifestMembership(
@@ -57,17 +50,20 @@ export type ApplicationBranchStore = BranchStore &
     ): Promise<void>;
     recordManifestDocumentCreated(
       documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+      view?: { projectId: ProjectId },
     ): Promise<void>;
     recordManifestDocumentDeleted(
       documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+      view?: { projectId: ProjectId },
     ): Promise<void>;
   };
 
-/** Discards one Work draft and its draft-only membership without applying content to live. */
+/**
+ * Discards one Work draft without applying content to live; a document the Work's draft
+ * created ends that draft's use (bridge until lane D's `discardItems`).
+ */
 export type WorkDraftDiscard = (input: {
-  draftOnlyProjectId?: ProjectId;
+  createdBy?: DraftId;
   workId: WorkId;
   documentId: DocumentId;
   contentBranchId: string;

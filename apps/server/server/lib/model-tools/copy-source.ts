@@ -13,10 +13,15 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
-import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
+import {
+  type FileGrant,
+  type Principal,
+  sourceDestination,
+} from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
@@ -160,8 +165,8 @@ export function fromMessage(source: CopySource, message: string): string {
 
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
- * write, so it has no write handle, isn't part of the reply's save and is
- * never drafted.
+ * write, so it has no write handle and isn't part of the reply's save. In a
+ * draft-mode Work it lands in the draft as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -171,27 +176,36 @@ export async function copyBinary(
   sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
+  const destinationUri = splitDocumentFile(input.path).filePath;
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
-    livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },
-    destinationUri: splitDocumentFile(input.path).filePath,
+    destinationUri,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
+  const parsed = parseUnifiedContextUri(copied.value.uri);
+  const destination = parsed.ok
+    ? sourceDestination(parsed.value.scheme, context.resolution.primaryDraftWork)
+    : ({ kind: "live" } as const);
   return {
     output: modelResult({
       command: "copy",
       status: "success",
       phase: "committed",
-      payload: { path: input.path, destination: "live", copied: { from: input.from.path } },
+      payload: {
+        path: input.path,
+        destination: destination.kind,
+        ...(destination.kind === "draft" ? { draftWork: destination.workSlug ?? "/" } : {}),
+        copied: { from: input.from.path },
+      },
     }),
   };
 }

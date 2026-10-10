@@ -1,14 +1,13 @@
-/** Drizzle ContextDocumentStore for one Meridian context source. */
+/**
+ * Drizzle ContextDocumentStore for one Meridian context source. Reads go through one tree
+ * view (live, or one draft's); live creates reveal a hidden document at their path rather
+ * than inserting a twin, and a draft's creates make hidden rows through the tree owner.
+ */
 
+import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentPredicate,
-  documentMarkdownProjections,
-  documents,
-  folders,
-} from "@meridian/database/schema";
+import { documentMarkdownProjections, documents } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -24,9 +23,29 @@ import {
   type ContextFolder,
   type CreateBinaryDocumentInput,
   type CreateDocumentInput,
+  type DraftCreateInput,
+  LiveCreateCandidateChangedError,
+  type LiveCreateExpectation,
+  type LiveDocumentCreation,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
+import {
+  createInDraft,
+  createLive,
+  ensureLiveFolderPath,
+  findLiveCreateCandidate,
+  retractCreate,
+} from "../../tree/hidden-nodes.js";
+import {
+  createTreeReader,
+  LIVE_TREE,
+  type TreeView,
+  type VisibleDocument,
+  visibleDocuments,
+  visibleFolders,
+} from "../../tree/tree-view.js";
+import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
@@ -36,25 +55,33 @@ import type { ContextDocumentMembershipObserver } from "./membership-event-dispa
 
 export type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
-type FolderRow = typeof folders.$inferSelect;
-type DocumentRow = typeof documents.$inferSelect;
+type DocumentRow = Pick<
+  VisibleDocument,
+  | "id"
+  | "folderId"
+  | "name"
+  | "extension"
+  | "fileType"
+  | "storageUrl"
+  | "mimeType"
+  | "sizeBytes"
+  | "updatedAt"
+  | "provisionalName"
+>;
 
-const BINARY_FILE_TYPES = new Set<DocumentFileType>(["docx", "image", "pdf", "binary"]);
-
-function mapFolder(row: FolderRow): ContextFolder {
+function mapFolder(row: { id: string; parentId: string | null; name: string }): ContextFolder {
   return { id: row.id, parentId: row.parentId, name: row.name };
 }
 
 function mapDocument(row: DocumentRow): ContextDocument {
-  const storedType = row.fileType as Filetype | DocumentFileType;
-  const isBinary = BINARY_FILE_TYPES.has(storedType as DocumentFileType) || row.storageUrl !== null;
+  const isBinary = isStorageBackedDocument(row);
   return {
     id: row.id,
     folderId: row.folderId,
     name: row.name,
     extension: row.extension,
-    fileType: isBinary ? (storedType as DocumentFileType) : null,
-    filetype: isBinary ? null : (storedType as Filetype),
+    fileType: isBinary ? (row.fileType as DocumentFileType) : null,
+    filetype: isBinary ? null : (row.fileType as Filetype),
     storageUrl: row.storageUrl,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
@@ -66,6 +93,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
 export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
+  /** The live manifest's writer, until the manifest is retired (lane M). */
   membershipObserver?: ContextDocumentMembershipObserver;
   catalogMutations?: ContextCatalogMutationPort;
   arrivals?: DocumentArrivals;
@@ -101,7 +129,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   private get sourceId() {
-    return this.deps.contextSourceId;
+    return this.deps.contextSourceId as ContextSourceId;
   }
 
   async contextSourceId(): Promise<string> {
@@ -116,201 +144,181 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, operation);
   }
 
-  async findFolder(parentId: string | null, name: string): Promise<ContextFolder | null> {
+  async findFolder(view: TreeView, parentId: string | null, name: string) {
+    const vf = visibleFolders(view);
     const [row] = await this.db
-      .select()
-      .from(folders)
+      .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+      .from(vf)
       .where(
         and(
-          eq(folders.contextSourceId, this.sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, name),
-          isNull(folders.deletedAt),
+          eq(vf.contextSourceId, this.sourceId),
+          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
+          eq(vf.name, name),
         ),
       )
+      .orderBy(vf.id)
       .limit(1);
     return row ? mapFolder(row) : null;
   }
 
-  async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      if (await hasOppositeContextEntry(this.db, this.sourceId, parentId, name, "folder"))
-        throw new ContextEntryConflictError();
-      const [row] = await this.db
-        .insert(folders)
-        .values({ contextSourceId: this.sourceId, parentId, name })
-        .onConflictDoNothing()
-        .returning();
-      if (row) {
-        await claimDocumentLocation(this.deps.db, this.sourceId, parentId, name);
-        await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-        return mapFolder(row);
-      }
-      const existing = await this.findFolder(parentId, name);
-      if (!existing) throw new Error("Failed to create folder");
-      return existing;
-    });
-  }
-
-  async findDocument(
-    folderId: string | null,
-    name: string,
-    extension: string,
-  ): Promise<ContextDocument | null> {
+  async findDocument(view: TreeView, folderId: string | null, name: string, extension: string) {
+    const vd = visibleDocuments(view);
     const [row] = await this.db
       .select()
-      .from(documents)
+      .from(vd)
       .where(
         and(
-          eq(documents.contextSourceId, this.sourceId),
-          contentDocumentPredicate(),
-          folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
-          eq(documents.name, name),
-          eq(documents.extension, extension),
-          isNull(documents.deletedAt),
+          eq(vd.contextSourceId, this.sourceId),
+          folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
+          eq(vd.name, name),
+          eq(vd.extension, extension),
         ),
       )
+      .orderBy(vd.id)
       .limit(1);
     return row ? mapDocument(row) : null;
   }
 
-  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        throw new ContextEntryConflictError();
-      const existing = await this.findDocument(input.folderId, input.name, input.extension);
-      if (existing && existing.fileType !== null) {
-        throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
-      }
-      if (existing) throw new ContextEntryConflictError();
-      const [row] = await this.db
-        .insert(documents)
-        .values({
-          id: input.id,
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
-          fileType: input.filetype,
-          sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-        })
-        .returning();
-      if (!row) throw new Error("Failed to insert document");
-      await this.db
-        .insert(documentMarkdownProjections)
-        .values({ documentId: row.id, markdown: input.markdown });
-      await claimDocumentLocation(
-        this.deps.db,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
-      );
-      await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
-      return mapDocument(row);
-    });
-  }
-
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        return null;
-      const [row] = await this.db
-        .insert(documents)
-        .values({
-          id: input.id,
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
-          fileType: input.filetype,
-          sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-          provisionalName: input.provisionalName ?? false,
-          ...(input.metadata ? { metadata: input.metadata } : {}),
-        })
-        .onConflictDoNothing()
-        .returning();
-      if (!row) return null;
-      await this.db
-        .insert(documentMarkdownProjections)
-        .values({ documentId: row.id, markdown: input.markdown });
-      await claimDocumentLocation(
-        this.deps.db,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
-      );
-      await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      return mapDocument(row);
-    });
-  }
-
-  async findDocumentById(documentId: string) {
-    const [row] = await this.db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, documentId as never))
-      .limit(1);
-    if (!row) return null;
-
-    const segments: string[] = [];
-    let folderId = row.folderId as string | null;
-    while (folderId) {
-      const [folder] = await this.db
-        .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
-        .from(folders)
-        .where(and(eq(folders.id, folderId as never), isNull(folders.deletedAt)))
-        .limit(1);
-      if (!folder) break;
-      segments.unshift(folder.name);
-      folderId = folder.parentId;
-    }
-    segments.push(renderFilename(row.name, row.extension));
+  async findDocumentById(view: TreeView, documentId: string) {
+    const found = await createTreeReader(this.deps.db).findById(view, documentId as DocumentId);
+    if (found.kind !== "found") return null;
     return {
-      contextSourceId: row.contextSourceId,
-      document: mapDocument(row),
-      path: segments.join("/"),
-      active: row.deletedAt === null && row.kind === "content",
+      contextSourceId: found.document.contextSourceId,
+      document: mapDocument(found.document),
+      path: found.document.path,
     };
   }
 
-  async recordDocumentMembership(documentId: string): Promise<void> {
-    await this.deps.membershipObserver?.documentCreated(documentId);
+  async liveIdentity(documentId: string) {
+    const status = (
+      await createTreeReader(this.deps.db).identityStatus(LIVE_TREE, [documentId as DocumentId])
+    ).get(documentId as DocumentId);
+    if (status?.kind === "visible") {
+      return { kind: "visible" as const, contextSourceId: status.address.contextSourceId };
+    }
+    if (status?.kind === "hidden") {
+      return { kind: "hidden" as const, contextSourceId: status.address.contextSourceId };
+    }
+    return { kind: "other" as const };
+  }
+
+  async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      const ensured = await ensureLiveFolderPath(this.deps.db, {
+        contextSourceId: this.sourceId,
+        dir,
+        catalog: this.deps.catalogMutations,
+      });
+      if (!ensured.ok) throw new ContextEntryConflictError();
+      return ensured.value.folderId;
+    });
+  }
+
+  async findLiveCreateCandidate(dir: readonly string[], filename: string) {
+    const dot = filename.lastIndexOf(".");
+    const [name, extension] =
+      dot <= 0 ? [filename, ""] : [filename.slice(0, dot), filename.slice(dot + 1)];
+    return findLiveCreateCandidate(this.deps.db, {
+      contextSourceId: this.sourceId,
+      dir,
+      name,
+      extension,
+    });
+  }
+
+  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
+    const created = await this.createDocumentRecordIfAbsent(input);
+    if (!created) throw new ContextEntryConflictError();
+    await notifyMembershipObserver(
+      this.deps.membershipObserver,
+      "documentCreated",
+      created.document.id,
+    );
+    return created.document;
+  }
+
+  async createDocumentRecordIfAbsent(
+    input: CreateDocumentInput & LiveCreateExpectation,
+  ): Promise<LiveDocumentCreation | null> {
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (await liveFileOccupied(this, this.deps.db, this.sourceId, input)) return null;
+      const created = await createLive(this.deps.db, {
+        slot: {
+          contextSourceId: this.sourceId,
+          folderId: input.folderId as FolderId | null,
+          name: input.name,
+          extension: input.extension,
+        },
+        binary: false,
+        ...(input.revealById ? { revealById: input.revealById as DocumentId } : {}),
+        ...(input.expected
+          ? {
+              expected:
+                "none" in input.expected
+                  ? { none: true }
+                  : {
+                      documentId: input.expected.documentId as DocumentId,
+                      sourceId: input.expected.sourceId as ContextSourceId,
+                    },
+            }
+          : {}),
+        catalog: this.deps.catalogMutations,
+        insert: () => this.insertTrackedRow(input),
+      });
+      if (!created.ok) {
+        if (created.error.code === "candidate_changed") throw new LiveCreateCandidateChangedError();
+        return null;
+      }
+      const document = await this.findDocument(
+        LIVE_TREE,
+        input.folderId,
+        input.name,
+        input.extension,
+      );
+      if (!document) throw new Error(`Created document ${created.value.documentId} is not live`);
+      // Live manifest membership until the manifest is retired (lane M).
+      await this.deps.membershipObserver?.documentCreated(document.id);
+      return { document, revealed: created.value.kind === "revealed" };
+    });
+  }
+
+  /** Today's live insert: the row, its projection, its location claim, the catalog. */
+  private async insertTrackedRow(input: CreateDocumentInput): Promise<DocumentId> {
+    const [row] = await this.db
+      .insert(documents)
+      .values({
+        id: input.id,
+        contextSourceId: this.sourceId,
+        folderId: input.folderId,
+        name: input.name,
+        extension: input.extension,
+        fileType: input.filetype,
+        sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
+        provisionalName: input.provisionalName ?? false,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
+      })
+      .onConflictDoNothing()
+      .returning({ id: documents.id });
+    if (!row) throw new ContextEntryConflictError();
+    await this.db
+      .insert(documentMarkdownProjections)
+      .values({ documentId: row.id, markdown: input.markdown });
+    await claimLiveLocation(this.deps.db, this.sourceId, input);
+    await this.deps.catalogMutations?.refreshSources([this.sourceId]);
+    return row.id;
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        throw new ContextEntryConflictError();
-      const existing = await this.findDocument(input.folderId, input.name, input.extension);
+      const existing = await this.findDocument(
+        LIVE_TREE,
+        input.folderId,
+        input.name,
+        input.extension,
+      );
       if (existing) {
         const [row] = await this.db
           .update(documents)
@@ -322,10 +330,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
             updatedAt: new Date(),
           })
           .where(eq(documents.id, existing.id))
-          .returning();
+          .returning({ id: documents.id });
         if (!row) throw new Error(`Failed to update binary document: ${existing.id}`);
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-        return mapDocument(row);
+        const updated = await this.findDocument(
+          LIVE_TREE,
+          input.folderId,
+          input.name,
+          input.extension,
+        );
+        if (!updated) throw new Error(`Updated binary document ${existing.id} is not live`);
+        return updated;
       }
       return this.createBinaryDocument(input);
     });
@@ -334,16 +349,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
+      if (await liveFileOccupied(this, this.deps.db, this.sourceId, input)) {
         throw new ContextEntryConflictError();
+      }
+      // A live upload at a hidden image's path is a different document (12b-Q2).
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -358,22 +367,35 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           sizeBytes: input.sizeBytes,
           ...(input.metadata ? { metadata: input.metadata } : {}),
         })
-        .returning();
+        .returning({ id: documents.id });
       if (!row) throw new Error("Failed to create binary document");
-      await claimDocumentLocation(
-        this.deps.db,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
-      );
+      await claimLiveLocation(this.deps.db, this.sourceId, input);
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       // The upload is an arrival (contract §9.3): its membership and the settlement of a ref
-      // waiting at this address publish together, under the namespace key this command holds,
-      // before the manifest holder lock the publication takes.
+      // waiting at this address publish together, under the namespace key this command holds.
       await this.deps.membershipObserver?.documentCreated(row.id);
-      await this.deps.arrivals?.settle([row.id as DocumentId]);
-      return mapDocument(row);
+      await this.deps.arrivals?.settle([row.id]);
+      const document = await this.findDocument(
+        LIVE_TREE,
+        input.folderId,
+        input.name,
+        input.extension,
+      );
+      if (!document) throw new Error(`Created binary document ${row.id} is not live`);
+      return document;
     });
+  }
+
+  async createInDraft(input: DraftCreateInput) {
+    return createInDraft(this.deps.db, { ...input, contextSourceId: this.sourceId });
+  }
+
+  async retractDraftCreate(input: {
+    draftId: DraftCreateInput["draftId"];
+    workId: string;
+    documentId: DocumentId;
+  }) {
+    return (await retractCreate(this.deps.db, input)).retracted;
   }
 
   async readProjections(ids: string[]): Promise<Map<string, string>> {
@@ -381,36 +403,67 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     const rows = await this.db
       .select()
       .from(documentMarkdownProjections)
-      .where(inArray(documentMarkdownProjections.documentId, ids));
+      .where(inArray(documentMarkdownProjections.documentId, ids as DocumentId[]));
     return new Map(rows.map((row) => [row.documentId, row.markdown]));
   }
 
-  async listFolders(parentId: string | null): Promise<ContextFolder[]> {
+  async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
+    const vf = visibleFolders(view);
     const rows = await this.db
-      .select()
-      .from(folders)
+      .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+      .from(vf)
       .where(
         and(
-          eq(folders.contextSourceId, this.sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          isNull(folders.deletedAt),
+          eq(vf.contextSourceId, this.sourceId),
+          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
         ),
       );
     return rows.map(mapFolder);
   }
 
-  async listDocuments(folderId: string | null): Promise<ContextDocument[]> {
+  async listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
+    const vd = visibleDocuments(view);
     const rows = await this.db
       .select()
-      .from(documents)
+      .from(vd)
       .where(
         and(
-          eq(documents.contextSourceId, this.sourceId),
-          contentDocumentPredicate(),
-          folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
-          isNull(documents.deletedAt),
+          eq(vd.contextSourceId, this.sourceId),
+          folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
         ),
       );
     return rows.map(mapDocument);
   }
+}
+
+function claimLiveLocation(
+  db: Database,
+  sourceId: string,
+  input: { folderId: string | null; name: string; extension: string },
+): Promise<void> {
+  return claimDocumentLocation(
+    db,
+    sourceId,
+    input.folderId,
+    renderFilename(input.name, input.extension),
+  );
+}
+
+/** A live entry already holds this file's rendered path: a document, or a folder of that name. */
+async function liveFileOccupied(
+  store: DrizzleContextDocumentStore,
+  db: Database,
+  sourceId: string,
+  input: { folderId: string | null; name: string; extension: string },
+): Promise<boolean> {
+  return (
+    (await store.findDocument(LIVE_TREE, input.folderId, input.name, input.extension)) !== null ||
+    (await hasOppositeContextEntry(
+      db,
+      sourceId,
+      input.folderId,
+      renderFilename(input.name, input.extension),
+      "file",
+    ))
+  );
 }

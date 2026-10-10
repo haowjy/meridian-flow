@@ -45,6 +45,10 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    // The lease spells nothing; the held write spells as the document it admits.
+    withLiveDocument: engine.withLiveDocument,
+    writeDocumentHeld: (input) =>
+      scopes.within(by(input.held.documentId), () => engine.writeDocumentHeld(input)),
   };
 }
 
@@ -75,7 +79,6 @@ export function scopeAgentEdit(
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
     withResponseDocument: core.withResponseDocument,
-    responseDocuments: core.responseDocuments,
     responseDestination: core.responseDestination,
     getAvailability: core.getAvailability,
     invalidateThread: core.invalidateThread,
@@ -157,6 +160,7 @@ export function scopeBranchPeer(
     transferLiveManifestMembership: access.transferLiveManifestMembership,
     recordManifestDocumentCreated: access.recordManifestDocumentCreated,
     recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
+    ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

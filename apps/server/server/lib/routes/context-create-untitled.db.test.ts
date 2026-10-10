@@ -101,6 +101,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
+        drafts: collab.drafts,
         manifestMembership: collab,
         catalogMutations: catalog,
       });
@@ -181,6 +182,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
+        drafts: collab.drafts,
         manifestMembership: {
           async recordManifestDocumentCreated(documentId, view) {
             if (failNextMembershipWrite) {
@@ -235,6 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
+        drafts: collab.drafts,
         manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);

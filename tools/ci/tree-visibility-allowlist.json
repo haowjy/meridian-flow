@@ -7,8 +7,8 @@
     },
     {
       "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts",
-      "forms": ["read", "write"],
-      "reason": "Live and hidden creation writer: inserts and updates rows; every read goes through the view"
+      "forms": ["write"],
+      "reason": "Live creation writer: inserts and updates live rows; every read goes through the view, and hidden rows are written only by the tree owner"
     },
     {
       "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.ts",
@@ -19,11 +19,6 @@
       "path": "apps/server/server/domains/context/adapters/context-fs/document-locations.ts",
       "forms": ["read", "write"],
       "reason": "Namespace locks, location-history claims and records, subtree enumeration: identity and history by id, no visibility answer"
-    },
-    {
-      "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
-      "forms": ["read"],
-      "reason": "pending: lane C; switch catalog reads to the live tree view"
     },
     {
       "path": "apps/server/server/domains/context/adapters/document-link-scope.ts",
@@ -74,11 +69,6 @@
       "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.ts",
       "forms": ["read", "write"],
       "reason": "Certified derive: projection and links of any row by id under its generation/location CAS"
-    },
-    {
-      "path": "apps/server/server/domains/collab/adapters/drizzle-work-draft-discard.ts",
-      "forms": ["read"],
-      "reason": "pending: lane D; discard delegates to hidden-node lifecycle"
     }
   ]
 }

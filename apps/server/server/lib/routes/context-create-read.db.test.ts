@@ -102,6 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           links: createTestDocumentLinkScopes(db),
           db,
           documentSync: collab,
+          drafts: collab.drafts,
           manifestMembership: collab,
         }),
       };

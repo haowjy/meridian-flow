@@ -22,6 +22,8 @@ import {
   type ContextFolder,
   type CreateBinaryDocumentInput,
   type CreateDocumentInput,
+  type LiveCreateExpectation,
+  type LiveDocumentCreation,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import {
@@ -35,6 +37,8 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
+import type { LiveCreateCandidate } from "../../tree/hidden-nodes.js";
+import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import {
   type ContextDocumentMembershipObserver,
   createMembershipCommandId,
@@ -218,8 +222,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
-  async recordDocumentMembership(_documentId: string): Promise<void> {}
-
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     const foldersSnapshot = new Map(
       [...this.backing.folders].map(([id, row]) => [id, { ...row }] as const),
@@ -244,7 +246,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     }
   }
 
-  async findFolder(parentId: string | null, name: string): Promise<ContextFolder | null> {
+  async findFolder(
+    _view: TreeView,
+    parentId: string | null,
+    name: string,
+  ): Promise<ContextFolder | null> {
     for (const folder of this.backing.folders.values()) {
       if (
         folder.contextSourceId === this.sourceId &&
@@ -258,10 +264,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return null;
   }
 
-  async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
+  async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
+    let parentId: string | null = null;
+    for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
+    return parentId;
+  }
+
+  private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
       throw new ContextEntryConflictError();
-    const existing = await this.findFolder(parentId, name);
+    const existing = await this.findFolder(LIVE_TREE, parentId, name);
     if (existing) return existing;
     const folder: FolderRow = {
       id: crypto.randomUUID(),
@@ -277,6 +289,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async findDocument(
+    _view: TreeView,
     folderId: string | null,
     name: string,
     extension: string,
@@ -307,7 +320,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = await this.findDocument(
+      LIVE_TREE,
+      input.folderId,
+      input.name,
+      input.extension,
+    );
     if (existing && existing.fileType !== null) {
       throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
     }
@@ -340,7 +358,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.publicDocument(doc);
   }
 
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(
+    input: CreateDocumentInput & LiveCreateExpectation,
+  ): Promise<LiveDocumentCreation | null> {
     if (
       hasOppositeEntry(
         this.backing,
@@ -389,12 +409,32 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       doc.folderId,
       doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
     );
-    return this.publicDocument(doc);
+    return { document: this.publicDocument(doc), revealed: false };
   }
 
-  async findDocumentById(documentId: string) {
+  async liveIdentity(documentId: string) {
     const row = this.backing.documents.get(documentId);
-    if (!row) return null;
+    return row && row.deletedAt === null && isContentDocumentKind(row.kind)
+      ? { kind: "visible" as const, contextSourceId: row.contextSourceId }
+      : { kind: "other" as const };
+  }
+
+  async findLiveCreateCandidate(): Promise<LiveCreateCandidate> {
+    // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
+    return { none: true };
+  }
+
+  async createInDraft(): Promise<never> {
+    throw new Error("Draft creates need the Postgres tree view; the in-memory store has no drafts");
+  }
+
+  async retractDraftCreate(): Promise<never> {
+    throw new Error("Draft creates need the Postgres tree view; the in-memory store has no drafts");
+  }
+
+  async findDocumentById(_view: TreeView, documentId: string) {
+    const row = this.backing.documents.get(documentId);
+    if (!row || row.deletedAt !== null || !isContentDocumentKind(row.kind)) return null;
     const segments: string[] = [];
     let folderId = row.folderId;
     while (folderId) {
@@ -408,7 +448,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       contextSourceId: row.contextSourceId,
       document: this.publicDocument(row),
       path: segments.join("/"),
-      active: row.deletedAt === null && isContentDocumentKind(row.kind),
     };
   }
 
@@ -423,7 +462,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = await this.findDocument(
+      LIVE_TREE,
+      input.folderId,
+      input.name,
+      input.extension,
+    );
     if (existing) {
       throw new Error(
         `Duplicate binary document: ${input.name}.${input.extension} in folder ${input.folderId ?? "(root)"}`,
@@ -466,7 +510,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = await this.findDocument(
+      LIVE_TREE,
+      input.folderId,
+      input.name,
+      input.extension,
+    );
     if (existing) {
       const row = this.backing.documents.get(existing.id);
       if (!row) throw new Error(`Document row disappeared: ${existing.id}`);
@@ -494,7 +543,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     );
   }
 
-  async listFolders(parentId: string | null): Promise<ContextFolder[]> {
+  async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const out: ContextFolder[] = [];
     for (const folder of this.backing.folders.values()) {
       if (
@@ -508,7 +557,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async listDocuments(folderId: string | null): Promise<ContextDocument[]> {
+  async listDocuments(_view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
     const out: ContextDocument[] = [];
     for (const doc of this.backing.documents.values()) {
       if (
