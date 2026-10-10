@@ -47,7 +47,7 @@ While it is set, `DockShell` covers the occupant (mounted, inert) with
 `DockDocumentView` and `DockHeader` swaps the view switch for a Close document button then the
 title chip on the left, and Open in Editor (an expand button) then the collapse toggle on the right. Opening a second one
 replaces the first. `setDockView` on its screen clears it, so revealing
-the chat returns to the chat. Closing returns to the writer's last explicit view.
+the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat, unless the writer left it on Changes.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
 when the project changes, and a Work-screen document when leaving that Work or its screen; a
 Chat-screen occupant survives screen and chat changes, but is only shown on Chat (the sync also records the Work on the Work
@@ -56,16 +56,39 @@ screen, which the title menu browses); a sync to the same place is not an intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
 handling the slot has. Nothing is persisted across reloads.
 
-Rail screen switches (`ReadableProjectRoute.selectScreen`) call `handOffVisibleDocument`:
+Rail screen switches (`ReadableProjectRoute.selectScreen`) call the dock's
+`useRailDocumentHandOff` assembly and `handOffVisibleDocument`. The route hands the
+assembly the same published `activeContextScheme/Path/Chat` and local document pointer
+it gives the Editor pane, including a materialized-local document's target.
+`resolveVisibleEditorTab` owns the visible workspace tab for the desktop pane
+and hand-off: it combines those props, persisted selection and the matching removal
+binding, then delegates exact identity/path ownership to `resolveWorkspaceRoute`.
+The phone renders a route-resolved tab (or an explicit local tab), not desktop selection.
+Its local host uses `resolveWorkspaceRoute` only to settle a materialization binding, not
+to choose the document on screen.
+
+On a hand-off:
 the Editor's visible route-owned tab replaces the Chat slot and reveals the dock; a visible
 Chat or Work dock document opens or focuses through `openDocumentInEditor`, the same path
 as the header's Open in Editor button. Work receives no document. A collapsed dock, an
 Editor chooser or an unresolved route carries nothing; the destination keeps its own state.
+The click captures the projected document and claims the dock. Only an accepted destination
+commits the hand-off through `project-navigation.transition`; cancellation or navigation failure
+leaves the slot alone, and a newer dock pick wins. The accepted commit precedes history flush,
+before destination scope synchronization can clear a departing Work note.
 The hand-off uses the resource projection and the existing dock commit/claim boundary, so
 an earlier asynchronous open cannot overwrite it. Browser back/forward does not hand off.
 Peeking and closing the dock never write Editor tabs. There is no third active-document
 store or continuous synchronization. An Untitled Editor tab can also be carried: the dock
-binds its existing resource session and marks it create-eligible on first input.
+binds its existing resource session and marks it create-eligible on first input. Its title
+menu still browses from the root, without unavailable rename actions. Uploads navigate to
+the resource route without a prepared Editor tab. Rail and header opens share the route-owned
+failed-destination presentation, never a discarded promise rejection.
+
+`dockDocumentOnScreen` is the single project/screen predicate for the dock slot.
+`useDockDocument` supplies it to view rendering and file/Scratch highlights. LeftSidebar
+resolves its highlighted path through `useDockDocumentTab`, just like the dock header; the imperative
+hand-off uses it too. Parked Chat documents must not highlight rows on Work or Editor.
 
 Where a document opens is decided once, in `use-dock-placement.ts`, which also owns the one commit
 into the dock (`commitDockDocument`, used by `useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on
@@ -81,8 +104,7 @@ tabs through the viewer host, and an unresolvable id announces an error. A known
 menu pick, a left-tree click, a Scratch row) enters at the commit boundary directly. The phone has no
 context rail, so a phone never opens a Recent row here.
 
-With no document open, the Chat screen's rail header shows the same chip, "Open document", through `DockTitleMenu` (one component for both states): it opens at the root list with the project title and
-no actions, and a pick opens in the dock like any other. On that screen the left project tree's
+With no document open, the Chat screen's rail header shows the same chip, "Open document", through `DockTitleMenu` (one component for both states): it opens at the root list without a heading or actions, and a pick opens in the dock like any other. On that screen the left project tree's
 file clicks are chat doors too (`LeftSidebar` commits the known file to the dock, images, PDFs and
 binaries included since the dock's viewer host shows them) and the tree's highlighted row follows the
 dock document; on the Editor and Work screens and the phone a tree click is unchanged.
@@ -126,7 +148,7 @@ Scratch source alone.
 The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) at the document's own folder.
 Back rows climb through the folders to the area's top and one more to a root listing of the project's
 areas: Manuscript, Knowledge Base, User, Unfiled and the Scratch in view (the on-screen chat's on the
-Chat screen, the Work's on the Work screen), headed by the project's title; Rename follows at every
+Chat screen, the Work's on the Work screen), with no root heading; Rename follows at every
 level (Open in Editor is the header button). The tree comes from `useProjectMenuSource`
 (`../context/use-catalog-menu-source.ts`), built by the pure `../context/menu-tree.ts` from the
 same catalogs the left tree reads; a document in an area the root does not offer (Uploads, or a

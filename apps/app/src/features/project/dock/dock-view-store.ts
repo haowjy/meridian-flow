@@ -147,14 +147,23 @@ export function useDockView(
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
-  const occupant = useDockViewStore((state) =>
-    state.occupant?.screen === screen && state.occupant.projectId === projectId
-      ? state.occupant
-      : null,
-  );
+  const occupant = useDockDocument(screen, projectId);
   return {
     ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
     document: occupant,
   };
+}
+
+/** One scope predicate for rendering, highlighting and imperative hand-offs. */
+export function dockDocumentOnScreen(
+  occupant: DockDocument | null,
+  screen: ScreenKey,
+  projectId: string,
+): DockDocument | null {
+  return occupant?.screen === screen && occupant.projectId === projectId ? occupant : null;
+}
+
+export function useDockDocument(screen: ScreenKey, projectId: string): DockDocument | null {
+  return useDockViewStore((state) => dockDocumentOnScreen(state.occupant, screen, projectId));
 }

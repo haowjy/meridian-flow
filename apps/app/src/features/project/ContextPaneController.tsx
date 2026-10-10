@@ -20,12 +20,11 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
-import { activeEditorDocumentId } from "./context/active-editor-document";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
+import { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
@@ -88,42 +87,25 @@ export function ContextViewerSurfaceController({
   const resourceProjection = useAccountResourceProjection(projectId);
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = activeEditorDocumentId(
-    localDocumentId,
-    selectedTabIdByWork[routeWorkId],
-  );
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
-  const locator =
-    activeContextScheme !== null && activeContextPath !== null
-      ? {
-          scheme: activeContextScheme,
-          path: activeContextPath,
-          workId: routeWorkId,
-          ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
-        }
-      : null;
   const removalState = useContextRemovalProject(projectId);
-  const routeSelection = removalState.selection;
-  const boundDocumentId =
-    locator !== null &&
-    routeSelection.status === "bound" &&
-    routeSelection.identity.kind === "server" &&
-    routeSelection.locator.scheme === locator.scheme &&
-    routeSelection.locator.path === locator.path &&
-    routeSelection.locator.workId === locator.workId &&
-    routeSelection.locator.rootThreadId === locator.rootThreadId
-      ? routeSelection.identity.documentId
-      : null;
-  const workspaceRoute = resolveWorkspaceRoute({
-    tabs,
+  const {
     selectedDocumentId,
-    locator,
-    boundDocumentId,
+    workspaceRoute,
+    tab: activeTab,
+  } = resolveVisibleEditorTab({
+    tabs,
+    selectedTabId: selectedTabIdByWork[routeWorkId],
+    selection: removalState.selection,
+    editorWorkId: routeWorkId,
+    localDocumentId,
+    activeContextScheme,
+    activeContextPath,
+    activeContextChat,
   });
-  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;

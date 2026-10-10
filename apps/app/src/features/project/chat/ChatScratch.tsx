@@ -20,7 +20,7 @@ import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
@@ -57,9 +57,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
 function useOpenDocumentId(projectId: string, editorWorkId: string | null): string | undefined {
   const screen = useProjectScreen();
-  const docked = useDockViewStore((state) =>
-    state.occupant?.projectId === projectId ? state.occupant.tab.documentId : undefined,
-  );
+  const docked = useDockDocument(screen, projectId)?.tab.documentId;
   const { selectedTabIdByWork } = useContextTabs(projectId);
   if (screen === "chat") return docked;
   if (screen === "context") return selectedTabIdByWork[editorWorkId ?? ""] ?? undefined;

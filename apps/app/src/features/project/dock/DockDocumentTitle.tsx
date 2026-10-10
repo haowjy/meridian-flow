@@ -18,7 +18,7 @@ import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProject } from "@/client/query/useProjectList";
 import { useWorks } from "@/client/query/useWorks";
-import { type ServerContextTab, type TabOwner, tabContextOwner } from "@/client/stores";
+import { type ContextTab, type TabOwner, tabContextOwner } from "@/client/stores";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
@@ -42,7 +42,6 @@ export function DockDocumentTitle({
   document: DockDocument;
 }) {
   const { tab } = useDockDocumentTab(projectId, dockDocument);
-  if (tab.kind === "new") return <PaneTitle>{tab.name}</PaneTitle>;
   return <DockTitleMenu projectId={projectId} tab={tab} />;
 }
 
@@ -51,13 +50,8 @@ export function DockDocumentTitle({
  * folder, with Rename; with none (the Chat screen's rail) it reads "Open
  * document", opens at the root, and has no actions.
  */
-export function DockTitleMenu({
-  projectId,
-  tab,
-}: {
-  projectId: string;
-  tab: ServerContextTab | null;
-}) {
+export function DockTitleMenu({ projectId, tab }: { projectId: string; tab: ContextTab | null }) {
+  const locatedTab = tab?.kind === "new" ? null : tab;
   const openInDock = useOpenDocumentInDock();
   const { works } = useWorks(projectId);
   const [renaming, setRenaming] = useState(false);
@@ -69,19 +63,21 @@ export function DockTitleMenu({
     wasRenaming.current = renaming;
   }, [renaming]);
 
-  const work = tab?.workId ? works?.find((candidate) => candidate.id === tab.workId) : undefined;
+  const work = locatedTab?.workId
+    ? works?.find((candidate) => candidate.id === locatedTab.workId)
+    : undefined;
   const archived = work ? isWorkArchived(work) : false;
   // A document's owner names its own area: the Work, or the chat whose Scratch it is.
   const lineageTitle = useLineageTitle(
     projectId,
-    tab?.rootThreadId ? { rootThreadId: tab.rootThreadId } : null,
+    locatedTab?.rootThreadId ? { rootThreadId: locatedTab.rootThreadId } : null,
   );
   const ownerName = work?.name ?? lineageTitle;
-  const documentHeading = !tab
+  const documentHeading = !locatedTab
     ? ""
     : ownerName
-      ? t`${schemeLabel(tab.scheme)} for ${ownerName}`
-      : schemeLabel(tab.scheme);
+      ? t`${schemeLabel(locatedTab.scheme)} for ${ownerName}`
+      : schemeLabel(locatedTab.scheme);
 
   // The Scratch at the menu's root is the one on screen; the document's own area is separate.
   const scratch = useDockBrowseScratch(projectId);
@@ -90,13 +86,16 @@ export function DockTitleMenu({
     projectId,
     title: project?.title ?? "",
     scratch,
-    document: tab
-      ? { scheme: tab.scheme, owner: tabContextOwner(tab), heading: documentHeading }
+    document: locatedTab
+      ? { scheme: locatedTab.scheme, owner: tabContextOwner(locatedTab), heading: documentHeading }
       : null,
   });
   const { catalog } = source.own;
-  const current = tab ? (catalog?.findDocument(tab.documentId) ?? null) : null;
-  const openAt = useMemo(() => (tab ? source.own.openAt(tab.path) : []), [source.own, tab]);
+  const current = locatedTab ? (catalog?.findDocument(locatedTab.documentId) ?? null) : null;
+  const openAt = useMemo(
+    () => (locatedTab ? source.own.openAt(locatedTab.path) : []),
+    [source.own, locatedTab],
+  );
 
   const pick = (node: DrillNode) => {
     const next = source.tabFor(node.id);
@@ -109,12 +108,12 @@ export function DockTitleMenu({
       : []),
   ];
 
-  if (renaming && current && tab)
+  if (renaming && current && locatedTab)
     return (
       <DockDocumentRename
         projectId={projectId}
-        scheme={tab.scheme}
-        owner={tab}
+        scheme={locatedTab.scheme}
+        owner={locatedTab}
         file={current}
         siblingNames={catalogSiblingNames(catalog, current)}
         onDone={() => setRenaming(false)}
