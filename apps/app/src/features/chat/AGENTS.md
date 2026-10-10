@@ -23,6 +23,8 @@ current thread ID, including when creation starts in the dock.
 Unsent authoring state has one session owner, `useComposerSessionDraft`, keyed by
 account/chat for `ChatView` and account/project for `CreationComposer` on every
 host. Work selection is prospective context, not a separate creation draft.
+Hosts share the tab-local owner, so a pane change before the debounce flushes
+still hydrates the latest words. Each mount captures its initial snapshot once.
 It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
 on pagehide/unmount. Transfer to the submission journal clears it synchronously
 before dispatch/navigation. A rejection leaves live edits intact and publishes

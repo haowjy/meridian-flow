@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /** Tab/account isolation, lossless reload and the journal hand-off boundary. */
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { ComposerSessionDraft } from "./useComposerSessionDraft";
+import { ComposerSessionDraft, useComposerSessionDraft } from "./useComposerSessionDraft";
 
 const account = "01900000-0000-7000-8000-000000000002";
 const scope = { kind: "chat", id: "chat-1" } as const;
@@ -116,4 +118,29 @@ describe("session composer drafts", () => {
       owner.handoff();
     }).not.toThrow();
   });
+});
+
+it("hands the latest words between pane mounts before a debounced write or effect cleanup", async () => {
+  vi.useFakeTimers();
+  const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const previous = actGlobal.IS_REACT_ACT_ENVIRONMENT;
+  actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
+  const root = createRoot(document.createElement("div"));
+  let owner: ReturnType<typeof useComposerSessionDraft> | undefined;
+  let restoredAtRender: string | null = null;
+  function Pane() {
+    owner = useComposerSessionDraft(account, { kind: "chat", id: "pane-handoff" });
+    const snapshot = owner.initialDraft;
+    restoredAtRender = snapshot ? serializeComposerDraft(snapshot.doc).text : null;
+    return null;
+  }
+  try {
+    await act(() => root.render(createElement(Pane, { key: "center" })));
+    owner?.updateDraft(change("Just typed"));
+    await act(() => root.render(createElement(Pane, { key: "dock" })));
+    expect(restoredAtRender).toBe("Just typed");
+  } finally {
+    await act(() => root.unmount());
+    actGlobal.IS_REACT_ACT_ENVIRONMENT = previous;
+  }
 });

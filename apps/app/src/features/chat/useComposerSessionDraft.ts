@@ -11,7 +11,6 @@ type StoragePort = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export class ComposerSessionDraft {
   readonly key: string;
-  readonly initialDraft: ComposerDraftSnapshot | null;
   private current: ComposerDraftSnapshot | null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
@@ -31,7 +30,11 @@ export class ComposerSessionDraft {
     } catch {
       /* Storage is best effort; the live editor is always usable. */
     }
-    this.current = this.initialDraft = draft;
+    this.current = draft;
+  }
+
+  get initialDraft(): ComposerDraftSnapshot | null {
+    return this.current && parseRestorableComposerDraft(this.current);
   }
 
   updateDraft = (change: ComposerDraftChange): void => {
@@ -69,11 +72,21 @@ export class ComposerSessionDraft {
   };
 }
 
+// Hosts can hand the same chat between panes before the debounce writes. Keep
+// one tab-local owner so the next mount reads the latest words, not old storage.
+const sessionDrafts = new Map<string, ComposerSessionDraft>();
+
 export function useComposerSessionDraft(accountId: string, scope: ComposerDraftScope) {
-  const owner = useMemo(
-    () => new ComposerSessionDraft(accountId, scope),
-    [accountId, scope.kind, scope.id],
-  );
+  const owner = useMemo(() => {
+    if (typeof window === "undefined") return new ComposerSessionDraft(accountId, scope);
+    const key = JSON.stringify([accountId, scope.kind, scope.id]);
+    let current = sessionDrafts.get(key);
+    if (!current) {
+      current = new ComposerSessionDraft(accountId, scope);
+      sessionDrafts.set(key, current);
+    }
+    return current;
+  }, [accountId, scope.kind, scope.id]);
   useEffect(() => {
     window.addEventListener("pagehide", owner.flush);
     return () => {
@@ -81,5 +94,13 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
       owner.flush();
     };
   }, [owner]);
-  return owner;
+  return useMemo(
+    () => ({
+      key: owner.key,
+      initialDraft: owner.initialDraft,
+      updateDraft: owner.updateDraft,
+      handoff: owner.handoff,
+    }),
+    [owner],
+  );
 }

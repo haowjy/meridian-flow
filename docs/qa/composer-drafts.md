@@ -21,7 +21,7 @@ dev-login. Seed a document and chat with `./mf seed tools/dev/cli/fixtures/basic
 6. Open the chat in a second independent browser tab (not Duplicate tab or
    Restore closed tab). Type different words in each and reload both. Each
    keeps its own draft. Close one, then open a fresh tab: it starts empty.
-7. Save a draft referencing a file, delete that file through `./mf doc delete`,
+7. Save a draft referencing a file, delete that file through `./mf doc rm`,
    then reload. Successful catalog acquisition removes the missing atom while
    keeping prose. Offline/catalog errors must not erase references.
 8. Reload during an upload. The in-flight upload atom drops, because its bytes
