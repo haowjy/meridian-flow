@@ -90,6 +90,7 @@ import {
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
@@ -151,6 +152,7 @@ export function ChatView({
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();
+  const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const accountSignal = useAccountEpochSignal();
   const openThread = useOpenChatThread();
   const pendingCreation = useIsThreadPendingCreation(threadId);
@@ -363,6 +365,7 @@ export function ChatView({
         acceptedRevision: envelope.acceptedRevision,
       };
     }
+    draft.handoff();
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
     // Register the live row before the POST awaits admission: a thread remount
@@ -513,6 +516,9 @@ export function ChatView({
               always keeps its own border and overlaps the strip's edge. */}
               <DraftDock dock={dock} />
               <Composer
+                key={draft.key}
+                initialDraft={draft.initialDraft}
+                onDraftChange={draft.updateDraft}
                 onOpenReference={(reference) => {
                   void openReferenceDocument({
                     documentId: reference.documentId,
