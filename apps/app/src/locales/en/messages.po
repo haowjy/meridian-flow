@@ -3069,8 +3069,12 @@ msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopens your last document and chat when you switch devices"
-msgstr "Reopens your last document and chat when you switch devices"
+msgid "Reopens the documents you had open when you switch devices."
+msgstr "Reopens the documents you had open when you switch devices."
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Reopens your last document and chat when you switch devices"
+#~ msgstr "Reopens your last document and chat when you switch devices"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3122,8 +3126,12 @@ msgid "Restoring"
 msgstr "Restoring"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume where I left off on any device"
-msgstr "Resume where I left off on any device"
+msgid "Resume my documents on any device"
+msgstr "Resume my documents on any device"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Resume where I left off on any device"
+#~ msgstr "Resume where I left off on any device"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx

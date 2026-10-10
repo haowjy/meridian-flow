@@ -41,7 +41,7 @@ it("paints the account theme before hydration and keeps text size on this device
   localStorage.setItem(TEXT_SIZE_STORAGE_KEY, "lg");
   runBootScript(createUiThemeBootScript({ accountId: "a", theme: "ink-jade" }));
   runBootScript(TEXT_SIZE_BOOT_SCRIPT);
-  expect(document.documentElement.getAttribute("data-ui-theme")).toBe("dark");
+  expect(document.documentElement.hasAttribute("data-ui-theme")).toBe(false);
   expect(document.documentElement.getAttribute("data-text-size")).toBe("lg");
   runBootScript(createUiThemeBootScript({ accountId: "b", theme: "ink-jade" }));
   expect(document.documentElement.hasAttribute("data-ui-theme")).toBe(false);

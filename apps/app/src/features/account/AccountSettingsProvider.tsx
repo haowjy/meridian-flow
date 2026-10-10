@@ -16,9 +16,11 @@ const AccountSettingsContext = createContext<ReturnType<typeof useAccountSetting
 
 export function AccountSettingsProvider({
   serverValue,
+  serverReadGeneration,
   children,
 }: {
   serverValue: AccountSettings | null;
+  serverReadGeneration: number;
   children: React.ReactNode;
 }) {
   const accountId = useAccountId();
@@ -34,7 +36,12 @@ export function AccountSettingsProvider({
     setGeneration(generation + 1);
   }
   return (
-    <AccountSettingsOwner key={generation} accountId={accountId} serverValue={serverValue}>
+    <AccountSettingsOwner
+      key={generation}
+      accountId={accountId}
+      serverValue={serverValue}
+      serverReadGeneration={serverReadGeneration}
+    >
       {children}
     </AccountSettingsOwner>
   );
@@ -43,13 +50,15 @@ export function AccountSettingsProvider({
 function AccountSettingsOwner({
   accountId,
   serverValue,
+  serverReadGeneration,
   children,
 }: {
   accountId: string;
   serverValue: AccountSettings | null;
+  serverReadGeneration: number;
   children: React.ReactNode;
 }) {
-  const settings = useAccountSettings(serverValue);
+  const settings = useAccountSettings(serverValue, serverReadGeneration);
   const preference = settings.preference("workingSetSyncEnabled");
   useLayoutEffect(() => {
     changeUiTheme(settings.value.theme);

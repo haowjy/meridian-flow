@@ -1,10 +1,14 @@
-/** Account-lifetime optimistic commands, serialized and fenced per setting and account epoch. */
+/** Confirmed account snapshots with a tab-local optimistic command overlay. */
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { getAccountSettings, updateAccountSettings } from "@/client/api/account-api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getAccountSettings,
+  nextAccountSettingsGeneration,
+  updateAccountSettings,
+} from "@/client/api/account-api";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import {
   useAccountEpochSignal,
@@ -35,87 +39,73 @@ type Write = {
   revision: number;
   epoch: AbortSignal;
 };
+type Intent = { value: AccountSettings[SettingKey]; pending: boolean; error: SettingError | null };
 const DEFAULTS: AccountSettings = { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false };
-export function useAccountSettings(serverValue: AccountSettings | null) {
+const KEYS = Object.keys(DEFAULTS) as SettingKey[];
+
+export function useAccountSettings(
+  serverValue: AccountSettings | null,
+  serverReadGeneration: number,
+) {
   const accountId = useAccountId();
   const epoch = useAccountEpochSignal();
   const router = useRouter();
-  const [value, setValue] = useState(
-    () => readAccountSettingsCache(accountId) ?? serverValue ?? DEFAULTS,
-  );
+  const [fallback] = useState(() => serverValue ?? readAccountSettingsCache(accountId) ?? DEFAULTS);
   const [confirmed, setConfirmed] = useState(serverValue);
-  const hasConfirmedSnapshot = useRef(serverValue !== null);
-  const [errors, setErrors] = useState<Partial<Record<SettingKey, SettingError>>>({});
-  const [pending, setPending] = useState<Partial<Record<SettingKey, boolean>>>({});
+  const confirmedRef = useRef(confirmed);
+  const [intents, setIntents] = useState<Partial<Record<SettingKey, Intent>>>({});
+  const intentsRef = useRef(intents);
   const revisions = useRef<Partial<Record<SettingKey, number>>>({});
-  const storageRevision = useRef(0);
+  const acceptedGenerations = useRef<Partial<Record<SettingKey, number>>>({});
   const currentEpoch = useRef(epoch);
   currentEpoch.current = epoch;
-  const values = useRef(value);
-  values.current = value;
-  function adopt(next: AccountSettings) {
-    values.current = next;
-    setValue(next);
-    writeAccountSettingsCache(accountId, next);
+  function updateIntents(next: typeof intents) {
+    intentsRef.current = next;
+    setIntents(next);
+  }
+  function acceptSnapshot(
+    settings: AccountSettings,
+    generation: number,
+    publish: boolean,
+    ownKey?: SettingKey,
+  ) {
+    const next = { ...(confirmedRef.current ?? settings) };
+    for (const key of KEYS) {
+      // Request start orders reads; settlement fences reads begun before a command completed.
+      // Only pending/failed commands own the displayed value, never a settled revision.
+      if (
+        generation < (acceptedGenerations.current[key] ?? 0) ||
+        (intentsRef.current[key] && key !== ownKey)
+      )
+        continue;
+      Object.assign(next, { [key]: settings[key] });
+      acceptedGenerations.current[key] = generation;
+    }
+    confirmedRef.current = next;
+    setConfirmed(next);
+    if (publish) writeAccountSettingsCache(accountId, next);
   }
   useEffect(() => {
-    if (!serverValue) return;
-    hasConfirmedSnapshot.current = true;
-    setConfirmed((previous) => {
-      const next = { ...(previous ?? DEFAULTS) };
-      for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-        if (!revisions.current[key]) Object.assign(next, { [key]: serverValue[key] });
-      }
-      return next;
-    });
-    const next = { ...values.current };
-    for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-      if (!revisions.current[key]) Object.assign(next, { [key]: serverValue[key] });
-    }
-    adopt(next);
-  }, [serverValue, accountId]);
+    if (serverValue) acceptSnapshot(serverValue, serverReadGeneration, true);
+  }, [serverValue, serverReadGeneration, accountId]);
   useEffect(() => {
     function onStorage(event: StorageEvent) {
       if (event.key !== ACCOUNT_SETTINGS_CACHE_PREFIX + accountId) return;
-      const next = readAccountSettingsCache(accountId);
-      if (!next) return;
-      // A local pending or failed intent stays visible; other fields follow this account's tab.
-      const merged = { ...values.current };
-      for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-        if (!pending[key] && !errors[key]) Object.assign(merged, { [key]: next[key] });
-      }
-      values.current = merged;
-      setValue(merged);
-      const capturedStorageRevision = ++storageRevision.current;
+      const snapshot = readAccountSettingsCache(accountId);
+      if (!snapshot) return;
+      const generation = nextAccountSettingsGeneration();
       const capturedEpoch = epoch;
-      const capturedRevisions = { ...revisions.current };
+      acceptSnapshot(snapshot, generation, false);
       void getAccountSettings({ signal: capturedEpoch })
         .then((settings) => {
-          if (
-            capturedEpoch.aborted ||
-            capturedEpoch !== currentEpoch.current ||
-            capturedStorageRevision !== storageRevision.current
-          )
-            return;
-          hasConfirmedSnapshot.current = true;
-          setConfirmed((previous) => {
-            const next = { ...(previous ?? settings) };
-            for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-              if (
-                !pending[key] &&
-                !errors[key] &&
-                capturedRevisions[key] === revisions.current[key]
-              )
-                Object.assign(next, { [key]: settings[key] });
-            }
-            return next;
-          });
+          if (!capturedEpoch.aborted && capturedEpoch === currentEpoch.current)
+            acceptSnapshot(settings, generation, false);
         })
         .catch(() => undefined);
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [accountId, pending, errors]);
+  }, [accountId, epoch]);
   function live(write: Write) {
     return (
       !write.epoch.aborted &&
@@ -125,27 +115,11 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
   }
   function success(settings: AccountSettings, write: Write) {
     if (write.epoch.aborted || write.epoch !== currentEpoch.current) return;
-    const firstSnapshot = !hasConfirmedSnapshot.current;
-    hasConfirmedSnapshot.current = true;
-    setConfirmed((previous) => {
-      const next = { ...(previous ?? settings) };
-      for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-        if (key === write.key || (firstSnapshot && !revisions.current[key]))
-          Object.assign(next, { [key]: settings[key] });
-      }
-      return next;
-    });
-    const next = { ...values.current };
-    for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
-      if ((firstSnapshot && !revisions.current[key]) || (key === write.key && live(write)))
-        Object.assign(next, { [key]: settings[key] });
-    }
-    // Even a superseded write can supply the first full account snapshot.
-    // Only its own field waits for the latest intent's settlement.
-    adopt(next);
+    acceptSnapshot(settings, nextAccountSettingsGeneration(), true, write.key);
     if (!live(write)) return;
-    setErrors((previous) => ({ ...previous, [write.key]: undefined }));
-    setPending((previous) => ({ ...previous, [write.key]: false }));
+    const next = { ...intentsRef.current };
+    delete next[write.key];
+    updateIntents(next);
     void router.invalidate().catch(() => undefined);
   }
   const mutation = useMutation({
@@ -163,35 +137,47 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
             ? cause.status
             : undefined;
       const kind = status !== undefined && status >= 400 && status < 500 ? "rejected" : "ambiguous";
-      setPending((previous) => ({ ...previous, [write.key]: false }));
-      setErrors((previous) => ({ ...previous, [write.key]: { kind, retryValue: write.value } }));
-      // Never roll back the writer's choice. A read can prove an ambiguous write committed.
-      if (kind === "ambiguous")
+      updateIntents({
+        ...intentsRef.current,
+        [write.key]: {
+          value: write.value,
+          pending: false,
+          error: { kind, retryValue: write.value },
+        },
+      });
+      if (kind === "ambiguous") {
+        const generation = nextAccountSettingsGeneration();
         void getAccountSettings({ signal: write.epoch })
           .then((settings) => {
-            if (live(write) && settings[write.key] === write.value) success(settings, write);
+            if (!live(write)) return;
+            if (settings[write.key] === write.value) success(settings, write);
+            else acceptSnapshot(settings, generation, true);
           })
           .catch(() => undefined);
+      }
     },
   });
+  const value = useMemo(() => {
+    const next = { ...(confirmed ?? fallback) };
+    for (const key of KEYS) if (intents[key]) Object.assign(next, { [key]: intents[key].value });
+    return next;
+  }, [confirmed, fallback, intents]);
   function preference<K extends SettingKey>(key: K): AccountPreference<K> {
     function change(next: AccountSettings[K]) {
       const revision = (revisions.current[key] ?? 0) + 1;
       revisions.current[key] = revision;
-      adopt({ ...values.current, [key]: next });
-      setErrors((previous) => ({ ...previous, [key]: undefined }));
-      setPending((previous) => ({ ...previous, [key]: true }));
+      updateIntents({ ...intentsRef.current, [key]: { value: next, pending: true, error: null } });
       mutation.mutate({ key, value: next, revision, epoch });
     }
     return {
       value: value[key],
       confirmed: (confirmed ?? DEFAULTS)[key],
       available: confirmed !== null,
-      pending: pending[key] ?? false,
-      error: errors[key] ?? null,
+      pending: intents[key]?.pending ?? false,
+      error: intents[key]?.error ?? null,
       change,
       retry: () => {
-        const error = errors[key];
+        const error = intentsRef.current[key]?.error;
         if (error) change(error.retryValue as AccountSettings[K]);
       },
     };

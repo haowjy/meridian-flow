@@ -15,6 +15,7 @@ import { AccountSettingsProvider, useSharedAccountSettings } from "./AccountSett
 ).IS_REACT_ACT_ENVIRONMENT = true;
 const mocks = vi.hoisted(() => ({ update: vi.fn(), epoch: new AbortController(), hints: {} }));
 vi.mock("@/client/api/account-api", () => ({
+  nextAccountSettingsGeneration: () => 1,
   updateAccountSettings: mocks.update,
   getAccountSettings: vi.fn(),
 }));
@@ -56,6 +57,7 @@ it("keeps the explicit language choice visible after a failed save, even with a 
       root.render(
         <QueryClientProvider client={query}>
           <AccountSettingsProvider
+            serverReadGeneration={0}
             serverValue={{ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }}
           >
             <Probe />
