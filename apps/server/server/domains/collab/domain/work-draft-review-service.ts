@@ -96,7 +96,7 @@ export function createWorkDraftReviewService(input: {
     const titles = await input.resolveThreadTitles([
       ...new Set(pending.flatMap(({ actorThreadIds }) => actorThreadIds)),
     ]);
-    for (const { branch, rows, actorThreadIds } of pending) {
+    for (const { branch, actorThreadIds } of pending) {
       const uri = uris.get(branch.documentId) ?? null;
       drafts.push({
         draftId: branch.branchId,
@@ -104,7 +104,6 @@ export function createWorkDraftReviewService(input: {
         workId,
         status: "active",
         draftGeneration: branch.generation,
-        lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
         actorThreads: actorThreadIds.map((threadId) => ({
           threadId,
           title: titles.get(threadId) ?? null,

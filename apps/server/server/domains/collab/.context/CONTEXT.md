@@ -357,8 +357,11 @@ Preview diagnostics reach the domain's event-sink adapter as a warning with the
 document correlation and affected hunk count, never document content.
 
 `domain/draft-review-attribution.ts` owns replay, restoration aliases, range
-ownership and completeness. `domain/draft-review-operations.ts` owns writer
-grouping, presentation and dependency classes. The complete difference enters
+ownership and completeness. `domain/document-difference.ts` owns block alignment,
+identity-aware text gaps, clock ranges and anchors, without review authority.
+`domain/draft-review-hunks.ts` composes the raw difference with review attribution
+and restorative cancellation; publication consumes the raw difference directly.
+`domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
 ### Complete-effect terminal settlement
@@ -381,7 +384,9 @@ Whole-document Discard remains unfenced.
 ### Review read efficiency
 
 Review classes are opaque `closure:v1:` SHA-256 membership tokens, not encoded
-operation lists. Dependency closure decodes each row once and indexes ranges
+operation lists. One typed graph joins visible operation and journal-row nodes;
+physical rows always join their operation, while logical source rows join only
+when supplied in the journal cut. Dependency closure decodes each row once and indexes ranges
 per Yjs client; same-client prefix and overlapping-delete edges preserve the
 same connected components without pairwise row comparison. Block alignment
 peels matching ID prefixes and unambiguous suffixes before allocating an LCS

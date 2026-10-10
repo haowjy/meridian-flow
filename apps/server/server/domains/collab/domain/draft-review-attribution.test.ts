@@ -64,14 +64,12 @@ describe("draft review attribution", () => {
     expect(result.operations).toEqual([
       expect.objectContaining({
         operationId: "171",
-        contribution: "removed",
         classification: "removal",
         beforeExcerpt: "target",
         sourceUpdateIds: [171],
         closureUpdateIds: [171],
         actorTurnId: "turn-two-deletions",
         kind: "agent",
-        hunkCount: 2,
       }),
     ]);
   });
@@ -97,8 +95,6 @@ describe("draft review attribution", () => {
             deletedRanges: [{ client: 1, clock: 3, length: 5 }],
             insertedText: "New ",
             deletedText: "Alpha",
-            blockKey: "test",
-            blockIndex: 0,
           },
           review: {
             kind: "text",
@@ -140,8 +136,6 @@ describe("draft review attribution", () => {
             deletedRanges: [...known, { client: Number.MAX_SAFE_INTEGER, clock: 3, length: 1 }],
             insertedText: "",
             deletedText: "Alpha?",
-            blockKey: "test",
-            blockIndex: 0,
           },
           review: {
             kind: "text",
@@ -179,8 +173,6 @@ describe("draft review attribution", () => {
               deletedRanges: kind === "removal" ? [{ client: 1, clock: 3, length: 5 }] : [],
               insertedText: kind === "insertion" ? "Alpha" : "",
               deletedText: kind === "removal" ? "Alpha" : "",
-              blockKey: "test",
-              blockIndex: 0,
             },
             review: {
               kind: "text",
@@ -418,7 +410,6 @@ describe("draft review attribution", () => {
     expect(result.operations).toEqual([
       expect.objectContaining({
         operationId: "211",
-        contribution: "rewrote",
         classification: "rewrite",
         beforeExcerpt: "tar",
         afterExcerpt: "a",
@@ -426,18 +417,15 @@ describe("draft review attribution", () => {
         closureUpdateIds: [211, 212],
         actorTurnId: "turn-agent",
         kind: "agent",
-        hunkCount: 2,
       }),
       expect.objectContaining({
         operationId: "212",
-        contribution: "added",
         classification: "addition",
         afterExcerpt: "writer",
         sourceUpdateIds: [212],
         closureUpdateIds: [211, 212],
         actorUserId: "user-a",
         kind: "writer",
-        hunkCount: 1,
       }),
     ]);
   });
@@ -486,25 +474,21 @@ describe("draft review attribution", () => {
     expect(result.operations).toEqual([
       expect.objectContaining({
         operationId: "241",
-        contribution: "added",
         classification: "addition",
         afterExcerpt: "agent",
         sourceUpdateIds: [241],
         closureUpdateIds: [241, 242],
         actorTurnId: "turn-agent",
         kind: "agent",
-        hunkCount: 1,
       }),
       expect.objectContaining({
         operationId: "242",
-        contribution: "added",
         classification: "addition",
         afterExcerpt: "writer",
         sourceUpdateIds: [242],
         closureUpdateIds: [241, 242],
         actorUserId: "user-a",
         kind: "writer",
-        hunkCount: 1,
       }),
     ]);
   });
@@ -548,9 +532,7 @@ describe("draft review attribution", () => {
     expect(result.operations).toEqual([
       expect.objectContaining({
         operationId: "266",
-        contribution: "rewrote",
         classification: "rewrite",
-        hunkCount: 1,
       }),
     ]);
   });
