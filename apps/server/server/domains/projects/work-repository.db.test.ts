@@ -552,7 +552,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("hides Work chats, drafts, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, drafts, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db

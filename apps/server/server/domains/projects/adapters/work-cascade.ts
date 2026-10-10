@@ -8,7 +8,7 @@ import {
   projectResults,
   threads,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 type WorkCascadeInput = {
@@ -25,14 +25,14 @@ type CascadeContext = WorkCascadeInput & {
 
 type WorkCascadeEntry = {
   name: string;
-  hide(context: CascadeContext): Promise<readonly ThreadId[] | undefined>;
-  unhide(context: CascadeContext): Promise<void>;
+  cascadeDelete(context: CascadeContext): Promise<readonly ThreadId[] | undefined>;
+  cascadeRestore(context: CascadeContext): Promise<void>;
 };
 
 const WORK_CASCADE: readonly WorkCascadeEntry[] = [
   {
     name: "threads",
-    async hide({ db, workId, liveThreadIds, at }) {
+    async cascadeDelete({ db, workId, liveThreadIds, at }) {
       if (liveThreadIds.length === 0) return [];
       const rows = await currentDrizzleDb(db)
         .update(threads)
@@ -41,7 +41,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
         .returning({ id: threads.id });
       return rows.map(({ id }) => id);
     },
-    async unhide({ db, workId, at }) {
+    async cascadeRestore({ db, workId, at }) {
       await currentDrizzleDb(db)
         .update(threads)
         .set({ deletedAt: null, deletedByWorkId: null, updatedAt: at })
@@ -50,7 +50,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
   },
   {
     name: "project results",
-    async hide({ db, workId, threadIds }) {
+    async cascadeDelete({ db, workId, threadIds }) {
       if (threadIds.length === 0) return;
       await currentDrizzleDb(db)
         .update(projectResults)
@@ -65,7 +65,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
           ),
         );
     },
-    async unhide({ db, workId }) {
+    async cascadeRestore({ db, workId }) {
       await currentDrizzleDb(db)
         .update(projectResults)
         .set({ deletedByWorkId: null })
@@ -74,48 +74,64 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
   },
   {
     name: "documents",
-    async hide({ db, workId, sourceIds, at }) {
+    async cascadeDelete({ db, workId, sourceIds, at }) {
       if (sourceIds.length === 0) return;
       await currentDrizzleDb(db)
         .update(documents)
-        .set({ deletedAt: at, deletedByWorkId: workId })
+        .set({
+          deletedAt: at,
+          deletedByWorkId: workId,
+          locationVersion: sql`${documents.locationVersion} + 1`,
+        })
         .where(
           and(inArray(documents.contextSourceId, [...sourceIds]), isNull(documents.deletedAt)),
         );
     },
-    async unhide({ db, workId }) {
+    async cascadeRestore({ db, workId }) {
       await currentDrizzleDb(db)
         .update(documents)
-        .set({ deletedAt: null, deletedByWorkId: null })
+        .set({
+          deletedAt: null,
+          deletedByWorkId: null,
+          locationVersion: sql`${documents.locationVersion} + 1`,
+        })
         .where(eq(documents.deletedByWorkId, workId));
     },
   },
   {
     name: "folders",
-    async hide({ db, workId, sourceIds, at }) {
+    async cascadeDelete({ db, workId, sourceIds, at }) {
       if (sourceIds.length === 0) return;
       await currentDrizzleDb(db)
         .update(folders)
-        .set({ deletedAt: at, deletedByWorkId: workId })
+        .set({
+          deletedAt: at,
+          deletedByWorkId: workId,
+          locationVersion: sql`${folders.locationVersion} + 1`,
+        })
         .where(and(inArray(folders.contextSourceId, [...sourceIds]), isNull(folders.deletedAt)));
     },
-    async unhide({ db, workId }) {
+    async cascadeRestore({ db, workId }) {
       await currentDrizzleDb(db)
         .update(folders)
-        .set({ deletedAt: null, deletedByWorkId: null })
+        .set({
+          deletedAt: null,
+          deletedByWorkId: null,
+          locationVersion: sql`${folders.locationVersion} + 1`,
+        })
         .where(eq(folders.deletedByWorkId, workId));
     },
   },
   {
     name: "context sources",
-    async hide({ db, workId, sourceIds, at }) {
+    async cascadeDelete({ db, workId, sourceIds, at }) {
       if (sourceIds.length === 0) return;
       await currentDrizzleDb(db)
         .update(contextSources)
         .set({ deletedAt: at, deletedByWorkId: workId })
         .where(and(inArray(contextSources.id, [...sourceIds]), isNull(contextSources.deletedAt)));
     },
-    async unhide({ db, workId }) {
+    async cascadeRestore({ db, workId }) {
       await currentDrizzleDb(db)
         .update(contextSources)
         .set({ deletedAt: null, deletedByWorkId: null })
@@ -124,7 +140,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
   },
   {
     name: "Work draft branches",
-    async hide({ db, workId, at }) {
+    async cascadeDelete({ db, workId, at }) {
       await currentDrizzleDb(db)
         .update(documentBranches)
         .set({ status: "closed", deletedByWorkId: workId, updatedAt: at })
@@ -136,7 +152,7 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
           ),
         );
     },
-    async unhide({ db, workId, at }) {
+    async cascadeRestore({ db, workId, at }) {
       await currentDrizzleDb(db)
         .update(documentBranches)
         .set({ status: "active", deletedByWorkId: null, updatedAt: at })
@@ -156,23 +172,23 @@ async function cascadeContext(
   return { db, ...input, sourceIds: sources.map(({ id }) => id) };
 }
 
-export async function hideWorkOwnedRows(
+export async function cascadeDelete(
   db: DrizzleDb,
   input: Omit<CascadeContext, "db" | "sourceIds">,
 ): Promise<ThreadId[]> {
   const context = await cascadeContext(db, input);
-  const hiddenThreads: ThreadId[] = [];
+  const cascadedThreads: ThreadId[] = [];
   for (const entry of WORK_CASCADE) {
-    const ids = await entry.hide(context);
-    if (ids) hiddenThreads.push(...ids);
+    const ids = await entry.cascadeDelete(context);
+    if (ids) cascadedThreads.push(...ids);
   }
-  return hiddenThreads;
+  return cascadedThreads;
 }
 
-export async function unhideWorkOwnedRows(
+export async function cascadeRestore(
   db: DrizzleDb,
   input: Omit<CascadeContext, "db" | "sourceIds">,
 ): Promise<void> {
   const context: CascadeContext = { db, ...input, sourceIds: [] };
-  for (const entry of WORK_CASCADE) await entry.unhide(context);
+  for (const entry of WORK_CASCADE) await entry.cascadeRestore(context);
 }
