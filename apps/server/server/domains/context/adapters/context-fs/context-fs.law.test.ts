@@ -106,6 +106,18 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
+  it("reports the occupying kind through the context router", async () => {
+    const { fs } = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
+    });
+    await fs.mkdir("Lore");
+    expect(
+      await port.createBoundDocument("manuscript://Lore", null, { origin: { type: "system" } }),
+    ).toMatchObject({ ok: false, error: { code: "conflict", occupantKind: "folder" } });
+  });
+
   it("allocates past folder prose aliases", async () => {
     const { fs } = createUntitledFs({});
     await fs.mkdir("Untitled 1.md");

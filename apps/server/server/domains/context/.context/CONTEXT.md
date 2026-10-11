@@ -551,3 +551,6 @@ Writer routes can read, edit, rename or move notes out, but cannot create notes
 or move files into a lineage. Canonical AI writes use the normal edit policy.
 Rebinding selects a different bare Scratch owner; it never moves notes. The
 durable Work-switch Notice names the previous canonical Scratch root.
+
+Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
+and HTTP error data; it is absent when the failure cannot prove an occupant.

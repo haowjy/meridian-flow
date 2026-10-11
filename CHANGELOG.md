@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Namespace creation conflicts identify the occupying file or folder for accurate conflict copy.
+
 - Untitled creation advances past canonical folder aliases and occupied names.
 
 - Link candidate loading follows the shared exact-first and extension-omission contract.

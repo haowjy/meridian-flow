@@ -79,7 +79,7 @@ export type ContextTreeMoveCommand = PreparedFileMoveCommand | PreparedDirectory
 export type ContextTreeMutationError =
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "invalid_operation" }
   | { code: "not_found" };
 
