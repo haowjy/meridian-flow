@@ -608,7 +608,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = await this.readTreeView();
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folderId = await this.findFolderId(view, path.split("/").filter(Boolean));
-    if (folderId === MISSING) return Ok([]);
+    if (folderId === MISSING) return Err({ code: "not_found" });
 
     const [folders, documents] = await Promise.all([
       this.store.listFolders(view, folderId),
