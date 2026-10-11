@@ -35,7 +35,7 @@ const LAUNCH_AGENTS = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../domains/packages/builtin/launch-agents",
 );
-const RESOURCE = "skills://story-review/resources/line-edit.md";
+const RESOURCE = "skills://story-review/resources/line-edit";
 const url = process.env.DATABASE_URL;
 
 async function launchAgentsSource(): Promise<AgentSourceSnapshot> {
@@ -146,13 +146,13 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(body.readable).toBe(true);
 
       expect(await call(PARENT, "read", { path: RESOURCE })).toMatch(
-        /^skills:\/\/story-review\/resources\/line-edit\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n/,
+        /^skills:\/\/story-review\/resources\/line-edit\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n/,
       );
       expect(await call(PARENT, "ls", { path: "skills://" })).toBe(
         "skills://\n  story-review/ (read-only)",
       );
       expect(await call(PARENT, "skill", { name: "story-review" })).toMatch(
-        /^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative/,
+        /^skills:\/\/story-review\/SKILL\nPaths in this skill are relative/,
       );
 
       expect(await call(CHILD, "read", { path: RESOURCE })).toBe(

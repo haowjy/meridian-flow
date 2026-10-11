@@ -369,14 +369,23 @@ end-to-end as one suite.
 - **Steps:**
   1. Concurrent edit during a move. Run `729-730-V-app.py` with each of
      `prefix`, `unlink`, `inside` and `adjacent`: the holder has
-     `[Target](final.md) waits.`, the thread's draft edits the label, unlinks it,
+     `[Target](final) waits.`, the thread's draft edits the label, unlinks it,
      edits inside it or edits the suffix, then the target moves twice and is
-     renamed to `merged-729-730.md`.
+     renamed to `merged-729-730`.
   2. Ahead ref: `729-730-V-ahead.py`. The model writes `[Next](ch9)`; create
-     `ch9.md`, rename it to `ch10.md`, then create a new `ch9.md`.
+     `ch9`, rename it to `ch10`, then create a new `ch9`.
   3. Stale path: `729-730-V-stale.py`. The model reads four holders, the target
      is renamed, then block edits spell the old path with and without `.md`,
      plus a `find` of the old spelling.
+     Typed `[Next](ch9.md)` must also read back `[Next](ch9)`. Create prose
+     `outline` beside `outline.json`: `[Outline](outline)` must prefer the prose
+     document. Delete the prose document: that path must reach the JSON file.
+     Inspect `ls` (prose, JSON and a folder), `search`, and a missing-name `read`;
+     their paths, receipts and errors show no prose extension. Load a skill from
+     a source `SKILL.md`: the header and `ls` show `SKILL`, and either typed
+     spelling loads it. Published path descriptions teach `Chapter 13`, not a
+     prose suffix. Old probe scripts that assert added prose suffixes need their
+     assertions updated to this contract before use.
   4. Gone and restore: `729-730-V-gone.py` (delete, resolver, a new document at
      the old path) and `729-730-V-restore.py` (a Work-owned `scratch://` target:
      delete the Work, restore it).
@@ -391,12 +400,12 @@ end-to-end as one suite.
      `729-730-V-real-b.py <tag> before|inflight [delay]` moves the chapter, asks
      for the label change and reads back.
 - **Expect:** every read, preview and receipt shows the new path. Label edits and
-  unlinks stay what was written (`[Renamed target](merged-729-730.md) waits.`,
-  `Target waits.`, `[Tar drafted get](merged-729-730.md) waits.`,
-  `[Target](merged-729-730.md) returns.`); the suffix is never linked. Holder
+  unlinks stay what was written (`[Renamed target](merged-729-730) waits.`,
+  `Target waits.`, `[Tar drafted get](merged-729-730) waits.`,
+  `[Target](merged-729-730) returns.`); the suffix is never linked. Holder
   journals (updates, checkpoints, head sequence, state vector, draft branch
-  journal rows) are identical before and after every move. `ch9` reads `ch9.md`
-  then `ch10.md` and ignores the later `ch9.md`. Stale-path block edits keep the
+  journal rows) are identical before and after every move. `ch9` reads `ch9`
+  then `ch10` and ignores the later `ch9`. Stale-path block edits keep the
   document. A deleted target answers `gone` with no location from
   `POST /api/projects/:id/links/resolve`, is not captured by a new document at
   its path, and revives on Work restore. `linkUpdate.links` counts incoming

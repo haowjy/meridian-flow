@@ -43,7 +43,7 @@ if (!RUN) {
     } as const;
     type Scheme = keyof typeof SOURCES;
     const addressFor = (scheme: Scheme) =>
-      scheme === "manuscript" ? "manuscript://chapter.md" : `${scheme}://@notes/chapter.md`;
+      scheme === "manuscript" ? "manuscript://chapter.toml" : `${scheme}://@notes/chapter.toml`;
     const registrationFor = (scheme: Scheme, aheadId = AHEAD) => ({
       aheadId,
       holderProjectId: PROJECT as never,
@@ -89,7 +89,7 @@ if (!RUN) {
     const insertDocument = (db: Database, scheme: Scheme = "manuscript", id = DOCUMENT) =>
       db
         .insert(documents)
-        .values({ id, contextSourceId: SOURCES[scheme], name: "chapter", extension: "md" });
+        .values({ id, contextSourceId: SOURCES[scheme], name: "chapter", extension: "toml" });
     const settledIds = async () =>
       (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
         (row) => row.id,
@@ -292,7 +292,7 @@ if (!RUN) {
       expect(after?.settledAt).toEqual(first?.settledAt);
 
       await expect(
-        registry.register([{ ...registration, address: "manuscript://other.md" }]),
+        registry.register([{ ...registration, address: "manuscript://other.toml" }]),
       ).rejects.toThrow(/another address/);
 
       // Registration commits first, so a caller that then rolls back leaves a harmless orphan row.
@@ -341,12 +341,12 @@ if (!RUN) {
       }
       const registry = newRegistry(database);
       await registry.register([
-        { ...registration, address: "scratch://@/c1/note.md" },
-        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.md" },
+        { ...registration, address: "scratch://@/c1/note.toml" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.toml" },
       ]);
       await database
         .insert(documents)
-        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "md" });
+        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "toml" });
       await runInDrizzleTransaction(database, async () => {
         await lockContextSources(database, [SOURCES[0]]);
         expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);
@@ -372,7 +372,7 @@ if (!RUN) {
         "scratch://@/trailing.",
         "scratch://@/.hidden",
         "scratch://@/noext",
-        "scratch://contextual.md",
+        "scratch://contextual.toml",
       ]) {
         await expect(
           registry.register([{ ...registration, aheadId: DOCUMENT_2, address }]),
@@ -387,7 +387,7 @@ if (!RUN) {
           seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
           return String.fromCharCode(0x4e00 + (seed % 18_000));
         }).join("");
-      const long = `manuscript://${Array.from({ length: 18 }, segment).join("/")}.md`;
+      const long = `manuscript://${Array.from({ length: 18 }, segment).join("/")}.toml`;
       const longRegistration = { ...registration, aheadId: DOCUMENT_2, address: long };
       await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();
       await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();

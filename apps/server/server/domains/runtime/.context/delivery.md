@@ -205,7 +205,7 @@ What the model receives for five common deliveries, so "durable
    the same header as `skill()`:
    ```
    <system_update>
-   skills://writing-principles/SKILL.md
+   skills://writing-principles/SKILL
    Paths in this skill are relative to skills://writing-principles/.
 
    description: Craft rules for revision
