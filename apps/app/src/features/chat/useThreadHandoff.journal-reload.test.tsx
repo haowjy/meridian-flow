@@ -13,7 +13,7 @@ import { useStore } from "zustand";
 import * as trails from "@/client/change-trails";
 import {
   bindChatSubmissions,
-  type FirstSendChatSubmission,
+  type ChatSubmission,
   readChatSubmissions,
   recordChatSubmission,
 } from "@/client/chat-submissions";
@@ -123,9 +123,9 @@ const referencedPayload = {
   references: [{ ...REFERENCE, purpose: "reference" }],
 };
 
-function firstSend(): FirstSendChatSubmission {
+function firstSend(): ChatSubmission {
   return {
-    kind: "first-send",
+    recordId: "sub-first",
     submissionId: "sub-first",
     threadId: THREAD_ID,
     projectId: "project-1",
@@ -134,11 +134,13 @@ function firstSend(): FirstSendChatSubmission {
     blocks: [{ type: "text", text: "Draft the fight scene" }],
     references: [],
     activatedSkillSlugs: [],
-    title: "Draft the fight scene",
-    workId: null,
-    agentSelection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
-    agentName: "General",
-    agentSlug: "general",
+    creation: {
+      title: "Draft the fight scene",
+      workId: null,
+      agentSelection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
+      agentName: "General",
+      agentSlug: "general",
+    },
   };
 }
 
@@ -416,7 +418,7 @@ describe("real-store first-send retry", () => {
       projectId: "project-1",
       ...message,
       submissionId: "sub-first",
-      agent: { name: "General", slug: "general", selection: firstSend().agentSelection },
+      agent: { name: "General", slug: "general", selection: firstSend().creation!.agentSelection },
       workId: "no-work",
       threadActions: scenario.store.getState(),
       selectChat: () => undefined,

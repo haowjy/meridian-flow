@@ -4,8 +4,8 @@ Durable, account-stamped journal of unresolved chat-submission intents (P3).
 It is the local witness that lets a reload reconcile or replay a displayed send.
 It is not a thread replica: no assistant turns or rendered rows.
 
-- One record per `(accountId, submissionId)`, keyed
-  `meridian:chat-submissions:v1:<accountId>:<submissionId>`. Enumeration matches
+- One record per `(accountId, recordId)`, keyed
+  `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
   `prefix + accountId + ":"`, so an account id that is a string prefix of
   another never leaks the longer account's records.
 - One key per submission is deliberate. A tab can only clobber the record it
@@ -15,10 +15,10 @@ It is not a thread replica: no assistant turns or rendered rows.
   record/retire takes an explicit `accountId` and is refused when it is not the
   current bind. Reads for a non-current account return nothing.
 - Store the exact dispatch fingerprint fields (text, blocks, references,
-  activatedSkillSlugs) for every kind, a new chat's first send included: a
+  activatedSkillSlugs) for every record, a new chat's first send included: a
   replay rebuilt from text alone would drop its `@` references. A replay with
   the same `submissionId` but different payload trips the server's
-  `idempotency_conflict`. Existing-thread composer sends also retain their
+  `idempotency_conflict`. All composer sends also retain their
   validated structured authoring snapshot until settlement. The
   displayed writer row is built from the same blocks (`appendUserTurn`), so a
   live or recovered row keeps each reference's document like the snapshot does.
@@ -28,9 +28,13 @@ It is not a thread replica: no assistant turns or rendered rows.
   remount once the composer owns its words. Otherwise its exact snapshot stays in a
   durable rejected entry. Rejected entries render failed rows in every tab and
   on reload, never trigger lookup or replay, and are resolved only by the writer.
-  Retry remints the identity and sends the exact fingerprint, leaving newer
+  Retry rewrites the same record key with a reminted submission id and sends the exact fingerprint, leaving newer
   authoring alone. Edit prepends the rejected structured document to any newer
   draft before retirement. Ambiguous entries keep Check / Start over.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec discards a wrong envelope version, a foreign `accountId`, and corrupt
   JSON without throwing. Storage errors degrade to "no intents", never a crash.
+
+`creation` carries first-send inputs; `draft` retains the composer snapshot.
+Account bind rewrites v1 records to v2 before removing their old keys. The
+bounded rewrite removal trigger is in `.context/TODO`.

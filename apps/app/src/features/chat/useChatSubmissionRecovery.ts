@@ -1,7 +1,7 @@
 /** Reconciles and retries persisted chat submissions. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  type ExistingThreadChatSubmission,
+  type ChatSubmission,
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
   readChatSubmission,
@@ -25,7 +25,7 @@ export type RecoveredChatSubmission = {
 /** A proved rejection retained on its user turn for edit/retry recovery. */
 export type FailedChatSubmission = RecoveredChatSubmission & {
   /** The exact dispatch fingerprint, retained so Retry can remint and Edit can check faithfulness. */
-  fingerprint: ExistingThreadChatSubmission;
+  fingerprint: ChatSubmission;
 };
 
 export type ChatSubmissionRecovery = {
@@ -43,11 +43,8 @@ export type ChatSubmissionRecovery = {
   ) => Promise<ComposerSubmitOutcome>;
 };
 
-function isExistingThreadFor(
-  entry: { kind: string; threadId: string },
-  threadId: string,
-): entry is ExistingThreadChatSubmission {
-  return entry.kind === "existing-thread" && entry.threadId === threadId;
+function isExistingThreadFor(entry: ChatSubmission, threadId: string): boolean {
+  return !entry.creation && entry.threadId === threadId;
 }
 
 const restoredTurnIds = new Map<string, string>();
@@ -143,23 +140,20 @@ export function useChatSubmissionRecovery(
     );
   }, []);
 
-  const raiseRejected = useCallback(
-    (entry: ExistingThreadChatSubmission, optimisticTurnId: string) => {
-      setRejected((current) =>
-        current.some((candidate) => candidate.submissionId === entry.submissionId)
-          ? current
-          : [
-              ...current,
-              {
-                submissionId: entry.submissionId,
-                optimisticTurnId,
-                fingerprint: entry,
-              },
-            ],
-      );
-    },
-    [],
-  );
+  const raiseRejected = useCallback((entry: ChatSubmission, optimisticTurnId: string) => {
+    setRejected((current) =>
+      current.some((candidate) => candidate.submissionId === entry.submissionId)
+        ? current
+        : [
+            ...current,
+            {
+              submissionId: entry.submissionId,
+              optimisticTurnId,
+              fingerprint: entry,
+            },
+          ],
+    );
+  }, []);
 
   const dropRejected = useCallback((submissionId: string) => {
     setRejected((current) =>
@@ -180,7 +174,7 @@ export function useChatSubmissionRecovery(
 
   /** A proved rejection is an actionable failure, not a dropped send: keep the user row failed and transfer ownership to authoring or a rejected journal entry. */
   const reject = useCallback(
-    (entry: ExistingThreadChatSubmission, optimisticTurnId: string) => {
+    (entry: ChatSubmission, optimisticTurnId: string) => {
       if (getChatSubmissionAccountId() !== accountId || getChatSubmissionEpoch() !== bindEpoch)
         return;
       rememberSubmissionTurnId(accountId, entry.submissionId, optimisticTurnId);
@@ -200,10 +194,7 @@ export function useChatSubmissionRecovery(
 
   /** The lookup proved the server never saw this submission. */
   const replay = useCallback(
-    async (
-      entry: ExistingThreadChatSubmission,
-      optimisticTurnId: string,
-    ): Promise<ComposerSubmitOutcome> => {
+    async (entry: ChatSubmission, optimisticTurnId: string): Promise<ComposerSubmitOutcome> => {
       const ambiguous: ComposerSubmitOutcome = {
         kind: "ambiguous",
         submissionId: entry.submissionId,
@@ -264,7 +255,7 @@ export function useChatSubmissionRecovery(
 
   const settle = useCallback(
     async (
-      entry: ExistingThreadChatSubmission,
+      entry: ChatSubmission,
       optimisticTurnId: string,
       operation: "lookup" | "retire",
     ): Promise<void> => {
@@ -280,7 +271,7 @@ export function useChatSubmissionRecovery(
       if (!threadExists) {
         if (operation === "lookup") reject(entry, optimisticTurnId);
         else {
-          retireChatSubmission(accountId, entry.submissionId, epoch);
+          retireChatSubmission(accountId, entry.recordId, epoch);
           forget(entry.submissionId);
         }
         return;
@@ -316,7 +307,7 @@ export function useChatSubmissionRecovery(
           reject(entry, optimisticTurnId);
         } else {
           // Writer-directed Start over retires the witness entirely.
-          retireChatSubmission(accountId, entry.submissionId, epoch);
+          retireChatSubmission(accountId, entry.recordId, epoch);
           forget(entry.submissionId);
         }
         return;
@@ -462,7 +453,7 @@ export function useChatSubmissionRecovery(
       const epoch = getChatSubmissionEpoch();
       // A rejected `(threadId, submissionId)` is never re-admitted: mint a
       // fresh identity and record the durable intent before dispatch.
-      const nextEntry: ExistingThreadChatSubmission = {
+      const nextEntry: ChatSubmission = {
         ...entry,
         submissionId: crypto.randomUUID(),
         state: undefined,
@@ -477,7 +468,6 @@ export function useChatSubmissionRecovery(
           composerSessionDraft(accountId, { kind: "chat", id: threadId }).handoffSubmitted(
             nextEntry.draft,
           );
-        retireChatSubmission(accountId, entry.submissionId, epoch);
         // The fresh journal entry now owns the unresolved send. Drop the proved
         // rejection so a remount resolves through lookup (Check / Start over)
         // instead of reattaching Retry for an unresolved retry.
@@ -549,7 +539,7 @@ export function useChatSubmissionRecovery(
         )
       )
         return false;
-      if (entry && !retireChatSubmission(accountId, submissionId, bindEpoch)) return false;
+      if (entry && !retireChatSubmission(accountId, entry.recordId, bindEpoch)) return false;
       forget(submissionId);
       return true;
     },

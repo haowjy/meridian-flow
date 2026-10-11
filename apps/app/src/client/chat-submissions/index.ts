@@ -10,7 +10,6 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
-  type FirstSendChatSubmission,
 } from "./store";
 
 export {
@@ -18,8 +17,6 @@ export {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   type ChatSubmission,
   chatSubmissionStorageKey,
-  type ExistingThreadChatSubmission,
-  type FirstSendChatSubmission,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;
@@ -60,7 +57,9 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
 
 export function readChatSubmission(accountId: string, submissionId: string): ChatSubmission | null {
   const current = browserJournal();
-  return current?.accountId === accountId ? current.get(submissionId) : null;
+  return current?.accountId === accountId
+    ? (current.entries().find((entry) => entry.submissionId === submissionId) ?? null)
+    : null;
 }
 
 /** A rejected witness is durable, but no longer awaits admission lookup or replay. */
@@ -69,17 +68,16 @@ export function readUnresolvedSubmission(
   submissionId: string,
 ): ChatSubmission | null {
   const entry = readChatSubmission(accountId, submissionId);
-  return entry?.kind === "existing-thread" && entry.state === "rejected" ? null : entry;
+  return entry?.state === "rejected" ? null : entry;
 }
 
 export function readFirstSendSubmission(
   accountId: string,
   threadId: string,
-): FirstSendChatSubmission | null {
+): ChatSubmission | null {
   return (
     readChatSubmissions(accountId).find(
-      (entry): entry is FirstSendChatSubmission =>
-        entry.kind === "first-send" && entry.threadId === threadId,
+      (entry) => Boolean(entry.creation) && entry.threadId === threadId,
     ) ?? null
   );
 }
@@ -90,10 +88,10 @@ export function recordChatSubmission(accountId: string, entry: ChatSubmission): 
 
 export function retireChatSubmission(
   accountId: string,
-  submissionId: string,
+  recordId: string,
   expectedEpoch?: number,
 ): boolean {
-  return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
+  return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
 }
 
 /** One settlement owner, independent of mounted panes. Transfer words before retiring the witness. */
@@ -105,14 +103,14 @@ export function settleChatSubmission(
 ): boolean {
   const current = browserJournal();
   if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
-  const entry = current.get(submissionId);
+  const entry = current.entries().find((entry) => entry.submissionId === submissionId) ?? null;
   if (!entry) return false;
-  if (entry.kind === "existing-thread") {
+  if (!entry.creation) {
     const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
     if (outcome === "rejected") {
       if (!entry.draft || !owner.restoreRejected(entry.draft))
         return current.record(accountId, { ...entry, state: "rejected" });
     } else if (entry.draft && !owner.acceptSubmitted()) return false;
   }
-  return current.retire(accountId, submissionId, expectedEpoch);
+  return current.retire(accountId, entry.recordId, expectedEpoch);
 }
