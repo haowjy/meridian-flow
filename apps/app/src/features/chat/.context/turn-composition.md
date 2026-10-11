@@ -80,11 +80,11 @@ Notation: `r` = reasoning, `t` = process tool, `p` = prose, `c` = custom card,
 
 The label summarizes the tools inside that process item: a successful `skill`
 call names its skill (`Invoked 'Story Review'`, several joined as a list),
-`read` calls contribute unique explored documents, and successful `write`
-calls contribute edited documents. Failed operations and every other
+`read` calls contribute unique explored documents. Successful writes are omitted:
+the turn receipt is the one summary of changed documents. Failed operations and every other
 tool (`search`, `ls`, `work`, a `read` of a `skills://` file) contribute steps
 instead of documents; a `write` paused with `read_required` counts as a step.
-Clauses are ordered skills → explore → edit → steps. A process item with no
+Clauses are ordered skills → explore → steps. A process item with no
 readable tool but a reasoning run still shows `Thinking`. The trigger's
 accessible name is the visible label; there is no separate `aria-label`.
 
