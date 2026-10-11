@@ -6,7 +6,7 @@ import {
   reserveResourceDocument,
 } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
-import { threadRecentIdentityIndex } from "./thread-recent-identity";
+import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 
 it("hides descendants of pending deletes and restores them after refusal", () => {
   const scope = { kind: "project" as const, projectId: "project" };
@@ -70,12 +70,12 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
       },
     ],
   };
-  expect(threadRecentIdentityIndex("project", snapshot).get("doc")).toBeNull();
-  expect(threadRecentIdentityIndex("other", snapshot).has("doc")).toBe(false);
-  expect(threadRecentIdentityIndex("project", snapshot).has("unloaded")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
+  expect(recentDocumentIdentityIndex("other", snapshot).has("doc")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", snapshot).has("unloaded")).toBe(false);
   const restored = structuredClone(snapshot);
   restored.folders[0].intents[0].state = "needs-repair";
-  expect(threadRecentIdentityIndex("project", restored).get("doc")).toEqual({
+  expect(recentDocumentIdentityIndex("project", restored).get("doc")).toEqual({
     name: "doc.md",
     path: "kb://A/doc.md",
   });
@@ -100,8 +100,9 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
     folders: [],
     catalogs: [],
   };
-  expect(threadRecentIdentityIndex("project", snapshot).get("doc")).toBeNull();
-  expect(threadRecentIdentityIndex("other", snapshot).has("doc")).toBe(false);
-  deletion.next.intents[0].state = "needs-repair";
-  expect(threadRecentIdentityIndex("project", snapshot).has("doc")).toBe(false);
+  expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
+  expect(recentDocumentIdentityIndex("other", snapshot).has("doc")).toBe(false);
+  const restored = structuredClone(snapshot);
+  restored.records[0].intents[0].state = "needs-repair";
+  expect(recentDocumentIdentityIndex("project", restored).has("doc")).toBe(false);
 });

@@ -4,9 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import { bindAccountRecents, touchAccountRecent } from "@/client/recents";
-import { threadRecentIdentityIndex } from "@/features/project/context/thread-recent-identity";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { accountQueryKeys } from "./account-query-keys";
+import { recentDocumentIdentityIndex } from "./recent-document-identity";
 import { useRecentDocuments } from "./useRecentDocuments";
 
 const observation = vi.hoisted(() => ({ snapshot: null as ResourceProjectionSnapshot | null }));
@@ -102,7 +102,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
         });
       });
       expect(
-        threadRecentIdentityIndex(scope.projectId, observation.snapshot).get("doc"),
+        recentDocumentIdentityIndex(scope.projectId, observation.snapshot).get("doc"),
       ).toBeNull();
       expect(documents).toEqual([]);
       const restored = structuredClone(observation.snapshot);

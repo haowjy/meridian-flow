@@ -1,5 +1,7 @@
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { listRecentDocuments } from "@/client/api/recent-documents-api";
@@ -10,7 +12,9 @@ import {
   getAccountRecentsSnapshot,
   subscribeAccountRecents,
 } from "@/client/recents";
+import { useAccountResourceProjection } from "@/features/project/context/account-feature-context";
 import { accountQueryKeys } from "./account-query-keys";
+import { recentDeletionRevision, recentDocumentIdentityIndex } from "./recent-document-identity";
 
 export type RecentDocumentsStatus = {
   documents: AccountRecentItem[];
@@ -32,6 +36,13 @@ type RecentListFetch = {
  * another account bind is ignored.
  */
 export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
+  const { snapshot } = useAccountResourceProjection(projectId);
+  const identities = useMemo(
+    () => recentDocumentIdentityIndex(projectId, snapshot),
+    [projectId, snapshot],
+  );
+  const deletionRevision = recentDeletionRevision(projectId, snapshot);
+  const queryClient = useQueryClient();
   const local = useSyncExternalStore(
     subscribeAccountRecents,
     getAccountRecentsSnapshot,
@@ -51,9 +62,39 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
     applyServerRecentList(accountId, projectId, fetched.documents, fetched.bindEpoch);
   }, [accountId, local.bindEpoch, projectId, query.data]);
 
+  useEffect(() => {
+    if (!accountId || deletionRevision === "" || deletionRevision === "[]") return;
+    void queryClient.invalidateQueries({
+      queryKey: accountQueryKeys.recentDocuments(accountId, projectId),
+    });
+  }, [accountId, deletionRevision, projectId, queryClient]);
+
   const documents = useMemo(
-    () => (local.bound ? local.items.filter((item) => item.projectId === projectId) : []),
-    [local, projectId],
+    () =>
+      local.bound
+        ? local.items.flatMap((item) => {
+            if (item.projectId !== projectId) return [];
+            const identity = identities.get(item.documentId);
+            if (identity === null) return [];
+            if (!identity) return [item];
+            const parsed = parseContextUri(identity.path);
+            return [
+              {
+                ...item,
+                name: identity.name,
+                address:
+                  parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+                    ? {
+                        kind: "document" as const,
+                        scheme: parsed.value.scheme,
+                        path: `/${parsed.value.path}`,
+                      }
+                    : item.address,
+              },
+            ];
+          })
+        : [],
+    [identities, local, projectId],
   );
   const awaitingServer =
     !local.bound || (documents.length === 0 && (query.isPending || query.isFetching));
