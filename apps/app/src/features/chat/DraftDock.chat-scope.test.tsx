@@ -317,6 +317,13 @@ it.each([
         ),
       ).toHaveLength(1);
       expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1);
+      if (!isNewDocument) {
+        expect(
+          document
+            .querySelector("[data-draft-dock-strip-error] span[title]")
+            ?.getAttribute("title"),
+        ).toBe(message);
+      }
     },
     {
       chatSurface: <Strip />,

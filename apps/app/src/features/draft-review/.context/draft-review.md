@@ -158,7 +158,9 @@ Work-page footer; one summary row holds count and commands. Expanded changes sit
 directly under it for a single document; multiple documents get file headers. A file
 failure belongs to its rendered change row, otherwise to the single-file summary
 or multi-file header. This ownership is derived from the rendered row model.
-Discard confirmation replaces the summary instead of competing with it. Change excerpts
+Strip/header failures never wrap: the single line ellipsizes with full localized
+copy retained in its title and accessible text. Discard confirmation replaces the
+summary instead of competing with it. Change excerpts
 truncate to keep attribution and actions on the same line. Whole-draft header navigation is an explicit admitted-click effect,
 not an automatic consequence of a selection's closure.
 
