@@ -37,15 +37,17 @@ export interface FileAccess {
     need: N,
   ): Promise<FileGrant<N> | FileAccessDenied>;
   /**
-   * Edit at an explicit destination instead of the one the principal's mode
+   * Access at an explicit destination instead of the one the principal's mode
    * picks: an undo reverses a write where it landed, which a mode switch since
-   * may have moved new writes away from.
+   * may have moved new writes away from. Review previews use a read grant
+   * at the item's destination so archived drafts remain readable, not editable.
    */
-  authorizeAt(
+  authorizeAt<N extends FileNeed = "edit">(
     principal: Principal,
     target: FileTarget,
     destination: FileDestination,
-  ): Promise<FileGrant<"edit"> | FileAccessDenied>;
+    need?: N,
+  ): Promise<FileGrant<N> | FileAccessDenied>;
   /**
    * Authoritative, inside the ambient transaction (§5, §5.2). The caller has
    * already locked the Works the grants' facts name (`grantWorkIds`), in one
@@ -91,7 +93,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       return mint(principal, facts, result);
     },
 
-    async authorizeAt(principal, target, destination) {
+    async authorizeAt(principal, target, destination, need) {
       const facts = await deps.facts.load({
         target,
         ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
@@ -99,7 +101,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       if (!facts) return notFound(principal, target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
       const result = levelAt(principal, facts, grants, destination);
-      if (!atLeast(result.level, "edit")) return denied(principal, facts, result);
+      if (!atLeast(result.level, need ?? "edit")) return denied(principal, facts, result);
       return mint(principal, facts, result);
     },
 

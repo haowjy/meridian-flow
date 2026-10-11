@@ -136,7 +136,17 @@ export async function handleWorkDraftPreviewRequest(
     userId: UserId;
   },
 ): Promise<DraftPreviewResponse & Partial<DraftPreviewAdditions>> {
-  await draftGrants(deps, input, "read");
+  await requireDraftWorkAccess(deps, input);
+  const found = await deps.documentSync.draftReview.item({
+    workId: input.workId,
+    documentId: input.documentId,
+  });
+  const item = found?.item.draftBranchId === input.draftId ? found.item : null;
+  if (!item) throw createError({ statusCode: 404, message: "Draft not found" });
+  // Review evidence survives live deletion. This read grant cannot authorize rooms,
+  // downloads or ordinary file reads, which still check the deleted document.
+  if (item.deletedLive) await restoreGrant(deps, input, item, "read");
+  else await draftGrants(deps, input, "read");
   const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
   if (preview.status === "gone") return preview;
 
@@ -299,11 +309,12 @@ async function applyGrants(
   return grants;
 }
 
-async function restoreGrant(
+async function restoreGrant<N extends FileNeed = "edit">(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
   item: DraftReviewItem,
-): Promise<FileGrant<"edit">> {
+  need?: N,
+): Promise<FileGrant<N>> {
   const parsed = item.path ? parseUnifiedContextUri(item.path) : null;
   if (!parsed?.ok || !isProjectScopedScheme(parsed.value.scheme)) {
     throw createError({ statusCode: 404, message: "Draft not found" });
@@ -316,6 +327,7 @@ async function restoreGrant(
       owner: { scope: "project", projectId: input.projectId },
     },
     { kind: "draft", workId: input.workId, workSlug: null },
+    need,
   );
   if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });
   return grant;
