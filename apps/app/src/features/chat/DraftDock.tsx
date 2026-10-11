@@ -106,7 +106,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </button>
           }
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          <span className="min-w-[12ch] shrink truncate">
+          <span className="min-w-[10ch] shrink truncate">
             {multi ? <Trans>{dock.files.length} documents</Trans> : only?.name}
           </span>
           {dock.changeCount !== null ? (
