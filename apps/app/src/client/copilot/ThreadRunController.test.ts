@@ -202,6 +202,39 @@ describe("ThreadRunController send behind a queued switch", () => {
     );
     expect(scenario.turns().find(({ id }) => id === "turn-a")?.status).not.toBe("streaming");
   });
+
+  it("keeps following the running reply through queued sends, Stop, and its error", async () => {
+    const scenario = makeScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("first request");
+    scenario.emit(runStarted("turn-a"), "11");
+    for (const [userTurnId, resumeAfterSeq] of [
+      ["turn-user-2", "11"],
+      ["turn-user-3", "11"],
+    ]) {
+      scenario.setAppend(async () =>
+        defaultSendResponse({ userTurnId, assistantTurnId: null, resumeAfterSeq }),
+      );
+      await scenario.submit(`queued ${userTurnId}`);
+    }
+    // Two sends behind the switch leave A visible, and Stop still targets A.
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-a" }]);
+
+    // A's error does not end the queued sends' follow: their reply starts next.
+    scenario.emit({ type: EventType.RUN_ERROR, message: "cancelled" } as never, "12");
+    expect(scenario.activeSubscription()).toBeDefined();
+    scenario.emit(runStarted("turn-b"), "13");
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(scenario.transport.cancelRequests).toHaveLength(1);
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests.at(-1)).toEqual({
+      threadId: "thread_1",
+      turnId: "turn-b",
+    });
+  });
 });
 
 describe("controller gap-result ownership", () => {
