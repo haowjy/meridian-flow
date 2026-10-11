@@ -374,6 +374,9 @@ currently available to the request owner in the requested project.
   Prose uploads read bytes through the same tracked Markdown path regardless of
   their typed prose suffix. Original filenames remain in intake metadata and
   import provenance; collisions use the shared smallest ` (2)` allocator.
+  Corpus conversion removes only its DOCX source suffix before using the codec;
+  imported titles and directories retain their spelling. Atomic creation refuses
+  replacement if another intake claims the allocated name.
 - `uploads://` is intake, not an authoring workspace. F0 owns its authority,
   provisioning, and resolution; F4 owns the actual `UploadIntake` lifecycle. Tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an
