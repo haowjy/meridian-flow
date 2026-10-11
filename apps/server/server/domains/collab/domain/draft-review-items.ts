@@ -82,9 +82,8 @@ export function createDraftReviewItems(deps: {
     const edited = branches
       .filter((evidence) => evidence.rows.length > 0)
       .map((evidence) => evidence.branch.documentId);
-    const nodes = await deps.tree.treeState(draftId, edited);
+    const nodes = await deps.tree.treeState(draftId, edited, documentIds);
     return nodes
-      .filter((node) => !documentIds || documentIds.includes(node.nodeId))
       .map((node) => toItem(draftId, node, branchOf.get(node.nodeId)))
       .sort((a, b) => (a.path ?? "").localeCompare(b.path ?? ""));
   }

@@ -225,9 +225,14 @@ export interface TreeReader {
   ): Promise<ReadonlyMap<string, DocumentId[]>>;
   /**
    * The draft's created documents, plus the edited documents the caller names (the
-   * draft's branches with rows; the tree view doesn't read branches).
+   * draft's branches with rows; the tree view doesn't read branches). `only` limits the
+   * created ones to these ids, so one item's lookup costs one item.
    */
-  treeState(draftId: DraftId, edited?: readonly DocumentId[]): Promise<TreeStateNode[]>;
+  treeState(
+    draftId: DraftId,
+    edited?: readonly DocumentId[],
+    only?: readonly DocumentId[],
+  ): Promise<TreeStateNode[]>;
   /** File facts: in this view, its folder chain; deleted, its last chain; else null. */
   lineage(view: TreeView, id: DocumentId): Promise<DocumentLineage | null>;
   projectOfDocument(id: DocumentId): Promise<ProjectId | null>;
@@ -618,9 +623,12 @@ export function createTreeReader(
   async function treeState(
     draftId: DraftId,
     edited: readonly DocumentId[] = [],
+    only?: readonly DocumentId[],
   ): Promise<TreeStateNode[]> {
     const view: TreeView = { kind: "draft", draftId };
-    const created = isUuid(draftId) ? await loadDraftCreatedDocuments(tx(), draftId) : [];
+    const created = isUuid(draftId)
+      ? await loadDraftCreatedDocuments(tx(), draftId, only?.filter(isUuid))
+      : [];
     const createdIds = new Set(created.map((each) => each.row.id));
     const editedRows = await loadDocumentIdentityRows(
       tx(),
