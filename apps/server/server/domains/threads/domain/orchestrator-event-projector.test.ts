@@ -3,6 +3,11 @@
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import {
+  type OrchestratorEvent,
+  SIMPLE_TEXT_TURN_AGUI,
+  SIMPLE_TEXT_TURN_ORCHESTRATOR,
+} from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createOrchestratorEventProjector } from "./orchestrator-event-projector.js";
 
@@ -74,5 +79,13 @@ describe("historical card replacement", () => {
     expect(first.find((event) => event.type === EventType.TEXT_MESSAGE_START)).toMatchObject({
       messageId: "active-turn::0",
     });
+  });
+});
+
+describe("run start", () => {
+  it("names the reply's write mode and the user turns it answers", () => {
+    const projector = createOrchestratorEventProjector();
+    const [start] = projector.project(SIMPLE_TEXT_TURN_ORCHESTRATOR[0] as OrchestratorEvent);
+    expect(start).toEqual(SIMPLE_TEXT_TURN_AGUI[0]);
   });
 });

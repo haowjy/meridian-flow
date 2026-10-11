@@ -4,7 +4,7 @@
  */
 import { type AGUIEvent, EventType } from "../../protocol/index.js";
 
-import { GOLDEN_THREAD_ID } from "./simple-text-turn.js";
+import { GOLDEN_THREAD_ID, GOLDEN_USER_TURN_ID } from "./simple-text-turn.js";
 import { GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_TOOL_CALL_ID } from "./simple-tool-turn.js";
 
 /** Golden AG-UI stream for {@link SIMPLE_TOOL_TURN_ORCHESTRATOR} (server projector output). */
@@ -13,6 +13,7 @@ export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
     type: EventType.RUN_STARTED,
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_TOOL_ASSISTANT_TURN_ID,
+    rawEvent: { writeMode: null, answersUserTurnIds: [GOLDEN_USER_TURN_ID] },
   },
   {
     type: EventType.TOOL_CALL_START,

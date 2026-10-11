@@ -202,8 +202,9 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
-  // Null until this send's reply starts: a reply running at admission that this
-  // message did not join (it queued behind a write-mode switch) is not ours.
+  // Null until the reply that answers this send's user turn starts. A reply
+  // running at admission that this message did not join (it queued behind a
+  // write-mode switch), or an unrelated start the early cursor replays, is not ours.
   const isOurs = (turnId: string) => ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
@@ -217,7 +218,12 @@ async function followToOutcome(
         full: input.full,
         textStream: "err",
         shouldStop(event: CliEvent) {
-          if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
+          if (
+            event.type === "turn.started" &&
+            ourTurn === null &&
+            event.answersUserTurnIds.includes(admitted.userTurnId)
+          )
+            ourTurn = event.turnId;
           if (event.type === "turn.finished") return isOurs(event.turnId);
           if (event.type === "turn.failed") return ourTurn !== null;
           if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
@@ -228,21 +234,14 @@ async function followToOutcome(
         },
       });
       lastSeq = followed.lastSeq;
-      const stop = followed.stoppedBy?.type;
-      // A reply admission named is ours. One bound from a replayed start is
-      // only ours if it answers this send's user turn: the cursor predates the
-      // lock, so an unrelated reply's start can replay first.
-      const inferred = ourTurn !== null && ourTurn !== admitted.assistantTurnId;
-      if (stop !== "turn.failed" && !(stop && inferred)) break;
+      if (followed.stoppedBy?.type !== "turn.failed") break;
 
-      // A previous run can fail, or an unrelated one finish, while this send's
-      // user turn is still queued. Follow the reply that answers it instead.
+      // The reply admission named can fail while this send's user turn is
+      // still queued. Follow the reply that answers it instead.
       const snapshot = await session.request<ThreadSnapshotResponse>(
         "GET",
         apiThreadSnapshotPath(threadId),
       );
-      if (stop !== "turn.failed" && answersUserTurn(snapshot.turns, ourTurn, admitted.userTurnId))
-        break;
       interrupt = undefined;
       const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
       if (answer) {
@@ -288,24 +287,18 @@ async function followToOutcome(
   };
 }
 
-function descendsFrom(turns: readonly Turn[], turn: Turn, userTurnId: string): boolean {
-  const byId = new Map(turns.map((candidate) => [candidate.id, candidate]));
-  let current: Turn | undefined = turn;
-  while (current?.prevTurnId) {
-    if (current.prevTurnId === userTurnId) return true;
-    current = byId.get(current.prevTurnId);
-  }
-  return false;
-}
-
-function answersUserTurn(turns: readonly Turn[], turnId: string | null, userTurnId: string) {
-  const turn = turns.find((candidate) => candidate.id === turnId);
-  return turn !== undefined && descendsFrom(turns, turn, userTurnId);
-}
-
 function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | undefined {
+  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+  const descendsFromUserTurn = (turn: Turn) => {
+    let current: Turn | undefined = turn;
+    while (current?.prevTurnId) {
+      if (current.prevTurnId === userTurnId) return true;
+      current = byId.get(current.prevTurnId);
+    }
+    return false;
+  };
   return turns
-    .filter((turn) => turn.role === "assistant" && descendsFrom(turns, turn, userTurnId))
+    .filter((turn) => turn.role === "assistant" && descendsFromUserTurn(turn))
     .sort((left, right) => left.position - right.position)
     .at(-1);
 }

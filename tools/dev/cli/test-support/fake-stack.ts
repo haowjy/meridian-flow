@@ -134,10 +134,20 @@ function createFake() {
     for (const socket of sockets) socket.send(JSON.stringify(frame));
   };
 
+  /** A reply start, naming the user turns it answers as the server does. */
+  const publishStart = (runId: string, answersUserTurnIds: string[]) =>
+    publish({
+      type: "RUN_STARTED",
+      threadId: THREAD_ID,
+      runId,
+      rawEvent: { writeMode: null, answersUserTurnIds },
+    } as AGUIEvent);
+
   const runScenario = (text: string) => {
     runCounter += 1;
     const runId = `turn-a${runCounter}`;
-    turns.push({ id: `turn-u${runCounter}`, role: "user", status: "complete", error: null, text });
+    const userTurnId = `turn-u${runCounter}`;
+    turns.push({ id: userTurnId, role: "user", status: "complete", error: null, text });
     const assistant: FakeTurn = {
       id: runId,
       role: "assistant",
@@ -148,7 +158,7 @@ function createFake() {
     };
     turns.push(assistant);
     setTimeout(() => {
-      publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId } as AGUIEvent);
+      publishStart(runId, [userTurnId]);
       if (text.includes("fail")) {
         assistant.status = "error";
         assistant.error = "boom";
@@ -321,7 +331,7 @@ function createFake() {
           turns.push(reply);
           publish({ type: "RUN_ERROR", message: "cancelled" } as AGUIEvent);
           setTimeout(() => {
-            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishStart(replyId, [userTurnId]);
             const messageId = `${replyId}::0`;
             publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
             publish({
@@ -402,7 +412,7 @@ function createFake() {
               text: "",
             };
             turns.push(reply);
-            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishStart(replyId, [userTurnId]);
             reply.status = "complete";
             reply.text = "Answered in the new mode";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
@@ -443,7 +453,7 @@ function createFake() {
             text: body.text,
           },
         );
-        publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: unrelatedId } as AGUIEvent);
+        publishStart(unrelatedId, [`turn-m${runCounter}`]);
         pendingItems.push({
           id: userTurnId,
           seq: runCounter,
@@ -469,7 +479,7 @@ function createFake() {
               text: "",
             };
             turns.push(reply);
-            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishStart(replyId, [userTurnId]);
             reply.status = "complete";
             reply.text = "The answer to this message";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
