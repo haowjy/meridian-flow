@@ -85,7 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id,
         contextSourceId: SOURCE_ID,
         name,
-        extension: "md",
+        extension: "",
         fileType: "markdown",
         markdownProjection: name,
       });
@@ -96,19 +96,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await store.createDocument({
         folderId: null,
         name: "file",
-        extension: "md",
+        extension: "",
         filetype: "markdown",
         markdown: "original",
       });
-      await expect(store.createFolder(null, "file.md")).rejects.toThrow(
+      await expect(store.createFolder(null, "file")).rejects.toThrow(
         "Context entry already exists",
       );
-      await store.createFolder(null, "folder.md");
+      await store.createFolder(null, "folder");
       await expect(
         store.createDocumentRecordIfAbsent({
           folderId: null,
           name: "folder",
-          extension: "md",
+          extension: "",
           filetype: "markdown",
           markdown: "replacement",
         }),
@@ -117,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         store.createDocument({
           folderId: null,
           name: "folder",
-          extension: "md",
+          extension: "",
           filetype: "markdown",
           markdown: "replacement",
         }),
@@ -142,8 +142,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ).toMatchObject({ ok: true });
       }
-      await move("alpha.md", "beta.md");
-      await move("beta.md", "gamma.md");
+      await move("alpha", "beta");
+      await move("beta", "gamma");
       const resolver = createDocumentAddressResolver({
         locations: createDrizzleDocumentAddressStore(db),
         availability: createDrizzleProjectContextAvailability(db),
@@ -153,11 +153,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         scheme: "manuscript" as const,
         workId: null,
-        path: "alpha.md",
+        path: "alpha",
       };
       expect(await resolver.resolve(address)).toMatchObject({
         kind: "alias",
-        document: { documentId: DOC_DELETE_ID, entry: { path: ["gamma.md"] } },
+        document: { documentId: DOC_DELETE_ID, entry: { path: ["gamma"] } },
       });
       expect(
         await resolver.resolve({ ...address, userId: "00000000-0000-4000-8000-000000000799" }),
@@ -171,15 +171,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(documentPreviousLocations)
           .orderBy(documentPreviousLocations.path);
       expect(await history()).toEqual([
-        { path: "alpha.md", documentId: DOC_DELETE_ID },
-        { path: "beta.md", documentId: DOC_DELETE_ID },
+        { path: "alpha", documentId: DOC_DELETE_ID },
+        { path: "beta", documentId: DOC_DELETE_ID },
       ]);
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const replacement = await store.createDocumentRecordIfAbsent({
         id: DOC_AMBIENT_DELETE_ID,
         folderId: null,
         name: "alpha",
-        extension: "md",
+        extension: "",
         filetype: "markdown",
         markdown: "",
       });
@@ -188,20 +188,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(documents)
         .set({ deletedAt: new Date() })
         .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
-      await store.createFolder(null, "beta.md");
+      await store.createFolder(null, "beta");
       expect(await history()).toEqual([]);
       expect(await resolver.resolve(address)).toEqual({ kind: "unavailable" });
       await db
         .insert(documentPreviousLocations)
-        .values({ contextSourceId: SOURCE_ID, path: "beta.md", documentId: DOC_DELETE_ID });
-      expect(await resolver.resolve({ ...address, path: "beta.md" })).toEqual({
+        .values({ contextSourceId: SOURCE_ID, path: "beta", documentId: DOC_DELETE_ID });
+      expect(await resolver.resolve({ ...address, path: "beta" })).toEqual({
         kind: "unavailable",
       });
       await db
         .update(documents)
         .set({ deletedAt: new Date() })
         .where(eq(documents.id, DOC_DELETE_ID));
-      expect(await resolver.resolve({ ...address, path: "gamma.md" })).toEqual({
+      expect(await resolver.resolve({ ...address, path: "gamma" })).toEqual({
         kind: "unavailable",
       });
     });
@@ -214,7 +214,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_DELETE_ID,
         folderId: nested.id,
         name: "chapter",
-        extension: "md",
+        extension: "",
         filetype: "markdown",
         markdown: "",
       });
@@ -232,7 +232,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toMatchObject({ ok: true });
       expect(
         await db.select({ path: documentPreviousLocations.path }).from(documentPreviousLocations),
-      ).toEqual([{ path: "before/nested/chapter.md" }]);
+      ).toEqual([{ path: "before/nested/chapter" }]);
       await expect(
         runInDrizzleTransaction(db, async () => {
           const restoredParent = await store.createFolder(null, "before");
@@ -241,7 +241,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: DOC_AMBIENT_DELETE_ID,
             folderId: restoredNested.id,
             name: "chapter",
-            extension: "md",
+            extension: "",
             filetype: "markdown",
             markdown: "",
           });
@@ -251,7 +251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("rollback claim");
       expect(
         await db.select({ path: documentPreviousLocations.path }).from(documentPreviousLocations),
-      ).toEqual([{ path: "before/nested/chapter.md" }]);
+      ).toEqual([{ path: "before/nested/chapter" }]);
     });
 
     it("preserves paths longer than a B-tree index tuple", async () => {
@@ -276,10 +276,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: SOURCE_ID,
         folderId: parentId,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
-      const path = [...names, "chapter.md"].join("/");
+      const path = [...names, "chapter"].join("/");
       const tree = new DrizzleContextTreeMutationStore(db);
       const source = await tree.inspect(SOURCE_ID, path);
       if (source?.kind !== "file") throw new Error("missing document");
@@ -287,7 +287,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await tree.commitMove({
           source,
           destinationSourceId: SOURCE_ID,
-          destinationPath: "short.md",
+          destinationPath: "short",
           destinationFiletype: "markdown",
           graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
@@ -321,7 +321,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           contextSourceId: SOURCE_ID,
           folderId: NON_EMPTY_FOLDER_ID,
           name: "tracked",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
         {
@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           contextSourceId: SOURCE_ID,
           folderId: nestedFolderId,
           name: "nested",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
         {
@@ -406,8 +406,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         undefined,
         createDrizzleContextCatalog(db),
       );
-      const stale = await tree.inspect(SOURCE_ID, "stale-delete.md");
-      const rollbackToken = await tree.inspect(SOURCE_ID, "rollback-delete.md");
+      const stale = await tree.inspect(SOURCE_ID, "stale-delete");
+      const rollbackToken = await tree.inspect(SOURCE_ID, "rollback-delete");
       if (!stale || !rollbackToken) throw new Error("expected file tokens");
 
       await db
@@ -589,7 +589,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         observer,
         createDrizzleContextCatalog(db),
       );
-      const token = await tree.inspect(SOURCE_ID, "ambient-delete.md");
+      const token = await tree.inspect(SOURCE_ID, "ambient-delete");
       expect(token?.kind).toBe("file");
 
       await expect(
@@ -617,7 +617,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
       expect(rolledBack?.deletedAt).toBeNull();
 
-      const retryToken = await tree.inspect(SOURCE_ID, "ambient-delete.md");
+      const retryToken = await tree.inspect(SOURCE_ID, "ambient-delete");
       await runInDrizzleTransaction(db, async () => {
         await expect(
           tree.commitRecursiveDelete({
@@ -664,15 +664,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await Promise.all([committed.close(), probe.close()]);
     });
 
+    it("serializes opposite-kind creation under the shared namespace lock", async () => {
+      const left = new DrizzleContextDocumentStore({ db: committed, contextSourceId: sourceId });
+      const right = new DrizzleContextDocumentStore({ db: probe, contextSourceId: sourceId });
+      for (const [index, fileFirst] of [true, false].entries()) {
+        const name = `Clash ${index}`;
+        const file = () =>
+          left.createDocument({
+            folderId: null,
+            name,
+            extension: "",
+            filetype: "markdown",
+            markdown: "",
+          });
+        const folder = () => right.createFolder(null, name);
+        const results = await Promise.allSettled(
+          fileFirst ? [file(), folder()] : [folder(), file()],
+        );
+        expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        const rejected = results.find((result) => result.status === "rejected");
+        expect(rejected?.status === "rejected" && rejected.reason.message).toBe(
+          "Context entry already exists",
+        );
+        expect(
+          (await left.listDocuments(null)).filter((row) => row.name === name).length +
+            (await left.listFolders(null)).filter((row) => row.name === name).length,
+        ).toBe(1);
+      }
+    });
+
     it("a same-source move row-locks its document, and a journal FK insert still completes under it", async () => {
       const holder = randomUUID();
       await committed
         .insert(documents)
-        .values({ id: holder, contextSourceId: sourceId, name: "holder", extension: "md" });
+        .values({ id: holder, contextSourceId: sourceId, name: "holder", extension: "" });
       const persistence = createDrizzleCollabPersistence(committed);
       await persistence.lifecycle.ensureDocument(holder as never);
       const tree = new DrizzleContextTreeMutationStore(committed);
-      const source = await tree.inspect(sourceId, "holder.md");
+      const source = await tree.inspect(sourceId, "holder");
       if (source?.kind !== "file") throw new Error("Missing holder");
       let paused!: () => void;
       const atDestructiveWrite = new Promise<void>((resolve) => {
@@ -689,7 +718,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const moving = tree.commitMove({
         source,
         destinationSourceId: sourceId,
-        destinationPath: "moved-holder.md",
+        destinationPath: "moved-holder",
         expectedTarget: { state: "absent" },
         overwrite: false,
         destinationFiletype: "markdown",

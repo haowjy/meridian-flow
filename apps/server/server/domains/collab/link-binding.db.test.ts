@@ -172,10 +172,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
 
       try {
-        const target = (await ok(port.createTrackedDocument("manuscript://target.md", "")))
-          .documentId;
-        const holder = (await ok(port.createTrackedDocument("manuscript://holder.md", "")))
-          .documentId;
+        const target = (await ok(port.createTrackedDocument("manuscript://target", ""))).documentId;
+        const holder = (await ok(port.createTrackedDocument("manuscript://holder", ""))).documentId;
         const targetRef = `doc:${target}`;
         let soon: string | null = null;
 
@@ -190,9 +188,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "writer overwrite binds a resolved link and mints one ahead",
             act: async () => {
-              await ok(
-                port.write("manuscript://holder.md", "[T](target.md) and [S](soon.md).", writer),
-              );
+              await ok(port.write("manuscript://holder", "[T](target) and [S](soon.md).", writer));
               return holder;
             },
             refs: (refs) => {
@@ -203,11 +199,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "an overwrite after the target moved keeps every ref it leaves in place",
             act: async () => {
-              await ok(port.move("manuscript://target.md", "manuscript://moved/target.md"));
+              await ok(port.move("manuscript://target", "manuscript://moved/target"));
               await ok(
                 port.write(
-                  "manuscript://holder.md",
-                  "[T](moved/target.md) and [S](soon.md).\n\n[L](later.md)",
+                  "manuscript://holder",
+                  "[T](moved/target) and [S](soon.md).\n\n[L](later.md)",
                   writer,
                 ),
               );
@@ -222,7 +218,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 await ok(
                   port.write(
                     "manuscript://imported.md",
-                    "[T](moved/target.md) and [S](soon.md).",
+                    "[T](moved/target) and [S](soon.md).",
                     imported,
                   ),
                 )
@@ -361,22 +357,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             door: "a write bound for one holder never lands on the document that replaced it",
             act: async () => {
               const first = (
-                await ok(
-                  port.createTrackedDocument("manuscript://occupant.md", "First.\n\n[A](a.md)"),
-                )
+                await ok(port.createTrackedDocument("manuscript://occupant", "First.\n\n[A](a.md)"))
               ).documentId;
               afterNextBind = async () => {
-                await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
-                await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
+                await ok(port.move("manuscript://occupant", "manuscript://first-moved"));
+                await ok(port.createTrackedDocument("manuscript://occupant", "Second."));
               };
-              const saved = await port.write(
-                "manuscript://occupant.md",
-                "First.\n\nAppend.",
-                writer,
-              );
+              const saved = await port.write("manuscript://occupant", "First.\n\nAppend.", writer);
               expect(saved).toMatchObject({ ok: false, error: { code: "stale_target" } });
-              expect(await read("manuscript://first-moved.md")).toBe("First.\n\n[A](a.md)\n");
-              expect(await read("manuscript://occupant.md")).toBe("Second.\n");
+              expect(await read("manuscript://first-moved")).toBe("First.\n\n[A](a.md)\n");
+              expect(await read("manuscript://occupant")).toBe("Second.\n");
               return first;
             },
             refs: () => [expect.stringMatching(/^ahead:/)],
@@ -386,15 +376,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             door: "repair never publishes an empty document over a projection with no canonical state",
             act: async () => {
               const half = randomUUID();
-              const surviving = "Only surviving prose.\n\n[T](target.md)";
+              const surviving = "Only surviving prose.\n\n[T](target)";
               await db.insert(documents).values({
                 id: half,
                 contextSourceId: source?.id ?? "",
                 name: "half",
-                extension: "md",
+                extension: "",
                 markdownProjection: surviving,
               });
-              const repaired = await port.ensureTrackedDocument("manuscript://half.md");
+              const repaired = await port.ensureTrackedDocument("manuscript://half");
               expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
               const [kept] = await db.select().from(documents).where(eq(documents.id, half));
               expect(kept?.markdownProjection).toBe(surviving);

@@ -88,7 +88,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab.agentEdit().write(
           {
             command: "insert",
-            file: "chapter.md",
+            file: "chapter",
             documentId: DOC_ID,
             content: "![Pass](assets/map.png) The pass.",
           },
@@ -115,7 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: secondDocumentId,
         contextSourceId: SOURCE_ID,
         name: "chapter-two",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       // Two uploads no path spells: a deleted cover whose path a new cover took,
@@ -195,7 +195,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The model's read spells them alike, and records the deleted cover where it showed it.
       const grant = testFileGrant(DRAFT_DESTINATION, secondDocumentId);
       const read = await collab.agentEdit().read(
-        { file: "chapter-two.md", documentId: secondDocumentId },
+        { file: "chapter-two", documentId: secondDocumentId },
         {
           sessionId: "session-read",
           threadId: THREAD_ID,
@@ -298,7 +298,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: CREATED_ID,
         contextSourceId: SOURCE_ID,
         name: "created",
-        extension: "md",
+        extension: "",
       });
       await db.insert(modelResponses).values({
         id: RESPONSE_ID as never,
@@ -320,7 +320,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = collab.agentEdit();
       await expect(
         core.write(
-          { command: "create", file: "created.md", documentId: CREATED_ID, content: "New." },
+          { command: "create", file: "created", documentId: CREATED_ID, content: "New." },
           {
             ...ctx,
             grant: {
@@ -339,7 +339,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSchema.text("See created", [
           documentSchema.marks.link.create({
             ref: `doc:${CREATED_ID}`,
-            href: "manuscript://stale-created.md",
+            href: "manuscript://stale-created",
           }),
         ]),
       ]);
@@ -347,8 +347,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         core.write(
           {
             command: "copy",
-            from: { path: "created.md" },
-            file: "chapter.md",
+            from: { path: "created" },
+            file: "chapter",
             documentId: DOC_ID,
             overwrite: true,
           },
@@ -356,7 +356,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
-      const spelled = "[See created](created.md)";
+      const spelled = "[See created](created)";
       const view = {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
@@ -365,7 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       };
       const read = await core.read(
-        { file: "chapter.md", documentId: DOC_ID },
+        { file: "chapter", documentId: DOC_ID },
         { ...ctx, responseId: RESPONSE_ID },
       );
       const markdown = await collab.readEffectiveMarkdown(view);
@@ -416,7 +416,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(
         core.write(
-          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Suffix." },
+          { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
           { ...ctx, turnId: TURN_2_ID },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "committed" });
@@ -448,7 +448,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: LIVE_CREATED_ID,
         contextSourceId: SOURCE_ID,
         name: "live-created",
-        extension: "md",
+        extension: "",
       });
       await db.insert(modelResponses).values({
         id: LIVE_RESPONSE_ID as never,
@@ -464,7 +464,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab.agentEdit().write(
           {
             command: "create",
-            file: "live-created.md",
+            file: "live-created",
             documentId: LIVE_CREATED_ID,
             content: "Live.",
           },
@@ -497,13 +497,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             holders: views.map((each) => ({ documentId: DOC_ID, view: each })),
             refs: [`doc:${LIVE_CREATED_ID}`],
           });
-          const link = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale.md" };
+          const link = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale" };
           const [ownLive, baseline, ownDraft] = views.map((each) =>
             links.holder({ documentId: DOC_ID, view: each }),
           );
-          expect
-            .soft(ownLive?.spellLink(link).href, "the reply's live view")
-            .toBe("live-created.md");
+          expect.soft(ownLive?.spellLink(link).href, "the reply's live view").toBe("live-created");
           expect.soft(baseline?.resolve(link), "baseline live").toEqual({ kind: "gone" });
           expect.soft(ownDraft?.resolve(link), "the reply's draft view").toEqual({ kind: "gone" });
         },
