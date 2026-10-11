@@ -6,6 +6,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { cancelRefusedLocationChain } from "./namespace-journal-policy";
+import { committedResourceDeletion } from "./resource-deletion";
 import type {
   NamespaceAttempt,
   NamespaceIntent,
@@ -432,17 +433,11 @@ export function settleNamespaceOutcome(
       )
         repair = true;
       else {
-        const { sessionAdoption: _superseded, ...obligations } = resource.obligations;
-        resource = {
-          ...resource,
-          canonical: null,
-          obligations,
-          lifecycle: {
-            kind: "terminal",
-            generation: result.value.availabilityGeneration,
-            transitionId: receipt.operationId,
-          },
-        };
+        resource = committedResourceDeletion(
+          resource,
+          result.value.availabilityGeneration,
+          receipt.operationId,
+        );
       }
     }
   } else repair = true;

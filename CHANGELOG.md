@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.
+- Chat Recent follows document renames and moves from the file catalog.
+
 - Move feedback now appears on a folder’s first move and follows a new document through identity-conflict recovery.
 
 ### Changed

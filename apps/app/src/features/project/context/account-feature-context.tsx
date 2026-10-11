@@ -226,8 +226,11 @@ export function useObservedResourceProjection(
   }, [projectId, replica]);
   const records = useMemo(
     () =>
-      snapshot?.records.filter((record) =>
-        resourceVisibleInProject(projectId, record, snapshot.catalogs),
+      snapshot?.records.filter(
+        (record) =>
+          // Terminal facts are account-wide: losing a catalog row must not hide its deletion.
+          record.resource.lifecycle.kind === "terminal" ||
+          resourceVisibleInProject(projectId, record, snapshot.catalogs),
       ) ?? [],
     [projectId, snapshot],
   );

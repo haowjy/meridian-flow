@@ -4,6 +4,7 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
+  committedResourceDeletion,
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   installedFolderLocation,
@@ -631,6 +632,54 @@ export class AccountResourceReplica {
       planResourceDeletion(record, projectId, crypto.randomUUID()),
     );
     this.schedule(key);
+  }
+
+  /** Install server-proven absence before consumers can reproject a stale catalog entry. */
+  async acceptCommittedDelete(input: {
+    projectId: string;
+    deletedDocumentIds: readonly string[];
+    generation: string;
+  }): Promise<void> {
+    this.requireOpen();
+    for (const documentId of new Set(input.deletedDocumentIds)) {
+      // The catalog may already have removed the row. Resolve exact identity in the
+      // account journal, not through current project visibility or remint aliases.
+      const { records } = await this.metadata.readProjection(input.projectId);
+      const known = records.find(({ resource }) => resource.identity.documentId === documentId);
+      if (!known) continue;
+      const key = { handle: known.resource.handle };
+      const result = await this.lock.run(key, () =>
+        this.commitPlan(key, (record) => {
+          if (
+            record.resource.identity.documentId !== documentId ||
+            record.resource.lifecycle.kind === "terminal"
+          )
+            return null;
+          if (
+            record.resource.lifecycle.kind === "acknowledged" &&
+            record.resource.lifecycle.availabilityGeneration !== null &&
+            BigInt(record.resource.lifecycle.availabilityGeneration) > BigInt(input.generation)
+          )
+            return null;
+          return {
+            expectedRevision: record.resource.revision,
+            next: {
+              ...record,
+              resource: {
+                ...committedResourceDeletion(
+                  record.resource,
+                  input.generation,
+                  `delete:${documentId}:${input.generation}`,
+                ),
+                revision: record.resource.revision + 1,
+              },
+            },
+          };
+        }),
+      );
+      if (result.kind !== "acquired")
+        throw new Error("Document namespace is busy; retry deletion settlement");
+    }
   }
 
   private async commitPlan(

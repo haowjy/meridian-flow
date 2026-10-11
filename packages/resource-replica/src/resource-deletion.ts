@@ -56,3 +56,18 @@ export function planResourceDeletion(
     },
   };
 }
+
+/** Server-proven deletion, shared by namespace receipts and exact-ID availability. */
+export function committedResourceDeletion(
+  resource: ResourceRecord["resource"],
+  generation: string,
+  transitionId: string,
+): ResourceRecord["resource"] {
+  const { sessionAdoption: _superseded, ...obligations } = resource.obligations;
+  return {
+    ...resource,
+    canonical: null,
+    obligations,
+    lifecycle: { kind: "terminal", generation, transitionId },
+  };
+}
