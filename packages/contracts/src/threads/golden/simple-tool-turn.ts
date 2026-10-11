@@ -13,7 +13,12 @@ const assistantTurn = goldenAssistantTurn(GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_
 
 /** Tool call start/args → executing activity → result → complete. */
 export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
-  { type: "turn.created", turn: assistantTurn, answersUserTurnIds: [GOLDEN_USER_TURN_ID] },
+  {
+    type: "turn.created",
+    turn: assistantTurn,
+    answersUserTurnIds: [GOLDEN_USER_TURN_ID],
+    continuesRunId: null,
+  },
   {
     type: "stream.delta",
     kind: "tool_call",

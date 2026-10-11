@@ -61,6 +61,24 @@ else
       return rig.repos.turns.listByThread(rig.threadId);
     }
 
+    /** The run-boundary facts a turn's journaled start and completion carry. */
+    async function runBoundary(turnId: string | undefined) {
+      const rows = await db
+        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      const of = (type: string) =>
+        rows
+          .filter(({ eventType }) => eventType === type)
+          .map(({ payload }) => payload as Record<string, unknown> & { turn: { id: string } })
+          .find(({ turn }) => turn.id === turnId);
+      const start = of("turn.created");
+      return {
+        answersUserTurnIds: start?.answersUserTurnIds,
+        continuesRunId: start?.continuesRunId,
+        continued: of("turn.completed")?.continued ?? false,
+      };
+    }
+
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
@@ -328,6 +346,13 @@ else
         return input;
       };
       expect(started.created).toBe(true);
+      // The Retry re-answers the failed reply's user turn, under no earlier reply.
+      expect(await runBoundary(replyTurnId)).toEqual({
+        answersUserTurnIds: (await runBoundary(failed.id)).answersUserTurnIds,
+        continuesRunId: null,
+        continued: false,
+      });
+      expect((await runBoundary(replyTurnId)).answersUserTurnIds).toEqual([failed.prevTurnId]);
       expect(duplicate).toMatchObject({ created: false, turn: { id: replyTurnId } });
       expect(replayed).toMatchObject({
         id: replyTurnId,
@@ -1222,20 +1247,53 @@ else
         expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, assistantTurnId: null });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
         // Each reply's start names the user turns it answers: that, not stream
-        // order, is how a client matches M2 to B.
-        const starts = await db
-          .select({ payload: schema.eventJournal.payload })
-          .from(schema.eventJournal)
-          .where(eq(schema.eventJournal.eventType, "turn.created"));
-        const answers = (turnId: string | undefined) =>
-          starts
-            .map(
-              ({ payload }) => payload as { turn: { id: string }; answersUserTurnIds?: string[] },
-            )
-            .find(({ turn }) => turn.id === turnId)?.answersUserTurnIds;
-        expect(answers(tail[1]?.id)).toEqual([tail[0]?.id]);
-        expect(answers(tail[4]?.id)).toEqual([tail[2]?.id]);
+        // order, is how a client matches M2 to B. B is a new lease after the
+        // switch: A's finish reserved no successor and B continues nothing.
+        expect(await runBoundary(tail[1]?.id)).toEqual({
+          answersUserTurnIds: [tail[0]?.id],
+          continuesRunId: null,
+          continued: false,
+        });
+        expect(await runBoundary(tail[4]?.id)).toEqual({
+          answersUserTurnIds: [tail[2]?.id],
+          continuesRunId: null,
+          continued: false,
+        });
         expect(await threadMode(rig)).toBe("draft");
+      });
+
+      it("splits a steered reply into a successor that names the reply it continues", async () => {
+        let rig: Rig;
+        let admitted: Awaited<ReturnType<Rig["send"]>> | undefined;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call === 1) admitted = await rig.send(rig.threadId, "M2 steers the reply");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(tail.map((turn) => turn.role)).toEqual(["user", "assistant", "user", "assistant"]);
+        // M2 joined A, so admission names A; B, which answers M2, continues A.
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, assistantTurnId: tail[1]?.id });
+        expect(tail[2]?.metadata).toMatchObject({ delivery: "steer" });
+        expect(await runBoundary(tail[1]?.id)).toEqual({
+          answersUserTurnIds: [tail[0]?.id],
+          continuesRunId: null,
+          continued: true,
+        });
+        expect(await runBoundary(tail[3]?.id)).toEqual({
+          answersUserTurnIds: [tail[2]?.id],
+          continuesRunId: tail[1]?.id,
+          continued: false,
+        });
       });
 
       it("names no reply for a message admitted after the live reply ended and its switch applied", async () => {
@@ -1624,6 +1682,8 @@ else
           created: true,
           turn: { prevTurnId: applied.response.turnId },
         });
+        // The switch turn between them does not hide the failed reply's user turn.
+        expect((await runBoundary(replyTurnId)).answersUserTurnIds).toEqual([failed.prevTurnId]);
         expect(await rig.repos.turns.findById(replyTurnId as never)).toMatchObject({
           role: "assistant",
           status: "complete",

@@ -13,7 +13,7 @@ export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
     type: EventType.RUN_STARTED,
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_TOOL_ASSISTANT_TURN_ID,
-    rawEvent: { writeMode: null, answersUserTurnIds: [GOLDEN_USER_TURN_ID] },
+    rawEvent: { writeMode: null, answersUserTurnIds: [GOLDEN_USER_TURN_ID], continuesRunId: null },
   },
   {
     type: EventType.TOOL_CALL_START,
@@ -52,5 +52,6 @@ export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
     type: EventType.RUN_FINISHED,
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_TOOL_ASSISTANT_TURN_ID,
+    rawEvent: { continued: false },
   },
 ];

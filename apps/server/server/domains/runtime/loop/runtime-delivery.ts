@@ -25,6 +25,11 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   currentTurn: Turn;
   /** Use this client-minted id for the next assistant after a start-time compaction. */
   preferredSuccessorTurnId?: TurnId;
+  /**
+   * The reply a successor continues when the current turn is a compaction
+   * placeholder; an assistant current turn is its own successor's link.
+   */
+  continuesRunId?: TurnId;
   signal?: AbortSignal;
   continueTask?: boolean;
   /**

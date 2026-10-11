@@ -76,6 +76,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import { userTurnsAnsweredBy } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -538,6 +539,15 @@ async function runDrainTurn(
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );
+      // A Retry re-answers the user turns its failed reply answered: the reply
+      // the leaf reaches past trailing switch turns.
+      let retryAnswers: string[] = [];
+      if (input.replyTurnId) {
+        let failed: Turn | undefined = previousTurn ?? undefined;
+        while (failed && failed.role !== "assistant")
+          failed = failed.prevTurnId ? turnById.get(failed.prevTurnId) : undefined;
+        retryAnswers = failed ? userTurnsAnsweredBy(failed, turnById) : [];
+      }
       const knownTurnIds = new Set([
         ...inheritedTurns.map((turn) => turn.id as TurnId),
         ...priorTurns.map((turn) => turn.id as TurnId),
@@ -671,7 +681,11 @@ async function runDrainTurn(
         {
           type: "turn.created" as const,
           turn: reservedTurn,
-          answersUserTurnIds: selection.outstanding.map(({ id }) => id),
+          answersUserTurnIds: [
+            ...retryAnswers,
+            ...selection.outstanding.map(({ id }) => id).filter((id) => !retryAnswers.includes(id)),
+          ],
+          continuesRunId: null,
         },
       ];
       return {
@@ -1618,6 +1632,10 @@ async function executeLoop({
   }
 
   let currentTurn: Turn = reservedTurn;
+  // The reply a same-lease successor continues: the latest assistant this
+  // lease reserved, kept across a compaction placeholder.
+  let latestReplyTurnId: TurnId | undefined =
+    reservedTurn.role === "assistant" ? (reservedTurn.id as TurnId) : undefined;
   const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
   let preferredSuccessorTurnId =
     requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
@@ -1670,6 +1688,7 @@ async function executeLoop({
       lease: input.lease,
       currentTurn: currentTurn,
       ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
+      ...(latestReplyTurnId ? { continuesRunId: latestReplyTurnId } : {}),
       current: { kind: "assistant" },
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
@@ -1819,6 +1838,7 @@ async function executeLoop({
       const next = result.next;
       allTurns.push(next);
       currentTurn = next;
+      if (next.role === "assistant") latestReplyTurnId = next.id as TurnId;
       endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,
