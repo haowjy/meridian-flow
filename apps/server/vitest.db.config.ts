@@ -31,6 +31,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/drizzle-drafts.db.test.ts",
   "apps/server/server/domains/collab/branch-push-projection.db.test.ts",
   "apps/server/server/domains/collab/branch-push-settlement-oracle.db.test.ts",
+  "apps/server/server/domains/collab/branch-push-settlement-refusals.db.test.ts",
   "apps/server/server/domains/collab/branch-push-durable-projection.db.test.ts",
   "apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts",
   "apps/server/server/domains/collab/link-binding.db.test.ts",

@@ -7,9 +7,11 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { createDrizzlePendingSettlementStore } from "../adapters/drizzle-pending-settlement.js";
 import {
+  BETA_ID,
   type createHarness,
   ALPHA_ID as DEFAULT_ALPHA_ID,
   DEFAULT_SCENARIO_IDS,
+  GAMMA_ID,
   resetDatabase,
   schema,
   seedDatabase,
@@ -36,6 +38,20 @@ export {
 export const COLD_SCENARIO_IDS = Object.fromEntries(
   Object.entries(DEFAULT_SCENARIO_IDS).map(([key, value]) => [key, value.replace("4000", "4001")]),
 ) as typeof DEFAULT_SCENARIO_IDS;
+/** The three documents a multi-document settlement batch pushes together. */
+export const SETTLEMENT_BATCH = [DEFAULT_ALPHA_ID, BETA_ID, GAMMA_ID] as const;
+
+/** One staged destructive push per batch document; their branch ids in batch order. */
+export async function seedSettlementBatch(
+  harness: ReturnType<typeof createHarness>,
+): Promise<string[]> {
+  const branchIds: string[] = [];
+  for (const documentId of SETTLEMENT_BATCH) {
+    branchIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
+  }
+  return branchIds;
+}
+
 /** The caller owns hook registration and connection teardown. */
 export async function resetSettlementFixture(db: Database): Promise<void> {
   await resetDatabase(db);
