@@ -31,6 +31,11 @@ Using the owned app's upload and KB import controls:
   through KB/corpus conversion. Their names under `imports` are `Chapter 13`,
   `Vol. 2`, and `Chapter 13 (2)`. Parent directory spelling is preserved.
   Raw identity-bound DOCX upload is separate binary intake, not conversion.
+- Import `ch1.md`, `ch1` and `ch1.txt` together, then repeat in reverse order
+  into a fresh destination. `ch1` keeps its name; `.md` becomes `ch1 (2)` and
+  `.txt` becomes `ch1 (3)` in either order. Include `Lore.md` beside a file
+  with relative path `Lore/entry.md`: the folder remains `Lore` and the
+  colliding document becomes `Lore (2)`.
 
 ## Download and cleanup
 
