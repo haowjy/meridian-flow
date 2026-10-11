@@ -802,6 +802,11 @@ export function createDeliveryAdapter(
         await appendPending(draft.threadId);
         return message;
       },
+      async enqueueSettled(draft, cancelledIds) {
+        const message = await inbox.enqueue(draft);
+        await inbox.ack(draft.threadId, [...cancelledIds, message.id]);
+        await appendPending(draft.threadId);
+      },
       selectPending: inbox.selectPending,
       async threadWriteMode(threadId) {
         const thread = await deps.repos.threads.findById(threadId);

@@ -104,8 +104,9 @@ Enqueue runs under the thread lock, and every request writes its own row.
    comparison) is 409 `control_id_conflict`.
 2. **Switch back.** A switch to the other mode than the queued one acknowledges
    the queued row and writes the new row already acknowledged, in one
-   transaction. Nothing shows in the chat, and a chat has at most one queued
-   switch.
+   transaction that journals only the final queue (`enqueueSettled`). Nothing
+   shows in the chat, no snapshot ever holds both switches, and a chat has at
+   most one queued switch.
 3. **No change.** A switch to the queued mode, or to the chat's current mode
    with nothing queued, writes the row already acknowledged.
 4. **Otherwise** the switch is queued and, if the chat is idle, applied at once.

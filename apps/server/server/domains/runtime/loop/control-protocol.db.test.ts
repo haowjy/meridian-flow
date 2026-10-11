@@ -1,4 +1,5 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
@@ -1374,26 +1375,41 @@ else
         const first = crypto.randomUUID();
         const back = crypto.randomUUID();
         const newer = crypto.randomUUID();
-        // Holding the claim stands in for a running reply.
-        await rig.runClaim.withExclusiveThread(rig.threadId, async () => {
+        // The journal is what other tabs and replays see: a settled request
+        // publishes only the final queue, never a state with both switches.
+        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        const publishedQueues = () =>
+          appended.mock.calls.flatMap(([, event]) =>
+            event.type === "inbox.changed"
+              ? [(event as { pending: ThreadPendingInbox }).pending.items.map((item) => item.id)]
+              : [],
+          );
+        // A run lease stands in for a running reply, so the route leaves the switch queued.
+        const reply = await rig.runClaim.startExecution(rig.threadId, "running-reply");
+        if (!reply) throw new Error("Expected the reply's run claim");
+        try {
           expect((await switchMode(rig, "draft", first)).response).toMatchObject({
             pending: { id: first },
             turnId: null,
           });
+          appended.mockClear();
           expect(await switchMode(rig, "direct", back)).toEqual({
             created: true,
             response: { id: back, pending: null, turnId: null },
           });
+          expect(publishedQueues()).toEqual([[]]);
           expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
           expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
             id: newer,
           });
+          appended.mockClear();
           // Same mode as the queued switch: written settled, the queued one stays.
           expect((await switchMode(rig, "draft")).response).toMatchObject({
             pending: null,
             turnId: null,
           });
+          expect(publishedQueues()).toEqual([[newer]]);
           // A retried cancel answers its own settled row.
           expect(await switchMode(rig, "direct", back)).toEqual({
             created: false,
@@ -1406,7 +1422,9 @@ else
           expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
             newer,
           ]);
-        });
+        } finally {
+          await rig.runClaim.release(reply);
+        }
 
         await rig.delivery.applyDueSwitches(rig.threadId);
         const turns = await switchTurns(rig);
