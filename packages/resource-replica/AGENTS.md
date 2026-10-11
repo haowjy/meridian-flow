@@ -16,9 +16,10 @@ UI projections require that context explicitly.
 
 Bind destinations through canonical and historical rename locations; resolve parents
 before children, independently of record order. Missing destinations and cycles fall
-back to canonical placement. Alias traversal tracks qualified locations and used
-identities; each identity translates once per branch, so cycles cannot grow an
-unbounded search. Suppress deletions only after placement topology exists.
+back to canonical placement. Qualified canonical and historical homes bind parent identities directly, including
+installed descendants beneath historical ancestor homes. Never enumerate historical
+rewrite paths. Memoized identity resolution marks in-progress cycle members and
+falls back to their canonical homes together. Binding is bounded by path depth. Suppress deletions only after placement topology exists.
 
 Namespace intent `settled` means accepted by the server. Rejected work retired
 by a later command (including a reminted create conflict) is terminal
