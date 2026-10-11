@@ -108,11 +108,6 @@ msgstr "{0, plural, one {Changes in # more document did not apply} other {Change
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
-#~ msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
-#~ msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 
@@ -1277,10 +1272,6 @@ msgid "Couldn't discard. Check your connection and try again."
 msgstr "Couldn't discard. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
-#~ msgid "Couldn't draft"
-#~ msgstr "Couldn't draft"
-
-#: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
 msgstr "Couldn't edit"
 
@@ -1788,23 +1779,6 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr "Draft review"
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafted"
-#~ msgstr "Drafted"
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-#~ msgid "drafted {0}"
-#~ msgstr "drafted {0}"
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafted file"
-#~ msgstr "Drafted file"
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafting"
-#~ msgstr "Drafting"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -4634,14 +4608,6 @@ msgstr "Writing"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Writing the handoff brief"
 msgstr "Writing the handoff brief"
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Wrote"
-#~ msgstr "Wrote"
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Wrote file"
-#~ msgstr "Wrote file"
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
