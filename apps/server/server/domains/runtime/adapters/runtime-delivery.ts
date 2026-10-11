@@ -920,13 +920,16 @@ export function createDeliveryAdapter(
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
-      const disposition = await threadLock.withThreadLock(threadId, async () => {
-        // Serialize the terminal decision with remote cancellation, not only the loop's cached flag.
-        const receipt = await leaseStore.lockReceipt(input.lease);
-        const cause = receipt?.cancelRequested
+      // Serialize the terminal decision with cancellation, not only the loop's
+      // cached flag: the durable flag for a remote Stop, the local signal for
+      // a parent's cancel or shutdown.
+      const terminalCause = (receipt: { cancelRequested: boolean } | null) =>
+        receipt?.cancelRequested
           ? { kind: "cancelled" as const, reason: "cancelled" }
-          : input.cause;
-        const finalCause = cause;
+          : (input.localCancellation?.() ?? input.cause);
+      const disposition = await threadLock.withThreadLock(threadId, async () => {
+        const receipt = await leaseStore.lockReceipt(input.lease);
+        const cause = terminalCause(receipt);
         if (input.continueWith && cause.kind === "success") {
           // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
@@ -941,7 +944,7 @@ export function createDeliveryAdapter(
         const completion = await finalizeExecution(deps, {
           threadId,
           turnId: input.turnId,
-          cause: finalCause,
+          cause,
         });
         await acknowledgeFailedReply(threadId, completion.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
@@ -955,14 +958,10 @@ export function createDeliveryAdapter(
       if (adopted.split) return { kind: "split", adopted };
       const completion = await threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
-        const cause = receipt?.cancelRequested
-          ? { kind: "cancelled" as const, reason: "cancelled" }
-          : input.cause;
-        const finalCause = cause;
         const result = await finalizeExecution(deps, {
           threadId,
           turnId: input.turnId,
-          cause: finalCause,
+          cause: terminalCause(receipt),
         });
         await acknowledgeFailedReply(threadId, result.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
