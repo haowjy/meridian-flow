@@ -1,16 +1,16 @@
 /** Thread touch history supplies membership; the replica supplies current file identity. */
-import type { ThreadRecentDocumentItem } from "@meridian/contracts/protocol";
 import {
   catalogViewFromCheckpoint,
   type ResourceProjectionSnapshot,
 } from "@meridian/resource-replica";
 import { projectResourceCatalogView } from "@/client/query/useContextCatalog";
 
-export function threadRecentIdentity(
+/** Missing means not loaded; null means proven terminal and must not appear in Recent. */
+export function threadRecentIdentityIndex(
   projectId: string,
-  document: ThreadRecentDocumentItem,
   snapshot: ResourceProjectionSnapshot | null,
-): { name: string; path: string } {
+): ReadonlyMap<string, { name: string; path: string } | null> {
+  const identities = new Map<string, { name: string; path: string } | null>();
   for (const catalog of snapshot?.catalogs ?? []) {
     if (catalog.projectId !== projectId) continue;
     const view = projectResourceCatalogView(
@@ -20,9 +20,12 @@ export function threadRecentIdentity(
       snapshot?.records ?? [],
       snapshot?.folders ?? [],
     );
-    const entry = view.entries.get(document.documentId);
-    if (entry?.kind === "file") return { name: entry.name, path: entry.uri };
+    for (const [id, entry] of view.entries) {
+      if (entry.kind === "file") identities.set(id, { name: entry.name, path: entry.uri });
+    }
   }
-  const name = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
-  return { name, path: name };
+  for (const { resource } of snapshot?.records ?? []) {
+    if (resource.lifecycle.kind === "terminal") identities.set(resource.identity.documentId, null);
+  }
+  return identities;
 }

@@ -23,6 +23,12 @@ import {
 } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
 
+export type CommittedDeletionEvidence = {
+  handle: string;
+  documentId: string;
+  generation: string;
+};
+
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
@@ -45,6 +51,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   private readonly intents: Table<NamespaceIntent, string>;
   private readonly catalogs: Table<StoredCatalog, string>;
   private readonly folders: Table<FolderNamespaceRecord, string>;
+  private readonly committedDeletions: Table<CommittedDeletionEvidence, [string, string]>;
   private readonly operations = new Set<Promise<unknown>>();
   private readonly projectionListeners = new Map<symbol, ProjectionListener>();
   private projectionStop: (() => void) | null = null;
@@ -63,6 +70,8 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       catalogs: "key,projectId",
     });
     this.database.version(2).stores({ folders: "handle,projectId" });
+    this.database.version(3).stores({ committedDeletions: "[handle+documentId]" });
+    this.committedDeletions = this.database.table("committedDeletions");
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
@@ -76,6 +85,33 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       }
       return false;
     });
+  }
+
+  retainCommittedDeletions(evidence: readonly CommittedDeletionEvidence[]): Promise<void> {
+    return this.run(() =>
+      this.database.transaction("rw", this.committedDeletions, async () => {
+        for (const item of evidence) {
+          const previous = await this.committedDeletions.get([item.handle, item.documentId]);
+          if (!previous || BigInt(previous.generation) < BigInt(item.generation))
+            await this.committedDeletions.put(item);
+        }
+      }),
+    );
+  }
+
+  readCommittedDeletions(): Promise<CommittedDeletionEvidence[]> {
+    return this.run(() => this.committedDeletions.toArray());
+  }
+
+  settleCommittedDeletion(item: CommittedDeletionEvidence): Promise<void> {
+    return this.run(() =>
+      this.database.transaction("rw", this.committedDeletions, async () => {
+        const key: [string, string] = [item.handle, item.documentId];
+        const current = await this.committedDeletions.get(key);
+        // A concurrent admission may have replaced this evidence with a newer generation.
+        if (current?.generation === item.generation) await this.committedDeletions.delete(key);
+      }),
+    );
   }
 
   private run<T>(operation: () => Promise<T>): Promise<T> {

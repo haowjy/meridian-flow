@@ -15,8 +15,9 @@ A **browse surface** over the account resource replica. The replica owns durable
 resource descriptors, catalog checkpoints, local content access, and file and folder
 namespace work. Terminal document facts remain visible to tab/dock projections even
 when their last catalog entry is gone. Server-proven deletions enter the replica
-before availability reconciliation, sharing the file namespace receipt's terminal
-transition. React Query delivers acquisition results to consumers; it is not a second
+into a durable evidence inbox before availability reconciliation. Busy namespace
+locks retry automatically under the account epoch, sharing the file namespace
+receipt's irreversible terminal transition. React Query delivers acquisition results to consumers; it is not a second
 catalog owner. Renames and moves of files and folders are admitted locally and dispatched in
 the background; folder creation and deletion still use the direct context API.
 
@@ -101,3 +102,7 @@ Shared across both shells:
   projection), `core/resources/account-resource-replica.ts` (account owner),
   `context-schemes.ts`, `context-file-icon.ts`, `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)
+
+Chat Recent memoizes one catalog identity index per replica snapshot. Known
+terminal documents disappear, matching server Recent filtering; only identities
+not loaded locally may fall back to touch-row names.

@@ -148,3 +148,28 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    from Files. The folder tap target must still drill in independently.
 5. A new Work note must still open its naming field when it arrives. Cancelling
    the field keeps the note; renaming it clears the pending naming request.
+
+## Restorable lineage Scratch and committed deletion contention
+
+1. Create a `zz-probe` No Work chat with `./mf thread create`, and script an AI
+   `write create` to `scratch://zz-probe-note.md` on an owned mock-provider stack.
+   Open the note beside the chat so the browser installs its resource descriptor.
+2. Trash the last live chat with `./mf api DELETE /api/threads/$THREAD`. While
+   hidden, query `/api/projects/$PROJECT/context/availability` for the note ID:
+   expect `authority-unavailable` with `lineage_hidden`, never `deleted`.
+3. Restore with `./mf api POST /api/threads/$THREAD/restore`. Reopen the chat
+   and Scratch. The same note must return in the loaded profile, not just in a
+   fresh one. Repeat with Work trash/restore cascading over the lineage's chats.
+4. For a recursive folder delete, hold one descendant's account/resource
+   namespace Web Lock in another owned browser tab. Delete the folder. The
+   server command must succeed and the dialog close; release the lock without
+   another delete or refresh. All descendants must become terminal locally.
+   Reload while the lock is held and release it after reload: retained evidence
+   must still settle. Switching accounts fences the old delivery.
+5. A deleted file disappears from Chat Recent despite a cached touches response.
+   A live renamed file uses its current catalog name; a not-yet-loaded identity
+   may still use its touch-row name.
+
+Clean up `zz-probe` notes and chats and close only the owned browser profiles.
+Focused automated proofs: `committed-deletion.test.ts` and
+`lineage-scratch-arrivals.db.test.ts` (both restore doors).

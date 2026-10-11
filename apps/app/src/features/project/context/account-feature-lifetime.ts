@@ -38,13 +38,13 @@ export class AccountFeatureLifetime {
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
         const deletions = commands.filter((command) => command.kind === "terminal-remove");
-        for (const command of deletions) {
-          await this.resources?.acceptCommittedDelete({
+        await this.resources?.acceptCommittedDeletes(
+          deletions.map((command) => ({
             projectId: command.projectId,
             deletedDocumentIds: [command.documentId],
             generation: command.generation,
-          });
-        }
+          })),
+        );
         reconcileRecentAvailability(this.accountId, commands);
         await this.removal.reconcileDocumentAvailability(commands).localSettlement;
       },

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- A completed folder deletion no longer reports failure when local file metadata is busy. Settlement retries automatically and survives reload.
+- Chat Recent hides known-deleted documents instead of showing their cached names.
+
 - Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.
 
 - Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.

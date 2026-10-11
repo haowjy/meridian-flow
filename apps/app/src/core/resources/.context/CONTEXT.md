@@ -53,3 +53,10 @@ The namespace transport uses existing create/move/delete and receipt APIs. The
 Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
 cache invalidation.
+
+Committed server deletions enter a durable `committedDeletions` inbox in the
+account metadata database before workspace settlement. Intake indexes descriptors
+once per batch and retries busy namespace locks without another confirmation.
+Replay uses exact Document ID and generation fences, never remint aliases. The
+account epoch cancels delivery; remaining evidence survives reload and is drained
+on the next account start. Terminal descriptors remain irreversible.
