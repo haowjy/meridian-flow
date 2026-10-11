@@ -61,4 +61,3 @@ Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.
 
 See [`../AGENTS.md`](../AGENTS.md) for the working mental model and entry points.
-
