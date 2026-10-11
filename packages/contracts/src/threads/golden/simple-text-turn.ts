@@ -7,12 +7,14 @@ import { goldenAssistantTurn } from "./turn-fixture.js";
 
 export const GOLDEN_THREAD_ID = "thread_golden_text";
 export const GOLDEN_ASSISTANT_TURN_ID = "turn_golden_asst_text";
+/** The writer message the golden replies answer. */
+export const GOLDEN_USER_TURN_ID = "turn_golden_user";
 
 const assistantTurn = goldenAssistantTurn(GOLDEN_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID);
 
 /** Assistant text stream: RUN_STARTED → two text deltas → RUN_FINISHED. */
 export const SIMPLE_TEXT_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
-  { type: "turn.created", turn: assistantTurn },
+  { type: "turn.created", turn: assistantTurn, answersUserTurnIds: [GOLDEN_USER_TURN_ID] },
   { type: "stream.delta", kind: "text", text: "Hello" },
   { type: "stream.delta", kind: "text", text: " world" },
   {

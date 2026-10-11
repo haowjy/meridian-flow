@@ -621,7 +621,11 @@ export function createDeliveryAdapter(
                 ? [{ type: "turn.completed" as const, turn: completedTurn }]
                 : []),
               ...events,
-              { type: "turn.created" as const, turn: next },
+              {
+                type: "turn.created" as const,
+                turn: next,
+                answersUserTurnIds: adoption.selection.outstanding.map(({ id }) => id),
+              },
             ],
           }),
           {

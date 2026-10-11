@@ -1284,6 +1284,15 @@ else
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
+      // B, created after C, still names the writer's message it answers.
+      const journal = await db
+        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      const bStart = journal
+        .filter(({ eventType }) => eventType === "turn.created")
+        .map(({ payload }) => payload as { turn: { id: string }; answersUserTurnIds?: string[] })
+        .find(({ turn }) => turn.id === tail[3]?.id);
+      expect(bStart?.answersUserTurnIds).toContain(tail[1]?.id);
     });
 
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {

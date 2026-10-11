@@ -1221,6 +1221,20 @@ else
         // M2's answer from its RUN_STARTED, never A's id.
         expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, assistantTurnId: null });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
+        // Each reply's start names the user turns it answers: that, not stream
+        // order, is how a client matches M2 to B.
+        const starts = await db
+          .select({ payload: schema.eventJournal.payload })
+          .from(schema.eventJournal)
+          .where(eq(schema.eventJournal.eventType, "turn.created"));
+        const answers = (turnId: string | undefined) =>
+          starts
+            .map(
+              ({ payload }) => payload as { turn: { id: string }; answersUserTurnIds?: string[] },
+            )
+            .find(({ turn }) => turn.id === turnId)?.answersUserTurnIds;
+        expect(answers(tail[1]?.id)).toEqual([tail[0]?.id]);
+        expect(answers(tail[4]?.id)).toEqual([tail[2]?.id]);
         expect(await threadMode(rig)).toBe("draft");
       });
 

@@ -71,7 +71,12 @@ export type WorkContextChangedEvent = {
 
 export type OrchestratorEvent =
   | WorkContextChangedEvent
-  | { type: "turn.created"; turn: Turn }
+  | {
+      type: "turn.created";
+      turn: Turn;
+      /** On a reply reservation: the outstanding message ids (= user turn ids) it answers. */
+      answersUserTurnIds?: string[];
+    }
   | {
       type: "stream.delta";
       kind: "text" | "reasoning" | "tool_call";

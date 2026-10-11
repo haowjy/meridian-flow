@@ -9,7 +9,12 @@
  * contracts.
  */
 import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
-import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventSchemas,
+  EventType,
+  type RunStartedMeta,
+} from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
@@ -126,7 +131,10 @@ export function createOrchestratorEventProjector() {
             type: EventType.RUN_STARTED,
             threadId: event.turn.threadId,
             runId: event.turn.id,
-            rawEvent: { writeMode: event.turn.writeMode },
+            rawEvent: {
+              writeMode: event.turn.writeMode,
+              answersUserTurnIds: event.answersUserTurnIds ?? [],
+            } satisfies RunStartedMeta,
           }),
         ];
       }

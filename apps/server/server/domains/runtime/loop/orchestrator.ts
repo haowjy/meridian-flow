@@ -668,7 +668,11 @@ async function runDrainTurn(
           : []),
         ...plan.events,
         ...(preflight?.events ?? []),
-        { type: "turn.created" as const, turn: reservedTurn },
+        {
+          type: "turn.created" as const,
+          turn: reservedTurn,
+          answersUserTurnIds: selection.outstanding.map(({ id }) => id),
+        },
       ];
       return {
         value,

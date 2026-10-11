@@ -3,7 +3,7 @@
  * Why independent: The fixture captures the shared thread/protocol contract sequence while actual tool execution stays in runtime domains.
  */
 import type { OrchestratorEvent } from "../orchestrator-events.js";
-import { GOLDEN_THREAD_ID } from "./simple-text-turn.js";
+import { GOLDEN_THREAD_ID, GOLDEN_USER_TURN_ID } from "./simple-text-turn.js";
 import { goldenAssistantTurn } from "./turn-fixture.js";
 
 export const GOLDEN_TOOL_CALL_ID = "call_golden_tool_1";
@@ -13,7 +13,7 @@ const assistantTurn = goldenAssistantTurn(GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_
 
 /** Tool call start/args → executing activity → result → complete. */
 export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
-  { type: "turn.created", turn: assistantTurn },
+  { type: "turn.created", turn: assistantTurn, answersUserTurnIds: [GOLDEN_USER_TURN_ID] },
   {
     type: "stream.delta",
     kind: "tool_call",

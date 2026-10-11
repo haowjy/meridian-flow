@@ -2,11 +2,17 @@
  * Folds the thread socket's AG-UI stream into compact, dotted CLI events
  * (codex-exec style) and renders each as one text line.
  */
-import type { SequencedEvent } from "@meridian/contracts/protocol";
+import { readRunStartedMeta, type SequencedEvent } from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
-  | { type: "turn.started"; seq: string; turnId: string }
+  | {
+      type: "turn.started";
+      seq: string;
+      turnId: string;
+      /** User turns this reply answers; how a send recognizes its own reply. */
+      answersUserTurnIds: readonly string[];
+    }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
   | {
       type: "message.completed";
@@ -60,7 +66,14 @@ export class RunEventMapper {
     const e = event as unknown as Record<string, unknown> & { type: string };
     switch (e.type) {
       case "RUN_STARTED":
-        return [{ type: "turn.started", seq, turnId: String(e.runId) }];
+        return [
+          {
+            type: "turn.started",
+            seq,
+            turnId: String(e.runId),
+            answersUserTurnIds: readRunStartedMeta(e.rawEvent).answersUserTurnIds,
+          },
+        ];
       case "RUN_FINISHED":
         return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
       case "RUN_ERROR": {
