@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- Keep strip failure feedback on one line, with full localized text available on hover and to assistive technology.
+
+- Keep expanded strip failures visible exactly once and replace its summary with narrow-screen Discard confirmation.
+
+- Omit the redundant file header when the composer strip expands one document.
+
+- Chat process digests omit successful writes; the turn receipt alone summarizes changed documents. Reads, skills, and steps remain.
+
+- Call chat writes edits in every mode, without a separate drafted label.
+
+- Keep selective review commands beside incomplete changes, preserve readable dock names and whole chat attribution, keep focused controls inside the editor pane, and list this chat’s pending changes in the expanded composer strip.
+
+- Make draft review more compact: treat a new document as one actionable change, keep controls and attribution on one line, and remove redundant notes, counts, shortcuts and success toasts.
+
 - Keep an Editor tab’s review when closing the same document or review in the dock.
 
 - Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.

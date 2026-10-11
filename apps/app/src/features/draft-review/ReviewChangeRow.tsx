@@ -1,27 +1,13 @@
-/**
- * ReviewChangeRow — one change as one line: a dot in its colour, a short
- * excerpt, who made it, and Discard and Apply as icon buttons. Clicking the row
- * focuses the change in the manuscript.
- *
- * Presentational: the document's change list (the desktop popover and the
- * phone's sheet) and the Work page's expanded files both render it, and none
- * passes a controller. The row never decides what Apply or Discard means; it
- * calls what it is given.
- *
- * `touch` is the phone's row: the same line with every control a 44px target.
- *
- * The excerpt keeps a readable share of the line. The author sits beside it
- * when its names fit and wraps under it otherwise (flex-wrap decides, no
- * measuring), so several chats never squeeze the excerpt down to a letter.
- */
+/** A change's excerpt, attribution and commands on one line. The excerpt truncates first; touch controls retain 44px targets. Failures stay inline. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 
-import type { ChangeCommandState } from "@/client/query/draft-command-record";
+import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
+import { ReviewMessageText } from "./ReviewMessageText";
 import { changeExcerpt, type ReviewChange } from "./review-changes";
 
 export type ReviewChangeRowProps = {
@@ -31,14 +17,15 @@ export type ReviewChangeRowProps = {
   arrived?: boolean;
   /** Disposition is locked (a command is in flight, or the Work is archived). */
   disabled: boolean;
-  /** Per-change Apply is unavailable for a new document: it is applied whole. */
-  canApply: boolean;
+
   /** Why the last command on this change did not land. */
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
+  draftFailure?: DraftCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
+  showAttribution?: boolean;
 };
 
 export function ReviewChangeRow({
@@ -46,12 +33,14 @@ export function ReviewChangeRow({
   focused,
   arrived = false,
   disabled,
-  canApply,
+
   failure,
+  draftFailure,
   onFocus,
   onApply,
   onDiscard,
   touch = false,
+  showAttribution = false,
 }: ReviewChangeRowProps) {
   const { added, removed } = changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
@@ -68,18 +57,18 @@ export function ReviewChangeRow({
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
       className={cn(
-        "group flex cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-2 py-1 transition-colors",
+        "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1 transition-colors",
         focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
         arrived && "meridian-review-row-arrived",
       )}
     >
-      <div className="flex min-w-0 items-start gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {/* The dot sits outside the excerpt button so an author wrapped under
             the excerpt lines up with the excerpt text, not with the dot. */}
         <span className={cn("flex items-center", firstLine)}>
           <ChangeDot change={change} />
         </span>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+        <div className="flex min-w-0 flex-1 items-center gap-x-2">
           <button
             type="button"
             aria-current={focused ? "true" : undefined}
@@ -88,7 +77,7 @@ export function ReviewChangeRow({
               onFocus();
             }}
             className={cn(
-              "focus-ring flex min-w-0 flex-[1_1_8rem] items-center rounded-sm text-left text-caption",
+              "focus-ring flex min-w-0 flex-1 items-center rounded-sm text-left text-caption",
               firstLine,
               touch && "text-sm",
             )}
@@ -106,11 +95,13 @@ export function ReviewChangeRow({
               )}
             </span>
           </button>
-          <ChangeAuthor
-            touch={touch}
-            attribution={change.attribution}
-            className={cn("max-w-full", touch && "inline-flex min-h-11 items-center")}
-          />
+          {showAttribution ? (
+            <ChangeAuthor
+              overflow="hide"
+              attribution={change.attribution}
+              className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
+            />
+          ) : null}
         </div>
         {change.actionable ? (
           <span className="flex shrink-0 items-center">
@@ -126,26 +117,28 @@ export function ReviewChangeRow({
             >
               <X aria-hidden />
             </IconButton>
-            {canApply ? (
-              <IconButton
-                size="xs"
-                tooltip={t`Apply`}
-                disabled={disabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onApply();
-                }}
-                className={cn("text-primary hover:text-primary", iconButton)}
-              >
-                <Check aria-hidden />
-              </IconButton>
-            ) : null}
+            <IconButton
+              size="xs"
+              tooltip={t`Apply`}
+              disabled={disabled}
+              onClick={(event) => {
+                event.stopPropagation();
+                onApply();
+              }}
+              className={cn("text-primary hover:text-primary", iconButton)}
+            >
+              <Check aria-hidden />
+            </IconButton>
           </span>
         ) : null}
       </div>
-      {failure ? (
-        <p role="status" className="pl-4 text-caption text-destructive">
-          <ChangeFailureText failure={failure} />
+      {failure || draftFailure ? (
+        <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">
+          {draftFailure ? (
+            <ReviewMessageText failure={draftFailure} />
+          ) : failure ? (
+            <ChangeFailureText failure={failure} />
+          ) : null}
         </p>
       ) : null}
     </li>

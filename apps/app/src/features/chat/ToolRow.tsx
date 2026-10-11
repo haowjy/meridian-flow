@@ -23,25 +23,23 @@ import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
-import type { WriteMode } from "./tool-command";
 import { rendererFor, toolRowFailed } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
   tool: ToolView;
-  writeMode?: WriteMode;
 };
 
-function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
+function ToolRowComponent({ tool }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : toolRowFailed(tool) ? "error" : "done";
   const presentation = useMemo(
     () => ({
-      title: renderer.title(tool, { writeMode }),
+      title: renderer.title(tool),
       expand: renderer.expand?.(tool) ?? undefined,
     }),
-    [renderer, tool, writeMode],
+    [renderer, tool],
   );
   if (!isToolViewVisible(tool)) return null;
 

@@ -153,12 +153,18 @@ export function useReviewChanges(
     [controller.focusReviewChange, review, settleFocus],
   );
   const apply = useCallback(
-    (change: ReviewChange) => run(change, controller.applyChanges),
-    [controller.applyChanges, run],
+    async (change: ReviewChange) => {
+      if (change.wholeDraft && review) await controller.apply(review.documentId, review.draftId);
+      else await run(change, controller.applyChanges);
+    },
+    [controller.apply, controller.applyChanges, review, run],
   );
   const discard = useCallback(
-    (change: ReviewChange) => run(change, controller.discardChanges),
-    [controller.discardChanges, run],
+    async (change: ReviewChange) => {
+      if (change.wholeDraft && review) await controller.discard(review.documentId, review.draftId);
+      else await run(change, controller.discardChanges);
+    },
+    [controller.discard, controller.discardChanges, review, run],
   );
 
   const completion = inline?.completion;
@@ -187,7 +193,7 @@ export function useReviewChanges(
     items: completion?.phase === "closed" ? NO_ITEMS : items,
     focused,
     focusedIndex,
-    canApply: active?.isNewDocument !== true,
+
     locked: controller.dispositionLocked,
     completing,
     finished,
