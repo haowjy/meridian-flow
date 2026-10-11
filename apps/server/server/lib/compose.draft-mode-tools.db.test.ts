@@ -351,6 +351,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destination: "draft",
         });
       });
+
+      it("applies a switch blocked past the route's retries once the claim releases, without the sweep", async () => {
+        const { runtime } = await startWithChapter("Writer live content.");
+        await bindEditAgent(runtime, THREAD.threadId);
+
+        // The claim outlasts the route: its answer returns while the claim is held.
+        const switched = await runtime.app.runClaim.withExclusiveThread(
+          THREAD.threadId as never,
+          () => switchTo(runtime, "direct"),
+        );
+        expect(switched?.response).toMatchObject({
+          pending: { control: { kind: "write_mode", mode: "direct" } },
+          turnId: null,
+        });
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+
+        await processDetachedWork.drain();
+        expect(await modeOf(THREAD.threadId)).toBe("direct");
+        expect(await switchTurns()).toHaveLength(1);
+      });
     });
 
     // D31: a create or copy would make its file in the archived Work's frozen draft.
