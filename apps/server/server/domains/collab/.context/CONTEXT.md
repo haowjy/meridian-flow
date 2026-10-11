@@ -375,6 +375,16 @@ and restorative cancellation; publication consumes the raw difference directly.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
+Browser Undo restoration claims are untrusted. `domain/writer-restoration.ts`
+certifies new claims/targets against retained tombstones, exact content and
+structural anchors under the admission lock. Map copies may follow the source's
+chain of overwritten values at the same key. A recreated container requires a
+certified parent alias; its list copies trace left/right siblings already
+recreated at that copy's clock, and claimed sibling identities must preserve
+final source order. Equal content or equal parent shape alone grants no author.
+Only certified journal metadata enters cold attribution replay; the claims map
+itself remains untrusted.
+
 ### Complete-effect terminal settlement
 
 No visible review operations is not permission to reset a draft. Empty settlement

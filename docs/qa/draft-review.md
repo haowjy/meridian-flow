@@ -488,3 +488,23 @@ Keep/Discard, rather than overlapping the filename/count. Probe 390px touch and 
 must remain inside the row with disjoint bounds and 44px touch targets. Hold a
 whole-row Apply/Discard request: the change disappears immediately and returns
 on refusal, without a navigation change.
+
+## Writer restoration and generation handoff (#713)
+
+- Have a chat create a paragraph with an alignment attribute and a bold span.
+  Change its alignment as the writer, then Ctrl+Z. Delete the whole paragraph,
+  then Ctrl+Z. After each restoration, reload the review and check exact text,
+  formatting, alignment and attribution to the original chat. Do not use the
+  chat receipt's Undo for these steps: this probes the writer's own Undo.
+- For missing-anchor handoff, use the controlled real-Yjs regression rather
+  than timing a browser race:
+  `pnpm --filter @meridian/app test src/core/editor/branch-writer-handoff.test.ts`.
+  Both wholly pending and partially integrated carries must retain their bytes
+  and pending signal across a generation reset. When dependencies arrive,
+  anchored typing and the later independent stroke from the same writer client
+  must reach the successor, and only its acknowledgement settles the carry.
+  Permanently omitted dependencies must remain pending, never report delivery.
+- Run the certification and forged-claim controls with
+  `pnpm --filter @meridian/server test server/domains/collab/domain/writer-restoration.test.ts`.
+  This verifies cold attribution replay as well as complete attribute and rich
+  paragraph aliases; it is not browser interaction evidence.

@@ -48,12 +48,10 @@ export function certifyWriterRestorations(before: Y.Doc, update: Uint8Array): Re
         target.id.clock === alias.target.clock &&
         source.parentSub === target.parentSub
       ) {
-        // List restoration is immediately before its source. Map restoration
-        // replaces the retained source at the same key. Neither content nor a
-        // matching parent alone proves the copy belongs to that source.
-        const anchor = source.parentSub === null ? target.rightOrigin : target.origin;
         let anchored =
-          anchor?.client === alias.source.client && anchor.clock === alias.source.clock;
+          source.parentSub === null
+            ? sameId(target.rightOrigin, alias.source)
+            : mapAnchor(source, target.origin);
         const sourceParent = source.parent;
         const targetParent = target.parent;
         let sameParent = sourceParent === targetParent;
@@ -78,24 +76,62 @@ export function certifyWriterRestorations(before: Y.Doc, update: Uint8Array): Re
             );
         }
         if (sameParent && sourceParent !== targetParent) {
-          // Yjs must drop cross-parent origins when it recreates a deleted
-          // container. The certified parent identity is then the anchor; the
-          // left sibling must map to the same source slot (never text matching).
-          const left = source.left?.lastId;
+          // redoItem traces to siblings that have already been recreated in the
+          // new parent, skipping those still in the old parent. Formatting
+          // markers can be restored before their preceding text.
+          const priorCopy = (item: Y.Item, clock: number): Y.ID | null => {
+            const sibling = candidates.find(
+              (candidate) =>
+                candidate.source.client === item.id.client &&
+                candidate.source.clock <= clock &&
+                clock < candidate.source.clock + candidate.source.length &&
+                candidate.target.client === target.id.client &&
+                candidate.target.clock + candidate.target.length <= target.id.clock &&
+                itemAt(after, candidate.target.client, candidate.target.clock)?.parent ===
+                  targetParent &&
+                certify(candidate),
+            );
+            return sibling
+              ? Y.createID(
+                  sibling.target.client,
+                  sibling.target.clock + clock - sibling.source.clock,
+                )
+              : null;
+          };
+          const trace = (item: Y.Item | null, side: "left" | "right"): Y.ID | null => {
+            while (item) {
+              const id = priorCopy(item, side === "left" ? item.lastId.clock : item.id.clock);
+              if (id) return id;
+              item = item[side];
+            }
+            return null;
+          };
           anchored =
-            target.origin === null
-              ? source.parentSub !== null || left === undefined
-              : !!left &&
-                candidates.some(
-                  (sibling) =>
-                    sibling.source.client === left.client &&
-                    sibling.source.clock <= left.clock &&
-                    left.clock < sibling.source.clock + sibling.source.length &&
-                    sibling.target.client === target.origin?.client &&
-                    sibling.target.clock + left.clock - sibling.source.clock ===
-                      target.origin?.clock &&
-                    certify(sibling),
-                );
+            source.parentSub === null
+              ? sameId(target.origin, trace(source.left, "left")) &&
+                sameId(target.rightOrigin, trace(source.right, "right"))
+              : sameId(target.origin, trace(source, "right")) && target.rightOrigin === null;
+          if (anchored && source.parentSub === null) {
+            // Claims are untrusted: an early copy with no anchors must not
+            // borrow a later sibling's identity and invert the final order.
+            anchored = candidates.every((sibling) => {
+              if (sibling === alias) return true;
+              const otherSource = itemAt(after, sibling.source.client, sibling.source.clock);
+              const otherTarget = itemAt(after, sibling.target.client, sibling.target.clock);
+              if (
+                !otherSource ||
+                !otherTarget ||
+                otherSource.parent !== sourceParent ||
+                otherTarget.parent !== targetParent ||
+                otherSource.parentSub !== null
+              )
+                return true;
+              return sameId(alias.source, sibling.source)
+                ? false
+                : precedes(source, alias.source.clock, otherSource, sibling.source.clock) ===
+                    precedes(target, alias.target.clock, otherTarget, sibling.target.clock);
+            });
+          }
         }
         valid = anchored && sameParent && sameContent(source, target, alias);
       }
@@ -150,4 +186,28 @@ function sameContent(source: Y.Item, target: Y.Item, alias: RestorationAlias): b
     JSON.stringify(source.content.getContent().slice(offset, offset + alias.source.length)) ===
     JSON.stringify(target.content.getContent().slice(0, alias.target.length))
   );
+}
+
+function sameId(left: Y.ID | null, right: { client: number; clock: number } | null): boolean {
+  return left === null
+    ? right === null
+    : right !== null && left.client === right.client && left.clock === right.clock;
+}
+
+/** Map Undo follows the overwritten-value chain, not necessarily the source itself. */
+function mapAnchor(source: Y.Item, anchor: Y.ID | null): boolean {
+  for (let item: Y.Item | null = source; item; item = item.right) {
+    if (item.parent !== source.parent || item.parentSub !== source.parentSub || !item.deleted)
+      return false;
+    if (sameId(item.lastId, anchor)) return true;
+  }
+  return false;
+}
+
+function precedes(left: Y.Item, leftClock: number, right: Y.Item, rightClock: number): boolean {
+  if (left === right) return leftClock < rightClock;
+  for (let item = left.right; item; item = item.right) {
+    if (item === right) return true;
+  }
+  return false;
 }
