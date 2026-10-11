@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Existing prose documents, including deleted documents and saved aliases, now use extensionless names. Name clashes keep every document with the next available numbered suffix.
+
 - Document names accept prose suffixes without displaying them; registered code and data extensions keep their spelling. Reads and creates share the same document identity, renames keep non-prose extensions, and files cannot take a sibling folder’s name.
 
 - Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
