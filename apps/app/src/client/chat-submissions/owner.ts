@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
-import { composerSessionDraft } from "@/client/composer-drafts";
+import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { removeChatRow } from "@/client/query/chat-projections";
 import {
@@ -58,8 +58,10 @@ export function recordAndProjectSubmission(
   accountId: string,
   entry: ChatSubmission,
   actions: ThreadStoreActions,
+  scope: ComposerDraftScope,
 ): boolean {
   if (!recordChatSubmission(accountId, entry)) return false;
+  if (entry.draft) composerSessionDraft(accountId, scope).handoffSubmitted(entry.draft);
   try {
     if (entry.creation && entry.projectId)
       actions.ensureThread(
@@ -77,11 +79,6 @@ export function recordAndProjectSubmission(
         }),
       );
     projectRow(accountId, entry, actions).fresh = true;
-    if (entry.draft)
-      composerSessionDraft(accountId, {
-        kind: entry.creation ? "new-chat" : "chat",
-        id: entry.creation ? (entry.projectId ?? entry.threadId) : entry.threadId,
-      }).handoffSubmitted(entry.draft);
   } catch (error) {
     reportError(error);
   }
@@ -315,7 +312,8 @@ export class ChatSubmissionOwner {
       draft: envelope.draft,
       creation,
     };
-    if (!recordAndProjectSubmission(accountId, entry, actions)) return false;
+    if (!recordAndProjectSubmission(accountId, entry, actions, { kind: "chat", id: threadId }))
+      return false;
     void this.driver.drive(threadId);
     return true;
   };

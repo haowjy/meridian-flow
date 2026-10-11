@@ -70,7 +70,13 @@ export function sendProjectChat({
         agentSlug: agent.slug,
       },
     };
-    if (!recordAndProjectSubmission(accountId, submission, threadActions)) return null;
+    if (
+      !recordAndProjectSubmission(accountId, submission, threadActions, {
+        kind: "new-chat",
+        id: projectId,
+      })
+    )
+      return null;
   }
   try {
     selectChat(threadId);

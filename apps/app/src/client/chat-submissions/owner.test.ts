@@ -326,3 +326,32 @@ it("a refused Retry rewrite retains an actionable row but does not authorize Edi
     intercept.mockRestore();
   }
 });
+
+it("a chat send during creation hands off its chat draft even if projection throws", async () => {
+  const envelope = serializeComposerDraft(plainComposerDoc("Second"));
+  const source = composerSessionDraft(account, { kind: "chat", id: "thread_1" });
+  source.updateDraft({ snapshot: envelope.draft, text: envelope.text });
+  const scenario = new ThreadRunScenario();
+  const mounted = await mount(scenario);
+  recordChatSubmission(account, {
+    ...entry(),
+    creation: {
+      title: "Opening",
+      workId: null,
+      agentName: "General",
+      agentSlug: "general",
+      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    },
+  });
+  vi.stubGlobal("reportError", vi.fn());
+  const fault = vi.spyOn(scenario.store.getState(), "ensureThread").mockImplementation(() => {
+    throw new Error("projection");
+  });
+  try {
+    expect(await mounted.read().submit(envelope)).toBe(true);
+    expect(source.initialDraft).toBeNull();
+  } finally {
+    fault.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
