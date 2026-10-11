@@ -350,8 +350,12 @@ msgid "A file named {0} already exists in this location."
 msgstr "A file named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
-msgstr "A file named {trimmed} already exists in this location."
+msgid "A file named {candidate} already exists in this location."
+msgstr "A file named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr "A file named {trimmed} already exists in this location."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +363,12 @@ msgid "A folder named {0} already exists in this location."
 msgstr "A folder named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
-msgstr "A folder named {trimmed} already exists in this location."
+msgid "A folder named {candidate} already exists in this location."
+msgstr "A folder named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr "A folder named {trimmed} already exists in this location."
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
