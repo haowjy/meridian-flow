@@ -59,6 +59,7 @@ export function useChatSubmissions(
   const accountSignal = useOptionalAccountEpochSignal();
   const driver = useRef<ChatSubmissionDriver | null>(null);
   const failed = useRef(new Set<string>());
+  const localFailures = useRef(new Set<string>());
   const editing = useRef(new Set<string>());
   const [, render] = useReducer((value: number) => value + 1, 0);
   const latest = useRef({ actions, focusComposer, dissolveChat });
@@ -194,7 +195,9 @@ export function useChatSubmissions(
         void invalidateProjectThreadData(queryClient, projectId);
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       },
-      status: (entry, status) => {
+      status: (entry, status, localFailure) => {
+        if (localFailure) localFailures.current.add(entry.recordId);
+        else localFailures.current.delete(entry.recordId);
         if (!current()) return;
         if (status === "error") {
           if (!failed.current.has(entry.recordId)) {
@@ -340,7 +343,7 @@ export function useChatSubmissions(
         onRetry: () => {
           void driver.current?.retry(entry.submissionId);
         },
-        ...(entry.state === "rejected" && entry.draft
+        ...(entry.state === "rejected" && entry.draft && !localFailures.current.has(entry.recordId)
           ? {
               onEdit: () => {
                 if (editing.current.has(entry.recordId)) return;

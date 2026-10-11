@@ -31,7 +31,7 @@ export type SubmissionDriverOptions = {
   create(entry: ChatSubmission, signal: AbortSignal): Promise<Thread>;
   created(thread: Thread): void;
   row(entry: ChatSubmission): string;
-  status(entry: ChatSubmission, status: "pending" | "error"): void;
+  status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
   transferForEdit(entry: ChatSubmission): string[] | null;
@@ -40,6 +40,8 @@ export type SubmissionDriverOptions = {
 };
 
 export class ChatSubmissionDriver {
+  private readonly localFailures = new Set<string>();
+  private attempted: ChatSubmission | undefined;
   private readonly drives = new Map<string, Promise<void>>();
   constructor(private readonly options: SubmissionDriverOptions) {}
 
@@ -60,6 +62,16 @@ export class ChatSubmissionDriver {
       return await abortable(operation(signal), signal);
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private async admissionRequest(
+    operation: (signal: AbortSignal) => Promise<SubmissionOutcome>,
+  ): Promise<SubmissionOutcome> {
+    try {
+      return await this.request(operation);
+    } catch (error) {
+      return { kind: this.current() ? classifyWriteFailure(error) : "abandoned", submissionId: "" };
     }
   }
 
@@ -140,26 +152,38 @@ export class ChatSubmissionDriver {
           await operation(derived);
         },
       );
-    } catch {
-      // Ownership cancellation abandons the attempt. Its durable record is unchanged.
-      if (this.current()) {
-        for (const entry of this.options.journal
-          .entries()
-          .filter((entry) => entry.threadId === threadId && !entry.state)) {
-          if (!this.current()) return;
-          this.options.status(entry, "error");
-        }
-      }
+    } catch (error) {
+      if (!this.current()) return;
+      reportError(error);
+      if (this.attempted) this.localFailure(this.attempted);
+    } finally {
+      this.attempted = undefined;
     }
+  }
+
+  private localFailure(entry: ChatSubmission) {
+    this.localFailures.add(entry.recordId);
+    try {
+      this.options.status(entry, "error", true);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  private write(entry: ChatSubmission): boolean {
+    if (this.options.journal.record(entry)) return true;
+    this.localFailure(entry);
+    return false;
   }
 
   private async attempt(original: ChatSubmission, retry: boolean, derived: boolean) {
     let entry = this.read(original.recordId);
     if (!entry || !this.current()) return;
+    this.attempted = entry;
     const fresh = this.options.takeFresh(entry.recordId) && !retry;
     if (retry && entry.state) {
       entry = { ...entry, state: undefined };
-      if (!this.current() || !this.options.journal.record(entry)) return;
+      if (!this.current() || !this.write(entry)) return;
     }
     this.options.status(entry, "pending");
     if (!derived) {
@@ -167,35 +191,31 @@ export class ChatSubmissionDriver {
       return;
     }
     if (entry.creation) {
+      const creating = entry;
+      let thread: Thread;
       try {
-        const creating = entry;
-        const thread = await this.request((signal) => this.options.create(creating, signal));
-        if (!this.current()) return;
-        for (const record of this.options.journal
-          .entries()
-          .filter((record) => record.threadId === entry?.threadId && record.creation)) {
-          if (!this.current()) return;
-          if (!this.options.journal.record({ ...record, creation: undefined })) {
-            this.options.status(entry, "error");
-            return;
-          }
-        }
-        if (!this.current()) return;
-        this.options.created(thread);
-        entry = this.read(original.recordId);
-        if (!entry || !this.current()) return;
+        thread = await this.request((signal) => this.options.create(creating, signal));
       } catch (error) {
-        if (this.current() && entry) this.settle(entry, classifyWriteFailure(error));
+        if (this.current()) this.settle(entry, classifyWriteFailure(error));
         return;
       }
+      if (!this.current()) return;
+      for (const record of this.options.journal
+        .entries()
+        .filter((record) => record.threadId === entry?.threadId && record.creation)) {
+        if (!this.current() || !this.write({ ...record, creation: undefined })) return;
+      }
+      this.options.created(thread);
+      entry = this.read(original.recordId);
+      if (!entry || !this.current()) return;
     }
+
     const rowId = this.options.row(entry);
     const options = { optimisticUserTurnId: rowId };
-    let dispatched = false;
     try {
       if (!fresh) {
         const checking = entry;
-        const outcome = await this.request((signal) =>
+        const outcome = await this.admissionRequest((signal) =>
           this.options.controller.lookupSubmission(
             checking.threadId,
             checking.submissionId,
@@ -214,16 +234,15 @@ export class ChatSubmissionDriver {
         }
         if (outcome.kind === "rejected" && retry) {
           entry = { ...entry, submissionId: crypto.randomUUID(), state: undefined };
-          if (!this.current() || !this.options.journal.record(entry)) return;
+          if (!this.current() || !this.write(entry)) return;
         } else if (outcome.kind !== "not-seen") {
           this.settle(entry, outcome.kind === "rejected" ? "rejected" : "ambiguous");
           return;
         }
       }
       if (!this.current()) return;
-      dispatched = true;
       const dispatching = entry;
-      const outcome = await this.request((signal) =>
+      const outcome = await this.admissionRequest((signal) =>
         this.options.controller.recoverSubmission(
           dispatching.threadId,
           dispatching,
@@ -242,10 +261,8 @@ export class ChatSubmissionDriver {
       }
       this.settle(entry, outcome.kind === "not-seen" ? "ambiguous" : outcome.kind);
     } catch (error) {
-      if (!this.current() || !entry) return;
-      if (dispatched && classifyWriteFailure(error) === "ambiguous")
-        await this.reconcileAmbiguous(entry, options);
-      else this.settle(entry, classifyWriteFailure(error));
+      if (!this.current()) return;
+      throw error;
     }
   }
 
@@ -254,7 +271,7 @@ export class ChatSubmissionDriver {
     options: { optimisticUserTurnId: string },
   ) {
     try {
-      const outcome = await this.request((signal) =>
+      const outcome = await this.admissionRequest((signal) =>
         this.options.controller.lookupSubmission(
           entry.threadId,
           entry.submissionId,
@@ -267,17 +284,17 @@ export class ChatSubmissionDriver {
         entry,
         outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
       );
-    } catch {
-      if (this.current()) this.settle(entry, "ambiguous");
+    } catch (error) {
+      throw error;
     }
   }
 
   private settle(entry: ChatSubmission, kind: "accepted" | "rejected" | "ambiguous") {
     if (!this.current()) return;
-    if (kind === "accepted") this.options.journal.retire(entry.recordId);
-    else {
-      if (kind === "rejected" && !this.options.journal.record({ ...entry, state: "rejected" }))
-        return;
+    if (kind === "accepted") {
+      if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry);
+    } else {
+      if (kind === "rejected" && !this.write({ ...entry, state: "rejected" })) return;
       if (this.current()) this.options.status(entry, "error");
     }
   }
@@ -286,7 +303,12 @@ export class ChatSubmissionDriver {
     const original = this.options.journal
       .entries()
       .find((entry) => entry.submissionId === submissionId);
-    if (!original?.draft || original.state !== "rejected") return Promise.resolve();
+    if (
+      !original?.draft ||
+      original.state !== "rejected" ||
+      this.localFailures.has(original.recordId)
+    )
+      return Promise.resolve();
     return this.locked(original.threadId, async () => {
       const entry = this.read(original.recordId);
       if (
@@ -296,8 +318,10 @@ export class ChatSubmissionDriver {
         !this.current()
       )
         return;
+      this.attempted = entry;
+      if (this.localFailures.has(entry.recordId)) return;
       if (!entry.creation) {
-        const outcome = await this.request((signal) =>
+        const outcome = await this.admissionRequest((signal) =>
           this.options.controller.retireSubmission(
             entry.threadId,
             submissionId,
