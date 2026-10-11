@@ -118,9 +118,13 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <p
           data-user-turn-status="error"
           role="status"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
+          className={
+            submissionRecovery?.moving
+              ? "mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
+              : "mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
+          }
         >
-          {t`Couldn't send.`}
+          {submissionRecovery?.moving ? t`Moved to composer.` : t`Couldn't send.`}
         </p>
       ) : null}
       {submissionRecovery && turn.status === "error" ? (

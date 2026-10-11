@@ -187,8 +187,13 @@ export class ChatSubmissionOwner {
             ? { session: this.session, submissionId: entry.submissionId, signal }
             : undefined;
         if (status === "error") {
-          if (!row.failed) options.failed(entry.recordId);
-          row.failed = true;
+          if (this.transferDestination(entry).hasReceived(entry.recordId)) {
+            options.clear(entry.recordId);
+            row.failed = false;
+          } else {
+            if (!row.failed) options.failed(entry.recordId);
+            row.failed = true;
+          }
           row.localFailure = localFailure ?? false;
         } else {
           options.clear(entry.recordId);
@@ -291,7 +296,7 @@ export class ChatSubmissionOwner {
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
       if (moving) {
-        this.presentation.set(row.turnId, { busy: true });
+        this.presentation.set(row.turnId, { busy: true, moving: true });
         continue;
       }
       this.presentation.set(row.turnId, {
@@ -326,36 +331,47 @@ export class ChatSubmissionOwner {
     const { accountId, threadId, projectId, signal, current, actions, queryClient } = this.options;
     const timeout = AbortSignal.timeout(15_000);
     const requestSignal = AbortSignal.any([signal, timeout]);
+    const destination = this.destination;
     try {
-      const snapshot = await abortable(
-        getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
-        requestSignal,
-      );
-      if (!current()) return;
-      this.destination = "created";
-      actions.ensureThread(deserializeThreadSnapshot(snapshot).thread);
-      this.rebuild();
-    } catch (error) {
-      if (!current()) return;
-      if (error instanceof HttpResponseError && error.status === 404) {
-        // A newer addressed intent may have arrived while confirmation was in flight.
-        const records = readChatSubmissionSnapshot(accountId);
-        if (!records || records.some((entry) => entry.threadId === threadId)) return;
-        const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
-        if (
-          source.initialDraft &&
-          !composerSessionDraft(accountId, { kind: "new-chat", id: projectId }).prependSnapshots([
-            source.initialDraft,
-          ])
-        )
-          return;
-        source.handoff();
-        this.destination = "editing";
-        this.rebuild();
-        removeChatRow(queryClient, projectId, threadId);
-        this.options.dissolveChat();
+      let snapshot: Awaited<ReturnType<typeof getThreadSnapshot>> | undefined;
+      let missing = false;
+      try {
+        snapshot = await abortable(
+          getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
+          requestSignal,
+        );
+      } catch (error) {
+        if (!current() || !(error instanceof HttpResponseError && error.status === 404)) return;
+        missing = true;
       }
-      // Network failures and unavailable reads keep the destination and last-known rows.
+      if (!current()) return;
+      if (!missing) {
+        if (!snapshot) throw new Error("Thread snapshot response is empty");
+        const thread = deserializeThreadSnapshot(snapshot).thread;
+        actions.ensureThread(thread);
+        this.destination = "created";
+        this.rebuild();
+        return;
+      }
+      // A newer addressed intent may have arrived while confirmation was in flight.
+      const records = readChatSubmissionSnapshot(accountId);
+      if (!records || records.some((entry) => entry.threadId === threadId)) return;
+      const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
+      if (
+        source.initialDraft &&
+        !composerSessionDraft(accountId, { kind: "new-chat", id: projectId }).prependSnapshots([
+          source.initialDraft,
+        ])
+      )
+        return;
+      source.handoff();
+      this.destination = "editing";
+      this.rebuild();
+      removeChatRow(queryClient, projectId, threadId);
+      this.options.dissolveChat();
+    } catch (error) {
+      this.destination = destination;
+      reportError(error);
     } finally {
       this.reconciling = false;
     }
@@ -384,7 +400,6 @@ export class ChatSubmissionOwner {
     return true;
   };
 
-  rowActions = (turnId: string): UserTurnRecovery | null => this.presentation.get(turnId) ?? null;
   dispose() {
     this.options.controller.endRecoverySession(this.session);
     this.model.bindings.delete(this);

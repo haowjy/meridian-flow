@@ -3,4 +3,5 @@ export type UserTurnRecovery = {
   onRetry?: () => void;
   onEdit?: () => void;
   busy?: boolean;
+  moving?: boolean;
 };

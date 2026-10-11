@@ -2,8 +2,8 @@
 
 Durable, account-stamped journal of unresolved chat-submission intents (P3).
 It is the local witness that lets a reload reconcile or replay a displayed send.
-It is not a thread replica: no assistant turns. The tab owner projects writer rows and
-a single in-memory status/action snapshot; views never enumerate persistence.
+It is not a thread replica: no assistant turns. One observable account/thread model owns writer rows, live session/id-fenced
+attempts and the shared status/action snapshot for every mounted pane; views never enumerate persistence.
 
 - One record per `(accountId, recordId)`, keyed
   `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
@@ -55,8 +55,10 @@ journal `creation` with the provider-scoped pending flag through
 `useSyncExternalStore`, so uncreated journal destinations never query snapshots.
 
 `owner.ts` owns tab row identity, local failure/busy knowledge, durable Send handoff,
-and draft transfer. Both first and existing Send use `recordAndProjectSubmission`;
-after commit, subscriber/projection errors are reported through `reportError`, never
+and draft transfer. Pane bindings subscribe to that model, not separate status caches.
+Both first and existing Send use `recordAndProjectSubmission`;
+the caller supplies the actual authoring scope, independently of creation metadata.
+After commit, exact draft handoff precedes fallible projection. Subscriber/projection errors are reported through `reportError`, never
 turned into a resubmittable composer failure. The driver chooses Edit's cohort under
 its lock. Local write failure exposes Retry but never authorizes Edit or re-mint.
 
@@ -65,3 +67,10 @@ confirms the server destination: 200 loads it, 404 permits dissolution, and an
 inconclusive response preserves the destination and last-known rows. Only this
 tab's explicit Edit bypasses that check. Pane disposal fences only its recovery
 session; account disposal, not unrelated pane teardown, invalidates admissions.
+
+Edit saves stable record-id receipts atomically with the destination draft in
+sessionStorage. A received record is moving, never retryable or editable; mount
+and external wakes finish its journal retirement without another prepend/admission.
+Receipts survive draft Send/clear and reload in the same tab. They are not shared
+with other tabs: the receipt guarantee is tab-local, not a cross-tab transaction.
+Lookup/retirement request refusal is ambiguity, never rejection proof.

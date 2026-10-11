@@ -29,10 +29,10 @@ export type SubmissionDriverOptions = {
   status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
-  finished?(entry: ChatSubmission): void;
+  finished(entry: ChatSubmission): void;
   transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
-  transferReceived?(entry: ChatSubmission): boolean;
+  transferReceived(entry: ChatSubmission): boolean;
   timeoutMs?: number;
 };
 
@@ -92,7 +92,7 @@ export class ChatSubmissionDriver {
             .filter(
               (record) =>
                 record.threadId === threadId &&
-                (!record.state || this.options.transferReceived?.(record)) &&
+                (!record.state || this.options.transferReceived(record)) &&
                 !tried.has(record.recordId),
             )
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
@@ -121,7 +121,7 @@ export class ChatSubmissionDriver {
           .some(
             (record) =>
               record.threadId === threadId &&
-              (!record.state || this.options.transferReceived?.(record)) &&
+              (!record.state || this.options.transferReceived(record)) &&
               !tried.has(record.recordId),
           )
       )
@@ -136,7 +136,7 @@ export class ChatSubmissionDriver {
       .entries()
       .find((entry) => entry.submissionId === submissionId);
     if (!original || !this.current()) return Promise.resolve();
-    if (this.options.transferReceived?.(original)) return this.edit(submissionId);
+    if (this.options.transferReceived(original)) return this.edit(submissionId);
     this.options.status(original, "pending");
     return this.locked(
       original.threadId,
@@ -147,7 +147,7 @@ export class ChatSubmissionDriver {
       },
       original,
     )
-      .finally(() => this.options.finished?.(original))
+      .finally(() => this.options.finished(original))
       .then(() => {
         if (!this.current()) return;
         const remaining = this.read(original.recordId);
@@ -189,7 +189,7 @@ export class ChatSubmissionDriver {
       reportError(error);
       this.localFailure(entry);
     } finally {
-      this.options.finished?.(entry);
+      this.options.finished(entry);
     }
   }
 
@@ -214,7 +214,7 @@ export class ChatSubmissionDriver {
   private async attempt(original: ChatSubmission, retry: boolean, derived: boolean) {
     let entry = this.read(original.recordId);
     if (!entry || !this.current()) return;
-    if (this.options.transferReceived?.(entry)) {
+    if (this.options.transferReceived(entry)) {
       const moving = entry;
       this.finishEdit(
         entry,
@@ -223,7 +223,7 @@ export class ChatSubmissionDriver {
               .entries()
               .filter(
                 (record) =>
-                  record.threadId === moving.threadId && this.options.transferReceived?.(record),
+                  record.threadId === moving.threadId && this.options.transferReceived(record),
               )
           : [entry],
       );
@@ -361,7 +361,7 @@ export class ChatSubmissionDriver {
     if (
       !original?.draft ||
       original.state !== "rejected" ||
-      (this.localFailures.has(original.recordId) && !this.options.transferReceived?.(original))
+      (this.localFailures.has(original.recordId) && !this.options.transferReceived(original))
     )
       return Promise.resolve();
     return this.locked(original.threadId, () =>
@@ -374,7 +374,7 @@ export class ChatSubmissionDriver {
           !this.current()
         )
           return;
-        const received = this.options.transferReceived?.(entry);
+        const received = this.options.transferReceived(entry);
         if (this.localFailures.has(entry.recordId) && !received) return;
         if (!entry.creation && !received) {
           const outcome = await this.admissionRequest((signal) =>
@@ -405,7 +405,7 @@ export class ChatSubmissionDriver {
               .filter(
                 (record) =>
                   record.threadId === entry.threadId &&
-                  (!received || this.options.transferReceived?.(record)),
+                  (!received || this.options.transferReceived(record)),
               )
               .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           : [entry];

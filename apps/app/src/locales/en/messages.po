@@ -2408,6 +2408,10 @@ msgstr "Move row up"
 msgid "Move up"
 msgstr "Move up"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to composer."
+msgstr "Moved to composer."
+
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr "Must be a number"

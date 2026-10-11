@@ -39,7 +39,15 @@ describe("ThreadRunController write outcomes", () => {
     });
     const session = {};
     scenario.controller.beginRecoverySession(session);
-    const recovered = scenario.controller.lookupSubmission("thread_1", "sub-1", {}, session);
+    const row = scenario.store
+      .getState()
+      .appendUserTurn("thread_1", [{ type: "text", text: "hello" }]);
+    const recovered = scenario.controller.lookupSubmission(
+      "thread_1",
+      "sub-1",
+      { signal: new AbortController().signal, optimisticUserTurnId: row.id },
+      session,
+    );
     const submitted = scenario.submit("hello");
     scenario.controller.dispose();
     scenario.controller.activate();
@@ -71,7 +79,7 @@ describe("ThreadRunController write outcomes", () => {
     const pending = scenario.controller.retireSubmission(
       "thread_1",
       "sub-1",
-      { optimisticUserTurnId: row.id },
+      { signal: new AbortController().signal, optimisticUserTurnId: row.id },
       session,
     );
     await vi.waitFor(() => expect(scenario.retireRequests).toHaveLength(1));
@@ -117,7 +125,7 @@ describe("ThreadRunController write outcomes", () => {
       scenario.controller.lookupSubmission(
         "thread_1",
         "sub-ended",
-        { optimisticUserTurnId: endedRow.id },
+        { signal: new AbortController().signal, optimisticUserTurnId: endedRow.id },
         ended,
       ),
     ).resolves.toMatchObject({ kind: "abandoned" });
@@ -130,7 +138,7 @@ describe("ThreadRunController write outcomes", () => {
       scenario.controller.lookupSubmission(
         "thread_1",
         "sub-sibling",
-        { optimisticUserTurnId: siblingRow.id },
+        { signal: new AbortController().signal, optimisticUserTurnId: siblingRow.id },
         sibling,
       ),
     ).resolves.toMatchObject({ kind: "accepted" });
@@ -162,7 +170,7 @@ describe("ThreadRunController mid-run merge", () => {
     scenario.emit(runStarted("turn-b"), "13");
     expect(scenario.transport.subscriptions).toHaveLength(1);
     expect(scenario.activeSubscription()?.active).toBe(true);
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-user", "turn-a", "turn-b"]);
 
     scenario.emit(
       { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-b" } as never,

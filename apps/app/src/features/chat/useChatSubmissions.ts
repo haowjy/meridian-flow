@@ -107,6 +107,5 @@ export function useChatSubmissions(
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
       driver.current?.submit(envelope) ?? Promise.resolve(false),
-    rowActions: (turnId: string) => driver.current?.rowActions(turnId) ?? null,
   };
 }

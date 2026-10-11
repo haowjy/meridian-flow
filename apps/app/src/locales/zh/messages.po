@@ -2408,6 +2408,10 @@ msgstr ""
 msgid "Move up"
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to composer."
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr ""
