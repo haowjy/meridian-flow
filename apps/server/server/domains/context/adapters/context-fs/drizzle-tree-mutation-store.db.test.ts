@@ -100,9 +100,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         filetype: "markdown",
         markdown: "original",
       });
-      await expect(store.createFolder(null, "file")).rejects.toThrow(
-        "Context entry already exists",
-      );
+      await expect(store.createFolder(null, "file")).rejects.toMatchObject({
+        name: "ContextEntryConflictError",
+        occupantKind: "file",
+      });
       await store.createFolder(null, "folder");
       await expect(
         store.createDocumentRecordIfAbsent({
@@ -112,7 +113,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           filetype: "markdown",
           markdown: "replacement",
         }),
-      ).resolves.toBeNull();
+      ).rejects.toMatchObject({ name: "ContextEntryConflictError", occupantKind: "folder" });
       await expect(
         store.createDocument({
           folderId: null,

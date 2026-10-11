@@ -326,7 +326,7 @@ export class ContextFS implements ContextSchemeAdapter {
           return input.content.markdown;
         },
       });
-      if (!created.created) return Err({ code: "conflict", occupantKind: "file" });
+      if (!created.created) return Err({ code: "conflict" });
       if (!document) {
         return Err({ code: "io_error", message: "Created document identity was not returned" });
       }
@@ -373,8 +373,6 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok(undefined);
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
-      if (error instanceof ContextEntryConflictError)
-        return Err({ code: "conflict", occupantKind: error.occupantKind });
       throw error;
     }
   }
