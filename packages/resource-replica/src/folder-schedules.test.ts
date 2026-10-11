@@ -139,7 +139,25 @@ it("projects every nested placement/deletion schedule", () => {
         const view = project();
         const reordered = projectFolderCatalog("p", es, [...rs.values()].reverse());
         assert.deepEqual(reordered, view);
-        if (![...rs.values()].some(folderOwnsDeletion)) assert.equal(view.length, es.length);
+        if (![...rs.values()].some(folderOwnsDeletion)) {
+          // The checkpoint retains every ordinary row. Missing repair identities and
+          // their ancestor chain are additional journal-owned recovery rows.
+          const installed = new Set(es.map((entry) => entry.entryId));
+          assert.equal(view.filter((entry) => installed.has(entry.entryId)).length, es.length);
+          const recovery = new Set<string>();
+          for (const record of rs.values()) {
+            if (!record.intents.some((intent) => intent.state === "needs-repair")) continue;
+            let entry = view.find((entry) => entry.entryId === record.folderId);
+            while (entry && !recovery.has(entry.entryId)) {
+              recovery.add(entry.entryId);
+              const parentId =
+                entry.kind === "folder" || entry.kind === "file" ? entry.parentId : null;
+              entry = view.find((parent) => parent.entryId === parentId);
+            }
+          }
+          for (const entry of view)
+            assert(installed.has(entry.entryId) || recovery.has(entry.entryId));
+        }
         for (const [id, r] of rs)
           if (folderOwnsDeletion(r)) assert(!view.some((e) => e.entryId === id));
       }

@@ -371,7 +371,7 @@ export function ContextViewerSurfaceController({
         projectId,
         tab,
         resourceProjection.records,
-        resourceProjection.folders,
+        resourceProjection.placement,
       );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
@@ -429,7 +429,7 @@ export function ContextViewerSurfaceController({
     projectId,
     reconcileResourceTab,
     resourceProjection.records,
-    resourceProjection.folders,
+    resourceProjection.placement,
     routeWorkId,
     selectedDocumentId,
     tabs,

@@ -15,14 +15,11 @@ import {
   emptyCatalogView,
   type FolderNamespaceRecord,
   indexCatalogView,
-  projectFolderCatalog,
-  projectFolderLocation,
   projectFolderNeedsRepair,
-  projectResourceLocation,
   projectResourceNeedsRepair,
   type ResourceLocation,
+  type ResourcePlacement,
   type ResourceRecord,
-  rebaseFolderResourceLocation,
   resourceContextAuthority,
   resourceUriQualifier,
   sameCatalogProjectionScope,
@@ -116,10 +113,7 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
-function locationBelongsToScope(
-  location: ReturnType<typeof projectResourceLocation> & {},
-  scope: CatalogScope,
-): boolean {
+function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
   if (scope.kind === "project")
     return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
@@ -142,11 +136,12 @@ function overlayResourceCatalogView(
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
   isKnownVisible: (record: ResourceRecord) => boolean,
+  placement: ResourcePlacement,
 ): CatalogCacheView {
   const entries = new Map(view.entries);
   for (const record of records) {
     const documentId = record.resource.identity.documentId;
-    const location = projectResourceLocation(projectId, record);
+    const location = placement.resourceLocation(record);
     const visible =
       isKnownVisible(record) ||
       record.intents.some(
@@ -224,33 +219,25 @@ function overlayResourceCatalogView(
   return indexCatalogView({ ...view, entries });
 }
 
-/** Rebase every folder with a pending or settled local move, and its descendants, at once. */
-function overlayFolderCatalogView(
-  projectId: string,
-  view: CatalogCacheView,
-  folders: readonly FolderNamespaceRecord[],
-): CatalogCacheView {
-  if (folders.length === 0) return view;
-  const entries = projectFolderCatalog(projectId, [...view.entries.values()], folders);
-  return indexCatalogView({
-    ...view,
-    entries: new Map(entries.map((entry) => [entry.entryId, entry])),
-  });
-}
-
 /** Overlay recoverable resource state without treating unrelated account records as project files. */
 export function projectResourceCatalogView(
   projectId: string,
   scope: CatalogScope,
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
-  folders: readonly FolderNamespaceRecord[],
+  placement: ResourcePlacement,
 ): CatalogCacheView {
-  return overlayFolderCatalogView(
-    projectId,
-    overlayResourceCatalogView(projectId, scope, view, records, () => false),
-    folders,
-  );
+  const placed = indexCatalogView({
+    ...view,
+    entries: new Map(
+      placement
+        .projectCatalog([...view.entries.values()], records)
+        .filter((entry) => sameCatalogProjectionScope(entry.scope, scope))
+        .map((entry) => [entry.entryId, entry]),
+    ),
+  });
+  // Insert local-only rows against final folder identities, never stale paths.
+  return overlayResourceCatalogView(projectId, scope, placed, records, () => false, placement);
 }
 
 /** Project one record whose replica lookup already proved this project's access. */
@@ -258,6 +245,7 @@ export function accessibleResourceCatalogView(
   projectId: string,
   scope: CatalogScope,
   record: ResourceRecord,
+  placement: ResourcePlacement,
 ): CatalogCacheView {
   return overlayResourceCatalogView(
     projectId,
@@ -265,6 +253,7 @@ export function accessibleResourceCatalogView(
     emptyCatalogView(scope),
     [record],
     () => true,
+    placement,
   );
 }
 
@@ -303,8 +292,8 @@ export function projectCatalogFile(
 function projectCatalogDirectory(
   projectId: string,
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "folder" }>,
-  folder?: FolderNamespaceRecord,
-  folders: readonly FolderNamespaceRecord[] = [],
+  folder: FolderNamespaceRecord | undefined,
+  placement: ResourcePlacement,
 ): CatalogDirectory {
   const repair = folder ? projectFolderNeedsRepair(folder) : null;
   const failureAt = repair
@@ -325,7 +314,7 @@ function projectCatalogDirectory(
             folder && repair.destination
               ? refusedMoveDestination(
                   repair.destination,
-                  rebaseFolderResourceLocation(projectId, projectFolderLocation(folder), folders),
+                  placement.folderLocation(folder.folderId)!,
                 )
               : undefined,
           ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
@@ -338,6 +327,7 @@ export function projectCatalogView(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   view: CatalogCacheView,
+  placement: ResourcePlacement,
   records: readonly ResourceRecord[] = [],
   folders: readonly FolderNamespaceRecord[] = [],
 ): CatalogContextView {
@@ -361,8 +351,7 @@ export function projectCatalogView(
   ): CatalogFile | null => {
     if (entry.sourceId !== sourceId) return null;
     const record = resourcesByDocument.get(entry.entryId);
-    const placed = record ? projectResourceLocation(projectId, record) : null;
-    const effective = placed && rebaseFolderResourceLocation(projectId, placed, folders);
+    const effective = record ? placement.resourceLocation(record) : null;
     if (
       record &&
       (!effective || effective.scheme !== scheme || effective.path !== `/${entry.path.join("/")}`)
@@ -373,16 +362,7 @@ export function projectCatalogView(
     const repairedAt = repair
       ? record?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
       : undefined;
-    const placementPending =
-      effective !== placed ||
-      record?.intents.some(
-        (intent) =>
-          intent.projectId === projectId &&
-          intent.desired.kind === "set-location" &&
-          (intent.state === "pending" ||
-            intent.state === "submitted" ||
-            intent.state === "received"),
-      );
+    const placementPending = record && placement.resourcePlacementPending(record);
     return record
       ? {
           ...file,
@@ -422,7 +402,7 @@ export function projectCatalogView(
     if (!entry) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder" && entry.sourceId === sourceId)
-      return projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), folders);
+      return projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement);
     return null;
   };
   const files = () =>
@@ -449,7 +429,7 @@ export function projectCatalogView(
         entry.kind === "folder" &&
         entry.sourceId === sourceId &&
         `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), folders)]
+          ? [projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement)]
           : [],
       )[0] ??
       null,
@@ -525,7 +505,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
     return result;
   }, [schemes, scopeFor]);
   const resources = useOptionalAccountResourceReplica();
-  const { records, folders, snapshot, error } = useAccountResourceProjection(projectId);
+  const { records, folders, snapshot, placement, error } = useAccountResourceProjection(projectId);
   const combine = useCallback(
     (queries: UseQueryResult<CatalogCacheView>[]) => {
       const results = {} as Record<S, CatalogViewResult>;
@@ -538,17 +518,20 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
         const view = resources
           ? checkpoint
             ? catalogViewFromCheckpoint(checkpoint)
-            : (query.data ?? (records.length > 0 ? emptyCatalogView(scope) : null))
+            : (query.data ??
+              (records.length > 0 || folders.some((folder) => projectFolderNeedsRepair(folder))
+                ? emptyCatalogView(scope)
+                : null))
           : query.data;
         const projected = view
-          ? projectResourceCatalogView(projectId, scope, view, records, folders)
+          ? projectResourceCatalogView(projectId, scope, view, records, placement)
           : null;
         for (const scheme of schemes) {
           const requested = scopeFor(scheme);
           if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
             catalog: projected
-              ? projectCatalogView(projectId, scheme, projected, records, folders)
+              ? projectCatalogView(projectId, scheme, projected, placement, records, folders)
               : null,
             isComplete: resources ? Boolean(checkpoint) : Boolean(query.data),
             isError: query.isError || error !== null,
@@ -569,7 +552,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
       }
       return results;
     },
-    [projectId, schemes, scopeFor, scopes, resources, records, folders, snapshot, error],
+    [projectId, schemes, scopeFor, scopes, resources, records, folders, snapshot, placement, error],
   );
   return useQueries({
     queries: scopes.map((scope) => ({
@@ -618,20 +601,25 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
         candidate.projectId === projectId &&
         sameCatalogProjectionScope(candidate.scope, stableScope),
     );
-    const view = checkpoint ? catalogViewFromCheckpoint(checkpoint) : query.data;
+    const view = checkpoint
+      ? catalogViewFromCheckpoint(checkpoint)
+      : (query.data ??
+        (projection.folders.some((folder) => projectFolderNeedsRepair(folder))
+          ? emptyCatalogView(stableScope)
+          : undefined));
     return view
       ? projectResourceCatalogView(
           projectId,
           stableScope,
           view,
           projection.records,
-          projection.folders,
+          projection.placement,
         )
       : undefined;
   }, [
     projectId,
     projection.records,
-    projection.folders,
+    projection.placement,
     projection.snapshot,
     query.data,
     stableScope,

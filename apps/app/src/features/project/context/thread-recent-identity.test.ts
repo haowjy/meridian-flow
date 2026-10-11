@@ -73,8 +73,9 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
   expect(threadRecentIdentityIndex("project", snapshot).get("doc")).toBeNull();
   expect(threadRecentIdentityIndex("other", snapshot).has("doc")).toBe(false);
   expect(threadRecentIdentityIndex("project", snapshot).has("unloaded")).toBe(false);
-  snapshot.folders[0].intents[0].state = "needs-repair";
-  expect(threadRecentIdentityIndex("project", snapshot).get("doc")).toEqual({
+  const restored = structuredClone(snapshot);
+  restored.folders[0].intents[0].state = "needs-repair";
+  expect(threadRecentIdentityIndex("project", restored).get("doc")).toEqual({
     name: "doc.md",
     path: "kb://A/doc.md",
   });

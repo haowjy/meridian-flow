@@ -22,6 +22,13 @@ refusal restores rows with a delete failure mark. Folder creation uses the direc
 context API. Availability reconciles workspace visibility and session authority;
 it is not a general replica deletion intake.
 
+All placement consumers require the snapshot's shared `ResourcePlacement`: it
+contains every known project catalog and folder journal, including other Works.
+Never reconstruct a graph from only journal folders. A folder needing repair
+keeps a reachable recovery row even when its catalog membership or whole source
+is absent. Recovery rows retain stable journal identity and last known home;
+they do not prove the identity is currently visible on the server.
+
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
 destination one level at a time (scheme → folder → file), driven by `?scheme=` /
