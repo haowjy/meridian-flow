@@ -72,3 +72,10 @@ it("keeps bare hosts external without requiring extensions on internal names", (
   expect(normalizeLinkHref("Chapter 13")).toBe("Chapter 13");
   expect(normalizeLinkHref("The Second Gate")).toBe("The Second Gate");
 });
+
+it("labels an escaped literal # before interpreting an href section", () => {
+  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md" })).toBe("Chapter#13");
+  expect(linkTargetLabel({ kind: "relative", path: "Chapter%2313.md#opening" })).toBe(
+    "Chapter#13#opening",
+  );
+});

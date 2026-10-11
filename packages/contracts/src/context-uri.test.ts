@@ -113,7 +113,8 @@ describe("documentTitleFromUri", () => {
   });
 });
 
-it("drops query and section before deriving a document title", () => {
-  expect(documentTitleFromUri("manuscript://Chapter 13.md#opening")).toBe("Chapter 13");
-  expect(documentTitleFromUri("Chapter 13.md?view=1#opening")).toBe("Chapter 13");
+it("preserves literal href syntax in decoded document addresses", () => {
+  expect(documentTitleFromUri("manuscript://Chapter#13")).toBe("Chapter#13");
+  expect(documentTitleFromUri("manuscript://Book#1/Chapter 13")).toBe("Chapter 13");
+  expect(documentTitleFromUri("manuscript://Chapter?13")).toBe("Chapter?13");
 });

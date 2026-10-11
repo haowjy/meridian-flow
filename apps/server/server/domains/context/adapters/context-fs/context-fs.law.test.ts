@@ -1,5 +1,6 @@
 /** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
 
+import { documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
@@ -106,6 +107,24 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
+  it.each([
+    ["Chapter#13", "Chapter#13"],
+    ["Book#1/Chapter 13", "Chapter 13"],
+  ])("preserves literal # in created address %s and its title", async (path, title) => {
+    const { fs } = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
+    });
+    const created = await port.createTrackedDocument(`manuscript://${path}`, "", {
+      origin: { type: "system" },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(created.error.code);
+    expect(created.value.uri).toBe(`manuscript://${path}`);
+    expect(documentTitleFromUri(created.value.uri)).toBe(title);
+  });
+
   it("reports the occupying kind through the context router", async () => {
     const { fs } = createUntitledFs({});
     const port = createContextPortRouter({

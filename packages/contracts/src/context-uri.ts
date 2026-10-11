@@ -330,14 +330,16 @@ export function splitDocumentHrefSuffix(value: string): { path: string; suffix: 
  * canonicalized (`ch12.md` and `notes.txt` read `ch12` and `notes`). No
  * extension is stripped on its own.
  *
+ * This accepts decoded addresses, not hrefs. Href/tool callers split suffixes
+ * before decoding at their boundary.
+ *
  * Callers own the fallback because some server notices prefer a document id
  * while writer-facing surfaces use "Untitled document".
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const { path: address } = splitDocumentHrefSuffix(uri);
-  const schemeSeparator = address.indexOf("://");
-  const path = schemeSeparator >= 0 ? address.slice(schemeSeparator + 3) : address;
+  const schemeSeparator = uri.indexOf("://");
+  const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   const parsed = parseDocumentFilename(segment);
