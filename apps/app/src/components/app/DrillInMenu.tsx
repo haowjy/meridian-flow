@@ -49,8 +49,6 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
-  /** Keep the menu open while the caller validates or admits an action. */
-  keepOpen?: boolean;
 };
 
 export type DrillInMenuProps = {
@@ -62,7 +60,7 @@ export type DrillInMenuProps = {
   hereIds: readonly string[];
   /** The folders, outermost first, the menu opens inside. */
   openAt: readonly DrillNode[];
-  actions: readonly DrillAction[] | ((trail: readonly DrillNode[]) => readonly DrillAction[]);
+  actions?: readonly DrillAction[] | ((trail: readonly DrillNode[]) => readonly DrillAction[]);
   caption?: ReactNode;
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
@@ -102,10 +100,6 @@ export function DrillInMenu({
     }
     wasOpen.current = open;
   }, [open, openAt]);
-  // An action runs after the menu has handed focus back, so what it focuses
-  // (a rename field) is not pulled away by the trigger's restore.
-  const pendingAction = useRef<DrillAction | null>(null);
-
   const changeOpen = (next: boolean) => {
     if (next) {
       setTrail(openAt);
@@ -128,7 +122,7 @@ export function DrillInMenu({
 
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
-  const currentActions = typeof actions === "function" ? actions(trail) : actions;
+  const currentActions = typeof actions === "function" ? actions(trail) : (actions ?? []);
 
   return (
     <DropdownMenu open={open} onOpenChange={changeOpen}>
@@ -143,14 +137,7 @@ export function DrillInMenu({
             drill(trail.slice(0, -1));
           }
         }}
-        onCloseAutoFocus={(event) => {
-          const action = pendingAction.current;
-          pendingAction.current = null;
-          if (action) {
-            event.preventDefault();
-            action.onSelect();
-          } else onCloseAutoFocus?.(event);
-        }}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
         {folder ? (
@@ -206,10 +193,8 @@ export function DrillInMenu({
             key={action.key}
             disabled={action.disabled}
             onSelect={(event) => {
-              if (action.keepOpen) {
-                event.preventDefault();
-                action.onSelect();
-              } else pendingAction.current = action;
+              event.preventDefault();
+              action.onSelect();
             }}
           >
             <action.icon aria-hidden />
