@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Discard successive draft changes without replay errors, preserve restored-text attribution, and reject overlapping restoration copies.
+
 - Recover unrelated typing after a draft generation retires, release unanchorable carries, and report lost typing on its document.
 
 - Keep ambiguous browser restoration claims writer-authored, including manual attribute re-sets and omitted sibling claims.
