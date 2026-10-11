@@ -70,9 +70,10 @@ export type DraftApplyItemResult =
   | { itemKey: string; status: "held"; reason: DraftHeldReason };
 /** 202: the batch is staged and recovery is finishing it (F22, F27). `draftId` names the whole draft. */
 export type DraftApplyPendingResponse = { status: "pending"; draftId: string };
+/** `completed` means the command settled, including selections whose items were all held (F28). */
 export type DraftApplyAllResponse =
   | DraftApplyPendingResponse
-  | { status: "applied"; draftId: string; draftClosed: boolean; items: DraftApplyItemResult[] }
+  | { status: "completed"; draftId: string; draftClosed: boolean; items: DraftApplyItemResult[] }
   | { status: "stale"; draftId: string; staleItemKeys: string[] }
   | { status: "gone"; draftId: string };
 
