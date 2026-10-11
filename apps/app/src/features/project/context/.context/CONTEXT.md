@@ -65,7 +65,8 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
        ├─ useContextCatalogViews (batched projection) ┤
        ├─ useCreateEntryForm ────────────────┤
-       ├─ useRenameEntryForm ────────────────┤
+       ├─ useEntryInteraction ───────────────┤
+       │     └─ rename forms + move picker   │
        ├─ useDeleteConfirmation ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │

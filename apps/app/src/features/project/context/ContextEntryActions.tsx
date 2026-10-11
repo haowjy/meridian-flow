@@ -69,7 +69,7 @@ export type EntryActionTarget = {
   path: string;
 } & ({ kind: "file"; documentId: string } | { kind: "dir" });
 
-type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
+export type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
@@ -222,12 +222,9 @@ function DropdownActionItems({
 
 export function useDeleteConfirmation({
   projectId,
-  owner,
   scheme,
 }: {
   projectId: string;
-  /** Who holds the entries: a Work, or a No Work chat's lineage for its Scratch. */
-  owner: ContextOwner;
   scheme: ProjectContextTreeScheme;
 }) {
   const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
@@ -238,13 +235,10 @@ export function useDeleteConfirmation({
   const availability = useProjectContextAvailabilityCoordinator();
   const queryClient = useQueryClient();
 
-  const requestDelete = useCallback(
-    (t: EntryActionTarget) => {
-      setError(null);
-      setTarget({ ...t, owner, operationId: crypto.randomUUID() });
-    },
-    [owner],
-  );
+  const requestDelete = useCallback((t: DeleteTarget) => {
+    setError(null);
+    setTarget({ ...t, operationId: crypto.randomUUID() });
+  }, []);
   const cancel = useCallback(() => {
     setError(null);
     setTarget(null);

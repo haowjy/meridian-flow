@@ -1,14 +1,5 @@
 # Context browser FUTURE
 
-## Move picker
-
-- After a refused move, Move… reopens at the entry's current folder, so "Try
-  again" means climbing back to the refused destination. Open the picker at
-  that destination instead (`EntryMovePicker.tsx`), so a retry is one click.
-  It needs a menu-source lookup from a `ResourceDestination`'s scheme, owner
-  and `folderPath` to a `DrillNode` trail (`use-catalog-menu-source.ts`,
-  `menu-tree.ts`). The retry caption and retained name already work.
-
 ## Recently opened landing
 
 Code-local nice-to-haves for `RecentDocumentsLanding.tsx`, the recorder in

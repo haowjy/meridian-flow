@@ -194,7 +194,6 @@ function SchemeSection({
 
   const deleteConfirm = useDeleteConfirmation({
     projectId,
-    owner: { workId: editorWorkId },
     scheme,
   });
   const env = useMemo<TreeEnv | null>(
@@ -202,22 +201,25 @@ function SchemeSection({
       catalog
         ? ({
             projectId,
-            workId: editorWorkId,
+            owner: { workId: editorWorkId },
             scheme,
-            actions: [
-              ...(schemeAllowsCreation(scheme) ? (["new-file", "new-folder"] as const) : []),
+            capabilities: [
               "rename",
               "move",
               ...(scheme !== "uploads" ? (["delete"] as const) : []),
             ],
             activeScheme,
             activePath,
-            creating,
+            creation: schemeAllowsCreation(scheme)
+              ? {
+                  creating,
+                  request: requestCreate,
+                  done: onCreateDone,
+                  createdFile: setPendingOpenPath,
+                }
+              : undefined,
             onSelectFile,
-            onRequestCreate: requestCreate,
             onRequestDelete: deleteConfirm.requestDelete,
-            onCreateDone,
-            onCreatedFilePath: setPendingOpenPath,
             catalog,
             isExpanded: (entryId, depth) => expandedEntryIds[entryId] ?? depth < 2,
             toggleEntry,

@@ -15,19 +15,23 @@
  * tooltip and accessible name rather than a line of text.
  */
 import { t } from "@lingui/core/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { type CSSProperties, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import type { TabOwner } from "@/client/stores";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import {
+  DeleteConfirmationDialog,
+  type DeleteTarget,
+  useDeleteConfirmation,
+} from "../context/ContextEntryActions";
 import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
 import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
+import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
@@ -99,6 +103,20 @@ export function RailScratchSection({
   const sectionRef = useRef<HTMLElement | null>(null);
   // Folders the writer has toggled; a top-level folder starts open, like the tree's.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const deletion = useDeleteConfirmation({ projectId, scheme: "scratch" });
+  const { works, noWork } = useWorks(projectId);
+  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
+  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
+    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
+    const cached = capabilitiesByOwner.get(key);
+    if (cached) return cached;
+    const work =
+      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
+    const actions: EntryCapabilities =
+      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
+    capabilitiesByOwner.set(key, actions);
+    return actions;
+  };
   if (!scratch) return null;
   const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
@@ -161,6 +179,8 @@ export function RailScratchSection({
         <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
           <ScratchRows
             projectId={projectId}
+            onRequestDelete={deletion.requestDelete}
+            capabilitiesFor={capabilitiesFor}
             source={scratch.source}
             tree={tree}
             folderId={null}
@@ -174,6 +194,13 @@ export function RailScratchSection({
           />
         </div>
       ) : null}
+      <DeleteConfirmationDialog
+        target={deletion.target}
+        isPending={deletion.isPending}
+        error={deletion.error}
+        onCancel={deletion.cancel}
+        onConfirm={() => void deletion.confirm()}
+      />
     </section>
   );
 }
@@ -188,7 +215,11 @@ function ScratchRows({
   toggled,
   onToggle,
   onPick,
+  onRequestDelete,
+  capabilitiesFor,
 }: {
+  onRequestDelete: (target: DeleteTarget) => void;
+  capabilitiesFor: (owner: ContextOwner) => EntryCapabilities;
   projectId: string;
   source: CatalogMenuSource;
   tree: DrillTree;
@@ -209,6 +240,8 @@ function ScratchRows({
         <ScratchEntry
           key={node.id}
           projectId={projectId}
+          capabilities={capabilitiesFor(entry.owner)}
+          onRequestDelete={onRequestDelete}
           entry={entry}
           depth={depth}
           openId={openId}
@@ -241,6 +274,8 @@ function ScratchRows({
         {open ? (
           <ScratchRows
             projectId={projectId}
+            onRequestDelete={onRequestDelete}
+            capabilitiesFor={capabilitiesFor}
             source={source}
             tree={tree}
             folderId={node.id}
@@ -265,7 +300,11 @@ function ScratchEntry({
   toggled,
   onToggle,
   onPick,
+  capabilities,
+  onRequestDelete,
 }: {
+  capabilities: EntryCapabilities;
+  onRequestDelete: (target: DeleteTarget) => void;
   projectId: string;
   entry: NonNullable<ReturnType<CatalogMenuSource["entryFor"]>>;
   depth: number;
@@ -274,33 +313,16 @@ function ScratchEntry({
   onToggle: (id: string, open: boolean) => void;
   onPick: (node: DrillNode) => void;
 }) {
-  const parsed = parseContextUri(entry.node.uri);
-  const owner: TabOwner =
-    entry.owner.rootThreadId && parsed.ok && parsed.value.authority.kind === "lineage"
-      ? {
-          rootThreadId: entry.owner.rootThreadId,
-          rootThreadRef: parsed.value.authority.rootThreadRef,
-        }
-      : { workId: entry.owner.workId ?? undefined };
-  const { works, noWork } = useWorks(projectId);
-  const work =
-    entry.owner.workId === noWork?.id
-      ? noWork
-      : works?.find((candidate) => candidate.id === entry.owner.workId);
-  const editable = !entry.owner.workId || Boolean(work && !isWorkArchived(work));
-  const deletion = useDeleteConfirmation({ projectId, owner, scheme: "scratch" });
   return (
     <TreeEnvProvider
       value={{
         projectId,
         scheme: "scratch",
-        workId: entry.owner.workId ?? null,
-        owner,
-        actions: editable ? ["rename", "move", "delete"] : [],
+        owner: entry.owner,
+        capabilities,
         catalog: entry.catalog,
         activeScheme: "scratch",
         activePath: entry.catalog.findDocument(openId ?? "")?.path ?? null,
-        creating: null,
         onSelectFile: (_scheme, file) => {
           // Descendant rows resolve their own node through the rail's canonical opener.
           onPick({
@@ -311,10 +333,7 @@ function ScratchEntry({
             folder: false,
           });
         },
-        onRequestCreate: () => undefined,
-        onRequestDelete: deletion.requestDelete,
-        onCreateDone: () => undefined,
-        onCreatedFilePath: () => undefined,
+        onRequestDelete,
         isExpanded: (id, rowDepth) => toggled[id] ?? rowDepth < 2,
         toggleEntry: (id, defaultOpen) => onToggle(id, toggled[id] ?? defaultOpen),
       }}
@@ -325,13 +344,6 @@ function ScratchEntry({
         siblingNames={entry.catalog
           .children(entry.node.parentId ?? entry.catalog.root.entryId)
           .map((node) => node.name)}
-      />
-      <DeleteConfirmationDialog
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={() => void deletion.confirm()}
       />
     </TreeEnvProvider>
   );

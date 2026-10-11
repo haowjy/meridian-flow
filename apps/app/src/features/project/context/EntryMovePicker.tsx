@@ -13,8 +13,8 @@ import { useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName, validateContextEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { destinationOwner } from "./identity-location";
-import { rememberRenameOperation } from "./LinkUpdateNote";
 import { isFolderWithin } from "./menu-tree";
+import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-catalog-menu-source";
 
 export type MoveEntry = {
@@ -32,6 +32,7 @@ type EntryMovePickerProps = {
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
+  onMoved: (operationId: string) => void;
   children: ReactNode;
 };
 
@@ -54,6 +55,7 @@ function OpenMovePicker({
   open,
   repairMove,
   onOpenChange,
+  onMoved,
   rowRef,
 }: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
@@ -69,8 +71,9 @@ function OpenMovePicker({
     [scheme, owner],
   );
   const source = useProjectMenuSource({ projectId, title: "", document, scratch });
-  const openAt = source.own.openAt(entry.path);
-  const currentParentId = openAt.at(-1)?.id;
+  const currentTrail = source.own.openAt(entry.path);
+  const currentParentId = currentTrail.at(-1)?.id;
+  const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
   const failedFolder = repairMove
     ? (repairMove.folderPath.split("/").filter(Boolean).at(-1) ?? schemeLabel(repairMove.scheme))
@@ -130,7 +133,7 @@ function OpenMovePicker({
               if (!key) throw new Error(unavailable);
               return resources.setLocation(projectId, key, location);
             })();
-      if (result.operationId) rememberRenameOperation(entry.id, result.operationId, folder.name);
+      if (result.operationId) onMoved(result.operationId);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -141,8 +144,10 @@ function OpenMovePicker({
 
   return (
     <DrillInMenu
+      // Catalog acquisition may resolve the initial destination after this open picker mounts.
+      key={openAt.map((node) => node.id).join("/")}
       tree={source.tree}
-      hereIds={openAt.map((node) => node.id)}
+      hereIds={currentTrail.map((node) => node.id)}
       openAt={openAt}
       open={open}
       onOpenChange={(next) => {
@@ -175,7 +180,6 @@ function OpenMovePicker({
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move to ${folder.name}`,
             disabled: already || pending,
-            keepOpen: true,
             onSelect: () => {
               void move(trail);
             },

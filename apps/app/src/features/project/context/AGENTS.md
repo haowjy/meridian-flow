@@ -28,14 +28,18 @@ Shared across both shells:
 - **Inline name forms**: create and rename are thin adapters over
   `useInlineEdit` (`components/ui/use-inline-edit.ts`), the app's one in-place
   edit protocol, and render through `EntryNameField`. Extend the core, don't fork.
-- **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
-  (right-click context menu + hover kebab) rendered from one ordered action
-  specification. Add an action once; both primitive-specific renderers inherit it.
-  Rename is inline; Move… opens `EntryMovePicker`, the shared `DrillInMenu`
-  and project catalog tree as a folder picker. Scratch reuses these rows and
-  forms with its explicit lineage/Work owner and action capabilities: Rename, Move… and Delete while the actual owner is editable, none for archived Work notes. Closed row pickers mount no project catalog hooks. Refused moves retain their destination and reopen through Move, not the name-only repair field.
-  Uploads omits generic Delete because only the identity/revision-bound intake
-  contract may delete an upload.
+- **Entry interactions** (`use-entry-interaction.tsx`): the tree, phone and
+  Work Files declare management capabilities and one explicit `ContextOwner`.
+  The boundary owns dispatch, rename/repair state, operation selection and move
+  picker wiring; shells retain geometry, creation and navigation. Creation is
+  optional, and its requester is what enables the create actions. Scratch has
+  none. Each list owns one delete coordinator; requested targets carry their
+  owner, so Scratch's Work and Earlier notes share a dialog. Resolve archived
+  Work capabilities at the list/owner group, not in rows.
+  `ContextEntryActions.tsx` renders the same action specification through
+  context menus and kebabs. Closed move pickers acquire no catalogs. Refused
+  moves reopen at their retained destination when it still resolves, otherwise
+  at the current parent with the refusal message. Uploads omits generic Delete.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
 
@@ -68,7 +72,8 @@ Shared across both shells:
 - **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
   `ContextTreeRows.tsx` (direct-child desktop rows), `MobileContextBrowser.tsx`
   (phone Files destination)
-- **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`),
+- **Actions**: `use-entry-interaction.tsx` (row interaction boundary),
+  `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`),
   `EntryMovePicker.tsx` (row-anchored placement)
 - **Inline forms**: `use-create-entry-form.ts`, `use-rename-entry-form.ts`,
   `EntryNameField.tsx`, `context-entry-name.ts` (validation); the core is

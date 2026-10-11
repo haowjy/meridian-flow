@@ -86,7 +86,6 @@ export function WorkFilesView({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const scratchDelete = useDeleteConfirmation({
     projectId,
-    owner: { workId: work.id },
     scheme: "scratch",
   });
   const scratchRoot = scratch.catalog?.root.entryId;
@@ -121,6 +120,11 @@ export function WorkFilesView({
       node:
         node.kind === "dir" ? (
           <FolderRow
+            projectId={projectId}
+            workId={work.id}
+            siblingNames={catalogSiblingNames(scratch.catalog, node)}
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
             folder={node}
             open={expanded.has(node.path)}
             onToggle={() => toggleFolder(node.path)}
@@ -131,21 +135,10 @@ export function WorkFilesView({
             workId={work.id}
             file={node}
             siblingNames={catalogSiblingNames(scratch.catalog, node)}
-            edit={
-              files.editable
-                ? {
-                    renaming: files.renaming === node.path,
-                    onRename: files.setRenaming,
-                    onDelete: () =>
-                      scratchDelete.requestDelete({
-                        kind: "file",
-                        name: node.name,
-                        path: node.path,
-                        documentId: node.documentId,
-                      }),
-                  }
-                : undefined
-            }
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
+            requestRename={files.renaming === node.path}
+            onRenameDone={() => files.setRenaming(null)}
           />
         ),
     })),
