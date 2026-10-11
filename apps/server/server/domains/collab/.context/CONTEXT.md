@@ -379,14 +379,13 @@ Browser Undo restoration claims are untrusted. `domain/writer-restoration.ts`
 certifies new claims/targets against retained tombstones, exact content and
 structural anchors under the admission lock. Same-parent map overwrites stay
 writer-authored even after honest Undo: overwrite ancestry plus equal value
-cannot distinguish restoration from a manual re-set. A recreated container
-requires a certified parent alias and a complete bijection of retained source
-slots and live target slots, independent of the browser's chosen sibling claims.
-Its list copies trace the siblings already recreated at that copy's clock, and
-claimed identities must preserve final source order. Complete rich-paragraph
-restorations (including attributes on the recreated parent) can certify; omitted
-claims or retained history without a complete correspondence fall back to writer
-ownership. This conservative loss of AI attribution is deliberate: ambiguous
+cannot distinguish restoration from a manual re-set. Recreated-container
+copies use the pre-widening conservative rule: a certified parent identity and
+a directly certified left-sibling slot (or an actual first slot), not a claimed
+inventory or skipped-sibling trace. Browser claims cannot supply coverage when
+their own content, range, live target or parent fails certification. Rich
+restorations may lose AI attribution on unproved formatting/text slots; this is
+the deliberate fallback, not grounds to infer correspondence. Ambiguous
 correspondence must never credit writer text to the AI. Only certified journal
 metadata enters cold attribution replay; the claims map itself remains untrusted.
 
