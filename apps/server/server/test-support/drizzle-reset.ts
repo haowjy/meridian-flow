@@ -122,16 +122,21 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
   }
 }
 
+/** A rollback must also wait while its transaction-backed adapters are still usable. */
+async function drainDetachedWork(): Promise<void> {
+  if (!(await processDetachedWork.drain(25_000)))
+    throw new Error(
+      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
+    );
+}
+
 /**
  * Fast reset for focused suites. Supplied tables are scope anchors, not an
  * exhaustive ordering: the live Postgres FK graph recursively adds every
  * dependent table and determines the child-first delete order.
  */
 export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]): Promise<void> {
-  if (!(await processDetachedWork.drain(25_000)))
-    throw new Error(
-      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
-    );
+  await drainDetachedWork();
   await assertThrowawayDatabase(db);
   if (tables.length === 0) throw new Error("deleteDrizzleRows requires at least one table");
   const requestedTables = tables.map(drizzleTableIdentity);
@@ -276,7 +281,11 @@ export function useRollbackTestDatabase(
     try {
       await root.transaction(async (transaction) => {
         current = transaction as unknown as Database;
-        await runTest();
+        try {
+          await runTest();
+        } finally {
+          await drainDetachedWork();
+        }
         transaction.rollback();
       });
     } catch (error) {

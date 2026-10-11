@@ -7,7 +7,8 @@ helpers accept those connections explicitly. Do not mock modules or process glob
 
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
-from that transaction. Its optional `prepareSuite` establishes the committed
+from that transaction. The harness drains detached work before rolling back,
+while transaction-backed adapters are still usable. Its optional `prepareSuite` establishes the committed
 baseline once. Never use the root connection inside a rollback-isolated case.
 
 Suites testing commits, locks, LISTEN/NOTIFY, or multiple connections use
@@ -17,7 +18,10 @@ follows the live FK graph and deletes dependents first in one transaction.
 Include owner tables for insert-only data (prompt bakes are deleted through
 their thread). Do not add TRUNCATE or bespoke reset helpers. Runtime harnesses
 and manually composed DB-test runtimes use that same tracker; don't create an
-isolated tracker that the reset helper cannot drain. Rollback cannot isolate
+isolated tracker that the reset helper cannot drain. Production composition accepts
+`backgroundTasks`; DB-test compositions inject `processDetachedWork`. Hocuspocus
+room stores enqueue checkpoints: unloading a room does not await that checkpoint,
+so checkpoints join the same tracker as repairs and runtime work. Rollback cannot isolate
 other connections.
 
 Hoist immutable large fixtures to `beforeAll` only when each case restores its

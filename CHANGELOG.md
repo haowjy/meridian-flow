@@ -48,6 +48,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Drain background room checkpoints before resetting DB test fixtures, preventing a checkpoint reader from deadlocking with the suite reset.
+
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.

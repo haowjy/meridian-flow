@@ -20,10 +20,10 @@ import {
   folders,
   users,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
@@ -32,6 +32,7 @@ import {
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
+import { setCollabHook } from "../../collab/domain/collab-test-hooks.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
 import { endUse } from "./end-use.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
@@ -269,6 +270,59 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(tide), "live empty")
         .toEqual({ ok: true, value: "" });
+    });
+
+    it("drains a room's background checkpoint before the next fixture reset", async () => {
+      const { runtime, scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      const id = await scenario.model(drafting).create("checkpoint.md", "Drafted.");
+      const warm = await runtime.hocuspocus.openDirectConnection(id, {
+        origin: { type: "system", reason: "checkpoint-reset" },
+      });
+      let reached!: (pid: number) => void;
+      const atCheckpoint = new Promise<number>((resolve) => {
+        reached = resolve;
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const remove = setCollabHook("checkpoint.afterAuthorityRead", async () => {
+        const [row] = await currentDrizzleDb(db).execute<{ pid: number }>(
+          sql`SELECT pg_backend_pid() AS pid`,
+        );
+        reached(Number(row.pid));
+        await gate;
+      });
+      let reset: Promise<void> | undefined;
+      try {
+        if (!warm.document) throw new Error("the warm room has no document");
+        await runtime.ports.documentSync.storeHocuspocusDocument(id, warm.document);
+        const checkpointPid = await atCheckpoint;
+        reset = deleteDrizzleRows(db, [users]);
+        // Observe the real lock boundary, not a sleep intended to drain work.
+        const deadline = Date.now() + 500;
+        let lockWait = false;
+        while (Date.now() < deadline) {
+          const rows = await db.execute<{ pid: number }>(sql`
+            SELECT pid FROM pg_stat_activity WHERE datname=current_database()
+            AND ${checkpointPid}::int = ANY(pg_blocking_pids(pid))`);
+          if (rows.length > 0) {
+            lockWait = true;
+            break;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+        release();
+        await reset;
+        expect(lockWait, "reset never locks tables ahead of an in-flight checkpoint").toBe(false);
+      } finally {
+        remove();
+        release();
+        await reset?.catch(() => undefined);
+        await runtime.ports.documentSync.drainHocuspocusPersistence();
+        await warm.disconnect();
+      }
     });
 
     // §12.2 step 5: a batch's last uses prune every hidden ancestor left empty, whichever

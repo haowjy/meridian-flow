@@ -6,6 +6,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type {
@@ -52,6 +53,7 @@ type CheckpointSlot = {
 
 type HocuspocusPersistenceDeps = {
   journal: CheckpointJournal;
+  backgroundTasks?: DetachedWorkTracker;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
@@ -97,6 +99,7 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -221,24 +224,27 @@ export function createHocuspocusPersistenceService(
     }
     const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
     checkpointSlots.set(documentId, created);
-    created.running = (async () => {
-      while (created.next) {
-        const { document, authority, state, upToSeq } = created.next;
-        created.next = undefined;
-        // A retired room's state belongs to an authority generation that has
-        // since been replaced.
-        if (isDocumentHandleRetired(document)) {
-          continue;
+    created.running = backgroundTasks.track(
+      (async () => {
+        while (created.next) {
+          const { document, authority, state, upToSeq } = created.next;
+          created.next = undefined;
+          // A retired room's state belongs to an authority generation that has
+          // since been replaced.
+          if (isDocumentHandleRetired(document)) {
+            continue;
+          }
+          try {
+            await deps.journal.checkpoint(documentId, state, upToSeq, authority);
+          } catch (cause) {
+            emitCheckpointFailure(documentId, cause);
+          }
         }
-        try {
-          await deps.journal.checkpoint(documentId, state, upToSeq, authority);
-        } catch (cause) {
-          emitCheckpointFailure(documentId, cause);
-        }
-      }
-    })().finally(() => {
-      checkpointSlots.delete(documentId);
-    });
+      })().finally(() => {
+        checkpointSlots.delete(documentId);
+      }),
+      "Hocuspocus checkpoint",
+    );
   }
 
   async function drainCheckpoints(): Promise<void> {
