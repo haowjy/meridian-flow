@@ -113,7 +113,7 @@ function ReviewBottom({
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller, view, next, openDraft } = header;
+  const { controller, view } = header;
   return (
     <>
       <MobileChangeBar view={view} />
@@ -121,8 +121,6 @@ function ReviewBottom({
         open={listOpen}
         onOpenChange={onListOpenChange}
         view={view}
-        next={next}
-        onOpenNext={openDraft}
         controller={controller}
       />
       <ReviewToast

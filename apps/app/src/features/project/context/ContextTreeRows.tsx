@@ -55,7 +55,7 @@ export type TreeActions = {
   onCreateDone: () => void;
   onCreatedFilePath: (path: string) => void;
   /** Also ends an open create form, as a folder toggle always has. */
-  toggleEntry: (entryId: string, defaultOpen: boolean) => void;
+  toggleEntry: (entryId: string) => void;
 };
 
 /** Volatile tree state. Only `TreeChildren` reads it and hands rows plain props. */
@@ -63,7 +63,7 @@ export type TreeView = {
   /** Active file path in this scheme, or null when the active file is elsewhere. */
   activePath: string | null;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
-  isExpanded: (entryId: string, depth: number) => boolean;
+  isExpanded: (entryId: string) => boolean;
   catalog: CatalogContextView;
 };
 
@@ -128,7 +128,7 @@ export function TreeChildren({
             dir={child}
             depth={depth}
             siblingNames={siblingNames}
-            isOpen={view.isExpanded(child.entryId, depth)}
+            isOpen={view.isExpanded(child.entryId)}
           />
         ) : (
           <FileRow
@@ -213,7 +213,7 @@ const DirRow = memo(
     const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
     // A refused rename offers its name field once, as the failure arrives.
     useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
-    const toggle = () => env.toggleEntry(dir.entryId, depth < 2);
+    const toggle = () => env.toggleEntry(dir.entryId);
 
     function handleAction(action: EntryAction) {
       if (action === "new-file") env.onRequestCreate("file", dir.path);

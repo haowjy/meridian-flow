@@ -1,6 +1,6 @@
 /**
  * MobileChangeBar — the selected change's controls, pinned to the bottom of the
- * manuscript on a phone: who wrote it, "Includes your edits", Discard, Apply.
+ * manuscript on a phone: who wrote it, Discard, Apply, on one row.
  * It is in the page's flow (the manuscript shrinks to make room), so nothing is
  * ever hidden behind it, and it clears the home indicator, or the on-screen
  * keyboard when that is up (`--mobile-keyboard-height`, set by
@@ -12,7 +12,7 @@ import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges
 export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
   const item = view.items.find((candidate) => candidate.change.classId === view.focused?.classId);
   if (!item) return null;
-  const { change, failure } = item;
+  const { change, failure, draftFailure } = item;
   return (
     <div
       data-phone-change-bar
@@ -28,8 +28,8 @@ export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
         touch
         change={change}
         disabled={view.locked}
-        canApply={view.canApply}
         failure={failure}
+        draftFailure={draftFailure}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}
         className="rounded-xl"

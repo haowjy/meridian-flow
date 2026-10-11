@@ -56,7 +56,7 @@ row's Review a silent no-op).
    inline review UI appears in the editor. FAIL: nothing happens.
 4. Repeat with a draft that creates a **new** document (write directive
    targeting a filename that doesn't exist). PASS: the Work page row shows the
-   `New` badge; the editor tab opens and inline review renders before Apply
+   one change with Apply/Discard when expanded; the editor tab opens and inline review renders before Apply
    even though the document has no context-tree entry — the launcher
    synthesizes the tab from draft metadata ([#153]). The file tree must NOT
    show the new document until Apply (draft-only documents stay out of the
@@ -200,12 +200,12 @@ and inspect the surfaces.
 ### Checks
 
 1. Open Pacing pass. PASS: the strip shows Chapter A and only this chat's shared
-   change, not Lore pass's separate shield change or Chapter B. The tie note
-   names Lore pass and says Apply and Discard take both, above the commands
-   whether collapsed or expanded. Counts appear only once previews arrive.
+   change, not Lore pass's separate shield change or Chapter B. Summary and
+   controls share one line without notes. Counts appear once previews arrive,
+   except narrow docks hide the count to keep the filename readable.
 2. Choose Review. PASS: the Editor opens on the shared change, while its marks,
    stepper and document list still show the whole document's changes. The shared
-   row names both chats; each name opens that chat beside the review at its own
+   focused bar names both chats (overflow names are in +N); each name opens that chat beside the review at its own
    producing turn (the chat sheet on the phone), without changing destination.
 3. From a fresh fixture, Apply on Pacing pass's strip. PASS: the whole shared
    change reaches live (`sabre`), while `shield` and Chapter B's `spear` stay
@@ -213,24 +213,23 @@ and inspect the surfaces.
    and repeat with Discard: the shared change leaves both strips, live keeps
    `sword`, and Lore pass's separate changes remain. No command navigates.
 4. Open Lore pass before disposition. PASS: the strip shows Chapter A and B;
-   expanding reveals each file's count and notes. Discard asks "Discard this
+   expanding groups this chat’s changes under one-line file headers. Each
+   change uses the shared Work row with its own Apply/Discard. Single-file
+   strips also expand. Discard asks "Discard this
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
-   only Lore pass's changes, including the shared class warned about in its note.
-5. Open Dialogue pass. Once the preview has loaded, PASS: the new-document note
-   says to review it to apply, and the strip offers Review only, no Apply or
-   Discard. Review opens the draft-only document without publishing it.
+   only Lore pass's changes, including the shared class.
+5. Open Dialogue pass. Once loaded, its new document is one change with Apply,
+   Discard and Review. Apply publishes it; Discard removes it. Review opens it
+   without publishing. Verify whole-command payloads from strip, row and bar.
 6. Open Untouched. PASS: no strip, although the Work has pending changes. After
    Pacing pass's last change is handled, its strip also disappears, even while
    Lore pass's other changes remain.
-7. From a populated strip, click "All changes in <Work>" (expand a multi-file
-   strip first). PASS: one navigation opens that Work's Files tab, with the
-   Work-wide Changes to review group. The document list's footer goes to the
-   same destination. Repeat in No Work: its own chat strip and document list
-   still work, but neither offers a Work-wide footer or list.
+7. No strip or document list offers a Work-page footer. Ordinary Work navigation
+   still reaches Files and its Work-wide commands.
 
 8. **First paint and generation.** Hold previews for a new-document-only chat. Before
-   release, only Review is offered; no selective Apply/Discard flashes. Then stage an
-   ordinary file beside it and hold that preview: selective commands stay unavailable
+   release, Apply/Discard remain disabled. Then stage an ordinary file beside it
+   and hold that preview: commands stay unavailable
    until its authority is known. While a scripted mock turn is actively generating,
    attempt strip commands: no disposition request. Release the turn and previews;
    commands reflect actual actionable changes. Capture DOM mutations, not just the
@@ -244,7 +243,7 @@ and inspect the surfaces.
 ## Probe H — the document list on both shells
 
 Use Probe G's run-scoped Work and two-document, two-chat fixture. This is a
-visual probe: run at desktop 1280×900 and phone 393×852; do not infer layout
+visual probe: run at desktop 1280×900 and phone 390×844; do not infer layout
 from CLI success. Record screenshots and the fresh API reads per action.
 
 1. Open Chapter A live. Open its identity-row change-list button (phone sheet).
@@ -264,14 +263,11 @@ from CLI success. Record screenshots and the fresh API reads per action.
    tokens and all operation IDs of that class go in the request. Refusal restores
    that row with the server reason, not a false connection warning. Switch offline
    and click: it returns with a connection refusal, never dispatching on reconnect.
-4. Keep the list open while its last change completes. PASS: pending says Applying
-   or Discarding, never prematurely No changes left; confirmed close holds the
-   finished state. A formatting-only draft says formatting remains, not finished.
+4. Handle the last change with the list open. PASS: the list closes; Applying or
+   Discarding then No changes left appears only in the existing review/path row. A formatting-only draft says formatting remains, not finished.
    Next draft preserves sorted-file position; Back to live is offered when alone.
-5. Click "All changes in <Work>" at the foot. PASS: one navigation opens that Work's
-   Files tab and closes the list. Repeat in No Work: no Work-page link exists.
-   On phone the row command's confirmation toast is inside the sheet, not under
-   its scrim. Whole-draft Discard lives in the version menu and dispatches without
+5. No Work-page link or success toast appears in either list. Phone sheet title
+   says Changes without a count, and its list button has no count badge. Whole-draft Discard lives in the version menu and dispatches without
    an approval dialog. The list button remains usable while review enters/leaves and marks hide.
 
 6. **Marks, rows and arrivals.** With list open, hide marks, step Previous/Next
@@ -292,7 +288,7 @@ from CLI success. Record screenshots and the fresh API reads per action.
    entry is translated, compare its displayed words instead. For a run-scoped
    intercepted unknown refusal, preserve its server reason verbatim. Dismiss the
    failure/toast and check it leaves; transient
-   success toast has no Undo and expires. API category correctness remains automated.
+   success has no toast. API category correctness remains automated.
 8. **Versions and held failure navigation.** On desktop and phone, open Live/Draft
    menus with another file and Work present: only this document's offered versions
    appear. Whole Apply immediately moves to the next sorted file; reject its answer
@@ -305,8 +301,8 @@ from CLI success. Record screenshots and the fresh API reads per action.
    before opening rename UI. On a draft-only review, no Live choice exists; Close
    review does not open a live room. On phone, enter/leave review and another document
    while watching editor identity, scroll and selection: no unrelated document header
-   or remount-induced loss. Discard a row with the sheet open: its confirmation toast
-   appears inside the sheet, above the scrim. Close the sheet and use the version
+   or remount-induced loss. Discard with the sheet open: the row leaves immediately
+   without a success toast; the sheet closes when no changes remain. Close the sheet and use the version
    menu's whole Discard; it dispatches immediately and moves on without an approval
    dialog. Verify the manuscript editor survives both interactions and the keyboard
    does not intercept controls.
@@ -325,8 +321,9 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
 1. Open the named Work's Files tab. PASS: Changes to review lists files in stable
    name/id order; journal recency does not reorder them. Expand Chapter A: only
    its preview loads, a failure shows Retry on that file, never an empty-success
-   list. With a new-document-only proposal, the row offers Review, not selective
-   Apply. Formatting-only rows explain why whole-document commands remain.
+   list. A new document expands to one change with Apply/Discard dispatching whole
+   commands. Formatting-only rows say Formatting changes remain. Finished files
+   leave the group without a duplicate completion message.
 2. Apply a change from an unopened Chapter B while Chapter A remains in review.
    PASS: no review room/navigation is opened for B, the command acts on B alone,
    A stays where it was. Repeat for a Work owned by neither current chat nor Editor:
@@ -463,3 +460,31 @@ An Apply right after Discard of a new document in the same Work can return 500
 ([#753](https://github.com/haowjy/meridian-flow/issues/753)). It is a server
 authoring defect, not a review-follows-document failure: use a fresh Work for
 Apply cases that follow a new-document Discard, and record the 500 if you hit it.
+
+## Compact review checks
+
+- Existing previews containing an incomplete class keep selective controls on
+  complete classes. The incomplete row/bar has no commands or explanation;
+  the strip skips it, while whole-header commands cover it.
+- Document lists show excerpt and controls only. Work rows retain whole chat
+  names at wide widths and hide attribution at narrow container widths.
+- Focused bars never abbreviate a chat name. +N opens the remaining chat links,
+  including their producing-turn targets. Check desktop and phone.
+- With the 320px dock open, and at narrower editor widths, the bar and both
+  commands stay within the manuscript pane (under-change placement when needed).
+- A one-change review has a list button but no stepper.
+- Before screenshot capture, assert the intended surface is visible, no
+  Loading project text or Saved locally (offline) pill, and navigator.onLine.
+
+
+### Narrow strip failures and confirmation
+
+With one existing document, retain a failed Review launch or whole-draft command:
+automatic expansion must leave exactly one visible error owner. Whole-draft rows
+carry their own failures; selective rows must not hide an unrepresented draft error.
+With multiple documents, Discard replaces the summary with its question and
+Keep/Discard, rather than overlapping the filename/count. Probe 390px touch and a
+320px dock (256px inner strip), including a long translated question: all controls
+must remain inside the row with disjoint bounds and 44px touch targets. Hold a
+whole-row Apply/Discard request: the change disappears immediately and returns
+on refusal, without a navigation change.

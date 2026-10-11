@@ -3,6 +3,17 @@
 How the frontend is structured and why its seams exist. Visual implementation
 conventions live in [visual-conventions.md](visual-conventions.md).
 
+## Browser records
+
+`src/client/storage/browser-record.ts` owns best-effort JSON storage and the
+`{ version, accountId, scope?, payload }` envelope for workspace tabs, dock,
+reading places, composer drafts, remembered selections, and tree expansion.
+Domain parsers accept unknown payloads; `undefined` means absent/invalid on read
+and deletion on write, while `null` can mean explicitly empty. Scope stamps bind
+selections to project/kind and drafts to destination; features still own their
+state transitions and LRU. Old formats are absent, never migrated. The settings
+first-paint cache and raw boot-script preferences remain separate.
+
 ## Frontend performance
 
 Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
@@ -301,18 +312,33 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`WorkingSetSyncPreferenceProvider` →
+`AccountSettingsProvider` →
 `ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
 `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
 
-The account-lifetime `WorkingSetSyncPreferenceProvider` owns the cross-device
-working-set preference: it runs the command hook once per account, seeds from
-the loader only before the first local revision, and drives both the Settings
-row and `configureWorkingSetSync` from the same confirmed value. A stale or
-`null` loader commit cannot hide the switch or move the driver once a local
-confirm exists; an account epoch reset clears the override.
+The account-lifetime `AccountSettingsProvider` owns language, theme, Stats for
+nerds and working-set sync. Serialized partial PATCH commands keep per-setting
+revisions, pending state and retryable errors. Pending or failed intents own
+the displayed choice; confirmed values drive `configureWorkingSetSync` and
+are the only values relayed or cached. Newer ordered reads may replace settled
+choices. Account epoch changes remount the owner and fence abandoned writes.
+
+`meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
+cache using the shared browser-record versioned envelope, not a pending-write journal. The active-account pointer lets the theme
+boot script read it before hydration; SSR supplies the current account and a
+server theme seed that wins over cached appearance. The cache is used only
+when that seed is unavailable and contains confirmed snapshots only. Pending
+and failed choices are this tab's overlay, never relayed as saved values. Server
+reads carry a browser request-start generation; command settlements fence older
+reads, while newer reads can replace settled edits. Storage relays confirmed
+snapshots and reconciles unowned fields through a server read, without duplicate
+PATCHes. `?locale=` seeds a local language override; an
+explicit language command takes over for this account session. Settings controls
+show the account record, not that URL override.
+Text size alone stays device-local at `meridian:text-size:v1`. Settings uses
+shared section bodies for desktop and phone, grouped by these two scopes.
 
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated

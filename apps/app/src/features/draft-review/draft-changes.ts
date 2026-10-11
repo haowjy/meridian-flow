@@ -12,7 +12,10 @@ import { useMemo } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
+  type DraftCommandFailure,
+  draftCommandFailure,
   hiddenOperationIds,
+  pendingDraftCommand,
   useChangeCommandRecords,
 } from "@/client/query/draft-command-record";
 import { selectionOf } from "./change-selection";
@@ -20,6 +23,7 @@ import type { ReviewChange } from "./review-changes";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
+  draftFailure?: DraftCommandFailure | null;
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
 };
 
@@ -31,8 +35,7 @@ export type DraftChangesView = {
   items: readonly ReviewChangeItem[];
   /** The change the manuscript is focused on, when this draft is the open review; else null. */
   focused: ReviewChange | null;
-  /** A new document is applied whole: no per-change Apply. */
-  canApply: boolean;
+
   /** Every Apply and Discard disables on this. */
   locked: boolean;
   /**
@@ -70,10 +73,19 @@ export function useChangeItems(
     () =>
       changes.map((change) => {
         const state = draft ? changeCommandState(records, draft, selectionOf([change])) : null;
-        return { change, failure: state?.phase === "failed" ? state : null };
+        return {
+          change,
+          failure: state?.phase === "failed" ? state : null,
+          ...(change.wholeDraft && draft
+            ? { draftFailure: draftCommandFailure(records.drafts, draft) }
+            : {}),
+        };
       }),
     [changes, records, draft],
   );
-  const hiding = draft ? hiddenOperationIds(records, draft).size > 0 : false;
+  const hiding = draft
+    ? hiddenOperationIds(records, draft).size > 0 ||
+      pendingDraftCommand(records.drafts, draft)?.target === "all"
+    : false;
   return { items, hiding };
 }

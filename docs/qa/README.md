@@ -6,6 +6,8 @@ commit, date, stack/provider, outcome, and evidence path after each run. A recip
 is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
+- [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
@@ -65,3 +67,7 @@ Three harness artifacts have produced false defects. Rule them out first.
   Log both `navigator.onLine` and `onlineManager.isOnline()` (from the loaded
   app module) right before every command, and treat transport reachability as
   a separate fact.
+
+## Device reading memory
+
+[Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.

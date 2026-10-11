@@ -36,16 +36,16 @@ draft-control changes can be understood independently.
   `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
   identity only; the server owns outcome. First-send creation is replayed by
   `useThreadHandoff` using current-chat identity; it never becomes lost-message
-  recovery copy. For later sends, a proved rejection retires the witness
-  but keeps the failed user row with Retry / Edit (Retry remints the submission
-  id, since the server never re-admits a rejected one); ambiguous sends keep the
-  row with Check submission status / Start over. A Retry that is itself
-  unresolved — ambiguous, unmounted, or epoch-fenced — leaves its fresh journal
-  entry as the only witness and remounts as Check / Start over, never a second
-  Retry; the retained rejection is inserted only after a proved rejection and
-  cleared on acceptance. Edit focuses a live draft, or restores plain text only
-  when the fingerprint is plain and the composer is empty; a structured
-  rejection whose draft is gone offers Retry only. Recovery lookup/replay/ack/
+  recovery copy. For later sends, a proved rejection returns words to an empty
+  per-tab composer or remains in the device journal as rejected when newer writing
+  exists. A retired rejection's transient failed row is removed on remount
+  because its words already belong to the composer. Failed rows reconstruct
+  from rejected entries across tabs and reloads;
+  rejected entries never trigger lookup or replay. Retry remints the submission
+  identity and dispatches the exact fingerprint without replacing newer drafts.
+  Edit transfers reference-preserving rejected paragraphs ahead of current writing
+  before retiring the entry. Ambiguous sends keep Check submission status / Start
+  over. Recovery lookup/replay/ack/
   retire is fenced by a per-hook recovery-session token in `ThreadRunController`,
   distinct from the run `admissionEpoch`: mounting the session hook tears the run
   session down in the same React StrictMode commit that starts recovery, so the

@@ -1,18 +1,4 @@
-/**
- * The lines a review can show beside its controls: why the last whole-draft
- * command was refused, which other drafts of the Work did not apply (the
- * review has moved on from them, so their rows alone would be easy to miss),
- * and, once the writer has handled the last change, "No changes left" with the
- * way on (the next draft, or back to live). The review does not jump on its
- * own, so the finished text can be read.
- *
- * Two kinds, because the two shells have different room. `ReviewFailureNotices`
- * are alerts that sit in a row of their own under the controls on both shells.
- * The review's state (`ReviewStateNotice`) is a row on the phone and, on the
- * desktop, an inline run in the identity row itself (`ReviewStateInline`), so
- * entering review never adds a second header. `touch` raises buttons to 44px.
- */
-
+/** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
 import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -79,33 +65,11 @@ export function ReviewFailureNotices({
   );
 }
 
-/** The phone's row for the review's state, with 44px actions by touch. */
-export function ReviewStateNotice({
+/** The desktop's state stays inside the identity row's 22px box. */
+export function ReviewStateInline({
   touch = false,
   ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  if (!state.completing && !state.finished && !state.unlisted) return null;
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 border-border border-t px-4",
-        touch ? (state.finished ? "py-1" : "py-2.5") : "py-1.5",
-      )}
-      role="status"
-      aria-busy={!!state.completing}
-    >
-      <span className="flex flex-1 items-center gap-2 text-muted-foreground">
-        <ReviewStatusContent {...state} />
-      </span>
-      {state.finished ? (
-        <ReviewNextAction {...state} className={touch ? "h-11 px-4 text-sm" : undefined} />
-      ) : null}
-    </div>
-  );
-}
-
-/** The desktop's state stays inside the identity row's 22px box. */
-export function ReviewStateInline(state: ReviewStateProps) {
   if (!state.finished && !state.completing && !state.unlisted) return null;
   return (
     <span
@@ -123,32 +87,9 @@ export function ReviewStateInline(state: ReviewStateProps) {
       >
         <ReviewStatusContent {...state} />
       </span>
-      {state.finished ? <ReviewNextAction {...state} className="h-5.5" /> : null}
+      {state.finished ? (
+        <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-5.5"} />
+      ) : null}
     </span>
-  );
-}
-
-/** The phone's notices: failures, then the review's state, each a row under the header. */
-export function ReviewHeaderNotices({
-  commandError,
-  failedElsewhere,
-  touch = false,
-  ...state
-}: ReviewStateProps & {
-  commandError: DraftCommandFailure | null;
-  failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
-  touch?: boolean;
-}) {
-  return (
-    <>
-      <ReviewFailureNotices
-        commandError={commandError}
-        failedElsewhere={failedElsewhere}
-        onOpenNext={state.onOpenNext}
-        touch={touch}
-        className="px-4"
-      />
-      <ReviewStateNotice {...state} touch={touch} />
-    </>
   );
 }

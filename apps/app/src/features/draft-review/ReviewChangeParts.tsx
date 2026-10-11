@@ -3,15 +3,21 @@
  * who made it, and why a command on it did not land. The row, the bar and the
  * phone's sheet are made of these, so a change reads the same everywhere.
  */
-import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type {
   ChangeCommandMode,
   ChangeFailureCode,
   ServerRefusal,
 } from "@/client/query/draft-command-record";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -50,14 +56,15 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
  * "You", a link to each chat that wrote the change ("Pacing pass and Lore
  * pass"), or plain "AI" when the preview cannot say which chat. A link opens
  * its chat beside the change at the turn that wrote it and never also acts on
- * the change; the names wrap when there are many. The caller bounds the width
- * (`max-w-*`): the row gives it a line of its own, the bar caps it.
+ * the change. Names stay whole; the focused bar menus names that do not fit.
  */
 export function ChangeAuthor({
   attribution,
   className,
   touch = false,
+  overflow,
 }: {
+  overflow: "menu" | "hide";
   attribution: ChangeAttribution;
   className?: string;
   touch?: boolean;
@@ -89,39 +96,123 @@ export function ChangeAuthor({
       </span>
     );
   }
-  // The names as the chat list shows them, so each link names what it opens.
-  const parts = new Intl.ListFormat(i18n.locale || undefined, {
-    style: "long",
-    type: "conjunction",
-  }).formatToParts(attribution.chats.map((chat) => displayThreadTitle(chat.title)));
-  let next = 0;
+  return (
+    <OverflowChats
+      mode={overflow}
+      chats={attribution.chats}
+      openThread={openThread}
+      touch={touch}
+      className={className}
+    />
+  );
+}
+
+/** Measure whole names, never partial names. Overflow retains exact chat/turn links. */
+function OverflowChats({
+  mode,
+  chats,
+  openThread,
+  touch,
+  className,
+}: {
+  mode: "menu" | "hide";
+  chats: ChangeChat[];
+  openThread: (threadId: string) => void;
+  touch: boolean;
+  className?: string;
+}) {
+  const container = useRef<HTMLSpanElement>(null);
+  const measurements = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(0);
+  useLayoutEffect(() => {
+    const host = container.current;
+    const sizes = measurements.current;
+    if (!host || !sizes) return;
+    const measure = () => {
+      const widths = Array.from(sizes.children, (child) => child.getBoundingClientRect().width);
+      if (mode === "hide") {
+        const width =
+          widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 6;
+        setVisible(width <= (host.parentElement?.clientWidth ?? 0) * 0.45 ? chats.length : 0);
+        return;
+      }
+      let used = 0;
+      let count = 0;
+      for (const width of widths) {
+        const next = used + width + (count ? 6 : 0);
+        // Reserve the compact overflow trigger unless this is the last name.
+        if (next + (count < chats.length - 1 ? (touch ? 50 : 38) : 0) > host.clientWidth) break;
+        used = next;
+        count++;
+      }
+      setVisible(count);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(mode === "hide" && host.parentElement ? host.parentElement : host);
+    observer.observe(sizes);
+    return () => observer.disconnect();
+  }, [chats, touch, mode]);
   return (
     <span
+      ref={container}
       className={cn(
-        "inline-flex min-w-0 flex-wrap items-baseline text-caption text-muted-foreground",
+        "relative flex min-w-0 overflow-hidden items-center gap-1.5 text-caption text-muted-foreground",
+        mode === "menu" ? "w-full" : visible ? "w-auto shrink-0" : "w-0",
         className,
       )}
     >
-      {parts.map((part, index) => {
-        if (part.type === "literal") {
-          // pre keeps the separator's spaces, which a flex item would drop.
-          return (
-            <span key={index} className="whitespace-pre">
-              {part.value}
-            </span>
-          );
-        }
-        const chat = attribution.chats[next++];
-        return (
-          <ChatLink
+      <span
+        ref={measurements}
+        aria-hidden
+        className="pointer-events-none invisible absolute flex w-max gap-1.5"
+      >
+        {chats.map((chat) => (
+          <span
             key={chat.threadId}
-            chat={chat}
-            name={part.value}
-            onOpenThread={openThread}
-            touch={touch}
-          />
-        );
-      })}
+            className={cn(
+              "inline-flex items-center gap-0.5 whitespace-nowrap",
+              touch && "min-w-11",
+            )}
+          >
+            <span>{displayThreadTitle(chat.title)}</span>
+            <ArrowUpRight className="size-3" />
+          </span>
+        ))}
+      </span>
+      {chats.slice(0, visible).map((chat) => (
+        <ChatLink
+          key={chat.threadId}
+          chat={chat}
+          name={displayThreadTitle(chat.title)}
+          onOpenThread={openThread}
+          touch={touch}
+        />
+      ))}
+      {mode === "menu" && visible < chats.length ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t`More chats`}
+              className={cn(
+                "focus-ring shrink-0 rounded-sm px-1 text-primary",
+                touch && "min-h-11 min-w-11",
+              )}
+            >
+              +{chats.length - visible}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {chats.slice(visible).map((chat) => (
+              <DropdownMenuItem key={chat.threadId} onSelect={() => openChat(chat, openThread)}>
+                {displayThreadTitle(chat.title)}
+                <ArrowUpRight aria-hidden className="size-3" />
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
     </span>
   );
 }
@@ -143,28 +234,31 @@ function ChatLink({
       title={t`Open the chat that wrote this change`}
       onClick={(event) => {
         event.stopPropagation();
-        // Open the chat where the write happened. Without a recorded turn
-        // (older data) it is the chat at its usual position.
-        if (chat.turnId) {
-          requestConversationReveal({
-            kind: "turn",
-            threadId: chat.threadId,
-            turnId: chat.turnId,
-            ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
-          });
-        } else {
-          onOpenThread(chat.threadId);
-        }
+        openChat(chat, onOpenThread);
       }}
       className={cn(
-        "focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline",
+        "focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline",
         touch && "min-h-11 min-w-11",
       )}
     >
-      <span className="truncate">{name}</span>
+      <span>{name}</span>
       <ArrowUpRight aria-hidden className="size-3 shrink-0" />
     </button>
   );
+}
+
+/** Open the producing turn when recorded, otherwise the chat's usual position. */
+function openChat(chat: ChangeChat, openThread: (threadId: string) => void) {
+  if (chat.turnId) {
+    requestConversationReveal({
+      kind: "turn",
+      threadId: chat.threadId,
+      turnId: chat.turnId,
+      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
+    });
+  } else {
+    openThread(chat.threadId);
+  }
 }
 
 /** Why a command on a change did not land, in the writer's words. */
@@ -182,12 +276,6 @@ export function ChangeFailureText({
       );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
-    case "draft-only":
-      return mode === "apply" ? (
-        <Trans>A new document is applied as a whole. Use Apply draft.</Trans>
-      ) : (
-        <Trans>A new document is discarded as a whole. Use Discard draft.</Trans>
-      );
     case "unknown":
       return mode === "apply" ? (
         <Trans>

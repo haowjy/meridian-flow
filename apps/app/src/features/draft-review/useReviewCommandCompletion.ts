@@ -132,7 +132,7 @@ export function useReviewCommandCompletion({
           const before = pendingChangeCommand(previous, draft);
           const review = stateRef.current.surface;
           if (
-            command?.outcome &&
+            command?.outcome === "change-gone" &&
             command.outcome !== before?.outcome &&
             review.kind === "inline" &&
             review.documentId === draft.documentId &&
@@ -142,7 +142,7 @@ export function useReviewCommandCompletion({
             dispatch({
               type: "toast",
               code: command.outcome,
-              tone: command.outcome === "change-gone" ? "error" : "info",
+              tone: "error",
             });
         }
       }),

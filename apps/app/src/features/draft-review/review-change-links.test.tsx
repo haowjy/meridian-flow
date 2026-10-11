@@ -62,8 +62,9 @@ function render(node: React.ReactNode, run: () => Promise<void>, openThread = vi
 const rowProps = (overrides: Partial<React.ComponentProps<typeof ReviewChangeRow>> = {}) => ({
   change: change(),
   focused: false,
+  showAttribution: true,
   disabled: false,
-  canApply: true,
+
   failure: null,
   onFocus: vi.fn(),
   onApply: vi.fn(),

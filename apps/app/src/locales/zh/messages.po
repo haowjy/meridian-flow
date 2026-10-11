@@ -96,49 +96,14 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
-#. placeholder {0}: notes.newDocuments.length
-#: src/features/chat/DraftDockMessages.tsx
-msgid "{0, plural, one {{newNames} is a new document. Review it to apply.} other {{newNames} are new documents. Review them to apply.}}"
-msgstr ""
-
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
-#. placeholder {0}: notes.tiedChanges
-#: src/features/chat/DraftDockMessages.tsx
-msgid "{0, plural, one {# change also holds an edit from {tiedWith}. Apply and Discard take both.} other {# changes also hold edits from {tiedWith}. Apply and Discard take both.}}"
-msgstr ""
-
-#. placeholder {0}: notes.tiedChanges
-#: src/features/chat/DraftDockMessages.tsx
-msgid "{0, plural, one {# change also holds an edit from {tiedWith}.} other {# changes also hold edits from {tiedWith}.}}"
-msgstr ""
-
-#. placeholder {0}: notes.needsDraftCommand
-#: src/features/chat/DraftDockMessages.tsx
-msgid "{0, plural, one {# change needs Apply draft or Discard draft.} other {# changes need Apply draft or Discard draft.}}"
-msgstr ""
-
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
-msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
-msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {edited # document} other {edited # documents}}"
-msgstr ""
-
-#. placeholder {0}: notes.newDocuments.length
-#: src/features/chat/DraftDockMessages.tsx
-msgid "{0, plural, one {New document. Review it to apply.} other {New documents. Review them to apply.}}"
 msgstr ""
 
 #. placeholder {0}: readDocuments.size
@@ -416,18 +381,6 @@ msgstr ""
 msgid "A folder named {trimmed} already exists in this location."
 msgstr ""
 
-#: src/features/draft-review/ReviewChangeParts.tsx
-msgid "A new document is applied as a whole. Use Apply draft."
-msgstr ""
-
-#: src/features/draft-review/ReviewChangeParts.tsx
-msgid "A new document is discarded as a whole. Use Discard draft."
-msgstr ""
-
-#: src/features/chat/DraftDockMessages.tsx
-msgid "A new document is handled as a whole. Review it to apply."
-msgstr ""
-
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
@@ -511,10 +464,6 @@ msgstr ""
 msgid "Add to favorites"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Added"
-#~ msgstr ""
-
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "After"
@@ -541,10 +490,6 @@ msgstr ""
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
 msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "AI edits wait here for your review."
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode"
@@ -578,10 +523,6 @@ msgstr ""
 msgid "All changes"
 msgstr ""
 
-#: src/features/draft-review/WorkChangesLink.tsx
-msgid "All changes in {name}"
-msgstr ""
-
 #: src/features/project/chat-index/ChatIndexButton.tsx
 msgid "All chats"
 msgstr ""
@@ -589,6 +530,10 @@ msgstr ""
 #: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
 msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "All your devices"
+msgstr "所有设备"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
@@ -610,21 +555,12 @@ msgstr ""
 msgid "Appearance and behavior settings."
 msgstr ""
 
-#: src/features/draft-review/ReviewToast.tsx
-msgid "Applied"
-msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeRow.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply"
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Apply all"
-#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all changes"
@@ -633,10 +569,6 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply draft"
-msgstr ""
-
-#: src/features/draft-review/ReviewChangeBar.tsx
-msgid "Apply draft or Discard draft handles this."
 msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
@@ -695,10 +627,6 @@ msgstr ""
 #: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr ""
-
-#: src/features/project/mobile/MobileProject.tsx
-#~ msgid "Back to chat"
-#~ msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/editor/EditorView.tsx
@@ -903,10 +831,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/draft-review/ReviewChangeBar.tsx
-msgid "Check it reads right"
-msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
@@ -1071,11 +995,6 @@ msgstr ""
 msgid "Column options"
 msgstr ""
 
-#. placeholder {0}: proposal.contributingTurnIds.length
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Combines {0} AI turns"
-#~ msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
 msgstr ""
@@ -1134,10 +1053,6 @@ msgstr ""
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
-
-#: src/features/project/dock/DockHeader.tsx
-#~ msgid "Context"
-#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1260,6 +1175,7 @@ msgstr ""
 msgid "Couldn't compact"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr ""
@@ -1276,10 +1192,6 @@ msgstr ""
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't confirm whether this applied. Check what is left before you try again."
 msgstr ""
-
-#: src/features/chat/ReviewMessageText.tsx
-#~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
-#~ msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
@@ -1359,14 +1271,6 @@ msgstr ""
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
-#~ msgid "Couldn't discard. Try again."
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-msgid "Couldn't draft"
-msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
 msgstr ""
@@ -1417,10 +1321,6 @@ msgstr ""
 msgid "Couldn't load references."
 msgstr ""
 
-#: src/features/project/shell/RailSection.tsx
-#~ msgid "Couldn't load results."
-#~ msgstr ""
-
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr ""
@@ -1429,10 +1329,6 @@ msgstr ""
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
 msgstr ""
-
-#: src/features/project/shell/ResultViewerOverlay.tsx
-#~ msgid "Couldn't load this result."
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -1533,6 +1429,7 @@ msgstr ""
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr ""
@@ -1796,11 +1693,6 @@ msgstr ""
 msgid "Discard"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Discard all"
-#~ msgstr ""
-
 #: src/features/project/work/WorkChanges.tsx
 msgid "Discard all changes"
 msgstr ""
@@ -1826,10 +1718,6 @@ msgstr ""
 msgid "Discard with your edits"
 msgstr ""
 
-#: src/features/draft-review/ReviewToast.tsx
-msgid "Discarded"
-msgstr ""
-
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
 msgstr ""
@@ -1851,10 +1739,6 @@ msgstr ""
 msgid "Divider"
 msgstr ""
 
-#: src/features/project/dock/DockHeader.tsx
-#~ msgid "Dock view"
-#~ msgstr ""
-
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
 msgstr ""
@@ -1866,10 +1750,6 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Document version"
 msgstr ""
-
-#: src/features/project/shell/ContextSidebar.tsx
-#~ msgid "Documents the AI reads in this chat appear here."
-#~ msgstr ""
 
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -1900,27 +1780,6 @@ msgstr ""
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-msgid "Drafted"
-msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "drafted {0}"
-msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-msgid "Drafted file"
-msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-msgid "Drafting"
-msgstr "起草中"
-
-#: src/features/project/work/WorkDrafts.tsx
-#~ msgid "Drafts to review"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -1965,11 +1824,6 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/ReviewChangeRow.tsx
 msgid "Edited"
-msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "edited {0}"
 msgstr ""
 
 #. placeholder {0}: formatRelativeTime(project.updatedAt, now)
@@ -2156,15 +2010,8 @@ msgid "Form payload is malformed."
 msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
-msgid "Formatting changes remain"
-msgstr ""
-
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
-msgstr ""
-
 #: src/features/project/work/WorkChangeFile.tsx
-msgid "Formatting changes remain. Review the draft to apply or discard them."
+msgid "Formatting changes remain"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -2313,10 +2160,6 @@ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
-msgstr ""
-
-#: src/features/draft-review/ReviewChangeBar.tsx
-msgid "Includes your edits"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2551,14 +2394,6 @@ msgstr ""
 msgid "Loading report…"
 msgstr ""
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
-#~ msgid "Loading result…"
-#~ msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Loading results…"
-#~ msgstr ""
-
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
 msgstr ""
@@ -2607,10 +2442,6 @@ msgstr ""
 msgid "Merge cells"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Merged"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merged cells stay where they are."
 msgstr ""
@@ -2653,6 +2484,10 @@ msgstr ""
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
+msgstr ""
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "More chats"
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -2756,10 +2591,6 @@ msgstr "新对话"
 msgid "New document"
 msgstr ""
 
-#: src/features/project/work/WorkChangeFile.tsx
-msgid "New document. Review it to apply."
-msgstr ""
-
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -2811,7 +2642,6 @@ msgid "No billing activity yet."
 msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
-#: src/features/project/work/WorkChangeFile.tsx
 msgid "No changes left"
 msgstr ""
 
@@ -2878,10 +2708,6 @@ msgstr ""
 msgid "No notes yet. The AI keeps its notes for this chat here."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "No pending changes"
-#~ msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr ""
@@ -2894,10 +2720,6 @@ msgstr ""
 #: src/features/chat/thread-report-renderer.tsx
 msgid "No report text was returned."
 msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "No results yet."
-#~ msgstr ""
 
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes match “{search}”."
@@ -3010,17 +2832,9 @@ msgstr ""
 msgid "Open {title}"
 msgstr ""
 
-#: src/features/project/shell/ContextSidebar.tsx
-#~ msgid "Open a chat to see what the AI referenced."
-#~ msgstr ""
-
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
 msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Open a project to see its results."
-#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open a Work to create an Untitled document"
@@ -3067,22 +2881,6 @@ msgstr ""
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Open original"
 msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Open producing turn"
-#~ msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Open producing turn in {agentName}"
-#~ msgstr ""
-
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Open result {name}"
-#~ msgstr ""
-
-#: src/features/project/mobile/MobileProject.tsx
-#~ msgid "Open results"
-#~ msgstr ""
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "Open source chat {name}"
@@ -3155,10 +2953,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Paused to reread"
 msgstr ""
-
-#: src/features/project/work/WorkDrafts.tsx
-#~ msgid "Pending draft"
-#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
@@ -3382,10 +3176,6 @@ msgstr ""
 msgid "Remove reference"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Removed"
-#~ msgstr ""
-
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -3427,8 +3217,12 @@ msgid "Rendering diagram…"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopens your last document and chat when you switch devices"
-msgstr ""
+msgid "Reopens the documents you had open when you switch devices."
+msgstr "切换设备时，会重新打开你之前打开的文档。"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Reopens your last document and chat when you switch devices"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3479,15 +3273,13 @@ msgstr ""
 msgid "Restoring"
 msgstr ""
 
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/ContextSidebar.tsx
-#: src/features/project/shell/ResultsRailSection.tsx
-#~ msgid "Results"
-#~ msgstr ""
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Resume my documents on any device"
+msgstr "在任何设备上继续处理我的文档"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume where I left off on any device"
-msgstr ""
+#~ msgid "Resume where I left off on any device"
+#~ msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -3548,17 +3340,9 @@ msgstr ""
 msgid "Returned from the billing portal."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "Review"
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
-msgid "Review draft"
+msgid "Review"
 msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Rewrote"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
@@ -4178,6 +3962,14 @@ msgstr ""
 msgid "There is nowhere left to put that picture."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences follow your account wherever you sign in."
+msgstr "这些偏好设置会随账号同步到你登录的所有设备。"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences stay on this device to suit your screen."
+msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -4322,7 +4114,7 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
-msgstr ""
+msgstr "此设备"
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "This diagram has a syntax problem"
@@ -4755,10 +4547,6 @@ msgstr "你在想什么？"
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Why this is marked merged"
-#~ msgstr ""
-
 #: src/features/chat/compaction/QueuedControlRows.tsx
 msgid "Withdraw"
 msgstr ""
@@ -4833,14 +4621,6 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
-#: src/features/chat/command-descriptor.ts
-msgid "Wrote"
-msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-msgid "Wrote file"
-msgstr ""
-
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
 msgstr "昨天"
@@ -4870,10 +4650,6 @@ msgstr ""
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Your answer may not have reached the agent."
 msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
-#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
