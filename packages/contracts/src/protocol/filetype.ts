@@ -117,7 +117,16 @@ const extToFiletype: Record<string, Filetype> = {
   svg: "svg",
 };
 
-export const PROSE_EXTENSIONS: ReadonlySet<string> = new Set(["md", "markdown", "mdx", "txt"]);
+export const PROSE_EXTENSIONS: ReadonlySet<string> = new Set(
+  Object.entries(extToFiletype)
+    .filter(([, type]) => type === "markdown")
+    .map(([extension]) => extension),
+);
+
+/** First registered extension is the preferred spelling when storage supplies the type. */
+export function registeredExtensionForFiletype(filetype: string): string | null {
+  return Object.entries(extToFiletype).find(([, type]) => type === filetype)?.[0] ?? null;
+}
 
 export function filetypeForExtension(extension: string): Filetype | null {
   const key = extension.toLowerCase();

@@ -1,6 +1,6 @@
 /** Document naming laws, including canonical round trips and explicit destination types. */
 import { describe, expect, it } from "vitest";
-import { parseBinaryFilename, parseDocumentFilename, renderFilename } from "./document-filename.js";
+import { filenameForBinary, parseDocumentFilename, renderFilename } from "./document-filename.js";
 import {
   classifyFiletype,
   filetypeForKnownMimeType,
@@ -48,11 +48,11 @@ describe("document filename codec", () => {
       ok: true,
       value: { name: "settings", extension: "", filetype: "markdown" },
     });
-    expect(parseBinaryFilename("Pic.PNG")).toEqual({
+    expect(parseDocumentFilename("Pic.PNG")).toEqual({
       ok: true,
       value: { name: "Pic", extension: "png", filetype: "png" },
     });
-    expect(parseBinaryFilename("archive.unknown").ok).toBe(true);
+    expect(parseDocumentFilename("archive.unknown").ok).toBe(true);
     for (const unregistered of ["constructor", "__proto__", "toString"]) {
       expect(classifyFiletype(unregistered)).toEqual({ kind: "unknown" });
       expect(filetypeForKnownMimeType(unregistered)).toBeNull();
@@ -90,11 +90,6 @@ describe("document filename codec", () => {
             expect(
               parseDocumentFilename(renderFilename(result.value.name, result.value.extension)),
             ).toEqual(result);
-          const binary = parseBinaryFilename(input, { sourceExtension });
-          if (binary.ok)
-            expect(
-              parseBinaryFilename(renderFilename(binary.value.name, binary.value.extension)),
-            ).toEqual(binary);
         }
     for (const path of ["chapter", "chapter.draft", "folder.md/chapter"]) {
       expect(filetypeForPath(path)).toBe("markdown");
@@ -102,6 +97,25 @@ describe("document filename codec", () => {
     }
     for (const path of ["chapter.txt", "chapter.mdx", "chapter.MD"])
       expect(filetypeForKnownPath(path)).toBe("markdown");
+  });
+  it("chooses binary storage suffixes without a second identity parser", () => {
+    for (const [input, type, mime, name, extension] of [
+      ["x.txt", "pdf", "application/pdf", "x", "pdf"],
+      ["image.md.md", "image", "image/png", "image", "png"],
+      ["LICENSE", "binary", "application/octet-stream", "LICENSE", ""],
+      ["notes.txt", "binary", "text/plain", "notes", ""],
+      ["x.PNG", "pdf", "application/pdf", "x", "png"],
+    ]) {
+      const parsed = parseDocumentFilename(input ?? "");
+      expect(parsed.ok).toBe(true);
+      if (!parsed.ok) continue;
+      const result = filenameForBinary(parsed.value, type ?? "", mime);
+      expect(result).toMatchObject({ name, extension });
+      expect(parseDocumentFilename(renderFilename(result.name, result.extension))).toEqual({
+        ok: true,
+        value: result,
+      });
+    }
   });
   it("refuses empty stems and prose names that impersonate registered non-prose files", () => {
     for (const input of ["", " ", ".", "..", ".md", " .TXT ", "data.json.md", "data.json.txt.md"]) {

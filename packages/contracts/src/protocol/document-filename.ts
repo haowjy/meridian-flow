@@ -1,5 +1,12 @@
 /** The input codec for document basenames. Stored parts are the canonical name. */
-import { type Filetype, filetypeForExtension, PROSE_EXTENSIONS } from "./filetype.js";
+import {
+  classifyFiletype,
+  type Filetype,
+  filetypeForExtension,
+  filetypeForKnownMimeType,
+  PROSE_EXTENSIONS,
+  registeredExtensionForFiletype,
+} from "./filetype.js";
 
 export interface ParsedDocumentFilename {
   name: string;
@@ -13,7 +20,7 @@ export type DocumentFilenameResult =
 /** A registered suffix is explicit; otherwise a destination inherits its source extension. */
 export function parseDocumentFilename(
   filename: string,
-  options: { sourceExtension?: string; binary?: boolean } = {},
+  options: { sourceExtension?: string } = {},
 ): DocumentFilenameResult {
   const input = filename.trim();
   let name = input;
@@ -25,7 +32,7 @@ export function parseDocumentFilename(
     name = input.slice(0, dot).trim();
     extension = suffix;
   } else extension = options.sourceExtension?.toLowerCase() ?? "";
-  if (!options.binary && PROSE_EXTENSIONS.has(extension)) {
+  if (PROSE_EXTENSIONS.has(extension)) {
     extension = "";
     while (true) {
       const dot = name.lastIndexOf(".");
@@ -33,7 +40,7 @@ export function parseDocumentFilename(
       name = name.slice(0, dot).trim();
     }
   }
-  if (!options.binary && !extension) {
+  if (!extension) {
     const dot = name.lastIndexOf(".");
     const suffix = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
     if (filetypeForExtension(suffix) && !PROSE_EXTENSIONS.has(suffix)) {
@@ -60,15 +67,31 @@ export function parseDocumentFilename(
   };
 }
 
-/** Storage-backed bytes retain registered suffixes without prose normalization. */
-export function parseBinaryFilename(
-  filename: string,
-  options: { sourceExtension?: string } = {},
-): DocumentFilenameResult {
-  return parseDocumentFilename(filename, { ...options, binary: true });
+/** Binary storage chooses a registered suffix only when the parsed name is prose.
+ * Identity parsing itself never depends on storage kind.
+ */
+export function filenameForBinary(
+  parsed: ParsedDocumentFilename,
+  filetype: string,
+  mimeType?: string,
+): ParsedDocumentFilename {
+  if (parsed.extension) return parsed;
+  const mimeFiletype = mimeType ? filetypeForKnownMimeType(mimeType) : null;
+  const type =
+    mimeFiletype && classifyFiletype(mimeFiletype).kind === "binary" ? mimeFiletype : filetype;
+  const extension = registeredExtensionForFiletype(type);
+  return extension
+    ? { ...parsed, extension, filetype: filetypeForExtension(extension) ?? parsed.filetype }
+    : parsed;
 }
 
 /** Canonical path segment from stored parts. */
 export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
+}
+
+/** Folder spelling stays literal, but valid document aliases cannot hide an opposite-kind claim. */
+export function folderDocumentName(filename: string): string {
+  const parsed = parseDocumentFilename(filename);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
 }

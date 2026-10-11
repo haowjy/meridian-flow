@@ -9,9 +9,9 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   classifyFiletype,
   type Filetype,
+  filenameForBinary,
   filetypeForKnownPath,
   filetypeForPath,
-  parseBinaryFilename,
   parseDocumentFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -46,6 +46,7 @@ import type {
   AdapterFileRef,
   AdapterMoveResult,
   AdapterSearchHit,
+  ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
   ContextTreeAdapter,
   SchemeCapabilities,
@@ -70,12 +71,7 @@ import type {
 } from "../../ports/context-tree-mutation-store.js";
 import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
-import {
-  BoundWrites,
-  binaryTrackedWriteFault,
-  DEFAULT_EDITABLE_FILETYPE,
-  trackedFiletypeForPath,
-} from "./bound-writes.js";
+import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
@@ -135,9 +131,11 @@ function trackedSchemaForPersistedFiletype(
 function moveFiletypeTransition(
   source: Extract<ContextLocationToken, { kind: "file" }>,
   destinationPath: string,
+  parsedFiletype?: Filetype | null,
 ): Result<Filetype | null, AdapterFault> {
   if (source.filetype === null) {
-    const knownDestinationFiletype = filetypeForKnownPath(destinationPath);
+    const knownDestinationFiletype =
+      parsedFiletype === undefined ? filetypeForKnownPath(destinationPath) : parsedFiletype;
     if (knownDestinationFiletype === null) return Ok(null);
     const destination = classifyFiletype(knownDestinationFiletype);
     if (destination.kind !== "tracked") return Ok(null);
@@ -149,7 +147,7 @@ function moveFiletypeTransition(
 
   const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
   if (!sourceSchema.ok) return sourceSchema;
-  const destinationFiletype = filetypeForPath(destinationPath);
+  const destinationFiletype = parsedFiletype ?? filetypeForPath(destinationPath);
   const destination = classifyFiletype(destinationFiletype);
   if (destination.kind !== "tracked") {
     return Err({
@@ -504,12 +502,11 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
     }
-    const resolvedFiletype = trackedFiletypeForPath(filename);
-    if (!resolvedFiletype.ok) return resolvedFiletype;
     const folderId = await this.ensureFolderId(dir);
     const parsed = parseDocumentFilename(filename);
     if (!parsed.ok) return Err(parsed.error);
-    const { name, extension } = parsed.value;
+    const { name, extension, filetype } = parsed.value;
+    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
@@ -526,7 +523,7 @@ export class ContextFS implements ContextSchemeAdapter {
         folderId,
         name,
         extension,
-        filetype: resolvedFiletype.value,
+        filetype: filetype,
         content,
         options,
       });
@@ -594,13 +591,11 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
-    const resolvedFiletype = trackedFiletypeForPath(filename);
-    if (!resolvedFiletype.ok) return resolvedFiletype;
-    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const parsed = parseDocumentFilename(filename);
     if (!parsed.ok) return Err(parsed.error);
-    const { name, extension } = parsed.value;
+    const { name, extension, filetype } = parsed.value;
+    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing) {
       if (existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
@@ -732,25 +727,25 @@ export class ContextFS implements ContextSchemeAdapter {
 
   async ensureTrackedDocument(
     path: string,
-    options?: ContextWriteOptions,
+    options?: ContextEnsureTrackedOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     return this.commandExecutor.run(() => this.ensureTrackedDocumentInTransaction(path, options));
   }
 
   private async ensureTrackedDocumentInTransaction(
     path: string,
-    options?: ContextWriteOptions,
+    options?: ContextEnsureTrackedOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
     }
-    const parsed = parseDocumentFilename(filename, { sourceExtension: options?.sourceExtension });
+    const parsed = options?.parsedFilename
+      ? Ok(options.parsedFilename)
+      : parseDocumentFilename(filename, { sourceExtension: options?.sourceExtension });
     if (!parsed.ok) return Err(parsed.error);
-    const { name, extension } = parsed.value;
-    const resolvedFiletype = trackedFiletypeForPath(renderFilename(name, extension));
-    if (!resolvedFiletype.ok) return resolvedFiletype;
-    const filetype = resolvedFiletype.value;
+    const { name, extension, filetype } = parsed.value;
+    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
     const folderId = await this.ensureFolderId(dir);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
@@ -787,9 +782,13 @@ export class ContextFS implements ContextSchemeAdapter {
     }
     return this.commandExecutor.run(async () => {
       const folderId = await this.ensureFolderId(dir);
-      const parsed = parseBinaryFilename(filename);
+      const parsed = parseDocumentFilename(filename);
       if (!parsed.ok) return Err(parsed.error);
-      const { name, extension } = parsed.value;
+      const { name, extension } = filenameForBinary(
+        parsed.value,
+        options.fileType,
+        options.mimeType,
+      );
       const doc = await this.store.createBinaryDocument({
         id: options.documentId,
         folderId,
@@ -1059,7 +1058,11 @@ export class ContextFS implements ContextSchemeAdapter {
       // The mover found the source through its own adapter's inspectMovable,
       // which filters by that source's view in this transaction.
       const source = prepared.source;
-      const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
+      const destinationFiletype = moveFiletypeTransition(
+        source,
+        prepared.destinationPath,
+        "destinationFiletype" in prepared ? prepared.destinationFiletype : undefined,
+      );
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
         source,

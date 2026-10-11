@@ -1,15 +1,13 @@
 # domains/context — context filesystem primitives (unified)
 
 Agent-readable/writable project workspace content addressed by context URIs.
-The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
-with a single unified `ContextPort` that resolves durable project schemes
+A single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus No Work Uploads at `uploads://@/` and lineage Scratch at `scratch://@/c12/`.
 
 ## Document names
 
-`@meridian/contracts/protocol` owns basename parsing (`parseDocumentFilename`,
-`parseBinaryFilename`) and rendering (`renderFilename`). Prose is stored as
+`@meridian/contracts/protocol` owns basename parsing (`parseDocumentFilename`) and rendering (`renderFilename`). Prose is stored as
 `name` with empty `extension` and `fileType = 'markdown'`. Input accepts and
 repeatedly strips `md`, `markdown`, `mdx` and `txt`, case-insensitively. Registered
 non-prose suffixes retain their lower-case extension; unknown suffixes belong to
@@ -20,11 +18,18 @@ alternatives in its message, not another spelling for that data file.
 Lookups use exact parsed parts, not link extension omission. File results return
 the canonical URI. Create-on-existing through `ensureTrackedDocument` reaches
 the same identity for all prose spellings. Untitled documents are `Untitled N`.
-Copy supplies `sourceExtension`; the tree mover parses destinations with the
+The router consumes copy `sourceExtension` once and passes parsed parts and
+filetype to ContextFS; the tree mover parses destinations with the
 source's actual extension before target inspection and CAS. Same-identity
 renames are in place. Type changes still respect the existing Yjs schema guard.
 
-Documents and folders share rendered names within a parent. Creation, parent
+Binary storage uses `filenameForBinary` after the same parse: prose names take
+the storage type's registered suffix when available, otherwise keep the parsed
+name. Reads and tree inspection never guess storage kind before resolving identity.
+
+Documents and folders cannot share document names within a parent. A folder's
+comparison name is parsed by the document codec (`Lore.md` clashes with document
+`Lore`); its own spelling stays unchanged. Creation, parent
 provisioning and tree commits check opposite-kind occupancy under the existing
 sorted logical namespace advisory locks, held through the transaction. Work
 restore takes those same locks and checks the complete arriving tree before
@@ -430,7 +435,7 @@ currently available to the request owner in the requested project.
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
-  boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
+  boundary: it atomically allocates a name under the Document names contract, persists `provisionalName`,
   installs an empty Yjs authority, and records manifest membership in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID
@@ -481,14 +486,6 @@ currently available to the request owner in the requested project.
   contributes every committed descendant document ID, while an empty folder
   contributes none. Post-commit membership callback failure is diagnostic; the
   committed receipt remains successful.
-
-## Deleted (cleanse removal)
-
-- **Legacy `ContextPortFactory`** (dual-port with `forThread`/`forProject`) — deleted.
-- **`fs1://`** scheme — sandbox-era vestige, removed.
-- **`scratch://.results`** — promotion cruft, removed. Results use canonical Scratch paths.
-- **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
-- **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
 
 ## Negative space
 

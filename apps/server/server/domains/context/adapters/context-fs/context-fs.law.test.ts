@@ -6,6 +6,7 @@ import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
+import { createContextPortRouter } from "../../context/router.js";
 import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
@@ -429,4 +430,92 @@ it("atomically claims opposite-kind names across in-memory store instances", asy
       "Context entry already exists",
     );
   }
+});
+
+describe("router through real ContextFS naming", () => {
+  function harness() {
+    const fixture = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([
+        ["manuscript", { adapter: fixture.fs, authority: { kind: "contextual" } }],
+      ]),
+      workAuthorities: new Map(),
+    });
+    return { ...fixture, port };
+  }
+
+  it("consumes destination inheritance once and stores the codec filetype", async () => {
+    const { port, backing } = harness();
+    const created = await port.ensureTrackedDocument("manuscript://settings.txt", {
+      sourceExtension: "toml",
+    });
+    expect(created).toMatchObject({ ok: true, value: { uri: "manuscript://settings" } });
+    expect([...backing.documents.values()]).toMatchObject([
+      { name: "settings", extension: "", filetype: "markdown" },
+    ]);
+    expect(await port.stat("manuscript://settings")).toMatchObject({
+      ok: true,
+      value: { documentId: created.ok ? created.value.documentId : "" },
+    });
+  });
+
+  it("creates readable binary names through the same identity codec", async () => {
+    const { port, fs } = harness();
+    const written = await port.writeBinary("manuscript://bytes.txt", {
+      fileType: "pdf",
+      mimeType: "application/pdf",
+      storageUrl: "s3://bytes",
+      sizeBytes: 3,
+    });
+    expect(written).toMatchObject({ ok: true, value: { uri: "manuscript://bytes.pdf" } });
+    expect(await port.stat("manuscript://bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { documentId: written.ok ? written.value.documentId : "" },
+    });
+    expect(await fs.tree.inspectMovable("bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { kind: "file" },
+    });
+    const unregistered = await port.writeBinary("manuscript://LICENSE", {
+      fileType: "binary",
+      mimeType: "application/octet-stream",
+      storageUrl: "s3://license",
+      sizeBytes: 3,
+    });
+    expect(unregistered).toMatchObject({ ok: true, value: { uri: "manuscript://LICENSE" } });
+    expect(await port.stat("manuscript://LICENSE")).toMatchObject({ ok: true });
+  });
+
+  it("refuses folder document-alias claims, parent provisioning and CAS moves", async () => {
+    const { fs, port } = harness();
+    await fs.mkdir("Lore.md");
+    expect(await port.ensureTrackedDocument("manuscript://Lore")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
+    expect(chapter.ok).toBe(true);
+    await expect(fs.mkdir("Chapter.txt/child")).rejects.toThrow("Context entry already exists");
+    expect(
+      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+    await fs.mkdir("Other");
+    expect(
+      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it.each([
+    ["data.json", "data.md"],
+    ["notes", "notes.json"],
+  ])("refuses cross-schema rename %s to %s without changing identity or location", async (source, destination) => {
+    const { port, backing } = harness();
+    const original = await port.ensureTrackedDocument(`manuscript://${source}`);
+    expect(original.ok).toBe(true);
+    const before = [...backing.documents.values()].map((row) => ({ ...row }));
+    expect(
+      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`),
+    ).toMatchObject({ ok: false, error: { code: "invalid_operation" } });
+    expect([...backing.documents.values()]).toEqual(before);
+  });
 });

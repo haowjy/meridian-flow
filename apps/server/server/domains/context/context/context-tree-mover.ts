@@ -8,6 +8,7 @@
 
 import {
   type DeleteContextEntryResult,
+  type Filetype,
   isWorkScopedProjectContextScheme,
   parseDocumentFilename,
   renderFilename,
@@ -341,16 +342,21 @@ export class ContextTreeMover {
       policy.target === "exact",
     );
     if (!targetPath.ok) return targetPath;
+    let destinationFiletype: Filetype | null | undefined;
     if (sourceToken.value.kind === "file") {
-      const sourceParts = parseDocumentFilename(sourceBasename, {
-        binary: sourceToken.value.filetype === null,
-      });
+      const sourceParts = parseDocumentFilename(sourceBasename);
       if (!sourceParts.ok) return Err({ ...sourceParts.error, uri: source.canonical });
-      const targetParts = parseDocumentFilename(basename(targetPath.value), {
+      const targetInput = basename(targetPath.value);
+      const targetParts = parseDocumentFilename(targetInput, {
         sourceExtension: sourceParts.value.extension,
-        binary: sourceToken.value.filetype === null,
       });
       if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
+      destinationFiletype =
+        sourceToken.value.filetype === null &&
+        !targetParts.value.extension &&
+        targetInput.trim() === targetParts.value.name
+          ? null
+          : targetParts.value.filetype;
       targetPath = Ok(
         joinPath(
           dirname(targetPath.value),
@@ -397,6 +403,7 @@ export class ContextTreeMover {
       ? Ok({
           ...prepared,
           source: sourceToken.value,
+          destinationFiletype,
           graduateProvisionalName:
             policy.target === "exact" && policy.graduateProvisionalName === true,
         })
