@@ -135,3 +135,9 @@ used by placement. The first menu mounts with its final trail and highlight IDs.
 Path fit is selected from intrinsic-width candidates rendered by the same
 `CrumbRow` as the visible path. A link-update note is a direct sibling of the
 path, so an absent note occupies neither a flex item nor a gap.
+
+Link-update feedback derives its destination from the matched move receipt, not
+from a picker-provided label. The remount registry retains only operation
+selection until settlement plus the receipt note TTL; admission age never
+expires a pending/offline move. Same-folder renames without changed links do
+not claim a placement.

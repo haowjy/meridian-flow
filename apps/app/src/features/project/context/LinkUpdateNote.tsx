@@ -10,6 +10,7 @@
  * operation.
  */
 import { plural, t } from "@lingui/core/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
   NAMESPACE_RECEIPT_NOTE_TTL_MS,
@@ -21,24 +22,32 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { announce } from "@/client/stores";
 import { cn } from "@/lib/utils";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
+import { schemeLabel } from "./context-schemes";
 
 const FADE_MS = 400;
 
 // Surfaces that remount while a rename lands (the identity bar) keep its operation here.
-const renameOperations = new Map<string, { operationId: string; at: number; folder?: string }>();
+const renameOperations = new Map<string, { operationId: string; deadline?: number }>();
 const renameListeners = new Set<() => void>();
 
-export function rememberRenameOperation(
-  documentId: string,
-  operationId: string,
-  folder?: string,
-): void {
-  const now = Date.now();
-  // A note outlives its receipt's window by nothing, so older entries are dead weight.
-  for (const [id, entry] of renameOperations)
-    if (now - entry.at > 2 * NAMESPACE_RECEIPT_NOTE_TTL_MS) renameOperations.delete(id);
-  renameOperations.set(documentId, { operationId, at: now, folder });
+export function rememberRenameOperation(documentId: string, operationId: string): void {
+  renameOperations.set(documentId, { operationId });
   for (const listener of renameListeners) listener();
+}
+
+/** Pending/offline operations have no deadline; settlement alone starts the note's lifetime. */
+function expireRenameOperation(documentId: string, operationId: string, deadline: number): void {
+  const entry = renameOperations.get(documentId);
+  if (!entry || entry.operationId !== operationId || entry.deadline === deadline) return;
+  entry.deadline = deadline;
+  const expire = () => {
+    if (renameOperations.get(documentId) !== entry) return;
+    renameOperations.delete(documentId);
+    for (const listener of renameListeners) listener();
+  };
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) expire();
+  else window.setTimeout(expire, remaining);
 }
 
 export function useRenameOperation(documentId: string): string | null {
@@ -81,7 +90,24 @@ function indexOf(snapshot: ResourceProjectionSnapshot): ProjectionIndex {
   return index;
 }
 
-type SettledMove = { links: number; deadline: number; succeeded: boolean };
+/** A rename in the same folder is not destination feedback; a placement is. */
+export function movedDestinationName(receipt: ContextOperationReceipt | null): string | null {
+  if (receipt?.command.kind !== "move" || !receipt.result.ok) return null;
+  const source = parseContextUri(receipt.command.sourceUri);
+  const destination = parseContextUri(receipt.command.destinationUri);
+  if (!destination.ok) return null;
+  const parent = destination.value.path.split("/").slice(0, -1);
+  if (
+    source.ok &&
+    source.value.scheme === destination.value.scheme &&
+    JSON.stringify(source.value.authority) === JSON.stringify(destination.value.authority) &&
+    source.value.path.split("/").slice(0, -1).join("/") === parent.join("/")
+  )
+    return null;
+  return parent.at(-1) || schemeLabel(destination.value.scheme);
+}
+
+type SettledMove = { links: number; deadline: number; destination: string | null };
 
 /** The move's link count and absolute deadline once it settles locally; watches only while `watching`. */
 function useSettledMove(
@@ -99,11 +125,14 @@ function useSettledMove(
       (snapshot) => {
         const index = indexOf(snapshot);
         const intents = (subject.kind === "folder" ? index.folders : index.files).get(subject.id);
-        const intent = intents?.find((candidate) =>
-          candidate.attempts.some(
-            (attempt) =>
-              attempt.request.kind !== "create" && attempt.request.body.operationId === operationId,
-          ),
+        const intent = intents?.find(
+          (candidate) =>
+            candidate.operationId === operationId ||
+            candidate.attempts.some(
+              (attempt) =>
+                attempt.request.kind !== "create" &&
+                attempt.request.body.operationId === operationId,
+            ),
         );
         const receipt = intents ? settledNamespaceReceipt(intents, operationId, Date.now()) : null;
         // The deadline is known once the move settles locally, whatever the server said.
@@ -112,13 +141,14 @@ function useSettledMove(
             ? null
             : {
                 links: movedLinkCount(receipt),
-                succeeded: receipt?.command.kind === "move" && receipt.result.ok,
+                destination: movedDestinationName(receipt),
                 deadline: intent.settledAt + NAMESPACE_RECEIPT_NOTE_TTL_MS,
               };
+        if (next) expireRenameOperation(subject.id, operationId, next.deadline);
         setSettled((previous) =>
           previous?.links === next?.links &&
           previous?.deadline === next?.deadline &&
-          previous?.succeeded === next?.succeeded
+          previous?.destination === next?.destination
             ? previous
             : next,
         );
@@ -172,10 +202,8 @@ function ActiveNote({
   const settled = useSettledMove(projectId, subject, operationId, phase !== "gone");
   const links = settled?.links ?? 0;
   const deadline = settled?.deadline;
-  const remembered = renameOperations.get(subject.id);
-  const folder = remembered?.operationId === operationId ? remembered.folder : undefined;
-  const showMoved = Boolean(folder && settled?.succeeded);
-  const visible = links > 0 || showMoved;
+  const folder = settled?.destination;
+  const visible = links > 0 || Boolean(folder);
   const message =
     links > 0
       ? plural(links, { one: "Updated # link", other: "Updated # links" })
