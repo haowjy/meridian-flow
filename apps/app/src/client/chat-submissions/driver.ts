@@ -76,28 +76,36 @@ export class ChatSubmissionDriver {
     const tried = new Set<string>();
     let entered = false;
     let blocked = false;
-    const driving = this.locked(threadId, async (derived) => {
-      entered = true;
-      while (this.current()) {
-        const entry = this.options.journal
-          .entries()
-          .filter(
-            (record) =>
-              record.threadId === threadId && !record.state && !tried.has(record.recordId),
-          )
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-        if (!entry) break;
-        tried.add(entry.recordId);
-        await this.guard(entry, () => this.attempt(entry, false, derived));
-        if (!this.current()) return;
-        // An unresolved predecessor may still land. Do not let later messages overtake it.
-        const unresolved = this.read(entry.recordId);
-        if (unresolved && !unresolved.state) {
-          blocked = true;
-          break;
+    const waiting = this.options.journal
+      .entries()
+      .filter((entry) => entry.threadId === threadId && !entry.state)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    const driving = this.locked(
+      threadId,
+      async (derived) => {
+        entered = true;
+        while (this.current()) {
+          const entry = this.options.journal
+            .entries()
+            .filter(
+              (record) =>
+                record.threadId === threadId && !record.state && !tried.has(record.recordId),
+            )
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+          if (!entry) break;
+          tried.add(entry.recordId);
+          await this.guard(entry, () => this.attempt(entry, false, derived));
+          if (!this.current()) return;
+          // An unresolved predecessor may still land. Do not let later messages overtake it.
+          const unresolved = this.read(entry.recordId);
+          if (unresolved && !unresolved.state) {
+            blocked = true;
+            break;
+          }
         }
-      }
-    }).finally(() => {
+      },
+      waiting,
+    ).finally(() => {
       this.drives.delete(threadId);
       // A Send can arrive after the final scan but before the lock callback settles.
       if (
@@ -123,18 +131,27 @@ export class ChatSubmissionDriver {
       .find((entry) => entry.submissionId === submissionId);
     if (!original || !this.current()) return Promise.resolve();
     this.options.status(original, "pending");
-    return this.locked(original.threadId, async (derived) => {
-      const entry = this.read(original.recordId);
-      if (!entry || entry.submissionId !== submissionId || !this.current()) return;
-      await this.guard(entry, () => this.attempt(entry, true, derived));
-    }).then(() => {
+    return this.locked(
+      original.threadId,
+      async (derived) => {
+        const entry = this.read(original.recordId);
+        if (!entry || entry.submissionId !== submissionId || !this.current()) return;
+        await this.guard(entry, () => this.attempt(entry, true, derived));
+      },
+      original,
+    ).then(() => {
       if (!this.current()) return;
       const remaining = this.read(original.recordId);
       if (!remaining || remaining.state) return this.drive(original.threadId);
     });
   }
 
-  private async locked(threadId: string, operation: (derived: boolean) => Promise<void>) {
+  private async locked(
+    threadId: string,
+    operation: (derived: boolean) => Promise<void>,
+    waiting?: ChatSubmission,
+  ) {
+    let entered = false;
     try {
       const derived = await this.options.whenDerived(threadId, this.options.signal);
       if (!this.current()) return;
@@ -144,12 +161,14 @@ export class ChatSubmissionDriver {
         this.options.signal,
         async () => {
           if (!this.current()) return;
+          entered = true;
           await operation(derived);
         },
       );
     } catch (error) {
       if (!this.current()) return;
       reportError(error);
+      if (!entered && waiting) this.localFailure(waiting);
     }
   }
 

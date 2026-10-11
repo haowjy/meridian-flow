@@ -312,3 +312,30 @@ it("reports a projection exception and fails only the attempted record", async (
     vi.unstubAllGlobals();
   }
 });
+
+it("a lock failure reports its cause and fails only the waiting attempt", async () => {
+  const reported = vi.fn();
+  vi.stubGlobal("reportError", reported);
+  const r = rig();
+  const cause = new Error("lock adapter unavailable");
+  const statuses: string[] = [];
+  try {
+    await r
+      .mount({
+        lock: {
+          run: async () => {
+            throw cause;
+          },
+        },
+        status: (entry, status) => {
+          if (status === "error") statuses.push(entry.recordId);
+        },
+      })
+      .owner.retry("sub-1");
+    expect(reported).toHaveBeenCalledWith(cause);
+    expect(statuses).toEqual(["record-1"]);
+  } finally {
+    r.dispose();
+    vi.unstubAllGlobals();
+  }
+});
