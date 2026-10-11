@@ -15,9 +15,13 @@ dev-login. Seed a document and chat with `./mf seed tools/dev/cli/fixtures/basic
    The dispatch journal/transcript owns the message; no unchanged composer draft
    returns. Start another unsent message and reload: the new words do return.
 5. Force a proved admission rejection (for example, intercept the send POST with
-   a deterministic 403). The original live draft stays exactly once. Edit on the
-   failed row focuses it without inserting another copy. Reload after the
-   rejection and verify the same unsent draft returns.
+   a deterministic 403). The original message stays on its failed writer row
+   with Retry and Edit, and the composer is empty. Type newer words, then Edit:
+   the rejected message comes first and the newer words remain. Reload before
+   Edit and verify the rejected row, not a second composer copy, returns.
+   After Edit, refuse journal-key deletion and reload in the same tab: the words
+   appear once in the draft, the old row reads “Moved to the message box.” without
+   Retry/Edit, and restoring deletion then going online finishes retirement.
 6. Open the chat in a second independent browser tab (not Duplicate tab or
    Restore closed tab). Type different words in each and reload both. Each
    keeps its own draft. Close one, then open a fresh tab: it starts empty.

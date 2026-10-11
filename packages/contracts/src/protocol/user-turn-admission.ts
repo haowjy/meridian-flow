@@ -85,7 +85,8 @@ export type AcceptedAdmission = {
 export type AdmissionLookup =
   | AcceptedAdmission
   | { kind: "pending"; submissionId: string }
-  | { kind: "rejected" | "retired"; submissionId: string; code: string }
+  | { kind: "rejected"; submissionId: string; code: string }
+  | { kind: "retired"; submissionId: string; code: string }
   | { kind: "not-seen"; submissionId: string };
 
 export type AdmissionLookupRequest = Pick<
@@ -101,10 +102,7 @@ export type RetireAdmissionResult =
 
 export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "work_unavailable";
 
-export type UserTurnAdmissionResult =
-  | AcceptedAdmission
-  | { kind: "pending"; submissionId: string }
-  | { kind: "rejected"; submissionId: string; code: AdmissionErrorCode };
+export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
 /** Server-generated snapshot; never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {

@@ -807,8 +807,8 @@ msgstr "Chats in this Work share its goal and scratch files."
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr "Check submission status"
+#~ msgid "Check submission status"
+#~ msgstr "Check submission status"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1362,7 +1362,10 @@ msgstr "Couldn't send a message to {line}"
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "Couldn't send your message."
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
@@ -2424,6 +2427,14 @@ msgstr "Move row up"
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr "Moved to composer."
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
+msgstr "Moved to the message box."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -3501,8 +3512,8 @@ msgstr "Start a Work"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr "Start over"
+#~ msgid "Start over"
+#~ msgstr "Start over"
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"
