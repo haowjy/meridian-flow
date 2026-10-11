@@ -8,9 +8,11 @@ export function workFileSearch(search: string): WorkFileSearch {
 
 export function catalogSiblingNames(
   catalog: { children(parentId: string): readonly { name: string }[] } | null | undefined,
-  file: { parentId: string },
+  file: { parentId: string | null },
 ): string[] {
-  return catalog?.children(file.parentId).map((sibling) => sibling.name) ?? [];
+  return file.parentId
+    ? (catalog?.children(file.parentId).map((sibling) => sibling.name) ?? [])
+    : [];
 }
 
 /** A row's place in the file tree: its path, and whether it is a folder. */

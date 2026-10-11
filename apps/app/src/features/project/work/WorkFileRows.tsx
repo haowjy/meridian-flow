@@ -1,30 +1,24 @@
 /**
- * The Work Files tab's Scratch rows: a folder, a file (renamed in place, or
- * only opened when its Work is not editable), and a new note still on its way.
+ * The Work Files tab's Scratch rows: folder disclosure and file navigation
+ * around the shared entry interaction model, plus a new note still on its way.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
-import { useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { cn } from "@/lib/utils";
-import {
-  ContextEntryMenu,
-  type EntryAction,
-  EntryKebabButton,
-} from "../context/ContextEntryActions";
+import { type DeleteTarget, EntryKebabButton } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { EntryMovePicker } from "../context/EntryMovePicker";
 import { EntryNameField } from "../context/EntryNameField";
-import {
-  LinkUpdateNote,
-  rememberRenameOperation,
-  useRenameOperation,
-} from "../context/LinkUpdateNote";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
+import {
+  type EntryCapabilities,
+  EntryInteractionShell,
+  useEntryInteraction,
+} from "../context/use-entry-interaction";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import { useEntryRenameRepair } from "../context/use-repair-on-fresh-failure";
 import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { RowIcon } from "../RuledList";
@@ -34,74 +28,111 @@ import type { NoteAttempt } from "./use-work-note-intake";
 export const workFileRowClass =
   "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover";
 
+type ScratchRowManagement = {
+  projectId: string;
+  workId: string;
+  siblingNames: readonly string[];
+  capabilities: EntryCapabilities;
+  onRequestDelete: (target: DeleteTarget) => void;
+};
+
 export function FolderRow({
   folder,
   open,
   onToggle,
-}: {
+  ...management
+}: ScratchRowManagement & {
   folder: CatalogDirectory;
   open: boolean;
   onToggle: () => void;
 }) {
+  const interaction = useEntryInteraction({
+    ...management,
+    node: folder,
+    owner: { workId: management.workId },
+    scheme: "scratch",
+  });
+  if (interaction.renaming)
+    return (
+      <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
+        <RowIcon icon={open ? FolderOpen : Folder} />
+        <InlineRename options={interaction.rename} />
+      </div>
+    );
   return (
-    <button type="button" className={workFileRowClass} aria-expanded={open} onClick={onToggle}>
-      <RowIcon icon={open ? FolderOpen : Folder} />
-      <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
-    </button>
+    <EntryInteractionShell interaction={interaction}>
+      <div className="group relative flex min-w-0 items-center">
+        <button
+          type="button"
+          className={cn(workFileRowClass, interaction.actions.length > 0 && "pr-10")}
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          <RowIcon icon={open ? FolderOpen : Folder} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{folder.name}</span>
+            <LinkUpdateNote
+              projectId={management.projectId}
+              subject={{ kind: "folder", id: folder.entryId }}
+              operationId={interaction.operationId}
+              layout="stacked"
+            />
+            {folder.namespaceFailure ? (
+              <NamespaceFailureMark
+                failure={folder.namespaceFailure}
+                move={Boolean(folder.namespaceRepairMove)}
+                folder
+                labelled
+              />
+            ) : null}
+          </span>
+        </button>
+        <div className="absolute right-1">
+          <EntryKebabButton
+            allowedActions={interaction.actions}
+            onAction={interaction.onAction}
+            align="end"
+          />
+        </div>
+      </div>
+    </EntryInteractionShell>
   );
 }
-
-/** Rename, Move and Delete, offered only while the file's Work is editable. */
-export type ScratchFileEdit = {
-  renaming: boolean;
-  onRename: (path: string | null) => void;
-  onDelete: () => void;
-};
 
 export function ScratchFileRow({
   projectId,
   workId,
   file,
   siblingNames,
-  edit,
-}: {
-  projectId: string;
-  workId: string;
+  capabilities,
+  onRequestDelete,
+  requestRename,
+  onRenameDone,
+}: ScratchRowManagement & {
   file: CatalogFile;
-  siblingNames: readonly string[];
-  /** Absent: the row only opens, with no menu, kebab or rename. */
-  edit?: ScratchFileEdit;
+  requestRename?: boolean;
+  onRenameDone?: () => void;
 }) {
   const openFile = useOpenDocumentInDock();
   const screen = useProjectScreen();
   const docked = useDockDocument(screen, projectId)?.tab.documentId === file.documentId;
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
-  const [moving, setMoving] = useState(false);
-  // Renames and moves from any list share one note per document, so a moved row still shows it.
-  const noteOperationId = useRenameOperation(file.documentId);
-  const setNoteOperationId = (operationId: string) =>
-    rememberRenameOperation(file.documentId, operationId);
-  // Like the tree, a refused rename offers its name field once, as the failure arrives.
-  useEntryRenameRepair(file, () => edit?.onRename(file.path), Boolean(edit));
-  const actions: readonly EntryAction[] = edit ? ["rename", "move", "delete"] : [];
-  const handleAction = (action: EntryAction) => {
-    if (!edit) return;
-    if (action === "rename") edit.onRename(file.path);
-    if (action === "move") setMoving(true);
-    if (action === "delete") edit.onDelete();
-  };
-  if (edit?.renaming)
+  const interaction = useEntryInteraction({
+    projectId,
+    node: file,
+    owner: { workId },
+    scheme: "scratch",
+    siblingNames,
+    capabilities,
+    onRequestDelete,
+    requestRename,
+    onRenameDone,
+  });
+  if (interaction.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
         <RowIcon icon={fileKindIcon(file)} />
-        <InlineRename
-          projectId={projectId}
-          workId={workId}
-          file={file}
-          siblingNames={siblingNames}
-          onRenamed={setNoteOperationId}
-          onDone={() => edit.onRename(null)}
-        />
+        <InlineRename options={interaction.rename} />
       </div>
     );
   const open = () => {
@@ -114,7 +145,7 @@ export function ScratchFileRow({
     >
       <button
         type="button"
-        className={cn(workFileRowClass, edit && "pr-10")}
+        className={cn(workFileRowClass, interaction.actions.length > 0 && "pr-10")}
         aria-current={docked || undefined}
         onClick={open}
       >
@@ -124,7 +155,7 @@ export function ScratchFileRow({
           <LinkUpdateNote
             projectId={projectId}
             subject={{ kind: "file", id: file.documentId }}
-            operationId={noteOperationId}
+            operationId={interaction.operationId}
             layout="stacked"
           />
           {folder ? (
@@ -139,30 +170,18 @@ export function ScratchFileRow({
           ) : null}
         </span>
       </button>
-      {edit ? (
+      {interaction.actions.length > 0 ? (
         <div className="absolute right-1">
-          <EntryKebabButton allowedActions={actions} onAction={handleAction} align="end" />
+          <EntryKebabButton
+            allowedActions={interaction.actions}
+            onAction={interaction.onAction}
+            align="end"
+          />
         </div>
       ) : null}
     </div>
   );
-  // An archived Work row only opens, with no mutation actions.
-  if (!edit) return row;
-  return (
-    <EntryMovePicker
-      projectId={projectId}
-      scheme="scratch"
-      owner={{ workId }}
-      entry={{ id: file.documentId, name: file.name, path: file.path, kind: "file" }}
-      repairMove={file.namespaceRepairMove}
-      open={moving}
-      onOpenChange={setMoving}
-    >
-      <ContextEntryMenu allowedActions={actions} onAction={handleAction}>
-        {row}
-      </ContextEntryMenu>
-    </EntryMovePicker>
-  );
+  return <EntryInteractionShell interaction={interaction}>{row}</EntryInteractionShell>;
 }
 
 /**
@@ -207,33 +226,9 @@ export function NoteAttemptRow({
   );
 }
 
-function InlineRename({
-  projectId,
-  workId,
-  file,
-  siblingNames,
-  onRenamed,
-  onDone,
-}: {
-  projectId: string;
-  workId: string;
-  file: CatalogFile;
-  siblingNames: readonly string[];
-  onRenamed: (operationId: string) => void;
-  onDone: () => void;
-}) {
-  const form = useRenameEntryForm({
-    projectId,
-    entryId: file.entryId,
-    owner: { workId },
-    scheme: "scratch",
-    path: file.path,
-    currentName: file.name,
-    repairName: file.namespaceRepairMove ? undefined : file.namespaceRepairName,
-    siblingNames,
-    kind: "file",
-    onRenamed,
-    onDone,
-  });
-  return <EntryNameField form={form} label={t`File name`} />;
+function InlineRename({ options }: { options: Parameters<typeof useRenameEntryForm>[0] }) {
+  const form = useRenameEntryForm(options);
+  return (
+    <EntryNameField form={form} label={options.kind === "folder" ? t`Rename` : t`File name`} />
+  );
 }

@@ -108,9 +108,34 @@ refusal opens a name-only field; move retry loses a queued rename.
    in the file list. Clicking the mark must not open a placement/name field.
 3. Repeat with a refused Rename. The list may offer its inline name repair;
    the path bar only directs retry to Rename in the file list.
-4. Restore native fetch. Retry through the list. For a cancelled rename/move
+4. Restore native fetch. Reopen Move…: it must start at the refused destination
+   with an enabled Move to button, not Already in the current parent. Submit
+   without drilling again. If the destination was removed, it instead opens at
+   the current parent and retains the refusal message. Retry through the list. For a cancelled rename/move
    chain, check the request's name is the retained destination name, not the
    restored original name. Collision validation must use that retained name too.
 5. Restore any moved probe file and the Work's original lifecycle state. Save
    screenshots and requests in the active work directory. Never leave fetch
    interception installed in the shared browser session.
+
+
+## Shared list entry interactions
+
+Named risks: list shells dispatch different actions; Scratch loses a pending
+delete when a row remounts; Work Files folders expose no management actions.
+
+In an owned project, seed two Manuscript folders and an editable Work's Scratch
+with two folders and a note. Open a chat bound to that Work (for example Beats).
+
+1. In Files tree, chat Scratch, and Work Files, rename a file in place, move it
+   to another folder, and open Delete then Cancel. Verify its content at the new
+   URI through `./mf doc read`. Keep all operations in the isolated project.
+2. In Work Files, repeat Rename and Delete then Cancel on a folder; its menu
+   must also offer Move…. Archived Work folders and files must expose no actions.
+3. Scratch's menus offer only Rename, Move… and Delete (no create commands).
+   When Earlier notes are present, request Delete on a lineage entry and on a
+   Work entry; each opens the same surface dialog with the correct target.
+4. At phone width, repeat file and folder Rename, Move… and Delete then Cancel
+   from Files. The folder tap target must still drill in independently.
+5. A new Work note must still open its naming field when it arrives. Cancelling
+   the field keeps the note; renaming it clears the pending naming request.
