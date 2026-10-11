@@ -402,6 +402,11 @@ export type CreateThreadRequest = {
   agentSelection: AgentSelection;
   /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
+  /**
+   * The writer's explicit mode for the new chat. Omitted, the chat copies its Work's default;
+   * given, it also becomes that Work's default.
+   */
+  aiWriteMode?: AiWriteMode;
 };
 
 export type CreateThreadResponse = Thread;

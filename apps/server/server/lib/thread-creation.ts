@@ -5,6 +5,7 @@
  */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import {
   type EventSink,
   emitEvent,
@@ -23,7 +24,7 @@ import {
 } from "../domains/projects/index.js";
 import { createBoundConversation } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
-import { InvalidWorkAttachmentError, resolveWorkMembership } from "./work-attachment.js";
+import { InvalidWorkAttachmentError, resolveRootWork } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";
 
@@ -59,13 +60,16 @@ export interface CreateThreadForProjectArgs {
   agentSelection: AgentSelection;
   /** Explicit work assignment from the request, if any. */
   workId?: string | null;
+  /** The writer's explicit mode; it also becomes the Work's default. Omitted, the chat copies it. */
+  aiWriteMode?: AiWriteMode;
 }
 
 /**
  * Create a thread under a project — the single owner of thread-creation policy
  * shared by both the global (`/api/threads`) and project-scoped
  * (`/api/projects/:projectId/threads`) routes. Verifies ownership, persists the
- * thread row, then creates its primary Work membership. Throws (404) if the caller
+ * thread row in the mode the request chose or its Work's default, then creates its primary Work
+ * membership. Throws (404) if the caller
  * does not own the project.
  */
 export async function createThreadForProject(
@@ -91,7 +95,7 @@ export async function createThreadForProject(
 
   const existing = await existingById();
   if (existing) return ownedExisting(existing);
-  let resolvedWorkId!: string;
+  let work!: Work;
   let thread: Thread;
   try {
     const resolved = await deps.agentCatalog.resolvePrimary(
@@ -107,19 +111,24 @@ export async function createThreadForProject(
       agentRevisions: deps.agentRevisions,
       revision,
       configuration,
-      createThread: () =>
-        deps.threads.create({
+      createThread: async () => {
+        work = await resolveRootWork(
+          { workRepo: deps.workRepo },
+          { projectId: args.projectId, workId: args.workId },
+        );
+        return deps.threads.create({
           id: args.id,
           userId: args.userId,
           projectId: args.projectId,
           title: args.title ?? null,
-        }),
+          aiWriteMode: args.aiWriteMode ?? work.aiWriteMode,
+        });
+      },
       resolveWork: async (created) => {
-        resolvedWorkId = await resolveWorkMembership(
-          { workRepo: deps.workRepo, threadWorks: deps.threadWorks },
-          { threadId: created.id, projectId: args.projectId, workId: args.workId },
-        );
-        return resolvedWorkId;
+        await deps.threadWorks.addMembership(created.id, work.id, true);
+        // An explicit choice becomes the Work's default; lock order is thread, then Work.
+        if (args.aiWriteMode) await deps.workRepo.setDefaultAiWriteMode(work.id, args.aiWriteMode);
+        return work.id;
       },
     });
   } catch (error) {
@@ -132,7 +141,7 @@ export async function createThreadForProject(
   }
 
   try {
-    await deps.workRepo.touch(resolvedWorkId);
+    await deps.workRepo.touch(work.id);
   } catch (error) {
     emitEvent(eventSink, {
       level: "warn",
@@ -141,7 +150,7 @@ export async function createThreadForProject(
       payload: {
         threadId: thread.id,
         projectId: args.projectId,
-        workId: resolvedWorkId,
+        workId: work.id,
         ...unknownToEventPayload(error),
       },
     });

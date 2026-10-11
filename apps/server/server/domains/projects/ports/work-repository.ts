@@ -4,7 +4,7 @@
  * in-memory work adapters implement.
  */
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -118,4 +118,6 @@ export interface WorkRepository {
   /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
   restore(id: WorkId): Promise<WorkRestoration>;
   touch(id: WorkId): Promise<void>;
+  /** Sets the mode a new chat in this Work starts with; a no-op when it already holds it. */
+  setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void>;
 }

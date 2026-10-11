@@ -235,6 +235,8 @@ export interface CreateThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId?: WorkId | null;
+  /** No default: every creation path chooses the chat's mode. */
+  aiWriteMode: AiWriteMode;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;

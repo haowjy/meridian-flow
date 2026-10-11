@@ -593,6 +593,7 @@ describe("useChatSubmissionRecovery", () => {
       sourceTitle: "Chapter 12 plan",
       originTurnId: "cut",
       workId: null,
+      aiWriteMode: "direct",
       agent: null,
       agentName: "General",
       createdAt: "2026-09-22T12:00:00.000Z",

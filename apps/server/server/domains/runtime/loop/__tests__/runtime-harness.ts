@@ -331,7 +331,11 @@ export async function runtimeScenario(
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects, transactionOwner });
   const project = await projects.create({ userId, title: projectTitle });
-  const thread = await repos.threads.create({ userId, projectId: project.id });
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId,
+    projectId: project.id,
+  });
   const journal = createInMemoryEventJournalWriter();
   const eventSink = options.eventSink ?? createInMemoryEventSink();
   const hub = createThreadEventHub({ journalWriter: journal, journalReader: journal, eventSink });

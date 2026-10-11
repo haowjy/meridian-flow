@@ -49,7 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps a refused manual compaction in segment zero and opens segment one only on completion", async () => {
       const { readTranscriptPage } = await import("./transcript-page.js");
       const repos = createDrizzleRepositoriesForTest(db);
-      const thread = await repos.threads.create({ projectId, userId });
+      const thread = await repos.threads.create({ aiWriteMode: "direct", projectId, userId });
       const threadId = thread.id as ThreadId;
       const initial = await repos.threads.bakeInitialPrompt(threadId, {
         composedSystemPrompt: "initial prompt",

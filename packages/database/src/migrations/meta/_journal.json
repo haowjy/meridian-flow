@@ -274,6 +274,20 @@
       "when": 1791742394147,
       "tag": "0038_work_branch_foundation_online",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791748739590,
+      "tag": "0039_d62_chat_write_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791748763478,
+      "tag": "0040_d62_chat_write_mode_online",
+      "breakpoints": true
     }
   ]
 }

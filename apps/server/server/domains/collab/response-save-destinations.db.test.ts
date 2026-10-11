@@ -169,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Rewrite",
           slug: "rewrite",
-          aiWriteMode: "draft",
+          defaultAiWriteMode: "draft",
         },
       ]);
       await db.insert(schema.contextSources).values([
@@ -351,7 +351,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createTestCollab();
       await db
         .update(schema.works)
-        .set({ aiWriteMode: "direct" })
+        .set({ defaultAiWriteMode: "direct" })
         .where(eq(schema.works.id, WORK_ID));
       await seed(collab);
       const agentEdit = collab.agentEdit();
@@ -426,7 +426,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .update(schema.works)
-        .set({ aiWriteMode: "direct" })
+        .set({ defaultAiWriteMode: "direct" })
         .where(eq(schema.works.id, WORK_ID));
       const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
       const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
@@ -671,7 +671,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Second",
         slug: "second",
-        aiWriteMode: "draft",
+        defaultAiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_B_SOURCE_ID,

@@ -51,6 +51,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const { thread: destination } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.user,
         projectId: ids.project,
@@ -174,6 +175,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const destination = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.user,
         projectId: ids.project,
         title: "Handoff destination",

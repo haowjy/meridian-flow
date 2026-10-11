@@ -157,12 +157,12 @@ if (!enabled || !databaseUrl) {
           const [work] =
             await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
             VALUES (${project.id}, ${user.id}, 'No Work', true)
-            RETURNING id, slug, status, archived_at, ai_write_mode`;
+            RETURNING id, slug, status, archived_at, default_ai_write_mode`;
           expect(work).toMatchObject({
             slug: null,
             status: null,
             archived_at: null,
-            ai_write_mode: "direct",
+            default_ai_write_mode: "direct",
           });
           await expect(
             tx.savepoint(

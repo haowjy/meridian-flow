@@ -8,6 +8,7 @@ describe("block.updated", () => {
   it("preserves card placement and rejects a missing target", async () => {
     const repos = createInMemoryRepositories();
     const thread = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: crypto.randomUUID() as UserId,
       projectId: crypto.randomUUID() as ProjectId,
     });

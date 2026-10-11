@@ -308,11 +308,13 @@ export function createDrizzleWorkPushPolicyStore(
         const [changed] = await currentDrizzleDb(db)
           .update(works)
           .set({
-            aiWriteMode: aiWriteModeProjection(policy),
+            defaultAiWriteMode: aiWriteModeProjection(policy),
             entityRevision: sql`${works.entityRevision} + 1`,
             updatedAt: new Date(),
           })
-          .where(and(eq(works.id, workId), ne(works.aiWriteMode, aiWriteModeProjection(policy))))
+          .where(
+            and(eq(works.id, workId), ne(works.defaultAiWriteMode, aiWriteModeProjection(policy))),
+          )
           .returning({ projectId: works.projectId });
         if (changed) await workProjection?.publishWorks([workId]);
       });

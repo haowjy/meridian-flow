@@ -458,6 +458,7 @@ else
       const { answer, results } = await documentTail(rig);
       const source = (await rig.repos.threads.findById(rig.threadId))!;
       const { thread: forkBefore } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -486,6 +487,7 @@ else
       await run.execute();
       const c = (await rig.repos.turns.findById(run.executionTurnId))!;
       const { thread: forkAfter } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,

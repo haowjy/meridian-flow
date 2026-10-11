@@ -1,6 +1,6 @@
 /** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
@@ -276,6 +276,14 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         advance(row);
         return { before, after: { ...row }, changed: true };
       });
+    },
+
+    async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
+      const row = rows.get(id);
+      if (!row || row.aiWriteMode === mode) return;
+      row.aiWriteMode = mode;
+      row.updatedAt = now();
+      advance(row);
     },
 
     async touch(id: WorkId): Promise<void> {

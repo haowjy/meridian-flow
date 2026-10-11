@@ -73,7 +73,8 @@ export function CreationComposer({
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenChatDocument(projectId);
-  const context = agent && workId ? { workId, agent } : undefined;
+  const context =
+    agent && work ? { workId: work.id, workAiWriteMode: work.aiWriteMode, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(

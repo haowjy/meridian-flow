@@ -1492,6 +1492,9 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async setDefaultAiWriteMode() {
+        throw new Error("in-memory work repository is not implemented");
+      },
     },
     projectRepo: {
       async create() {
@@ -1570,6 +1573,9 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async setDefaultAiWriteMode() {
+        throw new Error("in-memory work repository is not implemented");
+      },
     },
     workAuthorityResolver,
     workContext: unavailableWorkContext,

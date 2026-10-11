@@ -75,6 +75,7 @@ const forkInput = {
   sourceTitle: "Chapter 12 plan",
   originTurnId: "cut",
   workId: null,
+  aiWriteMode: "direct" as const,
   agent: null,
   agentName: "General",
 };

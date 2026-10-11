@@ -286,6 +286,8 @@ export interface Thread {
   projectId: string;
   /** Work item this thread belongs to; null when ungrouped. */
   workId: string | null;
+  /** The chat's own write mode, copied at creation from the request or its Work's default. */
+  aiWriteMode: AiWriteMode;
   userId: string;
   kind: ThreadKind;
   status: ThreadLifecycleStatus;

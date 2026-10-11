@@ -8,7 +8,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
+import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -76,7 +76,11 @@ export const works = pgTable(
     goal: text("goal"),
     status: text("status"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    aiWriteMode: text("ai_write_mode").notNull().default("direct"),
+    // What a new chat in this Work starts with; each chat owns its own mode afterwards.
+    defaultAiWriteMode: text("default_ai_write_mode")
+      .$type<AiWriteMode>()
+      .notNull()
+      .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -113,7 +117,10 @@ export const works = pgTable(
       "works_status_length",
       sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
     ),
-    check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
+    check(
+      "works_default_ai_write_mode_valid",
+      sql`${table.defaultAiWriteMode} IN ('direct', 'draft')`,
+    ),
     unique("works_project_id_unique").on(table.projectId, table.id),
   ],
 );

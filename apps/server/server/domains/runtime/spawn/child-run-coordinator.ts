@@ -168,7 +168,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     const child = await deps.repos.transaction(async () => {
       // Parent journal writes must precede child membership's Work locks in lock order.
-      await deps.repos.threads.lockByIdIncludingDeleted(input.parentThread.id as ThreadId);
+      const lockedParent = await deps.repos.threads.lockByIdIncludingDeleted(
+        input.parentThread.id as ThreadId,
+      );
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
@@ -180,6 +182,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             id: crypto.randomUUID() as ThreadId,
             userId: input.parentThread.userId,
             projectId: input.parentThread.projectId,
+            // A child works in its parent's mode, which is also the spawning reply's.
+            aiWriteMode: (lockedParent ?? input.parentThread).aiWriteMode,
             parentThreadId: input.parentThread.id as ThreadId,
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,

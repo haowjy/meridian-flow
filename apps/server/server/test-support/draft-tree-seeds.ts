@@ -286,7 +286,7 @@ export function draftTreeWorldOver(
         .replace(/^-|-$/g, "");
       const [work] = await db
         .insert(works)
-        .values({ projectId, createdByUserId: userId, name, slug, aiWriteMode: mode })
+        .values({ projectId, createdByUserId: userId, name, slug, defaultAiWriteMode: mode })
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
       const { threadId, turnId } = await insertThread(name, work.id);

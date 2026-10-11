@@ -17,6 +17,7 @@ import type {
   PrefixCachePredictionState,
   PriceSource,
 } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -75,6 +76,8 @@ export const threads = pgTable(
     turnCount: integer("turn_count").notNull().default(0),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
+    // The chat's write mode: copied at creation, changed only by an applied switch.
+    aiWriteMode: text("ai_write_mode").$type<AiWriteMode>().notNull().default("direct"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -115,6 +118,7 @@ export const threads = pgTable(
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
+    check("threads_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
     // Lifecycle only. Run state is derived from the lease, never stored here.
     check("threads_status_valid", sql`${table.status} IN ('idle', 'archived')`),
@@ -240,7 +244,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' = 'compact' OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );

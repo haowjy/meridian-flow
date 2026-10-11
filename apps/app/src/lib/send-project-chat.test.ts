@@ -50,6 +50,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     submissionId: "sub-1",
     agent,
     workId: "no-work",
+    workAiWriteMode: "direct",
     ...overrides,
     threadActions,
     selectChat,

@@ -9,7 +9,11 @@ import {
 } from "../../../lib/request-id.js";
 import { createThreadForProject } from "../../../lib/thread-creation.js";
 
-import { parseCreationTitle, throwThreadCreationError } from "../../../lib/thread-creation-http.js";
+import {
+  parseCreationAiWriteMode,
+  parseCreationTitle,
+  throwThreadCreationError,
+} from "../../../lib/thread-creation-http.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -39,6 +43,7 @@ export default defineEventHandler(async (event) => {
         title: parseCreationTitle(body.title),
         agentSelection: requireAgentSelection(body.agentSelection),
         workId: body.workId == null ? null : parseOptionalRequestId(body.workId, "workId"),
+        aiWriteMode: parseCreationAiWriteMode(body.aiWriteMode),
       },
     );
 

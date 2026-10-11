@@ -9,6 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
@@ -29,6 +30,8 @@ export type DerivationIntent = {
   /** The chosen turn is the exact inherited cutoff. */
   originTurnId: string;
   workId: string | null;
+  /** The source chat's mode, which the server copies onto the destination. */
+  aiWriteMode: AiWriteMode;
   /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
   agent: CreationAgent | null;
   agentName: string | null;
@@ -115,6 +118,7 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
         : `Handoff from ${intent.sourceTitle ?? "thread"}`,
     timestamp: intent.createdAt,
     workId: intent.workId,
+    aiWriteMode: intent.aiWriteMode,
     ...(intent.agent ? { agent: intent.agent } : {}),
   });
   return {

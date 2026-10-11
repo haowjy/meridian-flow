@@ -11,6 +11,7 @@
 
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ComposerDraftSnapshot,
@@ -53,6 +54,10 @@ export type FirstSendChatSubmission = ChatSubmissionBase & {
   projectId: string;
   title: string;
   workId: string | null;
+  /** The Work's default when sent: the optimistic chat's mode when no choice was made. */
+  workAiWriteMode: AiWriteMode;
+  /** The writer's explicit choice, sent with the creation request. */
+  aiWriteMode?: AiWriteMode;
   agentSelection: AgentSelection;
   agentName: string;
   agentSlug: string;
@@ -70,6 +75,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isAiWriteMode(value: unknown): value is AiWriteMode {
+  return value === "direct" || value === "draft";
 }
 
 function isAgentSelection(value: unknown): value is AgentSelection {
@@ -131,6 +140,8 @@ function parseSubmission(parsed: unknown): ChatSubmission | null {
       typeof common.projectId !== "string" ||
       typeof parsed.title !== "string" ||
       (parsed.workId !== null && typeof parsed.workId !== "string") ||
+      !isAiWriteMode(parsed.workAiWriteMode) ||
+      (parsed.aiWriteMode !== undefined && !isAiWriteMode(parsed.aiWriteMode)) ||
       !isAgentSelection(parsed.agentSelection) ||
       typeof parsed.agentName !== "string" ||
       typeof parsed.agentSlug !== "string"
@@ -143,6 +154,8 @@ function parseSubmission(parsed: unknown): ChatSubmission | null {
       projectId: common.projectId,
       title: parsed.title,
       workId: parsed.workId,
+      workAiWriteMode: parsed.workAiWriteMode,
+      ...(parsed.aiWriteMode !== undefined ? { aiWriteMode: parsed.aiWriteMode } : {}),
       agentSelection: parsed.agentSelection,
       agentName: parsed.agentName,
       agentSlug: parsed.agentSlug,

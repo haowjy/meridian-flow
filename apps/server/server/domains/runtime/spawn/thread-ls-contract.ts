@@ -14,7 +14,7 @@ export function defineThreadLsContract(
   async function fixture() {
     const { repos, projectId, userId } = await createHarness();
     const identity = { projectId, userId };
-    const root = await repos.threads.create({ ...identity, title: "root" });
+    const root = await repos.threads.create({ aiWriteMode: "direct", ...identity, title: "root" });
     const cut = await repos.turns.create({
       threadId: root.id,
       role: "user",
@@ -23,6 +23,7 @@ export function defineThreadLsContract(
     });
     async function child(parent = root, title = "child") {
       return repos.threads.createSubagent({
+        aiWriteMode: "direct",
         ...identity,
         parentThreadId: parent.id,
         rootThreadId: root.id,
@@ -34,6 +35,7 @@ export function defineThreadLsContract(
     async function fork(source = root, originType: "fork" | "handoff" = "fork") {
       return (
         await repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
           ...identity,
           id: crypto.randomUUID() as never,
           workId: null,
@@ -101,6 +103,7 @@ export function defineThreadLsContract(
       expect(typeof (await f.read(f.root, { ref: handoff.ref }))).toBe("string");
       expect(typeof (await f.read(handoff, { ref: f.root.ref }))).toBe("string");
       const outsider = await f.repos.threads.create({
+        aiWriteMode: "direct",
         projectId: f.root.projectId,
         userId: f.root.userId,
       });

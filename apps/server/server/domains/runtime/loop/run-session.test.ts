@@ -18,7 +18,11 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   const sink = createInMemoryEventSink();
   let calls = 0;
   const repos = createInMemoryRepositories();
-  const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId: "user-1",
+    projectId: "project-1",
+  });
   const boundThreadIds = new Set([thread.id]);
   const harness = createRuntimeHarness({
     repos,
@@ -280,6 +284,7 @@ describe("RunSession", () => {
       prevTurnId: null,
     });
     const child = await f.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
       parentThreadId: f.thread.id,
@@ -350,10 +355,12 @@ describe("RunSession", () => {
   ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();
     const fg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
     const bg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });

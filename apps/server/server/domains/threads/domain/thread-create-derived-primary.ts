@@ -16,6 +16,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { toIsoString } from "./contract-serialization.js";
 
 export interface CreateDerivedPrimaryThreadInput {
@@ -23,6 +24,8 @@ export interface CreateDerivedPrimaryThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId: WorkId | null;
+  /** The source chat's mode: a fork or handoff continues in it. */
+  aiWriteMode: AiWriteMode;
   /** The source thread's own lineage, inherited byte-for-byte (see file header). */
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
@@ -37,6 +40,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     id: input.id,
     projectId: input.projectId,
     workId: input.workId,
+    aiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "primary",
     status: "idle",
