@@ -105,8 +105,8 @@ CREATE TABLE "branch_push_settlement_payloads" (
 	CONSTRAINT "branch_push_settlement_payloads_batch_id_step_kind_pk" PRIMARY KEY("batch_id","step_kind")
 );
 --> statement-breakpoint
--- Retire the constraints whose columns change shape below. Their replacements are added NOT VALID
--- and validated in 0037_work_branch_foundation_online.
+-- Drop the constraints on columns that leave or change meaning below. The two that return are
+-- added NOT VALID at the end and validated in 0037_work_branch_foundation_online.
 ALTER TABLE "documents" DROP CONSTRAINT "documents_kind_valid";
 --> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" DROP CONSTRAINT "branch_push_settlement_outbox_state_valid";
