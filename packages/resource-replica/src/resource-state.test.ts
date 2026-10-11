@@ -4,6 +4,7 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
+import { projectResourceNeedsRepair } from "./resource-projection";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -337,4 +338,42 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
     transitionId: "reopen-7",
     generation: null,
   });
+});
+
+it("keeps typed rename provenance through optimistic placement and transport", () => {
+  for (const typed of ["settings.md", "settings.txt", "Notes.md"]) {
+    const record = reserved();
+    record.intents = [];
+    record.resource.canonical = {
+      scheme: "user",
+      path: "/config.toml",
+      name: "config.toml",
+      workId: null,
+    };
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "rename",
+      eligibleAt: 0,
+      destination: { scheme: "user", folderPath: "", name: typed, workId: null },
+    });
+    expect(planned?.next.intents[0]?.desired).toMatchObject({
+      typedName: typed,
+      destination: { name: typed === "Notes.md" ? "Notes" : "settings" },
+    });
+    if (!planned) throw new Error("Missing location plan");
+    planned.next.intents = planned.next.intents.map((intent) => ({
+      ...intent,
+      state: "needs-repair",
+    }));
+    expect(projectResourceNeedsRepair("project", planned.next)?.name).toBe(typed);
+    planned.next.intents = planned.next.intents.map((intent) => ({ ...intent, state: "pending" }));
+    const attempt = prepareNamespaceAttempt(planned.next, {
+      attemptId: "attempt",
+      operationId: "operation",
+    });
+    expect(attempt?.next.intents[0]?.attempts[0]?.request).toMatchObject({
+      body: { newName: typed },
+    });
+  }
 });

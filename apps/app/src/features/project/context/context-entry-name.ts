@@ -74,9 +74,20 @@ export type ContextEntryNameSeverity = {
   message: string;
 };
 
+export function contextEntryConflictMessage(
+  name: string,
+  occupantKind?: "file" | "folder",
+): string {
+  if (occupantKind === "folder") return t`A folder named ${name} already exists in this location.`;
+  if (occupantKind === "file") return t`A file named ${name} already exists in this location.`;
+  return t`An entry named ${name} already exists in this location.`;
+}
+
+export type ContextEntrySibling = { entryId: string; name: string; kind: "file" | "dir" };
+
 export function validateContextEntryName(
   raw: string,
-  siblingNames: readonly string[],
+  siblings: readonly ContextEntrySibling[],
   kind: ContextCreateKind = "file",
   /** The stored name of the file being renamed; absent when creating. */
   current?: string,
@@ -92,13 +103,15 @@ export function validateContextEntryName(
     candidate = stored.name;
   }
   const key = entryNameKey(candidate);
-  if (siblingNames.some((name) => entryNameKey(name) === key)) {
+  const occupant = siblings.find((sibling) =>
+    kind === "folder" && sibling.kind === "dir"
+      ? sibling.name === candidate
+      : entryNameKey(sibling.name) === key,
+  );
+  if (occupant) {
     return {
       level: "error",
-      message:
-        kind === "folder"
-          ? t`A folder named ${candidate} already exists in this location.`
-          : t`A file named ${candidate} already exists in this location.`,
+      message: contextEntryConflictMessage(candidate, occupant.kind === "dir" ? "folder" : "file"),
     };
   }
   if (raw !== trimmed) {

@@ -5,6 +5,7 @@
  * the create mutation. Submit semantics are the shared inline-edit protocol:
  * Enter or blur commits, Escape or an empty name cancels.
  */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
@@ -16,13 +17,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
-
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
+import type { ContextEntrySibling } from "./context-entry-name";
+import {
+  contextEntryConflictMessage,
+  joinContextEntryPath,
+  validateContextEntryName,
+} from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 
 export type UseCreateEntryFormOptions = {
@@ -32,7 +37,7 @@ export type UseCreateEntryFormOptions = {
   /** Parent folder path. Defaults to `""` (scheme root). */
   parent?: string;
   /** Sibling names for collision detection. Omit to skip collision checks. */
-  siblingNames?: readonly string[];
+  siblings?: readonly ContextEntrySibling[];
   /** Called when the form completes (successful create or cancel). */
   onDone: () => void;
   /** Called after a successful create, with the new entry's path. */
@@ -58,7 +63,7 @@ export function useCreateEntryForm({
   scheme,
   kind,
   parent = "",
-  siblingNames = [],
+  siblings = [],
   onDone,
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
@@ -93,16 +98,24 @@ export function useCreateEntryForm({
           queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, undefined),
         });
       } else {
-        await mutation.mutateAsync({ scheme, type: kind, path, workId: null });
+        const result = await mutation.mutateAsync({ scheme, type: kind, path, workId: null });
+        if (result.status === "conflict") {
+          throw new Error(
+            result.occupantKind
+              ? contextEntryConflictMessage(name, result.occupantKind)
+              : (validateContextEntryName(name, siblings, kind)?.message ??
+                  contextEntryConflictMessage(name)),
+          );
+        }
       }
       onCreated?.(path);
     },
-    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources],
+    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, siblings],
   );
 
   const form = useInlineEdit({
     initial: "",
-    validate: (draft) => validateContextEntryName(draft, siblingNames, kind),
+    validate: (draft) => validateContextEntryName(draft, siblings, kind),
     onCommit: async (name) => {
       await handleSubmit(name);
       onDone();

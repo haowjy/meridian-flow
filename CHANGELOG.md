@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve typed rename and move suffixes through optimistic filing and server requests, including repair retries. Compare folder siblings literally and report the conflict occupant’s kind.
+
 - Preserve prose classification when MIME inference supplies an upload suffix.
 
 - Share destination naming between optimistic clients and server commands, and use the binary naming rule for upload intake.

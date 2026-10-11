@@ -76,7 +76,7 @@ export function deriveIdentityCommitPlan(
   editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
-  // Submit and compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
+  // Compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
   const stored = storedFilename(target.name, tab.kind === "new" ? undefined : location.leaf);
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
@@ -129,7 +129,7 @@ export function useIdentityCommit({
       const ownership = await resources.setLocation(projectId, key, {
         scheme: destination.scheme,
         folderPath: destination.folderPath,
-        name: plan.desired.name,
+        name: target.name.trim(),
         ...authority,
       });
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");

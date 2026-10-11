@@ -1,4 +1,5 @@
 /** Renders the mobile context browser. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -20,6 +21,7 @@ import {
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
 import type { ContextCreateKind } from "../context/context-create-kind";
+import type { ContextEntrySibling } from "../context/context-entry-name";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
@@ -159,9 +161,7 @@ function MobileFolderListing({
   // client-side feedback matching the desktop tree panel.
   const currentEntry = folder ? catalog?.findPath(folder) : catalog?.root;
   const currentDir = currentEntry?.kind === "dir" ? currentEntry : null;
-  const siblingNames = currentDir
-    ? (catalog?.children(currentDir.entryId).map((child) => child.name) ?? [])
-    : [];
+  const siblings = currentDir ? (catalog?.children(currentDir.entryId) ?? []) : [];
 
   const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
 
@@ -176,7 +176,7 @@ function MobileFolderListing({
           scheme={creating.scheme}
           parent={creating.parentPath}
           kind={creating.kind}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onDone={onCreateDone}
         />
       ) : null}
@@ -281,7 +281,7 @@ function FolderListingBody({
     void openDocument({ documentId: file.documentId, workId: workId ?? undefined });
   }
 
-  const siblingNames = children.map((child) => child.name);
+  const siblings = children;
 
   return (
     <ul className="flex flex-col">
@@ -292,7 +292,7 @@ function FolderListingBody({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onDrill={() => onSelectContextFolder(child.path)}
           onRequestDelete={onRequestDelete}
         />
@@ -304,7 +304,7 @@ function FolderListingBody({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onOpen={() => openFile(child)}
           onRequestDelete={onRequestDelete}
         />
@@ -319,7 +319,7 @@ function MobileCreateRow({
   scheme,
   parent,
   kind,
-  siblingNames,
+  siblings,
   onDone,
 }: {
   projectId: string;
@@ -328,7 +328,7 @@ function MobileCreateRow({
   parent: string;
   kind: ContextCreateKind;
   /** Names of siblings in the current folder, for live collision detection. */
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onDone: () => void;
 }) {
   const form = useCreateEntryForm({
@@ -336,7 +336,7 @@ function MobileCreateRow({
     scheme,
     kind,
     parent,
-    siblingNames,
+    siblings,
     onDone,
   });
   return (
@@ -357,7 +357,7 @@ function MobileFolderRow({
   projectId,
   editorWorkId,
   scheme,
-  siblingNames,
+  siblings,
   onDrill,
   onRequestDelete,
 }: {
@@ -365,7 +365,7 @@ function MobileFolderRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onDrill: () => void;
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
@@ -384,7 +384,7 @@ function MobileFolderRow({
           path={dir.path}
           currentName={dir.name}
           repairName={dir.namespaceRepairName}
-          siblingNames={siblingNames}
+          siblings={siblings}
           kind="folder"
           icon={Folder}
           onRenamed={setNoteOperationId}
@@ -430,7 +430,7 @@ function MobileFileRow({
   projectId,
   editorWorkId,
   scheme,
-  siblingNames,
+  siblings,
   onOpen,
   onRequestDelete,
 }: {
@@ -438,7 +438,7 @@ function MobileFileRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onOpen: () => void;
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
@@ -458,7 +458,7 @@ function MobileFileRow({
           path={file.path}
           currentName={file.name}
           repairName={file.namespaceRepairName}
-          siblingNames={siblingNames}
+          siblings={siblings}
           kind="file"
           icon={FileIcon}
           onRenamed={setNoteOperationId}
@@ -513,7 +513,7 @@ function MobileRenameRow({
   path,
   currentName,
   repairName,
-  siblingNames,
+  siblings,
   kind,
   icon: Icon,
   onRenamed,
@@ -526,7 +526,7 @@ function MobileRenameRow({
   path: string;
   currentName: string;
   repairName?: string;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   onRenamed: (operationId: string) => void;
@@ -540,7 +540,7 @@ function MobileRenameRow({
     path,
     currentName,
     repairName,
-    siblingNames,
+    siblings,
     kind,
     onRenamed,
     onDone,
