@@ -13,7 +13,6 @@ it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word h
   const h = createWriteToolHarness(
     { "chapter.md": evidence.before.join("\n\n") },
     {
-      onUnexpectedWriteError: (e) => console.error(e),
       segmentDraftWrites: true,
       semanticProvenance: createSemanticProvenanceWriter(),
     },
@@ -26,7 +25,7 @@ it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word h
     {
       command: "insert",
       file: "chapter.md",
-      after: model.getBlockId(blocks.at(-1)!),
+      after: model.getBlockId(blocks[blocks.length - 1]),
       content: evidence.inserted.slice(evidence.before.length).join("\n\n"),
     },
     context,
@@ -81,5 +80,208 @@ it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word h
       clients.add(client);
     }
   }
+  live.destroy();
+});
+
+it("keeps paragraph splits, merges and contiguous insertions as one change", async () => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  for (const [before, after] of [
+    ["Alpha road. Beta valley.", "Alpha road.\n\nBeta valley."],
+    ["Alpha road.\n\nBeta valley.", "Alpha road. Beta valley."],
+    ["Anchor.", "Anchor.\n\nOne.\n\nTwo.\n\nThree."],
+  ]) {
+    const h = createWriteToolHarness({ "chapter.md": before }, { segmentDraftWrites: true });
+    const live = new Y.Doc({ gc: false });
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
+    const result = await h.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        in: [1, before.split("\n\n").length],
+        content: after,
+      },
+      { sessionId: "chat", threadId: "chat", turnId: "structural" },
+    );
+    expect(result.isError).toBe(false);
+    const journal = await h.journal.readForReconstruction("chapter.md");
+    const review = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: h.liveDoc("chapter.md"),
+      model,
+      draftUpdates: journal.updates.map((row) => ({
+        id: row.seq,
+        actorTurnId: row.meta.actorTurnId ?? null,
+        updateData: row.update,
+      })),
+    });
+    expect(new Set(review.operations.map((op) => op.closureClassId)).size).toBe(1);
+    live.destroy();
+  }
+});
+
+it("keeps a six-paragraph new run independent of adjacent paragraph swaps, in the middle or at the end", async () => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const before = [
+    "Mara walks along the valley road.",
+    "She watches the mountain pass.",
+    "The priest follows her slowly.",
+  ];
+  const rewritten = [
+    "I walk along the valley road.",
+    "I watch the mountain pass.",
+    "The priest follows me slowly.",
+  ];
+  const inserted = Array.from(
+    { length: 6 },
+    (_, i) => `New scene ${i + 1} opens beyond the village walls.`,
+  );
+  for (const position of [1, 3]) {
+    const h = createWriteToolHarness(
+      { "chapter.md": before.join("\n\n") },
+      { segmentDraftWrites: true },
+    );
+    const live = new Y.Doc({ gc: false });
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
+    const after = [...rewritten.slice(0, position), ...inserted, ...rewritten.slice(position)];
+    expect(
+      (
+        await h.core.write(
+          { command: "replace", file: "chapter.md", in: [1, 3], content: after.join("\n\n") },
+          { sessionId: "chat", threadId: "chat", turnId: "mixed" },
+        )
+      ).isError,
+    ).toBe(false);
+    const journal = await h.journal.readForReconstruction("chapter.md");
+    const rows = journal.updates.map((row) => ({
+      id: row.seq,
+      actorTurnId: row.meta.actorTurnId ?? null,
+      updateData: row.update,
+    }));
+    expect(rows).toHaveLength(4);
+    const review = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: h.liveDoc("chapter.md"),
+      model,
+      draftUpdates: rows,
+    });
+    expect(new Set(review.operations.map((op) => op.closureClassId)).size).toBe(4);
+    const newHunks = review.hunks.filter((hunk) => hunk.kind === "text" && !hunk.deletedText);
+    expect(newHunks).toHaveLength(6);
+    expect(new Set(newHunks.flatMap((hunk) => hunk.operationIds)).size).toBe(1);
+    live.destroy();
+  }
+});
+
+it("groups repeated matches by paragraph, but independent writes never group just for sharing one", async () => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const h = createWriteToolHarness(
+    { "chapter.md": "She climbs. She watches the stars.\n\nShe waits by the river." },
+    { segmentDraftWrites: true },
+  );
+  const live = new Y.Doc({ gc: false });
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
+  const review = async () => {
+    const journal = await h.journal.readForReconstruction("chapter.md");
+    return computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: h.liveDoc("chapter.md"),
+      model,
+      draftUpdates: journal.updates.map((row) => ({
+        id: row.seq,
+        actorTurnId: row.meta.actorTurnId ?? null,
+        updateData: row.update,
+      })),
+    });
+  };
+  expect(
+    (
+      await h.core.write(
+        { command: "replace", file: "chapter.md", find: "She", all: true, content: "I" },
+        { sessionId: "a", threadId: "a", turnId: "pronouns" },
+      )
+    ).isError,
+  ).toBe(false);
+  expect(new Set((await review()).operations.map((op) => op.closureClassId)).size).toBe(2);
+  expect(
+    (
+      await h.core.write(
+        { command: "replace", file: "chapter.md", find: "stars", content: "clouds" },
+        { sessionId: "b", threadId: "b", turnId: "independent" },
+      )
+    ).isError,
+  ).toBe(false);
+  expect(new Set((await review()).operations.map((op) => op.closureClassId)).size).toBe(3);
+  // Editing newly supplied text really depends on that write, even from another chat.
+  expect(
+    (
+      await h.core.write(
+        { command: "replace", file: "chapter.md", find: "clouds", content: "moon" },
+        { sessionId: "c", threadId: "c", turnId: "dependent" },
+      )
+    ).isError,
+  ).toBe(false);
+  expect(new Set((await review()).operations.map((op) => op.closureClassId)).size).toBe(3);
+  live.destroy();
+});
+
+it("absorbs overlapping edits before and after a large rewrite, transitively, while keeping untouched words separate", async () => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const before = [
+    "Mara raises the jade sword and waits beside the old gate.",
+    "The priest walks down the quiet road.",
+    "Snow falls over the distant mountain.",
+  ];
+  const h = createWriteToolHarness(
+    { "chapter.md": before.join("\n\n") },
+    { segmentDraftWrites: true },
+  );
+  const live = new Y.Doc({ gc: false });
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
+  const write = async (find: string, content: string, threadId: string) => {
+    expect(
+      (
+        await h.core.write(
+          { command: "replace", file: "chapter.md", find, content },
+          { sessionId: threadId, threadId, turnId: threadId },
+        )
+      ).isError,
+    ).toBe(false);
+  };
+  const count = async () => {
+    const journal = await h.journal.readForReconstruction("chapter.md");
+    const review = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: h.liveDoc("chapter.md"),
+      model,
+      draftUpdates: journal.updates.map((row) => ({
+        id: row.seq,
+        actorTurnId: row.meta.actorTurnId ?? null,
+        updateData: row.update,
+      })),
+    });
+    return new Set(review.operations.map((op) => op.closureClassId)).size;
+  };
+  await write("jade", "silver", "before-overlap");
+  await write("old", "ancient", "before-independent");
+  const target = [
+    "I raise the iron blade and wait beside the ancient gate.",
+    "The priest runs down the silent road.",
+    "Rain falls over the nearby mountain.",
+  ];
+  expect(
+    (
+      await h.core.write(
+        { command: "replace", file: "chapter.md", in: [1, 3], content: target.join("\n\n") },
+        { sessionId: "big", threadId: "big", turnId: "big" },
+      )
+    ).isError,
+  ).toBe(false);
+  expect(await count()).toBe(4);
+  await write("iron", "steel", "after-overlap");
+  expect(await count()).toBe(4);
+  await write("steel", "bronze", "transitive");
+  expect(await count()).toBe(4);
+  await write("gate", "arch", "after-independent");
+  expect(await count()).toBe(5);
   live.destroy();
 });
