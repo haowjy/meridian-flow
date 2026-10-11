@@ -306,14 +306,20 @@ export async function guardWorkContextRestore(db: Database, workId: string): Pro
     ),
   );
   const rows = await currentDrizzleDb(db).execute(sql`
-    SELECT d.id FROM documents d JOIN folders f
-      ON f.context_source_id = d.context_source_id AND f.parent_id IS NOT DISTINCT FROM d.folder_id
-      AND f.name = d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END
-    WHERE d.kind = 'content'
-      AND (d.deleted_by_work_id = ${workId}::uuid OR f.deleted_by_work_id = ${workId}::uuid)
-      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
-      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
-    LIMIT 1
+    WITH occupants AS (
+      SELECT d.context_source_id, d.folder_id AS parent_id,
+        d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
+        d.deleted_by_work_id = ${workId}::uuid AS arriving
+      FROM documents d WHERE d.kind = 'content'
+        AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+        AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
+      UNION ALL
+      SELECT f.context_source_id, f.parent_id, f.name, f.deleted_by_work_id = ${workId}::uuid
+      FROM folders f WHERE f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+        AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
+    )
+    SELECT 1 FROM occupants GROUP BY context_source_id, parent_id, name
+    HAVING count(*) > 1 AND bool_or(arriving) LIMIT 1
   `);
   if (rows.length > 0) throw new ContextEntryConflictError();
 }

@@ -6,7 +6,7 @@
 
 - Document creation reports the canonical URI, including when a prose suffix was typed. Concurrent file and folder claims cannot produce a shared name.
 
-- Existing prose documents, including deleted documents and saved aliases, now use extensionless names. Name clashes keep every document with the next available numbered suffix.
+- Existing prose documents, including deleted documents and saved aliases, now use extensionless names. Name clashes keep every document with the next available numbered suffix, and catalog cursors reset to the updated names.
 
 - Document names accept prose suffixes without displaying them; registered code and data extensions keep their spelling. Reads and creates share the same document identity, renames keep non-prose extensions, and files cannot take a sibling folder’s name.
 

@@ -15,7 +15,7 @@ WITH RECURSIVE folder_paths AS (
  SELECT id, name AS path FROM folders WHERE parent_id IS NULL
  UNION ALL SELECT f.id, p.path || '/' || f.name FROM folders f JOIN folder_paths p ON f.parent_id = p.id
 )
-SELECT d.id, d.context_source_id, d.folder_id, d.deleted_at,
+SELECT d.id, d.context_source_id, d.folder_id, d.deleted_at, d.deleted_by_work_id,
  d.name AS old_name, d.extension AS old_extension, d.file_type AS old_type,
  coalesce(p.path || '/', '') AS prefix,
  d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS old_basename,
@@ -56,7 +56,7 @@ BEGIN
    EXIT WHEN NOT (
     (e = '' AND r.filetype = 'markdown' AND EXISTS (SELECT 1 FROM document_name_registry WHERE extension = suffix AND filetype <> 'markdown'))
     OR EXISTS (SELECT 1 FROM folders f WHERE f.context_source_id = r.context_source_id
-      AND f.parent_id IS NOT DISTINCT FROM r.folder_id AND f.deleted_at IS NULL
+      AND f.parent_id IS NOT DISTINCT FROM r.folder_id AND (f.deleted_at IS NULL OR f.deleted_by_work_id = r.deleted_by_work_id)
       AND f.name = candidate || CASE WHEN e = '' THEN '' ELSE '.' || e END)
     OR (r.deleted_at IS NULL AND EXISTS (SELECT 1 FROM document_name_changes c
       WHERE c.id <> r.id AND c.context_source_id = r.context_source_id
@@ -90,8 +90,8 @@ INSERT INTO document_address_changes
  SELECT 'previous', ctid::text, path, path FROM document_previous_locations
  UNION ALL SELECT 'ahead', ahead_id::text, path, path FROM link_ahead_refs
  UNION ALL SELECT 'link', ctid::text, address, address FROM document_links WHERE address IS NOT NULL
- UNION ALL SELECT 'upload', document_id::text, final_path, final_path FROM upload_intakes
- UNION ALL SELECT 'upload-uri', document_id::text, canonical_uri, canonical_uri FROM upload_intakes
+ UNION ALL SELECT 'upload', u.document_id::text, u.final_path, u.final_path FROM upload_intakes u WHERE EXISTS (SELECT 1 FROM document_name_changes c WHERE c.id = u.document_id)
+ UNION ALL SELECT 'upload-uri', u.document_id::text, u.canonical_uri, u.canonical_uri FROM upload_intakes u WHERE EXISTS (SELECT 1 FROM document_name_changes c WHERE c.id = u.document_id)
  UNION ALL SELECT 'result-uri', id::text, results_uri, results_uri FROM project_results WHERE results_uri ~ '^(manuscript|kb|user|unfiled|scratch|uploads)://';
 --> statement-breakpoint
 DO $$
@@ -107,7 +107,11 @@ BEGIN
    SELECT document_id INTO target FROM upload_intakes WHERE document_id = r.id::uuid;
   ELSIF r.kind = 'ahead' THEN
    SELECT s.id, a.settled_document_id INTO source, target FROM link_ahead_refs a JOIN context_sources s
-    ON s.project_id = a.project_id AND s.slug = a.scheme AND s.work_id IS NOT DISTINCT FROM a.work_id
+    ON (
+      coalesce(s.project_id, (SELECT w.project_id FROM works w WHERE w.id = s.work_id)) = a.project_id
+      OR (a.scheme = 'user' AND EXISTS (SELECT 1 FROM projects holder JOIN projects personal
+        ON personal.user_id = holder.user_id AND personal.is_personal WHERE holder.id = a.project_id AND personal.id = s.project_id))
+    ) AND s.slug = a.scheme AND s.work_id IS NOT DISTINCT FROM a.work_id
     AND s.root_thread_id IS NOT DISTINCT FROM a.root_thread_id WHERE a.ahead_id = r.id::uuid LIMIT 1;
   END IF;
   IF r.kind = 'link' THEN
@@ -143,8 +147,19 @@ BEGIN
  END LOOP;
  UPDATE document_previous_locations p SET path = a.address FROM document_address_changes a WHERE a.kind = 'previous' AND p.ctid = a.id::tid;
  UPDATE link_ahead_refs p SET path = a.address FROM document_address_changes a WHERE a.kind = 'ahead' AND p.ahead_id = a.id::uuid;
+ UPDATE document_address_changes c SET address = regexp_replace(c.old_address, '[^/]*$', '') || substring(a.address FROM '[^/]*$')
+ FROM document_links l JOIN document_address_changes a ON a.kind = 'ahead' AND a.id = l.ahead_id::text
+ WHERE c.kind = 'link' AND l.ctid = c.id::tid;
  UPDATE document_links p SET address = a.address FROM document_address_changes a WHERE a.kind = 'link' AND p.ctid = a.id::tid;
  UPDATE upload_intakes p SET canonical_uri = a.address FROM document_address_changes a WHERE a.kind = 'upload-uri' AND p.document_id = a.id::uuid;
  UPDATE project_results p SET results_uri = a.address FROM document_address_changes a WHERE a.kind = 'result-uri' AND p.id = a.id::uuid;
  UPDATE upload_intakes p SET final_path = a.address FROM document_address_changes a WHERE a.kind = 'upload' AND p.document_id = a.id::uuid;
 END $$;
+
+--> statement-breakpoint
+-- Catalog entries/commits are derived address checkpoints, not writer content. Fence old
+-- cursors instead of letting an old delta replay resurrect pre-migration document names.
+DELETE FROM context_catalog_commits; -- migration-lint: skip DELETE_WITHOUT_WHERE (all rows are derived replay checkpoints; the generation reset forces canonical snapshots, and no writer content is removed)
+DELETE FROM context_catalog_entries; -- migration-lint: skip DELETE_WITHOUT_WHERE (all rows are derived metadata checkpoints rebuilt from document identity, not writer content)
+UPDATE context_catalog_scope_heads SET generation = gen_random_uuid(), head_revision = 0, oldest_revision = 1; -- migration-lint: skip UPDATE_WITHOUT_WHERE (every catalog scope must fence its pre-migration replay cursor)
+UPDATE context_availability_heads SET generation = nextval('context_availability_generation_seq'); -- migration-lint: skip UPDATE_WITHOUT_WHERE (every cached availability scope must revalidate the rewritten addresses)
