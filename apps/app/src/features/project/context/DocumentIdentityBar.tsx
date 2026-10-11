@@ -1,6 +1,6 @@
 /**
  * DocumentIdentityBar — where an open document lives: its path, which navigates,
- * and the chips about it (Choose a home for an untitled draft, device-only, a
+ * and the chips about it (Choose a home for a document in Unfiled, device-only, a
  * refused move, a review). The Editor shows it as a band above the page; a
  * document beside the chat shows it in the dock header (`variant="header"`).
  */
@@ -106,8 +106,8 @@ export function DocumentIdentityBar({
     setFieldOpen(true),
   );
 
-  // An untitled draft is invited to choose a home. Once it has one, renaming
-  // and moving belong to the lists that show it. Uploads aren't writing material.
+  // A document in Unfiled, untitled or named, is invited to choose a home. Once it
+  // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip = !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
 

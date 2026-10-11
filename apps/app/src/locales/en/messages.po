@@ -816,8 +816,8 @@ msgid "Choose a document or enter a web address or document path."
 msgstr "Choose a document or enter a web address or document path."
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "Choose a home"
-msgstr "Choose a home"
+#~ msgid "Choose a home"
+#~ msgstr "Choose a home"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -1865,6 +1865,10 @@ msgstr "fig:terrace"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
+#: src/features/project/context/IdentityChips.tsx
+msgid "File it"
+msgstr "File it"
+
 #: src/features/project/context/use-create-entry-form.ts
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
@@ -1873,6 +1877,10 @@ msgstr "File name"
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "File suggestions"
 msgstr "File suggestions"
+
+#: src/features/project/context/IdentityChips.tsx
+msgid "File this document"
+msgstr "File this document"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2660,6 +2668,10 @@ msgstr "Not compacted"
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
 msgstr "Not created"
+
+#: src/features/project/context/IdentityChips.tsx
+msgid "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
+msgstr "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
 
 #: src/routes/__root.tsx
 msgid "Not Found"
@@ -3979,8 +3991,8 @@ msgid "This document is still opening."
 msgstr "This document is still opening."
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
-msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
