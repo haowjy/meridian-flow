@@ -62,19 +62,27 @@ export function folderPlacementGraph(
     if (alias) return { parent: alias.id, base: location, suffix: "" };
     // A child path may name an ancestor's earlier optimistic rename. Translate it back
     // to installed identity before looking up the actual destination parent.
-    const queue = [location];
-    const seen = new Set<string>([location.path]);
-    for (let i = 0; i < queue.length && i < aliases.length + ordered.length; i++) {
+    // Each identity can translate at most once on a branch. Revisiting it describes
+    // an alias cycle, not another ancestor. This bounds traversal by simple paths
+    // through the finite identity graph, including path-growing rename cycles.
+    const queue = [{ location, used: new Set<string>() }];
+    const key = (at: ResourceLocation, used: Set<string>) =>
+      JSON.stringify([at.scheme, ownerOf(at), at.path, [...used].sort()]);
+    const seen = new Set<string>([key(location, new Set())]);
+    for (let i = 0; i < queue.length; i++) {
+      const current = queue[i];
       for (const a of aliases) {
-        if (!contains(a.location, queue[i])) continue;
+        if (current.used.has(a.id) || !contains(a.location, current.location)) continue;
         const node = ordered.find((n) => n.id === a.id);
         if (!node) continue;
         const translated = {
           ...node.canonical,
-          path: node.canonical.path + queue[i].path.slice(a.location.path.length),
+          path: node.canonical.path + current.location.path.slice(a.location.path.length),
         };
-        if (seen.has(translated.path)) continue;
-        seen.add(translated.path);
+        const used = new Set([...current.used, a.id]);
+        const state = key(translated, used);
+        if (seen.has(state)) continue;
+        seen.add(state);
         const match = ordered.find(
           (n) =>
             n.id !== exclude &&
@@ -83,7 +91,7 @@ export function folderPlacementGraph(
             n.canonical.path === translated.path,
         );
         if (match) return { parent: match.id, base: location, suffix: "" };
-        queue.push(translated);
+        queue.push({ location: translated, used });
       }
     }
     return null;
