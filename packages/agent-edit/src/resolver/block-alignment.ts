@@ -2,6 +2,7 @@
 
 import type { Block } from "../codec-types.js";
 import { weightedOrderedMatches } from "../ordered-matching.js";
+import { retainedBlockRuns } from "./retained-block-runs.js";
 
 export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "keep"; old: number; next: number }
@@ -145,9 +146,7 @@ function edgeSimilarity(oldText: string, newText: string): number {
   return shared * 3 >= limit ? shared + 1 : 0;
 }
 
-/** Word correspondence across adjacent blocks identifies split/merge boundaries before lowering.
- * Kept blocks fence the correspondence search; unrelated insertions never inherit a boundary.
- */
+/** Connected retained runs identify structural boundaries; kept blocks fence each diff. */
 function recognizeBoundaries(
   steps: BlockAlignmentStep[],
   oldBlocks: readonly Block[],
@@ -158,123 +157,50 @@ function recognizeBoundaries(
     if (end !== steps.length && steps[end].kind !== "keep") continue;
     const gap = steps.slice(start, end);
     start = end + 1;
-    if (!gap.some((step) => step.kind === "change")) continue;
-    const oldIndices = gap.flatMap((step) => ("old" in step ? [step.old] : []));
-    const newIndices = gap.flatMap((step) => ("next" in step ? [step.next] : []));
-    const positions = (indices: number[], blocks: readonly Block[]) => {
-      let offset = 0;
-      return indices.map((index) => {
-        const from = offset;
-        offset += blocks[index].textContent.length + 2;
-        return { index, from, to: offset - 2 };
-      });
+    const old = gap.flatMap((step, owner) =>
+      "old" in step ? [{ owner, text: oldBlocks[step.old].textContent }] : [],
+    );
+    const next = gap.flatMap((step, owner) =>
+      "next" in step ? [{ owner, text: newBlocks[step.next].textContent }] : [],
+    );
+    const parents = gap.map((_, index) => index);
+    const root = (index: number): number => {
+      while (parents[index] !== index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+      }
+      return index;
     };
-    const oldPositions = positions(oldIndices, oldBlocks);
-    const newPositions = positions(newIndices, newBlocks);
-    const before = oldIndices.map((index) => oldBlocks[index].textContent).join("\n\n");
-    const after = newIndices.map((index) => newBlocks[index].textContent).join("\n\n");
-    const correspondences = new Map<number, Set<number>>();
-    // Match ordered occurrences only when a whole word's multiplicity is unchanged.
-    // Repeated boilerplate must not displace a unique moved sentence's correspondence.
-    const occurrences = (text: string) => {
-      const words = new Map<string, number[]>();
-      for (const match of text.matchAll(/[\p{L}\p{N}\p{M}_]+/gu)) {
-        const offsets = words.get(match[0]) ?? [];
-        offsets.push(match.index);
-        words.set(match[0], offsets);
-      }
-      return words;
+    const union = (owners: number[]) => {
+      for (const owner of owners) parents[root(owner)] = root(owners[0]);
     };
-    const targetWords = occurrences(after);
-    for (const [word, offsets] of occurrences(before)) {
-      const targets = targetWords.get(word);
-      if (!targets || targets.length !== offsets.length) continue;
-      for (let index = 0; index < offsets.length; index++) {
-        const old = oldPositions.find(
-          (pos) => offsets[index] >= pos.from && offsets[index] < pos.to,
-        );
-        const next = newPositions.find(
-          (pos) => targets[index] >= pos.from && targets[index] < pos.to,
-        );
-        if (!old || !next) continue;
-        const destinations = correspondences.get(old.index) ?? new Set<number>();
-        destinations.add(next.index);
-        correspondences.set(old.index, destinations);
-      }
+    // Adjacent structural steps already form one physical insert/delete run.
+    for (let index = 1; index < gap.length; index++) {
+      if (
+        (gap[index].kind === "add" || gap[index].kind === "remove") &&
+        (gap[index - 1].kind === "add" || gap[index - 1].kind === "remove")
+      )
+        union([index - 1, index]);
     }
-    const owners = new Map<BlockAlignmentStep, Set<BlockAlignmentStep>>();
-    for (const change of gap) {
-      if (change.kind !== "change") continue;
-      for (const structure of gap) {
-        const split =
-          structure.kind === "add" &&
-          correspondences.get(change.old)?.has(change.next) &&
-          correspondences.get(change.old)?.has(structure.next);
-        const merge =
-          structure.kind === "remove" &&
-          correspondences.get(change.old)?.has(change.next) &&
-          correspondences.get(structure.old)?.has(change.next);
-        const redistributed =
-          structure.kind === "change" &&
-          structure !== change &&
-          (correspondences.get(change.old)?.has(structure.next) ||
-            correspondences.get(structure.old)?.has(change.next));
-        if (!split && !merge && !redistributed) continue;
-        const group = owners.get(change) ?? new Set([change]);
-        group.add(structure);
-        owners.set(change, group);
-      }
-    }
-    // Union connected correspondence groups before assigning identity. Structural runs
-    // between or touching their members are inseparable insertion/removal boundaries.
-    const components = [...owners.values()];
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let index = 0; index < components.length; index++) {
-        const component = components[index];
-        for (let other = components.length - 1; other > index; other--) {
-          if (![...components[other]].some((step) => component.has(step))) continue;
-          for (const step of components[other]) component.add(step);
-          components.splice(other, 1);
-          changed = true;
-        }
-        const indices = [...component].map((step) => gap.indexOf(step));
-        const from = Math.min(...indices),
-          to = Math.max(...indices);
-        const span = gap.slice(from, to + 1);
-        if (
-          !span.every(
-            (step) => component.has(step) || step.kind === "add" || step.kind === "remove",
-          )
-        )
-          continue;
-        let left = from,
-          right = to;
-        if (gap[from].kind === "add" || gap[from].kind === "remove")
-          while (left > 0 && (gap[left - 1].kind === "add" || gap[left - 1].kind === "remove"))
-            left--;
-        if (gap[to].kind === "add" || gap[to].kind === "remove")
-          while (
-            right + 1 < gap.length &&
-            (gap[right + 1].kind === "add" || gap[right + 1].kind === "remove")
-          )
-            right++;
-        for (const step of gap.slice(left, right + 1)) {
-          if (!component.has(step)) {
-            component.add(step);
-            changed = true;
-          }
-        }
-      }
-    }
-    // Kept blocks fence the gap; unrelated changed blocks must not bridge a component.
-    for (const component of components) {
-      const indices = [...component].map((step) => gap.indexOf(step)).sort((a, b) => a - b);
-      if (indices.some((position, offset) => offset > 0 && position !== indices[offset - 1] + 1))
-        continue;
-      const boundary = {};
-      for (const member of component) member.structuralBoundary = boundary;
+    for (const run of retainedBlockRuns(
+      old.map((block) => block.text),
+      next.map((block) => block.text),
+    ))
+      union([
+        ...run.old.map((index) => old[index].owner),
+        ...run.next.map((index) => next[index].owner),
+      ]);
+    const components = new Map<number, BlockAlignmentStep[]>();
+    gap.forEach((step, index) => {
+      const key = root(index),
+        members = components.get(key) ?? [];
+      members.push(step);
+      components.set(key, members);
+    });
+    for (const members of components.values()) {
+      if (members.length < 2) continue;
+      const identity = {};
+      for (const step of members) step.structuralBoundary = identity;
     }
   }
 }
