@@ -218,8 +218,9 @@ The store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be
 durable while Hocuspocus has not applied it. Certification retakes the mutation
 lock, checks generation and `next_admission_sequence`, and conditionally updates
-the document at the captured `location_version`. A move increments that counter
-at the common `recordDocumentMove` seam, including same-source folder renames.
+the document at the captured `location_version`. Every tree lifecycle change
+(move, delete, restore, reveal) increments that counter through context's
+`bumpLocationVersions` (`tree/node-locations.ts`).
 Serialization runs outside the lock unless the caller already owns a transaction.
 For an initialized live document, lifecycle ensure is read-only: retaining an
 ambient head-row update lock would deadlock the subsequent root journal batch.
@@ -238,8 +239,8 @@ canonical URI captured under the journal lock. Rows are keyed by
 `(source_document_id, link_key)`: `doc:<id>` and `asset:<id>` keys carry the
 target id, `ahead:<uuid>` keys the ahead id and its decoded address, and a
 contextual link keys by its href. It is a hint from a certified cut, never link
-authority. Manifests (and already soft-deleted staged-push holders without a
-live URI) certify with no link rows. Changing the extractor must bump its
+authority. A holder with no live address (deleted, or under a deleted folder or
+Work) certifies with no link rows. Changing the extractor must bump its
 version to invalidate older output; never add a second post-write publisher.
 
 A certified derive whose rows hold `ahead:` refs registers the ones the registry

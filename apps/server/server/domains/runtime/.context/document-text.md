@@ -41,7 +41,7 @@ shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
 `thread_shown_links`). A row holds the identity shown (`ref`: a link's
 `doc:`/`ahead:` ref or an uploaded picture's `asset:<id>`, the link index's key
 space; never in model text), the absolute address shown,
-the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
+the holder URI, the view (`live` or `draft:<draftId>`) and the turn. When a
 write rewrites links, ref assignment binds them to these rows. The model
 never sees them: agent-edit's `showing { holderUri, view, links }` stays
 host-only on `WriteOutcome`, receipts and concurrent runs, a search hit's

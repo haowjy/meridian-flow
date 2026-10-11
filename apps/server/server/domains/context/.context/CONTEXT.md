@@ -94,24 +94,11 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   means the subtree is gone from this scope, not pending refetch.
   Entries are the live tree view (`visibleDocuments(LIVE_TREE)`,
   `visibleFolders(LIVE_TREE)`): a draft's hidden rows and folders never reach
-  it. Source refreshes publish in the mutating transaction; post-Apply/Discard
-  project refreshes go through this adapter's deferred queue, retry policy, and
-  failure reporting. Repairs coalesce per catalog
-  scope. A running batch stays frozen; refreshes committed during it queue one dirty rerun.
-  Overlapping pending scope groups merge transitively and retain per-scope
-  invalidations and per-authority generation maxima. All scopes and generations
-  in a batch publish atomically with one shared catalog commit ID; disjoint
-  groups may run concurrently. Queued and running requests are drain-tracked.
-  Exhausted Postgres lock timeouts are warnings; other failures remain errors.
-  Database locks still arbitrate independent processes.
-  A batch containing `refreshProjectDocuments` reserves a fresh generation before
-  any catalog scope lock, under a short `lock_timeout`; this supersedes older
-  source reservations for the same authority. Source-only batches publish their
-  commit-reserved generations. The route only attaches repair to `waitUntil`.
-  Post-draft refreshes settle after the queue reports failures, like detached source
-  repairs, so the transport cannot log exhausted contention again as an error.
-  `reserve` and `publishReserved` are required port methods with no non-atomic
-  fallback. Other project and Work sources retain their source-specific visibility.
+  it. Source refreshes (`refreshSources`) publish in the mutating transaction;
+  Apply's draft tree step and the Discard kernel reconcile their sources that
+  way too, so there is no post-commit catalog refresh for drafts.
+  `reserve` and `publishReserved` are required availability port methods with no
+  non-atomic fallback. Other project and Work sources retain their source-specific visibility.
   `ContextFS` owns result-aware single-source transactions;
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after

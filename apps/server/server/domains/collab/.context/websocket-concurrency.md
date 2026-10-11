@@ -33,6 +33,6 @@ state.
 
 Live writer-admission failure closes with `1013 writer-journal-admission-failed`
 (retryable). Drive the close through the raw crossws peer
-(`closeWriterTransport` → `wsPeer.close`). Do not rely on throwing
+(`closeTransport` → `wsPeer.close`). Do not rely on throwing
 `permissionDenied`: Hocuspocus swallows a thrown error's `.code`, so only the
 direct peer close preserves the declared code and reason.

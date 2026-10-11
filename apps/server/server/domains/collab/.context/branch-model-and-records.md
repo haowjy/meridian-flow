@@ -155,7 +155,7 @@ branches; Apply is `domain/draft-publication.ts`.
 `domain/document-creation.ts` owns tracked-document materialization transactions.
 Context and bootstrap supply the row and initial content. They commit together;
 warm-room publication follows the enclosing transaction's commit. Tree presence
-comes from context's live/draft SQL views, never a Yjs manifest.
+comes from context's tree views, never a Yjs manifest.
 
 ## Durable records
 

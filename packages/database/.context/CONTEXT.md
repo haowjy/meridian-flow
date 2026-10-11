@@ -64,10 +64,9 @@ never a bare `Date` in a template. Canonical patterns:
 - **Typed comparators** — `lt`/`eq`/`gt` encode the `Date` through the column
   type so postgres-js receives an ISO string. Use this for timestamp comparisons
   instead of embedding raw `Date` values in `sql` fragments.
-- **`::timestamptz` round-trip** — CAS revision tokens are read as `::text` and
-  compared with `${revision}::timestamptz`, keeping microsecond precision:
-  [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
-  (`documentRevisionWhere` + the `updatedAt::text` selects).
+- **`::timestamptz` cast** — keyset cursors bind the ISO string and cast it in
+  SQL (`${cursorActivity}::timestamptz`):
+  [`chat-feed-repository.ts`](../../../apps/server/server/domains/threads/adapters/drizzle/chat-feed-repository.ts).
 
 ### Thread inbox kinds
 
@@ -225,7 +224,7 @@ Existing databases that ran the pre-relaunch chain must be reset with
 `pnpm db:reset` (local data is destroyed), not incrementally migrated.
 
 The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
-change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+change-trail lifecycle functions/triggers on `branch_write_journal`. The three
 functions in `src/functions/` remain a separate post-migration install that the
 `db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
 Works: the historical No Work and thread binding backfills had no rows to
@@ -300,8 +299,7 @@ What the move keeps and changes:
 
 ### Works columns that must not return
 
-`works` lives in [`../src/schema/content.ts`](../src/schema/content.ts)
-(`src/schema/works.ts` re-exports it). `visibility` and `persistence` were
+`works` lives in [`../src/schema/content.ts`](../src/schema/content.ts). `visibility` and `persistence` were
 speculative columns that no code read. They are dropped. If multi-writer
 sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
 those shapes. Works are archived (visibility) or soft-deleted with a

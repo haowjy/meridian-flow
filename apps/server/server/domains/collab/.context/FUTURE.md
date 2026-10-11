@@ -9,6 +9,12 @@
 - Extend `adapters/drizzle-change-trail-aggregate.db.test.ts` history regression
   with old `turn_trail_work` rows as well as settled shells, explicitly protecting
   both candidate-page predicates from independent regressions.
+- The derivation recovery sweep's stale query scans every current document every
+  ten seconds per process (100,000 current documents took about 100 ms; cost is
+  linear). LIMIT 100 bounds returned rows, not the scan. Revisit when sweep cost
+  shows up in production metrics: watermark columns on the head row with a
+  partial index, or a work-budgeted cursor with an explicit recovery-latency
+  tradeoff.
 
 ## Reply save and room admission statement counts
 

@@ -193,9 +193,10 @@ prop that drifts.
 <h2>The one consent point: Apply</h2>
 <p>
 <span class="gate-word">Apply is consent.</span> Clicking it means the writer
-accepted that the current draft — the <em>whole</em> branch, including writer
-edits made after preview — replaces live. There is no partial apply, no
-machine arbitration of meaning. Proposal cards offer selective
+accepted that each selected item's <em>whole</em> current branch, including
+writer edits made after preview, replaces live, with its tree change (reveal,
+restore, rename back). Within an item there is no partial apply and no machine
+arbitration of meaning; an item whose path is taken is held. Proposal cards offer selective
 <em>Discard</em> only, grouped by server-vended discard class.
 </p>
 <p>
@@ -205,44 +206,18 @@ The writer's protection is not a veto layer. It is two things:
   <li><strong>Seeing what Apply will do</strong> — the review surface, and a
       planned live-vs-draft diff mode
       (<a href="https://github.com/haowjy/meridian-flow/issues/421">#421</a>).</li>
-  <li><strong>Refusing a stale Apply</strong>: decided, not yet built (below).</li>
+  <li><strong>Refusing a stale Apply</strong> (below).</li>
 </ol>
 
-<details>
-<summary>Decided, not built: refuse a stale Apply (#420)</summary>
 <p>
-<strong>Not implemented.</strong> Apply takes only <code>{ draftId }</code> and
-pushes the branch against whatever live holds; tracked in
-<a href="https://github.com/haowjy/meridian-flow/issues/420">#420</a>. The
-decided rule: Apply consents only to replacing <em>the live the writer was
-looking at</em>. If live advanced past the draft's rendered pull state at the
-moment of Apply, the server refuses (<code>git push</code> non-fast-forward
-semantics). The planned mechanism:
+A stale Apply is refused, never merged on the writer's behalf. Each item
+carries the tokens its review rendered (location version, the live text's
+full-state fingerprint, the branch generation); Apply compares them under the
+batch's locks and answers <code>stale</code> when any moved, so the writer
+looks again. A deletion moves the fingerprint, which a state vector would miss.
+Pulls (live to draft) are never gated.
+(<code>domain/draft-publication.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
 </p>
-<ol>
-  <li><strong>Type:</strong> Apply requires a branded
-      <code>expectedLiveHead</code> token. Calling apply without declaring a
-      base is a compile error.</li>
-  <li><strong>Source:</strong> the token is server-minted from the pull
-      bookkeeping the draft already maintains; the client echoes the
-      watermark it <em>rendered</em>. One source of truth for "what has the
-      draft seen."</li>
-  <li><strong>Check:</strong> a fast-forward guard
-      (<code>expectedLiveHead</code> vs current head) inside the apply
-      transaction, under the same serialization that orders live writes.
-      Refusal is total — nothing partially applied.</li>
-  <li><strong>Recovery is automatic:</strong> refusal → pull refreshes the
-      draft → AI re-proposes → writer applies again. The refusal is a retry
-      loop that resolves itself; the writer's only job is to look and click
-      again.</li>
-</ol>
-<p class="muted">
-Detection is a state-vector comparison (live's SV ≤ draft's pulled SV ⇔
-"draft is up to date"); refusal is application-layer because CRDTs cannot
-refuse. Pulls (live→draft) are <strong>never</strong> gated — do not
-generalize the guard onto the pull path.
-</p>
-</details>
 
 <h2>The durable record</h2>
 <ul class="rule-list">
@@ -271,7 +246,7 @@ generalize the guard onto the pull path.
   <li><strong>Publish-time rebase</strong> — rejected on product grounds: it
       would have the machine arbitrate meaning. Preserved as a rejected
       alternative in the work archive
-      (<code>work/draft-simplify/design/publish-time-rebase.md</code>).</li>
+      (<code>archive/work/draft-simplify/design/publish-time-rebase.md</code>).</li>
   <li><strong>Per-edit accept surfaces and sweep fan-out</strong> — made
       routine edits feel exceptional; consent belongs at one edge, not
       smeared across every change.</li>
