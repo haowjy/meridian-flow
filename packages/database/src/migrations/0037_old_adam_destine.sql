@@ -46,10 +46,28 @@ SELECT d.id, d.context_source_id, d.folder_id, d.deleted_at, d.deleted_by_work_i
  false AS allocated
 FROM documents d LEFT JOIN folder_paths p ON p.id = d.folder_id WHERE d.kind = 'content';
 --> statement-breakpoint
+-- Reservations without a content row participate in the same canonical allocation.
+INSERT INTO document_name_changes
+SELECT u.document_id, u.context_source_id, f.id, NULL::timestamptz, NULL::uuid,
+ CASE WHEN registry.extension IS NULL THEN basename ELSE left(basename, length(basename) - length(registry.extension) - 1) END,
+ coalesce(registry.extension, ''), u.file_type, prefix, basename,
+ basename, '', u.file_type, false
+FROM upload_intakes u
+CROSS JOIN LATERAL (SELECT regexp_replace(u.final_path, '[^/]*$', '') AS prefix,
+ substring(u.final_path FROM '[^/]*$') AS basename) path
+LEFT JOIN document_name_registry registry ON registry.extension = lower(substring(basename FROM '[.]([^.]*)$'))
+LEFT JOIN (
+ WITH RECURSIVE paths AS (
+  SELECT id, context_source_id, name AS path FROM folders WHERE parent_id IS NULL
+  UNION ALL SELECT f.id, f.context_source_id, p.path || '/' || f.name FROM folders f JOIN paths p ON p.id = f.parent_id
+ ) SELECT * FROM paths
+) f ON f.context_source_id = u.context_source_id AND f.path || '/' = prefix
+WHERE u.state IN ('reserved', 'object_stored') AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = u.document_id);
+--> statement-breakpoint
 DO $$
 DECLARE r record; n text; e text; t text; suffix text; is_binary boolean; binary_type text; candidate text; number integer;
 BEGIN
- FOR r IN SELECT c.*, d.storage_url, d.mime_type FROM document_name_changes c JOIN documents d ON d.id = c.id LOOP
+ FOR r IN SELECT c.*, d.storage_url, coalesce(d.mime_type, u.mime_type) AS mime_type FROM document_name_changes c LEFT JOIN documents d ON d.id = c.id LEFT JOIN upload_intakes u ON u.document_id = c.id LOOP
   is_binary := r.storage_url IS NOT NULL OR r.old_type IN ('pdf','image','binary','docx','png','jpg','svg','notebook');
   n := btrim(r.old_name); e := lower(r.old_extension); t := r.old_type;
   IF NOT EXISTS (SELECT 1 FROM document_name_registry WHERE extension = e) THEN
@@ -82,7 +100,8 @@ BEGIN
  -- Canonical existing names win, then UUID order. Reserve every desired name before allocating
  -- a suffix so a twin cannot steal a legitimate "Chapter (2)". Folders always win.
  FOR r IN SELECT * FROM document_name_changes ORDER BY deleted_at IS NOT NULL,
-   (old_name = name AND old_extension = extension) DESC, id LOOP
+   (old_name = name AND old_extension = extension) DESC,
+   EXISTS (SELECT 1 FROM documents d WHERE d.id = document_name_changes.id) DESC, id LOOP
   n := r.name; e := r.extension; candidate := n; number := 1;
   LOOP
    suffix := lower(substring(candidate FROM '[.]([^.]*)$'));

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Document-name migration canonicalizes pending upload reservations and resolves collisions before resumable finalization. Finalization verifies the reserved address and identity.
+
 - Namespace creation conflicts identify the occupying file or folder for accurate conflict copy.
 
 - Untitled creation advances past canonical folder aliases and occupied names.

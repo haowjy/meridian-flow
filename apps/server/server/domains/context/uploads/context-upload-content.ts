@@ -63,7 +63,11 @@ export function createContextUploadContentPort(
               sizeBytes: input.bytes.byteLength,
               origin,
             });
-      return result.ok ? { ok: true } : { ok: false, definite: true };
+      return result.ok &&
+        result.value.uri === input.reservation.canonicalUri &&
+        result.value.documentId === input.reservation.documentId
+        ? { ok: true }
+        : { ok: false, definite: true };
     },
 
     async remove({ reservation, actorUserId }) {
