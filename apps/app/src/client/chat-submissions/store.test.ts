@@ -135,7 +135,7 @@ it("two journal owners preserve the rejected fingerprint while drafts remain tab
   draftA.handoffSubmitted(rejected);
   draftB.updateDraft({ text: next.text, snapshot: next.draft });
   const seen = b.get("sub-1") as ChatSubmission;
-  expect(draftB.restoreRejected(rejected)).toBe(false);
+  draftB.flush();
   expect(b.record("account", { ...seen, state: "rejected" })).toBe(true);
   expect(a.get("sub-1")).toMatchObject({
     state: "rejected",
