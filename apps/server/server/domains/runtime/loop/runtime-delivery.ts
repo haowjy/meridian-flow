@@ -69,7 +69,10 @@ export type DeliverySelectionFields = {
 export type DeliverySelection = DeliverySelectionFields & {
   next: InboxWorkSelection;
 };
-export type DeliveryBoundarySelection = DeliverySelectionFields;
+export type DeliveryBoundarySelection = DeliverySelectionFields & {
+  /** A message waits behind the queued write-mode switch: end the reply here. */
+  yieldReply: boolean;
+};
 export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
@@ -80,6 +83,11 @@ export type AdoptedBatch<TCurrent = undefined> = {
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
   context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+  /**
+   * The reply ends at this request boundary for a queued switch. An assistant
+   * exits through a success close; a placeholder comes back `terminal`.
+   */
+  yielded?: boolean;
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
@@ -98,6 +106,14 @@ export interface RuntimeDelivery
     threadId: ThreadId,
     controlId: string,
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
+  /**
+   * Applies queued write-mode switches that are due while no reply holds the
+   * chat; a no-op when a claim is held. Called after a control enqueue commits
+   * and before every run start.
+   */
+  applyDueSwitches(threadId: ThreadId): Promise<void>;
+  /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
+  yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */

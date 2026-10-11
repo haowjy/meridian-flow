@@ -301,6 +301,8 @@ export interface ThreadRepository {
   updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
+  /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
+  setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */
   bakeInitialPrompt(
     id: ThreadId,

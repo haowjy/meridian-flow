@@ -132,6 +132,7 @@ export {
   isConversationTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
+  isWriteModeSwitchTurn,
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
@@ -142,7 +143,9 @@ export {
   savedSubagentReportMetadata,
   skillBodyMetadata,
   steerMetadata,
+  WriteModeSwitchMetadataCodec,
   workUpdateMetadata,
+  writeModeSwitchMetadata,
   writerSendMetadata,
 } from "./domain/turn-metadata.js";
 export {

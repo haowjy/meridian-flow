@@ -1038,4 +1038,335 @@ else
       const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
       expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
     });
+
+    describe("write-mode switch", () => {
+      type Rig = Awaited<ReturnType<typeof fixture>>;
+      const toolUse = {
+        content: [
+          {
+            type: "tool_use" as const,
+            toolCallId: "switch-boundary",
+            toolName: "unavailable_probe_tool",
+            input: {},
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use" as const,
+        usage: lowUsage,
+        model: "gpt-4.1-mini",
+        provider: "openai",
+      };
+
+      function switchMode(rig: Rig, mode: "direct" | "draft", id: string = crypto.randomUUID()) {
+        return rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id,
+          control: { kind: "write_mode", mode },
+        });
+      }
+      const switchTurns = async (rig: Rig) =>
+        (await rig.repos.turns.listByThread(rig.threadId)).filter(
+          (turn) => (turn.metadata as { kind?: string } | null)?.kind === "write_mode_switch",
+        );
+      const threadMode = async (rig: Rig) =>
+        (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode;
+
+      it("applies at once in an idle chat as one complete switch turn", async () => {
+        const rig = await manualFixture();
+        const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId;
+        const applied = await switchMode(rig, "draft");
+
+        const [turn] = await switchTurns(rig);
+        expect(applied).toMatchObject({
+          created: true,
+          response: { pending: null, turnId: turn?.id },
+        });
+        expect(turn).toMatchObject({
+          role: "system",
+          status: "complete",
+          writeMode: "draft",
+          prevTurnId: leaf,
+          metadata: {
+            kind: "write_mode_switch",
+            mode: "draft",
+            controlMessageId: applied.response.id,
+          },
+        });
+        expect((await rig.repos.blocks.listByTurn(turn?.id as never))[0]?.textContent).toContain(
+          "The writer switched this chat to draft mode.",
+        );
+        expect(await threadMode(rig)).toBe("draft");
+        expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+        expect(await rig.delivery.withdrawControl(rig.threadId, applied.response.id)).toEqual({
+          outcome: "already_started",
+        });
+      });
+
+      it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
+        let rig: Rig;
+        let queued: Awaited<ReturnType<typeof switchMode>> | undefined;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call !== 1) return;
+            queued = await switchMode(rig, "draft");
+            await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        // The budget is spent while the switch waits: only a yield before the
+        // budget check keeps A from failing.
+        vi.spyOn(rig.deps.billingUsage, "canContinueModelCall").mockImplementation(async () =>
+          (await rig.delivery.selectPending(rig.threadId)).every(
+            (row) => row.body.kind !== "write_mode",
+          ),
+        );
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        const outcome = await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(queued?.response).toMatchObject({
+          pending: { deliveryState: "waiting", control: { kind: "write_mode", mode: "draft" } },
+          turnId: null,
+        });
+        expect(outcome).toMatchObject({ status: "complete" });
+        expect(outcome.status === "failed" ? null : outcome.turn).toMatchObject({
+          role: "assistant",
+          status: "complete",
+          finishReason: "end_turn",
+        });
+        expect(
+          tail.map((turn) =>
+            turn.role === "system" ? (turn.metadata as { kind: string }).kind : turn.role,
+          ),
+        ).toEqual(["user", "assistant", "user", "write_mode_switch", "assistant"]);
+        expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+          tail.slice(0, -1).map((turn) => turn.id),
+        );
+        // A made one request; the next reply answers M2 after the notice.
+        expect(gateway.requests).toHaveLength(2);
+        const reply = JSON.stringify(gateway.requests[1]?.messages);
+        expect(reply.indexOf("The writer switched this chat to draft mode.")).toBeGreaterThan(
+          reply.indexOf("M2 behind the switch"),
+        );
+        expect(tail[2]?.metadata).not.toMatchObject({ delivery: "steer" });
+        expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
+        expect(await threadMode(rig)).toBe("draft");
+      });
+
+      it.each([
+        { name: "at final close", results: [], raceEarlyCheck: false },
+        {
+          name: "when the switch lands after the early check",
+          results: [toolUse],
+          raceEarlyCheck: true,
+        },
+      ])("ends the reply with no successor $name", async ({ results, raceEarlyCheck }) => {
+        let rig: Rig;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results,
+          onStream: async (call) => {
+            if (call !== 1) return;
+            await switchMode(rig, "draft");
+            await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        if (raceEarlyCheck) vi.spyOn(rig.delivery, "yieldsAtBoundary").mockResolvedValueOnce(false);
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(
+          tail.map((turn) =>
+            turn.role === "system" ? (turn.metadata as { kind: string }).kind : turn.role,
+          ),
+        ).toEqual(["user", "assistant", "user", "write_mode_switch", "assistant"]);
+        expect(tail[1]).toMatchObject({ status: "complete" });
+        expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+          tail.slice(0, -1).map((turn) => turn.id),
+        );
+        expect(gateway.requests).toHaveLength(2);
+      });
+
+      it("lets a running compaction keep its outcome and leaves the message behind the switch pending", async () => {
+        const summarizer = scriptedSummarizer(async () => ({
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        }));
+        const rig = await manualFixture({ summarizer });
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Build a tail." })
+        ).execute();
+        await settled(rig);
+        const control = await compactControl(rig);
+        const summarize = summarizer.summarize.bind(summarizer);
+        let queuedMessageId = "";
+        summarizer.summarize = async (input) => {
+          const result = await summarize(input);
+          await switchMode(rig, "draft");
+          queuedMessageId = (
+            await rig.delivery.enqueue({
+              threadId: rig.threadId,
+              intent: "message",
+              provenance: { kind: "writer", actorId: rig.ids.user },
+              body: { kind: "text", text: "M2 behind the switch" },
+              idempotencyKey: "m2-behind-switch",
+            })
+          ).id;
+          return result;
+        };
+        const requestsBefore = rig.gateway.requests.length;
+
+        const outcome = await drainControls(rig);
+        // The compaction run released with C as its last turn: no successor.
+        expect(outcome.status === "failed" ? null : outcome.turn).toMatchObject({
+          role: "compaction",
+          status: "complete",
+          metadata: { controlMessageId: control.id },
+        });
+        const turns = await settled(rig);
+        const compaction = turns.find((turn) => turn.role === "compaction");
+        const [switchTurn] = await switchTurns(rig);
+        const message = turns.find((turn) => turn.id === queuedMessageId);
+        const answer = turns.find(
+          (turn) => turn.role === "assistant" && turn.position > (switchTurn?.position ?? 0),
+        );
+        expect(compaction?.status).toBe("complete");
+        expect(switchTurn?.position).toBeGreaterThan(compaction?.position ?? 0);
+        // M2 was never adopted by the compaction run: it joins the graph after the switch.
+        expect(message?.prevTurnId).toBe(switchTurn?.id);
+        expect(answer).toMatchObject({ status: "complete", prevTurnId: message?.id });
+        expect(
+          turns.filter(
+            (turn) =>
+              turn.role === "assistant" &&
+              turn.position > (compaction?.position ?? 0) &&
+              turn.position < (switchTurn?.position ?? 0),
+          ),
+        ).toEqual([]);
+        expect(rig.gateway.requests.length - requestsBefore).toBe(1);
+      });
+
+      it("cancels a queued switch with a switch back and never cancels a newer one on replay", async () => {
+        const rig = await manualFixture();
+        const first = crypto.randomUUID();
+        const back = crypto.randomUUID();
+        const newer = crypto.randomUUID();
+        // Holding the claim stands in for a running reply.
+        await rig.runClaim.withExclusiveThread(rig.threadId, async () => {
+          expect((await switchMode(rig, "draft", first)).response).toMatchObject({
+            pending: { id: first },
+            turnId: null,
+          });
+          expect(await switchMode(rig, "direct", back)).toEqual({
+            created: true,
+            response: { id: back, pending: null, turnId: null },
+          });
+          expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+
+          expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
+            id: newer,
+          });
+          // Same mode as the queued switch: written settled, the queued one stays.
+          expect((await switchMode(rig, "draft")).response).toMatchObject({
+            pending: null,
+            turnId: null,
+          });
+          // A retried cancel answers its own settled row.
+          expect(await switchMode(rig, "direct", back)).toEqual({
+            created: false,
+            response: { id: back, pending: null, turnId: null },
+          });
+          await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
+            statusCode: 409,
+            message: "control_id_conflict",
+          });
+          expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
+            newer,
+          ]);
+        });
+
+        await rig.delivery.applyDueSwitches(rig.threadId);
+        const turns = await switchTurns(rig);
+        expect(
+          turns.map((turn) => (turn.metadata as { controlMessageId: string }).controlMessageId),
+        ).toEqual([newer]);
+        expect(await threadMode(rig)).toBe("draft");
+        expect(await rig.delivery.withdrawControl(rig.threadId, first)).toEqual({
+          outcome: "withdrawn",
+        });
+        // Already in draft mode: a new draft request changes nothing.
+        expect((await switchMode(rig, "draft")).response).toMatchObject({
+          pending: null,
+          turnId: null,
+        });
+        expect(await switchTurns(rig)).toHaveLength(1);
+      });
+
+      it("keeps Retry available after a switch and chains the retry after it", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        let fail = true;
+        const stream = gateway.stream.bind(gateway);
+        gateway.stream = async function* (request) {
+          if (!fail) {
+            yield* stream(request);
+            return;
+          }
+          gateway.requests.push(request);
+          yield {
+            type: "error" as const,
+            code: "provider_error",
+            message: "provider unavailable",
+            retryable: false,
+          };
+        };
+        const rig = await manualFixture({ gateway });
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Answer after the switch." },
+          idempotencyKey: "retry-after-switch",
+        });
+        expect((await drainControls(rig)).status).toBe("error");
+        await processDetachedWork.drain();
+        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        if (!failed) throw new Error("Failed reply was not persisted");
+        const applied = await switchMode(rig, "draft");
+        fail = false;
+
+        const replyTurnId = crypto.randomUUID();
+        const started = await rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: replyTurnId as never,
+        });
+        await processDetachedWork.drain();
+
+        expect(started).toMatchObject({
+          created: true,
+          turn: { prevTurnId: applied.response.turnId },
+        });
+        expect(await rig.repos.turns.findById(replyTurnId as never)).toMatchObject({
+          role: "assistant",
+          status: "complete",
+          prevTurnId: applied.response.turnId,
+        });
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
+          "The writer switched this chat to draft mode.",
+        );
+      });
+    });
   });

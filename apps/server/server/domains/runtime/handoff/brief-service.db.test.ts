@@ -144,7 +144,10 @@ else
       });
       let runtime!: ReturnType<typeof createRuntimeHarness>;
       const runStarter = createRunStarter(
-        { startDrain: (threadId) => runtime.startDrain(threadId) },
+        {
+          startDrain: (threadId) => runtime.startDrain(threadId),
+          applyDueSwitches: (threadId) => delivery.applyDueSwitches(threadId),
+        },
         createInMemoryEventSink(),
       );
       const delivery = createTestDrizzleDelivery(db, {

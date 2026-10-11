@@ -77,7 +77,7 @@ function currentWorkLines(
  * scratch and draft (D29, D30); only an agent the action policy lets unarchive
  * is offered that, and only draft mode has auto-apply as a way out (D31).
  */
-function writeModeLines(
+export function writeModeLines(
   work: Pick<Work, "archivedAt" | "aiWriteMode">,
   mayUnarchive: boolean,
 ): string[] {

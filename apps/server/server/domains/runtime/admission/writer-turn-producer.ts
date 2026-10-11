@@ -24,6 +24,7 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
+import { queuedWriteModeSwitch } from "../loop/next-inbox-work.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { InboxReader } from "../loop/ports.js";
 import type { RunningTurnView } from "../loop/run-session.js";
@@ -96,6 +97,10 @@ export function createWriterTurnProducer(deps: {
               createdAfter: live.startedAt,
             })))
           : null;
+      // A message sent behind a queued switch ends the live reply instead of
+      // steering it, so it is answered by the next reply in the new mode.
+      const steers =
+        !!assistantTurnId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId));
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??
@@ -111,7 +116,7 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: writerSendMetadata(turnMetadata, assistantTurnId ? "steer" : "send"),
+          userTurnMetadata: writerSendMetadata(turnMetadata, steers ? "steer" : "send"),
           delivery: deps.delivery,
           inbox: deps.inbox,
           beforePersist: () => deps.requireWritableThread(threadId),

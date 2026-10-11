@@ -13,18 +13,25 @@ Rationale: [One Run Preparation Protocol][kb-run-prep].
 
 ## Command selection and release wake
 
-`loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. At a
-reply boundary it selects every non-command row, including rows and Work
-refresh notices after a queued command; commands never run beside a tool call
-or at turn close. At run start, every non-command row runs if any message is
-waiting; otherwise the oldest command runs alone. Messages never wait behind a command.
-A notice-only queue does not start a run, but a Work refresh notice already
-waiting in the selected rows at a reply boundary still closes that reply's
-batch. The selector returns at most one command per run. Stop only ends the
-current turn; release then follows the same message-first rule.
+`loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. A
+**request boundary** is the point between two model requests inside one reply
+(one run); "reply" means the whole run. At a request boundary the selector
+takes every non-command row, including rows and Work refresh notices after a
+queued command; commands never run beside a tool call or at turn close. At run
+start, every non-command row runs if any message is waiting; otherwise the
+oldest command runs alone. Messages never wait behind a command, except behind
+a queued write-mode switch: then a request boundary returns `yield` (the reply
+ends there with no successor) and run start returns `switch` (applied by
+`applyDueSwitches` outside any run). See [controls](controls.md) for the
+table, the yield and cancel-out. A notice-only queue does not start a run, but
+a Work refresh notice already waiting in the selected rows at a request
+boundary still closes that reply's batch. The selector returns at most one
+command per run. Stop only ends the current turn; release then follows the
+same rule.
 
 After a run releases its claim, `wakeIfRunnable` refreshes pending state and
-uses the same run-start selector as setup. It re-reads after runs that found no
+uses the same run-start selector as setup; `RunStarter.start` applies any due
+write-mode switch before it starts a drain. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
 not lost. A failed assistant acknowledges its adopted messages before release,
 so neither the reread nor the periodic sweep replays that reply. The wake has no
@@ -39,7 +46,7 @@ The bound Work must exist, but archiving does not freeze its chats: sends,
 retries, and interrupt answers remain admissible. The admission fence runs
 under the thread lock before writer-turn persistence.
 
-`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue; response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
+`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue, unless a write-mode switch is queued: that message ends the reply instead and is stamped `send`. Response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
 
 A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
 writer's user turn with its own metadata (activated skill slugs or null) and no

@@ -405,6 +405,10 @@ export function inboxMessageText(message: InboxMessage): string {
       return message.body.instructions
         ? `/compact ${message.body.instructions}`
         : "Compact conversation";
+    case "write_mode":
+      return message.body.mode === "direct"
+        ? "Switch this chat to auto-apply"
+        : "Switch this chat to draft mode";
     case "work_context_refresh":
       return "";
     case "text":

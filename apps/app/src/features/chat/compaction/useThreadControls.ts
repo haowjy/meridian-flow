@@ -12,7 +12,7 @@
  * writer caused.
  */
 import { t } from "@lingui/core/macro";
-import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -22,6 +22,7 @@ import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
+  type CompactControl,
   controlsReducer,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
@@ -31,7 +32,7 @@ import {
 export type ThreadControls = {
   queued: readonly QueuedControl[];
   stoppingTurnIds: ReadonlySet<string>;
-  enqueue: (control: ControlBody) => string;
+  enqueue: (control: CompactControl) => string;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
   /** Stop a running compaction divider. */
@@ -61,7 +62,7 @@ export function useThreadControls(input: {
   }, [pending]);
 
   const send = useCallback(
-    (id: string, control: ControlBody) => {
+    (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
           dispatch({
@@ -87,7 +88,7 @@ export function useThreadControls(input: {
   );
 
   const enqueue = useCallback(
-    (control: ControlBody) => {
+    (control: CompactControl) => {
       const id = crypto.randomUUID();
       dispatch({ type: "enqueue", id, control });
       announce(controlStatusCopy("queued"));

@@ -527,6 +527,9 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
+      // A due switch applies outside any run: return no work, and the release
+      // wake's reread reaches applyDueSwitches before the next run starts.
+      if (selection.next.kind === "switch") return null;
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
@@ -1656,6 +1659,8 @@ async function executeLoop({
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let endTurnRequested = false;
   let terminalControl = false;
+  // A message waits behind a queued write-mode switch: end the reply here.
+  let yieldRequested = false;
   let continuingTask = false;
   let iteration = 0;
   // One emergency retry per reply, even across tool iterations and compaction splits.
@@ -1806,6 +1811,10 @@ async function executeLoop({
       terminalControl = true;
       return result.drain;
     }
+    if (result.yielded) {
+      yieldRequested = true;
+      return result.drain;
+    }
     if (result.compaction && currentTurn.role === "assistant") continuingTask = true;
     if (result.split) {
       const next = result.next;
@@ -1891,6 +1900,9 @@ async function executeLoop({
     kind: "success",
     finishReason: result.finishReason,
   });
+  // The yield ends A exactly as a steer split would, but releases the claim
+  // instead of reserving a successor; close still lets cancellation win.
+  const yieldExit = () => exitRun(false, { kind: "success", finishReason: "end_turn" });
 
   // The one cancel exit: discard an in-flight response, then finalize through
   // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
@@ -1938,6 +1950,13 @@ async function executeLoop({
       // Every cancellation/error path must persist terminal events, not just
       // return/throw, so subscribers see the turn lifecycle closure.
       async function iterate(): Promise<boolean> {
+        // Before the budget and iteration checks, so a reply out of credits
+        // still yields to the switch instead of failing.
+        if (
+          yieldRequested ||
+          (!queuedDrain && (await deps.delivery.yieldsAtBoundary(input.threadId)))
+        )
+          return yieldExit();
         iteration += 1;
         if (iteration > MAX_TURN_ITERATIONS) {
           return exitRun(false, errorTerminal("exceeded max tool iterations"));
@@ -1978,6 +1997,7 @@ async function executeLoop({
 
         queuedDrain = undefined;
         if (terminalControl) return false;
+        if (yieldRequested) return yieldExit();
 
         if (!preparedContext)
           throw new Error("Request context must be prepared before assistant generation");

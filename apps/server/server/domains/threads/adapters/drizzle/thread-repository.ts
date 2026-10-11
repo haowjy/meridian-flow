@@ -516,6 +516,14 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
+    async setAiWriteMode(id, mode) {
+      const rows = await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ aiWriteMode: mode, updatedAt: new Date() })
+        .where(eq(schema.threads.id, id))
+        .returning({ id: schema.threads.id });
+      if (rows.length === 0) throw new Error(`Thread not found: ${id}`);
+    },
     async bakeInitialPrompt(
       id,
       input: PromptBakeContent,
