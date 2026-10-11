@@ -106,13 +106,15 @@ export function createThreadControls(deps: {
         return { created: true, apply: true };
       });
       if (outcome.apply) await applyIdleSwitch(input.threadId);
-      const turn = await deps.findControlTurn(input.threadId, input.id);
-      const pending =
-        (await deps.pending(input.threadId)).items.find((item) => item.id === input.id) ?? null;
-      return {
-        created: outcome.created,
-        response: { id: input.id, pending, turnId: turn?.id ?? null },
-      };
+      // One read under the lock: a switch applies under it too, so the answer
+      // never pairs a pre-apply turn read with a post-apply queue read.
+      const response = await deps.withThreadLock(input.threadId, async () => {
+        const turn = await deps.findControlTurn(input.threadId, input.id);
+        const pending =
+          (await deps.pending(input.threadId)).items.find((item) => item.id === input.id) ?? null;
+        return { id: input.id, pending, turnId: turn?.id ?? null };
+      });
+      return { created: outcome.created, response };
     },
     withdrawControl: (threadId, controlId) =>
       deps.withThreadLock(threadId, async () => {
