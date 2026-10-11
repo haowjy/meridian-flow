@@ -77,33 +77,53 @@ function currentWorkLines(
  * Where this chat's AI writes land (D9, D62): the chat's mode over its Work.
  * An archived Work freezes its own scratch and draft (D29, D30); only an agent
  * the action policy lets unarchive is offered that, and only a draft-mode chat
- * has auto-apply as a way out (D31).
+ * has auto-apply as a way out (D31). One description, two presentations: the
+ * Work context's `writes:` line and the switch notice.
  */
-export function writeModeLines(input: {
+export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
-}): string[] {
+}): { label: string; instructions: string[] } {
   if (input.archived) {
     if (!input.mayUnarchive) {
-      return [
-        "  writes: archived. This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",
-      ];
+      return {
+        label: "archived",
+        instructions: [
+          "This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",
+        ],
+      };
     }
     if (input.mode === "direct") {
-      return [
-        "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
-      ];
+      return {
+        label: "archived in auto-apply",
+        instructions: [
+          "Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
+        ],
+      };
     }
-    return [
-      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
-    ];
+    return {
+      label: "archived in draft mode",
+      instructions: [
+        "This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+      ],
+    };
   }
-  if (input.mode === "direct") return ["  writes: auto-apply. Your changes go live right away."];
-  return [
-    "  writes: draft mode. Your changes wait in this Work's draft, except scratch:// changes, which go live.",
-    "  The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
-  ];
+  if (input.mode === "direct")
+    return { label: "auto-apply", instructions: ["Your changes go live right away."] };
+  return {
+    label: "draft mode",
+    instructions: [
+      "Your changes wait in this Work's draft, except scratch:// changes, which go live.",
+      "The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
+    ],
+  };
+}
+
+function writeModeLines(input: Parameters<typeof describeWriteMode>[0]): string[] {
+  const { label, instructions } = describeWriteMode(input);
+  const [first, ...rest] = instructions;
+  return [`  writes: ${label}. ${first}`, ...rest.map((line) => `  ${line}`)];
 }
 
 type ContextWork = Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
