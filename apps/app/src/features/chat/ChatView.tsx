@@ -347,7 +347,7 @@ export function ChatView({
     // write, do not show a row or dispatch — keep the draft and report failure.
     const epoch = getChatSubmissionEpoch();
     const recorded = recordChatSubmission(accountId, {
-      kind: "existing-thread",
+      recordId: envelope.submissionId,
       submissionId: envelope.submissionId,
       threadId,
       projectId,

@@ -1,11 +1,12 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { SubmittedReference, Thread, UserMessageBlock } from "@meridian/contracts/protocol";
 import {
-  type FirstSendChatSubmission,
+  type ChatSubmission,
   recordChatSubmission,
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
+import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { deriveTitleFromMessage } from "./thread-title";
 
@@ -50,6 +51,7 @@ export type SendProjectChatArgs = {
   blocks: readonly UserMessageBlock[];
   references: readonly SubmittedReference[];
   submissionId: string;
+  draft?: ComposerDraftSnapshot;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
   workId: string;
@@ -106,6 +108,7 @@ export function sendProjectChat({
   blocks,
   references,
   submissionId,
+  draft,
   activatedSkillSlugs,
   agent,
   workId,
@@ -122,8 +125,8 @@ export function sendProjectChat({
     // Durable witness before any display or navigation: if the intent cannot be
     // persisted, do not show a destination or dispatch it. Keep the draft so
     // the composer can report the local failure.
-    const submission: FirstSendChatSubmission = {
-      kind: "first-send",
+    const submission: ChatSubmission = {
+      recordId: submissionId,
       submissionId,
       threadId,
       projectId,
@@ -132,11 +135,14 @@ export function sendProjectChat({
       blocks: [...blocks],
       references: [...references],
       activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
-      title,
-      workId,
-      agentSelection: agent.selection,
-      agentName: agent.name,
-      agentSlug: agent.slug,
+      draft,
+      creation: {
+        title,
+        workId,
+        agentSelection: agent.selection,
+        agentName: agent.name,
+        agentSlug: agent.slug,
+      },
     };
     if (!recordChatSubmission(accountId, submission)) return null;
     threadActions.ensureThread(
@@ -194,21 +200,23 @@ export function retireFirstSendSubmission(
  * same-tab sessionStorage handoff are both gone.
  */
 export function rehydrateFirstSendSubmission(
-  entry: FirstSendChatSubmission,
+  entry: ChatSubmission,
   threadActions: ThreadStoreActions,
   accountId: string,
 ): NonNullable<PendingStreamStart["creation"]> {
+  if (!entry.creation || !entry.projectId) throw new Error("First send requires creation inputs");
+  const creation = entry.creation;
   threadActions.ensureThread(
     makeOptimisticThread({
       id: entry.threadId,
       projectId: entry.projectId,
-      title: entry.title,
+      title: creation.title,
       timestamp: entry.createdAt,
-      workId: entry.workId,
+      workId: creation.workId,
       agent: {
-        name: entry.agentName,
-        slug: entry.agentSlug,
-        selection: entry.agentSelection,
+        name: creation.agentName,
+        slug: creation.agentSlug,
+        selection: creation.agentSelection,
       },
     }),
   );
@@ -230,12 +238,12 @@ export function rehydrateFirstSendSubmission(
   firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
   return {
     projectId: entry.projectId,
-    title: entry.title,
+    title: creation.title,
     text: entry.text,
     blocks: entry.blocks,
     references: entry.references,
-    agentSelection: entry.agentSelection,
-    workId: entry.workId,
+    agentSelection: creation.agentSelection,
+    workId: creation.workId,
     optimisticUserTurnId,
     workingTurnId,
     submissionId: entry.submissionId,

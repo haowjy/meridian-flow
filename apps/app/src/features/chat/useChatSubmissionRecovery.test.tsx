@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import type { ExistingThreadChatSubmission } from "@/client/chat-submissions";
+import type { ChatSubmission } from "@/client/chat-submissions";
 import {
   bindChatSubmissions,
   readChatSubmissions,
@@ -49,11 +49,9 @@ vi.mock("@/client/api/threads-api", async (importOriginal) => ({
 const ACCOUNT = "account";
 const THREAD_ID = "thread_1";
 
-function entry(
-  overrides: Partial<ExistingThreadChatSubmission> = {},
-): ExistingThreadChatSubmission {
+function entry(overrides: Partial<ChatSubmission> = {}): ChatSubmission {
   return {
-    kind: "existing-thread",
+    recordId: "sub-1",
     submissionId: "sub-1",
     threadId: THREAD_ID,
     projectId: "project-1",
