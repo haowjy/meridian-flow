@@ -542,6 +542,10 @@ msgid "Apply all"
 msgstr "Apply all"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Apply is finishing. You're still in Draft."
+msgstr "Apply is finishing. You're still in Draft."
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
 

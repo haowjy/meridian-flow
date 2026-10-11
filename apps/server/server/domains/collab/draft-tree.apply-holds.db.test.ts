@@ -6,7 +6,13 @@
  * recovery the way Apply does (E-7c).
  */
 import type { DocumentId } from "@meridian/contracts";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { draftPublicationHttpAnswer } from "../../lib/draft-publication-http.js";
+import {
+  handleApplyWorkDraftRequest,
+  selectDraftRouteServices,
+} from "../../lib/draft-review-route.js";
+import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../../lib/interrupt-boundary.js";
 import {
   handleWorkWriteModeRequest,
   selectWorkWriteModeServices,
@@ -14,7 +20,12 @@ import {
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { makePendingSettlementsDue } from "../../test-support/settlement-claims.js";
+import { PublicationLeasesChangedError } from "./domain/branch-push-transition.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
+import {
+  DraftApplyPendingError,
+  DraftLinkRegistrationFailedError,
+} from "./domain/draft-publication.js";
 
 describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
   it("holds the second draft's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
@@ -212,7 +223,10 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("growth/later.md"), "the newest stays in D").toBeNull();
     expect.soft(await s.draftStatuses(beacon), "D stays open for it").toEqual(["active"]);
   });
-  it("answers 503 and switches nothing when the draft outgrows D40's bounded continuation; recovery finishes the batch (E-7c)", async () => {
+  it.each([
+    "switch",
+    "all",
+  ] as const)("answers pending when %s outgrows bounded continuation; recovery finishes the batch (E-7c)", async (kind) => {
     const { runtime, s } = await start();
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
@@ -229,25 +243,78 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       await grow();
     });
     const stopContinue = setCollabHook("applyItems.beforeContinue", grow);
-    let refused: unknown;
-    try {
-      await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
-        projectId: s.project.id,
-        workId: beacon.id,
-        userId: s.project.userId,
-        aiWriteMode: "direct",
-        pending: "apply",
+    const draftId = (await s.items(beacon))[0]?.draftId;
+    if (kind === "switch") {
+      const failure = new DraftLinkRegistrationFailedError(draftId as string, []);
+      let registrationAnswer: unknown;
+      try {
+        draftPublicationHttpAnswer(failure);
+      } catch (cause) {
+        registrationAnswer = cause;
+      }
+      expect.soft(registrationAnswer, "nothing staged is a typed retryable failure").toMatchObject({
+        statusCode: 503,
+        data: {
+          [HTTP_INTERRUPT_ENVELOPE_KEY]: {
+            kind: "error",
+            error: {
+              code: "draft_link_registration_failed",
+              retryable: true,
+              source: "system",
+            },
+          },
+        },
       });
+    }
+    // Per-document Apply doesn't close D, so ordinary draft growth needs no new leases.
+    // Its publication port can still hand off; it uses the same transport mapping.
+    if (kind === "switch") {
+      const item = (await s.items(beacon))[0];
+      if (!item?.draftBranchId || !draftId) throw new Error("Missing draft item");
+      const deps = selectDraftRouteServices(runtime.app);
+      const handoff = new PublicationLeasesChangedError("batch", [], {} as never);
+      const apply = vi
+        .spyOn(deps.documentSync.draftReview, "applyWorkDraft")
+        .mockRejectedValueOnce(new DraftApplyPendingError(draftId, handoff));
+      try {
+        expect
+          .soft(
+            await handleApplyWorkDraftRequest(deps, {
+              projectId: s.project.id,
+              workId: beacon.id,
+              userId: s.project.userId,
+              documentId: original,
+              draftId: item.draftBranchId,
+            }),
+          )
+          .toEqual({ httpStatus: 202, body: { status: "pending", draftId } });
+      } finally {
+        apply.mockRestore();
+      }
+    }
+    let answer: unknown;
+    try {
+      if (kind === "switch") {
+        answer = await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
+          projectId: s.project.id,
+          workId: beacon.id,
+          userId: s.project.userId,
+          aiWriteMode: "direct",
+          pending: "apply",
+        });
+      } else {
+        answer = await s.applyAll(beacon);
+      }
     } catch (cause) {
-      refused = cause;
+      answer = cause;
     } finally {
       stopStaging();
       stopContinue();
     }
     expect.soft(grown, "grown at staging and at each of three continuations").toBe(4);
     expect
-      .soft(refused, "the handoff answers 503 with the background meaning, never updated")
-      .toMatchObject({ statusCode: 503, message: expect.stringContaining("in the background") });
+      .soft(answer, "the handoff is accepted, never failed or updated")
+      .toEqual({ status: "pending", draftId });
     expect
       .soft((await runtime.ports.workRepo.findById(beacon.id))?.aiWriteMode, "the mode stays")
       .toBe("draft");
