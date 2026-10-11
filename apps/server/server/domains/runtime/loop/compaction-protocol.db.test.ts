@@ -1284,15 +1284,29 @@ else
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
-      // B, created after C, still names the writer's message it answers.
+      // B, created after C, names only the writer's message it answers (not
+      // the one A already answered) and continues A through the placeholder.
       const journal = await db
         .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
         .from(schema.eventJournal);
-      const bStart = journal
-        .filter(({ eventType }) => eventType === "turn.created")
-        .map(({ payload }) => payload as { turn: { id: string }; answersUserTurnIds?: string[] })
-        .find(({ turn }) => turn.id === tail[3]?.id);
-      expect(bStart?.answersUserTurnIds).toContain(tail[1]?.id);
+      const event = (type: string, turnId: string | undefined) =>
+        journal
+          .filter(({ eventType }) => eventType === type)
+          .map(
+            ({ payload }) =>
+              payload as {
+                turn: { id: string };
+                answersUserTurnIds?: string[];
+                continuesRunId?: string | null;
+                continued?: boolean;
+              },
+          )
+          .find(({ turn }) => turn.id === turnId);
+      expect(event("turn.created", tail[3]?.id)).toMatchObject({
+        answersUserTurnIds: [tail[1]?.id],
+        continuesRunId: tail[0]?.id,
+      });
+      expect(event("turn.completed", tail[0]?.id)?.continued).toBe(true);
     });
 
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {

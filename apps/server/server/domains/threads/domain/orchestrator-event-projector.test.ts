@@ -89,3 +89,32 @@ describe("run start", () => {
     expect(start).toEqual(SIMPLE_TEXT_TURN_AGUI[0]);
   });
 });
+
+describe("same-lease successor", () => {
+  it("marks a split's finish continued and names the reply the successor continues", () => {
+    const projector = createOrchestratorEventProjector();
+    const turn = (id: string) =>
+      ({ id, threadId: "thread-1", role: "assistant", blocks: [], writeMode: "direct" }) as never;
+    projector.project({ type: "turn.created", turn: turn("a"), answersUserTurnIds: ["m1"] });
+    const finish = projector.project({ type: "turn.completed", turn: turn("a"), continued: true });
+    const start = projector.project({
+      type: "turn.created",
+      turn: turn("b"),
+      answersUserTurnIds: ["m2"],
+      continuesRunId: "a",
+    });
+
+    expect(finish.find((event) => event.type === EventType.RUN_FINISHED)).toMatchObject({
+      runId: "a",
+      rawEvent: { continued: true },
+    });
+    expect(start).toEqual([
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "thread-1",
+        runId: "b",
+        rawEvent: { writeMode: "direct", answersUserTurnIds: ["m2"], continuesRunId: "a" },
+      },
+    ]);
+  });
+});

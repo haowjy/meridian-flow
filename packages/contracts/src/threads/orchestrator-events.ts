@@ -76,6 +76,8 @@ export type OrchestratorEvent =
       turn: Turn;
       /** On a reply reservation: the outstanding message ids (= user turn ids) it answers. */
       answersUserTurnIds?: string[];
+      /** On a same-lease successor: the reply it continues. */
+      continuesRunId?: string | null;
     }
   | {
       type: "stream.delta";
@@ -225,7 +227,12 @@ export type OrchestratorEvent =
       /** Normalized settled cutoff retained by the fork. */
       originTurnId: string;
     }
-  | { type: "turn.completed"; turn: Turn }
+  | {
+      type: "turn.completed";
+      turn: Turn;
+      /** The completion is a same-lease split: a successor reply continues this one. */
+      continued?: boolean;
+    }
   | { type: "turn.cancelled"; turn: Turn }
   | {
       type: "turn.change_trail_updated";

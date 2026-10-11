@@ -618,13 +618,17 @@ export function createDeliveryAdapter(
             result: undefined,
             events: [
               ...(input.current.kind === "assistant"
-                ? [{ type: "turn.completed" as const, turn: completedTurn }]
+                ? [{ type: "turn.completed" as const, turn: completedTurn, continued: true }]
                 : []),
               ...events,
               {
                 type: "turn.created" as const,
                 turn: next,
                 answersUserTurnIds: adoption.selection.outstanding.map(({ id }) => id),
+                continuesRunId:
+                  input.current.kind === "assistant"
+                    ? currentTurn.id
+                    : (input.continuesRunId ?? null),
               },
             ],
           }),

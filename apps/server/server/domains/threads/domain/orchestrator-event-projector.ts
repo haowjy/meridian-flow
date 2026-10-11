@@ -13,6 +13,7 @@ import {
   type AGUIEvent,
   EventSchemas,
   EventType,
+  type RunFinishedMeta,
   type RunStartedMeta,
 } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
@@ -94,7 +95,7 @@ export function createOrchestratorEventProjector() {
     state.nextBlockSequence = Math.max(state.nextBlockSequence, block.sequence + 1);
   }
 
-  function finalizeRun(errorMessage?: string): AGUIEvent[] {
+  function finalizeRun(errorMessage?: string, continued = false): AGUIEvent[] {
     const events = [...closeOpenTextMessage(), ...closeOpenReasoningMessage()];
     if (errorMessage) {
       events.push(
@@ -109,6 +110,7 @@ export function createOrchestratorEventProjector() {
           type: EventType.RUN_FINISHED,
           threadId: state.activeThreadId,
           runId: state.activeRunId,
+          rawEvent: { continued } satisfies RunFinishedMeta,
         }),
       );
     }
@@ -134,6 +136,7 @@ export function createOrchestratorEventProjector() {
             rawEvent: {
               writeMode: event.turn.writeMode,
               answersUserTurnIds: event.answersUserTurnIds ?? [],
+              continuesRunId: event.continuesRunId ?? null,
             } satisfies RunStartedMeta,
           }),
         ];
@@ -487,7 +490,7 @@ export function createOrchestratorEventProjector() {
         ];
 
       case "turn.completed":
-        return finalizeRun();
+        return finalizeRun(undefined, event.continued === true);
 
       case "turn.cancelled":
         return finalizeRun();
