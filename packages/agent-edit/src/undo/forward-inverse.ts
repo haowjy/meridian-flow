@@ -391,10 +391,12 @@ export function admitInverseReceipt(
       },
     ]);
     for (const alias of receipt.aliases) {
-      const root = index.root(key(alias.source));
-      if (!allowed.has(index.effective(root)))
-        throw new Error("Restoration alias outside accepted parts");
-      merged.effective(root);
+      for (const source of clocks([{ ...alias.source, len: alias.len }])) {
+        const root = index.root(source);
+        if (!allowed.has(index.effective(root)))
+          throw new Error("Restoration alias outside accepted parts");
+        merged.effective(root);
+      }
     }
   } finally {
     after.destroy();

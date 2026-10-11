@@ -110,11 +110,17 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           journalIds: [...selected].sort((a, b) => a - b),
         };
       }
+      // Selectable rows exclude discarded effects; reconstruction still needs
+      // their clocks to integrate the active restoration deltas that consumed them.
+      const history = await deps.journalReadStore.listJournalRowsForBranch({
+        branchId: branch.branchId,
+        generation: branch.generation,
+      });
       const liveDoc = await loadLiveDoc(branch.documentId);
       const restorations: { receipt: CapturedPart; rows: BranchJournalRow[] }[] = [];
       const peer = buildReversalPeer({
         liveDoc,
-        rows: reviewableRows,
+        rows: history,
         selectedIds: selected,
         capture: (receipt, rows) => {
           restorations.push({ receipt, rows });

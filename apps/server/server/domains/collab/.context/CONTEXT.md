@@ -423,3 +423,12 @@ Command reads joined to an ambient transaction retain the caller's lock and
 revision fence. Callers destroy the returned document; no encoded snapshot
 round trip is needed. Draft lists bulk-resolve document paths with one document
 query and one shared folder graph, and expose persisted branch update times.
+
+### Selective Discard reconstruction
+
+Selection reads only active and rollback-pending rows. The reversal peer replays
+all retained rows in the current generation, including discarded suppliers,
+because an active Discard restoration delta can depend on their inserted clocks.
+Reconstruction history never grants selection eligibility. Server-owned Discard
+aliases use the existing journal metadata range contract (length on both source
+and target); the immutable inverse receipt retains its compact len format.

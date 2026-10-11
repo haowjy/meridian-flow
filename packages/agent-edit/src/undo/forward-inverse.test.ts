@@ -542,6 +542,32 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(() => admitInverseReceipt(v.doc, v.history, target, outside)).toThrow(
       "Inverse deletes outside accepted parts",
     );
+    const overlap = base(["abcdef"]),
+      deleted = write(overlap, [(v) => text(v).delete(1, 4)]);
+    const restore = (parts: InversePart[]) =>
+      computeInverse(
+        overlap.doc,
+        overlap.history,
+        parts.map((part) => ({ part, direction: "invert" })),
+        { actionId: "overlap", allocateClient: () => overlap.nextClient++ },
+      ).edits[0].parts[0];
+    const whole = restore(deleted),
+      range = deleted[0].effect.deleted[0];
+    const tail = restore([
+      {
+        ...deleted[0],
+        effect: { inserted: [], deleted: [{ ...range, clock: range.clock + 2, len: 2 }] },
+      },
+    ]);
+    Y.applyUpdate(overlap.doc, tail.update);
+    overlap.history.push({ ...tail, id: 2, editId: "tail", ordinal: 0, kind: "undo" });
+    cold(overlap);
+    expect(content(overlap)).toEqual(["adef"]);
+    expect(() => admitInverseReceipt(overlap.doc, overlap.history, deleted, whole)).toThrow(
+      "Multiple visible restorations of one root",
+    );
+    expect(content(overlap)).toEqual(["adef"]);
+    overlap.doc.destroy();
     after.destroy();
     v.doc.destroy();
   });

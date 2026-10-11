@@ -1,6 +1,6 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-import { captureEditParts } from "@meridian/agent-edit/integration";
+import { captureEditParts, type EditAlias } from "@meridian/agent-edit/integration";
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -10,6 +10,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
+import type { RestorationAlias } from "@meridian/prosemirror-schema";
 import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -476,7 +477,10 @@ async function commitPreparedDiscard(
         draftBaseUpdateSeq: row.draftBaseUpdateSeq,
         source: "writer",
         actorUserId: input.reviewedByUserId ?? null,
-        updateMeta: { restorationAliases: receipt.aliases, kind: "discard" },
+        updateMeta: {
+          restorationAliases: restorationMetadataAliases(receipt.aliases),
+          kind: "discard",
+        },
       })
       .returning({ id: branchWriteJournal.id });
     if (!restorationRow) throw new Error("Discard restoration was not journaled");
@@ -752,4 +756,13 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
 
 function aiWriteModeProjection(policy: "manual" | "auto"): "draft" | "direct" {
   return policy === "manual" ? "draft" : "direct";
+}
+
+// Durable receipts share compact len ranges with effects; journal metadata uses
+// the existing browser/server restoration contract with lengths on both ends.
+function restorationMetadataAliases(aliases: readonly EditAlias[]): RestorationAlias[] {
+  return aliases.map(({ source, target, len }) => ({
+    source: { ...source, length: len },
+    target: { ...target, length: len },
+  }));
 }
