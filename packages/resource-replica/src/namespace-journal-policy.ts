@@ -40,9 +40,9 @@ export function namespaceRepairDestination(
         : candidate,
     failed,
   );
-  return latest.desired.kind === "set-location" || latest.desired.kind === "set-folder-location"
-    ? latest.desired.destination
-    : null;
+  if (latest.desired.kind === "set-location")
+    return { ...latest.desired.destination, name: latest.desired.typedName };
+  return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
 }
 
 export function validateNamespaceJournal(input: {

@@ -350,7 +350,11 @@ msgid "A file named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {candidate} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -363,7 +367,11 @@ msgid "A folder named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {candidate} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -526,6 +534,10 @@ msgstr "所有设备"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts

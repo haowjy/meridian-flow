@@ -1,7 +1,9 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
 
-import { type ParsedContextUri, parseContextUri } from "./context-uri.js";
+import { type ParsedContextUri, parseContextUri, splitDocumentHrefSuffix } from "./context-uri.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+
+export { splitDocumentHrefSuffix } from "./context-uri.js";
 
 export type ResolvedDocumentHref = { uri: string; suffix: string };
 
@@ -105,14 +107,6 @@ export function matchDocumentPath<T>(
     );
   });
   return loose.length === 1 ? (loose[0] ?? null) : null;
-}
-
-/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
-export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
-  const index = value.search(/[?#]/);
-  return index < 0
-    ? { path: value, suffix: "" }
-    : { path: value.slice(0, index), suffix: value.slice(index) };
 }
 
 function decodePath(path: string): string | null {

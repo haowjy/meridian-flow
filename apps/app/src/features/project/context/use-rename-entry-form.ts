@@ -3,8 +3,8 @@
  *
  * Adds rename-specific behavior: the stored name pre-populated, selection of
  * the part before a visible extension (all of a prose name), sibling filtering
- * that excludes the current name, and same-name = cancel semantics. Names are
- * compared and submitted as the codec stores them, so `Chapter 13.md` on
+ * that excludes the current identity, and same-name = cancel semantics. Names are
+ * compared as the codec stores them, but submitted as typed, so `Chapter 13.md` on
  * `Chapter 13` is no change and `settings` on `config.toml` is `settings.toml`.
  */
 
@@ -21,8 +21,8 @@ import type { TabOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
+import type { ContextEntrySibling } from "./context-entry-name";
 import {
-  entryNameKey,
   entryNameStemEnd,
   parentContextEntryPath,
   validateContextEntryName,
@@ -42,7 +42,7 @@ export type UseRenameEntryFormOptions = {
   /** Failed durable destination restored after asynchronous namespace repair. */
   repairName?: string;
   /** Sibling names for collision detection (should include all siblings). */
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
   /** Called with the move's operation id once the rename is admitted, before `onDone`. */
   onRenamed?: (operationId: string) => void;
@@ -60,7 +60,7 @@ export function useRenameEntryForm({
   path,
   currentName,
   repairName,
-  siblingNames,
+  siblings,
   kind,
   onRenamed,
   onDone,
@@ -73,7 +73,7 @@ export function useRenameEntryForm({
   };
   const mutation = useMutation({
     mutationFn: async (typed: string) => {
-      const name = kind === "folder" ? typed : storedName(typed);
+      const name = typed;
       const unavailable = () =>
         new Error(
           kind === "folder"
@@ -101,11 +101,10 @@ export function useRenameEntryForm({
     },
   });
 
-  // Exclude the current name from collision checks — renaming "foo" to "foo"
-  // is a no-op, not a collision.
+  // Another entry may have a codec-equivalent name; only this identity is excluded.
   const filteredSiblings = useMemo(
-    () => siblingNames.filter((sibling) => entryNameKey(sibling) !== entryNameKey(currentName)),
-    [siblingNames, currentName],
+    () => siblings.filter((sibling) => sibling.entryId !== entryId),
+    [siblings, entryId],
   );
 
   // Select the name sans a visible extension on focus ("outline" in

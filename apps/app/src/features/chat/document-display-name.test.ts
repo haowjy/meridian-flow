@@ -42,5 +42,7 @@ describe("tool activity labels", () => {
     expect(label("read", "manuscript://ch12")).toBe("Read ch12");
     expect(label("read", "manuscript://outline.json")).toBe("Read outline.json");
     expect(label("read", "ch12.md")).toBe("Read ch12");
+    expect(label("read", "manuscript://Chapter 13.md#opening")).toBe("Read Chapter 13");
+    expect(label("read", "Chapter 13.md?view=1#opening")).toBe("Read Chapter 13");
   });
 });

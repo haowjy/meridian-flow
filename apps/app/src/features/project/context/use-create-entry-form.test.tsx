@@ -1,7 +1,7 @@
 /** A created file is submitted under the name the server will store. */
 
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { type CreateEntryForm, useCreateEntryForm } from "./use-create-entry-form";
 
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     key: "key",
     content: { kind: "opened", handle: { release: vi.fn() } },
   })),
-  createEntry: vi.fn(async () => undefined),
+  createEntry: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({ status: "created" })),
 }));
 vi.mock("@/client/query/useCreateContextEntry", () => ({
   useCreateContextEntry: () => ({ mutateAsync: mocks.createEntry }),
@@ -53,11 +53,18 @@ async function create(typed: string, kind: "file" | "folder" = "file") {
       } as never);
     });
   });
-  return { onCreated, onDone };
+  return { onCreated, onDone, issue: form.issue };
 }
 
 describe("useCreateEntryForm", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
 
   it.each([
     ["Chapter 13", "Chapter 13"],
@@ -97,5 +104,26 @@ describe("useCreateEntryForm", () => {
     expect(mocks.createEntry).toHaveBeenCalledWith(
       expect.objectContaining({ path: "/Book/v1.json", type: "folder" }),
     );
+  });
+});
+
+describe("server conflicts", () => {
+  beforeEach(() =>
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    }),
+  );
+  afterEach(() => vi.unstubAllGlobals());
+  it("shows the server conflict occupant kind without reporting creation", async () => {
+    mocks.createEntry.mockResolvedValueOnce({
+      status: "conflict",
+      uri: "manuscript://Book/Lore",
+      occupantKind: "folder",
+    });
+    const result = await create("Lore", "folder");
+    expect(result.issue?.message).toContain("A folder named Lore already exists");
+    expect(result.onDone).not.toHaveBeenCalled();
+    expect(result.onCreated).not.toHaveBeenCalled();
   });
 });

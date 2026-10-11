@@ -24,11 +24,11 @@ describe("normalizeLinkHref", () => {
 
   it.each([
     "chapter-213.md",
-    "notes.txt",
-    "outline.json",
-    "map.png",
+    "./notes.txt",
+    "./outline.json",
+    "./map.png",
     "Arc 1/outline.json#top",
-  ])("keeps the registered file name %s internal", (written) => {
+  ])("keeps an explicit relative file name %s internal", (written) => {
     expect(normalizeLinkHref(written)).toBe(written);
   });
 
@@ -63,4 +63,12 @@ describe("linkTargetLabel", () => {
       "https://example.com/",
     );
   });
+});
+
+it("keeps bare hosts external without requiring extensions on internal names", () => {
+  expect(normalizeLinkHref("example.com/data.json")).toBe("https://example.com/data.json");
+  expect(normalizeLinkHref("example.com/data.png")).toBe("https://example.com/data.png");
+  expect(normalizeLinkHref("example.json")).toBe("https://example.json");
+  expect(normalizeLinkHref("Chapter 13")).toBe("Chapter 13");
+  expect(normalizeLinkHref("The Second Gate")).toBe("The Second Gate");
 });

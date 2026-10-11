@@ -5,6 +5,7 @@
  * state: context URIs already carry the document basename and location.
  */
 import { t } from "@lingui/core/macro";
+import { splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -17,8 +18,9 @@ type ParsedContextLocation = {
 };
 
 function parseContextLocation(uriOrPath: string): ParsedContextLocation {
-  const parsed = parseUnifiedContextUri(uriOrPath);
-  return parsed.ok ? parsed.value : { scheme: "manuscript", path: uriOrPath };
+  const { path } = splitDocumentHrefSuffix(uriOrPath);
+  const parsed = parseUnifiedContextUri(path);
+  return parsed.ok ? parsed.value : { scheme: "manuscript", path };
 }
 
 /**
@@ -42,7 +44,7 @@ export function documentDisplayName(uriOrPath: string): string {
 function skillFileDisplayName(uriOrPath: string): string | null {
   const file = skillFile(uriOrPath);
   if (!file) return null;
-  const name = documentTitleFromUri(file.path.replace(/#.*$/, "")) ?? file.path;
+  const name = documentTitleFromUri(file.path) ?? file.path;
   const skill = humanizeSkillSlug(file.skill);
   return t`${name} (${skill})`;
 }

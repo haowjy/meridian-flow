@@ -315,6 +315,14 @@ function invalidContextUri(uri: string, reason: string): ContextUriParseError {
   return { ok: false, error: { uri, reason } };
 }
 
+/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
+export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
+  const index = value.search(/[?#]/);
+  return index < 0
+    ? { path: value, suffix: "" }
+    : { path: value.slice(0, index), suffix: value.slice(index) };
+}
+
 /**
  * The name a writer sees for the document at the final URI/path segment: the
  * stored name as the codec spells it. A stored segment is already canonical
@@ -327,8 +335,9 @@ function invalidContextUri(uri: string, reason: string): ContextUriParseError {
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const schemeSeparator = uri.indexOf("://");
-  const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
+  const { path: address } = splitDocumentHrefSuffix(uri);
+  const schemeSeparator = address.indexOf("://");
+  const path = schemeSeparator >= 0 ? address.slice(schemeSeparator + 3) : address;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   const parsed = parseDocumentFilename(segment);
