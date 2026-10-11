@@ -183,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const write = context.write("chapter", "Revised chapter");
       await writeStarted;
-      await expect(move("chapter", "chapter.txt")).resolves.toMatchObject({ ok: true });
+      await expect(move("chapter", "renamed chapter.txt")).resolves.toMatchObject({ ok: true });
       releaseWrite();
 
       await expect(write).resolves.toMatchObject({
@@ -194,10 +194,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db
           .select({ id: documents.id, name: documents.name, extension: documents.extension })
           .from(documents),
-      ).resolves.toEqual([{ id: initial.value.documentId, name: "chapter", extension: "" }]);
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+      ).resolves.toEqual([
+        { id: initial.value.documentId, name: "renamed chapter", extension: "" },
+      ]);
+      await expect(context.stat("renamed chapter")).resolves.toMatchObject({
         ok: true,
         value: { documentId: initial.value.documentId, filetype: "markdown", sizeBytes: 15 },
+      });
+      await expect(context.stat("chapter")).resolves.toEqual({ ok: true, value: null });
+      await expect(context.read("renamed chapter")).resolves.toMatchObject({
+        ok: true,
+        value: { content: "Revised chapter" },
+      });
+    });
+
+    it("keeps alias-only Postgres renames in place", async () => {
+      const { context, move } = createContextHarness();
+      const initial = await context.write("Alias", "Unchanged");
+      if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+      expect(await move("Alias", "Alias.txt")).toMatchObject({ ok: true });
+      expect(
+        await db
+          .select({ id: documents.id, name: documents.name, extension: documents.extension })
+          .from(documents),
+      ).toEqual([{ id: initial.value.documentId, name: "Alias", extension: "" }]);
+      expect(await context.read("Alias.md")).toMatchObject({
+        ok: true,
+        value: { content: "Unchanged" },
       });
     });
 
