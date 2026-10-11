@@ -6,6 +6,30 @@ with a single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus No Work Uploads at `uploads://@/` and lineage Scratch at `scratch://@/c12/`.
 
+## Document names
+
+`@meridian/contracts/protocol` owns basename parsing (`parseDocumentFilename`,
+`parseBinaryFilename`) and rendering (`renderFilename`). Prose is stored as
+`name` with empty `extension` and `fileType = 'markdown'`. Input accepts and
+repeatedly strips `md`, `markdown`, `mdx` and `txt`, case-insensitively. Registered
+non-prose suffixes retain their lower-case extension; unknown suffixes belong to
+the name. Names are trimmed and must have a nonempty stem other than `.` or `..`.
+A prose stem ending in a registered non-prose suffix is `invalid_name`, with
+alternatives in its message, not another spelling for that data file.
+
+Lookups use exact parsed parts, not link extension omission. File results return
+the canonical URI. Create-on-existing through `ensureTrackedDocument` reaches
+the same identity for all prose spellings. Untitled documents are `Untitled N`.
+Copy supplies `sourceExtension`; the tree mover parses destinations with the
+source's actual extension before target inspection and CAS. Same-identity
+renames are in place. Type changes still respect the existing Yjs schema guard.
+
+Documents and folders share rendered names within a parent. Creation, parent
+provisioning and tree commits check opposite-kind occupancy under the existing
+sorted logical namespace advisory locks, held through the transaction. Work
+restore takes those same locks and checks the complete arriving tree before
+unhiding either table. Location-only CAS tokens still fence moved identities.
+
 ## Revision queries and reads
 
 Runtime uses the context-owned `DocumentRevisions.current` port, never collab

@@ -1,4 +1,8 @@
 import {
+  parseDocumentFilename,
+  renderFilename as renderDocumentFilename,
+} from "@meridian/contracts/protocol";
+import {
   DOCUMENT_KINDS,
   type DocumentKind,
   isContentDocumentKind,
@@ -14,7 +18,7 @@ import {
 
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import { renderFilename, splitPath } from "../../context/paths.js";
 import {
   type ContextDocument,
   type ContextDocumentStore,
@@ -706,7 +710,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === MISSING_FOLDER) return null;
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return null;
+    const { name, extension } = parsed.value;
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
@@ -738,7 +744,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         kind: "file",
         nodeId: doc.id,
         sourceId,
-        path: normalized,
+        path: [...splitPath(normalized).dir, renderDocumentFilename(doc.name, doc.extension)].join(
+          "/",
+        ),
         filetype: doc.filetype,
       };
     }
@@ -828,7 +836,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "invalid_operation" });
+        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
         if (!input.overwrite || input.source.kind === "directory") {
           return Err({ code: "conflict" });
@@ -877,7 +885,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
-        const { name, extension } = parseFilename(targetBasename);
+        const parsed = parseDocumentFilename(targetBasename, {
+          binary: input.source.filetype === null,
+        });
+        if (!parsed.ok) return Err({ code: "invalid_operation" });
+        const { name, extension } = parsed.value;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;

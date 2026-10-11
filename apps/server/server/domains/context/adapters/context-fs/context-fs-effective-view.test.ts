@@ -32,7 +32,7 @@ describe("ContextFS drafted-source effective view", () => {
       id: LIVE_DOC_ID,
       folderId: null,
       name: "live-only",
-      extension: "md",
+      extension: "",
       markdown: "SQL row that the draft manifest deleted",
       filetype: "markdown",
     });
@@ -40,7 +40,7 @@ describe("ContextFS drafted-source effective view", () => {
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
-      extension: "md",
+      extension: "",
       markdown: "SQL identity row for a draft-created document",
       filetype: "markdown",
     });
@@ -85,12 +85,12 @@ describe("ContextFS drafted-source effective view", () => {
 
     const listed = await fs.list("");
     expect(listed.ok ? listed.value : []).toEqual([
-      expect.objectContaining({ documentId: CREATED_DOC_ID, path: "draft-created.md" }),
+      expect.objectContaining({ documentId: CREATED_DOC_ID, path: "draft-created" }),
     ]);
     const hits = await fs.search("branch");
     expect(hits.ok ? hits.value : []).toEqual([
       {
-        path: "draft-created.md",
+        path: "draft-created",
         documentId: CREATED_DOC_ID,
         revision: "test-revision",
         matches: [{ excerpt: "new branch bytes", blockHash: "createdhash" }],
@@ -106,7 +106,7 @@ describe("ContextFS drafted-source effective view", () => {
       id: BRANCH_DOC_ID,
       folderId: null,
       name: "branch-touched",
-      extension: "md",
+      extension: "",
       markdown: "live old bytes",
       filetype: "markdown",
     });
@@ -114,7 +114,7 @@ describe("ContextFS drafted-source effective view", () => {
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
-      extension: "md",
+      extension: "",
       markdown: "identity only",
       filetype: "markdown",
     });
@@ -159,12 +159,12 @@ describe("ContextFS drafted-source effective view", () => {
     expect(hits.ok ? hits.value : []).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "branch-touched.md",
+          path: "branch-touched",
           matches: [{ excerpt: "branch touched needle bytes", blockHash: "branchhash" }],
           matchCount: 1,
         }),
         expect.objectContaining({
-          path: "draft-created.md",
+          path: "draft-created",
           documentId: CREATED_DOC_ID,
           revision: "test-revision",
           matches: [{ excerpt: "draft created needle bytes", blockHash: "createdhash" }],
@@ -172,10 +172,10 @@ describe("ContextFS drafted-source effective view", () => {
         }),
       ]),
     );
-    await expect(fs.read("branch-touched.md")).resolves.toEqual(
+    await expect(fs.read("branch-touched")).resolves.toEqual(
       Ok({ content: effective.get(BRANCH_DOC_ID) ?? "", documentId: BRANCH_DOC_ID }),
     );
-    await expect(fs.read("draft-created.md")).resolves.toEqual(
+    await expect(fs.read("draft-created")).resolves.toEqual(
       Ok({ content: effective.get(CREATED_DOC_ID) ?? "", documentId: CREATED_DOC_ID }),
     );
   });
@@ -187,7 +187,7 @@ describe("ContextFS drafted-source effective view", () => {
       id: LIVE_DOC_ID,
       folderId: null,
       name: "chapter-1",
-      extension: "md",
+      extension: "",
       markdown: "seed",
       filetype: "markdown",
     });

@@ -16,14 +16,4 @@ export function splitPath(path: string): { dir: string[]; filename: string } {
   return { dir: segments, filename };
 }
 
-/** Split a filename into a base name and extension (no leading dot). */
-export function parseFilename(filename: string): { name: string; extension: string } {
-  const dot = filename.lastIndexOf(".");
-  if (dot <= 0) return { name: filename, extension: "" };
-  return { name: filename.slice(0, dot), extension: filename.slice(dot + 1) };
-}
-
-/** Render a base name + extension back into a filename. */
-export function renderFilename(name: string, extension: string): string {
-  return extension ? `${name}.${extension}` : name;
-}
+export { renderFilename } from "@meridian/contracts/protocol";

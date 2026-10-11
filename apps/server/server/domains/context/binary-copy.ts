@@ -1,3 +1,4 @@
+import { parseBinaryFilename, renderFilename } from "@meridian/contracts/protocol";
 /**
  * Whole-document copy of a binary file (D24): the one place a copy depends on
  * how a document is stored. It duplicates the storage object, so deleting
@@ -39,7 +40,19 @@ export async function copyBinaryDocument(
   if (granted.kind === "container" || granted.documentId !== input.source.documentId) {
     throw new Error("A binary copy's grant must name its source document");
   }
-  const existing = await input.port.stat(input.destinationUri);
+  const sourceParts = parseBinaryFilename(
+    input.source.uri.slice(input.source.uri.lastIndexOf("/") + 1),
+  );
+  if (!sourceParts.ok) return Err({ ...sourceParts.error, uri: input.source.uri });
+  const slash = input.destinationUri.lastIndexOf("/");
+  const destinationParts = parseBinaryFilename(input.destinationUri.slice(slash + 1), {
+    sourceExtension: sourceParts.value.extension,
+  });
+  if (!destinationParts.ok) return Err({ ...destinationParts.error, uri: input.destinationUri });
+  const destinationUri =
+    input.destinationUri.slice(0, slash + 1) +
+    renderFilename(destinationParts.value.name, destinationParts.value.extension);
+  const existing = await input.port.stat(destinationUri);
   if (existing.ok) {
     return Err({
       code: "invalid_operation",
@@ -59,7 +72,7 @@ export async function copyBinaryDocument(
   const put = await input.objectStore.put(key, object.value.bytes, mimeType);
   if (!put.ok) return ioError(input.destinationUri, put.error.message);
 
-  const written = await input.livePort.writeBinary(input.destinationUri, {
+  const written = await input.livePort.writeBinary(destinationUri, {
     fileType: input.source.fileType,
     storageUrl: put.value.storageUrl,
     mimeType,

@@ -139,11 +139,11 @@ describe("context router Work slug resolution", () => {
     });
     await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
       ok: true,
-      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
+      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
     });
     await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
       ok: true,
-      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
+      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
     });
   });
 
@@ -255,7 +255,7 @@ describe("context router scheme creation capabilities", () => {
         documentId: "00000000-0000-4000-8000-000000000001",
       }),
     ).resolves.toEqual({ ok: true, value: { documentId: "document-new" } });
-    expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes.md", "notes", {
+    expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
     });
   });
@@ -283,7 +283,7 @@ describe("context router scheme creation capabilities", () => {
       port.move(`uploads://@current/old.md`, `uploads://@current/renamed.md`),
     ).resolves.toEqual({
       ok: true,
-      value: { movedNodeId: "document-old", destinationPath: "renamed.md" },
+      value: { movedNodeId: "document-old", destinationPath: "renamed" },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });

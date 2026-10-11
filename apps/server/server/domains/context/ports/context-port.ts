@@ -230,6 +230,8 @@ export type WriteProvenance =
   | { type: "system" };
 
 export interface ContextWriteOptions {
+  /** Extension inherited by an extensionless copy destination. */
+  sourceExtension?: string;
   origin?: WriteProvenance;
   /** Stable identity reserved by an authoritative aggregate before content creation. */
   documentId?: string;

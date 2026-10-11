@@ -139,6 +139,7 @@ function contextErrorMessage(error: ContextError): string {
     case "stale_source":
     case "stale_target":
       return "Context location changed; retry the operation";
+    case "invalid_name":
     case "invalid_operation":
       return error.message ?? "Invalid context operation";
   }
