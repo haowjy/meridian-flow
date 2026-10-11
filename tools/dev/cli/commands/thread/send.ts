@@ -11,7 +11,7 @@ import {
   type ThreadSnapshotResponse,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import { blockPlainText, type Turn } from "@meridian/contracts/threads";
+import { blockPlainText, replyReaching, type Turn } from "@meridian/contracts/threads";
 import { CliError, EXIT, type ExitCode, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -199,12 +199,16 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
+  // The admission's named reply is only where to start: the message joined its
+  // lease, so its same-lease successors answer it. With none named, the reply
+  // whose start names this user turn is ours. Never the next start in the
+  // stream: the early cursor replays others', and another client's can follow.
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
-  // Null until the reply that answers this send's user turn starts. A reply
-  // running at admission that this message did not join (it queued behind a
-  // write-mode switch), or an unrelated start the early cursor replays, is not ours.
+  // Our reply finished `continued`: its successor's start is still due.
+  let continuing = false;
+  let recover = false;
   const isOurs = (turnId: string) => ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
@@ -218,14 +222,29 @@ async function followToOutcome(
         full: input.full,
         textStream: "err",
         shouldStop(event: CliEvent) {
-          if (
-            event.type === "turn.started" &&
-            ourTurn === null &&
-            event.answersUserTurnIds.includes(admitted.userTurnId)
-          )
-            ourTurn = event.turnId;
-          if (event.type === "turn.finished") return isOurs(event.turnId);
-          if (event.type === "turn.failed") return ourTurn !== null;
+          if (event.type === "turn.started") {
+            const answers = event.answersUserTurnIds.includes(admitted.userTurnId);
+            const successor = ourTurn !== null && event.continuesRunId === ourTurn;
+            if (answers || successor) {
+              ourTurn = event.turnId;
+              continuing = false;
+              return false;
+            }
+            // One run claim per thread: another start after a continued
+            // finish means that lease ended without its successor.
+            if (!continuing) return false;
+            recover = true;
+            return true;
+          }
+          if (event.type === "turn.finished") {
+            if (!isOurs(event.turnId)) return false;
+            continuing = event.continued;
+            return !event.continued;
+          }
+          if (event.type === "turn.failed") {
+            recover = ourTurn !== null;
+            return recover;
+          }
           if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
             interrupt = { turnId: event.turnId, interruptId: event.interruptId };
             return true;
@@ -234,16 +253,18 @@ async function followToOutcome(
         },
       });
       lastSeq = followed.lastSeq;
-      if (followed.stoppedBy?.type !== "turn.failed") break;
+      if (!recover) break;
+      recover = false;
+      continuing = false;
 
-      // The reply admission named can fail while this send's user turn is
-      // still queued. Follow the reply that answers it instead.
+      // Our reply (or the lease it continued) failed while this send's user
+      // turn may still be queued: durable turns say what answers it now.
       const snapshot = await session.request<ThreadSnapshotResponse>(
         "GET",
         apiThreadSnapshotPath(threadId),
       );
       interrupt = undefined;
-      const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+      const answer = replyReaching(snapshot.turns, admitted.userTurnId);
       if (answer) {
         ourTurn = answer.id;
         if (["complete", "cancelled", "error"].includes(answer.status)) break;
@@ -285,22 +306,6 @@ async function followToOutcome(
     error: turn?.error ?? null,
     ...(interrupt ? { interrupt } : {}),
   };
-}
-
-function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | undefined {
-  const byId = new Map(turns.map((turn) => [turn.id, turn]));
-  const descendsFromUserTurn = (turn: Turn) => {
-    let current: Turn | undefined = turn;
-    while (current?.prevTurnId) {
-      if (current.prevTurnId === userTurnId) return true;
-      current = byId.get(current.prevTurnId);
-    }
-    return false;
-  };
-  return turns
-    .filter((turn) => turn.role === "assistant" && descendsFromUserTurn(turn))
-    .sort((left, right) => left.position - right.position)
-    .at(-1);
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */

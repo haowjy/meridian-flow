@@ -2,7 +2,11 @@
  * Folds the thread socket's AG-UI stream into compact, dotted CLI events
  * (codex-exec style) and renders each as one text line.
  */
-import { readRunStartedMeta, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  readRunFinishedMeta,
+  readRunStartedMeta,
+  type SequencedEvent,
+} from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
@@ -12,6 +16,8 @@ export type CliEvent =
       turnId: string;
       /** User turns this reply answers; how a send recognizes its own reply. */
       answersUserTurnIds: readonly string[];
+      /** The reply this one continues under the same lease (a split successor). */
+      continuesRunId: string | null;
     }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
   | {
@@ -41,7 +47,13 @@ export type CliEvent =
       turnId: string;
       interruptId: string;
     }
-  | { type: "turn.finished"; seq: string; turnId: string }
+  | {
+      type: "turn.finished";
+      seq: string;
+      turnId: string;
+      /** A same-lease successor continues this reply; the run is not over. */
+      continued: boolean;
+    }
   | {
       type: "turn.failed";
       seq: string;
@@ -65,17 +77,27 @@ export class RunEventMapper {
     const { seq, event } = sequenced;
     const e = event as unknown as Record<string, unknown> & { type: string };
     switch (e.type) {
-      case "RUN_STARTED":
+      case "RUN_STARTED": {
+        const { answersUserTurnIds, continuesRunId } = readRunStartedMeta(e.rawEvent);
         return [
           {
             type: "turn.started",
             seq,
             turnId: String(e.runId),
-            answersUserTurnIds: readRunStartedMeta(e.rawEvent).answersUserTurnIds,
+            answersUserTurnIds,
+            continuesRunId,
           },
         ];
+      }
       case "RUN_FINISHED":
-        return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
+        return [
+          {
+            type: "turn.finished",
+            seq,
+            turnId: String(e.runId),
+            continued: readRunFinishedMeta(e.rawEvent).continued,
+          },
+        ];
       case "RUN_ERROR": {
         const details =
           sequenced.error?.details &&
