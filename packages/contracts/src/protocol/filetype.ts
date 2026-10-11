@@ -84,7 +84,9 @@ const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition 
 /** Classify registered and persisted filetype metadata without throwing. */
 export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
   if (!filetype) return { kind: "unknown" };
-  return dispositionsByPersistedValue[filetype] ?? { kind: "unknown" };
+  return Object.hasOwn(dispositionsByPersistedValue, filetype)
+    ? (dispositionsByPersistedValue[filetype] ?? { kind: "unknown" })
+    : { kind: "unknown" };
 }
 
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
@@ -118,7 +120,8 @@ const extToFiletype: Record<string, Filetype> = {
 export const PROSE_EXTENSIONS: ReadonlySet<string> = new Set(["md", "markdown", "mdx", "txt"]);
 
 export function filetypeForExtension(extension: string): Filetype | null {
-  return extToFiletype[extension.toLowerCase()] ?? null;
+  const key = extension.toLowerCase();
+  return Object.hasOwn(extToFiletype, key) ? (extToFiletype[key] ?? null) : null;
 }
 
 /**
@@ -193,7 +196,7 @@ export function filetypeForMimeType(mimeType: string): Filetype {
 export function filetypeForKnownMimeType(mimeType: string): Filetype | null {
   const semi = mimeType.indexOf(";");
   const clean = semi >= 0 ? mimeType.slice(0, semi).trim() : mimeType.trim();
-  return mimeToFiletype[clean] ?? null;
+  return Object.hasOwn(mimeToFiletype, clean) ? (mimeToFiletype[clean] ?? null) : null;
 }
 
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

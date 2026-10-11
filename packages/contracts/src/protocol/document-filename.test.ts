@@ -1,7 +1,12 @@
 /** Document naming laws, including canonical round trips and explicit destination types. */
 import { describe, expect, it } from "vitest";
 import { parseBinaryFilename, parseDocumentFilename, renderFilename } from "./document-filename.js";
-import { filetypeForKnownPath, filetypeForPath } from "./filetype.js";
+import {
+  classifyFiletype,
+  filetypeForKnownMimeType,
+  filetypeForKnownPath,
+  filetypeForPath,
+} from "./filetype.js";
 
 describe("document filename codec", () => {
   it("normalizes prose, preserves registered suffixes, and round-trips stored parts", () => {
@@ -16,7 +21,12 @@ describe("document filename codec", () => {
       [" config.toml ", "config", "toml", "text"],
       ["app.tsx", "app", "tsx", "typescript"],
       ["Pic.PNG", "Pic", "png", "png"],
-      ...["Vol. 2", "Chapter 1.5", "ch12.draft"].map((name) => [name, name, "", "markdown"]),
+      ...["Vol. 2", "Chapter 1.5", "ch12.draft", "foo.constructor", "foo.__proto__"].map((name) => [
+        name,
+        name,
+        "",
+        "markdown",
+      ]),
     ];
     for (const [input, name, extension, filetype] of cases) {
       const result = parseDocumentFilename(input ?? "");
@@ -43,6 +53,10 @@ describe("document filename codec", () => {
       value: { name: "Pic", extension: "png", filetype: "png" },
     });
     expect(parseBinaryFilename("archive.unknown").ok).toBe(true);
+    for (const unregistered of ["constructor", "__proto__", "toString"]) {
+      expect(classifyFiletype(unregistered)).toEqual({ kind: "unknown" });
+      expect(filetypeForKnownMimeType(unregistered)).toBeNull();
+    }
   });
   it("round-trips generated dotted names, explicit extensions and inherited destinations", () => {
     for (const stem of [
