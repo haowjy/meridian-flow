@@ -6,12 +6,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { useMemo } from "react";
+import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
-import { threadRecentIdentityIndex } from "../context/thread-recent-identity";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
 import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
@@ -30,7 +30,7 @@ export type ContextSidebarProps = {
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const { snapshot } = useAccountResourceProjection(projectId ?? "");
   const identities = useMemo(
-    () => threadRecentIdentityIndex(projectId ?? "", snapshot),
+    () => recentDocumentIdentityIndex(projectId ?? "", snapshot),
     [projectId, snapshot],
   );
   const recent = useThreadRecentDocuments(threadId);

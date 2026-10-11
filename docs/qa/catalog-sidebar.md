@@ -176,7 +176,14 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 6. Delete a Scratch note independently, then trash and restore its No Work chat
    and its Work. Availability must still say `deleted`, including while its lineage
    is hidden; the independently deleted note never returns.
-7. A deleted file disappears from Chat Recent despite a cached touches response.
+7. Open a folder descendant and confirm it appears in Recently opened. Go
+   offline in the browser and delete the parent. The dialog closes after local
+   persistence, the tree/tab/dock closes, and Recently opened loses the link
+   before the server deletion runs. Reconnect: the accepted deletion refetches
+   `/api/projects/$PROJECT/recent-documents`; its response and the reloaded
+   Recently opened list omit the deleted document. No deleted-state view or
+   Undo is expected: deletion is permanent.
+8. A deleted file disappears from Chat Recent despite a cached touches response.
    A live renamed file uses its current catalog name; a not-yet-loaded identity
    may still use its touch-row name.
 
@@ -207,8 +214,11 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    command, the queued command becomes repair, not deletion. Even without the
    folder's catalog row, its journal identity must remain reachable in the
    tree at its last known home with failure evidence. An entirely missing
-   checkpoint also renders the repair source and ancestor chain. These recovery
-   rows do not establish server visibility or catalog completeness.
+   checkpoint also renders the repair source and ancestor chain. Real parent
+   and child recovery identities occupy their homes before missing ancestors
+   are synthesized, regardless of identity sort order. Synthetic ancestors
+   permit navigation but expose no create, rename, move or delete controls.
+   These recovery rows do not establish server visibility or catalog completeness.
 
 Automated boundary evidence: `folder-placement-selectors.test.ts` exercises the
 real tree and tab selectors through pending, accepted and folder-only refreshed
@@ -216,3 +226,8 @@ placements, absent-row/absent-catalog repair, and placement-relative deletion.
 `cross-owner-placement.test.ts` guards qualified alias binding. The folder
 schedule suite retains its full schedule inventory and validates that any new
 non-catalog rows belong to a reachable journal repair chain.
+
+`folder-placement-regressions.test.ts` bounds 200 nested journaled identities
+with a missing destination and verifies parent/child recovery identity reuse.
+`useRecentDocuments.test.tsx` checks shared pending-delete suppression, refusal
+restoration and accepted-delete query invalidation.

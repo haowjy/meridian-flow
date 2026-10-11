@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
+
 - Missing folder parents reuse real recovery identities; synthesized ancestors only navigate.
 
 - Deeply nested pending folder renames no longer stall workspace projection when a destination is missing.

@@ -116,6 +116,8 @@ Shared across both shells:
   `context-schemes.ts`, `context-file-icon.ts`, `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)
 
-Chat Recent memoizes one catalog identity index per replica snapshot. Known
+Chat Recent and Recently opened share `client/query/recent-document-identity.ts`,
+one catalog identity index per immutable replica snapshot. Accepted deletion
+invalidates the server Recently opened query; pending deletion never waits for it. Known
 terminal and pending-deleted documents disappear, matching server Recent filtering; only identities
 not loaded locally may fall back to touch-row names.
