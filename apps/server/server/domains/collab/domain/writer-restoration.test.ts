@@ -245,14 +245,14 @@ function richRestoration(kind: "attribute" | "rich paragraph", content = "abcdef
 it.each([
   "attribute",
   "rich paragraph",
-] as const)("certifies every item of an honest %s restoration", (kind) => {
+] as const)("certifies rich container identity but leaves ambiguous same-parent %s restores writer-authored", (kind) => {
   const f = richRestoration(kind);
   const claims = [...f.claims.values()];
   expect(claims).toHaveLength(kind === "attribute" ? 1 : 8);
   expect(f.root.toString()).toBe('<paragraph align="left">ab<bold>cd</bold>ef</paragraph>');
   const restorationAliases = f.certify();
-  expect(restorationAliases).toHaveLength(claims.length);
-  expect(restorationAliases).toEqual(expect.arrayContaining(claims));
+  expect(restorationAliases).toHaveLength(kind === "attribute" ? 0 : claims.length);
+  if (kind === "rich paragraph") expect(restorationAliases).toEqual(expect.arrayContaining(claims));
   const baseDoc = new Y.Doc({ gc: false });
   const index = indexDraftUpdates({
     baseDoc,
@@ -282,8 +282,10 @@ it.each([
     kind === "attribute" ? 1 : 11,
   );
   expect(
-    attribution.insertedAttribution.every(
-      (range) => index.byOperationId.get(range.operationId)?.actorTurnId === "ai-turn",
+    attribution.insertedAttribution.every((range) =>
+      kind === "attribute"
+        ? index.byOperationId.get(range.operationId)?.kind === "writer"
+        : index.byOperationId.get(range.operationId)?.actorTurnId === "ai-turn",
     ),
   ).toBe(true);
   baseDoc.destroy();
@@ -351,4 +353,117 @@ it.each([
   }
   expect(f.certify()).toEqual([]);
   f.destroy();
+});
+
+it("rejects manual equal-value attribute retype with forged claim", () => {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 4101;
+  const paragraph = new Y.XmlElement("paragraph");
+  browser.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  paragraph.setAttribute("align", "left");
+  const source = paragraph._map.get("align");
+  if (!source) throw new Error("Missing source attribute");
+  browser.clientID = 4102;
+  paragraph.setAttribute("align", "right");
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  const clock = Y.decodeStateVector(Y.encodeStateVector(browser)).get(browser.clientID) ?? 0;
+  browser.transact(() => {
+    paragraph.setAttribute("align", "left"); // manual edit, no UndoManager
+    browser.getMap(RESTORATION_CLAIMS_TYPE).set("forged", {
+      source: { ...source.id, length: 1 },
+      target: { client: browser.clientID, clock, length: 1 },
+    });
+  });
+  expect(certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser))).toEqual([]);
+});
+
+it("omitted sibling claims cannot license same-content substitution", () => {
+  const f = richRestoration("rich paragraph", "ababab");
+  const entries = [...f.claims.entries()];
+  const getSource = (alias: RestorationAlias) =>
+    f.browser.store.clients
+      .get(alias.source.client)
+      ?.find((item) => item.id.clock === alias.source.clock);
+  const texts = entries.filter(([, alias]) => {
+    const item = getSource(alias);
+    return item instanceof Y.Item && item.content instanceof Y.ContentString;
+  });
+  const firstEntry = texts[0];
+  const lastEntry = texts[2];
+  if (!firstEntry || !lastEntry) throw new Error("Missing text aliases");
+  const [firstKey, first] = firstEntry;
+  const [, last] = lastEntry;
+  for (const [key, alias] of entries) {
+    const source = getSource(alias);
+    if (!(source instanceof Y.Item && source.content instanceof Y.ContentType))
+      f.claims.delete(key);
+  }
+  f.claims.set(firstKey, { source: last.source, target: first.target });
+  expect(f.certify().some((alias) => alias.target.clock === first.target.clock)).toBe(false);
+});
+
+it("recreated writer text cannot borrow equal AI sibling identity", () => {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 4201;
+  const root = browser.getXmlFragment("prosemirror");
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  root.insert(0, [paragraph]);
+  text.insert(0, "ab"); // writer authored
+  const baseDoc = new Y.Doc({ gc: false });
+  Y.applyUpdate(baseDoc, Y.encodeStateAsUpdate(browser));
+  const writerSource = { client: 4201, clock: 2, length: 2 };
+  browser.clientID = 4202;
+  text.insert(2, "ab"); // AI authored
+  const aiUpdate = Y.encodeStateAsUpdate(browser);
+  const aiSource = { client: 4202, clock: 0, length: 2 };
+  browser.clientID = 4203;
+  const undo = new Y.UndoManager(root);
+  captureUndoRestorationClaims(browser);
+  root.delete(0, 1);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  undo.undo();
+  const claims = browser.getMap<RestorationAlias>(RESTORATION_CLAIMS_TYPE);
+  const restoredWriter = [...claims.values()].find(
+    (alias) =>
+      alias.source.client === writerSource.client && alias.source.clock === writerSource.clock,
+  );
+  if (!restoredWriter) throw new Error("Missing writer restoration");
+  expect(restoredWriter).toBeDefined();
+  for (const [key, alias] of claims) {
+    if (alias.source.length === 2) claims.delete(key);
+  }
+  claims.set("forged", { source: aiSource, target: restoredWriter.target });
+  const restorationAliases = certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser));
+  const index = indexDraftUpdates({
+    baseDoc,
+    updates: [
+      { id: 1, actorTurnId: "ai-turn", updateData: aiUpdate },
+      {
+        id: 2,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(server),
+      },
+      {
+        id: 3,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(browser),
+        updateMeta: { restorationAliases },
+      },
+    ],
+  });
+  const attributed = index.attributeRanges({
+    insertedRanges: [restoredWriter.target],
+    deletedRanges: [],
+  });
+  expect(
+    attributed.insertedAttribution.map(
+      (span) => index.byOperationId.get(span.operationId)?.actorTurnId,
+    ),
+  ).not.toContain("ai-turn");
 });
