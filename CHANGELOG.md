@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Dev document commands accept prose suffixes and report canonical names; seed scenarios use writer titles without `.md`.
+
 - A new project starts with the prose document “Chapter 1”; the mock writer targets that same chapter.
 
 - Corpus and KB imports preserve writer titles and folder names instead of slugging them, and name clashes receive numbered suffixes without replacing existing content.
