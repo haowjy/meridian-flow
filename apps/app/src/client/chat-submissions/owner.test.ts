@@ -355,3 +355,24 @@ it("a chat send during creation hands off its chat draft even if projection thro
     vi.unstubAllGlobals();
   }
 });
+
+it("two same-thread owners publish rejection and busy to the same readable snapshot", async () => {
+  recordChatSubmission(account, { ...entry(), state: undefined });
+  const gate = scenarioGate<never>();
+  const scenario = new ThreadRunScenario({
+    lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    append: async () => {
+      throw new HttpResponseError("refused", 400, null);
+    },
+    retire: () => gate.promise,
+  });
+  const first = await mount(scenario);
+  const second = await mount(scenario);
+  const id = scenario.turns()[0]!.id;
+  await first.read().driver.drive("thread_1");
+  expect(first.read().presentation.get(id)?.onEdit).toBeTypeOf("function");
+  expect(second.read().presentation.get(id)?.onEdit).toBeTypeOf("function");
+  first.read().presentation.get(id)?.onEdit?.();
+  expect(second.read().presentation.get(id)?.busy).toBe(true);
+  first.read().dispose();
+});

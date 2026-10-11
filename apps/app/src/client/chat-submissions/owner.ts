@@ -34,12 +34,34 @@ type Row = {
   failed?: boolean;
   localFailure?: boolean;
   busy?: boolean;
-  status?: "pending" | "error";
+  status?: "error";
+  attempt?: { session: object; submissionId: string; signal: AbortSignal };
 };
-const rows = new Map<string, Row>();
+type ThreadModel = {
+  epoch: number;
+  rows: Map<string, Row>;
+  presentation: Map<string, UserTurnRecovery>;
+  bindings: Set<ChatSubmissionOwner>;
+};
+const models = new Map<string, ThreadModel>();
+function threadModel(accountId: string, threadId: string): ThreadModel {
+  const id = JSON.stringify([accountId, threadId]);
+  let model = models.get(id);
+  if (!model || model.epoch !== getChatSubmissionEpoch()) {
+    model = {
+      epoch: getChatSubmissionEpoch(),
+      rows: new Map(),
+      presentation: new Map(),
+      bindings: new Set(),
+    };
+    models.set(id, model);
+  }
+  return model;
+}
 const key = (accountId: string, recordId: string) => `${accountId}:${recordId}`;
 
 function projectRow(accountId: string, entry: ChatSubmission, actions: ThreadStoreActions): Row {
+  const rows = threadModel(accountId, entry.threadId).rows;
   const id = key(accountId, entry.recordId);
   let row = rows.get(id);
   if (!row || !actions.turns(entry.threadId)?.some((turn) => turn.id === row?.turnId)) {
@@ -103,7 +125,10 @@ type OwnerOptions = {
 
 export class ChatSubmissionOwner {
   readonly driver: ChatSubmissionDriver;
-  presentation = new Map<string, UserTurnRecovery>();
+  private readonly model: ThreadModel;
+  get presentation() {
+    return this.model.presentation;
+  }
   private readonly session = {};
   private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
   private reconciling = false;
@@ -111,6 +136,9 @@ export class ChatSubmissionOwner {
   constructor(private readonly options: OwnerOptions) {
     const { accountId, threadId, projectId, signal, current, controller, actions, queryClient } =
       options;
+    this.model = threadModel(accountId, threadId);
+    this.model.bindings.add(this);
+    const rows = this.model.rows;
     controller.beginRecoverySession(this.session);
     this.driver = new ChatSubmissionDriver({
       accountId,
@@ -153,7 +181,11 @@ export class ChatSubmissionOwner {
       },
       status: (entry, status, localFailure) => {
         const row = projectRow(accountId, entry, actions);
-        row.status = status;
+        row.status = status === "error" ? status : undefined;
+        row.attempt =
+          status === "pending"
+            ? { session: this.session, submissionId: entry.submissionId, signal }
+            : undefined;
         if (status === "error") {
           if (!row.failed) options.failed(entry.recordId);
           row.failed = true;
@@ -163,6 +195,11 @@ export class ChatSubmissionOwner {
           row.failed = false;
         }
         actions.patchTurnStatus(threadId, row.turnId, status);
+        this.rebuild();
+      },
+      finished: (entry) => {
+        const row = rows.get(key(accountId, entry.recordId));
+        if (row?.attempt?.session === this.session) row.attempt = undefined;
         this.rebuild();
       },
       transferForEdit: (entry, cohort) => {
@@ -214,7 +251,8 @@ export class ChatSubmissionOwner {
       void this.reconcileDestination();
       return;
     }
-    this.presentation = new Map();
+    const rows = this.model.rows;
+    this.model.presentation = new Map();
     const ids = new Set(records.map((entry) => key(accountId, entry.recordId)));
     let retired = false;
     for (const [id, row] of rows) {
@@ -226,7 +264,12 @@ export class ChatSubmissionOwner {
     }
     for (const entry of records) {
       const row = projectRow(accountId, entry, actions);
-      const failure = row.status ? row.status === "error" : row.failed || entry.state;
+      const pending =
+        row.attempt &&
+        !row.attempt.signal.aborted &&
+        row.attempt.submissionId === entry.submissionId;
+      if (!pending) row.attempt = undefined;
+      const failure = !pending && (row.status === "error" || row.failed || entry.state);
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
       this.presentation.set(row.turnId, {
@@ -250,7 +293,8 @@ export class ChatSubmissionOwner {
       });
     }
     if (retired) actions.invalidateThreadSnapshot(threadId);
-    this.options.changed();
+    for (const binding of this.model.bindings)
+      if (binding.options.current()) binding.options.changed();
   };
 
   /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
@@ -321,5 +365,10 @@ export class ChatSubmissionOwner {
   rowActions = (turnId: string): UserTurnRecovery | null => this.presentation.get(turnId) ?? null;
   dispose() {
     this.options.controller.endRecoverySession(this.session);
+    this.model.bindings.delete(this);
+    for (const row of this.model.rows.values())
+      if (row.attempt?.session === this.session) row.attempt = undefined;
+    const binding = [...this.model.bindings].find((owner) => owner.options.current());
+    binding?.rebuild();
   }
 }
