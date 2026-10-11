@@ -73,7 +73,7 @@ export function createWorkDraftFixture(db: Database) {
       createdByUserId: USER_ID,
       name: "Work",
       slug: "work",
-      aiWriteMode: "draft",
+      defaultAiWriteMode: "draft",
     });
     // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
     await db

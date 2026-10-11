@@ -116,11 +116,13 @@ else
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
+        aiWriteMode: "direct",
         source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
         originTurnId: originTurnId as never,
       } as never);
       const subagent = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -153,6 +155,7 @@ else
       await expect(
         repos.transaction(async () => {
           const child = await repos.threads.createSubagent({
+            aiWriteMode: "direct",
             userId: ids.userId,
             projectId: ids.projectId,
             parentThreadId: ids.threadId,

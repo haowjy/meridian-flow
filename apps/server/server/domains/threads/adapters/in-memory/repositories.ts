@@ -110,6 +110,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     id,
     projectId: input.projectId,
     workId: null,
+    aiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: normalized.kind,
     status: "idle",

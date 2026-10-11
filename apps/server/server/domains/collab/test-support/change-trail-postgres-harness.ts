@@ -202,7 +202,7 @@ export async function seedDatabase(
     createdByUserId: USER_ID,
     name: "Atomicity work",
     slug: "atomicity-work",
-    aiWriteMode: "draft",
+    defaultAiWriteMode: "draft",
   });
   // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
   // a drafted read pulls its thread peers instead of reading live.

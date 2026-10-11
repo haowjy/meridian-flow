@@ -1,5 +1,6 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { SubmittedReference, Thread, UserMessageBlock } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import {
   type FirstSendChatSubmission,
   recordChatSubmission,
@@ -53,6 +54,10 @@ export type SendProjectChatArgs = {
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
   workId: string;
+  /** The selected Work's default: the new chat's mode unless the writer chose one. */
+  workAiWriteMode: AiWriteMode;
+  /** The writer's explicit choice in this composer; it becomes the Work's default too. */
+  aiWriteMode?: AiWriteMode;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
   now?: number;
@@ -70,12 +75,14 @@ export function makeOptimisticThread(input: {
   title: string;
   timestamp: string;
   workId?: string | null;
+  aiWriteMode: AiWriteMode;
   agent?: CreationAgent;
 }): Thread {
   return {
     id: input.id,
     projectId: input.projectId,
     workId: input.workId ?? null,
+    aiWriteMode: input.aiWriteMode,
     userId: OPTIMISTIC_OWNER_ID,
     kind: "primary",
     status: "idle",
@@ -109,6 +116,8 @@ export function sendProjectChat({
   activatedSkillSlugs,
   agent,
   workId,
+  workAiWriteMode,
+  aiWriteMode,
   threadActions,
   selectChat,
   now,
@@ -134,13 +143,23 @@ export function sendProjectChat({
       activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
       title,
       workId,
+      workAiWriteMode,
+      ...(aiWriteMode ? { aiWriteMode } : {}),
       agentSelection: agent.selection,
       agentName: agent.name,
       agentSlug: agent.slug,
     };
     if (!recordChatSubmission(accountId, submission)) return null;
     threadActions.ensureThread(
-      makeOptimisticThread({ id: threadId, projectId, title, timestamp, workId, agent }),
+      makeOptimisticThread({
+        id: threadId,
+        projectId,
+        title,
+        timestamp,
+        workId,
+        aiWriteMode: aiWriteMode ?? workAiWriteMode,
+        agent,
+      }),
     );
     threadActions.markPendingCreation({ threadId });
   }
@@ -161,6 +180,7 @@ export function sendProjectChat({
       references,
       agentSelection: agent.selection,
       workId,
+      ...(aiWriteMode ? { aiWriteMode } : {}),
       optimisticUserTurnId,
       workingTurnId,
       submissionId,
@@ -205,6 +225,7 @@ export function rehydrateFirstSendSubmission(
       title: entry.title,
       timestamp: entry.createdAt,
       workId: entry.workId,
+      aiWriteMode: entry.aiWriteMode ?? entry.workAiWriteMode,
       agent: {
         name: entry.agentName,
         slug: entry.agentSlug,
@@ -236,6 +257,7 @@ export function rehydrateFirstSendSubmission(
     references: entry.references,
     agentSelection: entry.agentSelection,
     workId: entry.workId,
+    ...(entry.aiWriteMode ? { aiWriteMode: entry.aiWriteMode } : {}),
     optimisticUserTurnId,
     workingTurnId,
     submissionId: entry.submissionId,

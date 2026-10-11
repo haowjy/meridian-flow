@@ -56,7 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Runtime settlement",
         slug: "runtime-settlement",
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
       });
       // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
       await db
@@ -147,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "No Work",
         slug: null,
         isNoWork: true,
-        aiWriteMode: "draft",
+        defaultAiWriteMode: "draft",
       });
       await db.delete(schema.threadWorks).where(eq(schema.threadWorks.threadId, THREAD_ID));
       await db.insert(schema.threadWorks).values({

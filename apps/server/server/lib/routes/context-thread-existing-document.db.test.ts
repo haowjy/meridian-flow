@@ -114,7 +114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Direct",
           slug: "direct",
-          aiWriteMode: "direct",
+          defaultAiWriteMode: "direct",
         },
         {
           id: DRAFT_WORK_ID,
@@ -122,7 +122,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Draft",
           slug: "draft",
-          aiWriteMode: "draft",
+          defaultAiWriteMode: "draft",
         },
       ]);
       await db.insert(schema.threads).values({

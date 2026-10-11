@@ -28,6 +28,7 @@ function thread(): Thread {
     id: THREAD_ID,
     projectId: CUSTOM_PROJECT_ID,
     workId: WORK_ID,
+    aiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
     status: "idle",

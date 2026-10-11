@@ -68,7 +68,10 @@ async function fixture(
   const harness = createHarness(db, options.links ? { links: options.links } : {});
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
-  await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
+  await db
+    .update(schema.works)
+    .set({ defaultAiWriteMode: mode })
+    .where(eq(schema.works.id, WORK_ID));
   await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
   await f.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
     const before = Y.encodeStateVector(doc);
@@ -301,7 +304,7 @@ describe("document revisions (postgres and collab)", () => {
       createdByUserId: USER_ID,
       name: "Other draft",
       slug: "other-draft",
-      aiWriteMode: "draft",
+      defaultAiWriteMode: "draft",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);

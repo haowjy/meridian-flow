@@ -43,6 +43,7 @@ export function mapThread(
     id: row.id,
     projectId: row.projectId,
     workId: row.workId ?? null,
+    aiWriteMode: row.aiWriteMode,
     userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
     status: row.status as Thread["status"],

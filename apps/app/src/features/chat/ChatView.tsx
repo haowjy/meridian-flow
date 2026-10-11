@@ -265,6 +265,7 @@ export function ChatView({
       sourceThreadId: threadId,
       sourceTitle: activeThread.title,
       workId: activeWork?.id ?? activeThread.workId,
+      aiWriteMode: activeThread.aiWriteMode,
     };
     return {
       projectId,

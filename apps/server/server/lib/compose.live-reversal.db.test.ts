@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Rewrite",
         slug: "rewrite",
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
       });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,

@@ -180,6 +180,7 @@ async function setup(
           status: "complete",
         });
         return rig.repos.threads.createSubagent({
+          aiWriteMode: "direct",
           userId: USER_ID,
           projectId: rig.project.id,
           parentThreadId: rig.thread.id,
@@ -609,6 +610,7 @@ describe("drain-only start", () => {
       prevTurnId: null,
     });
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: thread.userId,
       projectId: thread.projectId,
       parentThreadId: thread.id,

@@ -303,6 +303,7 @@ else
       ).resolves.toMatchObject({ thread: { id }, created: false });
 
       const otherSource = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Other source",
@@ -357,6 +358,7 @@ else
     it("returns the row when competing sources hit the same ID insert", async () => {
       const fixture = await setupSource();
       const otherSource = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Other source",
@@ -931,6 +933,7 @@ else
         originTurnId: fixture.firstTurn.id,
       });
       const child = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: fixture.source.id as never,

@@ -13,6 +13,7 @@ import type {
   ThreadLifecycleStatus,
 } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
@@ -138,7 +139,10 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
 
 async function insertThreadRow(
   db: DrizzleDatabase,
-  values: Omit<typeof schema.threads.$inferInsert, "ref" | "kind"> & { kind: ThreadKind },
+  values: Omit<typeof schema.threads.$inferInsert, "ref" | "kind" | "aiWriteMode"> & {
+    kind: ThreadKind;
+    aiWriteMode: AiWriteMode;
+  },
   options: { ignoreIdConflict?: boolean } = {},
 ) {
   return runInDrizzleTransaction(db, async () => {
@@ -176,6 +180,7 @@ export function createDrizzleThreadRepository(
         projectId: input.projectId as ProjectId,
         createdByUserId: input.userId as string,
         kind: normalized.kind,
+        aiWriteMode: input.aiWriteMode,
         title: normalized.title,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
@@ -193,6 +198,7 @@ export function createDrizzleThreadRepository(
         projectId: thread.projectId as ProjectId,
         createdByUserId: thread.userId,
         kind: thread.kind,
+        aiWriteMode: thread.aiWriteMode,
         title: thread.title ?? "",
         initialPromptBakeId: thread.initialPromptBakeId ?? null,
         parentThreadId: thread.parentThreadId,
@@ -215,6 +221,7 @@ export function createDrizzleThreadRepository(
           projectId: thread.projectId as ProjectId,
           createdByUserId: thread.userId,
           kind: "primary",
+          aiWriteMode: thread.aiWriteMode,
           title: thread.title ?? "",
           initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,

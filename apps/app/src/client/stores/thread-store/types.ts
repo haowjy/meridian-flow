@@ -10,6 +10,7 @@ import type {
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
@@ -27,6 +28,8 @@ export type PendingStreamStart = {
     references: readonly SubmittedReference[];
     agentSelection: AgentSelection;
     workId?: string | null;
+    /** The writer's explicit mode for the new chat; omitted, it copies the Work's default. */
+    aiWriteMode?: AiWriteMode;
     optimisticUserTurnId?: string;
     workingTurnId?: string;
     submissionId?: string;

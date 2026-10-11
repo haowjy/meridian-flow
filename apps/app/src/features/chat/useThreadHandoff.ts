@@ -193,6 +193,7 @@ export function useThreadHandoff(
           id: threadId,
           title: creation.title,
           workId: creation.workId,
+          ...(creation.aiWriteMode ? { aiWriteMode: creation.aiWriteMode } : {}),
           agentSelection: creation.agentSelection,
         });
       })

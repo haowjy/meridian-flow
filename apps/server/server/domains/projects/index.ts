@@ -156,7 +156,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         name: NO_WORK_NAME,
         slug: null,
         isNoWork: true,
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
       })
       .returning({ id: works.id });
     if (!row) throw new Error("Failed to create No Work");

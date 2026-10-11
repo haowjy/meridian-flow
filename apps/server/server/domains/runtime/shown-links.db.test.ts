@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !url) {
       } else {
         repos = createInMemoryRepositories({ transactionOwner: owner }) as unknown as typeof repos;
       }
-      const thread = await repos.threads.create({ userId, projectId });
+      const thread = await repos.threads.create({ aiWriteMode: "direct", userId, projectId });
       const answer = await repos.turns.create({
         threadId: thread.id as ThreadId,
         role: "assistant",
@@ -94,6 +94,7 @@ if (!RUN_DB_TESTS || !url) {
         status: "complete",
       });
       const child = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId,
         projectId,
         parentThreadId: thread.id as ThreadId,
@@ -150,6 +151,7 @@ if (!RUN_DB_TESTS || !url) {
       const derive = async (originType: "fork" | "handoff", origin: Turn, from = source) =>
         (
           await repos.threads.createDerivedPrimary({
+            aiWriteMode: "direct",
             id: crypto.randomUUID(),
             source: from,
             workId: from.workId,

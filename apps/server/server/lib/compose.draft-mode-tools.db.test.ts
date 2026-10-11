@@ -58,7 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Rewrite",
         slug: "rewrite",
-        aiWriteMode: "draft",
+        defaultAiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await first.save();
       await db
         .update(schema.works)
-        .set({ aiWriteMode: "direct" })
+        .set({ defaultAiWriteMode: "direct" })
         .where(eq(schema.works.id, WORK_ID));
 
       const { call } = await script.begin();
@@ -257,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("rolls a copy back with its reply", async () => {
       await db
         .update(schema.works)
-        .set({ aiWriteMode: "direct" })
+        .set({ defaultAiWriteMode: "direct" })
         .where(eq(schema.works.id, WORK_ID));
       const script = await startWithChapter("Writer live content.");
       const { call, responseId } = await script.begin();
@@ -403,7 +403,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
         .update(schema.works)
-        .set({ aiWriteMode: "direct" })
+        .set({ defaultAiWriteMode: "direct" })
         .where(eq(schema.works.id, WORK_ID));
       const script = await startWithChapter("Writer live content.");
       const { call } = await script.begin();

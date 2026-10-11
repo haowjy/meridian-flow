@@ -20,6 +20,7 @@ describe("buildThreadSnapshot ancestors", () => {
   it("aggregates all billed calls and reflects the next persisted response in a fresh snapshot", async () => {
     const repos = createInMemoryRepositories();
     const thread = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
       title: "Muse chat",
@@ -114,6 +115,7 @@ describe("buildThreadSnapshot ancestors", () => {
     });
 
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: thread.id as ThreadId,

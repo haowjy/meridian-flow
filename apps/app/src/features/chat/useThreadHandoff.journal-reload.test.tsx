@@ -136,6 +136,7 @@ function firstSend(): FirstSendChatSubmission {
     activatedSkillSlugs: [],
     title: "Draft the fight scene",
     workId: null,
+    workAiWriteMode: "direct",
     agentSelection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
     agentName: "General",
     agentSlug: "general",
@@ -418,6 +419,7 @@ describe("real-store first-send retry", () => {
       submissionId: "sub-first",
       agent: { name: "General", slug: "general", selection: firstSend().agentSelection },
       workId: "no-work",
+      workAiWriteMode: "direct",
       threadActions: scenario.store.getState(),
       selectChat: () => undefined,
     });

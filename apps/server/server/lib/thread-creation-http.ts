@@ -1,5 +1,6 @@
 /** Shared root-creation request validation and definite-refusal transport mapping. */
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { AgentSelectionError } from "../domains/packages/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
@@ -14,6 +15,13 @@ export function parseCreationTitle(value: unknown): string | null {
   if (typeof value !== "string")
     throw createError({ statusCode: 400, message: "title must be a string or null" });
   return value || null;
+}
+
+/** Omitted means the chat copies its Work's default. */
+export function parseCreationAiWriteMode(value: unknown): AiWriteMode | undefined {
+  if (value === undefined) return undefined;
+  if (value === "direct" || value === "draft") return value;
+  throw createError({ statusCode: 400, message: "aiWriteMode must be 'direct' or 'draft'" });
 }
 
 export function throwThreadCreationError(error: unknown): never {
