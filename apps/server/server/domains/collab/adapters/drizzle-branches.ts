@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  captureEditParts,
   type DocumentCoordinator,
   type DocumentLifecycle,
   effectiveYjsUpdate,
@@ -70,6 +71,11 @@ import {
   replicateFrozenIdentity,
 } from "../domain/document-mutation-policy.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
+import {
+  captureReceiptRows,
+  recordDocumentEdit,
+  settleDraftGeneration,
+} from "./drizzle-document-edits.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -914,6 +920,8 @@ export function createDrizzleBranchStore(
     async commitBranchMutation(input: CommitBranchMutationInput) {
       return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
         const journals = input.journals ?? [];
+        const editBranch = await getBranchSnapshot(input.branchId);
+        await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
         if (
           journals.some(
             (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
@@ -957,8 +965,8 @@ export function createDrizzleBranchStore(
         if (journals.length) {
           await mutatePending(
             journals.map((journal) => journal.branchId),
-            () =>
-              currentDrizzleDb(db)
+            async () => {
+              const rows = await currentDrizzleDb(db)
                 .insert(branchWriteJournal)
                 .values(
                   journals.map((journal) => ({
@@ -975,7 +983,16 @@ export function createDrizzleBranchStore(
                     updateMeta: journal.updateMeta ?? null,
                   })),
                 )
-                .then(() => undefined),
+                .returning({ id: branchWriteJournal.id });
+              const branch = await getBranchSnapshot(input.branchId);
+              const doc = createCollabYDoc({ gc: false });
+              Y.applyUpdate(doc, input.expectedState);
+              try {
+                await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
+              } finally {
+                doc.destroy();
+              }
+            },
           );
         }
         return true;
@@ -1021,6 +1038,12 @@ export function createDrizzleBranchStore(
               ),
             )
             .then(() => undefined);
+          await settleDraftGeneration(
+            txDb,
+            input.branchId,
+            input.expectedGeneration,
+            input.editDisposition ?? "discarded",
+          );
           return true;
         }),
       );
@@ -1254,5 +1277,65 @@ function updateChangesState(state: Uint8Array, update: Uint8Array): boolean {
     return Boolean(effectiveYjsUpdate(doc, update));
   } finally {
     doc.destroy();
+  }
+}
+
+async function captureBranchEdits(
+  db: Pick<Database, "select" | "insert" | "update">,
+  branch: BranchSnapshot,
+  doc: Y.Doc,
+  journals: readonly AppendBranchJournalInput[],
+  rows: readonly { id: number }[],
+): Promise<void> {
+  const groups = new Map<
+    string,
+    {
+      journal: AppendBranchJournalInput;
+      receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+    }
+  >();
+  const captured = captureReceiptRows(
+    doc,
+    journals.map((journal, i) => ({
+      update: journal.updateData,
+      origin: {
+        kind: "pending",
+        branchId: branch.branchId,
+        generation: branch.generation,
+        rowId: rows[i].id,
+      },
+    })),
+  );
+  for (const [i, journal] of journals.entries()) {
+    const meta =
+      journal.updateMeta && typeof journal.updateMeta === "object"
+        ? (journal.updateMeta as Record<string, unknown>)
+        : {};
+    if (meta.kind === "manifest_membership" || meta.branchReversal) continue;
+    const key = journal.documentEditKey ?? `${journal.threadId}:${journal.wId ?? rows[i].id}`;
+    const group = groups.get(key) ?? { journal, receipts: [] };
+    group.receipts.push(captured[i]);
+    groups.set(key, group);
+  }
+  for (const { journal, receipts } of groups.values()) {
+    const meta =
+      journal.updateMeta && typeof journal.updateMeta === "object"
+        ? (journal.updateMeta as Record<string, unknown>)
+        : {};
+    await recordDocumentEdit(db, {
+      documentId: branch.documentId,
+      threadId: journal.threadId,
+      turnId: journal.turnId as import("@meridian/contracts").TurnId | null | undefined,
+      responseId:
+        typeof meta.authoringResponseId === "string"
+          ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
+          : undefined,
+      actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
+      actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
+      receipts: captureEditParts(doc, receipts).map((p, i) => ({
+        ...p,
+        origin: receipts[i].origin,
+      })),
+    });
   }
 }

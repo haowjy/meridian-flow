@@ -16,6 +16,7 @@ import type {
   WriteMutationRow,
 } from "@meridian/agent-edit/integration";
 import {
+  captureEditParts,
   parseWriteHandle,
   persistUndoPlanWatermark,
   unwrapDoc,
@@ -66,6 +67,7 @@ import {
   ensureAndReadDocumentAuthorityHead,
   findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
+import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
@@ -208,10 +210,23 @@ function parseOrigin(meta: UpdateMeta): {
   throw new Error(`Invalid update origin: ${meta.origin}`);
 }
 
-function metaFromUpdateRow(
-  row: typeof documentYjsUpdates.$inferSelect,
-  mode: UpdateMetaMode,
-): UpdateMeta {
+// Existing transport readers intentionally do not consume the new edit lineage.
+const journalTransportColumns = {
+  id: documentYjsUpdates.id,
+  updateData: documentYjsUpdates.updateData,
+  originType: documentYjsUpdates.originType,
+  actorUserId: documentYjsUpdates.actorUserId,
+  actorTurnId: documentYjsUpdates.actorTurnId,
+  authoringResponseId: documentYjsUpdates.authoringResponseId,
+  reversalActorType: documentYjsUpdates.reversalActorType,
+  reversalActorUserId: documentYjsUpdates.reversalActorUserId,
+};
+type JournalTransportRow = Pick<
+  typeof documentYjsUpdates.$inferSelect,
+  keyof typeof journalTransportColumns
+>;
+
+function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): UpdateMeta {
   const reversalActor =
     row.reversalActorType === "user" && row.reversalActorUserId
       ? ({ type: "user", userId: row.reversalActorUserId } as const)
@@ -256,10 +271,7 @@ function metaFromUpdateRow(
   };
 }
 
-function mapUpdate(
-  row: typeof documentYjsUpdates.$inferSelect,
-  mode: UpdateMetaMode = "journal",
-): PersistedUpdate {
+function mapUpdate(row: JournalTransportRow, mode: UpdateMetaMode = "journal"): PersistedUpdate {
   return {
     seq: row.id,
     update: toBytes(row.updateData),
@@ -477,6 +489,10 @@ async function appendUpdate(
 ): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
   await validateAppendAuthority(db, documentId, authority);
+  const receiptState =
+    origin.originType === "human"
+      ? encodeJournalSnapshot(await createDrizzleJournal(db).read(documentId))
+      : undefined;
   const authorityHead = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
@@ -496,6 +512,22 @@ async function appendUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
+  if (receiptState) {
+    const doc = createCollabYDoc({ gc: false });
+    let receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+    try {
+      Y.applyUpdate(doc, receiptState);
+      receipts = captureReceiptRows(doc, [{ update, origin: { kind: "live", seq: row.id } }]);
+    } finally {
+      doc.destroy();
+    }
+    await recordDocumentEdit(db, {
+      documentId: asDocumentId(documentId),
+      actor: "human",
+      actorUserId: origin.actorUserId,
+      receipts,
+    });
+  }
   // Every admitted content mutation invalidates an unresolved settlement cut.
   const joinedSettlement =
     (await joinAdmissionWithinTx(db, {
@@ -870,6 +902,11 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
         }
+        const receiptStates = new Map<string, Uint8Array>();
+        for (const docId of uniqueSortedDocIds(
+          entries.filter((e) => e.mutation).map((e) => e.docId),
+        ))
+          receiptStates.set(docId, encodeJournalSnapshot(await this.read(docId)));
         const batchOrdinals = new Map<string, number>();
 
         const updateRows = await txDb
@@ -910,6 +947,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           });
         }
 
+        await captureLiveEdits(txDb, receiptStates, entries, updateRows);
         const mutationValues: Array<{
           index: number;
           seq: number;
@@ -1230,7 +1268,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
 
       const rows = await readDb
-        .select()
+        .select(journalTransportColumns)
         .from(documentYjsUpdates)
         .where(and(...conditions))
         .orderBy(asc(documentYjsUpdates.id));
@@ -1639,7 +1677,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
 
     async latestUpdate(docId) {
       const [row] = await db
-        .select()
+        .select(journalTransportColumns)
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
         .orderBy(desc(documentYjsUpdates.id))
@@ -1672,4 +1710,65 @@ export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPers
     lifecycle: createServerDocumentLifecycle(db, journal),
     store: createDrizzleCollabFacadeStore(db),
   };
+}
+
+function encodeJournalSnapshot(snapshot: JournalSnapshot): Uint8Array {
+  const doc = createCollabYDoc({ gc: false });
+  try {
+    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
+    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+async function captureLiveEdits(
+  db: JournalDb,
+  states: Map<string, Uint8Array>,
+  entries: readonly import("@meridian/agent-edit/integration").JournalBatchAppendEntry[],
+  rows: readonly { id: number }[],
+): Promise<void> {
+  for (const [docId, state] of states) {
+    const doc = createCollabYDoc({ gc: false }),
+      groups = new Map<
+        string,
+        {
+          mutation: NonNullable<(typeof entries)[number]["mutation"]>;
+          receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+        }
+      >();
+    try {
+      Y.applyUpdate(doc, state);
+      for (const [i, entry] of entries.entries()) {
+        if (entry.docId !== docId) continue;
+        const receipts = captureReceiptRows(
+          doc,
+          (entry.mutation?.editParts ?? [entry.update]).map((update) => ({
+            update,
+            origin: { kind: "live", seq: rows[i].id },
+          })),
+        );
+        if (!entry.mutation) continue;
+        const key = entry.mutation.writeId ?? String(rows[i].id),
+          group = groups.get(key) ?? { mutation: entry.mutation, receipts: [] };
+        group.receipts.push(...receipts);
+        groups.set(key, group);
+      }
+      for (const { mutation, receipts } of groups.values())
+        await recordDocumentEdit(db, {
+          documentId: asDocumentId(docId),
+          threadId: asThreadId(mutation.threadId),
+          turnId: asOptionalTurnId(mutation.turnId ?? undefined),
+          responseId: asModelResponseId(mutation.authoringResponseId),
+          actor: mutation.actorKind,
+          actorUserId: mutation.userId ? asUserId(mutation.userId) : undefined,
+          receipts: captureEditParts(doc, receipts).map((p, i) => ({
+            ...p,
+            origin: receipts[i].origin,
+          })),
+        });
+    } finally {
+      doc.destroy();
+    }
+  }
 }

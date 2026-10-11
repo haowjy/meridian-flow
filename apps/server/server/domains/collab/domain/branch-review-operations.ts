@@ -1,5 +1,6 @@
 /** Standalone selective discard and turn-level undo/redo service for work-draft review. */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import { type CapturedPart, captureServerRestoration } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -110,7 +111,15 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
         };
       }
       const liveDoc = await loadLiveDoc(branch.documentId);
-      const peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
+      const restorations: { receipt: CapturedPart; rows: BranchJournalRow[] }[] = [];
+      const peer = buildReversalPeer({
+        liveDoc,
+        rows: reviewableRows,
+        selectedIds: selected,
+        capture: (receipt, rows) => {
+          restorations.push({ receipt, rows });
+        },
+      });
       const branchDoc = materializeBranch(branch);
       try {
         syncPeer(peer, branchDoc);
@@ -121,6 +130,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           branch,
           journalRows: rows,
           expectedLiveRevision: selection.expectedLiveRevision,
+          restorations,
           state,
           stateVector,
           reviewedByUserId: discardInput.reviewedByUserId,
@@ -253,6 +263,7 @@ function buildReversalPeer(input: {
   liveDoc: Y.Doc;
   rows: BranchJournalRow[];
   selectedIds: ReadonlySet<number>;
+  capture?: (receipt: CapturedPart, rows: BranchJournalRow[]) => void;
 }): Y.Doc {
   const peer = createCollabYDoc({ gc: false });
   Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
@@ -264,8 +275,18 @@ function buildReversalPeer(input: {
     captureTimeout: Number.POSITIVE_INFINITY,
   });
   undoManager.stopCapturing();
+  const stackRows = new Map<unknown, BranchJournalRow[]>();
+  let previousTarget: string | undefined;
   for (const row of input.rows) {
-    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? targetOrigin : otherOrigin);
+    if (input.selectedIds.has(row.id)) {
+      const meta = row.updateMeta as { documentEdit?: { editId: string } } | undefined;
+      const target = meta?.documentEdit?.editId ?? `${row.threadId}:${row.wId ?? row.id}`;
+      if (target !== previousTarget) undoManager.stopCapturing();
+      previousTarget = target;
+      Y.applyUpdate(peer, row.updateData, targetOrigin);
+      const stack = undoManager.undoStack.at(-1);
+      if (stack) stackRows.set(stack, [...(stackRows.get(stack) ?? []), row]);
+    } else Y.applyUpdate(peer, row.updateData, otherOrigin);
   }
   assertNoPendingIntegration(
     peer,
@@ -274,9 +295,15 @@ function buildReversalPeer(input: {
   );
   undoManager.stopCapturing();
   while (undoManager.undoStack.length > 0) {
-    undoManager.undo();
+    const rows = stackRows.get(undoManager.undoStack.at(-1));
+    const fresh = createCollabYDoc({ gc: false });
+    peer.clientID = fresh.clientID;
+    fresh.destroy();
+    const receipt = captureServerRestoration(peer, () => undoManager.undo());
     undoManager.stopCapturing();
+    if (receipt && rows) input.capture?.(receipt, rows);
   }
+  undoManager.destroy();
   assertNoPendingIntegration(
     peer,
     "selective_discard_peer_after_undo",

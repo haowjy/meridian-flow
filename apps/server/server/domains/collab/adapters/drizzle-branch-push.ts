@@ -1,5 +1,7 @@
-import { randomUUID } from "node:crypto";
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
+import { randomUUID } from "node:crypto";
+import { captureEditParts } from "@meridian/agent-edit/integration";
+
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -9,6 +11,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -36,6 +39,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { placeDraftRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
@@ -455,6 +459,65 @@ async function commitPreparedDiscard(
     .returning({ id: documentBranches.id });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
+  const actionId = randomUUID();
+  const groups = new Map<string, import("./drizzle-document-edits.js").ReceiptWrite["receipts"]>();
+  for (const { receipt, rows } of input.restorations ?? []) {
+    const row = rows[0];
+    const meta = row.updateMeta as
+      | { documentEdit?: { editId: string; ordinal: number } }
+      | undefined;
+    const target = meta?.documentEdit;
+    const [restorationRow] = await db
+      .insert(branchWriteJournal)
+      .values({
+        branchId: input.branch.branchId,
+        generation: input.branch.generation,
+        updateData: Buffer.from(receipt.update),
+        draftBaseUpdateSeq: row.draftBaseUpdateSeq,
+        source: "writer",
+        actorUserId: input.reviewedByUserId ?? null,
+        updateMeta: { restorationAliases: receipt.aliases, kind: "discard" },
+      })
+      .returning({ id: branchWriteJournal.id });
+    if (!restorationRow) throw new Error("Discard restoration was not journaled");
+    const key = target?.editId ?? `legacy-row:${row.id}`;
+    const group = groups.get(key) ?? [];
+    group.push({
+      ...receipt,
+      targets: rows.flatMap((row) => {
+        const target = (
+          row.updateMeta as { documentEdit?: { editId: string; ordinal: number } } | undefined
+        )?.documentEdit;
+        return target ? [{ ...target, direction: "invert" as const }] : [];
+      }),
+      origin: {
+        kind: "pending",
+        branchId: input.branch.branchId,
+        generation: input.branch.generation,
+        rowId: restorationRow.id,
+      },
+    });
+    groups.set(key, group);
+  }
+  if (groups.size) {
+    const doc = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(doc, input.state);
+      for (const receipts of groups.values()) {
+        const normalized = captureEditParts(doc, receipts);
+        await recordDocumentEdit(db, {
+          documentId: input.branch.documentId,
+          actor: "human",
+          actorUserId: input.reviewedByUserId,
+          kind: "discard",
+          actionId,
+          receipts: receipts.map((p, i) => ({ ...p, effect: normalized[i].effect })),
+        });
+      }
+    } finally {
+      doc.destroy();
+    }
+  }
   const discardedRows = await db
     .update(branchWriteJournal)
     .set({
@@ -477,6 +540,13 @@ async function commitPreparedDiscard(
   if (discardedRows.length !== input.journalRows.length) {
     throw new BranchPushCommitConflictError(input.branch.branchId);
   }
+  await placeDraftRows(
+    db,
+    input.branch.branchId,
+    input.branch.generation,
+    input.journalRows.map((row) => row.id),
+    { kind: "discarded" },
+  );
 }
 
 async function commitPreparedRedo(
