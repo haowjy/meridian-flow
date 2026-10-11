@@ -382,7 +382,7 @@ else
       await db
         .insert(contextSources)
         .values({ id: sourceId, workId, name: "Uploads", slug: "uploads", scope: "work" });
-      if (scenario === "clash")
+      if (scenario !== "no-clash")
         await db.insert(documents).values({
           contextSourceId: sourceId,
           name: "upload",

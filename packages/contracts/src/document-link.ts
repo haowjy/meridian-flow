@@ -100,7 +100,9 @@ export function resolveStoredLink(
   const uri = parsed.ok
     ? stored.uri.slice(0, -parsed.value.path.length) + documentPathKey(parsed.value.path)
     : stored.uri;
-  const occupant = catalog.documentAt(uri);
+  // Prepare tracked the stored spelling. Canonicalization changes the shown
+  // ahead address, not the snapshot key that was loaded for this occurrence.
+  const occupant = catalog.documentAt(stored.uri);
   if (occupant === undefined) return { kind: "unknown" };
   // A document the reader cannot name or read is answered as nothing there:
   // an unsettled ref must not reveal what sits at its address.

@@ -133,7 +133,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     ["link run across marks", "[chapter **two**](ch2.md)"],
     ["external link", "[the web](https://example.com)"],
     ["inline image", "![Map](assets/map.png)"],
-    ["ahead link in a heading", "[Ahead](ch12.md#top)"],
+    ["ahead link in a heading", "[Ahead](ch12#top)"],
     ["no-ref link in a list", "[Lin](../kb.md)"],
     ["figure", '<Figure src="assets/fig.png" alt="Fig" caption="" />'],
     ["table anchor", tableText],
