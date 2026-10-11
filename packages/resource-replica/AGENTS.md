@@ -9,9 +9,16 @@ checkpoint; a scope entry disappearing does not prove that a document was
 deleted globally. Resource content has its own Yjs persistence authority.
 
 Folder placement is an identity dependency graph, not a sequence of path replacements.
+Every immutable replica observation shares one complete placement context across
+catalogs, resource locations, Editor tabs, the dock and Recent. Build it from all
+known project catalogs and all project journals, not from journal folders alone.
+UI projections require that context explicitly.
+
 Bind destinations through canonical and historical rename locations; resolve parents
 before children, independently of record order. Missing destinations and cycles fall
-back to canonical placement. Suppress deletions only after placement topology exists.
+back to canonical placement. Alias traversal tracks qualified locations and used
+identities; each identity translates once per branch, so cycles cannot grow an
+unbounded search. Suppress deletions only after placement topology exists.
 
 Namespace intent `settled` means accepted by the server. Rejected work retired
 by a later command (including a reminted create conflict) is terminal
@@ -36,6 +43,8 @@ outcomes without applying their effects; immutable transport evidence remains.
 
 Successful moves fence later dispatch until catalog or exact-ID availability installs
 the canonical location. Scoped absence alone never clears that fence. Authoritative
-unavailability releases queued commands into visible repair; a folder tombstone
+unavailability releases queued commands into visible repair. A missing catalog
+row is reconstructed from its journal identity and last known placement, with
+reachable ancestors and source, solely as a recovery row (never deletion proof); a folder tombstone
 retires them as terminal history. Folder availability cannot terminalize descendant
 documents. Only a delete receipt's exact IDs authorize that content transition.

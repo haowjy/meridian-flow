@@ -187,3 +187,32 @@ Record this separately from Scratch availability; never delete real branches to 
 Clean up `zz-probe` notes and chats and close only the owned browser profiles.
 Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder settlement) and
 `lineage-scratch-arrivals.db.test.ts` (both restore doors).
+
+## Shared placement and missing recovery rows (PR #754)
+
+1. Seed `P/A/doc.md` and `B/anchor.md` in an isolated project. Open the first
+   document in the Editor and expand both folders. Neither P nor B should have
+   a local namespace journal.
+2. In an isolated browser session, abort `**/context/manuscript/move` requests.
+   Move A into B through its Actions menu. Before reconnecting, A and doc.md
+   must appear under B and the open document path must read B / A / doc.md.
+   Prose stays mounted. Rename A in place and repeat under an unjournaled parent.
+3. Remove interception and trigger online/focus reconciliation. Check the same
+   placement after receipt settlement, folder-only availability, full catalog
+   convergence, and reload. Read the document through `./mf` at its new URI.
+4. Repeat across two named Works: move alpha's B to beta without changing B's
+   name, then move beta's X under B/sub. Both row orders must place X at
+   `scratch://@beta/B/sub/X`.
+5. If availability returns `unavailable` while a move refresh fences a queued
+   command, the queued command becomes repair, not deletion. Even without the
+   folder's catalog row, its journal identity must remain reachable in the
+   tree at its last known home with failure evidence. An entirely missing
+   checkpoint also renders the repair source and ancestor chain. These recovery
+   rows do not establish server visibility or catalog completeness.
+
+Automated boundary evidence: `folder-placement-selectors.test.ts` exercises the
+real tree and tab selectors through pending, accepted and folder-only refreshed
+placements, absent-row/absent-catalog repair, and placement-relative deletion.
+`cross-owner-placement.test.ts` guards qualified alias binding. The folder
+schedule suite retains its full schedule inventory and validates that any new
+non-catalog rows belong to a reachable journal repair chain.

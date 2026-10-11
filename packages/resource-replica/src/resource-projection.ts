@@ -50,7 +50,7 @@ export function projectResourceNeedsRepair(
   };
 }
 
-/** Writer-facing location, including durable local intentions not yet reflected by a catalog. */
+/** Resource-owned placement policy. UI consumers use ResourcePlacement to include ancestor changes. */
 export function projectResourceLocation(
   projectId: string,
   record: ResourceRecord,

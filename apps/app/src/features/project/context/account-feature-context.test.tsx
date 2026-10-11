@@ -62,9 +62,9 @@ describe("AccountFeatureTestProvider", () => {
     record.resource.lifecycle = { kind: "terminal", generation: "9", transitionId: "delete" };
     const projections: ReturnType<typeof projectResourceTab>[] = [];
     function Child() {
-      const { records, folders } = useObservedResourceProjection(replica, "project-1");
+      const { records, placement } = useObservedResourceProjection(replica, "project-1");
       projections.push(
-        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, folders),
+        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, placement),
       );
       return null;
     }

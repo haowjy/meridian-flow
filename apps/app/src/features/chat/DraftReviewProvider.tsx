@@ -2,6 +2,7 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { Work } from "@meridian/contracts/works";
+import { resourcePlacementForSnapshot } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -183,10 +184,16 @@ export function useDraftReviewScopeValue({
     // could report the pre-Apply tree and misread a remote Apply as a Discard.
     void resources
       .acquireCatalogAfter(projectId, scope)
-      .then((view) => {
+      .then(async (view) => {
         if (attempt.signal.aborted) return;
         queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-        const catalog = projectCatalogView(projectId, "manuscript", view);
+        const catalog = projectCatalogView(
+          projectId,
+          "manuscript",
+          view,
+          resourcePlacementForSnapshot(projectId, await resources.readProjection(projectId)),
+        );
+        if (attempt.signal.aborted) return;
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),

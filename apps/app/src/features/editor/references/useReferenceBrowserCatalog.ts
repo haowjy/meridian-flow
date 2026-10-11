@@ -2,6 +2,7 @@ import type { CatalogScope } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
+  resourcePlacementForSnapshot,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import { QueryClientContext } from "@tanstack/react-query";
@@ -69,7 +70,9 @@ export function useReferenceBrowserCatalog(
                     scope,
                     view,
                     snapshot?.records ?? [],
-                    snapshot?.folders ?? [],
+                    snapshot
+                      ? resourcePlacementForSnapshot(projectId, snapshot)
+                      : projection.placement,
                   )
                 : null;
             };
@@ -126,7 +129,7 @@ export function useReferenceBrowserCatalog(
                     scope,
                     view,
                     snapshot.records,
-                    snapshot.folders,
+                    resourcePlacementForSnapshot(projectId, snapshot),
                   );
                 },
               },
@@ -139,6 +142,7 @@ export function useReferenceBrowserCatalog(
       projectPending,
       projection.error,
       projection.snapshot,
+      projection.placement,
       queryClient,
       resources,
       scopes,

@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 /** Account reconciliation continues without a mounted project/catalog consumer. */
 import "fake-indexeddb/auto";
-import { markResourceCreateEligible, reserveResourceDocument } from "@meridian/resource-replica";
+import {
+  createResourcePlacement,
+  markResourceCreateEligible,
+  reserveResourceDocument,
+} from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/http-client";
@@ -159,7 +163,13 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     const catalog = projectCatalogView(
       "project",
       "unfiled",
-      accessibleResourceCatalogView("project", { kind: "project", projectId: "project" }, record),
+      accessibleResourceCatalogView(
+        "project",
+        { kind: "project", projectId: "project" },
+        record,
+        createResourcePlacement("project", [], []),
+      ),
+      createResourcePlacement("project", [], []),
       [record],
     );
     expect(catalog.children(catalog.root.entryId)).toMatchObject([

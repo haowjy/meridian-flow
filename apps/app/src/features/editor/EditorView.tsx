@@ -23,7 +23,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import { projectResourceLocation, resourceForDocumentIdentity } from "@meridian/resource-replica";
+import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -384,10 +384,10 @@ function ActiveSessionEditorView({
   effectiveEditableRef.current = effectiveEditable;
 
   // Links belong to their holder, never to the route's or a chat's Work.
-  const { records } = useAccountResourceProjection(projectId ?? "");
+  const { records, placement } = useAccountResourceProjection(projectId ?? "");
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = resourceForDocumentIdentity(records, documentId);
-  const location = holder && projectId ? projectResourceLocation(projectId, holder) : null;
+  const location = holder && projectId ? placement.resourceLocation(holder) : null;
   // A draft-created document has no holder record until Apply, so under review
   // its links belong to the draft's Work. Without one the scope would stay
   // pending and a followed link would wait forever.

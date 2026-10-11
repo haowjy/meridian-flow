@@ -1,10 +1,15 @@
 /** Authenticated-account scope for the project feature lifetime. */
 import type {
   FolderNamespaceRecord,
+  ResourcePlacement,
   ResourceProjectionSnapshot,
   ResourceRecord,
 } from "@meridian/resource-replica";
-import { resourceVisibleInProject } from "@meridian/resource-replica";
+import {
+  createResourcePlacement,
+  resourcePlacementForSnapshot,
+  resourceVisibleInProject,
+} from "@meridian/resource-replica";
 import {
   createContext,
   useContext,
@@ -193,6 +198,7 @@ export function useAccountResourceProjection(projectId: string): {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
   snapshot: ResourceProjectionSnapshot | null;
+  placement: ResourcePlacement;
   error: unknown;
 } {
   const replica = useOptionalAccountResourceReplica();
@@ -207,6 +213,7 @@ export function useObservedResourceProjection(
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
   snapshot: ResourceProjectionSnapshot | null;
+  placement: ResourcePlacement;
   error: unknown;
 } {
   const [snapshot, setSnapshot] = useState<ResourceProjectionSnapshot | null>(null);
@@ -241,7 +248,14 @@ export function useObservedResourceProjection(
       ) ?? [],
     [projectId, snapshot],
   );
-  return { records, folders, snapshot, error };
+  const placement = useMemo(
+    () =>
+      snapshot
+        ? resourcePlacementForSnapshot(projectId, snapshot)
+        : createResourcePlacement(projectId, [], []),
+    [projectId, snapshot],
+  );
+  return { records, folders, snapshot, placement, error };
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";

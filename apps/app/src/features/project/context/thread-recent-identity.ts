@@ -2,8 +2,8 @@
 import {
   catalogViewFromCheckpoint,
   intentOwnsDeletion,
-  projectFolderCatalog,
   type ResourceProjectionSnapshot,
+  resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import { projectResourceCatalogView } from "@/client/query/useContextCatalog";
 
@@ -13,29 +13,29 @@ export function threadRecentIdentityIndex(
   snapshot: ResourceProjectionSnapshot | null,
 ): ReadonlyMap<string, { name: string; path: string } | null> {
   const identities = new Map<string, { name: string; path: string } | null>();
-  for (const catalog of snapshot?.catalogs ?? []) {
+  if (!snapshot) return identities;
+  const placement = resourcePlacementForSnapshot(projectId, snapshot);
+  const suppressed = new Set<string>();
+  for (const catalog of snapshot.catalogs) {
     if (catalog.projectId !== projectId) continue;
     const view = projectResourceCatalogView(
       projectId,
       catalog.scope,
       catalogViewFromCheckpoint(catalog),
       snapshot?.records ?? [],
-      [],
+      placement,
     );
-    const entries = projectFolderCatalog(
-      projectId,
-      [...view.entries.values()],
-      snapshot?.folders ?? [],
-    );
+    const entries = [...view.entries.values()];
     const retained = new Set(entries.map((entry) => entry.entryId));
-    for (const [id, entry] of view.entries) {
-      if (entry.kind === "file" && !retained.has(id)) identities.set(id, null);
+    for (const entry of catalog.entries) {
+      if (entry.kind === "file" && !retained.has(entry.entryId)) suppressed.add(entry.entryId);
     }
     for (const entry of entries) {
       if (entry.kind === "file")
         identities.set(entry.entryId, { name: entry.name, path: entry.uri });
     }
   }
+  for (const id of suppressed) if (!identities.has(id)) identities.set(id, null);
   for (const { resource, intents } of snapshot?.records ?? []) {
     if (
       resource.lifecycle.kind === "terminal" ||

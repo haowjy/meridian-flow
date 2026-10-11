@@ -14,7 +14,6 @@ import {
   planFolderLocation,
   planResourceDeletion,
   planResourceLocation,
-  projectResourceLocation,
   publishResourceTerminal,
   ResourceCatalogAcquisition,
   type ResourceDestination,
@@ -27,6 +26,7 @@ import {
   remintCreateConflict,
   reserveResourceDocument,
   resourceNeedsBackgroundReconciliation,
+  resourcePlacementForSnapshot,
   resourceVisibleInProject,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
@@ -266,10 +266,11 @@ export class AccountResourceReplica {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
     const projection = await this.metadata.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, projection);
     const names = new Set(
       projection.records.flatMap((record) => {
         if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
-        const name = projectResourceLocation(projectId, record)?.name;
+        const name = placement.resourceLocation(record)?.name;
         return name ? [name] : [];
       }),
     );
@@ -399,7 +400,10 @@ export class AccountResourceReplica {
     return Boolean(
       known &&
         known.record.resource.lifecycle.kind === "acknowledged" &&
-        projectResourceLocation(projectId, known.record),
+        resourcePlacementForSnapshot(
+          projectId,
+          await this.readProjection(projectId),
+        ).resourceLocation(known.record),
     );
   }
 
