@@ -14,7 +14,7 @@ import {
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import { MemorySubmissionLock } from "@/client/chat-submissions/adapters/memory-lock";
-import { composerSessionDraft } from "@/client/composer-drafts";
+import { ComposerSessionDraft, composerSessionDraft } from "@/client/composer-drafts";
 import {
   defaultSendResponse,
   scenarioGate,
@@ -70,7 +70,9 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
   });
   owner.rebuild();
   const unsubscribe = paused ? () => {} : subscribeChatSubmissions(owner.rebuild);
+  const previousCleanup = cleanup;
   cleanup = async () => {
+    await previousCleanup?.();
     life.abort();
     unsubscribe();
     owner.dispose();
@@ -117,7 +119,7 @@ it("Edit bridges an already-accepted submission rather than returning delivered 
   const mounted = await mount(scenario);
   const row = scenario.turns()[0];
   if (!row) throw new Error("No row");
-  mounted.read().rowActions(row.id)?.onEdit?.();
+  mounted.read().presentation.get(row.id)?.onEdit?.();
   await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
   expect(scenario.turns().map((turn) => turn.id)).toEqual([defaultSendResponse().userTurnId]);
   expect(composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft).toBeNull();
@@ -132,7 +134,7 @@ it("Edit leaves a pending admission and its writer row untouched", async () => {
   const mounted = await mount(scenario);
   const row = scenario.turns()[0];
   if (!row) throw new Error("No row");
-  mounted.read().rowActions(row.id)?.onEdit?.();
+  mounted.read().presentation.get(row.id)?.onEdit?.();
   await vi.waitFor(() => expect(scenario.retireRequests).toHaveLength(1));
   expect(readChatSubmissions(account)).toHaveLength(1);
   expect(scenario.turns()).toEqual([expect.objectContaining({ id: row.id, status: "error" })]);
@@ -149,17 +151,17 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   };
   recordChatSubmission(account, { ...entry(), creation });
   recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
-  composerSessionDraft(account, { kind: "chat", id: "thread_1" }).editRejected(
+  composerSessionDraft(account, { kind: "chat", id: "thread_1" }).prependSnapshots([
     serializeComposerDraft(plainComposerDoc("Third unsent")).draft,
-  );
-  composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).editRejected(
+  ]);
+  composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).prependSnapshots([
     serializeComposerDraft(plainComposerDoc("Fourth existing")).draft,
-  );
+  ]);
   const scenario = new ThreadRunScenario();
   const mounted = await mount(scenario);
   const row = scenario.turns()[0];
   if (!row) throw new Error("No row");
-  mounted.read().rowActions(row.id)?.onEdit?.();
+  mounted.read().presentation.get(row.id)?.onEdit?.();
   await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
   const draft = composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).initialDraft;
   if (!draft) throw new Error("No transferred draft");
@@ -216,7 +218,7 @@ it("dissolves this pane without retiring a message recorded after the transfer r
     }
   });
   try {
-    mounted.read().rowActions(row.id)?.onEdit?.();
+    mounted.read().presentation.get(row.id)?.onEdit?.();
     await vi.waitFor(() =>
       expect(readChatSubmissions(account).map((record) => record.recordId)).toEqual(["late"]),
     );
@@ -320,8 +322,8 @@ it("a refused Retry rewrite retains an actionable row but does not authorize Edi
   try {
     await mounted.read().driver.retry("one");
     expect(scenario.turns()[0]?.status).toBe("error");
-    expect(mounted.read().rowActions(row.id)?.onRetry).toBeTypeOf("function");
-    expect(mounted.read().rowActions(row.id)?.onEdit).toBeUndefined();
+    expect(mounted.read().presentation.get(row.id)?.onRetry).toBeTypeOf("function");
+    expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();
     expect(readChatSubmissions(account)[0]?.submissionId).toBe("one");
     expect(readChatSubmissions(account)[0]?.state).toBe("rejected");
   } finally {
@@ -334,6 +336,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
   const source = composerSessionDraft(account, { kind: "chat", id: "thread_1" });
   source.updateDraft({ snapshot: envelope.draft, text: envelope.text });
   const scenario = new ThreadRunScenario();
+  const actions = scenario.store.getState();
   const mounted = await mount(scenario);
   recordChatSubmission(account, {
     ...entry(),
@@ -346,7 +349,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
     },
   });
   vi.stubGlobal("reportError", vi.fn());
-  const fault = vi.spyOn(scenario.store.getState(), "ensureThread").mockImplementation(() => {
+  const fault = vi.spyOn(actions, "ensureThread").mockImplementation(() => {
     throw new Error("projection");
   });
   try {
@@ -402,11 +405,103 @@ it("Edit retirement refusal cannot duplicate a transferred record or leave Retry
     await mounted.read().driver.edit("one");
     const draft = composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft;
     expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
+    expect(mounted.read().presentation.get(row.id)?.moving).toBe(true);
     expect(mounted.read().presentation.get(row.id)?.onRetry).toBeUndefined();
     expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();
     await mounted.read().driver.retry("one");
     expect(scenario.appendRequests).toHaveLength(0);
   } finally {
     fault.mockRestore();
+  }
+});
+
+it("a received Edit survives draft reload and retries only retirement", async () => {
+  recordChatSubmission(account, entry());
+  const scenario = new ThreadRunScenario({
+    retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
+  });
+  const mounted = await mount(scenario);
+  const remove = Storage.prototype.removeItem;
+  const fault = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (
+    this: Storage,
+    key,
+  ) {
+    if (key === chatSubmissionStorageKey(account, "one")) throw new Error("retirement refused");
+    remove.call(this, key);
+  });
+  await mounted.read().driver.edit("one");
+  fault.mockRestore();
+  const reloaded = new ComposerSessionDraft(account, { kind: "chat", id: "thread_1" });
+  expect(reloaded.hasReceived("one")).toBe(true);
+  const snapshot = entry().draft;
+  if (!snapshot) throw new Error("Missing draft");
+  expect(reloaded.prependSnapshots([snapshot], ["one"])).toBe(true);
+  expect(reloaded.initialDraft && serializeComposerDraft(reloaded.initialDraft.doc).text).toBe(
+    "First rejected",
+  );
+  await mounted.read().driver.drive("thread_1");
+  expect(readChatSubmissions(account)).toEqual([]);
+  expect(scenario.retireRequests).toHaveLength(1);
+  expect(scenario.appendRequests).toHaveLength(0);
+});
+
+it.each([
+  "projection",
+  "decoding",
+] as const)("destination %s faults report their cause without resolving the destination", async (kind) => {
+  recordChatSubmission(account, {
+    ...entry(),
+    creation: {
+      title: "Opening",
+      workId: null,
+      agentName: "General",
+      agentSlug: "general",
+      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    },
+  });
+  const scenario = new ThreadRunScenario();
+  const actions = scenario.store.getState();
+  const mounted = await mount(scenario);
+  const snapshot = {
+    thread: {
+      id: "thread_1",
+      userId: account,
+      projectId: "project-1",
+      title: "Opening",
+      workId: null,
+      createdAt: "2026-10-11T00:00:00Z",
+      updatedAt: "2026-10-11T00:00:00Z",
+    },
+    turns: [],
+    state: null,
+    hasMore: false,
+  } as unknown as Awaited<ReturnType<typeof getThreadSnapshot>>;
+  vi.mocked(getThreadSnapshot).mockResolvedValue(
+    kind === "decoding" ? (null as unknown as typeof snapshot) : snapshot,
+  );
+  const cause = new Error("destination projection");
+  const reported = vi.fn();
+  vi.stubGlobal("reportError", reported);
+  const fault = vi.spyOn(actions, "ensureThread").mockImplementation(() => {
+    throw cause;
+  });
+  try {
+    retireChatSubmission(account, "one");
+    await vi.waitFor(() =>
+      expect(reported).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: kind === "projection" ? cause.message : "Thread snapshot response is empty",
+        }),
+      ),
+    );
+    expect(mounted.dissolved).not.toHaveBeenCalled();
+    fault.mockRestore();
+    vi.mocked(getThreadSnapshot).mockResolvedValue(snapshot);
+    mounted.read().rebuild();
+    await vi.waitFor(() => expect(getThreadSnapshot).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(scenario.turns()).toEqual([]));
+  } finally {
+    fault.mockRestore();
+    vi.unstubAllGlobals();
   }
 });

@@ -88,6 +88,8 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
       },
       takeFresh: () => false,
       transferForEdit: () => false,
+      transferReceived: () => false,
+      finished: () => {},
       edited: () => {},
       ...overrides,
     });

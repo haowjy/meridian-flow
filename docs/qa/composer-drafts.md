@@ -19,6 +19,9 @@ dev-login. Seed a document and chat with `./mf seed tools/dev/cli/fixtures/basic
    with Retry and Edit, and the composer is empty. Type newer words, then Edit:
    the rejected message comes first and the newer words remain. Reload before
    Edit and verify the rejected row, not a second composer copy, returns.
+   After Edit, refuse journal-key deletion and reload in the same tab: the words
+   appear once in the draft, the old row reads “Moved to composer.” without
+   Retry/Edit, and restoring deletion then going online finishes retirement.
 6. Open the chat in a second independent browser tab (not Duplicate tab or
    Restore closed tab). Type different words in each and reload both. Each
    keeps its own draft. Close one, then open a fresh tab: it starts empty.

@@ -32,11 +32,6 @@ export class ComposerSessionDraft {
     for (const listener of this.listeners) listener();
   }
 
-  /** Writer-directed Edit prepends the rejected document without flattening reference atoms. */
-  editRejected(snapshot: ComposerDraftSnapshot): boolean {
-    return this.prependSnapshots([snapshot]);
-  }
-
   /** One ordered transfer for a rejected cohort, followed by this destination's newer writing. */
   prependSnapshots(snapshots: ComposerDraftSnapshot[], recordIds: string[] = []): boolean {
     const pending = snapshots.filter(

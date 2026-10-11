@@ -38,9 +38,9 @@ export type SubscribeLiveOptions = {
 };
 
 export type SubmitOptions = {
-  signal?: AbortSignal;
+  signal: AbortSignal;
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
-  optimisticUserTurnId?: string;
+  optimisticUserTurnId: string;
 };
 
 export type SubmissionPayload = {
@@ -214,10 +214,7 @@ export class ThreadRunController {
       kind,
       submissionId: envelope.submissionId,
     });
-    const signal = AbortSignal.any([
-      this.accountSignal,
-      ...(options.signal ? [options.signal] : []),
-    ]);
+    const signal = AbortSignal.any([this.accountSignal, options.signal]);
     const current = () => fence() && !signal.aborted;
     if (!current()) return outcome("abandoned");
     const previous = this.leaseTail;
@@ -261,14 +258,12 @@ export class ThreadRunController {
         return outcome("ambiguous");
       }
       if (!current()) return outcome("abandoned");
-      if (options.optimisticUserTurnId) {
-        this.actions.acknowledgeUserTurn(
-          threadId,
-          options.optimisticUserTurnId,
-          result.userTurnId,
-          result.snapshotFloorNextSeq,
-        );
-      }
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.snapshotFloorNextSeq,
+      );
       this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
@@ -306,10 +301,7 @@ export class ThreadRunController {
       kind,
       submissionId,
     });
-    const signal = AbortSignal.any([
-      this.accountSignal,
-      ...(options.signal ? [options.signal] : []),
-    ]);
+    const signal = AbortSignal.any([this.accountSignal, options.signal]);
     const current = () => fence() && !signal.aborted;
     if (!current()) return outcome("abandoned");
     let result: Awaited<ReturnType<LookupAdmissionFn>> | Awaited<ReturnType<RetireAdmissionFn>>;
@@ -322,19 +314,17 @@ export class ThreadRunController {
         }),
         signal,
       );
-    } catch (error) {
+    } catch {
       return outcome(current() ? "ambiguous" : "abandoned");
     }
     if (!current()) return outcome("abandoned");
     if (result.kind === "accepted" || result.kind === "already-accepted") {
-      if (options.optimisticUserTurnId) {
-        this.actions.acknowledgeUserTurn(
-          threadId,
-          options.optimisticUserTurnId,
-          result.userTurnId,
-          result.snapshotFloorNextSeq,
-        );
-      }
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.snapshotFloorNextSeq,
+      );
       this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     }

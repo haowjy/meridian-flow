@@ -268,10 +268,6 @@ export class DeviceChatSubmissionJournal {
     return found;
   }
 
-  forThread(threadId: string): ChatSubmission[] {
-    return this.entries().filter((entry) => entry.threadId === threadId);
-  }
-
   get(recordId: string): ChatSubmission | null {
     const accountId = this.state?.accountId;
     if (!accountId) return null;

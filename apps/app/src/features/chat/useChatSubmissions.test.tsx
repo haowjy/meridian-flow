@@ -110,7 +110,7 @@ it("subscribes to journal changes and cancels its own pending recovery on unmoun
   });
   const row = scenario.turns()[0];
   if (!row) throw new Error("No subscribed row");
-  expect(mounted.read().rowActions(row.id)).toBeNull();
+  expect(mounted.read().presentation?.get(row.id)).toBeUndefined();
   await act(async () => window.dispatchEvent(new Event("online")));
   await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
   await cleanup?.();

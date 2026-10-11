@@ -33,17 +33,20 @@ draft-control changes can be understood independently.
   server-initiated continuation live.
 - Durable acknowledged submissions — `client/chat-submissions` owns one
   account-stamped record for every unadmitted writer message. Its tab owner owns
-  row identity, failed/busy knowledge, Edit transfers and the in-memory presentation
-  snapshot. `useChatSubmissions` binds cancellation, external wakes and keyed alerts;
+  one shared account/thread row identity, live session/id-fenced attempts,
+  failed/busy knowledge, Edit transfers and observable presentation snapshot. `useChatSubmissions` binds cancellation, external wakes and keyed alerts;
   `useThreadRunResume` resumes only
   server snapshot runs. First-send creation is a field on the same record, not a
   separate stream handoff. The driver holds a per-thread Web Lock, bounds requests
   and fences every result by the account epoch and mounted recovery session.
   Accepted messages bridge and retire. Rejections remain on writer rows and never
   replay automatically. Ambiguity is tab-local and re-drives on mount, online,
-  snapshot refresh and reconnect. Retry looks up first and re-mints only a durable
-  rejected id. Edit retires server-side before transferring words, preserving newer
+  snapshot refresh and reconnect. Retry looks up first and re-mints only after successfully decoded
+  rejection/retirement proof. Failed lookup/retire requests preserve ambiguity and identity. Edit retires server-side before transferring words, preserving newer
   drafts; this tab's Edit dissolves a never-created chat to New chat in the same pane.
+  A stable record-id receipt is saved atomically with the transferred draft;
+  same-tab reload or partial retirement cannot copy or Retry those words again.
+  These receipts are tab-local, not a cross-tab ownership transaction.
   Remote absence requires a server 404 before dissolution; failed reads and
   inconclusive requests retain the destination and rows. Composer
   clears when the journal accepts ownership, not when the network completes.

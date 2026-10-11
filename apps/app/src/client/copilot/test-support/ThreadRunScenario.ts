@@ -245,13 +245,17 @@ export class ThreadRunScenario {
     this.snapshot = handler;
   }
 
-  submit(text: string, options: SubmitOptions = {}, threadId = "thread_1") {
+  submit(text: string, options: Partial<SubmitOptions> = {}, threadId = "thread_1") {
     const session = {};
     this.controller.beginRecoverySession(session);
+    const envelope = serializeComposerDraft(plainComposerDoc(text));
+    const optimisticUserTurnId =
+      options.optimisticUserTurnId ??
+      this.store.getState().appendUserTurn(threadId, envelope.blocks).id;
     return this.controller.recoverSubmission(
       threadId,
-      serializeComposerDraft(plainComposerDoc(text)),
-      options,
+      envelope,
+      { signal: options.signal ?? new AbortController().signal, optimisticUserTurnId },
       session,
     );
   }

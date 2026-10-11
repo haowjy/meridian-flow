@@ -131,7 +131,10 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
         references: [],
         activatedSkillSlugs: [],
       },
-      {},
+      {
+        signal: account.signal,
+        optimisticUserTurnId: store.getState().appendUserTurn("thread-1", []).id,
+      },
       session,
     ),
   ).resolves.toMatchObject({ kind: "accepted" });
