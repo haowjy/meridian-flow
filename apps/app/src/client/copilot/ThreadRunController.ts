@@ -51,22 +51,14 @@ type SessionFence = () => boolean;
 /** What a dispatch does when the server accepts the POST after this session has already lost ownership (a fence that no longer matches). */
 type StaleAcceptPolicy = "bridge-row" | "leave-row";
 
-function isAdmissionPending(error: unknown): boolean {
-  return (
-    (error instanceof HttpResponseError || isMeridianApiError(error)) &&
-    (error.message === "admission_pending" || error.message.includes("admission_pending"))
-  );
-}
-
-/** A structured refusal or a 4xx proves the endpoint rejected the write, so the journal entry may be retired. */
-function isDefinitiveWriteRejection(error: unknown): boolean {
-  if (isMeridianApiError(error)) {
-    return error.status === undefined || (error.status >= 400 && error.status < 500);
+/** A refusal proves rejection; transport, server errors and pending admissions do not. */
+export function classifyWriteFailure(error: unknown): "rejected" | "ambiguous" {
+  if (error instanceof HttpResponseError || isMeridianApiError(error)) {
+    if (error.status === 409 && error.message.includes("admission_pending")) return "ambiguous";
+    if (error.status === undefined || (error.status >= 400 && error.status < 500))
+      return "rejected";
   }
-  if (error instanceof HttpResponseError) {
-    return error.status >= 400 && error.status < 500;
-  }
-  return false;
+  return "ambiguous";
 }
 
 export type ThreadRunControllerOptions = {
@@ -265,8 +257,7 @@ export class ThreadRunController {
         });
       } catch (error) {
         if (!fence()) return outcome("ambiguous");
-        if (isAdmissionPending(error)) return outcome("ambiguous");
-        if (isDefinitiveWriteRejection(error)) {
+        if (classifyWriteFailure(error) === "rejected") {
           this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
