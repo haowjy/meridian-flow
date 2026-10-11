@@ -164,7 +164,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   };
 }
 
-/** An agent's document or container access may go through its draft-mode Work's draft. */
+/** An agent's document or container access may go through its draft-mode chat's Work draft. */
 function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
   const draftWork = principal.agent?.draftWork;
   return target.kind !== "draft" && draftWork ? { target, draftWorkId: draftWork.id } : { target };

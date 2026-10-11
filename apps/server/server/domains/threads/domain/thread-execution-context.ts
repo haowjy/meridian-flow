@@ -1,12 +1,14 @@
-/** Thread execution policy from a locked Work. */
-import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
+/** Thread execution policy: the chat's write mode over its locked primary Work. */
+import type { AiWriteMode, ThreadExecutionContext, Work } from "@meridian/contracts/works";
 
+/** Draft mode drafts into the Work the chat is bound to at the time of the call (D62). */
 export function threadExecutionContext(
-  work: Pick<Work, "id" | "slug" | "aiWriteMode">,
+  work: Pick<Work, "id" | "slug">,
+  aiWriteMode: AiWriteMode,
 ): ThreadExecutionContext {
   return {
     scope: { workId: work.id, workSlug: work.slug },
-    aiWriteMode: work.aiWriteMode,
-    draftOwner: work.aiWriteMode === "draft" ? { kind: "work", workId: work.id } : null,
+    aiWriteMode,
+    draftOwner: aiWriteMode === "draft" ? { kind: "work", workId: work.id } : null,
   };
 }
