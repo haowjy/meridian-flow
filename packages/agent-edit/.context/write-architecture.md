@@ -185,7 +185,8 @@ alone flattens those segments into rows. Live writes capture one merged update.
 
 Recognized adjacent paragraph splits/merges and contiguous inserted or removed
 block runs stay one structural segment. Alignment carries their boundary identity
-into lowering; the segmenter never guesses correspondence from text substrings.
+into lowering; the segmenter consumes those recognized structural joins rather
+than rediscovering correspondence.
 Different logical writes remain separate unless their Yjs edits are dependent,
 even when they edit the same paragraph.
 
@@ -194,8 +195,10 @@ unpaired blocks are split/merge candidates, fenced by kept blocks. Each boundary
 checks whether the head's last word and tail's first word occur contiguously
 in the unsplit paragraph, ignoring whitespace. Words include adjacent non-space
 punctuation; fragments match by substring and any occurrence counts. On the
-outward walk the already-joined middle piece is used whole. There is no LCS,
-subdivision or cell budget. Windows over 4,096 UTF-16 units join conservatively.
+outward walk the already-joined middle piece is used whole. This boundary
+recognition uses substring continuation, without LCS, subdivision or a cell
+budget; block pairing separately uses `weightedOrderedMatches` with
+`MAX_TABLE_CELLS`. Windows over 4,096 UTF-16 units join conservatively.
 Structural joins and physical insert/delete runs close into union-find components.
 Consecutive insertion
 edits sharing an old anchor carry one ordered run; execution chains each through
