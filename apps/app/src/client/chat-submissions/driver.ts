@@ -252,7 +252,11 @@ export class ChatSubmissionDriver {
       for (const record of this.options.journal
         .entries()
         .filter((record) => record.threadId === entry?.threadId && record.creation)) {
-        if (!this.current() || !this.write({ ...record, creation: undefined })) return;
+        if (!this.current()) return;
+        if (!this.write({ ...record, creation: undefined })) {
+          this.localFailure(entry);
+          return;
+        }
       }
       this.options.created(thread);
       entry = this.read(original.recordId);
