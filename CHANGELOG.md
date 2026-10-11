@@ -50,6 +50,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Chat summaries count a section and its whole file as one document, for both reads and edits.
+
 - Passage jumps stay visible when you return to an already-open Editor tab.
 
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
