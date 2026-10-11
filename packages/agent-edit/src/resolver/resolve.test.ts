@@ -308,3 +308,16 @@ it("groups the same exact word splices by edit, sentence or paragraph", () => {
   expect(editSegments(doc, model, edits, "sentence")).toHaveLength(2);
   expect(editSegments(doc, model, edits, "paragraph")).toHaveLength(1);
 });
+
+it("falls back to one block segment for changed marks and hard breaks", () => {
+  for (const [before, after] of [
+    ["She carries a sword.", "She carries a **sword**."],
+    ["She carries a sword.  \nShe leaves.", "I carry a sword.  \nI leave."],
+  ]) {
+    const doc = createDoc(before);
+    const edits = expectOk(resolve(doc, { command: "replace", content: after, in: 1 }));
+    expect(edits).toHaveLength(1);
+    expect(edits[0].kind).toBe("block");
+    expect(editSegments(doc, model, edits)).toHaveLength(1);
+  }
+});
