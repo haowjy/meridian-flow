@@ -168,7 +168,6 @@ else
                     return 0n;
                   },
                 },
-                inbox,
                 delivery: producer,
                 threadId: ids.child,
                 userTurnId: writerId,
