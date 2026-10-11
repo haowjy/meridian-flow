@@ -7,10 +7,10 @@
  */
 import { I18nProvider } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Outlet, Scripts, useMatches } from "@tanstack/react-router";
 import { AuthKitProvider, getAuthAction } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
 import { LINK_CHIP_ICON_CSS } from "@/components/app/link-chip/family-icons";
@@ -18,7 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
 import { IOS_FOCUS_ZOOM_BOOT_SCRIPT } from "@/lib/ios-focus-zoom";
 import { TEXT_SIZE_BOOT_SCRIPT } from "@/lib/text-size";
-import { UI_THEME_BOOT_SCRIPT } from "@/lib/ui-theme";
+import { createUiThemeBootScript } from "@/lib/ui-theme";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import globalCssUrl from "@/styles/globals.css?url";
 
@@ -59,16 +59,32 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   const { auth } = Route.useLoaderData();
-  const [locale, setLocale] = useState(DEFAULT_LOCALE);
+  const matches = useMatches();
+  const account = matches.find((match) => match.routeId === "/_authenticated")?.loaderData as
+    | {
+        user?: {
+          userId: string;
+          accountSettings?: { theme: import("@/lib/ui-theme").UiTheme } | null;
+        };
+      }
+    | undefined;
+  const user = account?.user;
+  const themeBootScript = createUiThemeBootScript(
+    user ? { accountId: user.userId, theme: user.accountSettings?.theme } : undefined,
+  );
+  const locale = useSyncExternalStore(
+    (onChange) => i18n.on("change", onChange),
+    () => i18n.locale || DEFAULT_LOCALE,
+    () => DEFAULT_LOCALE,
+  );
 
   useEffect(() => {
     const resolved = resolveLocale();
-    setLocale(resolved);
     activateLocale(resolved);
   }, []);
 
   return (
-    <RootDocument lang={locale}>
+    <RootDocument lang={locale} themeBootScript={themeBootScript}>
       <I18nProvider i18n={i18n}>
         <AuthKitProvider initialAuth={auth}>
           <TooltipProvider>
@@ -81,12 +97,16 @@ function RootComponent() {
   );
 }
 
-function RootDocument({ children, lang }: Readonly<{ children: ReactNode; lang: string }>) {
+function RootDocument({
+  children,
+  lang,
+  themeBootScript,
+}: Readonly<{ children: ReactNode; lang: string; themeBootScript: string }>) {
   return (
     <html lang={lang} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
-        <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <HeadContent />
         {/* Generated from the family icon data, so the link chip's images and
             the scheme icons share one source. */}

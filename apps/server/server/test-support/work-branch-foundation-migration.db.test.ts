@@ -1,5 +1,5 @@
 /**
- * Populated upgrade contract for 0036/0037: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0037/0038: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
  */
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -17,10 +17,10 @@ import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./dra
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73600000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const FOUNDATION = "0036_work_branch_foundation";
-const ONLINE = "0037_work_branch_foundation_online";
+const FOUNDATION = "0037_work_branch_foundation";
+const ONLINE = "0038_work_branch_foundation_online";
 
-/** Rows in `main`'s 0035 shape: every kind of row the foundation migration moves. */
+/** Rows in `main`'s 0036 shape: every kind of row the foundation migration moves. */
 async function seedMainShape(sql: postgres.Sql) {
   const bytes = Buffer.from([0, 0]);
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'foundation-upgrade', 'foundation@example.test')`;

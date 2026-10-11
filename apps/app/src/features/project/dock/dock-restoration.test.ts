@@ -31,6 +31,9 @@ function storage(): DockStorage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,
+    removeItem: (key) => {
+      values.delete(key);
+    },
     setItem: (key, value) => {
       values.set(key, value);
     },
@@ -195,11 +198,13 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
     },
     () => ({
       getItem: () => null,
+      removeItem: () => {},
       setItem: () => {
         throw new Error("write");
       },
     }),
     () => ({
+      removeItem: () => {},
       getItem: () => {
         throw new Error("read");
       },
@@ -318,7 +323,7 @@ it.each([
   const disk = storage();
   disk.setItem(
     DOCK_STORAGE_KEY,
-    JSON.stringify({ version: 1, accountId: "account", byScreen, occupant: document }),
+    JSON.stringify({ version: 1, accountId: "account", payload: { byScreen, occupant: document } }),
   );
   expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();
 });
@@ -329,8 +334,7 @@ it("rejects a non-string occupant screen even if it coerces to a valid policy ke
     JSON.stringify({
       version: 1,
       accountId: "account",
-      byScreen: {},
-      occupant: { ...document, screen: ["work"] },
+      payload: { byScreen: {}, occupant: { ...document, screen: ["work"] } },
     }),
   );
   expect(createDockViewStore(() => disk, "account").getState().restoring).toBeNull();

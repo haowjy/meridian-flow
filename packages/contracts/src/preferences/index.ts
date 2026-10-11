@@ -1,49 +1,25 @@
-/**
- * Purpose: (user, project)-scoped UI preferences shared by the app and server.
- * These are the *authenticated user's* preferences for a specific project's
- * thread list — persisted server-side so they follow the user across devices,
- * keyed on (userId, projectId). Distinct from ephemeral per-session client
- * state (filter, search) which never leaves the app.
- *
- * JSON-natural only: string-union enums and string arrays, no Date/branded types.
- */
-
-/** How the sidebar thread list is grouped. The user's persisted per-project default. */
-export type ThreadGroupBy = "work" | "date" | "flat";
-
-export const THREAD_GROUP_BY_VALUES: readonly ThreadGroupBy[] = ["work", "date", "flat"];
-
-/**
- * The calling user's preferences within one project. Small and bounded —
- * thread defaults and pinned thread ids.
- * The thread list is fetched separately; the client
- * cross-references `pinnedThreadIds` against it, so no projection change.
- */
-export interface ProjectPreferences {
-  threadGroupBy: ThreadGroupBy;
-  /** Ids of threads in this project the user has pinned to the top of the list. */
-  pinnedThreadIds: string[];
-  /** Same-turn interrupt timeout policy. Defaults keep runs moving if the user walks away. */
-  autoResume: {
-    enabled: boolean;
-    timeoutMs: number;
-  };
+/** Shared account appearance settings and project runtime preferences. */
+export const ACCOUNT_LANGUAGES = ["en", "zh"] as const;
+export type AccountLanguage = (typeof ACCOUNT_LANGUAGES)[number];
+export const ACCOUNT_THEMES = ["ink-jade", "dark"] as const;
+export type AccountTheme = (typeof ACCOUNT_THEMES)[number];
+export interface AccountAppearancePreferences {
+  language: AccountLanguage;
+  theme: AccountTheme;
+  statsForNerds: boolean;
 }
-
-/** Server + client seed when the user has no stored preferences for a project. */
-export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = {
-  threadGroupBy: "work",
-  pinnedThreadIds: [],
-  autoResume: {
-    enabled: true,
-    timeoutMs: 270_000,
-  },
+export const DEFAULT_ACCOUNT_APPEARANCE: AccountAppearancePreferences = {
+  language: "en",
+  theme: "ink-jade",
+  statsForNerds: false,
 };
-
-/** PUT body — partial so callers can update just group-by or just pins. */
+export interface ProjectPreferences {
+  autoResume: { enabled: boolean; timeoutMs: number };
+}
+export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = {
+  autoResume: { enabled: true, timeoutMs: 270_000 },
+};
 export type UpdateProjectPreferencesRequest = Partial<ProjectPreferences>;
-
-/** Envelope for `GET`/`PUT /api/projects/:projectId/preferences`. */
 export interface ProjectPreferencesResponse {
   preferences: ProjectPreferences;
 }
