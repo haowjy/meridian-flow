@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Untitled creation advances past canonical folder aliases and occupied names.
+
 - Link candidate loading follows the shared exact-first and extension-omission contract.
 
 - Historical unresolved links spell canonical prose names without changing their identity or writer labels.

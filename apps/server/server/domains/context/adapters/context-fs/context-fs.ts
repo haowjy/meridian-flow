@@ -12,6 +12,7 @@ import {
   filenameForBinary,
   filetypeForKnownPath,
   filetypeForPath,
+  folderDocumentName,
   parseDocumentFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -674,18 +675,24 @@ export class ContextFS implements ContextSchemeAdapter {
 
     const folderSegments = path.split("/").filter(Boolean);
     const folderId = await this.ensureFolderId(folderSegments);
+    let lastNumber = 0;
     for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
       const documents = await this.store.listDocuments(folderId);
       const folders = await this.store.listFolders(folderId);
-      const maxNumber = [...documents, ...folders].reduce((max, document) => {
-        const match = UNTITLED_NAME_PATTERN.exec(document.name);
+      const occupied = [
+        ...documents.map((document) => renderFilename(document.name, document.extension)),
+        ...folders.map((folder) => folderDocumentName(folder.name)),
+      ];
+      const maxNumber = occupied.reduce((max, name) => {
+        const match = UNTITLED_NAME_PATTERN.exec(name);
         if (!match) return max;
         const suffix = Number(match[1]);
         return Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER
           ? Math.max(max, suffix)
           : max;
-      }, 0);
-      const name = `Untitled ${maxNumber + 1}`;
+      }, lastNumber);
+      lastNumber = maxNumber + 1;
+      const name = `Untitled ${lastNumber}`;
       const created = await this.createTrackedDocumentAtomically({
         id: options.documentId,
         folderId,
