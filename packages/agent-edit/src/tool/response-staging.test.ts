@@ -317,7 +317,7 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
   const committed = await ctx.core.commitResponse("retry");
   expect(committed.documents[0].receipts).toHaveLength(1);
   const entries = ctx.journal.recordedBatchEntries().at(-1) ?? [];
-  expect(entries).toHaveLength(3);
+  expect(entries).toHaveLength(1);
   expect(new Set(entries.map((entry) => entry.mutation?.writeId)).size).toBe(1);
   expect(new Set(entries.map((entry) => entry.mutation?.wId)).size).toBe(1);
   const live = harness({ "chapter.md": "She did what she wanted." });

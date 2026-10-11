@@ -4,7 +4,7 @@ import type { AgentEditModel } from "../ports/model.js";
 import type { ResolvedEdit } from "./types.js";
 
 export type SegmentUnit = "edit" | "sentence" | "paragraph";
-export const DRAFT_SEGMENT_UNIT: SegmentUnit = "edit";
+export const DRAFT_SEGMENT_UNIT: SegmentUnit = "paragraph";
 
 export function editSegments(
   doc: DocHandle,
