@@ -30,7 +30,7 @@ export {
   renderedRunBytes,
 } from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
-export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";

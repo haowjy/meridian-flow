@@ -55,6 +55,8 @@
 ### Fixed
 
 - Drain background room checkpoints before resetting DB test fixtures, preventing a checkpoint reader from deadlocking with the suite reset.
+- Chat summaries count a section and its whole file as one document, for both reads and edits.
+
 - Passage jumps stay visible when you return to an already-open Editor tab.
 
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
