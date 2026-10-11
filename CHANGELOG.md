@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Give draft Undo and Redo fresh restoration identity so different chats cannot collide, and reverse every segment of a write.
+
 - Review independent AI word edits separately, preserving unchanged text identity and saving each reply atomically.
 
 - Keep an Editor tab’s review when closing the same document or review in the dock.
