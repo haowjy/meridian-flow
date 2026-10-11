@@ -1,6 +1,8 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
+
 import { createHash, randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import { aheadAddress } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -102,12 +104,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       };
 
       // Tracked create, then delete and recreate at the same path: the second never captures.
-      const chapter = await register("manuscript://ch1.toml");
+      const chapterAddress = aheadAddress("manuscript://ch1.md", "link");
+      expect(chapterAddress).toBe("manuscript://ch1");
+      const chapter = await register(chapterAddress ?? "");
       expect(await settlement(chapter)).toBeNull();
-      const first = await create("manuscript://ch1.toml");
+      const first = await create("manuscript://ch1");
       expect(await settlement(chapter)).toBe(first);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, first));
-      const second = await create("manuscript://ch1.toml");
+      const second = await create("manuscript://ch1");
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);
 

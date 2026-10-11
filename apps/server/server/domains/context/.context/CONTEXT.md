@@ -357,7 +357,9 @@ currently available to the request owner in the requested project.
   `kb://`, `user://`, `unfiled://` carry no Work authority. Scratch and uploads
   use named-Work owners; No Work Scratch instead uses the lineage owner.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
-- Scheme and relative paths are exact (an omitted final extension may match);
+- Scheme and relative paths canonicalize the final name through the document codec.
+  Exact names win; only without an exact match may exactly one non-prose file
+  match with its final extension omitted;
   relative traversal cannot escape its scheme root. Canonical qualifiers may explicitly name another
   non-deleted Work in the project. Contextual scratch/uploads use the selected
   scope; a lineage handle is part of the owner, so relative traversal cannot
@@ -430,7 +432,7 @@ currently available to the request owner in the requested project.
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
-  boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
+  boundary: it atomically allocates `Untitled N`, persists `provisionalName`,
   installs an empty Yjs authority, and records manifest membership in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID

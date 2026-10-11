@@ -180,6 +180,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       }
     });
+    it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
+      const r = resolver();
+      const data = await add("manuscript", "outline");
+      await database.current
+        .update(documents)
+        .set({ extension: "json", fileType: "json" })
+        .where(eq(documents.id, data));
+      const resolve = (path: string) =>
+        r.resolve({
+          projectId: p,
+          userId: u,
+          target: { kind: "scheme", uri: `manuscript://${path}` },
+        });
+      expect(await resolve("outline")).toMatchObject({
+        documentId: data,
+        uri: "manuscript://outline.json",
+      });
+      const prose = crypto.randomUUID();
+      const [row] = await database.current
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, data));
+      if (!row) throw new Error("Missing data fixture");
+      await database.current.insert(documents).values({
+        id: prose,
+        contextSourceId: row.contextSourceId,
+        name: "outline",
+        extension: "",
+      });
+      for (const path of ["outline", "outline.md", "outline.txt"])
+        expect(await resolve(path)).toMatchObject({
+          documentId: prose,
+          uri: "manuscript://outline",
+        });
+      expect(await resolve("outline.json")).toMatchObject({ documentId: data });
+    });
     it("resolves a contextual address in the current Work only, and archived but not deleted authority", async () => {
       const r = resolver();
       const local = await add("scratch", "Gate", a);
