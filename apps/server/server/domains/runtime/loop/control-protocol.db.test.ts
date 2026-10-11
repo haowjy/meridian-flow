@@ -1,6 +1,6 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
@@ -1106,6 +1106,56 @@ else
         expect(await rig.delivery.withdrawControl(rig.threadId, applied.response.id)).toEqual({
           outcome: "already_started",
         });
+      });
+
+      it("answers a switch a reply's release applies mid-answer as queued or applied, never both null", async () => {
+        const rig = await manualFixture();
+        const lease = await rig.runClaim.startExecution(
+          rig.threadId as never,
+          crypto.randomUUID() as never,
+        );
+        if (!lease) throw new Error("Expected the reply's run claim");
+        // The reply releases and applies S between the route's answer reads.
+        // Each read waits until that apply finishes or blocks on the thread lock.
+        const blockedOnLock = async () =>
+          (
+            await db.execute(
+              sql`select 1 from pg_locks where locktype = 'advisory' and not granted and database = (select oid from pg_database where datname = current_database())`,
+            )
+          ).length > 0;
+        let betweenReads!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          betweenReads = resolve;
+        });
+        let settled = false;
+        // Started outside the route's call, so it shares none of its transaction.
+        const applied = reached.then(async () => {
+          await rig.runClaim.release(lease);
+          return rig.delivery.applyDueSwitches(rig.threadId as never).finally(() => {
+            settled = true;
+          });
+        });
+        const find = rig.repos.turns.findByControlId.bind(rig.repos.turns);
+        vi.spyOn(rig.repos.turns, "findByControlId").mockImplementationOnce(async (...args) => {
+          const turn = await find(...args);
+          betweenReads();
+          await vi.waitFor(
+            async () => {
+              if (!settled && !(await blockedOnLock())) throw new Error("apply still running");
+            },
+            { interval: 5, timeout: 5000 },
+          );
+          return turn;
+        });
+
+        const { response } = await switchMode(rig, "draft");
+        expect(await applied).toBe(true);
+        const [turn] = await switchTurns(rig);
+
+        expect(turn).toBeDefined();
+        expect(await threadMode(rig)).toBe("draft");
+        // A coherent answer is queued (read before the apply) or applied, never both null.
+        expect(response.pending !== null || response.turnId === turn?.id).toBe(true);
       });
 
       it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
