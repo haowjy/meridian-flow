@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Skills load and list with the same extensionless prose names as documents.
 - Document links use the document’s one name, including links written with a prose extension.
 
 ### Changed
