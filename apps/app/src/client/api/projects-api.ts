@@ -316,7 +316,10 @@ export async function createContextEntry(
   body: { type: "file" | "folder"; path: string; content?: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<{ status: "created"; documentId?: string } | { status: "conflict"; uri: string }> {
+): Promise<
+  | { status: "created"; documentId?: string }
+  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" }
+> {
   return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
     acceptErrorResponse: acceptsContextConflict,

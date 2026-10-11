@@ -38,28 +38,64 @@ describe("entryNameStemEnd", () => {
 
 describe("validateContextEntryName", () => {
   it("collides a typed `.md` with the stored name beside it", () => {
-    expect(validateContextEntryName("Chapter 12.md", ["Chapter 12"])).toMatchObject({
+    expect(
+      validateContextEntryName("Chapter 12.md", [
+        { entryId: "sibling", name: "Chapter 12", kind: "file" },
+      ]),
+    ).toMatchObject({
       level: "error",
       message: expect.stringContaining("Chapter 12"),
     });
-    expect(validateContextEntryName("Chapter 12", ["Chapter 12"])?.level).toBe("error");
+    expect(
+      validateContextEntryName("Chapter 12", [
+        { entryId: "sibling", name: "Chapter 12", kind: "file" },
+      ])?.level,
+    ).toBe("error");
   });
 
   it("does not collide a visible extension with the prose name", () => {
-    expect(validateContextEntryName("notes.json", ["notes"])).toBeNull();
+    expect(
+      validateContextEntryName("notes.json", [{ entryId: "sibling", name: "notes", kind: "file" }]),
+    ).toBeNull();
   });
 
   it("lets a folder and a document not share a name (D15, D16)", () => {
-    expect(validateContextEntryName("Lore", ["Lore/"], "file")?.level).toBe("error");
-    expect(validateContextEntryName("Lore.md", ["Lore"], "folder")?.level).toBe("error");
-    expect(validateContextEntryName("Lore", ["Lore"], "folder")?.level).toBe("error");
+    expect(
+      validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
+        ?.level,
+    ).toBe("error");
+    expect(
+      validateContextEntryName(
+        "Lore.md",
+        [{ entryId: "sibling", name: "Lore", kind: "file" }],
+        "folder",
+      )?.level,
+    ).toBe("error");
+    expect(
+      validateContextEntryName(
+        "Lore",
+        [{ entryId: "sibling", name: "Lore", kind: "file" }],
+        "folder",
+      )?.level,
+    ).toBe("error");
   });
 
   it("checks a rename's collision against the name it would be stored under", () => {
     expect(
-      validateContextEntryName("settings", ["settings.toml"], "file", "config.toml")?.level,
+      validateContextEntryName(
+        "settings",
+        [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
+        "file",
+        "config.toml",
+      )?.level,
     ).toBe("error");
-    expect(validateContextEntryName("settings", ["settings.toml"], "file")).toBeNull();
+    expect(
+      validateContextEntryName(
+        "settings",
+        [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
+        "file",
+      ),
+    ).toBeNull();
   });
 
   it("shows the codec's invalid_name message on the field", () => {
@@ -71,6 +107,26 @@ describe("validateContextEntryName", () => {
   });
 
   it("accepts dotted names", () => {
-    expect(validateContextEntryName("Vol. 2", ["Vol. 1"])).toBeNull();
+    expect(
+      validateContextEntryName("Vol. 2", [{ entryId: "sibling", name: "Vol. 1", kind: "file" }]),
+    ).toBeNull();
   });
+});
+
+it("reports a colliding folder as a folder, not a file", () => {
+  expect(
+    validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
+      ?.message,
+  ).toContain("A folder named Lore");
+});
+
+it("compares folders literally and reports the occupant kind", () => {
+  const folder = { entryId: "lore", name: "Lore", kind: "dir" as const };
+  expect(validateContextEntryName("Lore.md", [folder], "folder")).toBeNull();
+  expect(validateContextEntryName("Lore.md", [folder], "file")?.message).toContain(
+    "A folder named Lore",
+  );
+  expect(
+    validateContextEntryName("Lore", [{ ...folder, kind: "file" }], "folder")?.message,
+  ).toContain("A file named Lore");
 });

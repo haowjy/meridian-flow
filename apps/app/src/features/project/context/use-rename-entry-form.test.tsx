@@ -8,7 +8,13 @@ import { type RenameEntryForm, useRenameEntryForm } from "./use-rename-entry-for
 
 const NO_WORK = "123e4567-e89b-42d3-a456-426614174000";
 const mocks = vi.hoisted(() => ({
-  setLocation: vi.fn(async () => ({ operationId: "op-1" })),
+  setLocation: vi.fn(
+    async (
+      _project: string,
+      _key: unknown,
+      _destination: import("@meridian/resource-replica").ResourceDestination,
+    ) => ({ operationId: "op-1" }),
+  ),
   setFolderLocation: vi.fn(async () => ({ operationId: "op-2" })),
 }));
 vi.mock("@/client/query/useWorks", () => ({
@@ -26,10 +32,17 @@ type Case = {
   currentName: string;
   typed: string;
   siblings?: string[];
+  siblingKind?: "file" | "dir";
   kind?: "file" | "folder";
 };
 
-async function rename({ currentName, typed, siblings = [], kind = "file" }: Case) {
+async function rename({
+  currentName,
+  typed,
+  siblings = [],
+  siblingKind = "file",
+  kind = "file",
+}: Case) {
   const onDone = vi.fn();
   const onRenamed = vi.fn();
   let form!: RenameEntryForm;
@@ -41,7 +54,14 @@ async function rename({ currentName, typed, siblings = [], kind = "file" }: Case
       scheme: "manuscript",
       path: `/Book/${currentName}`,
       currentName,
-      siblingNames: [currentName, ...siblings],
+      siblings: [
+        { entryId: "entry", name: currentName, kind: kind === "folder" ? "dir" : "file" },
+        ...siblings.map((name, index) => ({
+          entryId: `sibling-${index}`,
+          name,
+          kind: siblingKind,
+        })),
+      ],
       kind,
       onDone,
       onRenamed,
@@ -82,7 +102,7 @@ describe("useRenameEntryForm", () => {
         scheme: "manuscript",
         path: "/Chapter 13",
         currentName: "Chapter 13",
-        siblingNames: [],
+        siblings: [],
         kind: "file",
         onDone: () => {},
       }).draft;
@@ -102,12 +122,12 @@ describe("useRenameEntryForm", () => {
     expect(onDone).toHaveBeenCalled();
   });
 
-  it("submits the stored name, not the typed one", async () => {
+  it("submits the typed name without losing suffix provenance", async () => {
     const { onRenamed } = await rename({ currentName: "Chapter 13", typed: "Chapter 14.md" });
     expect(mocks.setLocation).toHaveBeenCalledWith(
       "project",
       "key",
-      expect.objectContaining({ name: "Chapter 14", folderPath: "/Book" }),
+      expect.objectContaining({ name: "Chapter 14.md", folderPath: "/Book" }),
     );
     expect(onRenamed).toHaveBeenCalledWith("op-1");
   });
@@ -126,7 +146,7 @@ describe("useRenameEntryForm", () => {
     expect(mocks.setLocation).toHaveBeenCalledWith(
       "project",
       "key",
-      expect.objectContaining({ name: "settings.toml" }),
+      expect.objectContaining({ name: "settings" }),
     );
   });
 
@@ -168,4 +188,36 @@ describe("useRenameEntryForm", () => {
       expect.objectContaining({ name: "v1.json" }),
     );
   });
+});
+
+it("preserves explicitly typed prose types on a text rename", async () => {
+  for (const typed of ["settings.md", "settings.txt", "Notes.md"]) {
+    await rename({ currentName: "config.toml", typed });
+    expect(mocks.setLocation).toHaveBeenLastCalledWith(
+      "project",
+      "key",
+      expect.objectContaining({ name: typed }),
+    );
+  }
+});
+
+it("retains another folder with a codec-equivalent name during rename validation", async () => {
+  const conflict = await rename({
+    currentName: "Lore.md",
+    typed: "Lore",
+    siblings: ["Lore"],
+    siblingKind: "dir",
+    kind: "folder",
+  });
+  expect(conflict.issue?.message).toContain("A folder named Lore");
+  expect(conflict.onDone).not.toHaveBeenCalled();
+  const distinct = await rename({
+    currentName: "Maps",
+    typed: "Lore.md",
+    siblings: ["Lore"],
+    siblingKind: "dir",
+    kind: "folder",
+  });
+  expect(distinct.issue).toBeNull();
+  expect(distinct.onRenamed).toHaveBeenCalledWith("op-2");
 });

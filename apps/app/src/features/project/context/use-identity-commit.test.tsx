@@ -17,7 +17,12 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 }));
 
 describe("useIdentityCommit", () => {
-  it("keeps the locked No Work row in the destination after an Editor identity rename", async () => {
+  it.each([
+    ["before", "after.md", "after"],
+    ["config.toml", "settings.md", "settings"],
+    ["config.toml", "settings.txt", "settings"],
+    ["config.toml", "Notes.md", "Notes"],
+  ])("transports %s to %s as typed, retaining No Work and canonical presentation", async (current, typed, canonical) => {
     let rename!: ReturnType<typeof useIdentityCommit>;
     const committed = vi.fn();
     function Probe() {
@@ -30,8 +35,8 @@ describe("useIdentityCommit", () => {
           resourceHandle: "resource",
           scheme: "scratch",
           workId: NO_WORK,
-          path: "/before",
-          name: "before",
+          path: `/${current}`,
+          name: current,
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -44,12 +49,17 @@ describe("useIdentityCommit", () => {
       await act(async () => {
         await rename({
           destination: { scheme: "scratch", folderPath: "", workId: NO_WORK },
-          name: "after.md", // typed with the suffix; stored without it
+          name: typed,
         });
       });
+      expect(resources.setLocation).toHaveBeenLastCalledWith(
+        "project",
+        { handle: "resource" },
+        expect.objectContaining({ name: typed }),
+      );
       expect(committed).toHaveBeenCalledWith(
         "doc-1",
-        expect.objectContaining({ routeWorkId: NO_WORK, path: "/after", name: "after" }),
+        expect.objectContaining({ routeWorkId: NO_WORK, path: `/${canonical}`, name: canonical }),
         { isLatest: true },
       );
     });

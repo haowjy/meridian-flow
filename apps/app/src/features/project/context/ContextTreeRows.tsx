@@ -17,6 +17,7 @@ import {
   EntryKebabButton,
 } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
+import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import {
@@ -73,22 +74,17 @@ export function TreeChildren({
 }) {
   const env = useTreeEnv();
   const children = env.catalog.children(parentId);
-  const siblingNames = children.map((child) => child.name);
+  const siblings = children;
   return (
     <>
       {env.creating?.parentPath === parentPath ? (
-        <CreateRow
-          kind={env.creating.kind}
-          parent={parentPath}
-          depth={depth}
-          siblingNames={siblingNames}
-        />
+        <CreateRow kind={env.creating.kind} parent={parentPath} depth={depth} siblings={siblings} />
       ) : null}
       {children.map((child) =>
         child.kind === "dir" ? (
-          <DirRow key={child.entryId} dir={child} depth={depth} siblingNames={siblingNames} />
+          <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
         ) : (
-          <FileRow key={child.entryId} file={child} depth={depth} siblingNames={siblingNames} />
+          <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
         ),
       )}
     </>
@@ -130,11 +126,11 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
 function DirRow({
   dir,
   depth,
-  siblingNames,
+  siblings,
 }: {
   dir: Extract<ContextNode, { kind: "dir" }>;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
@@ -162,7 +158,7 @@ function DirRow({
         path={dir.path}
         currentName={dir.name}
         repairName={dir.namespaceRepairName}
-        siblingNames={siblingNames}
+        siblings={siblings}
         kind="folder"
         depth={depth}
         icon={isOpen ? FolderOpen : Folder}
@@ -222,11 +218,11 @@ function DirRow({
 function FileRow({
   file,
   depth,
-  siblingNames,
+  siblings,
 }: {
   file: ContextFile;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
@@ -255,7 +251,7 @@ function FileRow({
         path={file.path}
         currentName={file.name}
         repairName={file.namespaceRepairName}
-        siblingNames={siblingNames}
+        siblings={siblings}
         kind="file"
         depth={depth}
         icon={fileKindIcon(file)}
@@ -306,7 +302,7 @@ function RenameRow({
   path,
   currentName,
   repairName,
-  siblingNames,
+  siblings,
   kind,
   depth,
   icon,
@@ -317,7 +313,7 @@ function RenameRow({
   path: string;
   currentName: string;
   repairName?: string;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
   depth: number;
   icon: typeof Folder;
@@ -333,7 +329,7 @@ function RenameRow({
     path,
     currentName,
     repairName,
-    siblingNames,
+    siblings,
     kind,
     onRenamed,
     onDone,
@@ -354,12 +350,12 @@ function CreateRow({
   kind,
   parent,
   depth,
-  siblingNames,
+  siblings,
 }: {
   kind: ContextCreateKind;
   parent: string;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const form = useCreateEntryForm({
@@ -367,7 +363,7 @@ function CreateRow({
     scheme: env.scheme,
     kind,
     parent,
-    siblingNames,
+    siblings,
     onDone: env.onCreateDone,
     onCreated: kind === "file" ? env.onCreatedFilePath : undefined,
   });

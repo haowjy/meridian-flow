@@ -91,21 +91,25 @@ export function planResourceLocation(input: {
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
-  // Whatever the writer typed (`Chapter 13.md`), the intent, its request and the
-  // optimistic location carry the name the server stores, so nothing flips and
-  // the move receipt names the destination this attempt asked for.
-  const stored = storedFilename(input.destination.name, record.resource.canonical?.name);
-  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const latest = owningLocationIntent(
     input.projectId,
     record.intents,
     Boolean(record.resource.obligations.canonicalRefresh),
   );
+  // Compute the optimistic name once, retaining the input for server dispatch.
+  const stored = storedFilename(
+    input.destination.name,
+    latest?.desired.kind === "set-location"
+      ? latest.desired.destination.name
+      : record.resource.canonical?.name,
+  );
+  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
+    latest.desired.typedName === input.destination.name &&
     JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
@@ -117,6 +121,7 @@ export function planResourceLocation(input: {
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",
+      typedName: input.destination.name,
       destination,
     },
     ...(input.operationId ? { operationId: input.operationId } : {}),

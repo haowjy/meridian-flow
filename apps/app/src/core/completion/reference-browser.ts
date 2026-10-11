@@ -732,5 +732,12 @@ function linkAheadRow(
   });
   if (named) return null;
   const target = linkAhead(name);
-  return target ? { kind: "link-ahead", rowId: "link-ahead", label: name, uri: target.uri } : null;
+  return target
+    ? {
+        kind: "link-ahead",
+        rowId: "link-ahead",
+        label: typed.ok ? renderFilename(typed.value.name, typed.value.extension) : name,
+        uri: target.uri,
+      }
+    : null;
 }
