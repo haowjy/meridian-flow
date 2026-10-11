@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Document links use the document’s one name, including links written with a prose extension.
+
 ### Changed
 
 - Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.

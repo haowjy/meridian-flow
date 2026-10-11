@@ -10,7 +10,7 @@ import {
   spellStoredLink,
   storedHref,
 } from "./document-link.js";
-import { aheadAddress, hasFileExtension, parseLinkRef } from "./document-ref.js";
+import { aheadAddress, isAheadFilename, parseLinkRef } from "./document-ref.js";
 
 // UUID-shaped ids: refs are UUID-backed, and anything else is malformed.
 const names = [
@@ -47,14 +47,14 @@ const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = 
   ...extra,
 });
 const documents: Record<string, CatalogDocument | null> = {
-  [U.sibling]: doc(U.sibling, "manuscript://book/ch2.md"),
-  [U.cast]: doc(U.cast, "kb://cast/Lin Feng.md"),
-  [U.drafted]: doc(U.drafted, "manuscript://book/new.md", { presence: "draft" }),
-  [U.deleted]: doc(U.deleted, "manuscript://book/old.md", { presence: "deleted" }),
-  [U.secret]: doc(U.secret, "manuscript://book/secret.md", { readable: false }),
-  [U.foreign]: doc(U.foreign, "manuscript://theirs.md", { projectId: "p2", nameable: false }),
+  [U.sibling]: doc(U.sibling, "manuscript://book/ch2"),
+  [U.cast]: doc(U.cast, "kb://cast/Lin Feng"),
+  [U.drafted]: doc(U.drafted, "manuscript://book/new", { presence: "draft" }),
+  [U.deleted]: doc(U.deleted, "manuscript://book/old", { presence: "deleted" }),
+  [U.secret]: doc(U.secret, "manuscript://book/secret", { readable: false }),
+  [U.foreign]: doc(U.foreign, "manuscript://theirs", { projectId: "p2", nameable: false }),
   [U.picture]: doc(U.picture, "manuscript://assets/gate.png"),
-  [U.occupant]: doc(U.occupant, "manuscript://book/arrived.md"),
+  [U.occupant]: doc(U.occupant, "manuscript://book/arrived"),
   [U.unknown]: null,
 };
 const settlements: Record<string, string | null> = {
@@ -63,9 +63,9 @@ const settlements: Record<string, string | null> = {
   [U.open]: null,
 };
 const addresses: Record<string, CatalogDocument | null | undefined> = {
-  "manuscript://book/arrived.md": documents[U.occupant],
-  "manuscript://book/secret.md": documents[U.secret],
-  "manuscript://book/unloaded.md": undefined,
+  "manuscript://book/arrived": documents[U.occupant],
+  "manuscript://book/secret": documents[U.secret],
+  "manuscript://book/unloaded": undefined,
 };
 const catalog: LinkCatalog = {
   document: (id) => documents[id],
@@ -73,7 +73,7 @@ const catalog: LinkCatalog = {
   documentAt: (uri) => (uri in addresses ? addresses[uri] : null),
 };
 const holder: LinkHolder = {
-  uri: "manuscript://book/ch1.md",
+  uri: "manuscript://book/ch1",
   projectId: "p1",
   view: { kind: "live" },
 };
@@ -95,135 +95,135 @@ it("resolves and spells stored links by rule", () => {
     {
       name: "live document spells relative with the stored suffix",
       ref: `doc:${U.sibling}`,
-      href: "manuscript://book/before-move.md#scene-2",
+      href: "manuscript://book/before-move#scene-2",
       kind: "document",
       inDraft: false,
-      spelled: "ch2.md#scene-2",
-      address: "manuscript://book/ch2.md",
+      spelled: "ch2#scene-2",
+      address: "manuscript://book/ch2",
     },
     {
       name: "cross-area target spells the full URI",
       ref: `doc:${U.cast}`,
-      href: "kb://cast/Lin Feng.md",
+      href: "kb://cast/Lin Feng",
       kind: "document",
-      spelled: "kb://cast/Lin Feng.md",
-      address: "kb://cast/Lin Feng.md",
+      spelled: "kb://cast/Lin Feng",
+      address: "kb://cast/Lin Feng",
     },
     {
       name: "chat (no holder) spells full URIs",
       ref: `doc:${U.sibling}`,
-      href: "manuscript://book/ch2.md",
+      href: "manuscript://book/ch2",
       holderUri: null,
       kind: "document",
-      spelled: "manuscript://book/ch2.md",
-      address: "manuscript://book/ch2.md",
+      spelled: "manuscript://book/ch2",
+      address: "manuscript://book/ch2",
     },
     {
       name: "a document only in a draft resolves in the draft",
       ref: `doc:${U.drafted}`,
-      href: "manuscript://book/new.md",
+      href: "manuscript://book/new",
       kind: "document",
       inDraft: true,
-      spelled: "new.md",
-      address: "manuscript://book/new.md",
+      spelled: "new",
+      address: "manuscript://book/new",
     },
     {
       name: "deleted target is gone and spells the stored href",
       ref: `doc:${U.deleted}`,
-      href: "manuscript://book/old.md?v=1",
+      href: "manuscript://book/old?v=1",
       kind: "gone",
-      spelled: "manuscript://book/old.md?v=1",
-      address: "manuscript://book/old.md",
+      spelled: "manuscript://book/old?v=1",
+      address: "manuscript://book/old",
     },
     {
       name: "unreadable target is gone without leaking its path",
       ref: `doc:${U.secret}`,
-      href: "manuscript://book/where-it-was.md",
+      href: "manuscript://book/where-it-was",
       kind: "gone",
-      spelled: "manuscript://book/where-it-was.md",
-      address: "manuscript://book/where-it-was.md",
+      spelled: "manuscript://book/where-it-was",
+      address: "manuscript://book/where-it-was",
     },
     {
       name: "other-project target is gone",
       ref: `doc:${U.foreign}`,
-      href: "manuscript://theirs.md",
+      href: "manuscript://theirs",
       kind: "gone",
-      spelled: "manuscript://theirs.md",
-      address: "manuscript://theirs.md",
+      spelled: "manuscript://theirs",
+      address: "manuscript://theirs",
     },
     {
       name: "unknown document is gone, never the document at its address",
       ref: `doc:${U.unknown}`,
-      href: "manuscript://book/arrived.md",
+      href: "manuscript://book/arrived",
       kind: "gone",
-      spelled: "manuscript://book/arrived.md",
-      address: "manuscript://book/arrived.md",
+      spelled: "manuscript://book/arrived",
+      address: "manuscript://book/arrived",
     },
     {
       name: "snapshot miss is unknown and spells stored",
       ref: `doc:${U.neverLoaded}`,
-      href: "manuscript://book/ch2.md",
+      href: "manuscript://book/ch2",
       kind: "unknown",
-      spelled: "manuscript://book/ch2.md",
-      address: "manuscript://book/ch2.md",
+      spelled: "manuscript://book/ch2",
+      address: "manuscript://book/ch2",
     },
     {
       name: "settled ahead ref follows its document",
       ref: `ahead:${U.settled}`,
-      href: "manuscript://book/lin.md",
+      href: "manuscript://book/lin",
       kind: "document",
       settled: true,
-      spelled: "kb://cast/Lin Feng.md",
-      address: "kb://cast/Lin Feng.md",
+      spelled: "kb://cast/Lin Feng",
+      address: "kb://cast/Lin Feng",
     },
     {
       name: "ahead ref settled on a deleted document is gone",
       ref: `ahead:${U.settledGone}`,
-      href: "manuscript://book/old.md",
+      href: "manuscript://book/old",
       kind: "gone",
       settled: true,
-      spelled: "manuscript://book/old.md",
-      address: "manuscript://book/old.md",
+      spelled: "manuscript://book/old",
+      address: "manuscript://book/old",
     },
     {
       name: "unsettled ahead ref resolves the document at its exact address",
       ref: `ahead:${U.open}`,
-      href: "manuscript://book/arrived.md",
+      href: "manuscript://book/arrived",
       kind: "document",
-      spelled: "arrived.md",
-      address: "manuscript://book/arrived.md",
+      spelled: "arrived",
+      address: "manuscript://book/arrived",
     },
     {
       name: "unsettled ahead ref with nothing there spells its canonical address",
       ref: `ahead:${U.open}`,
-      href: "manuscript://book/ch12.md#top",
+      href: "manuscript://book/ch12#top",
       kind: "ahead",
-      spelled: "ch12.md#top",
-      address: "manuscript://book/ch12.md",
+      spelled: "ch12#top",
+      address: "manuscript://book/ch12",
     },
     {
       name: "unsettled ahead ref does not reveal an unreadable occupant",
       ref: `ahead:${U.open}`,
-      href: "manuscript://book/secret.md",
+      href: "manuscript://book/secret",
       kind: "ahead",
-      spelled: "secret.md",
-      address: "manuscript://book/secret.md",
+      spelled: "secret",
+      address: "manuscript://book/secret",
     },
     {
       name: "unsettled ahead ref at an unloaded address is unknown",
       ref: `ahead:${U.open}`,
-      href: "manuscript://book/unloaded.md",
+      href: "manuscript://book/unloaded",
       kind: "unknown",
-      spelled: "manuscript://book/unloaded.md",
-      address: "manuscript://book/unloaded.md",
+      spelled: "manuscript://book/unloaded",
+      address: "manuscript://book/unloaded",
     },
     {
       name: "unregistered ahead ref is unknown",
       ref: `ahead:${U.unregistered}`,
-      href: "manuscript://book/ch13.md",
+      href: "manuscript://book/ch13",
       kind: "unknown",
-      spelled: "manuscript://book/ch13.md",
-      address: "manuscript://book/ch13.md",
+      spelled: "manuscript://book/ch13",
+      address: "manuscript://book/ch13",
     },
     {
       name: "no ref keeps today's address rules and spells as written",
@@ -236,18 +236,18 @@ it("resolves and spells stored links by rule", () => {
     {
       name: "malformed ref is gone",
       ref: "doc:",
-      href: "manuscript://book/ch2.md",
+      href: "manuscript://book/ch2",
       kind: "gone",
-      spelled: "manuscript://book/ch2.md",
-      address: "manuscript://book/ch2.md",
+      spelled: "manuscript://book/ch2",
+      address: "manuscript://book/ch2",
     },
     {
       name: "short non-UUID ref is malformed, so gone",
       ref: "doc:sibling",
-      href: "manuscript://book/ch2.md",
+      href: "manuscript://book/ch2",
       kind: "gone",
-      spelled: "manuscript://book/ch2.md",
-      address: "manuscript://book/ch2.md",
+      spelled: "manuscript://book/ch2",
+      address: "manuscript://book/ch2",
     },
     {
       name: "image source spells manuscript-root-relative",
@@ -261,11 +261,11 @@ it("resolves and spells stored links by rule", () => {
     {
       name: "image source outside the manuscript spells the full URI",
       ref: `doc:${U.cast}`,
-      href: "kb://cast/Lin Feng.md",
+      href: "kb://cast/Lin Feng",
       grammar: "manuscript-root",
       kind: "document",
-      spelled: "kb://cast/Lin Feng.md",
-      address: "kb://cast/Lin Feng.md",
+      spelled: "kb://cast/Lin Feng",
+      address: "kb://cast/Lin Feng",
     },
   ];
   for (const row of rows) {
@@ -312,15 +312,18 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     expect.soft(classifyWrittenSource(src), `source ${src}`).toEqual(expected);
 
   const minted: [string, "link" | "source", string | null][] = [
-    ["manuscript://book/ch12", "link", "manuscript://book/ch12.md"],
-    ["manuscript://book/ch12.mdx", "link", "manuscript://book/ch12.mdx"],
-    ["manuscript://book/.hidden", "link", "manuscript://book/.hidden.md"],
-    ["manuscript://book/chapter.", "link", "manuscript://book/chapter..md"],
+    ["manuscript://book/ch12", "link", "manuscript://book/ch12"],
+    ["manuscript://book/ch12.mdx", "link", "manuscript://book/ch12"],
+    ["manuscript://book/.hidden", "link", "manuscript://book/.hidden"],
+    ["manuscript://book/chapter.", "link", "manuscript://book/chapter."],
     ["manuscript://book/....", "link", null],
     ["manuscript://assets/gate.", "source", null],
     ["manuscript://assets/.png", "source", null],
     ["manuscript://assets/gate", "source", null],
     ["manuscript://assets/gate.png", "source", "manuscript://assets/gate.png"],
+    ["manuscript://book/ch12.md", "link", "manuscript://book/ch12"],
+    ["manuscript://book/notes.txt", "link", "manuscript://book/notes"],
+    ["manuscript://book/outline.json", "link", "manuscript://book/outline.json"],
     ["ch12", "link", null],
   ];
   for (const [uri, kind, expected] of minted) {
@@ -328,9 +331,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     expect.soft(address, `ahead ${kind} ${uri}`).toBe(expected);
     // Every minted address is one the registry accepts.
     if (address)
-      expect
-        .soft(hasFileExtension(address.slice(address.lastIndexOf("/") + 1)), address)
-        .toBe(true);
+      expect.soft(isAheadFilename(address.slice(address.lastIndexOf("/") + 1)), address).toBe(true);
   }
 
   const uuid = "550E8400-E29B-41D4-A716-446655440000";
@@ -364,44 +365,44 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     {
       written: "next%23part.md",
       kind: "link",
-      address: "manuscript://book/next#part.md",
-      stored: "manuscript://book/next%23part.md",
-      spelled: "next%23part.md",
+      address: "manuscript://book/next#part",
+      stored: "manuscript://book/next%23part",
+      spelled: "next%23part",
     },
     {
       written: "100%25.md",
       kind: "link",
-      address: "manuscript://book/100%.md",
-      stored: "manuscript://book/100%25.md",
-      spelled: "100%25.md",
+      address: "manuscript://book/100%",
+      stored: "manuscript://book/100%25",
+      spelled: "100%25",
     },
     {
       written: "literal%2520.md",
       kind: "link",
-      address: "manuscript://book/literal%20.md",
-      stored: "manuscript://book/literal%2520.md",
-      spelled: "literal%2520.md",
+      address: "manuscript://book/literal%20",
+      stored: "manuscript://book/literal%2520",
+      spelled: "literal%2520",
     },
     {
       written: "next%3Fpart.md",
       kind: "link",
-      address: "manuscript://book/next?part.md",
-      stored: "manuscript://book/next%3Fpart.md",
-      spelled: "next%3Fpart.md",
+      address: "manuscript://book/next?part",
+      stored: "manuscript://book/next%3Fpart",
+      spelled: "next%3Fpart",
     },
     {
       written: "next.md?q=a#part",
       kind: "link",
-      address: "manuscript://book/next.md",
-      stored: "manuscript://book/next.md?q=a#part",
-      spelled: "next.md?q=a#part",
+      address: "manuscript://book/next",
+      stored: "manuscript://book/next?q=a#part",
+      spelled: "next?q=a#part",
     },
     {
       written: "100%25%23two?v=1#top",
       kind: "link",
-      address: "manuscript://book/100%#two.md",
-      stored: "manuscript://book/100%25%23two.md?v=1#top",
-      spelled: "100%25%23two.md?v=1#top",
+      address: "manuscript://book/100%#two",
+      stored: "manuscript://book/100%25%23two?v=1#top",
+      spelled: "100%25%23two?v=1#top",
     },
     {
       written: "assets/map%23one.png",
@@ -463,27 +464,23 @@ function internal(uri: string, suffix: string) {
 }
 
 it("spells lineage links through their holder, without a chat-only spelling channel", () => {
-  const target = doc(U.cast, "scratch://@/c12/x.md");
+  const target = doc(U.cast, "scratch://@/c12/x");
   const resolution = { kind: "document", document: target, inDraft: false } as const;
-  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old.md#gate" };
-  const ownScratch = { ...holder, uri: "scratch://@/c12/holder.md" };
-  expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x.md#gate");
+  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old#gate" };
+  const ownScratch = { ...holder, uri: "scratch://@/c12/holder" };
+  expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x#gate");
   // Contextual spelling already in the chat's own Scratch stays contextual.
   expect(
-    spellStoredLink(
-      { ref: null, href: "scratch://x.md" },
-      ownScratch,
-      { kind: "address" },
-      "holder",
-    ).href,
-  ).toBe("scratch://x.md");
+    spellStoredLink({ ref: null, href: "scratch://x" }, ownScratch, { kind: "address" }, "holder")
+      .href,
+  ).toBe("scratch://x");
   for (const uri of [
     null,
-    "scratch://@/c13/holder.md",
-    "scratch://@arc/holder.md",
-    "manuscript://holder.md",
+    "scratch://@/c13/holder",
+    "scratch://@arc/holder",
+    "manuscript://holder",
   ])
     expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
-      "scratch://@/c12/x.md#gate",
+      "scratch://@/c12/x#gate",
     );
 });

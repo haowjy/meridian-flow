@@ -5,7 +5,7 @@
  */
 import {
   type CatalogDocument,
-  hasFileExtension,
+  isAheadFilename,
   type LinkHolder,
   resolveStoredLink,
   spellStoredLink,
@@ -253,8 +253,8 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       {
         kind: "ahead",
         ref: `ahead:${id.open}`,
-        href: "manuscript://book/chapter..md",
-        address: "manuscript://book/chapter..md",
+        href: "manuscript://book/chapter.",
+        address: "manuscript://book/chapter.",
       },
     ],
   ];
@@ -264,7 +264,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     // Every ahead address assignment mints is one the registry accepts.
     if (result.kind === "ahead")
       expect
-        .soft(hasFileExtension(result.address.slice(result.address.lastIndexOf("/") + 1)), href)
+        .soft(isAheadFilename(result.address.slice(result.address.lastIndexOf("/") + 1)), href)
         .toBe(true);
   }
   expect

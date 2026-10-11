@@ -1,5 +1,7 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
+
 import { type ParsedContextUri, parseContextUri } from "./context-uri.js";
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 
 export type ResolvedDocumentHref = { uri: string; suffix: string };
 
@@ -62,9 +64,13 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
   return format(target.value, encodePath(target.value.path));
 }
 
-/** Canonical catalog comparison seam; document types may later normalize it. */
+/** Canonicalize only the filename: folder segments are literal names. */
 export function documentPathKey(path: string): string {
-  return path;
+  const slash = path.lastIndexOf("/");
+  const parsed = parseDocumentFilename(path.slice(slash + 1));
+  return parsed.ok
+    ? path.slice(0, slash + 1) + renderFilename(parsed.value.name, parsed.value.extension)
+    : path;
 }
 
 /**
@@ -82,8 +88,13 @@ export function matchDocumentPath<T>(
   if (exact) return exact;
   const loose = candidates.filter((candidate) => {
     const value = pathOf(candidate);
-    const dot = value.lastIndexOf(".");
-    return dot > value.lastIndexOf("/") && documentPathKey(value.slice(0, dot)) === key;
+    const slash = value.lastIndexOf("/");
+    const parsed = parseDocumentFilename(value.slice(slash + 1));
+    return (
+      parsed.ok &&
+      parsed.value.extension !== "" &&
+      value.slice(0, slash + 1) + parsed.value.name === key
+    );
   });
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
