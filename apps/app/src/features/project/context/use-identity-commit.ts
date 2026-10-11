@@ -1,13 +1,12 @@
 /** Derives and transports one explicit writer request for a document's final identity. */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { storedEntryName } from "./context-entry-name";
 import {
   type DesiredIdentity,
   destinationOwner,
@@ -78,7 +77,7 @@ export function deriveIdentityCommitPlan(
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
   // Submit and compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
-  const stored = storedEntryName(target.name, tab.kind === "new" ? undefined : location.leaf);
+  const stored = storedFilename(target.name, tab.kind === "new" ? undefined : location.leaf);
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
     name: stored.ok ? stored.name : target.name.trim(),

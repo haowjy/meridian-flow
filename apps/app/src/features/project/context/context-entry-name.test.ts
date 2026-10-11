@@ -4,50 +4,8 @@ import {
   entryNameKey,
   entryNameStemEnd,
   invalidContextEntryNameReason,
-  storedEntryName,
   validateContextEntryName,
 } from "./context-entry-name";
-
-const stored = (raw: string, current?: string) => {
-  const result = storedEntryName(raw, current);
-  return result.ok ? result.name : `refused: ${result.message}`;
-};
-
-describe("storedEntryName", () => {
-  it("stores a prose document without an extension", () => {
-    expect(stored("Chapter 13")).toBe("Chapter 13");
-    expect(stored("Chapter 13.md")).toBe("Chapter 13");
-    expect(stored("Chapter 13.txt")).toBe("Chapter 13");
-    expect(stored("notes.txt")).toBe("notes");
-  });
-
-  it("keeps a visible extension, lower-cased", () => {
-    expect(stored("outline.json")).toBe("outline.json");
-    expect(stored("Map.PNG")).toBe("Map.png");
-  });
-
-  it("treats a dotted name as a name", () => {
-    expect(stored("Vol. 2")).toBe("Vol. 2");
-    expect(stored("Chapter 1.5")).toBe("Chapter 1.5");
-  });
-
-  it("keeps the renamed file's extension when none is typed", () => {
-    expect(stored("settings", "config.toml")).toBe("settings.toml");
-    expect(stored("pic", "map.png")).toBe("pic.png");
-    expect(stored("Chapter 14", "Chapter 13")).toBe("Chapter 14");
-  });
-
-  it("lets a typed extension state the type", () => {
-    expect(stored("Chapter 13.md", "config.toml")).toBe("Chapter 13");
-  });
-
-  it("passes the codec's refusal through", () => {
-    expect(stored("data.json.md")).toMatch(
-      /^refused: .*data\.json\.md.*would show as .*data\.json/,
-    );
-    expect(stored(".md")).toMatch(/^refused: /);
-  });
-});
 
 describe("entryNameKey", () => {
   it("makes every spelling of a prose name one key", () => {

@@ -12,6 +12,7 @@ import {
   type ContextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +27,6 @@ import {
   entryNameKey,
   entryNameStemEnd,
   invalidContextEntryNameReason,
-  storedEntryName,
 } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -435,7 +435,7 @@ function findCollision(
 ): LocalCollision {
   if (!typed) return null;
   // The same name by the codec's spelling: `Chapter 12.md` finds `Chapter 12`.
-  const stored = storedEntryName(typed, currentName);
+  const stored = storedFilename(typed, currentName);
   const key = entryNameKey(stored.ok ? stored.name : typed);
   return (
     folderChildren(entries, scheme, folderPath).find(

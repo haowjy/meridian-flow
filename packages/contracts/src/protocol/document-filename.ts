@@ -1,5 +1,10 @@
 /** The input codec for document basenames. Stored parts are the canonical name. */
-import { type Filetype, filetypeForExtension, PROSE_EXTENSIONS } from "./filetype.js";
+import {
+  classifyFiletype,
+  type Filetype,
+  filetypeForExtension,
+  PROSE_EXTENSIONS,
+} from "./filetype.js";
 
 export interface ParsedDocumentFilename {
   name: string;
@@ -71,4 +76,27 @@ export function parseBinaryFilename(
 /** Canonical path segment from stored parts. */
 export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
+}
+
+/**
+ * The name a typed filename is stored under when it names (or renames) the file
+ * currently called `current`: the typed suffix states the type, otherwise the
+ * current file keeps its extension (`settings` on `config.toml` is
+ * `settings.toml`; a prose document has none to keep). Clients submit this, so
+ * their optimistic name and the server's answer are the same string.
+ */
+export function storedFilename(
+  typed: string,
+  current?: string,
+): { ok: true; name: string } | { ok: false; message: string } {
+  const source = current ? parseDocumentFilename(current) : null;
+  const sourceExtension = source?.ok ? source.value.extension : "";
+  const binary =
+    Boolean(sourceExtension) &&
+    source?.ok === true &&
+    classifyFiletype(source.value.filetype).kind === "binary";
+  const parsed = parseDocumentFilename(typed, { sourceExtension, binary });
+  return parsed.ok
+    ? { ok: true, name: renderFilename(parsed.value.name, parsed.value.extension) }
+    : { ok: false, message: parsed.error.message };
 }

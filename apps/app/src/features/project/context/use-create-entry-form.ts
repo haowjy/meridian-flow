@@ -7,7 +7,11 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  parseDocumentFilename,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
@@ -18,11 +22,7 @@ import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import {
-  joinContextEntryPath,
-  storedEntryName,
-  validateContextEntryName,
-} from "./context-entry-name";
+import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 
 export type UseCreateEntryFormOptions = {
@@ -70,7 +70,7 @@ export function useCreateEntryForm({
     async (typed: string) => {
       // Submit the name the server will store, so the optimistic entry and the
       // server's answer are the same path and nothing flips when it arrives.
-      const stored = kind === "file" ? storedEntryName(typed) : null;
+      const stored = kind === "file" ? storedFilename(typed) : null;
       const name = stored?.ok ? stored.name : typed;
       const path = joinContextEntryPath(parent, name);
       if (kind === "file" && usesResourceDocumentCreate(name)) {
@@ -119,6 +119,6 @@ export function useCreateEntryForm({
 
 /** The icon previews the name the file will be stored under; an empty field is prose. */
 function iconName(draft: string): string {
-  const stored = storedEntryName(draft);
+  const stored = storedFilename(draft);
   return stored.ok ? stored.name : draft;
 }

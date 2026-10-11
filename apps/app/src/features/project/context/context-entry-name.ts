@@ -5,35 +5,11 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
-  classifyFiletype,
   parseDocumentFilename,
   renderFilename,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
-
-/**
- * The name a typed file name is stored under, by the one codec in contracts:
- * `Chapter 13.md` and `notes.txt` store `Chapter 13` and `notes`, `outline.json`
- * keeps its extension, `Vol. 2` is a name. `current` is the stored name of the
- * file being renamed, so an extensionless `settings` renaming `config.toml`
- * stays `settings.toml`. The codec's `invalid_name` message passes through.
- */
-export function storedEntryName(
-  raw: string,
-  current?: string,
-): { ok: true; name: string } | { ok: false; message: string } {
-  const source = current ? parseDocumentFilename(current) : null;
-  const sourceExtension = source?.ok ? source.value.extension : "";
-  const parsed = parseDocumentFilename(raw, {
-    sourceExtension,
-    binary:
-      Boolean(sourceExtension) &&
-      classifyFiletype(source?.ok ? source.value.filetype : null).kind === "binary",
-  });
-  return parsed.ok
-    ? { ok: true, name: renderFilename(parsed.value.name, parsed.value.extension) }
-    : { ok: false, message: parsed.error.message };
-}
 
 /**
  * What two sibling names clash on. A folder compares as a document name, so a
@@ -88,7 +64,7 @@ export function parentContextEntryPath(path: string): string {
 export function invalidContextEntryNameReason(name: string, current?: string): string | null {
   const result = validateSharedContextEntryName(name);
   if (!result.ok) return validationReason(result);
-  const stored = storedEntryName(result.value, current);
+  const stored = storedFilename(result.value, current);
   return stored.ok ? null : stored.message;
 }
 
@@ -111,7 +87,7 @@ export function validateContextEntryName(
   if (!validation.ok) return { level: "error", message: validationReason(validation) };
   let candidate = trimmed;
   if (kind === "file") {
-    const stored = storedEntryName(trimmed, current);
+    const stored = storedFilename(trimmed, current);
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
