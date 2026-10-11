@@ -87,11 +87,13 @@ the retries turned them away, and a short claim that turned an attempt away
 wakes its chat on release (`loop/contended-claim-wake.ts`, wrapped around the
 run claim at composition), so the switch applies right after it releases. That
 tracking is process-local: only a claim held by another server process leaves
-the switch to the sweep. No wake runs beside the route's attempts, because a
-wake applying the switch would race the answer. The answer reads the control's
-switch turn and queue row together under the thread lock after the attempts,
-so a reply's release applying the switch lands wholly before or after it: a
-switch turn recording the control means applied, a waiting row means queued.
+the switch to the sweep. The route does not enqueue a wake of its own, but a
+contended claim's release wake, or a reply's, can apply the switch while the
+attempts are still running. The answer stays consistent because of the
+thread lock, not because no wake runs: it reads the control's switch turn and
+queue row together under the lock that every apply takes, so an apply lands
+wholly before or after it. A switch turn recording the control means applied,
+and a waiting row means queued.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
 no receipt, nothing undoable. Because the yield ends the reply, writes before
