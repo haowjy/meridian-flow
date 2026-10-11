@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import { httpErrorStatus } from "@/client/api/http-client";
 import type { BranchRoomCarry, BranchRoomPool } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import { recoverWriterCarry } from "./writer-carry-recovery";
 import { rotateWriterClient } from "./writer-client";
 
 type Carry = BranchRoomCarry;
@@ -14,20 +15,33 @@ export const WRITER_HANDOFF_ORIGIN = Symbol("writer-handoff");
 /** Separate integrated bytes from unresolved writer clocks; neither is an acknowledgement. */
 function deliverableUpdate(
   document: Y.Doc,
-  carry: Uint8Array,
+  retirement: Carry,
+  retired: boolean,
 ): {
   update: Uint8Array | null;
   pending: boolean;
+  lost: boolean;
 } {
   const clone = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(clone, Y.encodeStateAsUpdate(document));
     const updates: Uint8Array[] = [];
     clone.on("update", (update: Uint8Array) => updates.push(update));
-    Y.applyUpdate(clone, carry);
+    Y.applyUpdate(clone, retirement.carry);
+    const pending = clone.store.pendingStructs;
+    let lost = false;
+    if (pending && retired) {
+      const excluded = new Set(
+        Y.decodeUpdate(retirement.carry).structs.map((item) => item.id.client),
+      );
+      excluded.add(document.clientID);
+      rotateWriterClient(clone, undefined, excluded);
+      lost = recoverWriterCarry(clone, retirement.sourceState, pending.update);
+    }
     return {
       update: updates.length ? Y.mergeUpdates(updates) : null,
-      pending: clone.store.pendingStructs !== null,
+      pending: pending !== null && !retired,
+      lost,
     };
   } finally {
     clone.destroy();
@@ -66,6 +80,7 @@ export class BranchWriterHandoff {
                   ? prior.retirement.source
                   : retirement.source,
               carry: Y.mergeUpdates([prior.retirement.carry, retirement.carry]),
+              sourceState: Y.mergeUpdates([prior.retirement.sourceState, retirement.sourceState]),
             }
           : retirement,
     };
@@ -128,7 +143,14 @@ export class BranchWriterHandoff {
           if (outcome === "ready" && this.deps.pool.peek(roomKey) !== session) outcome = "retry";
           if (outcome === "ready") {
             // No await between filtering and applying: the baseline cannot change underneath it.
-            const { update, pending } = deliverableUpdate(session.document, entry.retirement.carry);
+            // A synced newer generation is the durable retirement cut. Missing
+            // source identities cannot arrive from its fenced-off old journal.
+            const { update, pending, lost } = deliverableUpdate(
+              session.document,
+              entry.retirement,
+              room.generation > entry.retirement.source.generation,
+            );
+            if (lost) entry.retirement.ref.writerLoss?.();
             if (update) {
               const clients = new Set(
                 Y.decodeUpdate(entry.retirement.carry).structs.map((s) => s.id.client),

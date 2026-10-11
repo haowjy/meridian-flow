@@ -22,6 +22,7 @@ import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { WriterHandoffLossNotice } from "@/features/editor/WriterHandoffLossNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
@@ -371,6 +372,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   return (
     <MobileDocumentReview documentId={activeTab.documentId}>
       {capture}
+      <WriterHandoffLossNotice projectId={projectId} documentId={activeTab.documentId} />
       <div className="relative min-h-0 flex-1">
         <PassageNotice documentId={activeTab.documentId} />
         <EditorView

@@ -1730,6 +1730,10 @@ msgstr ""
 msgid "Dismiss"
 msgstr ""
 
+#: src/features/editor/WriterHandoffLossNotice.tsx
+msgid "Dismiss typing notice"
+msgstr "关闭输入提示"
+
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Display text"
@@ -3612,6 +3616,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Some changes to {name} couldn't be completed."
 msgstr ""
+
+#: src/features/editor/WriterHandoffLossNotice.tsx
+msgid "Some typing inside a discarded change couldn't be kept."
+msgstr "已丢弃改动中的部分输入未能保留。"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."

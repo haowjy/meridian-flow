@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+- Recover unrelated typing after a draft generation retires, release unanchorable carries, and report lost typing on its document.
+
 - Keep ambiguous browser restoration claims writer-authored, including manual attribute re-sets and omitted sibling claims.
 
-- Preserve chat attribution when writer Undo restores paragraph attributes and formatted paragraphs.
+- Preserve chat attribution when writer Undo restores complete formatted paragraphs with their attributes.
 
 - Retain unacknowledged draft typing across generation changes when its Yjs anchors are still missing.
 

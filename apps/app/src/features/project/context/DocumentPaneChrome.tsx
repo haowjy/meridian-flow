@@ -8,6 +8,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { WriterHandoffLossNotice } from "@/features/editor/WriterHandoffLossNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
@@ -45,6 +46,7 @@ export function DocumentPaneChrome({
       {/* A jump that could not find its passage says so here, over the page
           rather than in the layout. */}
       <PassageNotice documentId={tab.documentId} />
+      <WriterHandoffLossNotice projectId={projectId} documentId={tab.documentId} />
       {archivedWork ? (
         <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
       ) : null}

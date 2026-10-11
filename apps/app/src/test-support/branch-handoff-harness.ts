@@ -104,12 +104,14 @@ export function branchHandoffHarness(transportFactory?: DocumentSessionTransport
   };
   const changed = vi.fn();
   const writerChanges = vi.fn();
+  const writerLoss = vi.fn();
   let currentRoom: () => Promise<string | null> = async () => null;
   const ref = (roomKey: string): BranchRoomRef => ({
     roomKey,
     currentRoom: () => currentRoom(),
     changed,
     writerChanges,
+    writerLoss,
   });
   return {
     pool,
@@ -118,6 +120,7 @@ export function branchHandoffHarness(transportFactory?: DocumentSessionTransport
     epoch,
     changed,
     writerChanges,
+    writerLoss,
     ref,
     handoff,
     locate: (locate: () => Promise<string | null>) => {
