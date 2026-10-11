@@ -1,18 +1,7 @@
-/**
- * DocumentChanges — the open review's own change list: its changes in document
- * order, or the state that stands in for them (loading, Applying or Discarding
- * the last change, "No changes left" with the way on, formatting-only,
- * marks hidden). The identity row's list popover and the phone's change sheet
- * both render it, so the document's state reads the same in either; the rows
- * themselves are `DocumentChangeRows`. A row focuses its change in the
- * manuscript. `touch` raises the rows and buttons to 44px.
- */
-
+/** The document's change rows, shared by the popover and phone sheet. Completion lives in the review header; the list closes after the last change. */
 import { t } from "@lingui/core/macro";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DocumentChangeRows } from "./DocumentChangeRows";
-import { ReviewNextAction, ReviewStatusContent } from "./ReviewCompletion";
-import type { DraftReviewController } from "./useDraftReviewController";
+import { ReviewStatusContent } from "./ReviewCompletion";
 import type { ReviewChangesView } from "./useReviewChanges";
 
 /** The name of the button that opens the document's change list: the count when there is one. */
@@ -23,38 +12,16 @@ export function changeListLabel(count: number): string {
 
 export function DocumentChanges({
   view,
-  controller,
-  next,
-  onOpenNext,
   touch = false,
   onFocused,
 }: {
   view: ReviewChangesView;
-  controller: Pick<DraftReviewController, "exitInlineReview">;
-  next: ReviewFileTarget | null;
-  onOpenNext: (row: ReviewFileTarget) => void;
   /** The phone's rows: every control a 44px target. */
   touch?: boolean;
   /** A change was tapped and focused in the manuscript (the phone closes its sheet). */
   onFocused?: () => void;
 }) {
   const stateLine = () => {
-    if (view.finished && !view.completing) {
-      return (
-        <div className="flex flex-col items-start gap-2 px-2 py-2" role="status">
-          <p className="text-caption text-muted-foreground">
-            <ReviewStatusContent finished />
-          </p>
-          <ReviewNextAction
-            next={next}
-            onOpenNext={onOpenNext}
-            onShowLive={controller.exitInlineReview}
-            size={touch ? "default" : "xs"}
-            className={touch ? "min-h-11" : undefined}
-          />
-        </div>
-      );
-    }
     if (view.completing || view.unlisted) {
       return (
         <p
@@ -62,7 +29,7 @@ export function DocumentChanges({
           role="status"
           aria-busy={!!view.completing}
         >
-          <ReviewStatusContent completing={view.completing} finished={false} explainFormatting />
+          <ReviewStatusContent completing={view.completing} finished={false} />
         </p>
       );
     }

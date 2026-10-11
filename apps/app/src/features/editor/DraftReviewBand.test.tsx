@@ -125,8 +125,7 @@ it("focuses this document, then applies and discards its classes without closing
           },
         ],
       ]);
-      expect(list()).not.toBeNull();
-      expect(row("2")).toBeNull();
+      expect(list()).toBeNull();
       await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
       expect(navigate).not.toHaveBeenCalled();
     },

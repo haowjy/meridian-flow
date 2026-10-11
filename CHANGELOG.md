@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Make draft review more compact: treat a new document as one actionable change, keep controls and attribution on one line, and remove redundant notes, counts, shortcuts and success toasts.
+
 - Keep an Editor tab’s review when closing the same document or review in the dock.
 
 - Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.

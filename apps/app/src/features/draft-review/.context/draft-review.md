@@ -30,9 +30,12 @@ Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
 
 `reviewChangesOfPreview` shares `reviewChanges` grouping by server
 `closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
-operations in the class, never a representative. Unclassified hunks without
-operations and classes flagged `canApplyOrDiscard: false` remain in the model
-but have no selective commands. Both count when predicting the last change.
+operations in the class, never a representative. New documents and previews containing unclassified hunks without operations or
+classes flagged `canApplyOrDiscard: false` become one whole-draft item, with all
+mark keys and attribution retained. Its Apply/Discard use existing whole-draft
+commands, never synthetic IDs in a selective request. With no hunks or
+operations, the preview remains formatting-only. Whole claims hide the addressed
+generation's preview optimistically; failures restore it.
 Rows are DOM display artifacts, not editable TipTap content.
 
 ## Command admission and ordering
@@ -59,7 +62,7 @@ without sending. The claim keeps generation, not a retained preview basis.
 Settlement order is explicit:
 
 1. An `applied`/`discarded` answer publishes closing evidence on the claim
-   before cache refresh. Selections also publish their addressed toast answer.
+   before cache refresh. Selections also publish their addressed answer.
 2. Whole Apply confirms and removes the addressed pending list membership
    immediately, preserving a newer generation. Catalog/list/preview refresh
    continues in the background; navigation and promotion do not decide success.
@@ -111,8 +114,9 @@ or promotes a draft-only tab. A later preview that omits a failed selection
 retires it; a later list omitting a failed draft retires that failure.
 
 Selection `incomplete_class` becomes `stale` and refetches; focus follows shared
-operations if regrouping changed the class ID. `draft_only` becomes `draft-only`
-and points to whole commands. `gone` is not held: the change leaves with a toast.
+operations if regrouping changed the class ID. `draft_only` refreshes as `stale` (a racing selective request cannot target a
+whole-draft item). `gone` is not held: the change leaves with failure feedback.
+Applied/discarded selections produce no success toast.
 Only `applied`/`discarded` answers can supply closure, never refusal or stale.
 Whole failures clear on the next disposition; opening Review clears only
 `review-failed` (a failed launch), not a refused command. Work rows can dismiss.
@@ -145,8 +149,11 @@ residue with no listed changes or command hiding them.
 
 Pending last Discard shows warm live text inert; refusal/non-closure restores
 review. Pending last Apply keeps the review editor with marks gone until the
-answer. Closed completion holds “No changes left” until explicit Next draft or
-Back to live. Whole-draft header navigation is an explicit admitted-click effect,
+answer. Closed completion holds “No changes left” in the existing review/path row until
+explicit Next draft or Back to live. Lists close on the last disposition and
+finished Work files leave Changes to review. The chat strip has no notes or
+Work-page footer; one summary row holds count and commands. Change excerpts
+truncate to keep attribution and actions on the same line. Whole-draft header navigation is an explicit admitted-click effect,
 not an automatic consequence of a selection's closure.
 
 Whole Apply stays in generation G. Whole Discard and last-selection disposition

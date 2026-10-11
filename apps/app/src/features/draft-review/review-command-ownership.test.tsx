@@ -74,7 +74,7 @@ it("Presented review selective Apply excludes Chat whole commands and both surfa
   });
 });
 
-it("Chat whole Apply excludes presented review selection without hiding the blocked change", async () => {
+it("Chat whole Apply hides the draft and excludes presented review selection", async () => {
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
   fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
@@ -90,10 +90,7 @@ it("Chat whole Apply excludes presented review selection without hiding the bloc
       });
     });
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-    expect(p().header.view.items.map(({ change }) => change.classId)).toEqual([
-      "class-1",
-      "class-2",
-    ]);
+    expect(p().header.view.items).toEqual([]);
     await act(async () => {
       answer.resolve({ status: "applied", draftId: "draft-a" });
       await done;

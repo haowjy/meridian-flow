@@ -20,8 +20,7 @@ export type ReviewStateProps = {
 export function ReviewStatusContent({
   completing,
   finished,
-  explainFormatting = false,
-}: Pick<ReviewStateProps, "completing" | "finished"> & { explainFormatting?: boolean }) {
+}: Pick<ReviewStateProps, "completing" | "finished">) {
   if (completing) {
     return (
       <>
@@ -31,11 +30,7 @@ export function ReviewStatusContent({
     );
   }
   if (finished) return <Trans>No changes left</Trans>;
-  return explainFormatting ? (
-    <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
-  ) : (
-    <Trans>Formatting changes remain</Trans>
-  );
+  return <Trans>Formatting changes remain</Trans>;
 }
 
 export function ReviewNextAction({

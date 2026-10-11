@@ -7,12 +7,9 @@
  * entering or leaving review moves nothing below it.
  *
  * The list button, left of the stepper, opens this document's own change list
- * (`DocumentChanges`) in a popover under the row, with "All changes in <Work>"
- * at its foot. Unlike the stepper, which needs a positive count, it is there in
- * every review state (loading, formatting-only, finished, marks hidden), because
- * the state lines and the way to the Work's other drafts live in it too. Opening
- * it is independent of marks visibility. Choosing a row focuses its change and
- * closes the list; Apply and Discard on a row leave it open.
+ * (`DocumentChanges`) in a popover under the row, independent of marks
+ * visibility. Focusing a row closes it; dispositions leave it open until the
+ * last change is handled. Completion stays in the identity row.
  *
  * Narrow rows give up room in a fixed order, always on one row (the container
  * is the identity bar's own `@container`, so a closed sidebar or open dock
@@ -31,7 +28,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { PaintCapture } from "@/components/app/PaintHold";
 
@@ -51,7 +48,6 @@ import {
   useReviewFailures,
   useReviewHeader,
 } from "@/features/draft-review/useReviewHeader";
-import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
@@ -160,11 +156,15 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
  */
 function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
   const [open, setOpen] = useState(false);
-  const { controller, view } = header;
+  const { view } = header;
+  useEffect(() => {
+    if (view.finished || view.completing) setOpen(false);
+  }, [view.finished, view.completing]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <IconButton
+          disabled={view.finished || !!view.completing}
           tooltip={changeListLabel(view.items.length)}
           className="size-5.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
         >
@@ -177,23 +177,8 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
         className="flex max-h-[min(28rem,70svh)] w-96 max-w-[calc(100vw-2rem)] flex-col p-0"
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
-          <DocumentChanges
-            view={view}
-            controller={controller}
-            next={header.next}
-            onOpenNext={(row) => {
-              setOpen(false);
-              header.openDraft(row);
-            }}
-            onFocused={() => setOpen(false)}
-          />
+          <DocumentChanges view={view} onFocused={() => setOpen(false)} />
         </div>
-        <WorkChangesLink
-          projectId={controller.projectId}
-          workId={controller.workId}
-          onOpen={() => setOpen(false)}
-          className="shrink-0 rounded-t-none border-t border-border-subtle px-3.5"
-        />
       </PopoverContent>
     </Popover>
   );

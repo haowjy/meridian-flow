@@ -291,7 +291,7 @@ async function execute(
         : { kind: "change-refused", mode, code: "gone" };
     }
     await refreshDraft();
-    const code = response.status === "draft_only" ? "draft-only" : "stale";
+    const code = "stale";
     failChangeCommand(draft, command.selection, mode, code);
     return { kind: "change-refused", mode, code };
   } catch (error) {

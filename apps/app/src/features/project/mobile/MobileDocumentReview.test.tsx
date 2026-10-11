@@ -123,8 +123,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       ]);
       await act(async () => selective.resolve(discarded(false)));
       await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
-      expect(sheet()?.querySelector("[data-review-toast]")?.textContent).toContain("Discarded");
-      expect(document.querySelectorAll("[data-review-toast]")).toHaveLength(1);
+      expect(document.querySelectorAll("[data-review-toast]")).toHaveLength(0);
       expect(probe().header.view.focused?.classId).toBe("class-2");
       await click("Close the list", sheet() as ParentNode);
       await act(async () =>
@@ -170,7 +169,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
   );
 });
 
-it("keeps last-change feedback in the sheet flow and gives chat links phone targets", async () => {
+it("closes the sheet on the last change and gives chat links phone targets", async () => {
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
@@ -195,11 +194,10 @@ it("keeps last-change feedback in the sheet flow and gives chat links phone targ
       expect.soft(chatLink?.classList.contains("min-h-11")).toBe(true);
       await click("Discard", sheet() as ParentNode);
       await settleReact(() => expect(probe().header.finished).toBe(true));
-      const toast = sheet()?.querySelector<HTMLElement>("[data-review-toast]");
-      expect(toast?.textContent).toBe("Discarded");
-      expect(toast?.classList.contains("static")).toBe(true);
-      expect(toast?.classList.contains("bottom-full")).toBe(false);
-      expect(sheet()?.textContent).toContain("No changes left");
+      expect(sheet()).toBeNull();
+      expect(document.querySelector("[data-phone-review-header]")?.textContent).toContain(
+        "No changes left",
+      );
     },
     {
       surface: (
