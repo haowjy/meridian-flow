@@ -3,9 +3,10 @@
  * turn at enqueue (so the client's optimistic ack and the send's durability hold
  * before any run exists), appends a writer-provenance `message` to the durable
  * inbox under the same id, settles admission plus attachments, and wakes the
- * thread — all in one turn-start transaction. A live run's assistant turn id is
- * returned for a mid-run merge; a fresh run returns null and the client learns
- * the assistant turn from `RUN_STARTED`.
+ * thread — all in one turn-start transaction. A message that joins the live
+ * reply (a steer) returns that reply's assistant turn id; one answered by a new
+ * reply (idle, or behind a queued write-mode switch) returns null and the
+ * client learns the assistant turn from `RUN_STARTED`.
  *
  * No run is started here: the wake is best-effort latency, the sweep is the
  * durable guarantee, and the drain owns the assistant container.
@@ -90,7 +91,7 @@ export function createWriterTurnProducer(deps: {
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
       const live = deps.runner.getRunningTurn(threadId);
-      const assistantTurnId =
+      const liveReplyId =
         live && live.kind !== "compaction"
           ? (live.turnId ??
             (await deps.turns.findRunningAssistantId(threadId, {
@@ -113,15 +114,14 @@ export function createWriterTurnProducer(deps: {
           userTurnId,
           userBlocks: input.blocks,
           // A message sent behind a queued switch ends the live reply instead of
-          // steering it, so it is answered by the next reply in the new mode.
+          // joining it, so it is answered by the next reply in the new mode.
           // Read under the lock: a switch committed before it is ahead of M2.
-          userTurnMetadata: async () =>
-            writerSendMetadata(
-              turnMetadata,
-              assistantTurnId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId))
-                ? "steer"
-                : "send",
-            ),
+          joinedReply: async () =>
+            liveReplyId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId))
+              ? liveReplyId
+              : null,
+          userTurnMetadata: (joinedReplyId) =>
+            writerSendMetadata(turnMetadata, joinedReplyId ? "steer" : "send"),
           delivery: deps.delivery,
           beforePersist: () => deps.requireWritableThread(threadId),
           draft: {
@@ -134,6 +134,7 @@ export function createWriterTurnProducer(deps: {
           },
           settle: async ({
             userTurnId: settledUserTurnId,
+            joinedReplyId,
             resumeAfterSeq,
             snapshotFloorNextSeq,
           }) => {
@@ -142,7 +143,7 @@ export function createWriterTurnProducer(deps: {
               threadId,
               submissionId: input.admission.submissionId,
               userTurnId: settledUserTurnId,
-              assistantTurnId,
+              assistantTurnId: joinedReplyId,
               resumeAfterSeq,
               snapshotFloorNextSeq,
             };

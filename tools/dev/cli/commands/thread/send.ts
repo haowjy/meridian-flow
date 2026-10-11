@@ -202,7 +202,9 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
-  const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
+  // Null until this send's reply starts: a reply running at admission that this
+  // message did not join (it queued behind a write-mode switch) is not ours.
+  const isOurs = (turnId: string) => ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
     for (;;) {

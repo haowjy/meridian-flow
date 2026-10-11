@@ -5,7 +5,7 @@ import {
   serializeTransport,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { Thread } from "@meridian/contracts/threads";
+import type { PendingInboxItem, Thread } from "@meridian/contracts/threads";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 
@@ -120,15 +120,7 @@ function childNode(status: unknown, spawnStatus: string, currentTool: unknown) {
 function createFake() {
   const journal: Journal = [];
   const turns: FakeTurn[] = [];
-  const pendingItems: {
-    id: string;
-    seq: number;
-    intent: "message";
-    provenance: { kind: "writer"; actorId: string };
-    deliveryState: "waiting";
-    summary: string;
-    enqueuedAt: string;
-  }[] = [];
+  const pendingItems: PendingInboxItem[] = [];
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
@@ -346,6 +338,79 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           assistantTurnId: runningTurnId,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "wait behind queued switch") {
+        // The running reply ends at its next boundary; a new reply, after the
+        // switch, answers this message. Admission names no reply for it.
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const runningTurnId = `turn-running-${runCounter}`;
+        const running: FakeTurn = {
+          id: runningTurnId,
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(running, {
+          id: userTurnId,
+          role: "user",
+          prevTurnId: runningTurnId,
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        pendingItems.push(
+          {
+            id: `switch-${runCounter}`,
+            seq: runCounter,
+            intent: "control",
+            control: { kind: "write_mode", mode: "draft" },
+            provenance: { kind: "writer", actorId: "u1" },
+            deliveryState: "waiting",
+            summary: "",
+            enqueuedAt: "2026-01-02T00:00:00.000Z",
+          },
+          {
+            id: userTurnId,
+            seq: runCounter,
+            intent: "message",
+            provenance: { kind: "writer", actorId: "u1" },
+            deliveryState: "waiting",
+            summary: body.text,
+            enqueuedAt: "2026-01-02T00:00:00.000Z",
+          },
+        );
+        setTimeout(() => {
+          running.status = "complete";
+          running.text = "The old reply";
+          publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: runningTurnId } as AGUIEvent);
+          pendingItems.splice(0, pendingItems.length);
+          setTimeout(() => {
+            const replyId = `turn-reply-${runCounter}`;
+            const reply: FakeTurn = {
+              id: replyId,
+              role: "assistant",
+              prevTurnId: userTurnId,
+              status: "streaming",
+              error: null,
+              text: "",
+            };
+            turns.push(reply);
+            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            reply.status = "complete";
+            reply.text = "Answered in the new mode";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+          }, 20);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",

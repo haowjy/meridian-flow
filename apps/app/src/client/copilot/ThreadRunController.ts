@@ -508,8 +508,15 @@ export class ThreadRunController {
     result: { assistantTurnId: string | null; resumeAfterSeq: string },
   ): void {
     if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
+    // Null names no reply for this message. A reply this controller is still
+    // following is live, not abandoned: the message queued behind a write-mode
+    // switch, and the fresh subscription carries that reply to its end.
+    const followingLiveRun =
+      this.activeRun?.threadId === threadId &&
+      this.activeRun.turnId !== undefined &&
+      !this.activeRun.splitBoundaryPending;
     const token = this.startRun(threadId, {
-      pruneAbandonedTurn: result.assistantTurnId == null,
+      pruneAbandonedTurn: result.assistantTurnId == null && !followingLiveRun,
     });
     this.attachLiveSubscription(threadId, token, {
       after: result.resumeAfterSeq,
