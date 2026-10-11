@@ -3,7 +3,6 @@
  * who made it, and why a command on it did not land. The row, the bar and the
  * phone's sheet are made of these, so a change reads the same everywhere.
  */
-import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
@@ -65,7 +64,7 @@ export function ChangeAuthor({
   touch = false,
   overflow,
 }: {
-  overflow?: "menu" | "hide";
+  overflow: "menu" | "hide";
   attribution: ChangeAttribution;
   className?: string;
   touch?: boolean;
@@ -97,50 +96,14 @@ export function ChangeAuthor({
       </span>
     );
   }
-  if (overflow)
-    return (
-      <OverflowChats
-        mode={overflow}
-        chats={attribution.chats}
-        openThread={openThread}
-        touch={touch}
-        className={className}
-      />
-    );
-  // The names as the chat list shows them, so each link names what it opens.
-  const parts = new Intl.ListFormat(i18n.locale || undefined, {
-    style: "long",
-    type: "conjunction",
-  }).formatToParts(attribution.chats.map((chat) => displayThreadTitle(chat.title)));
-  let next = 0;
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 flex-nowrap items-baseline text-caption text-muted-foreground",
-        className,
-      )}
-    >
-      {parts.map((part, index) => {
-        if (part.type === "literal") {
-          // pre keeps the separator's spaces, which a flex item would drop.
-          return (
-            <span key={index} className="whitespace-pre">
-              {part.value}
-            </span>
-          );
-        }
-        const chat = attribution.chats[next++];
-        return (
-          <ChatLink
-            key={chat.threadId}
-            chat={chat}
-            name={part.value}
-            onOpenThread={openThread}
-            touch={touch}
-          />
-        );
-      })}
-    </span>
+    <OverflowChats
+      mode={overflow}
+      chats={attribution.chats}
+      openThread={openThread}
+      touch={touch}
+      className={className}
+    />
   );
 }
 
