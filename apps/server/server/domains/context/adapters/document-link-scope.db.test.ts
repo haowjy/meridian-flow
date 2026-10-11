@@ -13,6 +13,7 @@ import {
   folders,
   linkAheadRefs,
   projects,
+  threads,
   users,
   works,
 } from "@meridian/database/schema";
@@ -58,6 +59,9 @@ const THREAD = id(22);
 const UNKNOWN_THREAD = id(23);
 const MISSING_ASSET = id(24);
 const WRECK = id(26);
+const RETIRED_SOURCE = id(27);
+const RETIRED_IMAGE = id(28);
+const RETIRED_CHAT = id(29);
 const LIVE = { kind: "live" } as const;
 
 const schema = buildDocumentSchema();
@@ -114,6 +118,24 @@ if (!RUN) {
         { id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript", isPrimary: true },
         { id: OTHER_SOURCE, projectId: OTHER_PROJECT, name: "Manuscript", slug: "manuscript" },
       ]);
+      // A retired lineage Scratch source keeps its documents.
+      await db.insert(threads).values({
+        id: RETIRED_CHAT,
+        projectId: PROJECT,
+        rootThreadId: RETIRED_CHAT,
+        createdByUserId: USER,
+        ref: "c1",
+        deletedAt: new Date(),
+      } as never);
+      await db.insert(contextSources).values({
+        id: RETIRED_SOURCE,
+        projectId: PROJECT,
+        rootThreadId: RETIRED_CHAT,
+        scope: "lineage",
+        name: "Scratch",
+        slug: "scratch",
+        deletedAt: new Date(),
+      });
       await db.insert(folders).values({ id: PART, contextSourceId: SOURCE, name: "part1" });
       const row = (docId: string, name: string, extra: Record<string, unknown> = {}) => ({
         id: docId,
@@ -143,6 +165,13 @@ if (!RUN) {
           deletedAt: new Date(),
         }),
         { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
+        {
+          id: RETIRED_IMAGE,
+          contextSourceId: RETIRED_SOURCE,
+          name: "sketch",
+          extension: "png",
+          fileType: "image",
+        },
       ]);
       await db.insert(works).values({
         id: WORK,
@@ -209,6 +238,7 @@ if (!RUN) {
               `asset:${MISSING_ASSET}`,
               `asset:${FOREIGN}`,
               `asset:${WRECK}`,
+              `asset:${RETIRED_IMAGE}`,
             ]),
           ],
           addresses: [
@@ -261,10 +291,60 @@ if (!RUN) {
           expect
             .soft(scope.spellSource({ src: `asset:${asset}`, ref: null }), what)
             .toEqual({ href: "", address: null });
+        // Retiring a source keeps its documents and their addresses: an image there still
+        // spells where it was, so rewriting its holder never drops the `asset:` id (S-L1).
+        expect
+          .soft(scope.spellSource({ src: `asset:${RETIRED_IMAGE}`, ref: null }), "retired source")
+          .toEqual({ href: "scratch://@/c1/sketch.png", address: "scratch://@/c1/sketch.png" });
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
         expect.soft(scope.assetFor("wreck.png"), "a hidden tombstone holds no path").toBeNull();
+      });
+    });
+
+    it("reports an image lookup in a view it never loaded as a miss, never as an answer (S-L2)", async () => {
+      const misses: string[] = [];
+      const recorded = createDrizzleDocumentLinkScopes({
+        db,
+        fileAccess,
+        observer: {
+          unscoped: (documentId) => misses.push(`unscoped:${documentId}`),
+          snapshotMiss: ({ key }) => misses.push(key),
+        },
+      });
+      await recorded.within({ documentId: HOLDER }, async () => {
+        await recorded.prepare({
+          holders: [{ documentId: HOLDER, view: LIVE }],
+          docs: [holderDoc([], [`asset:${MAP}`, `asset:${SEAL}`])],
+          addresses: ["manuscript://part1/map.png"],
+        });
+        const unloaded = recorded.holder({
+          documentId: HOLDER,
+          view: { kind: "draft", draftId: id(25) },
+        });
+        expect.soft(unloaded.spellSource({ src: `asset:${MAP}`, ref: null })).toEqual({
+          href: "",
+          address: null,
+        });
+        expect.soft(unloaded.assetFor("part1/map.png")).toBeNull();
+        expect
+          .soft(misses)
+          .toEqual(
+            expect.arrayContaining([
+              `identity:${MAP}`,
+              `asset:${MAP}`,
+              "manuscript://part1/map.png",
+            ]),
+          );
+        // The live view it did load still answers.
+        misses.length = 0;
+        const live = recorded.holder({ documentId: HOLDER, view: LIVE });
+        expect
+          .soft(live.spellSource({ src: `asset:${MAP}`, ref: null }).href)
+          .toBe("part1/map.png");
+        expect.soft(live.assetFor("seal.png")).toBe(SEAL);
+        expect.soft(misses).toEqual([]);
       });
       // A key that names no project (a non-UUID grant) still mints under the holder
       // row's own project, and registration keeps the project the mint recorded.

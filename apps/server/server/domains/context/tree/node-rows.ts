@@ -44,7 +44,8 @@ export async function lockDocuments(db: Database, ids: readonly string[]): Promi
 /**
  * A document row at `slot`: a text row with its Markdown projection (`markdown`, empty by
  * default; a hidden row's is always empty), or a storage-backed row. A visible row claims
- * its location. Null when a unique key (a caller-minted id) already holds the row.
+ * its location. Null when any unique key already holds the row (the caller-minted id; the
+ * live location only if the caller skipped its namespace lock and occupancy check).
  */
 export async function insertDocumentRow(
   db: Database,

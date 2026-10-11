@@ -690,7 +690,15 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       for (const row of rows) expect.soft(await row.run(), row.surface).toEqual(row.expected);
     });
 
-    // The probes that must write, each on its own subject.
+    // The probes that must write, each on its own subject; those that need only a project
+    // and a drafting Work skip the full matrix subject.
+    async function bareSubject() {
+      const runtime = await runtimes.compose();
+      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const ascension = await scenario.work("Ascension", "draft");
+      const { id: projectId, userId } = scenario.project;
+      return { runtime, scenario, ascension, projectId, userId };
+    }
 
     it("prunes a hidden document's stale recent when a live one is recorded (C-1a)", async () => {
       const s = await subject();
@@ -704,7 +712,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     });
 
     it("allocates an upload's name past only live documents (C-1a)", async () => {
-      const s = await subject();
+      const s = await bareSubject();
       // Uploads are never drafted; this adversarial row verifies the live relation.
       const [source] = await db
         .insert(contextSources)
@@ -732,7 +740,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     });
 
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {
-      const s = await subject();
+      const s = await bareSubject();
       const hidden = await s.scenario.model(s.ascension).create("chapter-1.md", "Drafted.");
       await db.update(projects).set({ isPersonal: true }).where(eq(projects.id, s.projectId));
       const bootstrap = await s.runtime.ports.projects.ensureDefaultBootstrap(s.userId);
