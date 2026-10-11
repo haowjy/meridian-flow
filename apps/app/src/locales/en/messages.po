@@ -3070,6 +3070,7 @@ msgstr "Removed"
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Rename"
 msgstr "Rename"
 
