@@ -5,7 +5,7 @@ import { forgetCreatedChatCopies, reconcileChatCopies } from "./forget";
 import type { ChatSubmission } from "./store";
 
 const entry = (recordId: string, threadId = "gone", state?: "rejected") =>
-  ({ recordId, threadId, state }) as ChatSubmission;
+  ({ recordId, submissionId: `submission-${recordId}`, threadId, state }) as ChatSubmission;
 function rig() {
   const records = [entry("pending"), entry("refused", "gone", "rejected"), entry("other", "live")];
   const draft = vi.fn();
@@ -75,6 +75,7 @@ it("reconciles unique unmounted created ids with bounded concurrency, keeping ev
     "server",
     "timeout",
   ]);
+  expect(probe).toHaveBeenCalledWith("gone", "submission-pending");
   expect(records.some((e) => e.threadId === "gone")).toBe(false);
   expect(records).toHaveLength(8);
   expect(draft).toHaveBeenCalledOnce();
@@ -112,7 +113,9 @@ it("cancels pending draft writes and removes just the specified account/chat sco
 it("retains an empty never-created destination while its mounted owner confirms O4", async () => {
   const { records, draft, options } = rig();
   records.splice(0, 2);
-  expect(await forgetCreatedChatCopies({ ...options, created: () => false }, "gone")).toBe(false);
+  expect(await forgetCreatedChatCopies({ ...options, created: () => false }, "gone")).toBe(
+    "creation",
+  );
   expect(draft).not.toHaveBeenCalled();
 });
 
@@ -140,5 +143,19 @@ it("runs at most four probes at once and abandons a changed account", async () =
   for (const release of releases) release();
   await pending;
   expect(records).toHaveLength(13);
+  expect(draft).not.toHaveBeenCalled();
+});
+
+it("distinguishes unavailable storage, creation and stale binds without discarding copies", async () => {
+  const { records, options, draft } = rig();
+  expect(await forgetCreatedChatCopies({ ...options, entries: () => null }, "gone")).toBe(
+    "unavailable",
+  );
+  expect(await forgetCreatedChatCopies({ ...options, current: () => false }, "gone")).toBe("stale");
+  const first = records[0];
+  if (!first) throw new Error("missing fixture");
+  first.creation = {} as ChatSubmission["creation"];
+  expect(await forgetCreatedChatCopies(options, "gone")).toBe("creation");
+  expect(records).toHaveLength(3);
   expect(draft).not.toHaveBeenCalled();
 });

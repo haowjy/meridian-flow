@@ -29,8 +29,7 @@ export async function deleteProjectChat(
   client.removeQueries({ queryKey: projectQueryKeys.threadUserState(projectId, threadId) });
   try {
     await deleteThread({ data: { threadId } });
-    if (accountId)
-      await forgetCreatedChat(accountId, threadId).catch((error) => reportError(error));
+    if (accountId) void forgetCreatedChat(accountId, threadId).catch((error) => reportError(error));
     void invalidateProjectThreadData(client, projectId);
     void invalidateWorkThreads(client, projectId);
     return { status: "success" };

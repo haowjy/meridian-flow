@@ -25,21 +25,29 @@ it.each([
   new DOMException("timeout", "TimeoutError"),
 ])("keeps copies on an inconclusive answer (%s)", async (error) => {
   expect(
-    await probeChatDestination("chat", async () => {
+    await probeChatDestination("chat", "probe", async () => {
       throw error;
     }),
   ).toBe("unknown");
 });
 it("keeps 200 and timed-out lookup, forgets only owner-gate 404", async () => {
   expect(
-    await probeChatDestination("chat", async () => ({ kind: "not-seen", submissionId: "probe" })),
+    await probeChatDestination("chat", "probe", async () => ({
+      kind: "not-seen",
+      submissionId: "probe",
+    })),
   ).toBe("unknown");
   expect(
-    await probeChatDestination("chat", async () => {
+    await probeChatDestination("chat", "probe", async () => {
       throw missing();
     }),
   ).toBe("missing");
   expect(
-    await probeChatDestination("chat", () => new Promise(() => {}), AbortSignal.timeout(1)),
+    await probeChatDestination(
+      "chat",
+      "probe",
+      () => new Promise(() => {}),
+      AbortSignal.timeout(1),
+    ),
   ).toBe("unknown");
 });

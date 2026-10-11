@@ -93,14 +93,18 @@ and receipts (cancelling any pending flush). Journal notifications retire the ro
 model. It never transfers writing or navigates; routing stays in the route adapter.
 A cohort carrying `creation` is exempt: its 404 still belongs to O4's New chat transfer.
 Mounted owners also retain that provenance after another tab retires the cohort;
-a skipped forget does not authorize route repair ahead of O4's transfer.
+a creation or stale-bind result prevents route repair ahead of O4's transfer.
+An unreadable journal leaves copies for the next reconciliation but never blocks
+missing-chat route repair. Mounted status comes from the account/thread row model's
+bindings, not a separate owner registry. Confirmed Delete starts cleanup without
+waiting for its lock before reporting the outcome.
 
 Only HTTP 404 with `thread_not_found` from either server thread owner gate is
 definitive. Generic `not_found`, submission not-seen, auth, transport, timeout,
 and server failure cannot discard browser copies.
 Once per account bind, after its locked v1 rewrite completes, a four-worker pass probes unique unmounted created chat
-ids in that account's readable journal. Read-only admission lookup with a fresh
-UUID is the existing lightest owner-gated request: one tiny response per chat,
+ids in that account's readable journal. Read-only admission lookup with one of that chat's recorded
+submission ids is the existing lightest owner-gated request: one tiny response per chat,
 no admission write or history load. Each request has a 15-second deadline. The
 pass is account/epoch fenced and only confirmed disappearance calls the same
 forget operation. Draft-only sessionStorage scopes are not enumerated: they end

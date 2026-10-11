@@ -576,7 +576,7 @@ it("forgetting a created chat drops its shared writer rows and its tab draft", a
     },
   ]);
   expect(read().presentation.size).toBe(1);
-  expect(await forgetCreatedChat(account, "thread_1")).toBe(true);
+  expect(await forgetCreatedChat(account, "thread_1")).toBe("forgotten");
   expect(readChatSubmissions(account)).toEqual([]);
   expect(read().presentation.size).toBe(0);
   expect(scenario.store.getState().turns("thread_1")).toEqual([]);

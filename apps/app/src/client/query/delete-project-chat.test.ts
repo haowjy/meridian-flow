@@ -107,3 +107,25 @@ describe("deleteProjectChat", () => {
     });
   });
 });
+
+it("reports confirmed deletion and invalidates without waiting for the cleanup lock", async () => {
+  api.deleteThread.mockResolvedValueOnce(undefined);
+  let finish!: () => void;
+  api.forget.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const client = seededClient();
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  try {
+    const outcome = await Promise.race([
+      deleteProjectChat(client, PROJECT_ID, THREAD_ID),
+      new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ]);
+    expect(outcome).toEqual({ status: "success" });
+    expect(invalidate).toHaveBeenCalled();
+  } finally {
+    finish();
+  }
+});

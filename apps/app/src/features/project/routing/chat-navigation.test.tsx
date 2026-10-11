@@ -24,11 +24,20 @@ import type { ProjectDestination } from "./project-address";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const copies = vi.hoisted(() => ({ forget: vi.fn(async () => true) }));
+const copies = vi.hoisted(() => ({
+  forget: vi.fn<typeof import("@/client/chat-submissions")["forgetCreatedChat"]>(
+    async () => "forgotten",
+  ),
+}));
 vi.mock("@/client/chat-submissions", async (actual) => ({
   ...(await actual<typeof import("@/client/chat-submissions")>()),
   forgetCreatedChat: copies.forget,
 }));
+
+vi.mock("@/client/chat-submissions/adapters/browser-lock", async () => {
+  const { MemorySubmissionLock } = await import("@/client/chat-submissions/adapters/memory-lock");
+  return { browserSubmissionLock: new MemorySubmissionLock() };
+});
 
 const ACCOUNT = "writer";
 const PROJECT = "project";
@@ -69,7 +78,8 @@ function render(activeScreen: ScreenKey, urlChatId: string | null = null) {
 }
 
 beforeEach(() => {
-  copies.forget.mockClear();
+  copies.forget.mockReset();
+  copies.forget.mockResolvedValue("forgotten");
   window.localStorage.clear();
   window.sessionStorage.clear();
   container = document.createElement("div");
@@ -149,9 +159,9 @@ it("rail switches with no current chat use the index and still forward the hand-
 });
 
 it("forgets browser copies before repairing a definitive missing-chat route", async () => {
-  let finish!: (value: boolean) => void;
+  let finish!: (value: "forgotten") => void;
   copies.forget.mockReturnValueOnce(
-    new Promise<boolean>((resolve) => {
+    new Promise<"forgotten">((resolve) => {
       finish = resolve;
     }),
   );
@@ -173,7 +183,7 @@ it("forgets browser copies before repairing a definitive missing-chat route", as
   expect(copies.forget).toHaveBeenCalledWith(ACCOUNT, "gone");
   expect(go).not.toHaveBeenCalled();
   await act(async () => {
-    finish(true);
+    finish("forgotten");
   });
   expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
 });
@@ -192,4 +202,109 @@ it("does not repair or forget an unrelated 404", async () => {
   });
   expect(copies.forget).not.toHaveBeenCalled();
   expect(go).not.toHaveBeenCalled();
+});
+
+it("repairs a missing-chat route even when the journal is unreadable", async () => {
+  const actual = await vi.importActual<typeof import("@/client/chat-submissions")>(
+    "@/client/chat-submissions",
+  );
+  actual.bindChatSubmissions(ACCOUNT);
+  copies.forget.mockImplementation(actual.forgetCreatedChat);
+  window.localStorage.setItem(`${actual.CHAT_SUBMISSIONS_STORAGE_PREFIX}${ACCOUNT}:record`, "{}");
+  const getItem = Storage.prototype.getItem;
+  const blocked = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+    this: Storage,
+    key,
+  ) {
+    if (key.startsWith(actual.CHAT_SUBMISSIONS_STORAGE_PREFIX)) throw new Error("blocked journal");
+    return getItem.call(this, key);
+  });
+  try {
+    render("chat", "gone");
+    const query = client
+      .getQueryCache()
+      .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey });
+    await act(async () => {
+      query.setState({
+        status: "error",
+        errorUpdatedAt: Date.now(),
+        error: new MeridianApiError(
+          { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+          404,
+        ),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+  } finally {
+    blocked.mockRestore();
+  }
+});
+
+it.each([
+  "creation",
+  "stale",
+] as const)("does not repair when forget reports %s", async (result) => {
+  copies.forget.mockResolvedValueOnce(result);
+  render("chat", "creating");
+  const query = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("creating").queryKey });
+  await act(async () => {
+    query.setState({
+      status: "error",
+      errorUpdatedAt: Date.now(),
+      error: new MeridianApiError(
+        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        404,
+      ),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(copies.forget).toHaveBeenCalled();
+  expect(go).not.toHaveBeenCalled();
+});
+
+it("leaves a creation-bearing cohort on its O4 destination", async () => {
+  const actual = await vi.importActual<typeof import("@/client/chat-submissions")>(
+    "@/client/chat-submissions",
+  );
+  actual.bindChatSubmissions(ACCOUNT);
+  actual.recordChatSubmission(ACCOUNT, {
+    recordId: "first",
+    submissionId: "first",
+    threadId: "creating",
+    projectId: PROJECT,
+    createdAt: new Date().toISOString(),
+    text: "First words",
+    blocks: [{ type: "text", text: "First words" }],
+    references: [],
+    activatedSkillSlugs: [],
+    creation: {
+      title: "Creating",
+      workId: null,
+      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+      agentName: "General",
+      agentSlug: "general",
+    },
+  });
+  copies.forget.mockImplementation(actual.forgetCreatedChat);
+  render("chat", "creating");
+  const query = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("creating").queryKey });
+  await act(async () => {
+    query.setState({
+      status: "error",
+      errorUpdatedAt: Date.now(),
+      error: new MeridianApiError(
+        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        404,
+      ),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(copies.forget).not.toHaveBeenCalled();
+  expect(go).not.toHaveBeenCalled();
+  expect(actual.readChatSubmissions(ACCOUNT)).toHaveLength(1);
 });

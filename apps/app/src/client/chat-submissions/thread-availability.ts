@@ -12,11 +12,12 @@ export function isThreadNotFound(error: unknown): boolean {
 /** Read-only admission lookup checks the owner gate without loading history or minting a record. */
 export async function probeChatDestination(
   threadId: string,
+  submissionId: string,
   lookup: typeof lookupUserMessageAdmission = lookupUserMessageAdmission,
   signal = AbortSignal.timeout(15_000),
 ): Promise<"missing" | "unknown"> {
   try {
-    await abortable(lookup({ threadId, submissionId: crypto.randomUUID(), signal }), signal);
+    await abortable(lookup({ threadId, submissionId, signal }), signal);
   } catch (error) {
     if (isThreadNotFound(error)) return "missing";
   }

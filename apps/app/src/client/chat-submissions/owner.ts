@@ -19,58 +19,20 @@ import {
   forgetCreatedChat,
   getChatSubmissionEpoch,
   isThreadNotFound,
-  mountChatSubmissionCopies,
   readChatSubmissionSnapshot,
   readChatSubmissions,
   recordChatSubmission,
   retireChatSubmission,
 } from "./index";
 import { abortable } from "./lock";
+import { type Row, type ThreadModel, threadModel } from "./model";
 import type { UserTurnRecovery } from "./presentation";
 import type { ChatSubmission } from "./store";
 
-type Row = {
-  threadId: string;
-  turnId: string;
-  fresh: boolean;
-  failed?: boolean;
-  localFailure?: boolean;
-  busy?: boolean;
-  status?: "error";
-  attempt?: { session: object; submissionId: string; signal: AbortSignal };
-};
-type RecoveryState = {
-  recordId: string;
-  submissionId: string;
-  editable?: boolean;
-  busy?: boolean;
-  moving?: boolean;
-};
-type ThreadModel = {
-  epoch: number;
-  rows: Map<string, Row>;
-  presentation: Map<string, RecoveryState>;
-  bindings: Set<ChatSubmissionOwner>;
-};
-const models = new Map<string, ThreadModel>();
-function threadModel(accountId: string, threadId: string): ThreadModel {
-  const id = JSON.stringify([accountId, threadId]);
-  let model = models.get(id);
-  if (!model || model.epoch !== getChatSubmissionEpoch()) {
-    model = {
-      epoch: getChatSubmissionEpoch(),
-      rows: new Map(),
-      presentation: new Map(),
-      bindings: new Set(),
-    };
-    models.set(id, model);
-  }
-  return model;
-}
 const key = (accountId: string, recordId: string) => `${accountId}:${recordId}`;
 
 function projectRow(accountId: string, entry: ChatSubmission, actions: ThreadStoreActions): Row {
-  const rows = threadModel(accountId, entry.threadId).rows;
+  const rows = threadModel(accountId, entry.threadId, getChatSubmissionEpoch()).rows;
   const id = key(accountId, entry.recordId);
   let row = rows.get(id);
   if (!row || !actions.turns(entry.threadId)?.some((turn) => turn.id === row?.turnId)) {
@@ -170,18 +132,15 @@ export class ChatSubmissionOwner {
   }
   private readonly session = {};
   private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
+  get isCreating(): boolean {
+    return this.destination === "creating";
+  }
   private reconciling = false;
-  private readonly unmountCopies: () => void;
   private readonly epoch = getChatSubmissionEpoch();
   constructor(private readonly options: OwnerOptions) {
     const { accountId, threadId, projectId, signal, current, controller, actions, queryClient } =
       options;
-    this.unmountCopies = mountChatSubmissionCopies(
-      accountId,
-      threadId,
-      () => this.destination !== "creating",
-    );
-    this.model = threadModel(accountId, threadId);
+    this.model = threadModel(accountId, threadId, this.epoch);
     this.model.bindings.add(this);
     const rows = this.model.rows;
     controller.beginRecoverySession(this.session);
@@ -433,7 +392,6 @@ export class ChatSubmissionOwner {
   };
 
   dispose() {
-    this.unmountCopies();
     this.options.controller.endRecoverySession(this.session);
     this.model.bindings.delete(this);
     for (const row of this.model.rows.values())

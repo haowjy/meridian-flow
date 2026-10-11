@@ -14,20 +14,23 @@ export type ChatCopyOwner = {
   forgetDraft(threadId: string): void;
 };
 
+export type ForgetChatResult = "forgotten" | "creation" | "unavailable" | "stale";
+
 export async function forgetCreatedChatCopies(
   owner: ChatCopyOwner,
   threadId: string,
-): Promise<boolean> {
+): Promise<ForgetChatResult> {
   return owner.lock.run(owner.accountId, threadId, owner.signal, async () => {
-    if (!owner.current() || owner.created?.(threadId) === false) return false;
+    if (!owner.current()) return "stale";
+    if (owner.created?.(threadId) === false) return "creation";
     const entries = owner.entries();
-    if (!entries) return false;
+    if (!entries) return "unavailable";
     const cohort = entries.filter((entry) => entry.threadId === threadId);
     // A first-send 404 belongs to O4's transfer, not deletion.
-    if (cohort.some((entry) => entry.creation)) return false;
+    if (cohort.some((entry) => entry.creation)) return "creation";
     for (const entry of cohort) owner.retire(entry.recordId);
     owner.forgetDraft(threadId);
-    return true;
+    return "forgotten";
   });
 }
 
@@ -35,7 +38,7 @@ export async function forgetCreatedChatCopies(
 export async function reconcileChatCopies(
   owner: ChatCopyOwner,
   mounted: (threadId: string) => boolean,
-  probe: (threadId: string) => Promise<"missing" | "unknown">,
+  probe: (threadId: string, submissionId: string) => Promise<"missing" | "unknown">,
 ): Promise<void> {
   const entries = owner.entries() ?? [];
   const ids = [...new Set(entries.map((entry) => entry.threadId))].filter(
@@ -49,7 +52,8 @@ export async function reconcileChatCopies(
         if (!id) return;
         if (mounted(id)) continue;
         try {
-          if ((await probe(id)) === "missing" && owner.current())
+          const record = entries.find((entry) => entry.threadId === id);
+          if (record && (await probe(id, record.submissionId)) === "missing" && owner.current())
             await forgetCreatedChatCopies(owner, id);
         } catch {
           // Transport, timeout and non-definitive responses preserve the copies.

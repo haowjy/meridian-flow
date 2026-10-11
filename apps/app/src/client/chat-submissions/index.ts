@@ -7,7 +7,13 @@
  */
 import { composerSessionDraft } from "@/client/composer-drafts";
 import { browserSubmissionLock } from "./adapters/browser-lock";
-import { type ChatCopyOwner, forgetCreatedChatCopies, reconcileChatCopies } from "./forget";
+import {
+  type ChatCopyOwner,
+  type ForgetChatResult,
+  forgetCreatedChatCopies,
+  reconcileChatCopies,
+} from "./forget";
+import { chatSubmissionMountState } from "./model";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -52,7 +58,14 @@ export function bindChatSubmissions(accountId: string): void {
   // Bind rewrite finishes before the one pass enumerates destinations; mounted
   // owners also get a chance to register while legacy keys are under their locks.
   void ready
-    .then(() => reconcileChatCopies(owner, isChatSubmissionMounted, probeChatDestination))
+    .then(() =>
+      reconcileChatCopies(
+        owner,
+        (threadId) =>
+          chatSubmissionMountState(accountId, threadId, getChatSubmissionEpoch()).mounted,
+        probeChatDestination,
+      ),
+    )
     .catch((error) => reportError(error));
 }
 
@@ -114,10 +127,7 @@ function copyOwner(accountId: string): ChatCopyOwner {
     accountId,
     signal: new AbortController().signal,
     current: () => getChatSubmissionAccountId() === accountId && getChatSubmissionEpoch() === epoch,
-    created: (threadId) =>
-      [...(mountedChats.get(JSON.stringify([accountId, threadId])) ?? [])].every((created) =>
-        created(),
-      ),
+    created: (threadId) => !chatSubmissionMountState(accountId, threadId, epoch).creating,
     lock: browserSubmissionLock,
     entries: () => readChatSubmissionSnapshot(accountId),
     retire: (id) => {
@@ -128,25 +138,6 @@ function copyOwner(accountId: string): ChatCopyOwner {
   };
 }
 
-export function forgetCreatedChat(accountId: string, threadId: string): Promise<boolean> {
+export function forgetCreatedChat(accountId: string, threadId: string): Promise<ForgetChatResult> {
   return forgetCreatedChatCopies(copyOwner(accountId), threadId);
-}
-
-const mountedChats = new Map<string, Set<() => boolean>>();
-function isChatSubmissionMounted(threadId: string): boolean {
-  return mountedChats.has(JSON.stringify([getChatSubmissionAccountId(), threadId]));
-}
-export function mountChatSubmissionCopies(
-  accountId: string,
-  threadId: string,
-  created: () => boolean,
-): () => void {
-  const key = JSON.stringify([accountId, threadId]);
-  const bindings = mountedChats.get(key) ?? new Set<() => boolean>();
-  mountedChats.set(key, bindings);
-  bindings.add(created);
-  return () => {
-    bindings.delete(created);
-    if (!bindings.size) mountedChats.delete(key);
-  };
 }

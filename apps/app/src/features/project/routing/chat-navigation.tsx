@@ -244,8 +244,8 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
     let disposed = false;
     if (notFound && errorUpdatedAt > pendingAt.current) {
       void forgetCreatedChat(accountId, threadId)
-        .then((forgotten) => {
-          if (!disposed && forgotten) latest.current();
+        .then((result) => {
+          if (!disposed && result !== "creation" && result !== "stale") latest.current();
         })
         .catch((error) => reportError(error));
     }
