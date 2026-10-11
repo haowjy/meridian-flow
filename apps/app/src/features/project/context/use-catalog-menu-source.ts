@@ -24,6 +24,7 @@ import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schem
 import {
   areaNode,
   buildMenuTree,
+  crumbTrailFor,
   foldersIn,
   type MenuArea,
   menuEntryFor,
@@ -144,11 +145,12 @@ export type ProjectMenuSource = {
     catalog: CatalogContextView;
     entryId: string;
   } | null;
-  /**
-   * The document's own area and the folders to open inside; `listed` says
-   * whether the root offers that area.
-   */
-  own: { catalog: CatalogContextView | null; listed: boolean; openAt(path: string): DrillNode[] };
+  /** The document's own catalog and source-owned opening trails. */
+  own: {
+    catalog: CatalogContextView | null;
+    openAt(path: string): DrillNode[];
+    crumbTrail(path: string, depth: number): DrillNode[];
+  };
 };
 
 /**
@@ -276,8 +278,8 @@ export function useProjectMenuSource({
     },
     own: {
       catalog: ownArea?.catalog ?? null,
-      listed: ownArea?.listed ?? false,
       openAt: (path) => (ownArea ? [areaNode(ownArea), ...foldersIn(ownArea, path)] : []),
+      crumbTrail: (path, depth) => crumbTrailFor(ownArea, path, depth),
     },
   };
 }

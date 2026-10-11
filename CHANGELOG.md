@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.
+
 - Reloading keeps the document and view you had open in the side panel.
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.

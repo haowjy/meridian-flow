@@ -125,3 +125,13 @@ open Editor tabs and are not recorded.
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
+
+### Document path browsing
+
+Resting crumbs are passive: project-menu acquisition mounts only when a crumb
+opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
+an area not offered at the root; `own.openAt(path)` remains the full folder trail
+used by placement. The first menu mounts with its final trail and highlight IDs.
+Path fit is selected from intrinsic-width candidates rendered by the same
+`CrumbRow` as the visible path. A link-update note is a direct sibling of the
+path, so an absent note occupies neither a flex item nor a gap.

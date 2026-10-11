@@ -9,7 +9,7 @@
  * The crumbs only navigate: a pick opens the document the way this screen
  * opens documents (`useOpenDocumentInDock`). Renaming and moving belong to the
  * lists. Folders collapse into `…` only when the row is too narrow for them,
- * measured from a hidden copy of the full row.
+ * measured from passive candidates of the same row renderer.
  */
 import { t } from "@lingui/core/macro";
 import {
@@ -47,113 +47,87 @@ export function DocumentPath({
   projectId: string;
   tab: ContextTab;
   location: TabLocation;
-  /** What follows the path on its row (a link-update note); the path fits around it. */
+  /** Rendered directly so a note returning null leaves no empty flex item. */
   trailing?: ReactNode;
 }) {
-  const menu = useDocumentPathMenu(projectId, tab);
-  const { folders } = location;
   const rowRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
-  const trailingRef = useRef<HTMLSpanElement>(null);
-  const fit = useFit(rowRef, measureRef, trailingRef, folders.length);
+  const fit = useFit(rowRef, measureRef);
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1">
+      <span ref={rowRef} className="relative min-w-0 flex-1">
+        <span
+          ref={measureRef}
+          aria-hidden
+          inert
+          className="pointer-events-none invisible absolute top-0 left-0"
+        >
+          {FITS.map((candidate) => (
+            <CrumbRow key={candidate} fit={candidate} location={location} />
+          ))}
+        </span>
+        <CrumbRow fit={fit} location={location} browse={{ projectId, tab }} />
+      </span>
+      {trailing}
+    </span>
+  );
+}
 
+type Browse = { projectId: string; tab: ContextTab };
+
+/** Visible and intrinsic-width measurement rows share every layout decision. */
+function CrumbRow({ fit, location, browse }: { fit: Fit; location: TabLocation; browse?: Browse }) {
+  const { folders } = location;
   const SchemeIcon = schemeIcon(location.scheme);
   const area = schemeLabel(location.scheme);
-  // The list a crumb sits in: depth 0 is the area (the root list), each folder
-  // one deeper, the filename last. An area the root does not offer (Uploads, a
-  // Scratch the writer has left) cannot be shown among the areas, so its crumb
-  // opens inside it instead.
-  const listOf = (depth: number) =>
-    menu ? menu.openAt.slice(0, depth === 0 && !menu.areaListed ? 1 : depth) : null;
   const shown = shownFolders(folders.length, fit);
   const hidden = folders.slice(0, folders.length - shown.length);
-
   const crumb = (
     key: string,
     label: ReactNode,
-    trail: DrillNode[] | null,
+    depth: number,
     className?: string,
     tooltip?: string,
   ) => (
-    <Crumb
-      key={key}
-      menu={trail && menu ? { ...menu, openAt: trail } : null}
-      className={className}
-      tooltip={tooltip}
-    >
+    <Crumb key={key} browse={browse} depth={depth} className={className} tooltip={tooltip}>
       {label}
     </Crumb>
   );
-  const areaLabel = (iconOnly: boolean) => (
-    <>
-      <SchemeIcon aria-hidden className="size-3 shrink-0" />
-      {iconOnly ? <span className="sr-only">{area}</span> : <span>{area}</span>}
-    </>
-  );
-
   return (
-    <span ref={rowRef} className="relative flex min-w-0 flex-1 items-center gap-1">
-      {/* The full row, invisible, for measuring what fits. */}
-      <span
-        ref={measureRef}
-        aria-hidden
-        className="pointer-events-none invisible absolute top-0 left-0 flex items-center gap-1 whitespace-nowrap"
-      >
-        <span data-measure="area" className="flex items-center gap-1 px-0.5">
-          {areaLabel(false)}
-        </span>
-        <span data-measure="icon" className="flex items-center px-0.5">
-          <SchemeIcon className="size-3" />
-        </span>
-        <span data-measure="sep">›</span>
-        <span data-measure="ellipsis" className="px-0.5">
-          …
-        </span>
-        {folders.map((folder, index) => (
-          <span key={`${index}:${folder}`} data-measure="folder" className="px-0.5">
-            {folder}
-          </span>
-        ))}
-        <span data-measure="leaf" className="px-0.5">
-          {location.leaf}
-        </span>
-      </span>
-
-      {crumb("area", areaLabel(fit === "icon"), listOf(0), "shrink-0")}
+    <span className={cn("flex min-w-0 items-center gap-1 whitespace-nowrap", !browse && "w-max")}>
+      {crumb(
+        "area",
+        <>
+          <SchemeIcon aria-hidden className="size-3 shrink-0" />
+          <span className={fit === "icon" ? "sr-only" : undefined}>{area}</span>
+        </>,
+        0,
+        "shrink-0",
+      )}
       {hidden.length > 0 ? (
         <>
           <Separator />
-          {/* Where the last hidden folder sits, with it highlighted. */}
-          {crumb("ellipsis", "…", listOf(hidden.length), "shrink-0", hidden.join(" › "))}
+          {crumb("ellipsis", "…", hidden.length, "shrink-0", hidden.join(" › "))}
         </>
       ) : null}
-      {shown.map((folderIndex) => {
-        const folder = folders[folderIndex];
-        const depth = folderIndex + 1;
-        return (
-          <span key={`${depth}:${folder}`} className="flex min-w-0 items-center gap-1">
-            <Separator />
-            {crumb(
-              `folder:${depth}`,
-              <span className="truncate">{folder}</span>,
-              listOf(depth),
-              "min-w-0",
-            )}
-          </span>
-        );
-      })}
+      {shown.map((folderIndex) => (
+        <span key={folderIndex} className="flex min-w-0 items-center gap-1">
+          <Separator />
+          {crumb(
+            `folder:${folderIndex}`,
+            <span className="truncate">{folders[folderIndex]}</span>,
+            folderIndex + 1,
+            "min-w-0",
+          )}
+        </span>
+      ))}
       <Separator />
       {crumb(
         "leaf",
         <span className={cn("truncate", location.provisional && "italic")}>{location.leaf}</span>,
-        listOf(folders.length + 1),
+        folders.length + 1,
         "min-w-0 text-ink-muted",
       )}
-      {trailing ? (
-        <span ref={trailingRef} className="flex shrink-0 items-center">
-          {trailing}
-        </span>
-      ) : null}
     </span>
   );
 }
@@ -167,7 +141,7 @@ function Separator() {
 }
 
 /** The folders still drawn by name at a fit, innermost last. */
-function shownFolders(count: number, fit: Fit): readonly number[] {
+export function shownFolders(count: number, fit: Fit): readonly number[] {
   if (fit === "all") return Array.from({ length: count }, (_, index) => index);
   if (fit === "last" && count > 0) return [count - 1];
   return [];
@@ -177,29 +151,31 @@ type PathMenu = {
   tree: Parameters<typeof DrillInMenu>[0]["tree"];
   hereIds: readonly string[];
   openAt: DrillNode[];
-  /** Whether the root offers the document's own area. */
-  areaListed: boolean;
   onPick: (node: DrillNode) => void;
 };
 
 function Crumb({
-  menu,
+  browse,
+  depth,
   className,
   tooltip,
   children,
 }: {
-  menu: PathMenu | null;
+  browse?: Browse;
+  depth: number;
   className?: string;
-  /** What the crumb stands for, when its label does not say (the `…`). */
   tooltip?: string;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
-  // A document not yet in a catalog (an untitled draft) has nowhere to browse from.
-  if (!menu) return <span className={classes}>{children}</span>;
-  const button: ReactElement = (
+  if (!browse || browse.tab.kind === "new") return <span className={classes}>{children}</span>;
+  const button = (
     <button
+      ref={buttonRef}
       type="button"
+      onClick={() => setOpen(true)}
       className={cn(
         classes,
         "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent/50 data-[state=open]:text-foreground",
@@ -208,28 +184,66 @@ function Crumb({
       {children}
     </button>
   );
-  const crumbMenu = (
+  const trigger = tooltip ? <TooltipTrigger asChild>{button}</TooltipTrigger> : button;
+  const content = open ? (
+    <OpenCrumbMenu
+      browse={browse}
+      depth={depth}
+      onOpenChange={setOpen}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        requestAnimationFrame(() => buttonRef.current?.focus());
+      }}
+    >
+      {trigger}
+    </OpenCrumbMenu>
+  ) : (
+    trigger
+  );
+  return tooltip ? (
+    <Tooltip>
+      {content}
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
+    </Tooltip>
+  ) : (
+    content
+  );
+}
+
+/** Catalog observers exist only while browsing; the first menu mounts at its final trail. */
+function OpenCrumbMenu({
+  browse,
+  depth,
+  children,
+  onOpenChange,
+  onCloseAutoFocus,
+}: {
+  browse: Browse;
+  depth: number;
+  children: ReactElement;
+  onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus: (event: Event) => void;
+}) {
+  const menu = useDocumentPathMenu(browse.projectId, browse.tab, depth);
+  if (!menu) return children;
+  return (
     <DrillInMenu
       tree={menu.tree}
       hereIds={menu.hereIds}
       openAt={menu.openAt}
-      actions={[]}
+      actions={() => []}
       onPick={menu.onPick}
+      open
+      onOpenChange={onOpenChange}
+      onCloseAutoFocus={onCloseAutoFocus}
     >
-      {tooltip ? <TooltipTrigger asChild>{button}</TooltipTrigger> : button}
+      {children}
     </DrillInMenu>
-  );
-  if (!tooltip) return crumbMenu;
-  return (
-    <Tooltip>
-      {crumbMenu}
-      <TooltipContent side="bottom">{tooltip}</TooltipContent>
-    </Tooltip>
   );
 }
 
 /** The project menu a document's crumbs browse, opened along the document's own path. */
-function useDocumentPathMenu(projectId: string, tab: ContextTab): PathMenu | null {
+function useDocumentPathMenu(projectId: string, tab: ContextTab, depth: number): PathMenu | null {
   const locatedTab = tab.kind === "new" ? null : tab;
   const openDocument = useOpenDocumentInDock();
   const { works } = useWorks(projectId);
@@ -276,57 +290,34 @@ function useDocumentPathMenu(projectId: string, tab: ContextTab): PathMenu | nul
   return {
     tree: source.tree,
     hereIds: [...openAt.map((node) => node.id), current.entryId],
-    openAt,
-    areaListed: source.own.listed,
+    openAt: source.own.crumbTrail(locatedTab.path, depth),
     onPick,
   };
 }
 
-/** The widest fit whose crumbs fit the row, re-measured when the row resizes. */
+/** Choose by actual candidate widths, not a second model of flex gaps or separators. */
 function useFit(
   rowRef: React.RefObject<HTMLSpanElement | null>,
   measureRef: React.RefObject<HTMLSpanElement | null>,
-  trailingRef: React.RefObject<HTMLSpanElement | null>,
-  folderCount: number,
 ): Fit {
   const [fit, setFit] = useState<Fit>("all");
   useLayoutEffect(() => {
     const row = rowRef.current;
     const measure = measureRef.current;
     if (!row || !measure) return;
-    const width = (name: string) =>
-      Array.from(measure.querySelectorAll<HTMLElement>(`[data-measure="${name}"]`)).map(
-        (element) => element.getBoundingClientRect().width,
-      );
+    const candidates = Array.from(measure.children);
     const update = () => {
-      const gap = 4;
-      const [area = 0] = width("area");
-      const [icon = 0] = width("icon");
-      const [sep = 0] = width("sep");
-      const [ellipsis = 0] = width("ellipsis");
-      const [leaf = 0] = width("leaf");
-      const folders = width("folder");
-      const step = (w: number) => sep + w + gap * 2;
-      const total = (choice: Fit) => {
-        const shown = shownFolders(folderCount, choice).map((index) => folders[index] ?? 0);
-        const hasEllipsis = folderCount > shown.length;
-        return (
-          (choice === "icon" ? icon : area) +
-          (hasEllipsis ? step(ellipsis) : 0) +
-          shown.reduce((sum, w) => sum + step(w), 0) +
-          step(leaf)
-        );
-      };
-      const trailing = trailingRef.current?.getBoundingClientRect().width ?? 0;
-      const available = row.getBoundingClientRect().width - (trailing ? trailing + gap : 0);
-      setFit(FITS.find((choice) => choice === "icon" || total(choice) <= available) ?? "icon");
+      const available = row.getBoundingClientRect().width;
+      setFit(
+        FITS.find((_, index) => candidates[index].getBoundingClientRect().width <= available) ??
+          "icon",
+      );
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(row);
-    observer.observe(measure);
-    if (trailingRef.current) observer.observe(trailingRef.current);
+    for (const candidate of candidates) observer.observe(candidate);
     return () => observer.disconnect();
-  }, [rowRef, measureRef, trailingRef, folderCount]);
+  }, [rowRef, measureRef]);
   return fit;
 }
