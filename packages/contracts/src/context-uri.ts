@@ -1,6 +1,5 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
-import { splitDocumentHrefSuffix } from "./document-href.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
 import { decodeWorkSlug } from "./works/index.js";
@@ -314,6 +313,14 @@ export function formatParsedContextUri(
 
 function invalidContextUri(uri: string, reason: string): ContextUriParseError {
   return { ok: false, error: { uri, reason } };
+}
+
+/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
+export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
+  const index = value.search(/[?#]/);
+  return index < 0
+    ? { path: value, suffix: "" }
+    : { path: value.slice(0, index), suffix: value.slice(index) };
 }
 
 /**
