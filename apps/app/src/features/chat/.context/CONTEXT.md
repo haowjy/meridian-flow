@@ -32,8 +32,10 @@ draft-control changes can be understood independently.
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.
 - Durable acknowledged submissions — `client/chat-submissions` owns one
-  account-stamped record for every unadmitted writer message. `useChatSubmissions`
-  binds journal rows to `ChatSubmissionDriver`; `useThreadRunResume` resumes only
+  account-stamped record for every unadmitted writer message. Its tab owner owns
+  row identity, failed/busy knowledge, Edit transfers and the in-memory presentation
+  snapshot. `useChatSubmissions` binds cancellation, external wakes and keyed alerts;
+  `useThreadRunResume` resumes only
   server snapshot runs. First-send creation is a field on the same record, not a
   separate stream handoff. The driver holds a per-thread Web Lock, bounds requests
   and fences every result by the account epoch and mounted recovery session.
@@ -41,7 +43,9 @@ draft-control changes can be understood independently.
   replay automatically. Ambiguity is tab-local and re-drives on mount, online,
   snapshot refresh and reconnect. Retry looks up first and re-mints only a durable
   rejected id. Edit retires server-side before transferring words, preserving newer
-  drafts; a never-created chat dissolves to New chat in the same pane. Composer
+  drafts; this tab's Edit dissolves a never-created chat to New chat in the same pane.
+  Remote absence requires a server 404 before dissolution; failed reads and
+  inconclusive requests retain the destination and rows. Composer
   clears when the journal accepts ownership, not when the network completes.
 
 - Transcript links follow through `useChatLinkFollowing.ts` over the shared
@@ -58,6 +62,3 @@ transcript does not add a conversation-wide aggregate record.
 
 See [`../AGENTS.md`](../AGENTS.md) for the working mental model and entry points.
 
-Submission rows, Edit cohorts and row actions are owned in `client/chat-submissions`.
-The React binding handles mount cancellation, external wakes and keyed alerts only.
-Journal absence never dissolves a destination without authoritative server confirmation.

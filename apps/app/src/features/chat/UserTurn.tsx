@@ -28,7 +28,7 @@ export type UserTurnProps = {
   turn: Turn;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
-  /** Check submission status / Start over for a recovered ambiguous send. */
+  /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
 

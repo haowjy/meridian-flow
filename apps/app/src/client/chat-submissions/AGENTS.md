@@ -41,8 +41,8 @@ a single in-memory status/action snapshot; views never enumerate persistence.
   structured draft ahead of newer writing. Never-created chat Edit transfers all
   its journal drafts and this tab's unsent writing to New chat before retirement.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
-- Codec discards a wrong envelope version, a foreign `accountId`, and corrupt
-  JSON without throwing. Unavailable reads retain the last complete snapshot and never sweep rows.
+- Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
+  records and unavailable enumeration retain the last complete snapshot and never sweep rows.
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
 Account bind rewrites v1 under the driver thread lock. A v2 copy is not
@@ -53,7 +53,6 @@ Record/retire notify in-tab subscribers; cross-tab localStorage events forward
 to the same listeners. `useIsThreadPendingCreation` synchronously combines
 journal `creation` with the provider-scoped pending flag through
 `useSyncExternalStore`, so uncreated journal destinations never query snapshots.
-
 
 `owner.ts` owns tab row identity, local failure/busy knowledge, durable Send handoff,
 and draft transfer. Both first and existing Send use `recordAndProjectSubmission`;
