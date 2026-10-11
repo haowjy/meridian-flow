@@ -155,3 +155,53 @@ it.each([
     }
   }
 });
+
+it("keeps generated cross-paragraph common-word substitutions independently replayable", async () => {
+  for (let sample = 0; sample < 12; sample++) {
+    const before = [`Alpha${sample} takes the sword.`, `Beta${sample} drops a shield.`];
+    const after = [`Alpha${sample} takes a sword.`, `Beta${sample} drops the shield.`];
+    const result = await revision(before.join("\n\n"), after.join("\n\n"), true);
+    expect(result.classes.size, `sample ${sample}`).toBe(2);
+    expect(
+      result.isolated.map((nodes) => nodes.map((node) => node.textContent).join("\n\n")).sort(),
+    ).toEqual([[after[0], before[1]].join("\n\n"), [before[0], after[1]].join("\n\n")].sort());
+  }
+});
+
+it.each([
+  false,
+  true,
+])("retains count-changing sentence splits as one exact change (draft=%s)", async (draft) => {
+  for (const [oldCount, newCount] of [
+    [1, 2],
+    [1, 3],
+    [2, 1],
+    [3, 2],
+  ]) {
+    const result = await revision(
+      `Alpha road. ${Array(oldCount).fill("Beta valley.").join(" ")}`,
+      `Alpha road.\n\n${Array(newCount).fill("Beta valley.").join(" ")}`,
+      draft,
+    );
+    expect(result.classes.size).toBe(1);
+    expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
+      result.expected.map((node) => node.toJSON()),
+    );
+  }
+});
+
+it.each([
+  false,
+  true,
+])("retains no-space word and single-token grapheme splits (draft=%s)", async (draft) => {
+  for (const [before, after] of [
+    ["青山绿水", "青山\n\n绿水"],
+    ["abcdef", "abc\n\ndef"],
+  ]) {
+    const result = await revision(before, after, draft);
+    expect(result.classes.size).toBe(1);
+    expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
+      result.expected.map((node) => node.toJSON()),
+    );
+  }
+});
