@@ -5,11 +5,15 @@
  * is not the current bind is refused, so a late callback cannot leak a row or
  * retire another account's unresolved intent.
  */
+import { composerSessionDraft } from "@/client/composer-drafts";
+import { browserSubmissionLock } from "./adapters/browser-lock";
+import { type ChatCopyOwner, forgetCreatedChatCopies, reconcileChatCopies } from "./forget";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
 } from "./store";
+import { probeChatDestination } from "./thread-availability";
 
 export {
   CHAT_SUBMISSIONS_SCHEMA_VERSION,
@@ -17,6 +21,7 @@ export {
   type ChatSubmission,
   chatSubmissionStorageKey,
 } from "./store";
+export { isThreadNotFound } from "./thread-availability";
 
 let journal: DeviceChatSubmissionJournal | null = null;
 
@@ -40,7 +45,15 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
 }
 
 export function bindChatSubmissions(accountId: string): void {
-  browserJournal()?.setUser(accountId);
+  const current = browserJournal();
+  if (!current || current.accountId === accountId) return;
+  const ready = current.setUser(accountId);
+  const owner = copyOwner(accountId);
+  // Bind rewrite finishes before the one pass enumerates destinations; mounted
+  // owners also get a chance to register while legacy keys are under their locks.
+  void ready
+    .then(() => reconcileChatCopies(owner, isChatSubmissionMounted, probeChatDestination))
+    .catch((error) => reportError(error));
 }
 
 export function getChatSubmissionAccountId(): string | null {
@@ -93,4 +106,47 @@ export function isThreadAwaitingCreation(
           (entry) => entry.threadId === threadId && entry.creation,
         )),
   );
+}
+
+function copyOwner(accountId: string): ChatCopyOwner {
+  const epoch = getChatSubmissionEpoch();
+  return {
+    accountId,
+    signal: new AbortController().signal,
+    current: () => getChatSubmissionAccountId() === accountId && getChatSubmissionEpoch() === epoch,
+    created: (threadId) =>
+      [...(mountedChats.get(JSON.stringify([accountId, threadId])) ?? [])].every((created) =>
+        created(),
+      ),
+    lock: browserSubmissionLock,
+    entries: () => readChatSubmissionSnapshot(accountId),
+    retire: (id) => {
+      retireChatSubmission(accountId, id, epoch);
+    },
+    forgetDraft: (threadId) =>
+      composerSessionDraft(accountId, { kind: "chat", id: threadId }).forget(),
+  };
+}
+
+export function forgetCreatedChat(accountId: string, threadId: string): Promise<boolean> {
+  return forgetCreatedChatCopies(copyOwner(accountId), threadId);
+}
+
+const mountedChats = new Map<string, Set<() => boolean>>();
+function isChatSubmissionMounted(threadId: string): boolean {
+  return mountedChats.has(JSON.stringify([getChatSubmissionAccountId(), threadId]));
+}
+export function mountChatSubmissionCopies(
+  accountId: string,
+  threadId: string,
+  created: () => boolean,
+): () => void {
+  const key = JSON.stringify([accountId, threadId]);
+  const bindings = mountedChats.get(key) ?? new Set<() => boolean>();
+  mountedChats.set(key, bindings);
+  bindings.add(created);
+  return () => {
+    bindings.delete(created);
+    if (!bindings.size) mountedChats.delete(key);
+  };
 }

@@ -5,13 +5,13 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
-import { HTTPError } from "nitro/h3";
 import { readThreadActivity } from "./domain/thread-activity.js";
 import type {
   ExecutionReportRepository,
   ThreadRepository,
   ThreadStatusReader,
 } from "./ports/index.js";
+import { throwThreadNotFound } from "./thread-access.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -59,7 +59,7 @@ export function createThreadRuntimeService(deps: {
       )
       .limit(1);
 
-    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
+    if (!thread) throwThreadNotFound();
     return thread as OwnedThread;
   }
 

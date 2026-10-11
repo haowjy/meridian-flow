@@ -33,6 +33,8 @@ export type SubmissionDriverOptions = {
   transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
   transferReceived(entry: ChatSubmission): boolean;
+  /** Enqueue disappearance cleanup after this driver releases the thread lock. */
+  threadMissing?(threadId: string): void;
   timeoutMs?: number;
 };
 
@@ -276,6 +278,10 @@ export class ChatSubmissionDriver {
         ),
       );
       if (!this.current()) return;
+      if (outcome.kind === "thread-missing") {
+        this.options.threadMissing?.(entry.threadId);
+        return;
+      }
       if (outcome.kind === "abandoned") {
         this.settle(entry, "ambiguous");
         return;
@@ -303,6 +309,10 @@ export class ChatSubmissionDriver {
       ),
     );
     if (!this.current()) return;
+    if (outcome.kind === "thread-missing") {
+      this.options.threadMissing?.(entry.threadId);
+      return;
+    }
     if (outcome.kind === "abandoned") {
       this.settle(entry, "ambiguous");
       return;
@@ -327,6 +337,10 @@ export class ChatSubmissionDriver {
       ),
     );
     if (!this.current()) return;
+    if (outcome.kind === "thread-missing") {
+      this.options.threadMissing?.(entry.threadId);
+      return;
+    }
     this.settle(
       entry,
       outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
@@ -389,6 +403,10 @@ export class ChatSubmissionDriver {
             ),
           );
           if (!this.current()) return;
+          if (outcome.kind === "thread-missing") {
+            this.options.threadMissing?.(entry.threadId);
+            return;
+          }
           if (outcome.kind === "accepted") {
             this.settle(entry, "accepted");
             return;

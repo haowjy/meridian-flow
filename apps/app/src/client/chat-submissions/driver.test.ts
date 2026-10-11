@@ -2,6 +2,7 @@
 import type { Thread } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
+import { MeridianApiError } from "@/client/api/meridian-error";
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import {
   defaultSendResponse,
@@ -14,6 +15,7 @@ import {
 } from "@/components/app/composer/composer-document";
 import { MemorySubmissionLock } from "./adapters/memory-lock";
 import { ChatSubmissionDriver, type SubmissionDriverOptions } from "./driver";
+import { forgetCreatedChatCopies } from "./forget";
 import type { ChatSubmission } from "./store";
 
 function record(): ChatSubmission {
@@ -98,6 +100,7 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
   return {
     scenario,
     records,
+    lock,
     mount,
     creates: () => creates,
     dispose: () => {
@@ -388,5 +391,109 @@ it("a failed successor creation rewrite also fails its attempted predecessor", a
     "error",
     true,
   );
+  test.dispose();
+});
+
+it.each([
+  "admission",
+  "lookup",
+  "retire",
+] as const)("settles a created chat missing during %s through the disappearance operation", async (operation) => {
+  const missing = new MeridianApiError(
+    { code: "thread_not_found", message: "Thread not found", retryable: false, source: "system" },
+    404,
+  );
+  const refuse = async () => {
+    throw missing;
+  };
+  const test = rig({ append: refuse, lookup: refuse, retire: refuse });
+  const original = test.records.get("record-1");
+  if (!original) throw new Error("missing fixture");
+  test.records.set("record-1", {
+    ...original,
+    creation: undefined,
+    state: operation === "retire" ? "rejected" : undefined,
+    draft: {
+      revision: 1,
+      doc: plainComposerDoc("words"),
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: [],
+    },
+  });
+  const forget = vi.fn();
+  const { owner } = test.mount({
+    takeFresh: () => operation === "admission",
+    threadMissing: forget,
+  });
+  if (operation === "retire") await owner.edit("sub-1");
+  else await owner.drive("thread_1");
+  expect(forget).toHaveBeenCalledWith("thread_1");
+  test.dispose();
+});
+
+it("a forget queued behind a live send cannot be undone by its late refusal", async () => {
+  const response = scenarioGate<ReturnType<typeof defaultSendResponse>>();
+  const test = rig({ append: () => response.promise });
+  const entry = test.records.get("record-1");
+  if (!entry) throw new Error("missing fixture");
+  test.records.set(entry.recordId, { ...entry, creation: undefined });
+  const { owner } = test.mount({ takeFresh: () => true });
+  const send = owner.drive(entry.threadId);
+  await vi.waitFor(() => expect(test.scenario.appendRequests).toHaveLength(1));
+  const draft = vi.fn();
+  const forgotten = forgetCreatedChatCopies(
+    {
+      accountId: "account-1",
+      signal: new AbortController().signal,
+      current: () => true,
+      lock: test.lock,
+      entries: () => [...test.records.values()],
+      retire: (id) => {
+        test.records.delete(id);
+      },
+      forgetDraft: draft,
+    },
+    entry.threadId,
+  );
+  expect(test.records.size).toBe(1);
+  response.reject(new HttpResponseError("refusal", 400, null));
+  await send;
+  await forgotten;
+  expect(test.records.size).toBe(0);
+  expect(draft).toHaveBeenCalledOnce();
+  test.dispose();
+});
+
+it.each([
+  "admission",
+  "lookup",
+  "retire",
+] as const)("keeps the chat on a non-owner 404 during %s", async (operation) => {
+  const refuse = async () => {
+    throw new HttpResponseError("Submission not seen", 404, null);
+  };
+  const test = rig({ append: refuse, lookup: refuse, retire: refuse });
+  const entry = test.records.get("record-1");
+  if (!entry) throw new Error("missing fixture");
+  test.records.set(entry.recordId, {
+    ...entry,
+    creation: undefined,
+    state: operation === "retire" ? "rejected" : undefined,
+    draft: {
+      revision: 1,
+      doc: plainComposerDoc("Words"),
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: [],
+    },
+  });
+  const forget = vi.fn();
+  const { owner } = test.mount({
+    takeFresh: () => operation === "admission",
+    threadMissing: forget,
+  });
+  if (operation === "retire") await owner.edit(entry.submissionId);
+  else await owner.drive(entry.threadId);
+  expect(forget).not.toHaveBeenCalled();
+  expect(test.records.size).toBe(1);
   test.dispose();
 });

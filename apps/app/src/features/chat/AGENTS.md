@@ -32,8 +32,10 @@ at Send. `client/chat-submissions/owner.ts` owns writer rows, command orchestrat
 shared account/thread presentation snapshot. Every mounted pane subscribes to the
 same row model; pending belongs only to a live session/submission attempt. `useChatSubmissions` only binds cancellation,
 external wakes and keyed announcements to that owner; first sends and later sends share
-that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
-this tab. The binding announces only a new failed transition, keyed by the stable
+that lifecycle. A refusal stays on its row across reload until resolved or its created chat is
+confirmed gone; `client/chat-submissions` forgets that chat's journal and tab draft
+together under its driver lock. Never-created destinations retain their New chat
+transfer contract. Ambiguity belongs to this tab. The binding announces only a new failed transition, keyed by the stable
 record id (account-qualified), never a restored rejection. Retry, successful Edit,
 acceptance and unmount clear only that record's alert. Retry looks up before posting. Edit fences first, prepends the rejected
 structured document before newer writing and saves a stable record-id receipt with

@@ -1,6 +1,6 @@
 /** Durable unresolved-submission journal codec + account fence. */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {
   plainComposerDoc,
@@ -266,4 +266,45 @@ it("unavailable record reads retain the last complete snapshot", () => {
   };
   expect(journal.snapshot()).toBeNull();
   expect(journal.entries()).toEqual([existingThread()]);
+});
+
+it("bind readiness waits for the locked legacy rewrite before reconciliation can enumerate", async () => {
+  const storage = memory();
+  storage.setItem(
+    "meridian:chat-submissions:v1:account:sub-1",
+    JSON.stringify({
+      version: 1,
+      accountId: "account",
+      payload: { ...existingThread(), kind: "existing-thread" },
+    }),
+  );
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: async (_name: string, operation: () => void) => {
+        await gate;
+        operation();
+      },
+    },
+  });
+  try {
+    const journal = new DeviceChatSubmissionJournal(storage);
+    let settled = false;
+    const ready = Promise.resolve(journal.setUser("account")).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(journal.entries()).toEqual([]);
+    release();
+    await ready;
+    expect(journal.entries()).toHaveLength(1);
+  } finally {
+    release();
+    vi.unstubAllGlobals();
+  }
 });

@@ -10,7 +10,11 @@ import { flattenChatFeed } from "./chat-projections";
 import { deleteProjectChat } from "./delete-project-chat";
 import { projectQueryKeys } from "./project-query-keys";
 
-const api = vi.hoisted(() => ({ deleteThread: vi.fn() }));
+const api = vi.hoisted(() => ({ deleteThread: vi.fn(), forget: vi.fn(async () => {}) }));
+vi.mock("@/client/chat-submissions", () => ({
+  getChatSubmissionAccountId: () => "writer",
+  forgetCreatedChat: api.forget,
+}));
 vi.mock("@/client/api/threads-api", () => ({ deleteThread: api.deleteThread }));
 
 const PROJECT_ID = "project-1";
@@ -57,6 +61,7 @@ function seededClient(): QueryClient {
 
 beforeEach(() => {
   api.deleteThread.mockReset();
+  api.forget.mockClear();
 });
 
 describe("deleteProjectChat", () => {
@@ -78,9 +83,11 @@ describe("deleteProjectChat", () => {
       client.getQueryData(projectQueryKeys.threadUserState(PROJECT_ID, THREAD_ID)),
     ).toBeUndefined();
 
+    expect(api.forget).not.toHaveBeenCalled();
     resolveDelete();
     const outcome = await pending;
     expect(outcome.status).toBe("success");
+    expect(api.forget).toHaveBeenCalledWith("writer", THREAD_ID);
   });
 
   it("restores the row and its user-state record when the server rejects the delete", async () => {
@@ -90,6 +97,7 @@ describe("deleteProjectChat", () => {
     const outcome = await deleteProjectChat(client, PROJECT_ID, THREAD_ID);
 
     expect(outcome.status).toBe("error");
+    expect(api.forget).not.toHaveBeenCalled();
     expect(
       client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads(PROJECT_ID)),
     ).toHaveLength(1);

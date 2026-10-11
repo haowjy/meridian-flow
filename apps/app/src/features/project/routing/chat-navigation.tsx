@@ -17,7 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { isThreadAwaitingCreation } from "@/client/chat-submissions";
+import {
+  forgetCreatedChat,
+  isThreadAwaitingCreation,
+  isThreadNotFound,
+} from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -197,7 +201,7 @@ export function useProjectChatNavigation({
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
   }, [urlChatId, remember]);
-  useMissingChatFallback(surfaceThreadId, () => {
+  useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "chat-index" }, { replace: true });
@@ -221,13 +225,13 @@ export function useProjectChatNavigation({
  * go. A 404 recorded before the chat was last pending creation is the benign
  * race of a first send, not a missing chat, even once the send is acknowledged.
  */
-function useMissingChatFallback(threadId: string | null, onMissing: () => void) {
+function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
   const pending = useIsThreadPendingCreation(threadId);
   const { error, errorUpdatedAt } = useQuery({
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,
   });
-  const notFound = !!error && "status" in error && error.status === 404;
+  const notFound = isThreadNotFound(error);
   const pendingAt = useRef(0);
   const latest = useRef(onMissing);
   latest.current = onMissing;
@@ -237,8 +241,18 @@ function useMissingChatFallback(threadId: string | null, onMissing: () => void) 
       pendingAt.current = Date.now();
       return;
     }
-    if (notFound && errorUpdatedAt > pendingAt.current) latest.current();
-  }, [threadId, pending, notFound, errorUpdatedAt]);
+    let disposed = false;
+    if (notFound && errorUpdatedAt > pendingAt.current) {
+      void forgetCreatedChat(accountId, threadId)
+        .then((forgotten) => {
+          if (!disposed && forgotten) latest.current();
+        })
+        .catch((error) => reportError(error));
+    }
+    return () => {
+      disposed = true;
+    };
+  }, [accountId, threadId, pending, notFound, errorUpdatedAt]);
 }
 
 /**

@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MeridianApiError } from "@/client/api/meridian-error";
 import { readCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
@@ -22,6 +23,12 @@ import type { ProjectDestination } from "./project-address";
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+const copies = vi.hoisted(() => ({ forget: vi.fn(async () => true) }));
+vi.mock("@/client/chat-submissions", async (actual) => ({
+  ...(await actual<typeof import("@/client/chat-submissions")>()),
+  forgetCreatedChat: copies.forget,
+}));
 
 const ACCOUNT = "writer";
 const PROJECT = "project";
@@ -62,6 +69,7 @@ function render(activeScreen: ScreenKey, urlChatId: string | null = null) {
 }
 
 beforeEach(() => {
+  copies.forget.mockClear();
   window.localStorage.clear();
   window.sessionStorage.clear();
   container = document.createElement("div");
@@ -101,7 +109,10 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   act(() =>
     snapshot.setState({
       status: "error",
-      error: Object.assign(new Error("missing"), { status: 404 }),
+      error: new MeridianApiError(
+        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        404,
+      ),
       errorUpdatedAt: Date.now() - 1000,
     }),
   );
@@ -135,4 +146,50 @@ it("rail switches with no current chat use the index and still forward the hand-
   });
   expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
   expect(effects).toHaveBeenCalledWith(commit);
+});
+
+it("forgets browser copies before repairing a definitive missing-chat route", async () => {
+  let finish!: (value: boolean) => void;
+  copies.forget.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render("chat", "gone");
+  const query = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey });
+  await act(async () => {
+    query.setState({
+      error: new MeridianApiError(
+        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        404,
+      ),
+      errorUpdatedAt: Date.now(),
+      status: "error",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(copies.forget).toHaveBeenCalledWith(ACCOUNT, "gone");
+  expect(go).not.toHaveBeenCalled();
+  await act(async () => {
+    finish(true);
+  });
+  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+});
+it("does not repair or forget an unrelated 404", async () => {
+  render("chat", "live");
+  const query = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("live").queryKey });
+  await act(async () => {
+    query.setState({
+      error: Object.assign(new Error("another resource"), { status: 404 }),
+      errorUpdatedAt: Date.now(),
+      status: "error",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(copies.forget).not.toHaveBeenCalled();
+  expect(go).not.toHaveBeenCalled();
 });

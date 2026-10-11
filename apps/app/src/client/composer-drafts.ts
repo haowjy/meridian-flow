@@ -112,6 +112,16 @@ export class ComposerSessionDraft {
     this.flush();
   };
 
+  /** Deletion owns both unsent writing and transfer receipts, including a pending flush. */
+  forget = (): void => {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.current = null;
+    this.received.clear();
+    this.dirty = !this.record.write(undefined);
+    this.publish();
+  };
+
   flush = (): void => {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;

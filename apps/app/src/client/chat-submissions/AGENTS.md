@@ -82,3 +82,26 @@ the journal record fails after Edit moves the words into that tab's message box,
 another tab can still Retry the record. Draft write and removal run in one synchronous
 step, so the only trigger is localStorage removal being refused when storage access
 is denied altogether.
+
+## Deleted created chats
+
+`forgetCreatedChat` is the only disappearance operation. Confirmed Delete,
+missing-chat route repair, and driver admission/lookup/retirement owner-gate
+failures call it. It runs under the driver's account/thread Web Lock, removes
+all that chat's journal states, and forgets this tab's chat-scoped composer draft
+and receipts (cancelling any pending flush). Journal notifications retire the row
+model. It never transfers writing or navigates; routing stays in the route adapter.
+A cohort carrying `creation` is exempt: its 404 still belongs to O4's New chat transfer.
+Mounted owners also retain that provenance after another tab retires the cohort;
+a skipped forget does not authorize route repair ahead of O4's transfer.
+
+Only HTTP 404 with `thread_not_found` from either server thread owner gate is
+definitive. Generic `not_found`, submission not-seen, auth, transport, timeout,
+and server failure cannot discard browser copies.
+Once per account bind, after its locked v1 rewrite completes, a four-worker pass probes unique unmounted created chat
+ids in that account's readable journal. Read-only admission lookup with a fresh
+UUID is the existing lightest owner-gated request: one tiny response per chat,
+no admission write or history load. Each request has a 15-second deadline. The
+pass is account/epoch fenced and only confirmed disappearance calls the same
+forget operation. Draft-only sessionStorage scopes are not enumerated: they end
+with their tab; a journal destination's draft is removed by the pass too.

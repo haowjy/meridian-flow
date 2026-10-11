@@ -1,6 +1,5 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 import type { QueryClient } from "@tanstack/react-query";
-import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
@@ -17,7 +16,10 @@ import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import { ChatSubmissionDriver } from "./driver";
 import {
+  forgetCreatedChat,
   getChatSubmissionEpoch,
+  isThreadNotFound,
+  mountChatSubmissionCopies,
   readChatSubmissionSnapshot,
   readChatSubmissions,
   recordChatSubmission,
@@ -169,10 +171,16 @@ export class ChatSubmissionOwner {
   private readonly session = {};
   private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
   private reconciling = false;
+  private readonly unmountCopies: () => void;
   private readonly epoch = getChatSubmissionEpoch();
   constructor(private readonly options: OwnerOptions) {
     const { accountId, threadId, projectId, signal, current, controller, actions, queryClient } =
       options;
+    this.unmountCopies = mountChatSubmissionCopies(
+      accountId,
+      threadId,
+      () => this.destination !== "creating",
+    );
     this.model = threadModel(accountId, threadId);
     this.model.bindings.add(this);
     const rows = this.model.rows;
@@ -188,6 +196,9 @@ export class ChatSubmissionOwner {
         entries: () => this.entries(),
         record: (entry) => current() && recordChatSubmission(accountId, entry),
         retire: (id) => current() && retireChatSubmission(accountId, id, this.epoch),
+      },
+      threadMissing: (id) => {
+        void forgetCreatedChat(accountId, id).catch((error) => reportError(error));
       },
       whenDerived,
       row: (entry) => projectRow(accountId, entry, actions).turnId,
@@ -362,7 +373,7 @@ export class ChatSubmissionOwner {
           requestSignal,
         );
       } catch (error) {
-        if (!current() || !(error instanceof HttpResponseError && error.status === 404)) return;
+        if (!current() || !isThreadNotFound(error)) return;
         missing = true;
       }
       if (!current()) return;
@@ -422,6 +433,7 @@ export class ChatSubmissionOwner {
   };
 
   dispose() {
+    this.unmountCopies();
     this.options.controller.endRecoverySession(this.session);
     this.model.bindings.delete(this);
     for (const row of this.model.rows.values())

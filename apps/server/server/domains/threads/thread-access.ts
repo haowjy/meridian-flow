@@ -7,7 +7,7 @@
 import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
+import { throwHttpInterrupt, throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
 import type { ProjectRepository, WorkContextNotices } from "../projects/index.js";
 import {
@@ -19,6 +19,14 @@ import type { ThreadRepositories, ThreadRepository } from "./ports/repositories.
 
 interface ProjectOwnerRepository {
   findById(id: string): Promise<Project | null>;
+}
+
+/** Shared HTTP proof for both repository and runtime owner gates. */
+export function throwThreadNotFound(): never {
+  throwHttpInterrupt(
+    { code: "thread_not_found", message: "Thread not found", retryable: false, source: "system" },
+    404,
+  );
 }
 
 /** Owner gate: 404 for missing, wrong user, deleted thread, or soft-deleted parent project. */
@@ -33,14 +41,14 @@ export async function requireThreadOwner(
   }
   const thread = await repos.threads.findById(parsedThreadId);
   if (!thread || thread.deletedAt) {
-    throwHttpInterruptForStatus(404, "Thread not found");
+    throwThreadNotFound();
   }
   const project = await repos.projects.findById(thread.projectId);
   if (!project || project.deletedAt || project.userId !== userId) {
-    throwHttpInterruptForStatus(404, "Thread not found");
+    throwThreadNotFound();
   }
   if (thread.userId !== userId) {
-    throwHttpInterruptForStatus(404, "Thread not found");
+    throwThreadNotFound();
   }
   return thread;
 }
@@ -73,7 +81,7 @@ export async function setOwnedThreadTrashState(
     });
   } catch (cause) {
     if (cause instanceof ThreadTrashUnavailableError) {
-      throwHttpInterruptForStatus(404, "Thread not found");
+      throwThreadNotFound();
     }
     throw cause;
   }

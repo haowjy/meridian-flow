@@ -3,11 +3,13 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
+import { MeridianApiError } from "@/client/api/meridian-error";
 import { getThreadSnapshot } from "@/client/api/threads-api";
 import {
   bindChatSubmissions,
   type ChatSubmission,
   chatSubmissionStorageKey,
+  forgetCreatedChat,
   readChatSubmissions,
   recordChatSubmission,
   retireChatSubmission,
@@ -96,7 +98,12 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.mocked(getThreadSnapshot).mockReset();
-  vi.mocked(getThreadSnapshot).mockRejectedValue(new HttpResponseError("missing", 404, null));
+  vi.mocked(getThreadSnapshot).mockRejectedValue(
+    new MeridianApiError(
+      { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+      404,
+    ),
+  );
   bindChatSubmissions("reset");
   bindChatSubmissions(account);
   composerSessionDraft(account, { kind: "chat", id: "thread_1" }).handoff();
@@ -553,4 +560,25 @@ it("disposing a sibling does not abandon the invoking pane's in-flight Edit", as
   expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
   await vi.waitFor(() => expect(first.focused).toHaveBeenCalledOnce());
   expect(second.focused).not.toHaveBeenCalled();
+});
+
+it("forgetting a created chat drops its shared writer rows and its tab draft", async () => {
+  recordChatSubmission(account, entry());
+  const scenario = new ThreadRunScenario();
+  const { read } = await mount(scenario);
+  const draft = composerSessionDraft(account, { kind: "chat", id: "thread_1" });
+  draft.prependSnapshots([
+    {
+      revision: 1,
+      doc: plainComposerDoc("Unsent"),
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: [],
+    },
+  ]);
+  expect(read().presentation.size).toBe(1);
+  expect(await forgetCreatedChat(account, "thread_1")).toBe(true);
+  expect(readChatSubmissions(account)).toEqual([]);
+  expect(read().presentation.size).toBe(0);
+  expect(scenario.store.getState().turns("thread_1")).toEqual([]);
+  expect(draft.initialDraft).toBeNull();
 });
