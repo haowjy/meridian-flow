@@ -12,6 +12,8 @@ import type {
 export type JournalCommitKind = "durable" | "staged";
 
 type JournalMutationBase = {
+  /** Segment transaction deltas retained even when the live journal uses one row. */
+  editParts?: readonly Uint8Array[];
   threadId: string;
   turnId: string | null;
   authoringResponseId?: string;

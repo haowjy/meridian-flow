@@ -311,10 +311,13 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    const { result: failure, update } = captureWriteUpdate(
+    const {
+      result: failure,
+      update,
+      parts,
+    } = captureWriteUpdate(
       runtime.doc,
       (beforeSegment) => {
-        beforeSegment?.();
         if (overwrite) {
           semanticEditIr = overwrite.ir;
           const applied = applyEdits(
@@ -322,6 +325,7 @@ export function createWriteCommands(deps: {
             options.model,
             overwrite.edits,
             origin,
+            beforeSegment,
           );
           if (!applied.ok) {
             restorePreWriteSnapshot(runtime, preWriteSnapshot);
@@ -332,6 +336,7 @@ export function createWriteCommands(deps: {
           deletedHashes = new Set(applied.deletedBlocks);
           insertedHashes = applied.insertedBlocks;
         } else {
+          beforeSegment?.();
           runtime.doc.transact(() => {
             insertedHashes = options.model
               .insertBlocks(toDocHandle(runtime.doc), null, written)
@@ -359,6 +364,7 @@ export function createWriteCommands(deps: {
           runtime,
           commandName: command.command,
           update,
+          editParts: parts,
           meta,
           liveOrigin: mutationUpdateOrigin(actor),
           actor,
@@ -428,6 +434,7 @@ export function createWriteCommands(deps: {
             update,
             meta,
             mutation: {
+              editParts: parts,
               threadId: session.threadId,
               turnId,
               ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
@@ -586,6 +593,7 @@ export function createWriteCommands(deps: {
       result: applied,
       update: ownUpdate,
       segments,
+      parts,
     } = captureWriteUpdate(
       runtime.doc,
       (beforeSegment) => {
@@ -666,6 +674,7 @@ export function createWriteCommands(deps: {
           commandName: command.command,
           update: ownUpdate,
           segments,
+          editParts: parts,
           meta,
           liveOrigin: mutationUpdateOrigin(actor),
           actor,
@@ -706,6 +715,7 @@ export function createWriteCommands(deps: {
           update,
           meta,
           mutation: {
+            editParts: parts,
             threadId: session.threadId,
             turnId,
             ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
@@ -948,7 +958,7 @@ function captureWriteUpdate<T>(
   doc: Y.Doc,
   write: (beforeSegment?: () => void) => T,
   segmented = false,
-): { result: T; update: Uint8Array; segments: Uint8Array[] } {
+): { result: T; update: Uint8Array; segments: Uint8Array[]; parts: Uint8Array[] } {
   const updates: Uint8Array[] = [];
   const segments: Uint8Array[] = [];
   const flush = () => {
@@ -958,14 +968,15 @@ function captureWriteUpdate<T>(
   };
   const beforeSegment = () => {
     flush();
-    doc.clientID = allocateDocumentClient(doc);
+    if (segmented) doc.clientID = allocateDocumentClient(doc);
   };
   const collect = (update: Uint8Array) => updates.push(update);
   doc.on("update", collect);
   try {
-    const result = write(segmented ? beforeSegment : undefined);
+    const result = write(beforeSegment);
     flush();
-    return { result, update: Y.mergeUpdates(segments), segments };
+    const update = Y.mergeUpdates(segments);
+    return { result, update, segments: segmented ? segments : [update], parts: segments };
   } finally {
     doc.off("update", collect);
   }

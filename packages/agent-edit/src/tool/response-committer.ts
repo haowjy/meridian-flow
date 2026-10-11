@@ -96,6 +96,7 @@ export interface ResponseStageUpdateInput {
   commandName: DocumentCommandName;
   update: Uint8Array;
   segments?: readonly Uint8Array[];
+  editParts?: readonly Uint8Array[];
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
@@ -1052,6 +1053,7 @@ export function createResponseCommitter(deps: {
       segments: input.segments ?? [input.update],
       meta: input.meta,
       mutation: {
+        ...(input.editParts ? { editParts: input.editParts } : {}),
         threadId: input.session.threadId,
         turnId: input.turnId,
         authoringResponseId: input.actor.responseId,
