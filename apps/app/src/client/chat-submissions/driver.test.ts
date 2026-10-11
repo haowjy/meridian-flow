@@ -356,3 +356,35 @@ it("lookup and retirement request refusals never authorize identity change or tr
   expect(transfer).not.toHaveBeenCalled();
   test.dispose();
 });
+
+it("a failed successor creation rewrite also fails its attempted predecessor", async () => {
+  const test = rig();
+  test.records.set("record-2", {
+    ...record(),
+    recordId: "record-2",
+    submissionId: "sub-2",
+    createdAt: "2026-10-11T10:00:01Z",
+  });
+  const status = vi.fn();
+  const { owner } = test.mount({
+    takeFresh: () => true,
+    status,
+    journal: {
+      entries: () => [...test.records.values()],
+      record: (entry) => {
+        if (entry.recordId === "record-2") return false;
+        test.records.set(entry.recordId, entry);
+        return true;
+      },
+      retire: (id) => test.records.delete(id),
+    },
+  });
+  await owner.drive("thread_1");
+  expect(test.scenario.appendRequests).toHaveLength(0);
+  expect(status).toHaveBeenCalledWith(
+    expect.objectContaining({ recordId: "record-1" }),
+    "error",
+    true,
+  );
+  test.dispose();
+});
