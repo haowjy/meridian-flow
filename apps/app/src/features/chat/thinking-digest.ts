@@ -7,6 +7,7 @@
  */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
+import { splitDocumentFile } from "@meridian/agent-edit";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ToolView } from "./group-delivery-segments";
 import {
@@ -108,8 +109,9 @@ export function thinkingDigest(tools: readonly ToolView[]): string | null {
 }
 
 function documentIdentity(uriOrPath: string): string {
-  const parsed = parseContextUri(uriOrPath);
-  return parsed.ok ? parsed.value.normalized : uriOrPath;
+  const { filePath } = splitDocumentFile(uriOrPath);
+  const parsed = parseContextUri(filePath);
+  return parsed.ok ? parsed.value.normalized : filePath;
 }
 
 function capitalizeFirst(value: string): string {

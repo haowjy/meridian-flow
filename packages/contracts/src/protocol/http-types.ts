@@ -242,7 +242,9 @@ export type ProjectWorkingSet = {
   updatedAt: string;
 };
 
-export type AccountSettings = { workingSetSyncEnabled: boolean };
+export type AccountSettings = import("../preferences/index.js").AccountAppearancePreferences & {
+  workingSetSyncEnabled: boolean;
+};
 
 /** Authenticated identity resolved through Meridian's user provisioning boundary. */
 export type AuthenticatedUser = {

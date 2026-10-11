@@ -23,6 +23,7 @@ import {
   getChatSubmissionEpoch,
   recordChatSubmission,
   retireChatSubmission,
+  settleChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -74,7 +75,6 @@ import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";
-import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
@@ -83,13 +83,13 @@ import { activeChildren } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import {
-  type FailedChatSubmission,
   forgetSubmissionTurnId,
   rememberSubmissionTurnId,
   submissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
@@ -152,6 +152,7 @@ export function ChatView({
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();
+  const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const accountSignal = useAccountEpochSignal();
   const openThread = useOpenChatThread();
   const pendingCreation = useIsThreadPendingCreation(threadId);
@@ -356,6 +357,7 @@ export function ChatView({
       blocks: [...envelope.blocks],
       references: [...envelope.references],
       activatedSkillSlugs: [...envelope.activatedSkillSlugs],
+      draft: envelope.draft,
     });
     if (!recorded) {
       return {
@@ -364,6 +366,7 @@ export function ChatView({
         acceptedRevision: envelope.acceptedRevision,
       };
     }
+    draft.handoffSubmitted(envelope.draft);
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
     // Register the live row before the POST awaits admission: a thread remount
@@ -387,8 +390,8 @@ export function ChatView({
         keepOptimisticOnFailure: true,
       });
       if (outcome.kind === "accepted") {
-        forgetSubmissionTurnId(accountId, envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId, epoch);
+        if (settleChatSubmission(accountId, envelope.submissionId, "accepted", epoch))
+          forgetSubmissionTurnId(accountId, envelope.submissionId);
       } else if (outcome.kind === "rejected") {
         // A proved rejection stays on the turn with edit/retry recovery; the
         // recovery owner retires the journal witness and retains the payload.
@@ -407,14 +410,8 @@ export function ChatView({
     }
   }
 
-  const restoreRejectedMessage = useCallback((entry: FailedChatSubmission) => {
-    const composer = composerRef.current;
-    if (!composer) return;
-    // A live send left the draft in the composer, so Edit focuses it. Only a
-    // plain-text rejection with an empty composer can be restored faithfully;
-    // a structured message has no blocks-to-composer inverse, and a live draft
-    // is never replaced.
-    restoreRejectedDraft(composer, entry.fingerprint);
+  const focusRejectedMessage = useCallback(() => {
+    composerRef.current?.focus();
   }, []);
 
   const settleQuarantined = useCallback(
@@ -443,8 +440,11 @@ export function ChatView({
       }
       if (outcome.kind === "accepted" || (retire && outcome.kind === "rejected")) {
         // Acknowledgement, or writer-directed Start over: retire the witness.
-        forgetSubmissionTurnId(accountId, envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId, epoch);
+        const retired =
+          outcome.kind === "accepted"
+            ? settleChatSubmission(accountId, envelope.submissionId, "accepted", epoch)
+            : retireChatSubmission(accountId, envelope.submissionId, epoch);
+        if (retired) forgetSubmissionTurnId(accountId, envelope.submissionId);
       } else if (outcome.kind === "rejected" && optimisticUserTurnId) {
         // A definitive rejection keeps the failed row with edit/retry recovery.
         submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurnId);
@@ -481,15 +481,20 @@ export function ChatView({
     });
   }
   for (const entry of submissionRecovery.rejected) {
-    const draftIsRecoverable = entry.draftRetained || canRestoreRejectedDraft(entry.fingerprint);
+    const draftIsRecoverable = Boolean(entry.fingerprint.draft);
     submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
       kind: "rejected",
       onRetry: () => {
         void submissionRecovery.retry(entry.optimisticTurnId);
       },
-      // Edit focuses a live draft or restores a plain-text message. A structured
-      // rejection whose draft is gone cannot be rebuilt, so only Retry remains.
-      ...(draftIsRecoverable ? { onEdit: () => restoreRejectedMessage(entry) } : {}),
+      // Edit transfers durable rejected words before focusing the composer.
+      ...(draftIsRecoverable
+        ? {
+            onEdit: () => {
+              if (submissionRecovery.edit(entry.submissionId)) focusRejectedMessage();
+            },
+          }
+        : {}),
     });
   }
 
@@ -514,6 +519,9 @@ export function ChatView({
               always keeps its own border and overlaps the strip's edge. */}
               <DraftDock dock={dock} />
               <Composer
+                key={draft.key}
+                initialDraft={draft.initialDraft}
+                onDraftChange={draft.updateDraft}
                 onOpenReference={(reference) => {
                   void openReferenceDocument({
                     documentId: reference.documentId,

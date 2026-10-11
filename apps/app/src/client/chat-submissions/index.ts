@@ -5,6 +5,7 @@
  * is not the current bind is refused, so a late callback cannot leak a row or
  * retire another account's unresolved intent.
  */
+import { composerSessionDraft } from "@/client/composer-drafts";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -57,6 +58,20 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
+export function readChatSubmission(accountId: string, submissionId: string): ChatSubmission | null {
+  const current = browserJournal();
+  return current?.accountId === accountId ? current.get(submissionId) : null;
+}
+
+/** A rejected witness is durable, but no longer awaits admission lookup or replay. */
+export function readUnresolvedSubmission(
+  accountId: string,
+  submissionId: string,
+): ChatSubmission | null {
+  const entry = readChatSubmission(accountId, submissionId);
+  return entry?.kind === "existing-thread" && entry.state === "rejected" ? null : entry;
+}
+
 export function readFirstSendSubmission(
   accountId: string,
   threadId: string,
@@ -79,4 +94,25 @@ export function retireChatSubmission(
   expectedEpoch?: number,
 ): boolean {
   return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
+}
+
+/** One settlement owner, independent of mounted panes. Transfer words before retiring the witness. */
+export function settleChatSubmission(
+  accountId: string,
+  submissionId: string,
+  outcome: "accepted" | "rejected",
+  expectedEpoch: number,
+): boolean {
+  const current = browserJournal();
+  if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
+  const entry = current.get(submissionId);
+  if (!entry) return false;
+  if (entry.kind === "existing-thread") {
+    const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
+    if (outcome === "rejected") {
+      if (!entry.draft || !owner.restoreRejected(entry.draft))
+        return current.record(accountId, { ...entry, state: "rejected" });
+    } else if (entry.draft && !owner.acceptSubmitted()) return false;
+  }
+  return current.retire(accountId, submissionId, expectedEpoch);
 }

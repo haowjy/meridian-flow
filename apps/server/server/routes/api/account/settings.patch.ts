@@ -10,5 +10,7 @@ import { requireAppUser } from "../../../lib/auth-gate.js";
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const settings = parseAccountSettingsPatch(await readBody(event));
-  return serializeTransport(await handlePatchAccountSettings(app.users, user.userId, settings));
+  return serializeTransport(
+    await handlePatchAccountSettings(app.accountSettings, user.userId, settings),
+  );
 });

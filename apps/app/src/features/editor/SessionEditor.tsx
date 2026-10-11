@@ -24,9 +24,14 @@ import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
+import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useLinkableDocuments } from "@/features/links";
-import { useAccountResourceProjection } from "@/features/project/context/account-feature-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+  useAccountResourceProjection,
+} from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -130,6 +135,8 @@ function ActiveSessionEditorView({
     held = false,
   } = surfaceOptions;
   const active = hostActive && !held;
+  const accountId = useAccountId();
+  const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const inReview = identity.surface === "review";
   const editorRef = useRef<Editor | null>(null);
@@ -307,15 +314,15 @@ function ActiveSessionEditorView({
     [],
   );
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      const scroller = scrollContainerRef.current;
-      if (scroller?.scrollTop !== 0) return;
-      const savedTop = Number(scroller.dataset.stableLayoutScrollTop ?? 0);
-      if (savedTop > 0) scroller.scrollTop = savedTop;
-    }, 250);
-    return () => window.clearInterval(interval);
-  }, []);
+  useReadingPosition({
+    editor,
+    pane: scrollContainerRef,
+    accountId,
+    documentId,
+    active,
+    review: inReview || held,
+    signal: accountEpoch,
+  });
 
   return (
     <EditorScopeProvider
@@ -352,14 +359,6 @@ function ActiveSessionEditorView({
             ) : undefined
           }
           scrollRef={scrollContainerRef}
-          onScroll={(event) => {
-            event.currentTarget.dataset.stableLayoutScrollTop = String(
-              event.currentTarget.scrollTop,
-            );
-            event.currentTarget.dataset.stableLayoutScrollLeft = String(
-              event.currentTarget.scrollLeft,
-            );
-          }}
         />
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}

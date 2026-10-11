@@ -1,14 +1,14 @@
 /**
  * Text-size preference — local, pre-paint reading scale for rendered prose.
  *
- * The preference is intentionally device-local (like locale today): writers may
+ * The preference is intentionally device-local: writers may
  * want different reading sizes on a laptop and a phone. Medium is represented by
  * the absence of a DOM attribute so the default browser-sized body stays the
  * default path.
  */
 import { createPreferenceSubscribers } from "./preference-subscribers";
 
-export const TEXT_SIZE_STORAGE_KEY = "meridian:text-size";
+export const TEXT_SIZE_STORAGE_KEY = "meridian:text-size:v1";
 export const TEXT_SIZE_ATTRIBUTE = "data-text-size";
 
 export const TEXT_SIZES = ["sm", "md", "lg"] as const;

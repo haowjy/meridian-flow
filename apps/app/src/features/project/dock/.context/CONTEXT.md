@@ -43,8 +43,10 @@ Chat-screen occupant survives screen and chat changes, but is only shown on Chat
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
-handling opens have. `dock-persistence.ts` stores `{ accountId, occupant }` under
-`meridian:dock:v1` in sessionStorage, reusing the Editor tab codec. Reads, parsing
+handling opens have. `dock-persistence.ts` stores the occupant (including `review` and `screenWorkId`)
+through `client/storage/browser-record.ts` under `meridian:dock:v1` in
+sessionStorage, reusing the Editor tab codec. The common version/account envelope
+owns browser I/O; there is no second raw JSON persistence path. Reads, parsing
 and writes degrade silently if storage is unavailable. The dock-owned restoration
 hook binds the authenticated account before admitting a snapshot; missing or
 foreign account stamps drop the entire layout. Account switches also clear live
