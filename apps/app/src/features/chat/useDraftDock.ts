@@ -1,15 +1,4 @@
-/**
- * useDraftDock — the composer strip's model: this chat's pending changes in its
- * Work, and the commands that act on them.
- *
- * Candidates come from the draft list (`actorThreads` names the chats with
- * pending writes in a draft); each candidate's preview confirms whether the
- * chat still has a change in it. Apply and Discard never touch a whole draft:
- * per file they name every operation of this chat's actionable changes, with
- * that preview's tokens, through creation-bound Work commands and the shared
- * executor, never the Editor's command authority. A refusal stays on its file;
- * nothing navigates.
- */
+/** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo } from "react";
 import {
@@ -23,14 +12,15 @@ import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewChange } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { type DockFile, dockFile, dockNotes, isOnStrip, totalChanges } from "./draft-dock-files";
+import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
-/** What went wrong on a file: the strip's own command, else anything held on the draft (a failed Review launch). */
+/** Failures held on a file: selective commands and the draft itself (including Review launches). */
 export type DockFileFailure =
   | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
   | { kind: "draft"; failure: DraftCommandFailure };
@@ -75,12 +65,11 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
         .filter(isOnStrip),
     [candidates, entries, threadId, untitled],
   );
-  const notes = useMemo(() => dockNotes(files), [files]);
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
-    (file: DockFile) => {
-      openReviewFile(file.row, workId, file.changes[0]?.operationIds);
+    (file: DockFile, change?: ReviewChange) => {
+      openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
     },
     [openReviewFile, workId],
   );
@@ -90,7 +79,9 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     (mode: "apply" | "discard") => {
       const items = actionableFiles.map((file) => ({
         draft: { documentId: file.row.documentId, draftId: file.row.draft.draftId },
-        selection: selectionOf(file.actionable),
+        ...(file.actionable.some((change) => change.wholeDraft)
+          ? { wholeDraft: true as const }
+          : { selection: selectionOf(file.actionable) }),
       }));
       if (items.length === 0) return;
       // The runner hides every file's selection at the click and returns each as
@@ -101,7 +92,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     [actionableFiles, runner],
   );
 
-  const fileFailure = (file: DockFile): DockFileFailure | null => {
+  const fileFailures = (file: DockFile): DockFileFailure[] => {
     const ref = {
       projectId,
       workId,
@@ -109,33 +100,28 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       draftId: file.row.draft.draftId,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
-    if (state?.phase === "failed") return { kind: "changes", failure: state };
     const held = draftCommandFailure(records.drafts, ref);
-    return held ? { kind: "draft", failure: held } : null;
+    return [
+      ...(state?.phase === "failed" ? [{ kind: "changes" as const, failure: state }] : []),
+      ...(held ? [{ kind: "draft" as const, failure: held }] : []),
+    ];
   };
 
   return {
     generating,
+    controller,
     files,
     mounted: files.length > 0,
-    notes,
     changeCount: totalChanges(files),
-    /**
-     * Apply and Discard are offered while something can still be actionable: a
-     * change they take, or an unread preview of a file the list does not already
-     * call a new document (that file never joins them, so waiting on it would
-     * paint the commands only to remove them).
-     */
-    showCommands:
-      actionableFiles.length > 0 ||
-      files.some((file) => file.status !== "ready" && !file.newDocument),
+    /** Unread previews keep the controls visible but disabled until their scope is known. */
+    showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     /** Review is held while a whole-draft command is running in this Work. */
     reviewBusy: controller.isDisposing,
     reviewable: reviewable !== null,
     projectId,
     workId,
-    fileFailure,
+    fileFailures,
     review,
     reviewFirst: () => reviewable && review(reviewable),
     apply: () => send("apply"),

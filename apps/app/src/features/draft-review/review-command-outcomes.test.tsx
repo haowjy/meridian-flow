@@ -286,7 +286,7 @@ const loose = {
   deletedText: "Alpha",
   deletedSpans: [],
 };
-it("classified commands never hide or send an unowned hunk, which prevents completion", async () => {
+it("unowned hunks retain selective commands on complete classes and prevent selective completion", async () => {
   fixture.network.getDraftPreview.mockResolvedValue({
     ...previewOf("1"),
     hunks: [
@@ -304,17 +304,16 @@ it("classified commands never hide or send an unowned hunk, which prevents compl
   fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
-    expect(p().header.view.items.map(({ change }) => change.actionable)).toEqual([true, false]);
-    const unowned = p().header.view.items[1].change;
-    await act(async () => {
-      await p().header.view.apply(unowned);
-      await p().header.view.discard(unowned);
-    });
-    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+    expect(p().header.view.items).toHaveLength(2);
+    const complete = p().header.view.items.find(({ change }) => change.actionable);
+    expect(complete?.change.wholeDraft).toBeUndefined();
+    expect(
+      p().header.view.items.find(({ change }) => !change.actionable)?.change.attribution.kind,
+    ).toBe("unattributed");
+    if (!complete) throw new Error("missing selective change");
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().presented.controller.applyChanges(draftA, change("1"));
+      done = p().header.view.apply(complete.change);
     });
     expect(p().header.view.items.map(({ change }) => change.attribution.kind)).toEqual([
       "unattributed",
@@ -335,6 +334,35 @@ it("classified commands never hide or send an unowned hunk, which prevents compl
     expect(p().header.finished).toBe(false);
     expect(p().header.unlisted).toBe(false);
     expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
+  });
+});
+
+it("an incomplete class leaves neighboring classes selectively actionable", async () => {
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    operations: [operation("1"), { ...operation("2"), canApplyOrDiscard: false }],
+  });
+  fixture.network.applyDraftChanges.mockReturnValueOnce(new Promise(() => {}));
+  await fixture.render(async (p) => {
+    await open(p);
+    const items = p().header.view.items;
+    expect(
+      items.map(({ change }) => [change.classId, change.actionable, change.wholeDraft]),
+    ).toEqual([
+      ["class-1", true, undefined],
+      ["class-2", false, undefined],
+    ]);
+    await act(async () => {
+      void p().header.view.apply(items[0].change);
+    });
+    expect(fixture.network.applyDraftChanges).toHaveBeenCalledWith(
+      "project-a",
+      "work-a",
+      "document-a",
+      expect.objectContaining({ operationIds: ["1"] }),
+    );
+    expect(fixture.network.applyDraft).not.toHaveBeenCalled();
+    expect(ids(p())).toEqual(["class-2"]);
   });
 });
 
@@ -412,5 +440,29 @@ it.each([
       await done;
     });
     expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
+  });
+});
+
+it.each([
+  "apply",
+  "discard",
+] as const)("a new document's one change dispatches whole %s", async (mode) => {
+  fixture.network.listWorkDrafts.mockResolvedValue({
+    drafts: [{ ...listed, isNewDocument: true }],
+  });
+  fixture.network.getDraftPreview.mockResolvedValue({ ...preview, isNewDocument: true });
+  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
+  fixture.network.discardDraft.mockResolvedValue({ status: "discarded", draftId: "draft-a" });
+  await fixture.render(async (p) => {
+    await open(p);
+    expect(p().header.view.items).toHaveLength(1);
+    await act(async () => {
+      await p().header.view[mode](p().header.view.items[0].change);
+    });
+    const request = mode === "apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
+    expect(request).toHaveBeenCalledWith("project-a", "work-a", "document-a", {
+      draftId: "draft-a",
+    });
+    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
   });
 });

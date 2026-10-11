@@ -83,7 +83,7 @@ Desktop draft chrome reads the presented review value from `DraftReviewProvider`
   same row as the path (there is no separate header above it), once
   `inlineReview.shown`: the version chip (Draft), the document's change-list
   button (an icon, in every review state, opening a popover with
-  `DocumentChanges` and "All changes in <Work>"), the stepper, Show changes,
+  `DocumentChanges`), the stepper, Show changes,
   Discard draft and Apply draft. The row takes the dock tint while a draft is
   reviewed. As the row narrows it collapses in a fixed order (folders, Show
   changes label, stepper count, file name, button labels); the chip, the list

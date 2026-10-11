@@ -28,6 +28,7 @@ export function ReviewStepper({
   touch?: boolean;
   compact?: boolean;
 }) {
+  if (count <= 1) return null;
   const position = focusedIndex + 1;
   const arrow = touch ? "size-11" : compact ? "size-5.5" : undefined;
   return (

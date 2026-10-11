@@ -22,6 +22,7 @@ import { getDraftPreview } from "@/client/api/drafts-api";
 import {
   type ChangeCommandRecords,
   hiddenOperationIds,
+  pendingDraftCommand,
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
   useChangeCommandRecords,
@@ -118,18 +119,27 @@ function previewWithoutHidden(
   data: DraftPreviewResponse,
   hidden: ReadonlySet<string>,
   hiddenKey: string,
+  whole: boolean,
 ): DraftPreviewResponse {
   const held = withoutHidden.get(data);
   if (held?.hiddenKey === hiddenKey) return held.preview;
-  const preview = previewWithoutOperations(data, hidden);
+  const preview =
+    whole && data.status === "active"
+      ? { ...data, operations: [], hunks: [] }
+      : previewWithoutOperations(data, hidden);
   withoutHidden.set(data, { hiddenKey, preview });
   return preview;
 }
 
 /** The operations the command records hide from this draft's preview, and a key that names them. */
-function hiddenOf(records: ChangeCommandRecords, draft: DraftRef) {
+function hiddenOf(records: ChangeCommandRecords, draft: DraftRef, data?: DraftPreviewResponse) {
+  const claim = pendingDraftCommand(records.drafts, draft);
+  const whole =
+    claim?.target === "all" &&
+    data?.status === "active" &&
+    claim.draftGeneration === data.draftGeneration;
   const hidden = hiddenOperationIds(records, draft);
-  return { hidden, hiddenKey: [...hidden].sort().join(",") };
+  return { hidden, whole, hiddenKey: whole ? "all" : [...hidden].sort().join(",") };
 }
 
 export function useDraftPreview(
@@ -160,9 +170,9 @@ export function useDraftPreview(
   // Keyed by the hidden operations themselves, so unrelated command records
   // never hand consumers a new preview object (the editor re-paints on one).
   const records = useChangeCommandRecords();
-  const { hidden, hiddenKey } = hiddenOf(records, draft);
+  const { hidden, hiddenKey, whole } = hiddenOf(records, draft, data);
   const preview = useMemo(
-    () => (data ? previewWithoutHidden(data, hidden, hiddenKey) : null),
+    () => (data ? previewWithoutHidden(data, hidden, hiddenKey, whole) : null),
     [data, hiddenKey],
   );
 
@@ -277,13 +287,15 @@ export function useDraftPreviews(
     for (const key of seen.current.keys()) if (!held.has(key)) seen.current.delete(key);
   }, [targetsKey, listedKey, open?.documentId, open?.draftId, queryClient]);
 
-  const hiddenKeys = targets.map((target) => hiddenOf(records, target).hiddenKey).join("|");
+  const hiddenKeys = targets
+    .map((target, index) => hiddenOf(records, target, reads[index]?.data).hiddenKey)
+    .join("|");
   return useMemo(() => {
     if (targets.length === 0) return NO_ENTRIES;
     return reads.map(({ data, failed, retry }, index): DraftPreviewEntry => {
       if (data) {
-        const { hidden, hiddenKey } = hiddenOf(records, targets[index]);
-        return { status: "ready", preview: previewWithoutHidden(data, hidden, hiddenKey) };
+        const { hidden, hiddenKey, whole } = hiddenOf(records, targets[index], data);
+        return { status: "ready", preview: previewWithoutHidden(data, hidden, hiddenKey, whole) };
       }
       return failed ? { status: "error", retry } : { status: "loading" };
     });

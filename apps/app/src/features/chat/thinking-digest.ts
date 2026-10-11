@@ -18,26 +18,21 @@ import {
   toolInputObject,
 } from "./tool-command";
 
-export type ThinkingDigestWriteMode = "direct" | "draft";
-
 export type FoldToolCounts = {
   /** Skill slugs the fold loaded, in call order. */
   invokedSkills: Set<string>;
   readDocuments: Set<string>;
-  editedDocuments: Set<string>;
   steps: number;
 };
 
 export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   const invokedSkills = new Set<string>();
   const readDocuments = new Set<string>();
-  const editedDocuments = new Set<string>();
   let steps = 0;
 
   for (const tool of tools) {
     const path = stringInput(toolInputObject(tool), "path");
-    // `read` calls count as reads and `write` calls as edits. A write command
-    // the app doesn't know is a step.
+    // Successful writes belong to the turn receipt, not the process digest.
     const command = toolCommand(tool);
     const skill = stringInput(toolInputObject(tool), "name");
 
@@ -51,7 +46,6 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       continue;
     }
     if (!tool.isError && path && isEditCommand(command)) {
-      editedDocuments.add(documentIdentity(path));
       continue;
     }
     // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
@@ -59,7 +53,7 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     steps += 1;
   }
 
-  return { invokedSkills, readDocuments, editedDocuments, steps };
+  return { invokedSkills, readDocuments, steps };
 }
 
 /** A command that only looked at a document. */
@@ -78,11 +72,8 @@ function isEditCommand(command: ToolCommand): boolean {
   );
 }
 
-export function thinkingDigest(
-  tools: readonly ToolView[],
-  writeMode: ThinkingDigestWriteMode,
-): string | null {
-  const { invokedSkills, readDocuments, editedDocuments, steps } = countFoldTools(tools);
+export function thinkingDigest(tools: readonly ToolView[]): string | null {
+  const { invokedSkills, readDocuments, steps } = countFoldTools(tools);
   const clauses: string[] = [];
 
   if (invokedSkills.size > 0) {
@@ -101,24 +92,6 @@ export function thinkingDigest(
         one: "read # document",
         other: "read # documents",
       }),
-    );
-  }
-  if (editedDocuments.size > 0) {
-    const carryDocumentNoun = readDocuments.size > 0;
-    clauses.push(
-      writeMode === "draft"
-        ? carryDocumentNoun
-          ? t`drafted ${editedDocuments.size}`
-          : plural(editedDocuments.size, {
-              one: "drafted # document",
-              other: "drafted # documents",
-            })
-        : carryDocumentNoun
-          ? t`edited ${editedDocuments.size}`
-          : plural(editedDocuments.size, {
-              one: "edited # document",
-              other: "edited # documents",
-            }),
     );
   }
   if (steps > 0) {

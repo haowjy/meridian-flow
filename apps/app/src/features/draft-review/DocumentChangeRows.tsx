@@ -25,11 +25,13 @@ export function DocumentChangeRows({
   onSelect,
   standIn = null,
   touch = false,
+  showAttribution = false,
 }: {
   view: DraftChangesView;
   onSelect: (change: ReviewChange) => void;
   standIn?: ReactNode;
   touch?: boolean;
+  showAttribution?: boolean;
 }) {
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
@@ -57,17 +59,18 @@ export function DocumentChangeRows({
     );
   }
   return (
-    <ul className="flex flex-col gap-0.5">
-      {view.items.map(({ change, failure }) => (
+    <ul className="@container/changes flex flex-col gap-0.5">
+      {view.items.map(({ change, failure, draftFailure }) => (
         <ReviewChangeRow
           touch={touch}
+          showAttribution={showAttribution}
           key={change.classId}
           change={change}
           focused={view.focused?.classId === change.classId}
           arrived={arrived.has(change.classId)}
           disabled={view.locked}
-          canApply={view.canApply}
           failure={failure}
+          draftFailure={draftFailure}
           onFocus={() => onSelect(change)}
           onApply={() => void view.apply(change)}
           onDiscard={() => void view.discard(change)}

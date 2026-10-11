@@ -162,7 +162,6 @@ function AssistantTurnComponent({
             threadId={resolvedThreadId}
             turnStatus={turn.status}
             onRespondToInterrupt={onRespondToInterrupt}
-            writeMode={turn.writeMode ?? "direct"}
             directResult={
               item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
             }
@@ -255,22 +254,17 @@ const TurnItemView = memo(function TurnItemView({
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  writeMode,
   directResult,
 }: {
   item: RenderItem;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  writeMode: "direct" | "draft";
   directResult: DirectInvocationResult | null;
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const tools = useMemo(() => (runs ? toolViewsInFold(runs) : []), [runs]);
-  const digest = useMemo(
-    () => (runs ? thinkingDigest(tools, writeMode) : null),
-    [runs, tools, writeMode],
-  );
+  const digest = useMemo(() => (runs ? thinkingDigest(tools) : null), [runs, tools]);
   const toolCallIds = useMemo(
     () => tools.flatMap((tool) => (tool.toolCallId ? [tool.toolCallId] : [])),
     [tools],
@@ -288,7 +282,6 @@ const TurnItemView = memo(function TurnItemView({
               threadId={threadId}
               turnStatus={turnStatus}
               onRespondToInterrupt={onRespondToInterrupt}
-              writeMode={writeMode}
             />
           ))}
         </ProcessDisclosure>
@@ -349,13 +342,11 @@ const FoldRun = memo(function FoldRun({
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  writeMode,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  writeMode: "direct" | "draft";
 }) {
   if (run.kind === "reasoning") {
     return (
@@ -374,7 +365,6 @@ const FoldRun = memo(function FoldRun({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
-        writeMode={writeMode}
       />
     </div>
   );
@@ -402,33 +392,25 @@ const DeliverySegments = memo(function DeliverySegments({
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  writeMode,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  writeMode: "direct" | "draft";
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
     <>
       {segments.flatMap((segment) => {
         if (segment.kind === "tool") {
-          return [
-            <ToolRow
-              key={blockRenderKey(segment.tool.keyBlock)}
-              tool={segment.tool}
-              writeMode={writeMode}
-            />,
-          ];
+          return [<ToolRow key={blockRenderKey(segment.tool.keyBlock)} tool={segment.tool} />];
         }
         // Claude-style timeline: adjacent tools stack as siblings instead of
         // collapsing into a grouping disclosure. With text-altitude rows the
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
           return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} />
           ));
         }
         return [
