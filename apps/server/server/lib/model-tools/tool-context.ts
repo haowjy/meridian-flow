@@ -148,8 +148,8 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
 
 /**
  * The thread's context, its port at `version` (a live read resolves paths
- * against live membership too), its Work's execution context and the
- * principal. The thread's Work membership loads once.
+ * against live membership too), its execution context (the chat's write mode
+ * over its Work) and the principal. The thread's Work membership loads once.
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
@@ -164,7 +164,7 @@ export async function resolveToolCall(
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
-  const execution = threadExecutionContext(primaryWork);
+  const execution = threadExecutionContext(primaryWork, context.resolution.thread.aiWriteMode);
   return { execution, context, principal: await agentPrincipal(deps, context, execution) };
 }
 

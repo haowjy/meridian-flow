@@ -39,7 +39,8 @@ export function createDocumentRevisions(deps: {
     const revisions = new Map<string, string | null>();
     // Archive restricts writes, not the revision reads used by summaries and compaction.
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
-    const draftOwner = work ? threadExecutionContext(work).draftOwner : null;
+    const draftOwner =
+      work && thread ? threadExecutionContext(work, thread.aiWriteMode).draftOwner : null;
     const draftWork = draftOwner && work ? { id: draftOwner.workId, slug: work.slug } : null;
     const view = draftWork ? await deps.drafts.viewForWork(draftWork.id) : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {

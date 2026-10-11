@@ -1,7 +1,7 @@
 /**
  * The one drafts resolver: which draft a Work's drafted writes share, the view a read in
  * that Work sees, and the lock and lifecycle calls every later lane makes on drafts. A
- * draft is made only at the write boundary, never by a read (F7): a draft-mode Work with
+ * draft is made only at the write boundary, never by a read (F7): a draft-mode chat's Work with
  * no active draft reads live. Callers reach drafts only through this object.
  */
 import type { DraftId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts";

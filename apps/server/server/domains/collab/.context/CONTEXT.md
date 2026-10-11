@@ -60,10 +60,10 @@ also records each document's last read version per thread (`live` or
 
 ## Write mode and drafts
 
-The Work's write mode decides only where new AI writes go. A draft write
-never pushes itself live (D59): a reply that saves into the draft after the
-writer switched the Work to Auto-apply waits there like a kept change, and
-the dock shows it. Switching to Auto-apply with pending changes needs a
+A chat's write mode decides only where its new AI writes go (D62); chats in
+one Work may differ. A draft write never pushes itself live (D59): a draft
+that an auto-apply chat leaves behind, or another chat keeps writing, waits
+there like a kept change, and the dock shows it. Switching to Auto-apply with pending changes needs a
 choice (`work-push-policy.ts`, D40): `apply` applies the whole draft as one
 publication (`applyItems` over every pending item, closing the draft when
 nothing stays; a held item stays as a kept change), then sets the mode; `keep`

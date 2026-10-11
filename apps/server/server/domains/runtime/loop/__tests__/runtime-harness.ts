@@ -163,11 +163,6 @@ export function createRuntimeHarness(
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry,
     projectPreferences,
-    workWriteMode: {
-      async read() {
-        return "direct";
-      },
-    },
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
