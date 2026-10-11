@@ -105,7 +105,7 @@ export function createAgentEditRuntime(input: {
         liveUtilityCore.write(
           {
             command: "create",
-            file: "document.md",
+            file: "document",
             documentId,
             content: content.markdown,
             // Bound against the holder's document: overwrite it. Bound fresh: an empty one only.

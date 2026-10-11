@@ -555,6 +555,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("refuses an opposite-kind name reclaimed before Work restore without partially unhiding", async () => {
+      for (const folderArrives of [false, true]) {
+        const work = await works.create({
+          projectId: PROJECT_ID,
+          name: folderArrives ? "Folder restore clash" : "Document restore clash",
+        });
+        const [source] = await db
+          .insert(schema.contextSources)
+          .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
+          .returning();
+        if (!source) throw new Error("Source fixture missing");
+        const arriving = folderArrives ? schema.folders : schema.documents;
+        await db.insert(arriving).values({ contextSourceId: source.id, name: "Lore" });
+        await works.softDelete(work.id);
+        // A historical/raw writer can leave opposite-kind occupancy: restore must guard
+        // both arriving tables before changing either one, not rely on their own indexes.
+        const occupied = folderArrives ? schema.documents : schema.folders;
+        await db.insert(occupied).values({ contextSourceId: source.id, name: "Lore" });
+        await expect(works.restore(work.id)).rejects.toEqual(
+          new WorkRestoreConflictError("content"),
+        );
+        expect(
+          (await db.select().from(schema.works).where(eq(schema.works.id, work.id)))[0]?.deletedAt,
+        ).not.toBeNull();
+        expect(
+          (await db.select().from(arriving).where(eq(arriving.contextSourceId, source.id)))[0]
+            ?.deletedByWorkId,
+        ).toBe(work.id);
+      }
+    });
+
     it("hides Work chats, drafts, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
@@ -1223,7 +1254,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({
           contextSourceId: lineageSource.id,
           name: "outline",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         })
         .returning();

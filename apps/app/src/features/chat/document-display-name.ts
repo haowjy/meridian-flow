@@ -5,6 +5,7 @@
  * state: context URIs already carry the document basename and location.
  */
 import { t } from "@lingui/core/macro";
+import { splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -17,16 +18,17 @@ type ParsedContextLocation = {
 };
 
 function parseContextLocation(uriOrPath: string): ParsedContextLocation {
-  const parsed = parseUnifiedContextUri(uriOrPath);
-  return parsed.ok ? parsed.value : { scheme: "manuscript", path: uriOrPath };
+  const { path } = splitDocumentHrefSuffix(uriOrPath);
+  const parsed = parseUnifiedContextUri(path);
+  return parsed.ok ? parsed.value : { scheme: "manuscript", path };
 }
 
 /**
- * The document's name, and nothing else. Where it lives is not part of what a
- * timeline row claims: the row says what the agent did to a document, and the
- * name's door already goes wherever that document is. The one place location
- * still earns its keep is the dead-route pane, which exists to say a document
- * is missing from a particular section.
+ * The document's name as stored, and nothing else: `Chapter 13`, `outline.json`.
+ * Where it lives is not part of what a timeline row claims: the row says what
+ * the agent did to a document, and the name's door already goes wherever that
+ * document is. The one place location still earns its keep is the dead-route
+ * pane, which exists to say a document is missing from a particular section.
  */
 export function documentDisplayName(uriOrPath: string): string {
   const skillFileName = skillFileDisplayName(uriOrPath);
@@ -36,24 +38,13 @@ export function documentDisplayName(uriOrPath: string): string {
 }
 
 /**
- * Exact file target for tool activity, retaining the extension to disambiguate
- * it. A skill file is named by its skill instead.
- */
-export function documentFileName(uriOrPath: string): string {
-  const skillFileName = skillFileDisplayName(uriOrPath);
-  if (skillFileName) return skillFileName;
-  const { path } = parseContextLocation(uriOrPath);
-  return path.split("/").filter(Boolean).at(-1) ?? t`Untitled document`;
-}
-
-/**
  * A skill file says whose it is, "prose-critique (Story Review)": its bare name
  * alone would pass for one of the writer's documents.
  */
 function skillFileDisplayName(uriOrPath: string): string | null {
   const file = skillFile(uriOrPath);
   if (!file) return null;
-  const name = documentTitleFromUri(file.path.replace(/#.*$/, "")) ?? file.path;
+  const name = documentTitleFromUri(file.path) ?? file.path;
   const skill = humanizeSkillSlug(file.skill);
   return t`${name} (${skill})`;
 }

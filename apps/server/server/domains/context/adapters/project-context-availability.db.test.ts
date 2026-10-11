@@ -109,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             [PROJECT_SOURCE, NONE_SOURCE, WORK_SOURCE, USER_SOURCE, FOREIGN_SOURCE][index] ??
             PROJECT_SOURCE,
           name: `doc-${index}`,
-          extension: "md",
+          extension: "",
         })),
       );
       return db;
@@ -173,7 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: foreignInvalidDocument,
           contextSourceId: foreignInvalidSource,
           name: "private",
-          extension: "md",
+          extension: "",
         },
         {
           id: foreignManifest,
@@ -217,7 +217,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: personalManuscriptDocument,
         contextSourceId: personalManuscriptSource,
         name: "chapter",
-        extension: "md",
+        extension: "",
       });
       const result = await createDrizzleProjectContextAvailability(db).lookup(
         {
@@ -246,7 +246,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: otherPersonalDocument,
         contextSourceId: otherPersonalSource,
         name: "private",
-        extension: "md",
+        extension: "",
       });
       const result = await createDrizzleProjectContextAvailability(db).lookup(
         { projectId: PROJECT as never, documentIds: [otherPersonalDocument] as never },
@@ -545,7 +545,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { userId: USER },
         ),
       ).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { uri: "user://doc-3.md" } }],
+        resolutions: [{ kind: "available", entry: { uri: "user://doc-3" } }],
       });
       await expect(
         catalog.snapshot({ kind: "user", userId: USER } as never),

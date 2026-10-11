@@ -13,7 +13,7 @@ pressure, voice, rhythm, omission, ambiguity, genre promise, and reader
 simulation.
 
 Use the smallest mode that fits the task. Read only the matching section in
-`resources/prose-modes.md` unless the prompt explicitly asks for a hybrid pass.
+`resources/prose-modes` unless the prompt explicitly asks for a hybrid pass.
 
 Load style and character state before writing a character. If the
 request contradicts character state, write to the request, note the
