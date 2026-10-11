@@ -155,6 +155,26 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
   expect(onDraftChange).not.toHaveBeenCalled();
 });
 
+it("draws a refused recording as the failure card and clears it once a send is recorded", async () => {
+  const onSubmit = vi.fn(async () => false);
+  await act(() =>
+    root.render(<Composer initialDraft={draft("Keep these words")} onSubmit={onSubmit} />),
+  );
+  await pressEnter();
+
+  // The card is the live alert; the words stay in the box and Send is the retry, so no buttons.
+  const alert = host.querySelector<HTMLElement>("[role='alert']");
+  expect(alert?.getAttribute("data-slot")).toBe("alert");
+  expect(alert?.textContent).toBe("Couldn't send. Your message stays.");
+  expect(alert?.querySelector("button")).toBeNull();
+  expect(editorElement()?.textContent).toBe("Keep these words");
+
+  onSubmit.mockResolvedValueOnce(true);
+  await pressEnter();
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()?.textContent).toBe("");
+});
+
 it("does not prepend a rejected submission to the live draft edited during admission", async () => {
   const ref = createRef<ComposerHandle>();
   let reject: ((recorded: boolean) => void) | undefined;
