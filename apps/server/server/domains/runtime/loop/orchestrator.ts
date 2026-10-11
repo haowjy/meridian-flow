@@ -1867,6 +1867,7 @@ async function executeLoop({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
+      localCancellation: () => (input.signal?.aborted ? abortTerminal() : null),
       settleSummaryResponses: () => settlePendingSummary(),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
@@ -1896,8 +1897,13 @@ async function executeLoop({
     finishReason: result.finishReason,
   });
   // The yield ends A exactly as a steer split would, but releases the claim
-  // instead of reserving a successor; close still lets cancellation win.
-  const yieldExit = () => exitRun(false, { kind: "success", finishReason: "end_turn" });
+  // instead of reserving a successor. Cancellation wins: the local signal is
+  // read after the asynchronous boundary read, and close rereads both it and
+  // the durable flag under the lock.
+  const yieldExit = () =>
+    input.signal?.aborted
+      ? cancelExit()
+      : exitRun(false, { kind: "success", finishReason: "end_turn" });
 
   // The one cancel exit: discard an in-flight response, then finalize through
   // `exitRun`. Every cancel site calls this so the rollback+cancel sequence

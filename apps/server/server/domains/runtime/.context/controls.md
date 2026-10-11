@@ -43,7 +43,10 @@ successor. The run checks `yieldsAtBoundary` before the next request's budget
 and iteration checks, so a reply out of credits still yields, and
 `splitAndContinue` and `close`'s `continueWith` check repeat the decision under
 the thread lock for a switch that lands later. Cancellation wins: `adopt`
-checks it under the lock first, and the success close turns into a cancel.
+checks it under the lock first; the early yield rechecks the run's local signal
+(a parent's cancel, shutdown) after its boundary read; and `close` rereads both
+the durable flag and the local signal under the lock, turning a success close
+into a cancel or the shutdown failure.
 
 - **Assistant turn.** It completes `end_turn` through the ordinary success
   close. Nothing is adopted, no peeked notice is consumed and no successor is

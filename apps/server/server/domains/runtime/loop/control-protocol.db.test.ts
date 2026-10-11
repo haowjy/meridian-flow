@@ -1201,6 +1201,41 @@ else
         expect(gateway.requests).toHaveLength(2);
       });
 
+      it("lets a parent's abort at the yield cancel the reply instead of completing it", async () => {
+        let rig: Rig;
+        const parent = new AbortController();
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call !== 1) return;
+            await switchMode(rig, "draft");
+            await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        // The parent aborts while the boundary read is in flight; no durable flag is set.
+        const yields = rig.delivery.yieldsAtBoundary.bind(rig.delivery);
+        vi.spyOn(rig.delivery, "yieldsAtBoundary").mockImplementation(async (id) => {
+          const result = await yields(id);
+          if (result) parent.abort();
+          return result;
+        });
+
+        const run = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+          signal: parent.signal,
+        });
+        await run.execute();
+        await settled(rig);
+
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          role: "assistant",
+          status: "cancelled",
+        });
+      });
+
       it("lets a running compaction keep its outcome and leaves the message behind the switch pending", async () => {
         const summarizer = scriptedSummarizer(async () => ({
           kind: "complete",

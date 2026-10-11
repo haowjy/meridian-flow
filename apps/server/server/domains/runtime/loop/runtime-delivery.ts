@@ -155,6 +155,12 @@ export interface RuntimeDelivery
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
+    /**
+     * The run's local abort (a parent's cancel, shutdown) as a terminal cause,
+     * or null. The lease never records it, so close rereads it under the lock
+     * beside the durable cancel flag.
+     */
+    localCancellation?: () => TerminalCause | null;
     settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<
