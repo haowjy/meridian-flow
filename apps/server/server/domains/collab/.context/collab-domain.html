@@ -606,12 +606,12 @@ the thread's Work.
     <code>applyCommittedUpdateWithRecheck</code> re-captures concurrency and
     applies the merged update in one synchronous block. In direct mode that
     target is the live room. In draft mode it is the thread peer, and the
-    thread-peer coordinator then commits the peer's delta into the Work draft
-    (snapshot compare-and-set plus one <code>branch_write_journal</code> row,
+    thread-peer coordinator then commits the peer's ordered segment updates into the Work draft
+    (one snapshot compare-and-set plus one <code>branch_write_journal</code> row per segment,
     through <code>admitCertifiedMutation</code> when the write carries a
     semantic edit IR).</li>
 </ol>
-<p class="ref"><code>packages/agent-edit/src/tool/response-committer.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendBatch</code>, <code>domain/branch-agent-edit.ts</code>, <code>domain/branch-coordinator.ts</code> <code>commitSyncFromDoc</code></p>
+<p class="ref"><code>packages/agent-edit/src/tool/response-committer.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendBatch</code>, <code>domain/branch-agent-edit.ts</code>, <code>domain/branch-coordinator.ts</code> <code>commitSegmentRows</code></p>
 <p>
 Draft-mode commits run inside one Drizzle transaction per reply, with
 process-local effects (branch cache updates, watermarks, response ownership)

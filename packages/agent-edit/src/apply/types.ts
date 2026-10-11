@@ -40,6 +40,8 @@ export type ResolvedEdit = {
   | {
       kind: "insert";
       after?: BlockRef;
+      /** Ordered insertions sharing an old anchor chain through their newly inserted tail. */
+      insertionRun?: object;
       /** Provenance text for the semantic IR; it never drives the insert. */
       newText: string;
       /**
