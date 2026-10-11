@@ -579,7 +579,7 @@ the thread's Work.
   <tr><th>Mode</th><th>Chosen when</th><th>Core</th><th>Lands in</th></tr>
   <tr>
     <td><span class="live-word">Direct</span></td>
-    <td>The Work's <code>aiWriteMode</code> is <code>direct</code> (Auto-apply), so <code>draftOwner === null</code>. This includes No Work.</td>
+    <td>The chat's <code>aiWriteMode</code> is <code>direct</code> (Auto-apply), so <code>draftOwner === null</code>. This includes No Work.</td>
     <td>The live utility core</td>
     <td>The live journal and live room, at response commit</td>
   </tr>
@@ -861,8 +861,8 @@ The points below are the ones that change how you reason about edits here.
     create no reviewable edit, and they publish the delta to an open review
     room through the normal branch update publisher.
     <span class="ref"><code>domain/branch-coordinator.ts</code> <code>pullFromDoc</code></span></li>
-  <li><strong>Apply is one publication.</strong> Every Apply (one document,
-    Apply all, D40's switch) calls <code>applyItems</code>: the link cut is
+  <li><strong>Apply is one publication.</strong> Every Apply (one document
+    or Apply all) calls <code>applyItems</code>: the link cut is
     registered first, then the selected branches push whole as one batch with
     the <code>draft_tree</code> payload. The tree step reveals still-hidden
     creates, restores documents deleted live and names relocated creates back,

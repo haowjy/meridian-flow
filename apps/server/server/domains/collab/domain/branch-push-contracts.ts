@@ -6,8 +6,7 @@ import type {
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { PendingChangesChoice } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
@@ -267,11 +266,6 @@ export type PushCommitStore = {
   }): Promise<number>;
 };
 
-export type WorkPushPolicyStore = {
-  /** Sets the Work's AI write mode: `auto` is auto-apply, `manual` is draft mode. */
-  setWorkWriteMode(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
-};
-
 export type PushUpdateComputer = (input: {
   branch: BranchSnapshot;
   branchDoc: Y.Doc;
@@ -304,18 +298,6 @@ export type BranchPushService = {
     outcomes: readonly PublicationItemOutcome[];
   }>;
 };
-
-export type SetWorkPushPolicyInput = {
-  workId: WorkId;
-  policy: "manual" | "auto";
-  /** Required to switch to auto-apply while drafts have pending changes. */
-  pending?: PendingChangesChoice;
-  pushedByUserId?: UserId;
-};
-
-export type SetWorkPushPolicyResult =
-  | { status: "updated"; policy: "manual" | "auto" }
-  | { status: "confirmation_required"; unpushedCount: number; reason: string };
 
 export type BranchTurnReversal =
   | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }

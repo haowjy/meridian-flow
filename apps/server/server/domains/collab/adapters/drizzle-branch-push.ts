@@ -8,12 +8,11 @@ import {
   drafts,
   draftTreeChanges,
   pushLineage,
-  works,
 } from "@meridian/database/schema";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   branchDraftWork,
   lockDraftBranchWorks,
@@ -30,7 +29,6 @@ import {
   type PreparedPushCommit,
   type PushCommitStore,
   type PushLineageRow,
-  type WorkPushPolicyStore,
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
@@ -294,30 +292,6 @@ export function createDrizzlePushCommitStore(
         )
         .returning({ id: branchWriteJournal.id });
       return rows.length;
-    },
-  };
-}
-
-export function createDrizzleWorkPushPolicyStore(
-  db: Database,
-  workProjection?: WorkProjectionMutation,
-): WorkPushPolicyStore {
-  return {
-    async setWorkWriteMode(workId, policy) {
-      await runInDrizzleTransaction(db, async () => {
-        const [changed] = await currentDrizzleDb(db)
-          .update(works)
-          .set({
-            defaultAiWriteMode: aiWriteModeProjection(policy),
-            entityRevision: sql`${works.entityRevision} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(eq(works.id, workId), ne(works.defaultAiWriteMode, aiWriteModeProjection(policy))),
-          )
-          .returning({ projectId: works.projectId });
-        if (changed) await workProjection?.publishWorks([workId]);
-      });
     },
   };
 }
@@ -652,8 +626,4 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
     threadId: row.threadId,
     turnId: row.turnId,
   };
-}
-
-function aiWriteModeProjection(policy: "manual" | "auto"): "draft" | "direct" {
-  return policy === "manual" ? "draft" : "direct";
 }

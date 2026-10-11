@@ -28,18 +28,12 @@ import type {
 export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type {
-  SetWorkPushPolicyInput,
-  SetWorkPushPolicyResult,
-} from "./domain/branch-push-contracts.js";
-import type {
   ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
-
-export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
@@ -420,7 +414,6 @@ export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
-  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   markFailedResponseRollbackPending(input: {
     branchId: string;
     threadId: ThreadId;

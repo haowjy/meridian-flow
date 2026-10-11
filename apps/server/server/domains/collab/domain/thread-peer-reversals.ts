@@ -1,7 +1,7 @@
 /**
  * Model undo and redo for the thread-peer pool. A thread's writes to one
  * document can sit in two journals, live and the thread's Work draft (after a
- * D40 "keep" switch, say); each selected write reverses where it landed, under
+ * switch to auto-apply, say); each selected write reverses where it landed, under
  * a grant at that destination.
  */
 import {

@@ -97,9 +97,11 @@ for ~200ms).
 2. With the Manuscript tree mounted, have the agent write a new document in
    auto-apply mode. PASS: the tree shows the document within ~5s of turn end
    with no navigation or reload.
-3. With the dock showing "No pending changes", the Draft → Auto-apply switch
-   must not warn about phantom pending changes (and must be disabled until
-   the drafts query has settled).
+3. With drafts pending, switch the chat to auto-apply through its controls
+   queue (`./mf api POST /api/threads/$T/controls --data
+   '{"id":"<uuid>","control":{"kind":"write_mode","mode":"direct"}}'`).
+   PASS: the answer has a `turnId`, the Work's drafts list is unchanged, and
+   the chat's next write lands live.
 
 ## Probe E — cold load and reload of a draft-only review
 
@@ -147,11 +149,10 @@ for ~200ms).
 
 Use `./mf` for the nonvisual commands (see [debugging](../debugging.md)).
 
-1. In a draft-mode Work, stage an edit to an existing chapter and record the
+1. From a draft-mode chat, stage an edit to an existing chapter and record the
    draft list and preview. Keep the Work Files tab open.
 2. Delete the Work. GET its drafts list and preview, POST per-document Apply
-   and Discard, POST Apply all and Discard all, and PATCH write mode to direct
-   with `pending: "apply"`. PASS: all refuse with 404 `Draft not found`.
+   and Discard, and POST Apply all and Discard all. PASS: all refuse with 404 `Draft not found`.
 3. Let a catalog wake refetch the deleted Work's drafts. PASS: no new toast or
    "Pending drafts couldn’t load" row. Other HTTP failures must still surface.
 4. Restore the Work. PASS: restore answers 200 and listing shows the same

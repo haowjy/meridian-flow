@@ -267,9 +267,11 @@ owns only the SQL predicate beside its partial index.
   mode changes only between replies.
 
   The Work's column is only the default a new chat starts with. An explicit
-  mode on chat creation sets it. The Work write-mode route
-  (`lib/work-write-mode-route.ts`) still sets only that default; branches carry
-  no push policy (D59).
+  mode on chat creation and every applied switch set it; nothing else does.
+  The writer switches a chat through its controls queue
+  (`POST /api/threads/:id/controls`, `{ kind: "write_mode" }`). Switching to
+  auto-apply applies nothing: pending drafts stay for review. Branches carry no
+  push policy (D59).
 
   → See [`domains/collab/.context/CONTEXT.md`](../../collab/.context/CONTEXT.md)
     for the branch review model.

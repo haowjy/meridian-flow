@@ -48,7 +48,6 @@ import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
   createDrizzleWorkDraftPendingStore,
-  createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
@@ -141,7 +140,6 @@ import {
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
-import { createWorkPushPolicy } from "./domain/work-push-policy.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { createBranchThreadPeerAgentEditCore } from "./thread-peer-composition.js";
 
@@ -348,10 +346,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.notices,
     deps.workProjectionMutation,
   );
-  const workPushPolicyStore = createDrizzleWorkPushPolicyStore(
-    deps.db,
-    deps.workProjectionMutation,
-  );
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
@@ -511,12 +505,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftLinks: draftBranchAheads,
     push: branchPush,
   });
-  const workPushPolicy = createWorkPushPolicy({
-    workPushPolicyStore,
-    drafts: workDrafts,
-    reviewItems,
-    publication,
-  });
   const draftLeases = createDraftBranchLeases({ branches, criticalSections });
   const discardStore = createDrizzleDraftDiscard(deps.db, {
     drafts: workDrafts,
@@ -672,7 +660,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,
       countPendingByWorkIds: workDraftPendingStore.countPendingByWorkIds,
-      setWorkPushPolicy: workPushPolicy.setWorkPushPolicy,
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },
     branchPeers,
