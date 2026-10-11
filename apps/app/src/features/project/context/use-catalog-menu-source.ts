@@ -144,8 +144,11 @@ export type ProjectMenuSource = {
     catalog: CatalogContextView;
     entryId: string;
   } | null;
-  /** The document's own area and the folders to open inside. */
-  own: { catalog: CatalogContextView | null; openAt(path: string): DrillNode[] };
+  /**
+   * The document's own area and the folders to open inside; `listed` says
+   * whether the root offers that area.
+   */
+  own: { catalog: CatalogContextView | null; listed: boolean; openAt(path: string): DrillNode[] };
 };
 
 /**
@@ -273,6 +276,7 @@ export function useProjectMenuSource({
     },
     own: {
       catalog: ownArea?.catalog ?? null,
+      listed: ownArea?.listed ?? false,
       openAt: (path) => (ownArea ? [areaNode(ownArea), ...foldersIn(ownArea, path)] : []),
     },
   };

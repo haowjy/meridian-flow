@@ -1,7 +1,7 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
@@ -69,7 +69,7 @@ export type EntryActionTarget = {
   path: string;
 } & ({ kind: "file"; documentId: string } | { kind: "dir" });
 
-type DeleteTarget = EntryActionTarget & { workId: string | null };
+type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
@@ -222,11 +222,12 @@ function DropdownActionItems({
 
 export function useDeleteConfirmation({
   projectId,
-  workId,
+  owner,
   scheme,
 }: {
   projectId: string;
-  workId: string | null;
+  /** Who holds the entries: a Work, or a No Work chat's lineage for its Scratch. */
+  owner: ContextOwner;
   scheme: ProjectContextTreeScheme;
 }) {
   const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
@@ -240,9 +241,9 @@ export function useDeleteConfirmation({
   const requestDelete = useCallback(
     (t: EntryActionTarget) => {
       setError(null);
-      setTarget({ ...t, workId, operationId: crypto.randomUUID() });
+      setTarget({ ...t, owner, operationId: crypto.randomUUID() });
     },
-    [workId],
+    [owner],
   );
   const cancel = useCallback(() => {
     setError(null);
@@ -264,7 +265,7 @@ export function useDeleteConfirmation({
       const result = await mutation.mutateAsync({
         operationId: target.operationId,
         path: target.path,
-        workId: target.workId,
+        ...target.owner,
         expected: { kind: "folder" },
       });
       await availability.acceptCommittedDelete({
@@ -277,7 +278,7 @@ export function useDeleteConfirmation({
         queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           scheme,
-          isWorkScopedProjectContextScheme(scheme) ? { workId: target.workId } : undefined,
+          isWorkScopedProjectContextScheme(scheme) ? target.owner : undefined,
         ),
       });
     } catch (cause) {

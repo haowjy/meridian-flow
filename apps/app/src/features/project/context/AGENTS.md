@@ -33,7 +33,7 @@ Shared across both shells:
   specification. Add an action once; both primitive-specific renderers inherit it.
   Rename is inline; Move… opens `EntryMovePicker`, the shared `DrillInMenu`
   and project catalog tree as a folder picker. Scratch reuses these rows and
-  forms with its explicit lineage/Work owner and action capabilities: Rename and Move… only while the actual owner is editable, neither for archived Work notes. Closed row pickers mount no project catalog hooks. Refused moves retain their destination and reopen through Move, not the name-only repair field.
+  forms with its explicit lineage/Work owner and action capabilities: Rename, Move… and Delete while the actual owner is editable, none for archived Work notes. Closed row pickers mount no project catalog hooks. Refused moves retain their destination and reopen through Move, not the name-only repair field.
   Uploads omits generic Delete because only the identity/revision-bound intake
   contract may delete an upload.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,

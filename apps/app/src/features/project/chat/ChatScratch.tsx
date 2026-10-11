@@ -7,8 +7,9 @@
  * means the chat on screen, and lists the chat's Scratch: the lineage's notes
  * for a No Work chat, the Work's for a chat on a named Work, with any lineage
  * notes left behind by a rebind under "Earlier notes". Picking a note opens it
- * beside the chat (`useOpenScratchNote`) and the section stays open. It lists
- * notes only: the AI makes them, and there is no New note. The section shows
+ * beside the chat (`useOpenScratchNote`) and the section stays open. Rows offer
+ * Rename, Move… and Delete like any list's, while the owner can still be edited;
+ * the AI makes the notes, so there is no New note. The section shows
  * for every chat, empty or not, so the rail never shifts when the first note
  * lands. The wording "Scratch for this chat" / "Scratch for <Work>" is its
  * tooltip and accessible name rather than a line of text.
@@ -21,6 +22,7 @@ import { useWorks } from "@/client/query/useWorks";
 import type { TabOwner } from "@/client/stores";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
 import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
@@ -286,6 +288,7 @@ function ScratchEntry({
       ? noWork
       : works?.find((candidate) => candidate.id === entry.owner.workId);
   const editable = !entry.owner.workId || Boolean(work && !isWorkArchived(work));
+  const deletion = useDeleteConfirmation({ projectId, owner, scheme: "scratch" });
   return (
     <TreeEnvProvider
       value={{
@@ -293,7 +296,7 @@ function ScratchEntry({
         scheme: "scratch",
         workId: entry.owner.workId ?? null,
         owner,
-        actions: editable ? ["rename", "move"] : [],
+        actions: editable ? ["rename", "move", "delete"] : [],
         catalog: entry.catalog,
         activeScheme: "scratch",
         activePath: entry.catalog.findDocument(openId ?? "")?.path ?? null,
@@ -309,7 +312,7 @@ function ScratchEntry({
           });
         },
         onRequestCreate: () => undefined,
-        onRequestDelete: () => undefined,
+        onRequestDelete: deletion.requestDelete,
         onCreateDone: () => undefined,
         onCreatedFilePath: () => undefined,
         isExpanded: (id, rowDepth) => toggled[id] ?? rowDepth < 2,
@@ -322,6 +325,13 @@ function ScratchEntry({
         siblingNames={entry.catalog
           .children(entry.node.parentId ?? entry.catalog.root.entryId)
           .map((node) => node.name)}
+      />
+      <DeleteConfirmationDialog
+        target={deletion.target}
+        isPending={deletion.isPending}
+        error={deletion.error}
+        onCancel={deletion.cancel}
+        onConfirm={() => void deletion.confirm()}
       />
     </TreeEnvProvider>
   );

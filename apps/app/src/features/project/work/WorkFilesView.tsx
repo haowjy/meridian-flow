@@ -84,7 +84,11 @@ export function WorkFilesView({
 }) {
   const { scratch, intake } = files;
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const scratchDelete = useDeleteConfirmation({ projectId, workId: work.id, scheme: "scratch" });
+  const scratchDelete = useDeleteConfirmation({
+    projectId,
+    owner: { workId: work.id },
+    scheme: "scratch",
+  });
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
     scratch.catalog && scratchRoot

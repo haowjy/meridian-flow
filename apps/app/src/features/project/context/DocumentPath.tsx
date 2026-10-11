@@ -1,9 +1,10 @@
 /**
  * DocumentPath — the crumbs that say where an open document lives and take the
- * writer nearby. Every crumb opens the drill-in menu inside the place it names:
- * the area, a folder, or (for the filename) the folder that holds it. The `…`
- * that stands for folders that do not fit opens one level above the crumb after
- * it. Whatever lies on the document's path is highlighted at every level.
+ * writer nearby. Every crumb opens the drill-in menu at the list it sits in,
+ * with itself highlighted: the area among the areas, a folder in its parent,
+ * the filename in its folder. The `…` that stands for folders that do not fit
+ * opens where the last of them sits. No two crumbs open the same list.
+ * Whatever lies on the document's path is highlighted at every level.
  *
  * The crumbs only navigate: a pick opens the document the way this screen
  * opens documents (`useOpenDocumentInDock`). Renaming and moving belong to the
@@ -58,8 +59,12 @@ export function DocumentPath({
 
   const SchemeIcon = schemeIcon(location.scheme);
   const area = schemeLabel(location.scheme);
-  // The menu trail each crumb opens inside: the area, then one folder per step.
-  const trailTo = (depth: number) => menu?.openAt.slice(0, depth + 1) ?? null;
+  // The list a crumb sits in: depth 0 is the area (the root list), each folder
+  // one deeper, the filename last. An area the root does not offer (Uploads, a
+  // Scratch the writer has left) cannot be shown among the areas, so its crumb
+  // opens inside it instead.
+  const listOf = (depth: number) =>
+    menu ? menu.openAt.slice(0, depth === 0 && !menu.areaListed ? 1 : depth) : null;
   const shown = shownFolders(folders.length, fit);
   const hidden = folders.slice(0, folders.length - shown.length);
 
@@ -114,12 +119,12 @@ export function DocumentPath({
         </span>
       </span>
 
-      {crumb("area", areaLabel(fit === "icon"), trailTo(0), "shrink-0")}
+      {crumb("area", areaLabel(fit === "icon"), listOf(0), "shrink-0")}
       {hidden.length > 0 ? (
         <>
           <Separator />
-          {/* One level above the crumb after it: inside the folder that holds the last folder. */}
-          {crumb("ellipsis", "…", trailTo(folders.length - 1), "shrink-0", hidden.join(" › "))}
+          {/* Where the last hidden folder sits, with it highlighted. */}
+          {crumb("ellipsis", "…", listOf(hidden.length), "shrink-0", hidden.join(" › "))}
         </>
       ) : null}
       {shown.map((folderIndex) => {
@@ -131,7 +136,7 @@ export function DocumentPath({
             {crumb(
               `folder:${depth}`,
               <span className="truncate">{folder}</span>,
-              trailTo(depth),
+              listOf(depth),
               "min-w-0",
             )}
           </span>
@@ -141,7 +146,7 @@ export function DocumentPath({
       {crumb(
         "leaf",
         <span className={cn("truncate", location.provisional && "italic")}>{location.leaf}</span>,
-        trailTo(folders.length),
+        listOf(folders.length + 1),
         "min-w-0 text-ink-muted",
       )}
       {trailing ? (
@@ -172,6 +177,8 @@ type PathMenu = {
   tree: Parameters<typeof DrillInMenu>[0]["tree"];
   hereIds: readonly string[];
   openAt: DrillNode[];
+  /** Whether the root offers the document's own area. */
+  areaListed: boolean;
   onPick: (node: DrillNode) => void;
 };
 
@@ -270,6 +277,7 @@ function useDocumentPathMenu(projectId: string, tab: ContextTab): PathMenu | nul
     tree: source.tree,
     hereIds: [...openAt.map((node) => node.id), current.entryId],
     openAt,
+    areaListed: source.own.listed,
     onPick,
   };
 }

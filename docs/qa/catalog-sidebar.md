@@ -80,9 +80,10 @@ returns documents for the populated case.
 3. Open the chat with recent documents. Capture its file rows (no heading of
    their own); confirm they still open the document beside the chat.
 4. With a document open beside the chat, capture the header: close, the path,
-   Open in Editor, collapse, and no title chip. Click each crumb: an area or
-   folder opens inside itself, the filename inside its folder, `…` one level
-   above the crumb after it. Climb with a back row: the folder left behind is
+   Open in Editor, collapse, and no title chip. Click each crumb: each opens the
+   list it sits in with itself highlighted (the area among the areas, a folder
+   in its parent, the filename in its folder, `…` where the last hidden folder
+   sits), and no two crumbs open the same list. Climb with a back row: the folder left behind is
    highlighted, and climbing past the area reaches the area list without a
    heading. Pick a file: it replaces the document beside the chat.
 5. At phone width, confirm existing full-screen document/navigation surfaces
