@@ -4,15 +4,15 @@ import {
   parseRestorableComposerDraft,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { browserRecord, type StorageSource } from "./storage/browser-record";
+import { browserRecord, isRecord, type StorageSource } from "./storage/browser-record";
 
 export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
+type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & { received?: string[] };
+
 export class ComposerSessionDraft {
   readonly key: string;
-  private readonly record: ReturnType<
-    typeof browserRecord<{ draft: ComposerDraftSnapshot | null; received: string[] }>
-  >;
+  private readonly record: ReturnType<typeof browserRecord<StoredComposerDraft>>;
   private current: ComposerDraftSnapshot | null;
   private received = new Set<string>();
   hasReceived = (recordId: string) => this.received.has(recordId);
@@ -50,7 +50,7 @@ export class ComposerSessionDraft {
       ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
     };
     const received = new Set([...this.received, ...recordIds]);
-    if (!this.record.write({ draft: edited, received: [...received] })) return false;
+    if (!this.record.write({ ...edited, received: [...received] })) return false;
     this.received = received;
     this.current = edited;
     this.dirty = false;
@@ -74,23 +74,21 @@ export class ComposerSessionDraft {
   }
 
   constructor(accountId: string, scope: ComposerDraftScope, storage: StorageSource = "session") {
-    this.key = `meridian:composer-draft:v2:${JSON.stringify([accountId, scope.kind, scope.id])}`;
-    this.record = browserRecord(
+    this.key = `meridian:composer-draft:v1:${JSON.stringify([accountId, scope.kind, scope.id])}`;
+    this.record = browserRecord<StoredComposerDraft>(
       storage,
-      { key: this.key, version: 2, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
+      { key: this.key, version: 1, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
       (value) => {
-        if (!value || typeof value !== "object" || !("draft" in value) || !("received" in value))
+        if (!isRecord(value)) return undefined;
+        const received = value.received === undefined ? [] : value.received;
+        if (!Array.isArray(received) || !received.every((id) => typeof id === "string"))
           return undefined;
-        if (!Array.isArray(value.received) || !value.received.every((id) => typeof id === "string"))
-          return undefined;
-        const draft = value.draft === null ? null : parseRestorableComposerDraft(value.draft);
-        return value.draft !== null && !draft
-          ? undefined
-          : { draft: draft ?? null, received: value.received as string[] };
+        const draft = value.doc === null ? null : parseRestorableComposerDraft(value);
+        return value.doc !== null && !draft ? undefined : { ...(draft ?? { doc: null }), received };
       },
     );
     const saved = this.record.read();
-    this.current = saved?.draft ?? null;
+    this.current = saved ? parseRestorableComposerDraft(saved) : null;
     this.received = new Set(saved?.received);
   }
 
@@ -122,9 +120,9 @@ export class ComposerSessionDraft {
     const saved =
       !draft || !serializeComposerDraft(draft.doc).text
         ? this.record.write(
-            this.received.size ? { draft: null, received: [...this.received] } : undefined,
+            this.received.size ? { doc: null, received: [...this.received] } : undefined,
           )
-        : this.record.write({ draft, received: [...this.received] });
+        : this.record.write({ ...draft, received: [...this.received] });
     if (saved) this.dirty = false;
   };
 }

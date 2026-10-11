@@ -30,6 +30,23 @@ function change(text: string) {
 afterEach(() => vi.useRealTimers());
 
 describe("session composer drafts", () => {
+  it("restores an existing v1 draft without Edit receipts", () => {
+    const tab = storage();
+    const key = `meridian:composer-draft:v1:${JSON.stringify([account, scope.kind, scope.id])}`;
+    tab.setItem(
+      key,
+      JSON.stringify({
+        version: 1,
+        accountId: account,
+        scope: JSON.stringify([scope.kind, scope.id]),
+        payload: change("Unsent words before deploy").snapshot,
+      }),
+    );
+    const owner = new ComposerSessionDraft(account, scope, () => tab);
+    expect(owner.initialDraft?.doc).toEqual(plainComposerDoc("Unsent words before deploy"));
+    expect(owner.hasReceived("old-record")).toBe(false);
+  });
+
   it("debounces writes, flushes the latest structured snapshot, and isolates accounts, destinations and tabs", () => {
     vi.useFakeTimers();
     const tab = storage();
