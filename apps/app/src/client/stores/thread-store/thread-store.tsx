@@ -15,14 +15,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import {
+  getChatSubmissionAccountId,
+  isThreadAwaitingCreation,
+  subscribeChatSubmissions,
+} from "@/client/chat-submissions";
 import {
   type InterruptResponseEntry,
   interruptResponseKey,
@@ -873,5 +880,23 @@ export function useThreadActions(): ThreadStoreActions {
 
 /** True when an optimistic thread create is in flight (pre-server confirmation). */
 export function useIsThreadPendingCreation(threadId: string | null | undefined): boolean {
-  return useThreadStore((s) => (threadId ? Boolean(s.pendingCreation.threadIds[threadId]) : false));
+  const store = useThreadStoreApi();
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const unsubscribeStore = store.subscribe(listener);
+      const unsubscribeJournal = subscribeChatSubmissions(listener);
+      return () => {
+        unsubscribeStore();
+        unsubscribeJournal();
+      };
+    },
+    [store],
+  );
+  const snapshot = () =>
+    isThreadAwaitingCreation(
+      getChatSubmissionAccountId() ?? "",
+      threadId,
+      Boolean(threadId && store.getState().pendingCreation.threadIds[threadId]),
+    );
+  return useSyncExternalStore(subscribe, snapshot, () => false);
 }

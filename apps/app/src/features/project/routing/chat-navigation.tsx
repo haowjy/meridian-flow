@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { readFirstSendSubmission } from "@/client/chat-submissions";
+import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -124,8 +124,8 @@ export function useProjectChatNavigation({
   );
   const display = computeChatDisplay(activeScreen, urlChatId, currentThreadId);
   const surfaceThreadId = chatSurfaceThreadId(display);
-  const [recoveringFirstSend] = useState(
-    () => surfaceThreadId !== null && readFirstSendSubmission(accountId, surfaceThreadId) !== null,
+  const [recoveringFirstSend] = useState(() =>
+    isThreadAwaitingCreation(accountId, surfaceThreadId),
   );
   const [channels] = useState(createChannels);
   const [newChatRequest, setNewChatRequest] = useState<NewChatRequest | null>(null);
@@ -194,7 +194,7 @@ export function useProjectChatNavigation({
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
   }, [urlChatId, remember]);
-  useMissingChatFallback(accountId, surfaceThreadId, () => {
+  useMissingChatFallback(surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "chat-index" }, { replace: true });
@@ -218,10 +218,8 @@ export function useProjectChatNavigation({
  * go. A 404 recorded before the chat was last pending creation is the benign
  * race of a first send, not a missing chat, even once the send is acknowledged.
  */
-function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
-  const pendingCreation = useIsThreadPendingCreation(threadId);
-  const firstSend = !!threadId && readFirstSendSubmission(accountId, threadId) !== null;
-  const pending = pendingCreation || firstSend;
+function useMissingChatFallback(threadId: string | null, onMissing: () => void) {
+  const pending = useIsThreadPendingCreation(threadId);
   const { error, errorUpdatedAt } = useQuery({
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,

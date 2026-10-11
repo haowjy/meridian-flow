@@ -38,3 +38,8 @@ It is not a thread replica: no assistant turns or rendered rows.
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
 Account bind rewrites v1 records to v2 before removing their old keys. The
 bounded rewrite removal trigger is in `.context/TODO`.
+
+Record/retire notify in-tab subscribers; cross-tab localStorage events forward
+to the same listeners. `useIsThreadPendingCreation` synchronously combines
+journal `creation` with the provider-scoped pending flag through
+`useSyncExternalStore`, so uncreated journal destinations never query snapshots.
