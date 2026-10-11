@@ -30,13 +30,15 @@ Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
 
 `reviewChangesOfPreview` shares `reviewChanges` grouping by server
 `closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
-operations in the class, never a representative. New documents and previews containing unclassified hunks without operations or
-classes flagged `canApplyOrDiscard: false` become one whole-draft item, with all
+operations in the class, never a representative. Only new documents become one whole-draft item, with all
 mark keys and attribution retained. Its Apply/Discard use existing whole-draft
 commands, never synthetic IDs in a selective request. With no hunks or
 operations, the preview remains formatting-only. Whole claims hide the addressed
 generation's preview optimistically; failures restore it.
-Rows are DOM display artifacts, not editable TipTap content.
+Existing documents retain each class. Unclassified hunks and classes flagged
+`canApplyOrDiscard: false` show no selective controls; other classes remain
+actionable. The chat strip skips incomplete classes; whole header commands
+cover them. Rows are DOM display artifacts, not editable TipTap content.
 
 ## Command admission and ordering
 

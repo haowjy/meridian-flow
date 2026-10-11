@@ -14,15 +14,15 @@ import type { OverlayBox } from "../../chrome/manuscript-overlay";
 export const BAR_GAP_PX = 10;
 /** Air between the bar and the pane's edge. */
 export const BAR_EDGE_PX = 8;
-/** The bar wraps to two short rows; below this it would have to break its words. */
-export const BAR_MIN_WIDTH_PX = 132;
+/** Commands and compact attribution need this much to stay on one row. */
+export const BAR_MIN_WIDTH_PX = 220;
 /**
  * "Discard with your edits" and Apply on one row need this much; narrower and
  * Apply is pushed past the pane's edge.
  */
-export const BAR_MIN_WIDTH_WITH_EDITS_PX = 200;
+export const BAR_MIN_WIDTH_WITH_EDITS_PX = 300;
 /** Wider margins give the bar no more than its one-row width. */
-export const BAR_MAX_WIDTH_PX = 260;
+export const BAR_MAX_WIDTH_PX = 360;
 
 export type ReviewBarPlacement =
   | { kind: "margin"; top: number; left: number; maxWidth: number }

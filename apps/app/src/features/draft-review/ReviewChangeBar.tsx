@@ -40,23 +40,24 @@ export function ReviewChangeBar({
       className={cn(
         touch
           ? "flex items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
-          : "flex w-fit max-w-full items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
+          : "flex w-full max-w-full items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
         className,
       )}
     >
       <div className={cn("flex min-w-0 flex-1 items-center", touch ? "gap-3 py-0.5" : "gap-x-1.5")}>
-        <div className={touch ? "flex min-w-0 flex-1 items-center" : "contents"}>
+        <div className="flex min-w-0 flex-1 items-center">
           <ChangeAuthor
             touch={touch}
+            overflow="menu"
             attribution={change.attribution}
-            className={touch ? "inline-flex min-h-11 max-w-full items-center" : "max-w-[60%]"}
+            className={touch ? "min-h-11" : undefined}
           />
         </div>
         {change.actionable ? (
           <span
             className={
               touch
-                ? "flex items-center gap-3"
+                ? "flex shrink-0 items-center gap-3"
                 : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
             }
           >

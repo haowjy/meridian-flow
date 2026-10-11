@@ -1,8 +1,11 @@
 /** Composer-attached strip for this chat's pending changes. Summary and commands share one row; multiple files expand in place. Failures stay on their file. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
@@ -28,7 +31,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
     <div
-      className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)]"
+      className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
       {confirming ? (
@@ -71,27 +74,21 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   );
 
   return (
-    <div
-      className="mx-[var(--chat-space-block)] rounded-t-lg bg-dock-surface"
-      data-draft-dock="settled"
-    >
+    <div className="@container/dock rounded-t-lg bg-dock-surface" data-draft-dock="settled">
       {/* The WHOLE first line is the expand/collapse target (several files) or
           opens the review (one); buttons intercept their own clicks. Tiny
           chevron-only targets read as broken affordance. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={multi ? () => setExpanded((value) => !value) : dock.reviewFirst}
+        onClick={() => setExpanded((value) => !value)}
         className={cn(
-          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] py-0.5 text-caption text-prose-foreground",
+          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
-        {/* The summary holds a floor (its basis) and the commands keep their
-            width, so a dock too narrow for both sends the commands to their
-            own right-aligned line instead of squeezing the name to nothing. */}
-        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)]">
-          {multi ? (
+        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
+          {
             <button
               type="button"
               aria-expanded={expanded}
@@ -107,23 +104,22 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 aria-hidden
               />
             </button>
-          ) : null}
+          }
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          {/* min() keeps the 12ch floor from padding short names with dead space */}
-          <span className="min-w-0 shrink truncate">
+          <span className="min-w-[12ch] shrink truncate">
             {multi ? <Trans>{dock.files.length} documents</Trans> : only?.name}
           </span>
           {dock.changeCount !== null ? (
-            <span className="shrink-0 whitespace-nowrap text-ink-subtle">
+            <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
               <ChangeCount count={dock.changeCount} />
             </span>
           ) : null}
         </div>
-        {!multi && only ? <FileTrouble dock={dock} file={only} /> : null}
+        {!expanded && !multi && only ? <FileTrouble dock={dock} file={only} /> : null}
         {commands}
       </div>
 
-      {multi && expanded ? (
+      {expanded ? (
         // Capped so a long list of files scrolls inside the dock instead of
         // pushing the transcript off screen above the composer.
         <div className="app-scroll max-h-[min(40svh,20rem)]">
@@ -140,33 +136,45 @@ function ChangeCount({ count }: { count: number }) {
   return <Plural value={count} one="# change" other="# changes" />;
 }
 
-/** One expanded file line: name, count, Review and any held failure. */
+/** One file header and the chat's changes, using the same rows as Work Files. */
 function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) {
+  const touch = usePhoneShell() ?? false;
+  const view = useDraftChanges(
+    {
+      projectId: dock.projectId,
+      workId: dock.workId,
+      documentId: file.row.documentId,
+      draftId: file.row.draft.draftId,
+    },
+    { controller: dock.controller },
+  );
+  const own = new Set(file.changes.map((change) => change.classId));
+  const items = view.items.filter(({ change }) => own.has(change.classId));
+  const held = dock.fileFailure(file);
+  const headerFailure =
+    file.status === "error" || (held?.kind === "draft" && !items.some((item) => item.draftFailure));
   return (
     <div
       data-draft-dock-file={file.row.documentId}
       className="border-border-subtle border-b last:border-b-0"
     >
-      <div className="group flex min-h-7 items-center gap-[var(--chat-space-inline)] pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)] text-caption text-prose-foreground">
-        <span aria-hidden className="shrink-0 text-ink-subtle">
-          ○
-        </span>
-        <span className="min-w-0 flex-1 truncate">{file.name}</span>
-        {file.status === "loading" ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
-        ) : file.status === "ready" ? (
-          <span className="shrink-0 whitespace-nowrap text-ink-subtle">
-            <ChangeCount count={file.changes.length} />
-          </span>
-        ) : null}
-        <FileTrouble dock={dock} file={file} row />
-        <span className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          <ReviewPill
-            onClick={() => dock.review(file)}
-            disabled={dock.reviewBusy || !file.row.contextPath}
-          />
-        </span>
+      <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
+        <button
+          type="button"
+          className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
+          onClick={() => dock.review(file)}
+        >
+          {file.name}
+        </button>
+        {headerFailure ? <FileTrouble dock={dock} file={file} row /> : null}
       </div>
+      {file.status !== "error" ? (
+        <DocumentChangeRows
+          view={{ ...view, items, locked: view.locked || dock.generating }}
+          touch={touch}
+          onSelect={(change) => dock.review(file, change)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -247,7 +255,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center justify-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+      className="focus-ring inline-flex h-5 shrink-0 items-center justify-center rounded-sm bg-primary px-2 @max-[25rem]/dock:px-1 text-caption @max-[20rem]/dock:[font-size:12px] font-semibold text-primary-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       <Trans>Review</Trans>
     </button>
@@ -269,7 +277,7 @@ function QuietButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 @max-[25rem]/dock:px-1 @max-[20rem]/dock:px-0 text-ink-muted hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       {children}
     </button>

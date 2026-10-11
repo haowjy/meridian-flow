@@ -201,10 +201,11 @@ and inspect the surfaces.
 
 1. Open Pacing pass. PASS: the strip shows Chapter A and only this chat's shared
    change, not Lore pass's separate shield change or Chapter B. Summary and
-   controls share one line without notes. Counts appear once previews arrive.
+   controls share one line without notes. Counts appear once previews arrive,
+   except narrow docks hide the count to keep the filename readable.
 2. Choose Review. PASS: the Editor opens on the shared change, while its marks,
    stepper and document list still show the whole document's changes. The shared
-   row names both chats; each name opens that chat beside the review at its own
+   focused bar names both chats (overflow names are in +N); each name opens that chat beside the review at its own
    producing turn (the chat sheet on the phone), without changing destination.
 3. From a fresh fixture, Apply on Pacing pass's strip. PASS: the whole shared
    change reaches live (`sabre`), while `shield` and Chapter B's `spear` stay
@@ -212,7 +213,9 @@ and inspect the surfaces.
    and repeat with Discard: the shared change leaves both strips, live keeps
    `sword`, and Lore pass's separate changes remain. No command navigates.
 4. Open Lore pass before disposition. PASS: the strip shows Chapter A and B;
-   expanding reveals each file on one line. Discard asks "Discard this
+   expanding groups this chat’s changes under one-line file headers. Each
+   change uses the shared Work row with its own Apply/Discard. Single-file
+   strips also expand. Discard asks "Discard this
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
    only Lore pass's changes, including the shared class.
 5. Open Dialogue pass. Once loaded, its new document is one change with Apply,
@@ -457,3 +460,18 @@ An Apply right after Discard of a new document in the same Work can return 500
 ([#753](https://github.com/haowjy/meridian-flow/issues/753)). It is a server
 authoring defect, not a review-follows-document failure: use a fresh Work for
 Apply cases that follow a new-document Discard, and record the 500 if you hit it.
+
+## Compact review checks
+
+- Existing previews containing an incomplete class keep selective controls on
+  complete classes. The incomplete row/bar has no commands or explanation;
+  the strip skips it, while whole-header commands cover it.
+- Document lists show excerpt and controls only. Work rows retain whole chat
+  names at wide widths and hide attribution at narrow container widths.
+- Focused bars never abbreviate a chat name. +N opens the remaining chat links,
+  including their producing-turn targets. Check desktop and phone.
+- With the 320px dock open, and at narrower editor widths, the bar and both
+  commands stay within the manuscript pane (under-change placement when needed).
+- A one-change review has a list button but no stepper.
+- Before screenshot capture, assert the intended surface is visible, no
+  Loading project text or Saved locally (offline) pill, and navigator.onLine.

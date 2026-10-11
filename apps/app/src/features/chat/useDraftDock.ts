@@ -12,6 +12,7 @@ import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewChange } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -67,8 +68,8 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
-    (file: DockFile) => {
-      openReviewFile(file.row, workId, file.changes[0]?.operationIds);
+    (file: DockFile, change?: ReviewChange) => {
+      openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
     },
     [openReviewFile, workId],
   );
@@ -106,6 +107,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   return {
     generating,
+    controller,
     files,
     mounted: files.length > 0,
     changeCount: totalChanges(files),

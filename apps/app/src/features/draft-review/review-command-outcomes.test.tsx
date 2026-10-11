@@ -286,7 +286,7 @@ const loose = {
   deletedText: "Alpha",
   deletedSpans: [],
 };
-it("unowned hunks fold into a whole-draft item and still prevent selective completion", async () => {
+it("unowned hunks retain selective commands on complete classes and prevent selective completion", async () => {
   fixture.network.getDraftPreview.mockResolvedValue({
     ...previewOf("1"),
     hunks: [
@@ -304,11 +304,16 @@ it("unowned hunks fold into a whole-draft item and still prevent selective compl
   fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
-    expect(p().header.view.items).toHaveLength(1);
-    expect(p().header.view.items[0].change.wholeDraft).toBe(true);
+    expect(p().header.view.items).toHaveLength(2);
+    const complete = p().header.view.items.find(({ change }) => change.actionable);
+    expect(complete?.change.wholeDraft).toBeUndefined();
+    expect(
+      p().header.view.items.find(({ change }) => !change.actionable)?.change.attribution.kind,
+    ).toBe("unattributed");
+    if (!complete) throw new Error("missing selective change");
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().presented.controller.applyChanges(draftA, change("1"));
+      done = p().header.view.apply(complete.change);
     });
     expect(p().header.view.items.map(({ change }) => change.attribution.kind)).toEqual([
       "unattributed",
@@ -329,6 +334,35 @@ it("unowned hunks fold into a whole-draft item and still prevent selective compl
     expect(p().header.finished).toBe(false);
     expect(p().header.unlisted).toBe(false);
     expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
+  });
+});
+
+it("an incomplete class leaves neighboring classes selectively actionable", async () => {
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    operations: [operation("1"), { ...operation("2"), canApplyOrDiscard: false }],
+  });
+  fixture.network.applyDraftChanges.mockReturnValueOnce(new Promise(() => {}));
+  await fixture.render(async (p) => {
+    await open(p);
+    const items = p().header.view.items;
+    expect(
+      items.map(({ change }) => [change.classId, change.actionable, change.wholeDraft]),
+    ).toEqual([
+      ["class-1", true, undefined],
+      ["class-2", false, undefined],
+    ]);
+    await act(async () => {
+      void p().header.view.apply(items[0].change);
+    });
+    expect(fixture.network.applyDraftChanges).toHaveBeenCalledWith(
+      "project-a",
+      "work-a",
+      "document-a",
+      expect.objectContaining({ operationIds: ["1"] }),
+    );
+    expect(fixture.network.applyDraft).not.toHaveBeenCalled();
+    expect(ids(p())).toEqual(["class-2"]);
   });
 });
 

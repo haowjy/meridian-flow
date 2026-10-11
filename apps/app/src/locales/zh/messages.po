@@ -2516,6 +2516,10 @@ msgstr ""
 msgid "More"
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "More chats"
+msgstr ""
+
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "More chats couldn't load."
 msgstr ""

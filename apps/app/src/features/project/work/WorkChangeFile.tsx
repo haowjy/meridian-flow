@@ -106,6 +106,7 @@ function FileChanges({
 }) {
   return (
     <DocumentChangeRows
+      showAttribution
       view={view}
       touch={touch}
       onSelect={(change) => onSelect(change.operationIds)}

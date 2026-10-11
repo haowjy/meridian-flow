@@ -182,11 +182,14 @@ for the lifecycle, execution, preview, and projection contracts.
 lists the Work's drafts whose `actorThreads` name the chat, reads each one's
 preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
 chat. A chat with none shows no strip. Apply and Discard send the union of this
-chat's complete classes per file; new documents and incomplete-attribution
-previews are one whole-draft item using existing whole commands. Creation-bound
+chat's complete classes per file; only new documents
+are one whole-draft item using existing whole commands. Creation-bound
 Work batches hide every queued item at the click; failure restores its file.
-Summary, count and commands share one row, truncating the name first. Expanded
-file rows share one line each. There are no notes or Work-page footer; Work-wide
+Summary and commands share one row. Narrow strips hide the count before
+truncating the name, which has a readable width floor. Expanded
+file headers share one line each; expansion shows this chat’s changes through
+the same DocumentChangeRows used by Work Files, without per-file counts.
+There are no notes or Work-page footer; Work-wide
 lists and Apply all remain on the Work page. Coarse-pointer targets stay 44px.
 
 ## Transcript viewport (TurnList)

@@ -1,6 +1,6 @@
 /**
  * review-changes — the writer's list of changes under review, one per server
- * closure class or one whole-draft item when selective commands cannot act, in document order.
+ * closure class or one whole-draft item for a new document, in document order.
  *
  * The server owns the class partition (dependency-closed sets of operations
  * that publish or discard together); this module only groups by the required
@@ -142,12 +142,8 @@ export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewC
   let changes = changesOfPreview.get(preview);
   if (!changes) {
     changes = reviewChanges(preview.operations, preview.hunks);
-    // Incomplete attribution cannot be safely split. Like a new document,
-    // present the entire draft as one change backed by whole-draft commands.
-    if (
-      changes.length > 0 &&
-      (preview.isNewDocument || changes.some((change) => !change.actionable))
-    ) {
+    // A draft-only document has no live target for selective commands.
+    if (changes.length > 0 && preview.isNewDocument) {
       const first = changes[0];
       const attribution = preview.operations.length
         ? changeAttribution(preview.operations)

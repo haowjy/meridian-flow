@@ -7,6 +7,7 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import {
@@ -56,6 +57,12 @@ const op = (id: string, actor: typeof pacing | null, classId = `class-${id}`) =>
     : { kind: "writer" as const }),
 });
 function Strip() {
+  window.matchMedia = () =>
+    ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }) as unknown as MediaQueryList;
   return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: false })} />;
 }
 const strip = () => document.querySelector<HTMLElement>("[data-draft-dock]");
@@ -134,9 +141,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
         },
       ]);
       await settleReact(() =>
-        expect(text()).toContain(
-          "This chat's changes in chapter-12 were updated. Check them and apply again.",
-        ),
+        expect(text()).toContain("This change was updated. Check it and apply again."),
       );
       expect(text()).toContain("2 changes");
       expect(text()).not.toContain("chapter-14");
@@ -186,7 +191,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-            {children}
+            <TooltipProvider>{children}</TooltipProvider>
           </ProjectNavigationProvider>
         </I18nProvider>
       ),
@@ -194,7 +199,15 @@ it("hides the queued chat batch, restores only the refused file, then discards i
   );
 });
 
-it.each(["Apply", "Discard"])("the strip's new document dispatches whole %s", async (label) => {
+it.each([
+  { label: "Apply", expanded: false },
+  { label: "Discard", expanded: false },
+  { label: "Apply", expanded: true },
+  { label: "Discard", expanded: true },
+])("the strip's new document dispatches whole $label (expanded: $expanded)", async ({
+  label,
+  expanded,
+}) => {
   const file = { ...draft("new-scene", [pacing]), isNewDocument: true };
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
@@ -211,7 +224,21 @@ it.each(["Apply", "Discard"])("the strip's new document dispatches whole %s", as
   await fixture.render(
     async () => {
       await settleReact(() => expect(text()).toContain("1 change"));
-      await click(label);
+      if (expanded) {
+        await act(async () =>
+          document.querySelector<HTMLButtonElement>('[aria-label="Expand changes"]')?.click(),
+        );
+        await settleReact(() =>
+          expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
+        );
+        await act(async () =>
+          document
+            .querySelector<HTMLButtonElement>(
+              `[data-review-change-row] button[aria-label="${label}"]`,
+            )
+            ?.click(),
+        );
+      } else await click(label);
       expect(request).toHaveBeenCalledWith("project-a", "work-a", "new-scene", {
         draftId: file.draftId,
       });
@@ -222,7 +249,7 @@ it.each(["Apply", "Discard"])("the strip's new document dispatches whole %s", as
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-            {children}
+            <TooltipProvider>{children}</TooltipProvider>
           </ProjectNavigationProvider>
         </I18nProvider>
       ),
