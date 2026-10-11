@@ -6,6 +6,7 @@ import type { CreationAgent, CreationChoices } from "@/features/agents/creation-
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { sendProjectChat } from "@/lib/send-project-chat";
+import { rememberSubmissionRow } from "./useChatSubmissions";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 export function useCreationComposer(projectId: string) {
@@ -37,6 +38,8 @@ export function useCreationComposer(projectId: string) {
           agent: context.agent,
           workId: context.workId,
           threadActions,
+          rememberRow: (recordId, threadId, turnId) =>
+            rememberSubmissionRow(accountId, recordId, threadId, turnId, true),
           selectChat: (threadId) => {
             draft.handoff();
             acceptCreatedChat(threadId);

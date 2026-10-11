@@ -13,7 +13,7 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { makeOptimisticThread } from "@/lib/send-project-chat";
+import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import type { InheritedView } from "./inherited-view";
 
 export type DerivationKind = "fork" | "handoff";

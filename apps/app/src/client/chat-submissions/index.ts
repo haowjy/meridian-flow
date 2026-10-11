@@ -5,7 +5,6 @@
  * is not the current bind is refused, so a late callback cannot leak a row or
  * retire another account's unresolved intent.
  */
-import { composerSessionDraft } from "@/client/composer-drafts";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -65,26 +64,6 @@ export function readChatSubmission(accountId: string, submissionId: string): Cha
     : null;
 }
 
-/** A rejected witness is durable, but no longer awaits admission lookup or replay. */
-export function readUnresolvedSubmission(
-  accountId: string,
-  submissionId: string,
-): ChatSubmission | null {
-  const entry = readChatSubmission(accountId, submissionId);
-  return entry?.state === "rejected" ? null : entry;
-}
-
-export function readFirstSendSubmission(
-  accountId: string,
-  threadId: string,
-): ChatSubmission | null {
-  return (
-    readChatSubmissions(accountId).find(
-      (entry) => Boolean(entry.creation) && entry.threadId === threadId,
-    ) ?? null
-  );
-}
-
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
   return browserJournal()?.record(accountId, entry) ?? false;
 }
@@ -97,7 +76,7 @@ export function retireChatSubmission(
   return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
 }
 
-/** One settlement owner, independent of mounted panes. Transfer words before retiring the witness. */
+/** Accepted records retire; proved refusals remain durable writer rows. */
 export function settleChatSubmission(
   accountId: string,
   submissionId: string,
@@ -108,13 +87,7 @@ export function settleChatSubmission(
   if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
   const entry = current.entries().find((entry) => entry.submissionId === submissionId) ?? null;
   if (!entry) return false;
-  if (!entry.creation) {
-    const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
-    if (outcome === "rejected") {
-      if (!entry.draft || !owner.restoreRejected(entry.draft))
-        return current.record(accountId, { ...entry, state: "rejected" });
-    } else if (entry.draft && !owner.acceptSubmitted()) return false;
-  }
+  if (outcome === "rejected") return current.record(accountId, { ...entry, state: "rejected" });
   return current.retire(accountId, entry.recordId, expectedEpoch);
 }
 
@@ -129,5 +102,11 @@ export function isThreadAwaitingCreation(
   threadId: string | null | undefined,
   pendingCreation = false,
 ): boolean {
-  return Boolean(threadId && (pendingCreation || readFirstSendSubmission(accountId, threadId)));
+  return Boolean(
+    threadId &&
+      (pendingCreation ||
+        readChatSubmissions(accountId).some(
+          (entry) => entry.threadId === threadId && entry.creation,
+        )),
+  );
 }

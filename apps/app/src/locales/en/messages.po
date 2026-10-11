@@ -787,8 +787,8 @@ msgstr "Chats in this Work share its goal and scratch files."
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr "Check submission status"
+#~ msgid "Check submission status"
+#~ msgstr "Check submission status"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1342,7 +1342,6 @@ msgstr "Couldn't send a message to {line}"
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
@@ -3481,8 +3480,8 @@ msgstr "Start a Work"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr "Start over"
+#~ msgid "Start over"
+#~ msgstr "Start over"
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"

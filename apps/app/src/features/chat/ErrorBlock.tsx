@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * - `send` → the writer's message was never admitted (failed first send).
  * - `generation` → the message was admitted and the reply failed, with or
  *   without partial output.
  * - `retry` → a failed reply's Retry never reached the server; this is its
@@ -16,7 +15,7 @@ import { cn } from "@/lib/utils";
  * - `provider-declined` → the AI provider turned the request down and the
  *   server judged a retry futile.
  */
-export type ErrorBlockKind = "send" | "generation" | "retry" | "provider-declined";
+export type ErrorBlockKind = "generation" | "retry" | "provider-declined";
 
 export type ErrorBlockProps = {
   /**
@@ -38,8 +37,6 @@ export type ErrorBlockProps = {
 /** One quiet sentence per kind; reads on its own in history, no status prefix. */
 function copy(kind: ErrorBlockKind, current: boolean): string {
   switch (kind) {
-    case "send":
-      return t`Couldn't send.`;
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
     case "provider-declined":

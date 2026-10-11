@@ -48,7 +48,6 @@ import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type {
   EnsureAssistantTurnOptions,
   LiveTurnMeta,
-  PendingStreamStart,
   ThreadStoreActions,
   ThreadStoreState,
   TurnStatusPatch,
@@ -63,8 +62,6 @@ type ThreadStoreSliceState = ThreadStoreState & {
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
   durableBlockCursorByThread: Record<string, string>;
-  handoffPendingThreadIds: Record<string, true>;
-  pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
   /** Monotonic order for the newest-pending error correlation. */
@@ -220,7 +217,6 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
-    markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
@@ -233,8 +229,6 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
     applyThreadSnapshot: state.applyThreadSnapshot,
-    markPendingStream: state.markPendingStream,
-    consumePendingStream: state.consumePendingStream,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
     interruptResponseFor: state.interruptResponseFor,
@@ -257,8 +251,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         snapshotNextSeqFloorByThread: {},
         durableBlockCursorByThread: {},
         liveMeta: {},
-        handoffPendingThreadIds: {},
-        pendingStreamByThreadId: {},
         pendingCreation: { threadIds: {} },
         interruptResponses: {},
         interruptResponseCounter: 0,
@@ -281,12 +273,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               ? state
               : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
           );
-        },
-
-        markHandoffPending(threadId) {
-          set((state) => ({
-            handoffPendingThreadIds: { ...state.handoffPendingThreadIds, [threadId]: true },
-          }));
         },
 
         appendUserTurn(threadId, blocks) {
@@ -459,10 +445,14 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (turnIndex < 0) return state;
 
             const definedPatch = definedTurnStatusPatch(patch);
-            threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
             const nextTurns = turns.map((turn, index) =>
               index === turnIndex ? { ...turn, ...definedPatch, status } : turn,
             );
+            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
+            if (turns[turnIndex]?.role === "user" && isOptimisticTurnId(turnId)) {
+              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+            }
+            threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
             if (!isTerminalTurnStatus(status)) {
               return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
             }
@@ -571,30 +561,9 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           const threadId = thread.id;
           const { nextSeq, lifecycle } = options;
           if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
-          const handoffPending = Boolean(get().handoffPendingThreadIds[threadId]);
-          const keepLocalTurns = handoffPending && serverTurns.length === 0;
-
           threadCache.upsertThread(thread, lifecycle);
-          if (!keepLocalTurns) {
-            clearPendingInterruptPatchesForThread(threadId);
-          }
-
+          clearPendingInterruptPatchesForThread(threadId);
           set((state) => {
-            const handoffPendingThreadIds = { ...state.handoffPendingThreadIds };
-            if (!keepLocalTurns) {
-              delete handoffPendingThreadIds[threadId];
-            }
-
-            if (keepLocalTurns) {
-              return {
-                handoffPendingThreadIds,
-                snapshotNextSeqFloorByThread: {
-                  ...state.snapshotNextSeqFloorByThread,
-                  [threadId]: nextSeq,
-                },
-              };
-            }
-
             const localTurns = state.turnsByThread[threadId] ?? [];
             const runningTurnId = lifecycle.runningTurnId;
             const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
@@ -602,7 +571,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             });
 
             const nextState: Partial<ThreadStoreSliceState> = {
-              handoffPendingThreadIds,
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
 
@@ -641,27 +609,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return nextState;
           });
           return true;
-        },
-
-        markPendingStream(threadId, start) {
-          set((state) => ({
-            pendingStreamByThreadId: {
-              ...state.pendingStreamByThreadId,
-              [threadId]: start ?? {},
-            },
-          }));
-        },
-
-        /** One-shot read-and-remove of pending stream metadata. */
-        consumePendingStream(threadId) {
-          const pending = get().pendingStreamByThreadId[threadId];
-          if (!pending) return null;
-          set((state) => {
-            const { [threadId]: _removed, ...pendingStreamByThreadId } =
-              state.pendingStreamByThreadId;
-            return { pendingStreamByThreadId };
-          });
-          return pending;
         },
 
         markPendingCreation({ threadId }) {

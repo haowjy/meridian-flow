@@ -68,7 +68,7 @@ export type ChatNavigation = {
   /** The Chat screen: the current chat, or the index when there is none. */
   showChatScreen: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
   /** The Chat screen's index; in the dock, an empty composer. */
-  openNewChat: (workId?: string) => Promise<void>;
+  openNewChat: (workId?: string, options?: { replace?: boolean }) => Promise<void>;
   openChatIndex: () => Promise<void>;
   /** Open the dock, showing the chat or the document it holds. */
   revealDock: (view: DockReveal) => void;
@@ -167,8 +167,11 @@ export function useProjectChatNavigation({
       openChatIndex,
       revealDock: (view: DockReveal) => channels.dockReveal.request(view),
       showChatScreen,
-      openNewChat: async (workId?: string) => {
-        if (onChatScreen()) return openChatIndex();
+      openNewChat: async (workId?: string, options?: { replace?: boolean }) => {
+        if (onChatScreen()) {
+          await go({ kind: "chat-index" }, { replace: options?.replace ?? false });
+          return;
+        }
         remember(null);
         channels.dockReveal.request("chat");
         setNewChatRequest({

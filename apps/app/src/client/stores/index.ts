@@ -50,4 +50,4 @@ export {
   useThreadActions,
   useThreadStore,
 } from "./thread-store/thread-store";
-export type { PendingStreamStart, ThreadStoreActions } from "./thread-store/types";
+export type { ThreadStoreActions } from "./thread-store/types";
