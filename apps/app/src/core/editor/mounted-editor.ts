@@ -14,6 +14,7 @@
  */
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
+import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentNameStore } from "./agent-name-store";
@@ -23,6 +24,7 @@ import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
 import { gateCaretPresence } from "./local-presence";
+import { markEditorTarget } from "./reading-position-navigation";
 
 type EditorMountBase = {
   documentId: string;
@@ -194,8 +196,13 @@ export function useMountedEditor({
       () => new Editor(construction.initialOptions),
       construction.evidenceDegraded,
     );
+    const targetScroll = ({ transaction }: { transaction: Transaction }) => {
+      if (transaction.scrolledIntoView) markEditorTarget(mounted);
+    };
+    mounted.on("transaction", targetScroll);
     setEditor(mounted);
     return () => {
+      mounted.off("transaction", targetScroll);
       release();
       if (!mounted.isDestroyed) mounted.destroy();
     };

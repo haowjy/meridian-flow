@@ -140,6 +140,7 @@ it("persists and admits the real New action without an empty working-set route",
   });
   localStorage.clear();
   const writes: Array<{ key: string; value: string }> = [];
+  let restoreTabStorage = () => {};
   const originalSetItem = Storage.prototype.setItem;
   const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
     this: Storage,
@@ -221,6 +222,18 @@ it("persists and admits the real New action without an empty working-set route",
 
   try {
     await withReactRoot(<Harness />, async () => {
+      // The harness creates a new window; its sessionStorage has its own realm.
+      const tabStoragePrototype = Object.getPrototypeOf(window.sessionStorage) as Storage;
+      const tabSetItem = tabStoragePrototype.setItem;
+      const tabSpy = vi.spyOn(tabStoragePrototype, "setItem").mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string,
+      ) {
+        writes.push({ key, value });
+        return tabSetItem.call(this, key, value);
+      });
+      restoreTabStorage = () => tabSpy.mockRestore();
       let opening: Promise<void> | undefined;
       await act(async () => {
         opening = Promise.resolve(viewerProps?.onNewDocument());
@@ -247,10 +260,10 @@ it("persists and admits the real New action without an empty working-set route",
         .map((write) => JSON.parse(write.value));
       expect(workspaceWrites.length).toBeGreaterThan(0);
       expect(workspaceWrites.every((workspace) => workspace.version === 1)).toBe(true);
-      expect(workspaceWrites.at(-1)?.projects.project).toMatchObject({
+      expect(workspaceWrites.at(-1)?.payload.project).toMatchObject({
         selectedTabIdByWork: { "work-a": local?.documentId },
       });
-      expect(workspaceWrites.at(-1)?.projects.project.tabs).toEqual(
+      expect(workspaceWrites.at(-1)?.payload.project.tabs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "new",
@@ -268,6 +281,7 @@ it("persists and admits the real New action without an empty working-set route",
     await resources?.finishClose();
     localStorage.clear();
     await rehydrateEditorWorkspace(`cleanup-${crypto.randomUUID()}`);
+    restoreTabStorage();
     setItem.mockRestore();
     Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
     vi.unstubAllGlobals();

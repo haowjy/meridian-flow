@@ -62,24 +62,5 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         return row.id as UserId;
       });
     },
-
-    async getWorkingSetSyncEnabled(userId: UserId): Promise<boolean> {
-      const [row] = await db
-        .select({ enabled: users.workingSetSyncEnabled })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      return row?.enabled ?? true;
-    },
-
-    async updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean> {
-      const [row] = await db
-        .update(users)
-        .set({ workingSetSyncEnabled: enabled, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, userId))
-        .returning({ enabled: users.workingSetSyncEnabled });
-      if (!row) throw new Error("User settings update did not find the authenticated user");
-      return row.enabled;
-    },
   };
 }

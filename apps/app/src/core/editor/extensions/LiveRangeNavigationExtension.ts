@@ -1,8 +1,10 @@
 /** Imperative, temporary highlighting for a validated Yjs trail range or deletion boundary. */
+
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type * as Y from "yjs";
+import { markEditorTarget } from "../reading-position-navigation";
 import {
   relativePositionRuntimeFromState,
   resolveRelativeRange,
@@ -33,6 +35,7 @@ export function relativeRangeToEditorPositions(
 }
 
 function scrollHighlight(editor: Editor): void {
+  markEditorTarget(editor);
   requestAnimationFrame(() => {
     editor.view.dom
       .querySelector<HTMLElement>("[data-live-range-navigation]")
