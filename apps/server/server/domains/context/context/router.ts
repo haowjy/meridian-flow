@@ -212,7 +212,8 @@ async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
-    if (error instanceof ContextEntryConflictError) return Err({ code: "conflict", uri });
+    if (error instanceof ContextEntryConflictError)
+      return Err({ code: "conflict", uri, occupantKind: error.occupantKind });
     return Err({
       code: "io_error",
       uri,

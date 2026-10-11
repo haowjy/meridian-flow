@@ -55,6 +55,7 @@ import type {
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
+import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 import type {
   ContextCreateUntitledDocumentOptions,
   ContextListOptions,
@@ -325,13 +326,15 @@ export class ContextFS implements ContextSchemeAdapter {
           return input.content.markdown;
         },
       });
-      if (!created.created) return Err({ code: "conflict" });
+      if (!created.created) return Err({ code: "conflict", occupantKind: "file" });
       if (!document) {
         return Err({ code: "io_error", message: "Created document identity was not returned" });
       }
       return Ok({ document, markdown: created.value });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
+      if (error instanceof ContextEntryConflictError)
+        return Err({ code: "conflict", occupantKind: error.occupantKind });
       throw error;
     }
   }
@@ -370,6 +373,8 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok(undefined);
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
+      if (error instanceof ContextEntryConflictError)
+        return Err({ code: "conflict", occupantKind: error.occupantKind });
       throw error;
     }
   }
@@ -604,7 +609,7 @@ export class ContextFS implements ContextSchemeAdapter {
         const repaired = await this.repairTrackedDocument(existing);
         if (!repaired.ok) return repaired;
       }
-      return Err({ code: "conflict" });
+      return Err({ code: "conflict", occupantKind: "file" });
     }
     const created = await this.createTrackedDocumentAtomically({
       id: options?.documentId,
@@ -1042,7 +1047,10 @@ export class ContextFS implements ContextSchemeAdapter {
       case "stale_target":
         return { code: "stale_target" };
       case "conflict":
-        return { code: "conflict" };
+        return {
+          code: "conflict",
+          ...(error.occupantKind ? { occupantKind: error.occupantKind } : {}),
+        };
       case "invalid_operation":
       case "not_found":
         return { code: "invalid_operation" };

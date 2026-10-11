@@ -61,7 +61,7 @@ export type AdapterFault =
   | { code: "invalid_name"; message: string }
   | { code: "not_found" }
   | { code: "permission_denied" }
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string }

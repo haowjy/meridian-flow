@@ -175,8 +175,9 @@ if (!RUN) {
         await scopes.within({ documentId: HOLDER }, async () => {
           await scopes.prepare({ holders: [{ documentId: HOLDER, view: LIVE }], addresses });
           expect(
-            scopes.holder({ documentId: HOLDER, view: LIVE }).documentFor(addresses[0]!)
-              ?.documentId,
+            scopes
+              .holder({ documentId: HOLDER, view: LIVE })
+              .documentFor("manuscript://part1/config.json")?.documentId,
           ).toBe(TARGET);
         });
       }

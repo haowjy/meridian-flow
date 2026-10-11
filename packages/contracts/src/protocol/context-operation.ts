@@ -10,7 +10,7 @@ export type ContextError =
   | { code: "invalid_name"; uri: string; message: string }
   | { code: "not_found"; uri: string }
   | { code: "permission_denied"; uri: string }
-  | { code: "conflict"; uri: string }
+  | { code: "conflict"; uri: string; occupantKind?: "file" | "folder" }
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
