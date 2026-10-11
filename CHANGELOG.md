@@ -4,9 +4,9 @@
 
 ### Changed
 
-- Editing a failed chat message focuses the message box you used, and closing another pane no longer interrupts its recovery.
-
-- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
+- A chat message that fails to send says "Couldn't send." on the message itself, with Retry, and Edit when the server refused it, the same way in new chats, existing chats, the side panel and on phones. Retry never sends a message twice, and a refused message stays in the chat until you retry or edit it.
+- The message box clears as soon as you press Send.
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.
 - Reloading keeps the document and view you had open in the side panel.
@@ -51,6 +51,8 @@
 - The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
+
+- A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
 
 - Passage jumps stay visible when you return to an already-open Editor tab.
 
