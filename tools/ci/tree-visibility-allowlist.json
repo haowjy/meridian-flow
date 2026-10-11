@@ -41,11 +41,6 @@
       "reason": "Rows the Work cascade deleted, by deleted_by_work_id: history of Work-owned sources"
     },
     {
-      "path": "apps/server/server/domains/collab/adapters/drizzle-branches.ts",
-      "forms": ["read"],
-      "reason": "Branch ownership by id (draftable source)"
-    },
-    {
       "path": "apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts",
       "forms": ["read"],
       "reason": "Yjs engine: a document's schema by id for a live or branch room the caller already holds; grants nothing"

@@ -5,7 +5,8 @@
  * verbs, the link resolve route's answer among them, live in `draft-tree-commands.ts`.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources.
+ * the other project sources, or `user://` for the account's personal source (in its
+ * personal project, shared by every world of the account).
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -31,6 +32,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { and, eq } from "drizzle-orm";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -43,7 +45,7 @@ import { insertDocumentRow, insertFolder } from "../domains/context/tree/node-ro
 import { ensureLiveFolderPath, walkFolders } from "../domains/context/tree/placement.js";
 import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 
-export type ScenarioSource = "manuscript" | "kb" | "unfiled";
+export type ScenarioSource = "manuscript" | "kb" | "unfiled" | "user";
 
 export type ScenarioWork = {
   id: WorkId;
@@ -56,7 +58,13 @@ export type ScenarioWork = {
 export interface DraftTreeWorld {
   /** The database the world lives in. */
   db: Database;
-  project: { id: ProjectId; userId: UserId; sources: Record<ScenarioSource, ContextSourceId> };
+  project: {
+    id: ProjectId;
+    userId: UserId;
+    /** The account's personal project, where `user://` lives. */
+    personalId: ProjectId;
+    sources: Record<ScenarioSource, ContextSourceId>;
+  };
   /** The production drafts resolver over this scenario's database. */
   drafts: Drafts;
   /** Every Work this world made, in order. */
@@ -90,11 +98,11 @@ export interface DraftTreeWorld {
   seedHolderBinding(aheadId: string, holder: DocumentId, documentId: DocumentId): Promise<void>;
 }
 
-const SOURCES: readonly ScenarioSource[] = ["manuscript", "kb", "unfiled"];
+const SOURCES = ["manuscript", "kb", "unfiled"] as const;
 
 /** A source-qualified scenario path's scheme and source-relative path. */
 export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } {
-  const match = /^(kb|unfiled|manuscript):\/\/(.*)$/.exec(path);
+  const match = /^(kb|unfiled|manuscript|user):\/\/(.*)$/.exec(path);
   return { scheme: (match?.[1] ?? "manuscript") as ScenarioSource, rel: match?.[2] ?? path };
 }
 
@@ -105,13 +113,47 @@ function splitFilename(filename: string) {
     : { name: filename.slice(0, dot), extension: filename.slice(dot + 1) };
 }
 
-export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
-  const userId = randomUUID() as UserId;
+/** The account's personal project and its `user://` source, made once per account. */
+async function personalUserSource(db: Database, userId: UserId) {
+  const [existing] = await db
+    .select({ projectId: projects.id, sourceId: contextSources.id })
+    .from(projects)
+    .innerJoin(
+      contextSources,
+      and(eq(contextSources.projectId, projects.id), eq(contextSources.slug, "user")),
+    )
+    .where(and(eq(projects.userId, userId), eq(projects.isPersonal, true)))
+    .limit(1);
+  if (existing) return existing;
+  const personalId = randomUUID() as ProjectId;
+  await db.insert(projects).values({
+    id: personalId,
+    userId,
+    name: "User Files",
+    slug: `user-files-${personalId.slice(0, 8)}`,
+    isPersonal: true,
+  });
+  const [source] = await db
+    .insert(contextSources)
+    .values({ projectId: personalId, name: "User Files", slug: "user" })
+    .returning({ id: contextSources.id });
+  if (!source) throw new Error("The user source was not inserted");
+  return { projectId: personalId, sourceId: source.id };
+}
+
+/** A world in a new account, or another project of `options.account`'s. */
+export async function draftTreeWorld(
+  db: Database,
+  options: { account?: UserId } = {},
+): Promise<DraftTreeWorld> {
+  const userId = options.account ?? (randomUUID() as UserId);
   const projectId = randomUUID() as ProjectId;
-  // One user per scenario, so a case may build several.
-  await db
-    .insert(users)
-    .values(conformanceUserValues(userId, `draft-tree-scenario-${userId.slice(0, 8)}`));
+  // One user per scenario unless shared, so a case may build several.
+  if (!options.account) {
+    await db
+      .insert(users)
+      .values(conformanceUserValues(userId, `draft-tree-scenario-${userId.slice(0, 8)}`));
+  }
   await db.insert(projects).values({
     id: projectId,
     userId,
@@ -124,7 +166,7 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
     name: "No Work",
     isNoWork: true,
   });
-  const sources = Object.fromEntries(
+  const projectSources = Object.fromEntries(
     await Promise.all(
       SOURCES.map(async (slug, index) => {
         const [row] = await db
@@ -141,7 +183,12 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
         return [slug, row.id] as const;
       }),
     ),
-  ) as Record<ScenarioSource, ContextSourceId>;
+  ) as Record<(typeof SOURCES)[number], ContextSourceId>;
+  const personal = await personalUserSource(db, userId);
+  const sources: Record<ScenarioSource, ContextSourceId> = {
+    ...projectSources,
+    user: personal.sourceId,
+  };
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
     boundary: createDrizzleDraftWriteBoundary(db),
@@ -215,7 +262,7 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
 
   return {
     db,
-    project: { id: projectId, userId, sources },
+    project: { id: projectId, userId, personalId: personal.projectId, sources },
     drafts,
     works: () => madeWorks,
     async work(name, mode) {

@@ -24,6 +24,7 @@ import {
 } from "../../collab/adapters/drizzle-drafts.js";
 import { createDrafts } from "../../collab/domain/drafts.js";
 import { lineageHasLiveMember } from "../../context/index.js";
+import { draftMayHold, type SourceOwner } from "../../context/tree/draft-ownership.js";
 import {
   createTreeReader,
   identityDocuments,
@@ -37,6 +38,8 @@ const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, 
 type WorkRow = {
   id: WorkId;
   projectId: ProjectId;
+  /** The account that owns the Work's project: its draft's holder (`draftMayHold`). */
+  accountId: UserId;
   slug: string | null;
   isNoWork: boolean;
   archivedAt: Date | null;
@@ -64,8 +67,8 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
     const facts: FileFacts = { ...base, target };
     if (draftWorkId === undefined) return facts;
     const draftWork = await readWork(db, draftWorkId);
-    // A Work's draft of another project's document doesn't exist.
-    if (draftWork && draftWork.projectId !== facts.projectId) return null;
+    // A Work's draft of a document it may not hold doesn't exist.
+    if (draftWork && !draftMayHold(draftWork, ownerOf(facts))) return null;
     return { ...facts, draftWork: draftWork ? workFacts(draftWork) : missingWork(draftWorkId) };
   }
 
@@ -104,7 +107,7 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
             out.set(documentId, base);
             continue;
           }
-          if (draftRow && draftRow.projectId !== base.projectId) continue;
+          if (draftRow && !draftMayHold(draftRow, ownerOf(base))) continue;
           out.set(documentId, {
             ...base,
             draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
@@ -117,6 +120,10 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
 }
 
 type BaseFacts = Omit<FileFacts, "target" | "draftWork">;
+
+function ownerOf(facts: BaseFacts): SourceOwner {
+  return { projectId: facts.projectId, accountId: facts.ownerAccountId, scheme: facts.scheme };
+}
 
 function documentRows(db: Database, view: TreeView) {
   const documents = identityDocuments(view);
@@ -267,18 +274,22 @@ async function readWork(db: Database, workId: WorkId): Promise<WorkRow | null> {
     .select({
       id: works.id,
       projectId: works.projectId,
+      accountId: projects.userId,
       slug: works.slug,
       isNoWork: works.isNoWork,
       archivedAt: works.archivedAt,
       deletedAt: works.deletedAt,
     })
     .from(works)
+    .innerJoin(projects, eq(projects.id, works.projectId))
     .where(eq(works.id, workId))
     .limit(1);
   return row ?? null;
 }
 
-function workFacts(row: WorkRow): FileWorkFacts {
+function workFacts(
+  row: Pick<WorkRow, "id" | "slug" | "isNoWork" | "archivedAt" | "deletedAt">,
+): FileWorkFacts {
   return {
     id: row.id,
     slug: row.slug,

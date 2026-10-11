@@ -742,6 +742,11 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {
       const s = await bareSubject();
       const hidden = await s.scenario.model(s.ascension).create("chapter-1.md", "Drafted.");
+      // The scenario's project stands in for the personal one the world seeded for user://.
+      await db
+        .update(projects)
+        .set({ isPersonal: false })
+        .where(eq(projects.id, s.scenario.project.personalId));
       await db.update(projects).set({ isPersonal: true }).where(eq(projects.id, s.projectId));
       const bootstrap = await s.runtime.ports.projects.ensureDefaultBootstrap(s.userId);
       expect(bootstrap.documentId).not.toBe(hidden);

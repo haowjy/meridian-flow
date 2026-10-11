@@ -16,6 +16,7 @@ import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
+import { draftMayHold, loadProjectHolder } from "./draft-ownership.js";
 import { recordCreated } from "./draft-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
@@ -39,6 +40,7 @@ import {
   findHiddenFolder,
   loadHiddenDocumentCandidates,
   loadRevealIdentityRow,
+  type RevealIdentityRow,
 } from "./tree-view-sql.js";
 
 // ---------------------------------------------------------------------------------------
@@ -202,22 +204,27 @@ export async function findLiveCreateCandidate(
 
 /**
  * A caller-named identity as a live create may use it (§6.4). A hidden document is usable
- * only when its row is in `projectId` and an active draft of that project uses it: that
- * draft view is the authority a project's owner reveals it under. The source is the row's
- * physical one, never a draft's address for it. No locks.
+ * only when `projectId`'s drafts may hold it (`draftMayHold`) and an active draft uses it:
+ * that draft's view is the authority the account reveals it under. The source is the
+ * row's physical one, never a draft's address for it. No locks.
  */
 export async function findRevealIdentity(
   db: Database,
   input: { documentId: DocumentId; projectId: ProjectId },
 ): Promise<RevealIdentity> {
   if (!isUuid(input.documentId)) return { kind: "absent" };
-  const row = await loadRevealIdentityRow(currentDrizzleDb(db), input.documentId, input.projectId);
+  const row = await loadRevealIdentityRow(currentDrizzleDb(db), input.documentId);
   if (!row) return { kind: "absent" };
-  if (row.deleted || row.projectId !== input.projectId) return { kind: "unusable" };
+  if (row.deleted || !(await mayHold(db, input.projectId, row))) return { kind: "unusable" };
   if (!row.hidden) return { kind: "visible", documentId: row.id, sourceId: row.sourceId };
-  return row.projectUses > 0
+  return row.activeUses > 0
     ? { kind: "hidden", documentId: row.id, sourceId: row.sourceId }
     : { kind: "unusable" };
+}
+
+async function mayHold(db: Database, projectId: ProjectId, row: RevealIdentityRow) {
+  const holder = await loadProjectHolder(currentDrizzleDb(db), projectId);
+  return holder !== null && draftMayHold(holder, row.owner);
 }
 
 /** What a live create did; its caller refreshes the catalog from it. */
@@ -312,8 +319,8 @@ export async function createLive(
 }
 
 /**
- * §6.4 under the document's lock: the named document is still hidden, live, in the
- * caller's project and used by one of its drafts, at the physical source discovery saw.
+ * §6.4 under the document's lock: the named document is still hidden, live, one the
+ * caller's drafts may hold, used by an active draft, at the physical source discovery saw.
  */
 async function revalidateRevealById(
   db: Database,
@@ -321,13 +328,13 @@ async function revalidateRevealById(
   projectId: ProjectId,
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
   await lockDocuments(db, [expected.documentId]);
-  const row = await loadRevealIdentityRow(currentDrizzleDb(db), expected.documentId, projectId);
+  const row = await loadRevealIdentityRow(currentDrizzleDb(db), expected.documentId);
   const usable =
     row?.hidden &&
     !row.deleted &&
-    row.projectId === projectId &&
-    row.projectUses > 0 &&
-    row.sourceId === expected.sourceId;
+    row.activeUses > 0 &&
+    row.sourceId === expected.sourceId &&
+    (await mayHold(db, projectId, row));
   return usable ? { id: expected.documentId, sourceId: expected.sourceId } : null;
 }
 

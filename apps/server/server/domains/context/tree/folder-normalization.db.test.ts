@@ -313,36 +313,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual([1n, 1n]);
     });
 
-    it("splits a nested hidden document off a folder moved out of the project or into a Work's Scratch (F-3)", async () => {
-      // Personal ↔ project (§8.3), and a Work's Scratch, which no draft ever holds.
-      for (const into of ["user", "scratch"] as const) {
+    it("splits a nested hidden document off a folder moved out of user:// or into a Work's Scratch (F-3)", async () => {
+      // Out of user:// into a project narrows which drafts may hold it (§8.3, D20); a
+      // Work's Scratch is held by none.
+      for (const into of ["project", "scratch"] as const) {
         const scenario = await start();
         const ascension = await scenario.work(`Ascension ${into}`, "draft");
+        const origin = into === "project" ? "user://world" : "world";
+        const stays =
+          into === "project" ? scenario.project.sources.user : scenario.project.sources.manuscript;
         const destination =
-          into === "user"
-            ? "user://world"
+          into === "project"
+            ? "world"
             : `scratch://@${(await scenario.work("Notes", "direct")).slug}/world`;
-        const map = await scenario.seedLive("world/places/map.md");
-        const places = await scenario.seedLiveFolder("world/places");
-        const harbor = await scenario.model(ascension).create("world/places/harbor.md", "Harbor.");
+        const map = await scenario.seedLive(`${origin}/places/map.md`);
+        const places = await scenario.seedLiveFolder(`${origin}/places`);
+        const harbor = await scenario
+          .model(ascension)
+          .create(`${origin}/places/harbor.md`, "Harbor.");
         const draft = await scenario.draftOf(ascension);
 
         expect
-          .soft(await scenario.writer.move("world", destination), `${destination}: the live move`)
+          .soft(await scenario.writer.move(origin, destination), `${destination}: the live move`)
           .toMatchObject({ ok: true });
 
         const now = await document(harbor);
-        expect.soft(now, `${destination}: harbor stays in Manuscript, hidden`).toMatchObject({
+        expect.soft(now, `${destination}: harbor stays where it was, hidden`).toMatchObject({
           hidden: true,
           deleted: false,
-          contextSourceId: scenario.project.sources.manuscript,
+          contextSourceId: stays,
         });
         expect.soft(now.folderId, `${destination}: under a twin`).not.toBe(places);
         const twin = await folder(now.folderId);
         expect.soft(twin, `${destination}: places' twin`).toMatchObject({
           name: "places",
           hidden: true,
-          contextSourceId: scenario.project.sources.manuscript,
+          contextSourceId: stays,
         });
         expect.soft(await folder(twin.parentId), `${destination}: world's twin`).toMatchObject({
           name: "world",
@@ -351,14 +357,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect
           .soft((await folder(places)).contextSourceId, `${destination}: the live folder left`)
-          .not.toBe(scenario.project.sources.manuscript);
+          .not.toBe(stays);
         expect.soft(await changeRow(draft.id, harbor), `${destination}: row repointed`).toEqual({
-          contextSourceId: scenario.project.sources.manuscript,
+          contextSourceId: stays,
           parentFolderId: now.folderId,
         });
         expect
           .soft(
-            await idAt(scenario, ascension, "world/places/harbor.md"),
+            await idAt(scenario, ascension, `${origin}/places/harbor.md`),
             `${destination}: the draft still sees it`,
           )
           .toBe(harbor);

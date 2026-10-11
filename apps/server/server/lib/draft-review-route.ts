@@ -71,7 +71,8 @@ export async function requireDraftWorkAccess(
 /**
  * The writer's grant on one draft (file-access §2, §4): preview reads it;
  * Discard edits it; Apply edits it and the live document, so an archived
- * Work's frozen draft can't be applied (D30).
+ * Work's frozen draft can't be applied (D30). The draft's facts exist only for a
+ * document the Work's draft may hold (`draftMayHold`), so no project check repeats here.
  */
 async function draftGrants<N extends FileNeed>(
   deps: DraftRouteServices,
@@ -86,9 +87,6 @@ async function draftGrants<N extends FileNeed>(
     { kind: "draft", documentId: input.documentId, workId: input.workId },
     need,
   );
-  if (draft.facts.projectId !== input.projectId) {
-    throw createError({ statusCode: 404, message: "Draft not found" });
-  }
   if (!options.live) return [draft];
   return [
     draft,

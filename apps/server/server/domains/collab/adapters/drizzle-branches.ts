@@ -8,14 +8,10 @@ import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
-  contextSources,
   documentBranches,
-  documents,
   documentYjsHeads,
   documentYjsUpdates,
-  drafts as draftRows,
   threadWorks,
-  works,
 } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -25,7 +21,6 @@ import {
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
@@ -40,6 +35,11 @@ import {
   draftBranchWorks,
   runWithActiveWorkDrafts,
 } from "../../../shared/work-draft-lifecycle.js";
+import {
+  draftMayHold,
+  loadDocumentOwner,
+  loadDraftHolder,
+} from "../../context/tree/draft-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
@@ -328,34 +328,20 @@ export function createDrizzleBranchStore(
   }
 
   /**
-   * Callers route scratch and uploads live (D9), and pick a draft of the document's own
-   * project; reaching here otherwise is a routing or authorization bug. Every draft branch
-   * is created here, so no entry point can pair a document with another project's draft.
+   * Callers route scratch and uploads live (D9), and pick a draft that may hold the
+   * document (`draftMayHold`); reaching here otherwise is a routing or authorization bug.
+   * Every draft branch is created here, so no entry point can pair a document with a
+   * draft that may not hold it.
    */
   async function assertDraftableInDraft(documentId: DocumentId, draftId: DraftId): Promise<void> {
-    const sourceWork = alias(works, "source_work");
-    const [row] = await currentDrizzleDb(db)
-      .select({
-        scheme: contextSources.slug,
-        projectId: sql<
-          string | null
-        >`coalesce(${contextSources.projectId}, ${sourceWork.projectId})`,
-      })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(sourceWork, eq(sourceWork.id, contextSources.workId))
-      .where(eq(documents.id, documentId))
-      .limit(1);
-    if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme)) {
-      throw new Error(`Document ${documentId} is in ${row.scheme}://, which is never drafted`);
+    const tx = currentDrizzleDb(db);
+    const owner = await loadDocumentOwner(tx, documentId);
+    if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
+      throw new Error(`Document ${documentId} is in ${owner.scheme}://, which is never drafted`);
     }
-    const [draft] = await currentDrizzleDb(db)
-      .select({ projectId: draftRows.projectId })
-      .from(draftRows)
-      .where(eq(draftRows.id, draftId))
-      .limit(1);
-    if (!row || !draft || row.projectId !== draft.projectId) {
-      throw new Error(`Draft ${draftId} cannot draft document ${documentId} outside its project`);
+    const holder = await loadDraftHolder(tx, draftId);
+    if (!owner || !holder || !draftMayHold(holder, owner)) {
+      throw new Error(`Draft ${draftId} may not hold document ${documentId}`);
     }
   }
 

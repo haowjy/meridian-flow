@@ -19,11 +19,12 @@
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, folders, works } from "@meridian/database/schema";
+import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { renderFilename } from "../context/paths.js";
+import { draftReachKept, loadSourceOwners, type SourceOwner } from "./draft-ownership.js";
 import {
   absorbAt,
   applySplit,
@@ -65,9 +66,9 @@ export type PreparedMove = NodeMove & {
   /** The document's file type after the move; null keeps it. */
   filetype: Filetype | null;
   /**
-   * A folder leaving where drafts can hold it: another project (§8.3), or a Work-owned or
-   * lineage Scratch source, which is never drafted. The hidden contents it owns split off
-   * and stay.
+   * A folder leaving where drafts can hold it: to a source fewer drafts may hold
+   * (`draftReachKept`, §8.3), or to a Work-owned or lineage Scratch source, which is never
+   * drafted. The hidden contents it owns split off and stay.
    */
   splitsHidden: boolean;
 };
@@ -148,7 +149,7 @@ export async function prepareMoves(
     const to = owners.get(move.to.contextSourceId);
     const splitsHidden =
       move.node.kind === "folder" &&
-      (from?.projectId !== to?.projectId || (to?.undrafted === true && !from?.undrafted));
+      (!from || !to || !draftReachKept(from.owner, to.owner) || (to.undrafted && !from.undrafted));
     snapshot.set(current.node.id, current.node);
     paths.set(current.node.id, current.path);
     moves.push({ ...move, path, filetype: filetype.value, splitsHidden });
@@ -458,22 +459,22 @@ async function currentNode(
 async function sourceOwners(
   db: Database,
   sourceIds: readonly ContextSourceId[],
-): Promise<ReadonlyMap<ContextSourceId, { projectId: string | null; undrafted: boolean }>> {
+): Promise<ReadonlyMap<ContextSourceId, { owner: SourceOwner; undrafted: boolean }>> {
   if (sourceIds.length === 0) return new Map();
+  const owners = await loadSourceOwners(db, sourceIds);
   const rows = await currentDrizzleDb(db)
     .select({
       id: contextSources.id,
-      projectId: sql<string | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
       workId: contextSources.workId,
       rootThreadId: contextSources.rootThreadId,
     })
     .from(contextSources)
-    .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  return new Map(
-    rows.map((row) => [
-      row.id,
-      { projectId: row.projectId, undrafted: row.workId !== null || row.rootThreadId !== null },
-    ]),
-  );
+  const out = new Map<ContextSourceId, { owner: SourceOwner; undrafted: boolean }>();
+  for (const row of rows) {
+    const owner = owners.get(row.id);
+    if (owner)
+      out.set(row.id, { owner, undrafted: row.workId !== null || row.rootThreadId !== null });
+  }
+  return out;
 }

@@ -25,6 +25,17 @@ A path two visible nodes share answers `ambiguous` with every `NodeRef`; a live 
 can produce it. Normalization performs writes only; `treeState` owns observable
 draft clashes.
 
+## Which drafts may hold a document
+
+`draft-ownership.ts` owns the one rule (D20 under 12b): draft D may hold a document in
+D's project, or in the personal `user://` source of the account that owns D's project
+(`draftMayHold`). That source lives in the account's personal project, so one hidden
+`user://` document can be shared by drafts in several projects of one account; never by
+another account's. Branch admission, file facts (and so the review route), reveal
+identity and move splits all ask it. Use counts are per document: end of use, Discard,
+purge, repair and reveal authority count every active draft that uses the row, since only
+drafts that may hold it ever do.
+
 ## Identity status
 
 `identityStatus(view, ids)` decides each id in this order: a hidden tombstone is `gone`;
@@ -54,6 +65,7 @@ target path or a needed folder's path, `deleted_live`, `relocated`, else `none`.
 | `hidden-node-repair.ts` | repair on touch, one per composition: a hidden node no draft uses, met by a reader or a create, is tombstoned in its own transaction and reported as a `context.hidden-node.repaired` warn event after commit |
 | `node-rows.ts` | `insertDocumentRow` (the one `documents` insert: hidden or live, text with its projection or storage-backed; a live row claims its location), folder inserts, tombstones, a tombstone's storage release (live Yjs, branches, derived rows, its own link rows) and document locks in id order |
 | `node-locations.ts` | location claims (`claimDocumentLocation`), relocation history (`recordLocationHistory`) and `bumpLocationVersions` |
+| `draft-ownership.ts` | `draftMayHold` and its loaders (a draft's holder, a source's or document's owner); `draftReachKept`, whether a move keeps every draft that may hold a node able to |
 | `draft-tree-store.ts` | `draft_tree_changes` writes: `recordCreated` (a draft's `created` rows) and `dropDocumentRows` |
 | `folder-normalization.ts` | what live folder operations do to hidden nodes: a visible folder arriving at a hidden folder's path absorbs it (never refused; clashes are read through the tree view); a live delete, or a move out of where drafts can hold a folder, splits hidden contents into ancestor-closed hidden twins (`planSplit` from a snapshot, `applySplit` once). Change rows follow |
 | `node-moves.ts` | the phased batch move: `prepareMoves` builds one node-keyed plan before any write, then `vacateMoves`, `installMoves`, `recordMoves`. The live mover runs all four; Apply's draft tree step (`collab/adapters/drizzle-draft-tree-step.ts`) runs prepare, vacate and install before text admission and record after it |

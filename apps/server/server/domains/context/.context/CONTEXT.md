@@ -230,10 +230,11 @@ router resolves to exact project-scoped Work authority before dispatch.
 A draft's hidden rows stay where that draft placed them whatever the writer
 does to live folders (`tree/folder-normalization.ts`). A rename or move that
 lands a folder at a hidden folder's path absorbs it; a recursive delete, or a
-folder move to another project or into a Work-owned or lineage Scratch source,
-first splits hidden
-contents into hidden twins at their old paths. Within the project they move with
-the folder, and the change rows under it take the new source. History (vacated
+folder move to a source fewer drafts may hold (another project, out of `user://`
+into a project, or into a Work-owned or lineage Scratch source; see
+`tree/draft-ownership.ts`), first splits hidden contents into hidden twins at
+their old paths. Otherwise they move with the folder, and the change rows under
+it take the new source. History (vacated
 aliases, consumed claims) is written for visible nodes only; every moved,
 deleted or overwritten node's `location_version` is bumped once.
 
