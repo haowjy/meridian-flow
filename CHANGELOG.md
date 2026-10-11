@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Skills load and list with the same extensionless prose names as documents.
+- Link snapshots resolve typed prose suffixes without losing the target’s identity.
 - Document links use the document’s one name, including links written with a prose extension.
 
 ### Changed
