@@ -10,8 +10,8 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-
 import { listWorkDrafts } from "@/client/api/drafts-api";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
 import type { CatalogContextView } from "./context-catalog-projection";
 import { readDraftsAfterCommands } from "./draft-command-record";
@@ -122,7 +122,13 @@ export function useWorkDrafts(
       queryKey: projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""),
       queryFn: () =>
         readDraftsAfterCommands({ projectId: projectId as string, workId: workId as string }, () =>
-          listWorkDrafts(projectId as string, workId as string).then((response) => response.drafts),
+          listWorkDrafts(projectId as string, workId as string)
+            .then((response) => response.drafts)
+            .catch((error: unknown) => {
+              // A catalog wake may outlive Work deletion; unavailable drafts have no UI.
+              if (httpErrorStatus(error) === 404) return [];
+              throw error;
+            }),
         ),
       staleTime: 15_000,
       enabled,

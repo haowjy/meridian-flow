@@ -142,3 +142,24 @@ for ~200ms).
   cache, the mode-switch phantom count, and the manifest resurrection;
   re-probes verified all fixed. Probe A step 4–5 and Probe D added from
   those runs.
+
+## Probe G — deleted Work draft admission (#736)
+
+Use `./mf` for the nonvisual commands (see [debugging](../debugging.md)).
+
+1. In a draft-mode Work, stage an edit to an existing chapter and record the
+   draft list and preview. Keep the Work Files tab open.
+2. Delete the Work. GET its drafts list and preview, POST per-document Apply
+   and Discard, POST Apply all and Discard all, and PATCH write mode to direct
+   with `pending: "apply"`. PASS: all refuse with 404 `Draft not found`.
+3. Let a catalog wake refetch the deleted Work's drafts. PASS: no new toast or
+   "Pending drafts couldn’t load" row. Other HTTP failures must still surface.
+4. Restore the Work. PASS: restore answers 200 and listing shows the same
+   pending item; preview still contains the pending text. The refused list
+   must not have created any `drafts` or `document_branches` rows.
+5. Archive the restored Work. PASS: list and preview remain readable, while
+   draft mutations remain frozen. Work purge is a separate privileged path.
+
+The DB regression is in `draft-tree.preview.db.test.ts`; it drives the route
+cores and lifecycle services over the composed runtime. It also snapshots row
+identities across the refused GET to detect accidental provisioning.

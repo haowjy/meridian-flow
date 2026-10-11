@@ -14,16 +14,12 @@ import {
 } from "../domains/projects/index.js";
 import type { AppServices } from "./app.js";
 import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
+import { requireDraftWorkAccess } from "./draft-review-route.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 type WorkWriteModeServices = {
-  works: {
-    findById(workId: WorkId): Promise<{
-      id: WorkId;
-      createdByUserId: UserId;
-      aiWriteMode: AiWriteMode;
-    } | null>;
-  };
+  projects: Pick<AppServices["projectRepo"], "findById">;
+  works: Pick<AppServices["workRepo"], "findById">;
   branchPush: {
     setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   };
@@ -32,6 +28,7 @@ type WorkWriteModeServices = {
 
 export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServices {
   return {
+    projects: app.projectRepo,
     works: app.workRepo,
     branchPush: app.documentSync,
     workContextNotices: app.workContextNotices,
@@ -62,8 +59,8 @@ export async function handleWorkWriteModeRequest(
     throw createError({ statusCode: 400, message: "pending must be 'apply' or 'keep'" });
   }
 
-  const work = await deps.works.findById(input.workId);
-  if (!work || work.createdByUserId !== input.userId) {
+  const work = await requireDraftWorkAccess(deps, input);
+  if (work.createdByUserId !== input.userId) {
     throw createError({ statusCode: 404, message: "Work not found" });
   }
 
