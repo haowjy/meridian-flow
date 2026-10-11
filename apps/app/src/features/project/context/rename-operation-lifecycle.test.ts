@@ -69,6 +69,8 @@ function projection(intents: NamespaceIntent[], terminal = false): ResourceProje
     records: [
       {
         resource: {
+          handle: "handle",
+          aliases: {},
           identity: { documentId: "document" },
           lifecycle: { kind: terminal ? "terminal" : "acknowledged" },
         },
@@ -83,6 +85,10 @@ function harness() {
   let emit: (snapshot: ResourceProjectionSnapshot) => void = () => {};
   const stop = vi.fn();
   const store = new RenameOperationLifecycle({
+    readKnownDocument: async () => ({
+      key: { handle: "handle" },
+      record: projection([]).records[0] as ResourceProjectionSnapshot["records"][number],
+    }),
     observeProjection: (_project, listener) => {
       emit = listener;
       return stop;
@@ -92,9 +98,9 @@ function harness() {
 }
 afterEach(() => vi.useRealTimers());
 
-it("retires a refused move's cancelled successor without settlement or a mounted note", () => {
+it("retires a refused move's cancelled successor without settlement or a mounted note", async () => {
   const { store, emit, stop } = harness();
-  store.remember("project", subject, "successor");
+  await store.remember("project", subject, "successor");
   emit(
     projection([
       intent({ state: "needs-repair", settledAt: 10_000 }),
@@ -108,11 +114,11 @@ it("retires a refused move's cancelled successor without settlement or a mounted
   });
 });
 
-it("settles while unmounted and expires by settlement time, not admission time", () => {
+it("settles while unmounted and expires by settlement time, not admission time", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000);
   const { store, emit, stop } = harness();
-  store.remember("project", subject, "move");
+  await store.remember("project", subject, "move");
   emit(projection([intent()]));
   vi.advanceTimersByTime(9_000);
   expect(store.get("project", subject)?.operationId).toBe("move");
@@ -126,7 +132,7 @@ it("settles while unmounted and expires by settlement time, not admission time",
   expect(stop).toHaveBeenCalledOnce();
 });
 
-it("uses the rebased successor even when the historical match comes first", () => {
+it("uses the rebased successor even when the historical match comes first", async () => {
   const historical = settled({ state: "superseded", sequence: 1, settledAt: 1_000 });
   const successor = intent({ sequence: 2 });
   expect(operationLifecycle([historical, successor], "move", 10_000)).toEqual({ kind: "pending" });
@@ -136,22 +142,22 @@ it("uses the rebased successor even when the historical match comes first", () =
   });
 });
 
-it("retires deletion and scopes pending watches to the account lifetime", () => {
+it("retires deletion and scopes pending watches to the account lifetime", async () => {
   const { store, emit, stop } = harness();
-  store.remember("project", subject, "move");
+  await store.remember("project", subject, "move");
   emit(projection([intent()], true));
   expect(store.get("project", subject)).toBeNull();
-  store.remember("project", subject, "another");
+  await store.remember("project", subject, "another");
   store.dispose();
   expect(store.get("project", subject)).toBeNull();
   expect(stop).toHaveBeenCalledTimes(2);
-  store.remember("project", subject, "after-account-close");
+  await store.remember("project", subject, "after-account-close");
   expect(store.get("project", subject)).toBeNull();
 });
 
-it("does not mistake a cached pre-admission projection for a refused operation", () => {
+it("does not mistake a cached pre-admission projection for a refused operation", async () => {
   const { store, emit } = harness();
-  store.remember("project", subject, "move");
+  await store.remember("project", subject, "move");
   emit(projection([]));
   expect(store.get("project", subject)?.operationId).toBe("move");
   emit(projection([intent()]));
@@ -159,11 +165,11 @@ it("does not mistake a cached pre-admission projection for a refused operation",
   store.dispose();
 });
 
-it("retires feedback immediately when the resource is deleted before its deadline", () => {
+it("retires feedback immediately when the resource is deleted before its deadline", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(10_000);
   const { store, emit, stop } = harness();
-  store.remember("project", subject, "move");
+  await store.remember("project", subject, "move");
   emit(projection([settled()]));
   emit(projection([settled()], true));
   expect(store.get("project", subject)).toBeNull();

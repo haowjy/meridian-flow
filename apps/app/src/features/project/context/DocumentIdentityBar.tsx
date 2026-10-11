@@ -68,7 +68,7 @@ export function DocumentIdentityBar({
     editorWorkId: editorWorkId,
     onCommitted,
   });
-  // The note is keyed by document, so a rename or move from any list shows here too.
+  // The note follows the resource handle, so list moves and identity remints show here too.
   // A placement made here re-resolves the tab and remounts this bar, so the
   // operation is remembered outside it.
   const commit: typeof commitIdentity = async (target) => {

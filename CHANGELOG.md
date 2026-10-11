@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Move feedback now appears on a folder’s first move and follows a new document through identity-conflict recovery.
+
 ### Changed
 
 - Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.

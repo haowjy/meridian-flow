@@ -4,6 +4,8 @@ import {
   NAMESPACE_RECEIPT_NOTE_TTL_MS,
   type NamespaceIntent,
   type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 
@@ -59,18 +61,28 @@ export function operationLifecycle(
   return { kind: "feedback", feedback: { receipt: receipt.receipt, deadline } };
 }
 
-function subjectKey(projectId: string, subject: LinkNoteSubject): string {
-  return JSON.stringify([projectId, subject.kind, subject.id]);
+function subjectKey(projectId: string, kind: LinkNoteSubject["kind"], handle: string): string {
+  return JSON.stringify([projectId, kind, handle]);
 }
 
-type Entry = { selection: Selection; stop: () => void; timer?: ReturnType<typeof setTimeout> };
+type Entry = {
+  projectId: string;
+  kind: LinkNoteSubject["kind"];
+  handle: string;
+  records: readonly ResourceRecord[];
+  selection: Selection;
+  stop: () => void;
+  timer?: ReturnType<typeof setTimeout>;
+};
 
 /** Each command owns its watch through pending work and feedback, never through a row mount. */
 export class RenameOperationLifecycle {
   private entries = new Map<string, Entry>();
   private listeners = new Set<() => void>();
   private closed = false;
-  constructor(private replica: Pick<AccountResourceReplica, "observeProjection">) {}
+  constructor(
+    private replica: Pick<AccountResourceReplica, "observeProjection" | "readKnownDocument">,
+  ) {}
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -79,7 +91,16 @@ export class RenameOperationLifecycle {
     };
   };
   get(projectId: string, subject: LinkNoteSubject): Selection | null {
-    return this.entries.get(subjectKey(projectId, subject))?.selection ?? null;
+    if (subject.kind === "folder")
+      return (
+        this.entries.get(subjectKey(projectId, "folder", `folder:${subject.id}`))?.selection ?? null
+      );
+    for (const entry of this.entries.values()) {
+      if (entry.projectId !== projectId || entry.kind !== "file") continue;
+      if (resourceForDocumentIdentity(entry.records, subject.id)?.resource.handle === entry.handle)
+        return entry.selection;
+    }
+    return null;
   }
   private notify() {
     for (const listener of this.listeners) listener();
@@ -91,28 +112,51 @@ export class RenameOperationLifecycle {
     clearTimeout(entry.timer);
     this.notify();
   }
-  remember(projectId: string, subject: LinkNoteSubject, operationId: string) {
+  async remember(projectId: string, subject: LinkNoteSubject, operationId: string) {
     if (this.closed) return;
-    const key = subjectKey(projectId, subject);
+    const known =
+      subject.kind === "file" ? await this.replica.readKnownDocument(projectId, subject.id) : null;
+    if (this.closed || (subject.kind === "file" && !known)) return;
+    const handle = known?.key.handle ?? `folder:${subject.id}`;
+    const key = subjectKey(projectId, subject.kind, handle);
     const old = this.entries.get(key);
     if (old?.selection.operationId === operationId) return;
     if (old) this.retire(key, old);
-    const entry: Entry = { selection: { operationId, feedback: null }, stop: () => {} };
+    const entry: Entry = {
+      projectId,
+      kind: subject.kind,
+      handle,
+      records: known ? [known.record] : [],
+      selection: { operationId, feedback: null },
+      stop: () => {},
+    };
     this.entries.set(key, entry);
     const update = (snapshot: ResourceProjectionSnapshot) => {
       if (this.entries.get(key) !== entry) return;
+      const previousIdentity = entry.records.find((record) => record.resource.handle === handle)
+        ?.resource.identity.documentId;
+      // A replay from before admission cannot erase the known identity either.
+      if (
+        subject.kind === "folder" ||
+        snapshot.records.some((record) => record.resource.handle === handle)
+      )
+        entry.records = snapshot.records;
+      const currentIdentity = entry.records.find((record) => record.resource.handle === handle)
+        ?.resource.identity.documentId;
+      if (previousIdentity !== currentIdentity) this.notify();
       const file =
         subject.kind === "file"
-          ? snapshot.records.find((record) => record.resource.identity.documentId === subject.id)
+          ? snapshot.records.find((record) => record.resource.handle === handle)
           : null;
       const intents =
         subject.kind === "folder"
           ? snapshot.folders.find((folder) => folder.folderId === subject.id)?.intents
           : file?.intents;
+      if (!intents) return;
       const state =
-        !intents || file?.resource.lifecycle.kind === "terminal"
+        file?.resource.lifecycle.kind === "terminal"
           ? { kind: "retired" as const }
-          : operationLifecycle(intents ?? [], operationId, Date.now());
+          : operationLifecycle(intents, operationId, Date.now());
       if (state.kind === "retired") this.retire(key, entry);
       else if (state.kind === "pending") {
         if (!entry.selection.feedback) return;
