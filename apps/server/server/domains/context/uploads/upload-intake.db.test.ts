@@ -343,7 +343,9 @@ if (!RUN) {
           ["Chapter 14", "text/markdown", "Chapter 14", "", "markdown"],
           ["Chapter 15", "text/plain", "Chapter 15", "", "markdown"],
           ["config", "application/json", "config", "json", "json"],
+          ["Vol. 2", "application/json", "Vol. 2", "json", "json"],
           ["Pic.PNG", "image/png", "Pic", "png", "image"],
+          ["Cover", "image/png", "Cover", "png", "image"],
           ["Binary.txt", "application/pdf", "Binary", "pdf", "pdf"],
           ["LICENSE", "application/pdf", "LICENSE", "pdf", "pdf"],
         ];
