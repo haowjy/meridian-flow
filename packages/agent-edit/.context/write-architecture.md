@@ -189,11 +189,14 @@ into lowering; the segmenter never guesses correspondence from text substrings.
 Different logical writes remain separate unless their Yjs edits are dependent,
 even when they edit the same paragraph.
 
-Within each kept-block gap, one ordered token diff recognizes retained prose
-crossing explicit block boundaries. Word tokens use `Intl.Segmenter`, with
-grapheme fallback for single-token blocks. Retained runs crossing a boundary
-and physical insert/delete runs close into union-find components before
-assigning segment identity. There is no per-word occurrence pairing or
-substring correspondence. Kept blocks fence components. Consecutive insertion
+Changed pairs never join each other through text correspondence. Only adjacent
+unpaired blocks are split/merge candidates, fenced by kept blocks. Each boundary
+uses a block-local token LCS: retained prose must continue immediately on both
+sides. Intl word tokenization is compatible across both texts; a boundary inside
+a word subdivides its token and boundary pieces into graphemes on both sides.
+Walk outward only after a successful join, without accumulating gap text.
+Windows over 4,096 UTF-16 units or 65,536 table cells join conservatively.
+Structural joins and physical insert/delete runs close into union-find components.
+Consecutive insertion
 edits sharing an old anchor carry one ordered run; execution chains each through
 the preceding insertion’s returned tail, in both live and draft destinations.
