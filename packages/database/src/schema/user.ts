@@ -1,4 +1,5 @@
 import type { ProjectId, UserId } from "@meridian/contracts";
+import type { AccountAppearancePreferences } from "@meridian/contracts/preferences";
 import { pgTable, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { createdAt, jsonbDefault, updatedAt } from "./_shared";
 import { projects } from "./content";
@@ -9,7 +10,7 @@ export const userPreferences = pgTable("user_preferences", {
     .$type<UserId>()
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
-  preferences: jsonbDefault("preferences"),
+  preferences: jsonbDefault("preferences").$type<Partial<AccountAppearancePreferences>>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -86,7 +86,11 @@
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
+- Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
+- Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.
 - Reloading keeps the document and view you had open in the side panel.
+- Each browser tab remembers its own chat and Work across reloads, while new tabs start from your last selection. Folder expansion stays with each tab; Scratch and Recent layout preferences carry into new tabs.
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
@@ -133,6 +137,10 @@
 - A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.
 
 - Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
+- Chat summaries count a section and its whole file as one document, for both reads and edits.
+
+- Passage jumps stay visible when you return to an already-open Editor tab.
+
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.

@@ -97,6 +97,8 @@ export function CreationComposer({
   return (
     <>
       <Composer
+        key={creation.draft.key}
+        initialDraft={creation.draft.initialDraft}
         ref={composerRef}
         variant={variant}
         autoFocus={autoFocus}
@@ -108,7 +110,7 @@ export function CreationComposer({
           submissionId: envelope.submissionId,
           acceptedRevision: envelope.acceptedRevision,
         })}
-        onDraftChange={creation.updateDraft}
+        onDraftChange={creation.draft.updateDraft}
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {

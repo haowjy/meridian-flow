@@ -1,5 +1,5 @@
 {
-  "id": "f1f1cd4e-751e-4dde-b8ef-cf0303499218",
+  "id": "cb3a11cb-fbc2-4d9e-a68b-0e0248e576ad",
   "prevId": "c3e93285-2f1e-4f70-b89f-5a152bfe3baa",
   "version": "7",
   "dialect": "postgresql",
@@ -6339,20 +6339,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "thread_group_by": {
-          "name": "thread_group_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'work'"
-        },
-        "pinned_thread_ids": {
-          "name": "pinned_thread_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
         "auto_resume_enabled": {
           "name": "auto_resume_enabled",
           "type": "boolean",
@@ -6416,10 +6402,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "project_user_preferences_thread_group_by_check": {
-          "name": "project_user_preferences_thread_group_by_check",
-          "value": "\"project_user_preferences\".\"thread_group_by\" IN ('work', 'date', 'flat')"
-        },
         "project_user_preferences_auto_resume_timeout_check": {
           "name": "project_user_preferences_auto_resume_timeout_check",
           "value": "\"project_user_preferences\".\"auto_resume_timeout_ms\" > 0"
@@ -7918,12 +7900,6 @@
         "w_id": {
           "name": "w_id",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_call_id": {
-          "name": "tool_call_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

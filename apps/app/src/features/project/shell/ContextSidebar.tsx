@@ -45,7 +45,7 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
           {recent.status === "loading" || recent.status === "error" || recent.documents?.length ? (
-            <CollapsibleRailSection title={t`Recent`} icon={Clock} defaultOpen>
+            <CollapsibleRailSection title={t`Recent`} icon={Clock} preferenceId="recent">
               {recent.status === "loading" ? (
                 <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
               ) : recent.status === "error" ? (

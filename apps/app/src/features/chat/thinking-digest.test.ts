@@ -4,7 +4,7 @@ import { beforeEach, expect, it } from "vitest";
 import { descriptorFor, toolActivityPhrase } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
 import { block } from "./report-test-fixtures";
-import { thinkingDigest } from "./thinking-digest";
+import { countFoldTools, thinkingDigest } from "./thinking-digest";
 
 beforeEach(() => i18n.loadAndActivate({ locale: "en", messages: {} }));
 
@@ -42,4 +42,13 @@ it.each(["create", "replace"])("calls a completed %s Edited in its row too", (co
   const write = tool("write", command);
   expect(toolActivityPhrase(write).verb).toBe("Edited");
   expect(descriptorFor(write).pathlessTitle?.()).toBe("Edited file");
+});
+
+it("counts section and whole-file reads once, without merging different documents", () => {
+  const read = (path: string) => ({ ...tool("read"), input: { path } });
+  const tools = [read("manuscript://chapter-11.md#the-pill-hall"), read("chapter-11.md")];
+  expect([...countFoldTools(tools).readDocuments]).toEqual(["manuscript://chapter-11.md"]);
+  expect(
+    countFoldTools([...tools, read("manuscript://chapter-12.md#the-pill-hall")]).readDocuments.size,
+  ).toBe(2);
 });
