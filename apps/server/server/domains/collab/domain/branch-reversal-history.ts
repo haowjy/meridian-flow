@@ -179,7 +179,10 @@ export function serializeBranchReversalRecord(
 export function activeBranchAgentWriteRows(
   rows: readonly BranchJournalRow[],
 ): Array<BranchJournalRow & { threadId: ThreadId; wId: number }> {
-  const forwardByHandle = new Map<string, BranchJournalRow & { threadId: ThreadId; wId: number }>();
+  const forwardByHandle = new Map<
+    string,
+    Array<BranchJournalRow & { threadId: ThreadId; wId: number }>
+  >();
   const activeHandles = new Set<string>();
   const undoneHandlesBySeq = new Map<number, string[]>();
   const key = (threadId: string, handle: string) => `${threadId}:${handle}`;
@@ -187,7 +190,9 @@ export function activeBranchAgentWriteRows(
   for (const row of [...rows].sort((left, right) => left.id - right.id)) {
     if (row.source === "agent" && row.threadId !== null && row.wId !== null) {
       const handleKey = key(row.threadId, writeHandle(row.wId));
-      forwardByHandle.set(handleKey, row as BranchJournalRow & { threadId: ThreadId; wId: number });
+      const forward = forwardByHandle.get(handleKey) ?? [];
+      forward.push(row as BranchJournalRow & { threadId: ThreadId; wId: number });
+      forwardByHandle.set(handleKey, forward);
       activeHandles.add(handleKey);
     }
     const operation = branchReversalOperation(row);
@@ -213,8 +218,7 @@ export function activeBranchAgentWriteRows(
 
   return [...activeHandles]
     .flatMap((handleKey) => {
-      const row = forwardByHandle.get(handleKey);
-      return row ? [row] : [];
+      return forwardByHandle.get(handleKey) ?? [];
     })
     .sort((left, right) => left.id - right.id);
 }
@@ -288,8 +292,10 @@ export function buildBranchReversalState(
       status: reversal?.status === "reversed" ? "reversed" : "active",
       ...(reversal?.status === "reversed" ? { undoUpdateSeq: reversal.undoUpdateSeq } : {}),
     };
-    mutationsByHandle.set(handle, [mutation]);
-    if (mutation.status === "active") {
+    const mutations = mutationsByHandle.get(handle) ?? [];
+    mutations.push(mutation);
+    mutationsByHandle.set(handle, mutations);
+    if (mutation.status === "active" && mutations.length === 1) {
       writes.push({
         writeId: handle,
         handle,

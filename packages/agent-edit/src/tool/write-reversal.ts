@@ -1,5 +1,6 @@
 // Runs write-level undo/redo from durable journal reconstruction.
 import type { LinkView } from "@meridian/contracts";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type BlockSnapshot, diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -139,6 +140,7 @@ export function createWriteReversal(deps: {
   codec: AgentEditCodecFactory;
   links: DocumentLinksPort;
   undoClientId?: number;
+  freshReversalClient?: boolean;
   reversalNoticePort?: ReversalNoticePort;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
@@ -445,7 +447,7 @@ export function createWriteReversal(deps: {
         source: sourceDoc,
         plan: reconstructionPlan,
         model,
-        undoClientId,
+        undoClientId: deps.freshReversalClient ? allocateDocumentClient(sourceDoc) : undoClientId,
       });
     } catch (cause) {
       sourceDoc.destroy();

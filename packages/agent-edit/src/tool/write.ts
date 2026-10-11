@@ -116,6 +116,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     codec: options.codec,
     links: options.links,
     undoClientId,
+    freshReversalClient: options.segmentDraftWrites,
     reversalNoticePort: options.reversalNoticePort,
     deferUntilCommit: options.deferUntilCommit,
     onInvariantViolation: options.onInvariantViolation,
