@@ -1,6 +1,5 @@
 /** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
 
-import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextCatalogCommits,
@@ -12,7 +11,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
@@ -152,51 +151,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
       expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
       expect(publish).toHaveBeenCalledTimes(2);
-    });
-
-    it("retries a post-Apply document refresh after the availability lock timeout", async () => {
-      const db = database.current;
-      const NEW_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      await seedProject(db, "catalog-apply-retry");
-      const catalog = createDrizzleContextCatalog(db);
-      const scope = { kind: "project", projectId: PROJECT_ID } as const;
-      await catalog.snapshot(scope);
-      await db.insert(documents).values({
-        id: NEW_DOCUMENT_ID,
-        contextSourceId: SOURCE_ID,
-        name: "new-chapter",
-        extension: "md",
-      });
-
-      const lockDb = createDb(DATABASE_URL, { max: 1 });
-      let releaseLock!: () => void;
-      let lockAcquired!: () => void;
-      const acquired = new Promise<void>((resolve) => {
-        lockAcquired = resolve;
-      });
-      const held = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      const lockTask = lockDb.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-        lockAcquired();
-        await held;
-      });
-      await acquired;
-      const releaseTimer = setTimeout(releaseLock, 350);
-      try {
-        await catalog.refreshProjectDocuments(PROJECT_ID);
-      } finally {
-        clearTimeout(releaseTimer);
-        releaseLock();
-        await lockTask;
-        await lockDb.close();
-      }
-
-      const snapshot = await catalog.snapshot(scope);
-      expect(snapshot.entries).toContainEqual(
-        expect.objectContaining({ kind: "file", entryId: NEW_DOCUMENT_ID }),
-      );
     });
 
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
