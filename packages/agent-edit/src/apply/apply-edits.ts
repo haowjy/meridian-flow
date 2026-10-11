@@ -34,6 +34,7 @@ type PlannedEdit =
     };
 
 interface ApplyAccumulator {
+  insertionTails: Map<object, BlockRef>;
   insertedBlocks: string[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
@@ -58,6 +59,7 @@ export function applyEdits(
   if (!turnSafety.ok) return turnSafety;
 
   const accumulator: ApplyAccumulator = {
+    insertionTails: new Map(),
     insertedBlocks: [],
     touchedHashes: new Set(),
     deletedHashes: new Set(),
@@ -257,7 +259,12 @@ function executePlan(
       break;
     }
     case "insert": {
-      const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
+      const run = plan.edit.insertionRun;
+      const anchor =
+        (run ? accumulator.insertionTails.get(run) : undefined) ?? plan.edit.after ?? null;
+      const inserted = model.insertBlocks(doc, anchor, plan.parsed);
+      if (run && inserted.length)
+        accumulator.insertionTails.set(run, inserted[inserted.length - 1]);
       const blockIds = inserted.map((block) => model.getBlockId(block));
       for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
       accumulator.insertedBlocks.push(...blockIds);

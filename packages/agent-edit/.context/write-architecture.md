@@ -188,3 +188,9 @@ block runs stay one structural segment. Alignment carries their boundary identit
 into lowering; the segmenter never guesses correspondence from text substrings.
 Different logical writes remain separate unless their Yjs edits are dependent,
 even when they edit the same paragraph.
+
+Structural correspondences close into connected components before assigning
+segment identity, including shared split/merge destinations and prose redistributed
+between rewritten neighbors. Kept blocks fence components. Consecutive insertion
+edits sharing an old anchor carry one ordered run; execution chains each through
+the preceding insertion’s returned tail, in both live and draft destinations.

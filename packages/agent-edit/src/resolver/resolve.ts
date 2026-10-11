@@ -287,7 +287,7 @@ function insertEdit(
   after: BlockRef | undefined,
   blocks: readonly Block[],
   newText = params.content,
-): ResolvedEdit {
+): Extract<ResolvedEdit, { kind: "insert" }> {
   return {
     documentId: params.documentAddress.documentId,
     file: params.documentAddress.filePath,
@@ -661,6 +661,7 @@ function replaceScope(
   let pendingDelete: BlockRef[] = [];
   let keptBlocks = false;
   let structuralBoundary: object | undefined;
+  let insertionRun = {};
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
@@ -672,6 +673,7 @@ function replaceScope(
           serializeReplacementBlocks(ctx, pendingInsert),
         ),
         structuralBoundary,
+        insertionRun,
       });
     }
     for (const block of pendingDelete) {
@@ -719,11 +721,13 @@ function replaceScope(
             : { kind: "block" as const, replacement: after }),
         });
         anchor = oldBlocks[step.old];
+        insertionRun = {};
         break;
       }
       case "keep":
         flushStructural();
         anchor = oldBlocks[step.old];
+        insertionRun = {};
         keptBlocks = true;
         break;
     }
