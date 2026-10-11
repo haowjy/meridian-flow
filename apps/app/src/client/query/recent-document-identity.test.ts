@@ -106,3 +106,59 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   restored.records[0].intents[0].state = "needs-repair";
   expect(recentDocumentIdentityIndex("project", restored).has("doc")).toBe(false);
 });
+
+it.each([
+  false,
+  true,
+])("suppresses a known descendant missing its catalog row (checkpoint=%s)", (checkpoint) => {
+  const record = reserveResourceDocument({
+    projectId: "project",
+    handle: "doc",
+    documentId: "doc",
+    databaseName: "content",
+    schema: "document",
+    intentId: "create",
+  }).next;
+  record.resource.canonical = { scheme: "kb", path: "/P/A/doc.md", name: "doc.md", workId: null };
+  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.intents = [];
+  const deletion = planFolderDeletion({
+    projectId: "project",
+    handle: "P",
+    folderId: "P",
+    source: { scheme: "kb", path: "/P", name: "P", workId: null },
+    intentId: "delete",
+    operationId: "delete",
+  });
+  if (!deletion) throw new Error("Missing deletion");
+  const scope = { kind: "project" as const, projectId: "project" };
+  const snapshot: ResourceProjectionSnapshot = {
+    records: [record],
+    folders: [deletion.next],
+    catalogs: checkpoint
+      ? [
+          {
+            projectId: "project",
+            scope,
+            revision: 1,
+            generation: "g",
+            appliedRevision: "1",
+            observedHeadRevision: "1",
+            cursor: "c",
+            entries: [
+              {
+                kind: "source",
+                entryId: "source",
+                scheme: "kb",
+                scope,
+                name: "Knowledge",
+                uri: "kb://",
+              },
+            ],
+          },
+        ]
+      : [],
+  };
+  expect(recentDocumentIdentityIndex("project", snapshot).get("doc")).toBeNull();
+  expect(recentDocumentIdentityIndex("project", snapshot).has("unknown")).toBe(false);
+});

@@ -4,7 +4,16 @@ import { expect, it } from "vitest";
 import { installFolderNamespaceAvailability } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
 import { createResourcePlacement } from "./folder-projection";
-import { del, loc, move, outcome, submit } from "./namespace-schedule-fixtures";
+import {
+  del,
+  entries,
+  loc,
+  move,
+  node,
+  outcome,
+  permutations,
+  submit,
+} from "./namespace-schedule-fixtures";
 
 it("resolves 200 nested journal identities with a missing destination in under 100 ms", () => {
   const nodes = [];
@@ -40,6 +49,52 @@ it("installs real repair parents before synthesizing missing ancestry in either 
         rows.filter((row) => row.kind === "folder" && row.path.join("/") === "P"),
       ).toMatchObject([{ entryId: parent }]);
       expect(rows.find((row) => row.entryId === child)).toMatchObject({ parentId: parent });
+    }
+  }
+});
+
+it.each([
+  [300, 1],
+  [30, 20],
+])("projects a healthy %i-deep catalog with %i branches in under 50 ms", (depth, width) => {
+  const rows = [entries[0]];
+  for (let branch = 0; branch < width; branch++) {
+    rows.push(node(`${branch}-0`, `W${branch}`));
+    for (let level = 1; level <= depth; level++)
+      rows.push(
+        node(
+          `${branch}-${level}`,
+          `W${branch}/${Array(level).fill("A").join("/")}`,
+          `${branch}-${level - 1}`,
+        ),
+      );
+  }
+  const start = performance.now();
+  const projected = createResourcePlacement("p", rows, []).projectCatalog(rows);
+  const elapsed = performance.now() - start;
+  expect(projected).toHaveLength(rows.length);
+  expect(elapsed).toBeLessThan(50);
+});
+
+it("cycle fallback preserves an independently renamed canonical parent", () => {
+  const folders = [
+    outcome(submit(move("P", "P", "Q")), true),
+    move("A", "P/A", "B/A"),
+    move("B", "B", "P/A/B"),
+  ];
+  for (const records of permutations(folders)) {
+    for (const catalog of [entries, [...entries].reverse()]) {
+      const projected = createResourcePlacement("p", catalog, records).projectCatalog(catalog);
+      expect(projected.find((row) => row.entryId === "P")).toMatchObject({ path: ["Q"] });
+      expect(projected.find((row) => row.entryId === "A")).toMatchObject({
+        parentId: "P",
+        path: ["Q", "A"],
+      });
+      expect(projected.find((row) => row.entryId === "f")).toMatchObject({
+        parentId: "A",
+        path: ["Q", "A", "doc.md"],
+      });
+      expect(projected.some((row) => row.kind === "folder" && row.navigationOnly)).toBe(false);
     }
   }
 });
