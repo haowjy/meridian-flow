@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep strip failure feedback on one line, with full localized text available on hover and to assistive technology.
+
 - Keep expanded strip failures visible exactly once and replace its summary with narrow-screen Discard confirmation.
 
 - Omit the redundant file header when the composer strip expands one document.

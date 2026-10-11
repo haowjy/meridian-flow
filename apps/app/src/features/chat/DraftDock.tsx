@@ -1,8 +1,9 @@
 /** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -284,6 +285,12 @@ function TroubleLine({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const { i18n } = useLingui();
+  const text = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    // Read the localized rendered copy, including refusal reasons, without duplicating it.
+    if (text.current) text.current.title = text.current.textContent ?? "";
+  }, [children, i18n.locale]);
   return (
     <p
       className={cn(
@@ -293,7 +300,9 @@ function TroubleLine({
       role="alert"
       {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
     >
-      <span className="min-w-0 flex-1">{children}</span>
+      <span ref={text} className="min-w-0 flex-1 truncate">
+        {children}
+      </span>
       {action}
     </p>
   );
