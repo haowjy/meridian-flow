@@ -2303,6 +2303,7 @@ msgid "Loading Work…"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/context/DocumentPath.tsx
 msgid "Loading…"
 msgstr ""
 

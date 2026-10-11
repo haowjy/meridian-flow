@@ -131,7 +131,9 @@ Scratch/Uploads, never project-owned Manuscript/KB/User paths.
 
 Move… follows Rename in the shared action specification, including phone actions.
 `EntryMovePicker` mounts `useProjectMenuSource` and `DrillInMenu` only while open; closed rows keep only their stable row anchor. It starts inside
-the current parent, disables files and the moved folder's subtree, and offers no
+the current parent for a new move. A retry opens at the refused destination
+when it still resolves (matching owner and full path), otherwise at the
+current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
 commit at the area list. The current parent reads "Already in <folder>".
 Destination collisions use the inline-name validator before namespace admission;
 files keep their name through `setLocation`, folders through `setFolderLocation`.
@@ -139,5 +141,8 @@ Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
 The chat's Scratch renders actual entries through `ContextTreeEntry` and its
-`TreeEnvProvider`, retaining lineage or Work authority. Rename and Move… share the Files implementations; create and Delete actions are absent. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
+`TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
+`useEntryInteraction`, the row boundary for management state, dispatch and
+operation selection. Creation is absent. One surface-owned deletion coordinator
+and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.

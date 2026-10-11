@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.
+
 - Move feedback survives slow or offline settlement and names the destination from the move receipt.
 
 - Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.

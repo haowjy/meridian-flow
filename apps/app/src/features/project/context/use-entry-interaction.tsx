@@ -8,7 +8,7 @@ import { ContextEntryMenu, type DeleteTarget, type EntryAction } from "./Context
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { EntryMovePicker } from "./EntryMovePicker";
-import { rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
+import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
@@ -50,7 +50,7 @@ export function useEntryInteraction({
   const [moving, setMoving] = useState(false);
   const id = node.kind === "file" ? node.documentId : node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
-  const operationId = useRenameOperation(id);
+  const { operationId, remember } = useRenameOperation(projectId, { kind, id });
   const parsed = parseContextUri(node.uri);
   let resolvedOwner: TabOwner = { workId: owner.workId ?? undefined };
   if (owner.rootThreadId) {
@@ -90,7 +90,7 @@ export function useEntryInteraction({
     repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
     siblingNames,
     kind,
-    onRenamed: (operation) => rememberRenameOperation(id, operation),
+    onRenamed: remember,
     onDone: () => {
       setRenaming(false);
       onRenameDone?.();
@@ -110,7 +110,7 @@ export function useEntryInteraction({
       repairMove: node.namespaceRepairMove,
       open: moving && capabilities.includes("move"),
       onOpenChange: setMoving,
-      onMoved: (operation: string) => rememberRenameOperation(id, operation),
+      onMoved: remember,
     },
   };
 }

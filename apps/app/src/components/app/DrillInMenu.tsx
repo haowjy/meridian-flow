@@ -11,7 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useCallback, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -73,42 +73,57 @@ export type DrillInMenuProps = {
   children: ReactElement;
 };
 
-export function DrillInMenu({
+/** Stable Radix trigger boundary; the browsing body and its acquisition mount only while open. */
+export function DrillInMenuRoot({
+  children,
+  body,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  children: ReactElement;
+  body: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [localOpen, setOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
+      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      {open ? body : null}
+    </DropdownMenu>
+  );
+}
+
+export function DrillInMenu({ children, open, onOpenChange, ...body }: DrillInMenuProps) {
+  return (
+    <DrillInMenuRoot open={open} onOpenChange={onOpenChange} body={<DrillInMenuBody {...body} />}>
+      {children}
+    </DrillInMenuRoot>
+  );
+}
+
+/** Mounted with the acquired source, so its first frame already has the correct trail. */
+export function DrillInMenuBody({
   tree,
   hereIds,
   openAt,
   actions,
   onPick,
-  children,
   caption,
   status,
   isDisabled,
-  open: controlledOpen,
-  onOpenChange,
   onCloseAutoFocus,
-}: DrillInMenuProps) {
-  const [localOpen, setOpen] = useState(false);
-  const open = controlledOpen ?? localOpen;
+}: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
-  // The folder a back row just climbed out of, highlighted so the writer keeps their place.
   const [exitedId, setExitedId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setTrail(openAt);
-      setExitedId(null);
-    }
-    wasOpen.current = open;
-  }, [open, openAt]);
-  const changeOpen = (next: boolean) => {
-    if (next) {
-      setTrail(openAt);
-      setExitedId(null);
-    }
-    setOpen(next);
-    onOpenChange?.(next);
-  };
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() =>
       contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(),
@@ -126,83 +141,78 @@ export function DrillInMenu({
   const currentActions = actions?.(trail) ?? [];
 
   return (
-    <DropdownMenu open={open} onOpenChange={changeOpen}>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        ref={contentRef}
-        align="start"
-        className="w-64 max-w-[calc(100vw-1rem)]"
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft" && trail.length > 0) {
+    <DropdownMenuContent
+      ref={contentRef}
+      align="start"
+      className="w-64 max-w-[calc(100vw-1rem)]"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" && trail.length > 0) {
+          event.preventDefault();
+          drill(trail.slice(0, -1));
+        }
+      }}
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
+      {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
+      {folder ? (
+        <DropdownMenuItem
+          onSelect={(event) => {
             event.preventDefault();
             drill(trail.slice(0, -1));
-          }
-        }}
-        onCloseAutoFocus={onCloseAutoFocus}
-      >
-        {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
-        {folder ? (
+          }}
+          aria-label={t`Back from ${folder.title ?? folder.name}`}
+        >
+          <ChevronLeft aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
+        </DropdownMenuItem>
+      ) : null}
+      {entries.length === 0 ? (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground">
+          {folder ? (
+            <Trans>Nothing here yet.</Trans>
+          ) : (
+            (tree.empty ?? <Trans>Nothing here yet.</Trans>)
+          )}
+        </p>
+      ) : (
+        entries.map((node) => (
           <DropdownMenuItem
+            key={node.id}
+            disabled={isDisabled?.(node)}
+            aria-current={isHere(node.id) ? "true" : undefined}
+            className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
             onSelect={(event) => {
-              event.preventDefault();
-              drill(trail.slice(0, -1));
-            }}
-            aria-label={t`Back from ${folder.title ?? folder.name}`}
-          >
-            <ChevronLeft aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {folder.title ?? folder.name}
-            </span>
-          </DropdownMenuItem>
-        ) : null}
-        {entries.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            {folder ? (
-              <Trans>Nothing here yet.</Trans>
-            ) : (
-              (tree.empty ?? <Trans>Nothing here yet.</Trans>)
-            )}
-          </p>
-        ) : (
-          entries.map((node) => (
-            <DropdownMenuItem
-              key={node.id}
-              disabled={isDisabled?.(node)}
-              aria-current={isHere(node.id) ? "true" : undefined}
-              className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
-              onSelect={(event) => {
-                if (node.folder) {
-                  event.preventDefault();
-                  drill([...trail, node]);
-                } else onPick(node);
-              }}
-            >
-              <node.icon aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
-              {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-            </DropdownMenuItem>
-          ))
-        )}
-        {status ? (
-          <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
-            {status}
-          </div>
-        ) : null}
-        {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
-        {currentActions.map((action) => (
-          <DropdownMenuItem
-            key={action.key}
-            disabled={action.disabled}
-            onSelect={(event) => {
-              event.preventDefault();
-              action.onSelect();
+              if (node.folder) {
+                event.preventDefault();
+                drill([...trail, node]);
+              } else onPick(node);
             }}
           >
-            <action.icon aria-hidden />
-            {action.label}
+            <node.icon aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
           </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        ))
+      )}
+      {status ? (
+        <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+          {status}
+        </div>
+      ) : null}
+      {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
+      {currentActions.map((action) => (
+        <DropdownMenuItem
+          key={action.key}
+          disabled={action.disabled}
+          onSelect={(event) => {
+            event.preventDefault();
+            action.onSelect();
+          }}
+        >
+          <action.icon aria-hidden />
+          {action.label}
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenuContent>
   );
 }
