@@ -32,25 +32,20 @@ import {
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
-  ProjectDocumentCatalogRefreshPort,
   WorkAuthorityCatalogMutationPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
 import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
-import { type CatalogRepairRequest, createCatalogRepairQueue } from "./catalog-repair-queue.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
-const REFRESH_RETRY_DELAYS_MS = [10, 50, 250, 1_000] as const;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -77,12 +72,6 @@ function decodeCursor(cursor: string): CursorPayload | null {
   } catch {
     return null;
   }
-}
-
-function isLockTimeout(cause: unknown): boolean {
-  if (!cause || typeof cause !== "object") return false;
-  if ("code" in cause && cause.code === "55P03") return true;
-  return "cause" in cause && isLockTimeout(cause.cause);
 }
 
 function stableJson(value: unknown): string {
@@ -377,15 +366,10 @@ export function createDrizzleContextCatalog(
   options: {
     retainedCommitsPerScope?: number;
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
-    eventSink?: EventSink;
-    delay?: (milliseconds: number) => Promise<void>;
-    /** Owns the post-commit repair so shutdown and test resets can drain it. */
-    backgroundTasks?: DetachedWorkTracker;
   } = {},
 ): ContextCatalog &
   ContextCatalogMutationPort &
   ProjectCatalogLifecyclePort &
-  ProjectDocumentCatalogRefreshPort &
   WorkAuthorityCatalogMutationPort {
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
@@ -393,106 +377,6 @@ export function createDrizzleContextCatalog(
     1,
     Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
   );
-  async function retryRefresh<T>(operation: () => Promise<T>): Promise<T> {
-    let lastCause: unknown;
-    for (const delayMs of REFRESH_RETRY_DELAYS_MS) {
-      await (options.delay ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(
-        delayMs,
-      );
-      try {
-        return await operation();
-      } catch (cause) {
-        lastCause = cause;
-      }
-    }
-    throw lastCause;
-  }
-  const repairQueue = createCatalogRepairQueue(async (requests) => {
-    const scopes = new Map<string, { scope: CatalogScope; roots: Set<string> }>();
-    const publications = new Map<
-      string,
-      {
-        generation: string | undefined;
-        projectIds: string[];
-        userIds: string[];
-      }
-    >();
-    const sourceIds = new Set<string>();
-    for (const request of requests) {
-      for (const scope of request.scopes) {
-        const key = catalogScopeKey(scope);
-        const entry = scopes.get(key) ?? { scope, roots: new Set<string>() };
-        for (const root of request.invalidatedRootIds) entry.roots.add(root);
-        scopes.set(key, entry);
-      }
-      for (const sourceId of request.sourceIds) sourceIds.add(sourceId);
-      for (const [kind, ids] of [
-        ["project", request.projectIds],
-        ["user", request.userIds],
-      ] as const) {
-        for (const id of ids) {
-          const key = `${kind}:${id}`;
-          const previous = publications.get(key);
-          // Generations order an authority, not a group of unrelated authorities.
-          // A post-draft refresh reserves a fresh generation inside the repair.
-          if (
-            !previous ||
-            request.availabilityGeneration === undefined ||
-            (previous.generation !== undefined &&
-              BigInt(request.availabilityGeneration) > BigInt(previous.generation))
-          ) {
-            publications.set(key, {
-              generation: request.availabilityGeneration,
-              projectIds: kind === "project" ? [id] : [],
-              userIds: kind === "user" ? [id] : [],
-            });
-          }
-        }
-      }
-    }
-    const commitId = randomUUID();
-    try {
-      await retryRefresh(() =>
-        runInDrizzleTransaction(db, async () => {
-          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
-          const reservedPublications = [];
-          for (const publication of publications.values()) {
-            reservedPublications.push({
-              ...publication,
-              generation: publication.generation ?? (await availabilityMutations.reserve()),
-            });
-          }
-          for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
-            await refreshScope(scope, [...roots], commitId);
-          }
-          for (const publication of reservedPublications) {
-            await availabilityMutations.publishReserved(publication);
-          }
-        }),
-      );
-    } catch (cause) {
-      if (options.eventSink) {
-        emitEvent(options.eventSink, {
-          level: isLockTimeout(cause) ? "warn" : "error",
-          source: "context-catalog",
-          name: "DeferredRefreshFailure",
-          payload: {
-            sourceIds: [...sourceIds],
-            scopeKeys: [...scopes.keys()],
-            ...unknownToEventPayload(cause),
-          },
-        });
-      }
-      throw cause;
-    }
-  });
-  function enqueueRepair(request: CatalogRepairRequest): Promise<void> {
-    // Track at enqueue, not at the immediate: drains must include queued reruns.
-    return (options.backgroundTasks ?? processDetachedWork).track(
-      repairQueue.enqueue(request),
-      "context catalog repair",
-    );
-  }
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -782,16 +666,6 @@ export function createDrizzleContextCatalog(
       )) {
         await refreshScope(scope, [], commitId);
       }
-    },
-    refreshProjectDocuments(projectId) {
-      // The queue reports failures; waitUntil must not reclassify contention as error.
-      return enqueueRepair({
-        scopes: [{ kind: "project", projectId }],
-        invalidatedRootIds: [],
-        projectIds: [projectId],
-        userIds: [],
-        sourceIds: [],
-      }).catch(() => undefined);
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();

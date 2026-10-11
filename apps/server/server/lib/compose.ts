@@ -64,7 +64,6 @@ import {
   type LinkAheadRegistry,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
-  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
@@ -266,7 +265,6 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
-  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -354,10 +352,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog &
-    ContextCatalogMutationPort &
-    ProjectCatalogLifecyclePort &
-    ProjectDocumentCatalogRefreshPort;
+  contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -478,8 +473,6 @@ export async function createProductionAppPorts(input: {
   let boundCollab: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
-    eventSink,
-    backgroundTasks,
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
@@ -1112,7 +1105,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
-    contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1409,11 +1401,6 @@ export function createInMemoryAppServices(): AppServices {
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
-    contextCatalogRefresh: {
-      async refreshProjectDocuments() {
-        throw new Error("Project document catalog refresh is unavailable in memory");
-      },
-    },
     documentAddresses: {
       async resolve() {
         return { kind: "unavailable" };
