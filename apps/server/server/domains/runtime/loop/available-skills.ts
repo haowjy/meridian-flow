@@ -16,6 +16,7 @@ import {
   skillListingFromMarkdown,
 } from "../../packages/index.js";
 
+// Retained package paths are the on-disk Mars format, not Context document names.
 const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
 
 type UserSkillCatalogStore = Pick<AgentRevisionStore, "listInstallations" | "readSource">;
@@ -308,7 +309,7 @@ function skillSlugFromPath(path: string): string {
   const match = SKILL_MD_PATH.exec(path);
   const slug = match?.[1];
   if (!slug) {
-    throw new Error(`Retained skill path is not a SKILL.md file: ${path}`);
+    throw new Error(`Retained skill path is not a skill definition: ${path}`);
   }
   return slug;
 }
