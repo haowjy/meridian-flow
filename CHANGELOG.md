@@ -4,6 +4,8 @@
 
 ### Changed
 
+- A new project starts with the prose document “Chapter 1”; the mock writer targets that same chapter.
+
 - Corpus and KB imports preserve writer titles and folder names instead of slugging them, and name clashes receive numbered suffixes without replacing existing content.
 
 - Prose uploads use writer names without suffixes, preserve their original filename in metadata, and number name clashes. Extensionless data uploads retain their MIME-derived file type.
