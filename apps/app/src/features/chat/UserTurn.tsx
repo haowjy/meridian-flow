@@ -17,6 +17,7 @@ import type {
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
+import { ErrorCard } from "./ErrorCard";
 import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnProps = {
@@ -114,37 +115,47 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           {t`Queued`}
         </p>
       ) : null}
-      {turn.status === "error" ? (
+      {turn.status === "error" && submissionRecovery?.moving ? (
         <p
           data-user-turn-status="error"
           role="status"
-          className={
-            submissionRecovery?.moving
-              ? "mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
-              : "mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
-          }
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {submissionRecovery?.moving ? t`Moved to the message box.` : t`Couldn't send.`}
+          {t`Moved to the message box.`}
         </p>
       ) : null}
-      {submissionRecovery && turn.status === "error" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          {submissionRecovery.onRetry ? (
-            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
-              {t`Retry`}
-            </Button>
-          ) : null}
-          {submissionRecovery.onEdit ? (
-            <Button
-              type="button"
-              variant="quiet"
-              size="sm"
-              disabled={submissionRecovery.busy}
-              onClick={submissionRecovery.onEdit}
-            >
-              {t`Edit`}
-            </Button>
-          ) : null}
+      {turn.status === "error" && !submissionRecovery?.moving ? (
+        // Zero intrinsic width so a short message's bubble does not stretch to the card;
+        // the card right-aligns inside the row and overhangs to the left.
+        <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
+          {/* The chat announces the failure once through its own assertive region, and a
+              rejection restored on reload must stay silent, so the card is not an alert. */}
+          <ErrorCard inline announce={false}>
+            <p data-user-turn-status="error" role="status">
+              {t`Couldn't send.`}
+            </p>
+            {submissionRecovery?.onRetry ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={submissionRecovery.onRetry}
+              >
+                {t`Retry`}
+              </Button>
+            ) : null}
+            {submissionRecovery?.onEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={submissionRecovery.busy}
+                onClick={submissionRecovery.onEdit}
+              >
+                {t`Edit`}
+              </Button>
+            ) : null}
+          </ErrorCard>
         </div>
       ) : null}
       {handoff ? (
