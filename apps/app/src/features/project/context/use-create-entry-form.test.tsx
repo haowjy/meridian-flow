@@ -2,6 +2,7 @@
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createContextEntry } from "@/client/api/projects-api";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { type CreateEntryForm, useCreateEntryForm } from "./use-create-entry-form";
 
@@ -125,5 +126,55 @@ describe("server conflicts", () => {
     expect(result.issue?.message).toContain("A folder named Lore already exists");
     expect(result.onDone).not.toHaveBeenCalled();
     expect(result.onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("creation conflict HTTP boundary", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([
+    {
+      name: "outline.json",
+      type: "file",
+      occupantKind: "folder",
+      copy: "A folder named outline.json already exists",
+    },
+    {
+      name: "Taken.md",
+      type: "folder",
+      occupantKind: "file",
+      copy: "A file named Taken.md already exists",
+    },
+  ] as const)("shows the $occupantKind copy for server-only conflict creating $name", async ({
+    name,
+    type,
+    occupantKind,
+    copy,
+  }) => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              status: "conflict",
+              uri: `manuscript://Book/${name}`,
+              occupantKind,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    mocks.createEntry.mockImplementationOnce(async (...args) => {
+      const body = args[0] as { type: "file" | "folder"; path: string };
+      return createContextEntry("project", "manuscript", body);
+    });
+    const result = await create(name, type);
+    expect(result.issue?.message).toContain(copy);
+    expect(result.onCreated).not.toHaveBeenCalled();
+    expect(result.onDone).not.toHaveBeenCalled();
   });
 });

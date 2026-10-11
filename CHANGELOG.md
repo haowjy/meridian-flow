@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- File and folder creation share a kind-aware HTTP conflict response, including clashes missing from the client’s sibling snapshot.
+
 - Preserve literal `#` in document titles and escaped link labels; split tool and href suffixes only at their input boundaries.
 
 - Namespace occupancy reports only proven occupant kinds; atomic identity collisions remain unqualified.

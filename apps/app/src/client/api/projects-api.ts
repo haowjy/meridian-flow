@@ -32,6 +32,7 @@ import {
   type CatalogScope,
   type CatalogSnapshot,
   type ContextReadResponse,
+  type CreateContextEntryResult,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
@@ -316,10 +317,7 @@ export async function createContextEntry(
   body: { type: "file" | "folder"; path: string; content?: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<
-  | { status: "created"; documentId?: string }
-  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" }
-> {
+): Promise<CreateContextEntryResult> {
   return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
     acceptErrorResponse: acceptsContextConflict,
