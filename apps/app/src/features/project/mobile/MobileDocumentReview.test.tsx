@@ -169,7 +169,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
   );
 });
 
-it("closes the sheet on the last change and gives chat links phone targets", async () => {
+it("closes the sheet on the last change without repeating attribution", async () => {
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
@@ -190,8 +190,7 @@ it("closes the sheet on the last change and gives chat links phone targets", asy
       const chatLink = sheet()?.querySelector<HTMLButtonElement>(
         '[title="Open the chat that wrote this change"]',
       );
-      expect(chatLink).not.toBeNull();
-      expect.soft(chatLink?.classList.contains("min-h-11")).toBe(true);
+      expect(chatLink).toBeNull();
       await click("Discard", sheet() as ParentNode);
       await settleReact(() => expect(probe().header.finished).toBe(true));
       expect(sheet()).toBeNull();

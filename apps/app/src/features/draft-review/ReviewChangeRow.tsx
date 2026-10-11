@@ -25,6 +25,7 @@ export type ReviewChangeRowProps = {
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
+  showAttribution?: boolean;
 };
 
 export function ReviewChangeRow({
@@ -39,6 +40,7 @@ export function ReviewChangeRow({
   onApply,
   onDiscard,
   touch = false,
+  showAttribution = false,
 }: ReviewChangeRowProps) {
   const { added, removed } = changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
@@ -93,11 +95,13 @@ export function ReviewChangeRow({
               )}
             </span>
           </button>
-          <ChangeAuthor
-            touch={touch}
-            attribution={change.attribution}
-            className={cn("max-w-[45%]", touch && "inline-flex min-h-11 items-center")}
-          />
+          {showAttribution ? (
+            <ChangeAuthor
+              overflow="hide"
+              attribution={change.attribution}
+              className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
+            />
+          ) : null}
         </div>
         {change.actionable ? (
           <span className="flex shrink-0 items-center">

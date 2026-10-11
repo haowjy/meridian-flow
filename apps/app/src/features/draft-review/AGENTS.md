@@ -2,7 +2,7 @@
 
 Shared review state and presentation for the manuscript, document change list,
 Work page and chat strip. One change is one server closure class, or one whole-draft item for a new
-document or incomplete attribution. Chat and Work
+document. Chat and Work
 lists can command drafts without opening a review or joining a room.
 
 Read [the lifecycle reference][reference] before changing state or settlement.
@@ -52,7 +52,7 @@ Paths outside this directory are relative to `apps/app/src`.
   their intended review rather than the last rendered selection.
 - Per-change commands send every operation of the class and the viewed revision
   tokens. Whole-draft commands settle the current server branch, not a preview.
-- New documents and previews with non-selectable text are one whole-draft
+- Only new documents are one whole-draft
   change. Its actions use existing whole commands; synthetic class keys never
   reach the server. No-hunk/no-operation previews remain formatting-only.
 - Review chrome, strip and change rows each use one line. Lists close on last

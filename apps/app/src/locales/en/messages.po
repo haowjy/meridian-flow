@@ -2516,6 +2516,10 @@ msgstr "Monthly usage"
 msgid "More"
 msgstr "More"
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "More chats"
+msgstr "More chats"
+
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "More chats couldn't load."
 msgstr "More chats couldn't load."
