@@ -155,7 +155,10 @@ answer. Closed completion holds “No changes left” in the existing review/pat
 explicit Next draft or Back to live. Lists close on the last disposition and
 finished Work files leave Changes to review. The chat strip has no notes or
 Work-page footer; one summary row holds count and commands. Expanded changes sit
-directly under it for a single document; multiple documents get file headers. Change excerpts
+directly under it for a single document; multiple documents get file headers. A file
+failure belongs to its rendered change row, otherwise to the single-file summary
+or multi-file header. This ownership is derived from the rendered row model.
+Discard confirmation replaces the summary instead of competing with it. Change excerpts
 truncate to keep attribution and actions on the same line. Whole-draft header navigation is an explicit admitted-click effect,
 not an automatic consequence of a selection's closure.
 

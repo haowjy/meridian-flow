@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep expanded strip failures visible exactly once and replace its summary with narrow-screen Discard confirmation.
+
 - Omit the redundant file header when the composer strip expands one document.
 
 - Chat process digests omit successful writes; the turn receipt alone summarizes changed documents. Reads, skills, and steps remain.

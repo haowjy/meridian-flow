@@ -475,3 +475,16 @@ Apply cases that follow a new-document Discard, and record the 500 if you hit it
 - A one-change review has a list button but no stepper.
 - Before screenshot capture, assert the intended surface is visible, no
   Loading project text or Saved locally (offline) pill, and navigator.onLine.
+
+
+### Narrow strip failures and confirmation
+
+With one existing document, retain a failed Review launch or whole-draft command:
+automatic expansion must leave exactly one visible error owner. Whole-draft rows
+carry their own failures; selective rows must not hide an unrepresented draft error.
+With multiple documents, Discard replaces the summary with its question and
+Keep/Discard, rather than overlapping the filename/count. Probe 390px touch and a
+320px dock (256px inner strip), including a long translated question: all controls
+must remain inside the row with disjoint bounds and 44px touch targets. Hold a
+whole-row Apply/Discard request: the change disappears immediately and returns
+on refusal, without a navigation change.
