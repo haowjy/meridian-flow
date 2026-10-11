@@ -17,7 +17,7 @@ import { type ThreadWorksRepository, writeModeSwitchMetadata } from "../../threa
 import { contentForBlockInput } from "./block-helpers.js";
 import { createLocalTurn } from "./local-turn.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
-import { writeModeLines } from "./work-context.js";
+import { describeWriteMode } from "./work-context.js";
 
 export interface WriteModeSwitchPort {
   /** The notice body for the chat's new mode, rendered against its bound Work. */
@@ -26,15 +26,17 @@ export interface WriteModeSwitchPort {
   setWorkDefault(workId: WorkId, mode: AiWriteMode): Promise<void>;
 }
 
-/** One sentence, then the same writes line the Work context renders for that mode. */
+/** One sentence, then the same instructions the Work context gives for that mode. */
 export function writeModeSwitchNotice(
   work: Pick<Work, "archivedAt">,
   mode: AiWriteMode,
   mayUnarchive: boolean,
 ): string {
-  const modeText = writeModeLines({ mode, archived: isWorkArchived(work), mayUnarchive })
-    .map((line) => line.trim().replace(/^writes: [^.]*\.\s*/, ""))
-    .join(" ");
+  const modeText = describeWriteMode({
+    mode,
+    archived: isWorkArchived(work),
+    mayUnarchive,
+  }).instructions.join(" ");
   return mode === "direct"
     ? `The writer switched this chat to auto-apply. ${modeText} Changes already in this Work's draft stay there for the writer to review.`
     : `The writer switched this chat to draft mode. ${modeText}`;
