@@ -182,6 +182,22 @@ if (!RUN) {
         });
       }
     });
+    it("spells a preloaded historical ahead href canonically", async () => {
+      const href = "manuscript://book.md/Chapter 15.md?view=1#scene";
+      const stored = [[`ahead:${OPEN_AHEAD}`, href]] as const;
+      await scopes.within({ documentId: HOLDER }, async () => {
+        await scopes.prepare({
+          holders: [{ documentId: HOLDER, view: LIVE }],
+          docs: [holderDoc(stored)],
+        });
+        expect(
+          scopes.holder({ documentId: HOLDER, view: LIVE }).spellLink({ ref: stored[0][0], href }),
+        ).toEqual({
+          href: "../book.md/Chapter 15?view=1#scene",
+          address: "manuscript://book.md/Chapter 15",
+        });
+      });
+    });
     beforeEach(seed);
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);
