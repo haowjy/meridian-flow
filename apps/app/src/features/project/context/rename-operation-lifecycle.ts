@@ -70,6 +70,8 @@ type Entry = {
   kind: LinkNoteSubject["kind"];
   handle: string;
   records: readonly ResourceRecord[];
+  /** Whether a snapshot has carried this subject's intents since admission. */
+  seen: boolean;
   selection: Selection;
   stop: () => void;
   timer?: ReturnType<typeof setTimeout>;
@@ -114,8 +116,11 @@ export class RenameOperationLifecycle {
   }
   async remember(projectId: string, subject: LinkNoteSubject, operationId: string) {
     if (this.closed) return;
+    // A failed lookup only costs the note; the command itself is unaffected.
     const known =
-      subject.kind === "file" ? await this.replica.readKnownDocument(projectId, subject.id) : null;
+      subject.kind === "file"
+        ? await this.replica.readKnownDocument(projectId, subject.id).catch(() => null)
+        : null;
     if (this.closed || (subject.kind === "file" && !known)) return;
     const handle = known?.key.handle ?? `folder:${subject.id}`;
     const key = subjectKey(projectId, subject.kind, handle);
@@ -127,6 +132,7 @@ export class RenameOperationLifecycle {
       kind: subject.kind,
       handle,
       records: known ? [known.record] : [],
+      seen: false,
       selection: { operationId, feedback: null },
       stop: () => {},
     };
@@ -152,7 +158,13 @@ export class RenameOperationLifecycle {
         subject.kind === "folder"
           ? snapshot.folders.find((folder) => folder.folderId === subject.id)?.intents
           : file?.intents;
-      if (!intents) return;
+      // Absent before it was ever seen is a replay from before admission; absent after
+      // being seen means the subject is gone (a deleted folder), so its watch ends.
+      if (!intents) {
+        if (entry.seen) this.retire(key, entry);
+        return;
+      }
+      entry.seen = true;
       const state =
         file?.resource.lifecycle.kind === "terminal"
           ? { kind: "retired" as const }

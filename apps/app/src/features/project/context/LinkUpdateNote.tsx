@@ -35,7 +35,7 @@ export function useRenameOperation(projectId: string, subject: LinkNoteSubject) 
   return {
     operationId: selection?.operationId ?? null,
     feedback: selection?.feedback ?? null,
-    remember: (operationId: string) => lifecycle?.remember(projectId, subject, operationId),
+    remember: (operationId: string) => void lifecycle?.remember(projectId, subject, operationId),
   };
 }
 
