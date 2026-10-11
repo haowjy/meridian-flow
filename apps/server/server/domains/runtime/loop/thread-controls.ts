@@ -34,6 +34,11 @@ export function createThreadControls(deps: {
   /** Enqueue and wake the thread. */
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   enqueueWithoutWake(draft: MessageDraft): Promise<InboxMessage>;
+  /**
+   * Writes the row already acknowledged, with the rows it cancels, then
+   * publishes the final queue once: no snapshot ever shows the settled row.
+   */
+  enqueueSettled(draft: MessageDraft, cancelledIds: readonly string[]): Promise<void>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   /** Applies due switches under the run claim; false when the claim was busy. */
@@ -96,11 +101,7 @@ export function createThreadControls(deps: {
           // A switch back cancels the queued switch; a same-mode request leaves
           // things alone. Either way the row is written already acknowledged,
           // so nothing shows in the chat and a replay finds it settled.
-          await deps.enqueueWithoutWake(draft);
-          await deps.acknowledge(input.threadId, [
-            ...(queued && !unchanged ? [queued.id] : []),
-            input.id,
-          ]);
+          await deps.enqueueSettled(draft, queued && !unchanged ? [queued.id] : []);
           return { created: true, apply: false };
         }
         await deps.enqueueWithoutWake(draft);
