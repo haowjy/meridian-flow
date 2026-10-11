@@ -28,11 +28,14 @@ Hosts share the tab-local owner, so a pane change before the debounce flushes
 still hydrates the latest words. Each mount captures its initial snapshot once.
 It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
 on pagehide/unmount. Transfer to the submission journal clears it synchronously
-before dispatch/navigation. `settleChatSubmission` transfers a rejection
-back to the tab-local owner before journal retirement, including after pane
-unmount. It never overwrites later authoring. Acceptance (including failed-row
-Retry) clears only the unchanged submitted snapshot. Lifecycle transfers publish
-a new editor mount; ordinary typing never does. Edit only focuses that editor.
+at Send. `useChatSubmissions` rebuilds writer rows and binds one cancellable
+`ChatSubmissionDriver` to the mounted chat; first sends and later sends share
+that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
+this tab. Retry looks up before posting. Edit fences first, prepends the rejected
+structured document before newer writing, then retires the journal record.
+Never-created chat Edit returns all its messages and unsent writing to New chat
+in the same pane. Lifecycle transfers publish a new editor mount; typing does
+not. `useThreadRunResume` only attaches snapshot-based active runs.
 Pending upload bytes do not persist. Successfully uploaded reference atoms do.
 
 ## Mental model

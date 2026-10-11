@@ -9,7 +9,8 @@ It is not a thread replica: no assistant turns or rendered rows.
   `prefix + accountId + ":"`, so an account id that is a string prefix of
   another never leaks the longer account's records.
 - One key per submission is deliberate. A tab can only clobber the record it
-  owns, so no whole-record read-modify-write race and no Web Lock. Account
+  owns, so no whole-record read-modify-write race. Writes need no Web Lock; the
+  driver holds a per-account/thread Web Lock for lifecycle transitions. Account
   switch never deletes another account's keys, so A→B→A preserves A's intents.
 - `setUser(accountId)` is the only bind; `epoch` bumps on every rebind. Every
   record/retire takes an explicit `accountId` and is refused when it is not the
@@ -22,15 +23,21 @@ It is not a thread replica: no assistant turns or rendered rows.
   validated structured authoring snapshot until settlement. The
   displayed writer row is built from the same blocks (`appendUserTurn`), so a
   live or recovered row keeps each reference's document like the snapshot does.
-- Lifecycle: record before dispatch and hand off only the unchanged authoring
-  snapshot. On acknowledgement retire the witness. A rejection fills an empty
-  per-tab composer before retirement; its transient failed row is removed on
-  remount once the composer owns its words. Otherwise its exact snapshot stays in a
-  durable rejected entry. Rejected entries render failed rows in every tab and
-  on reload, never trigger lookup or replay, and are resolved only by the writer.
-  Retry rewrites the same record key with a reminted submission id and sends the exact fingerprint, leaving newer
-  authoring alone. Edit prepends the rejected structured document to any newer
-  draft before retirement. Ambiguous entries keep Check / Start over.
+- The journal owns every displayed unadmitted writer message. `creation` carries
+  create-or-get inputs on every record until the server confirms the chat.
+  `ChatSubmissionDriver` serializes requests in `createdAt` order under
+  `meridian:chat-submissions:<accountId>:<threadId>`. Derivation waits stay outside
+  that lock. Account/lifetime cancellation abandons work without presenting failure;
+  each request has a timeout so a departed owner cannot block takeover.
+- Acceptance bridges the optimistic row, then retires its record. A refusal is
+  stored as `state: "rejected"` and never re-driven automatically. Ambiguity is
+  tab-local: the unresolved journal record is re-driven on mount, online,
+  snapshot refresh and socket reconnect. Failure appears only on the writer row.
+- Retry looks up the same submission id first. Acceptance bridges without a POST;
+  not-seen posts the same id; only a durable rejection re-mints the id in the same
+  record key. Edit fences an existing chat's submission before transferring its
+  structured draft ahead of newer writing. Never-created chat Edit transfers all
+  its journal drafts and this tab's unsent writing to New chat before retirement.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec discards a wrong envelope version, a foreign `accountId`, and corrupt
   JSON without throwing. Storage errors degrade to "no intents", never a crash.

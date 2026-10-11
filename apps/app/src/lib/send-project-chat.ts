@@ -1,50 +1,14 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
-import type { SubmittedReference, Thread, UserMessageBlock } from "@meridian/contracts/protocol";
-import {
-  type ChatSubmission,
-  recordChatSubmission,
-  retireChatSubmission,
-} from "@/client/chat-submissions";
-import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
+import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import { type ChatSubmission, recordChatSubmission } from "@/client/chat-submissions";
+import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
 import type { CreationAgent } from "@/features/agents/creation-agent";
+import { makeOptimisticThread } from "./optimistic-thread";
 import { deriveTitleFromMessage } from "./thread-title";
-
-const OPTIMISTIC_OWNER_ID = "optimistic-local";
-
-const persistJobs = new WeakMap<AbortSignal, Map<string, Promise<Thread>>>();
-
-/**
- * Per-tab session ids for an in-flight first send. A remount before
- * acknowledgement must reuse the destination rows instead of appending a
- * second pending user turn and working turn. Keyed `accountId:submissionId`.
- */
-const firstSendSessionIds = new Map<
-  string,
-  { optimisticUserTurnId: string; workingTurnId: string }
->();
-
-/** Share only create-or-get across mounts in one account epoch; each mount owns dispatch. */
-export function runExclusiveThreadCreation(
-  accountEpoch: AbortSignal,
-  threadId: string,
-  create: () => Promise<Thread>,
-): Promise<Thread> {
-  let jobs = persistJobs.get(accountEpoch);
-  if (!jobs) {
-    jobs = new Map();
-    persistJobs.set(accountEpoch, jobs);
-  }
-  const existing = jobs.get(threadId);
-  if (existing) return existing;
-  const running = create().finally(() => jobs.delete(threadId));
-  jobs.set(threadId, running);
-  return running;
-}
 
 export type SendProjectChatArgs = {
   accountId: string;
-  threadId?: string;
   projectId: string;
   /** The composer's message as submitted; `text` is its blocks' text, not trimmed. */
   text: string;
@@ -57,52 +21,17 @@ export type SendProjectChatArgs = {
   workId: string;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
+  rememberRow: (recordId: string, threadId: string, turnId: string) => void;
   now?: number;
 };
 
 export type SendProjectChatResult = {
   threadId: string;
   optimisticUserTurnId: string;
-  workingTurnId: string;
 };
-
-export function makeOptimisticThread(input: {
-  id: string;
-  projectId: string;
-  title: string;
-  timestamp: string;
-  workId?: string | null;
-  agent?: CreationAgent;
-}): Thread {
-  return {
-    id: input.id,
-    projectId: input.projectId,
-    workId: input.workId ?? null,
-    userId: OPTIMISTIC_OWNER_ID,
-    kind: "primary",
-    status: "idle",
-    title: input.title,
-    ref: null,
-    initialPromptBakeId: null,
-    agentDefinitionRevisionId: input.agent?.selection.definitionRevisionId ?? null,
-    agentName: input.agent?.name ?? null,
-    activeLeafTurnId: null,
-    parentThreadId: null,
-    rootThreadId: input.id,
-    spawnDepth: 0,
-    spawnStatus: null,
-    totalCostUsd: "0",
-    turnCount: 0,
-    createdAt: input.timestamp,
-    updatedAt: input.timestamp,
-    lastActivityAt: input.timestamp,
-    deletedAt: null,
-  };
-}
 
 export function sendProjectChat({
   accountId,
-  threadId: existingThreadId,
   projectId,
   text,
   blocks,
@@ -114,14 +43,14 @@ export function sendProjectChat({
   workId,
   threadActions,
   selectChat,
+  rememberRow,
   now,
 }: SendProjectChatArgs): SendProjectChatResult | null {
-  const threadId = existingThreadId ?? crypto.randomUUID();
+  const threadId = crypto.randomUUID();
   const timestamp = new Date(now ?? Date.now()).toISOString();
   const title = deriveTitleFromMessage(text.trim());
-  const isNew = !existingThreadId;
 
-  if (isNew) {
+  {
     // Durable witness before any display or navigation: if the intent cannot be
     // persisted, do not show a destination or dispatch it. Keep the draft so
     // the composer can report the local failure.
@@ -148,105 +77,11 @@ export function sendProjectChat({
     threadActions.ensureThread(
       makeOptimisticThread({ id: threadId, projectId, title, timestamp, workId, agent }),
     );
-    threadActions.markPendingCreation({ threadId });
   }
 
-  threadActions.markHandoffPending(threadId);
   const optimisticUserTurnId = threadActions.appendUserTurn(threadId, blocks).id;
-  const workingTurnId = crypto.randomUUID();
-  threadActions.ensureAssistantTurn(threadId, workingTurnId);
-
-  if (!isNew) return { threadId, optimisticUserTurnId, workingTurnId };
-
-  threadActions.markPendingStream(threadId, {
-    creation: {
-      projectId,
-      title,
-      text,
-      blocks,
-      references,
-      agentSelection: agent.selection,
-      workId,
-      optimisticUserTurnId,
-      workingTurnId,
-      submissionId,
-      ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
-    },
-  });
-  firstSendSessionIds.set(`${accountId}:${submissionId}`, {
-    optimisticUserTurnId,
-    workingTurnId,
-  });
+  rememberRow(submissionId, threadId, optimisticUserTurnId);
   selectChat(threadId);
-  return { threadId, optimisticUserTurnId, workingTurnId };
-}
-
-/** Retire the durable first-send intent on acknowledgement or a definitive outcome. */
-export function retireFirstSendSubmission(
-  accountId: string,
-  submissionId: string,
-  threadId: string,
-  threadActions: ThreadStoreActions,
-  expectedEpoch?: number,
-): void {
-  retireChatSubmission(accountId, submissionId, expectedEpoch);
-  firstSendSessionIds.delete(`${accountId}:${submissionId}`);
-  threadActions.clearPendingCreation({ threadId });
-}
-
-/**
- * Rebuild the destination rows from a durable first-send intent, then return
- * the `persistCreation` inputs. Used when the in-memory pending stream and the
- * same-tab sessionStorage handoff are both gone.
- */
-export function rehydrateFirstSendSubmission(
-  entry: ChatSubmission,
-  threadActions: ThreadStoreActions,
-  accountId: string,
-): NonNullable<PendingStreamStart["creation"]> {
-  if (!entry.creation || !entry.projectId) throw new Error("First send requires creation inputs");
-  const creation = entry.creation;
-  threadActions.ensureThread(
-    makeOptimisticThread({
-      id: entry.threadId,
-      projectId: entry.projectId,
-      title: creation.title,
-      timestamp: entry.createdAt,
-      workId: creation.workId,
-      agent: {
-        name: creation.agentName,
-        slug: creation.agentSlug,
-        selection: creation.agentSelection,
-      },
-    }),
-  );
-  threadActions.markPendingCreation({ threadId: entry.threadId });
-  threadActions.markHandoffPending(entry.threadId);
-  // Reuse the rows a same-tab remount already appended before acknowledgement;
-  // only a fresh store (real reload or another tab) needs new local ids.
-  const mapKey = `${accountId}:${entry.submissionId}`;
-  const remembered = firstSendSessionIds.get(mapKey);
-  const existingTurns = threadActions.turns(entry.threadId) ?? [];
-  const reuse =
-    remembered !== undefined &&
-    existingTurns.some((turn) => turn.id === remembered.optimisticUserTurnId);
-  const optimisticUserTurnId = reuse
-    ? remembered.optimisticUserTurnId
-    : threadActions.appendUserTurn(entry.threadId, entry.blocks).id;
-  const workingTurnId = reuse ? remembered.workingTurnId : crypto.randomUUID();
-  threadActions.ensureAssistantTurn(entry.threadId, workingTurnId);
-  firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
-  return {
-    projectId: entry.projectId,
-    title: creation.title,
-    text: entry.text,
-    blocks: entry.blocks,
-    references: entry.references,
-    agentSelection: creation.agentSelection,
-    workId: creation.workId,
-    optimisticUserTurnId,
-    workingTurnId,
-    submissionId: entry.submissionId,
-    activatedSkillSlugs: entry.activatedSkillSlugs,
-  };
+  // Mounting the selected destination wakes its submission driver.
+  return { threadId, optimisticUserTurnId };
 }

@@ -18,18 +18,11 @@ import type {
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
 
-export type UserTurnRecovery =
-  | {
-      kind: "ambiguous";
-      onCheck: () => void;
-      onRetire: () => void;
-    }
-  | {
-      kind: "rejected";
-      onRetry: () => void;
-      /** Move rejected words into the composer without replacing newer writing. */
-      onEdit?: () => void;
-    };
+export type UserTurnRecovery = {
+  onRetry: () => void;
+  onEdit?: () => void;
+  busy?: boolean;
+};
 
 export type UserTurnProps = {
   turn: Turn;
@@ -135,23 +128,19 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           {t`Couldn't send.`}
         </p>
       ) : null}
-      {submissionRecovery?.kind === "ambiguous" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
-            {t`Check submission status`}
-          </Button>
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetire}>
-            {t`Start over`}
-          </Button>
-        </div>
-      ) : null}
-      {submissionRecovery?.kind === "rejected" ? (
+      {submissionRecovery && turn.status === "error" ? (
         <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
             {t`Retry`}
           </Button>
           {submissionRecovery.onEdit ? (
-            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
+            <Button
+              type="button"
+              variant="quiet"
+              size="sm"
+              disabled={submissionRecovery.busy}
+              onClick={submissionRecovery.onEdit}
+            >
               {t`Edit`}
             </Button>
           ) : null}

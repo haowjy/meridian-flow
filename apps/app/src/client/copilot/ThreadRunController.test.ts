@@ -54,8 +54,8 @@ describe("ThreadRunController write outcomes", () => {
       snapshotFloorNextSeq: "43",
     });
     append.resolve(defaultSendResponse());
-    await expect(recovered).resolves.toMatchObject({ kind: "ambiguous" });
-    await expect(submitted).resolves.toMatchObject({ kind: "ambiguous" });
+    await expect(recovered).resolves.toMatchObject({ kind: "abandoned" });
+    await expect(submitted).resolves.toMatchObject({ kind: "abandoned" });
     expect(scenario.activeSubscription()).toBeUndefined();
     scenario.controller.dispose();
   });
@@ -87,7 +87,7 @@ describe("ThreadRunController write outcomes", () => {
       snapshotFloorNextSeq: "43",
     });
 
-    await expect(pending).resolves.toMatchObject({ kind: "ambiguous" });
+    await expect(pending).resolves.toMatchObject({ kind: "abandoned" });
     expect(scenario.turns()).toEqual([expect.objectContaining({ id: row.id, status: "pending" })]);
     expect(scenario.activeSubscription()).toBeUndefined();
   });
@@ -120,7 +120,7 @@ describe("ThreadRunController write outcomes", () => {
         { optimisticUserTurnId: endedRow.id },
         ended,
       ),
-    ).resolves.toMatchObject({ kind: "ambiguous" });
+    ).resolves.toMatchObject({ kind: "abandoned" });
 
     // The sibling token still owns its own reconciliation and settles normally.
     const siblingRow = scenario.store

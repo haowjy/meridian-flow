@@ -36,7 +36,7 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   unavailable/offline catalogs leave them alone. Session decoding omits upload
   atoms whose bytes existed only in memory, but preserves completed upload
   reference ownership.
-- Send retains the live document during admission. Rejection publishes the
-  current snapshot back to the host without prepending the submitted document;
-  accepted sends clear only an unchanged revision. The dispatch journal must
-  own the fingerprint before the host clears its persisted unsent copy.
+- Send transfers the exact structured fingerprint to the journal before clearing
+  unchanged editor words. `onSubmit` returns whether local recording succeeded;
+  network admission does not quarantine or lock authoring. A local storage refusal
+  keeps the live draft and reports the failure on the composer.
