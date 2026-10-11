@@ -12,7 +12,8 @@ ports and live/branch coordinators; the package never owns Postgres, Hocuspocus,
 routes, auth, or Meridian Work/Project concepts. The coordinator's document is
 this core's canonical world; it need not be the host's live document.
 
-Runtime sync state is memory-only. The journal is the only durable record;
+Runtime sync state is memory-only. The host persists journals and immutable edit
+receipts;
 restart/cold paths reconstruct from retained updates/checkpoints. Attribution is
 host-provided per interaction and must not depend on session-lifetime snapshots.
 
@@ -36,3 +37,13 @@ immediate writes use the journal kind returned by submission to restore or recov
   ProseMirror via `@meridian/markup`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
+
+## Forward inverse primitive (parallel, not policy)
+
+`undo/forward-inverse.ts` owns receipt normalization, per-part classification,
+restoration lineage hydration, server UndoManager execution, and admission.
+Its Yjs-private layout is pinned to 13.6.31. `computeInverse` returns one edit
+per target edit, with transaction-delta parts and aliases; the host persists
+those edits under one action ID. Normalization is per edit, never per action.
+This primitive does not route commands, choose destinations, or replace the
+existing reversal engine yet.

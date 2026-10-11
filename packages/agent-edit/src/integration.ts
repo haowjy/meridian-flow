@@ -126,6 +126,29 @@ export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
 export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type {
+  CapturedPart,
+  ComputedInverse,
+  ComputedInverseEdit,
+  EditAlias,
+  EditEffect,
+  EditFrontier,
+  EditKind,
+  EditRange,
+  EditTarget,
+  InversePart,
+  InverseSelection,
+  PartClassification,
+  PartState,
+} from "./undo/forward-inverse.js";
+export {
+  admitInverseReceipt,
+  captureEditFrontier,
+  captureEditParts,
+  captureServerRestoration,
+  classifyEditParts,
+  computeInverse,
+} from "./undo/forward-inverse.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
 export {
   decodeUpdateForDependencies,
