@@ -464,7 +464,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
         .from(branchWriteJournal)
         .orderBy(branchWriteJournal.id);
-      expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
       const pending = await collab.draftReview.preview({
         workId: WORK_ID as never,

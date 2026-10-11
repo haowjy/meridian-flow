@@ -299,28 +299,34 @@ describe("response staging", () => {
 });
 
 it("keeps segmented writes logical across rollback, retry and live destinations", async () => {
-  const ctx = harness({ "chapter.md": "She did what she wanted." }, { segmentDraftWrites: true });
+  const ctx = harness(
+    { "chapter.md": "She did what she wanted.\n\nShe climbed the road." },
+    { segmentDraftWrites: true },
+  );
   const command = {
     command: "replace" as const,
     file: "chapter.md",
-    in: 1,
-    content: "I do what I wanted.",
+    in: [1, 2] as [number, number],
+    content: "I do what I wanted.\n\nI climb the road.",
   };
   const staged = { ...context, turnId: "pov", responseId: "abort" };
   expect((await ctx.core.write(command, staged)).result.status).toBe("success");
   await ctx.core.rollbackResponse("abort");
   expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-  expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["She did what she wanted."]);
+  expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+    "She did what she wanted.",
+    "She climbed the road.",
+  ]);
   expect((await ctx.core.write(command, { ...staged, responseId: "retry" })).result.status).toBe(
     "success",
   );
   const committed = await ctx.core.commitResponse("retry");
   expect(committed.documents[0].receipts).toHaveLength(1);
   const entries = ctx.journal.recordedBatchEntries().at(-1) ?? [];
-  expect(entries).toHaveLength(1);
+  expect(entries).toHaveLength(2);
   expect(new Set(entries.map((entry) => entry.mutation?.writeId)).size).toBe(1);
   expect(new Set(entries.map((entry) => entry.mutation?.wId)).size).toBe(1);
-  const live = harness({ "chapter.md": "She did what she wanted." });
+  const live = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." });
   expect((await live.core.write(command, context)).result.status).toBe("success");
   expect((await live.journal.read("chapter.md")).updates).toHaveLength(1);
 });
