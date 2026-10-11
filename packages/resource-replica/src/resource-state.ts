@@ -91,14 +91,19 @@ export function planResourceLocation(input: {
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
-  // Compute the optimistic name once, retaining the input for server dispatch.
-  const stored = storedFilename(input.destination.name, record.resource.canonical?.name);
-  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const latest = owningLocationIntent(
     input.projectId,
     record.intents,
     Boolean(record.resource.obligations.canonicalRefresh),
   );
+  // Compute the optimistic name once, retaining the input for server dispatch.
+  const stored = storedFilename(
+    input.destination.name,
+    latest?.desired.kind === "set-location"
+      ? latest.desired.destination.name
+      : record.resource.canonical?.name,
+  );
+  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&
