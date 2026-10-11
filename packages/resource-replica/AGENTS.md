@@ -17,3 +17,8 @@ Typed non-retryable HTTP 4xx refusals also settle namespace attempts when route
 intake rejects before a server receipt exists. Persist that refusal against the
 submitted operation ID, never invent a server receipt. Bare HTTP/network failures
 still need receipt evidence and remain replayable otherwise.
+
+File location intents retain `typedName` independently of their canonical optimistic
+destination. Dispatch sends the typed name so an explicit prose suffix cannot be
+misread as source-extension inheritance. Receipt commands witness typed requests;
+the receipt result and optimistic location carry canonical stored names.
