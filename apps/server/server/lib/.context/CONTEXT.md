@@ -68,7 +68,8 @@ represented as a fully-typed slot:
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `eventQuery` | observability | Optional recent-event query port, present only when the debug gate is open |
-| `preferences` | preferences | Drizzle project preferences repository |
+| `preferences` | preferences | Drizzle project runtime preferences repository |
+| `accountSettings` | preferences | Atomic account settings repository over user preferences and working-set sync |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |
 | `stopThreadRun` | runtime | One composed running-turn lookup and runner-cancel policy used by Work lifecycle routes and tools |

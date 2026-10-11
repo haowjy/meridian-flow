@@ -29,3 +29,14 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   registered today, on every chat: it is always the command, and the server's
   refusal (nothing to summarize yet) lands on its row. Manuscript
   slash insertion is a different catalog.
+
+- The host owns session persistence through `initialDraft` / `onDraftChange`.
+  An initial snapshot is never applied again to a live draft. Successful catalog
+  acquisition removes restored reference atoms whose resources are gone;
+  unavailable/offline catalogs leave them alone. Session decoding omits upload
+  atoms whose bytes existed only in memory, but preserves completed upload
+  reference ownership.
+- Send retains the live document during admission. Rejection publishes the
+  current snapshot back to the host without prepending the submitted document;
+  accepted sends clear only an unchanged revision. The dispatch journal must
+  own the fingerprint before the host clears its persisted unsent copy.

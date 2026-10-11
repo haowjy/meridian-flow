@@ -15,11 +15,13 @@
  * keystroke, but it reaches ProseMirror through the same ySync channel a peer's
  * edit does, so the metadata has to be read rather than merely noticed.
  */
+
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type { TextRange } from "../passage-resolution";
+import { markEditorTarget } from "../reading-position-navigation";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -49,6 +51,7 @@ export const PassageHighlightExtension = Extension.create({
         (ranges) =>
         ({ editor, tr, dispatch }) => {
           if (ranges.length === 0) return false;
+          markEditorTarget(editor);
           dispatch?.(tr.setMeta(PASSAGE_META, [...ranges]));
           revealIfNeeded(editor);
           scheduleClear(editor);

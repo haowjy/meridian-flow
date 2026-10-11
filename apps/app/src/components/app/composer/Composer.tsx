@@ -46,12 +46,12 @@ import {
   ComposerUploadNode,
   composerReferenceContent,
   composerSelection,
-  mergeComposerDraftSnapshots,
   plainComposerDoc,
   restoreComposerSelection,
   serializeComposerDraft,
 } from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
+import { useRestoredReferences } from "./useRestoredReferences";
 
 export type {
   ComposerDraftChange,
@@ -134,12 +134,6 @@ export type ComposerHandle = {
   hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
-  restoreFailedSubmission: (
-    id: string,
-    submitted: ComposerDraftSnapshot,
-    later?: ComposerDraftSnapshot | null,
-    expectedRevision?: number,
-  ) => boolean;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
@@ -166,7 +160,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
   const revision = useRef(initialDraft?.revision ?? 0);
-  const restored = useRef(new Set<string>());
   const inFlight = useRef<ComposerSubmitEnvelope | null>(null);
   const [quarantined, setQuarantined] = useState<ComposerSubmitEnvelope | null>(null);
   const mountedRef = useRef(true);
@@ -321,6 +314,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
     },
   });
+  useRestoredReferences(editor, initialDraft, referenceCatalog);
   useLayoutEffect(() => {
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);
@@ -378,17 +372,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       hasContent: () => hasContent,
       snapshot,
       restoreSnapshot,
-      restoreFailedSubmission: (id, submitted, later, expectedRevision) => {
-        if (expectedRevision !== undefined && expectedRevision !== revision.current) return false;
-        if (restored.current.has(id)) return true;
-        if (!editor || editor.isDestroyed) return false;
-        restored.current.add(id);
-        return restoreSnapshot(
-          later && later.revision > submitted.revision
-            ? mergeComposerDraftSnapshots(submitted, later)
-            : submitted,
-        );
-      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -417,19 +400,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       );
       setLocked(false);
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
+        // Admission already settled authoring ownership. This presentation clear
+        // must not publish an empty draft over another pane's newer writing.
+        suppressDraftChangeRef.current = true;
         editor.commands.clearContent(true);
-      }
-      if (outcome.kind === "rejected" && revision.current !== envelope.acceptedRevision) {
-        const later = snapshot();
-        restoreSnapshot(
-          later.revision > envelope.draft.revision
-            ? mergeComposerDraftSnapshots(envelope.draft, later)
-            : envelope.draft,
-        );
+        suppressDraftChangeRef.current = false;
       }
       editor.commands.focus(undefined, { scrollIntoView: false });
     },
-    [editor, restoreSnapshot, snapshot],
+    [editor],
   );
 
   async function submit() {

@@ -7,33 +7,36 @@
  * therefore read as the same surface as the tree.
  */
 import type { LucideIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
-
+import type { ReactNode } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowIcon, rowPaddingLeft, Twistie } from "../context/ContextTreeRows";
 import { contextTreeFileRowClassName } from "../context/context-row-geometry";
 import { RailPaneHeader } from "../context/RailPaneHeader";
+import { type RailSectionId, useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 
 /** A collapsible section under a tree-style head. The tree's heads show no counts, so neither does this. */
 export function CollapsibleRailSection({
   title,
   icon,
-  defaultOpen = false,
+  preferenceId,
   children,
 }: {
   title: string;
   icon: LucideIcon;
-  defaultOpen?: boolean;
+  preferenceId: RailSectionId;
   children: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(defaultOpen);
+  const expanded = useProjectSurfacePrefsStore(
+    (state) => state.railPrefs[`${preferenceId}Expanded`],
+  );
+  const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
   return (
     <section>
       <RailPaneHeader
         label={title}
         icon={icon}
         expanded={expanded}
-        onExpandedChange={setExpanded}
+        onExpandedChange={(next) => setExpanded(preferenceId, next)}
       />
       {expanded ? <div>{children}</div> : null}
     </section>

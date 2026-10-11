@@ -512,6 +512,10 @@ msgstr ""
 msgid "All Work"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "All your devices"
+msgstr "所有设备"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
@@ -1102,6 +1106,7 @@ msgstr ""
 msgid "Couldn't compact"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr ""
@@ -1320,6 +1325,7 @@ msgstr ""
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr ""
@@ -3063,8 +3069,12 @@ msgid "Rendering diagram…"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopens your last document and chat when you switch devices"
-msgstr ""
+msgid "Reopens the documents you had open when you switch devices."
+msgstr "切换设备时，会重新打开你之前打开的文档。"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Reopens your last document and chat when you switch devices"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3116,8 +3126,12 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume where I left off on any device"
-msgstr ""
+msgid "Resume my documents on any device"
+msgstr "在任何设备上继续处理我的文档"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Resume where I left off on any device"
+#~ msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -3777,6 +3791,14 @@ msgstr ""
 msgid "There is nowhere left to put that picture."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences follow your account wherever you sign in."
+msgstr "这些偏好设置会随账号同步到你登录的所有设备。"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences stay on this device to suit your screen."
+msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -3904,7 +3926,7 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
-msgstr ""
+msgstr "此设备"
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "This diagram has a syntax problem"
