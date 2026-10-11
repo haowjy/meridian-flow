@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   branchPushOutboxUpdates,
-  branchPushSettlementBatches,
   branchPushSettlementOutbox,
   branchWriteJournal,
   documentBranches,
@@ -25,7 +24,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
@@ -45,10 +44,7 @@ import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistenc
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
-import type {
-  SettlementAdmission,
-  SettlementCut,
-} from "../domain/ports/pending-settlement-store.js";
+import type { SettlementCut } from "../domain/ports/pending-settlement-store.js";
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
@@ -57,6 +53,7 @@ import {
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
+import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
 
 /** A member row and its push, read once under the batch's locks. */
 export type LockedSettlementMember = {
@@ -584,64 +581,6 @@ export async function readSettlementMember(
     sweepEvidence,
     joinVersion: row.outbox.joinVersion,
   };
-}
-
-export async function joinAdmissionWithinTx(
-  db: Pick<Database, "select" | "insert" | "update">,
-  input: SettlementAdmission,
-): Promise<number> {
-  const sourceId = Number(input.source.id);
-  if (!Number.isSafeInteger(sourceId)) {
-    throw new Error(`Settlement admission source id is not a safe integer: ${input.source.id}`);
-  }
-  const excludePushId = input.excludePushId === undefined ? undefined : Number(input.excludePushId);
-  if (excludePushId !== undefined && !Number.isSafeInteger(excludePushId)) {
-    throw new Error(`Excluded settlement push id is not a safe integer: ${input.excludePushId}`);
-  }
-  const targets = await db
-    .select({
-      pushId: branchPushSettlementOutbox.pushId,
-      ordinal: branchPushSettlementOutbox.joinVersion,
-    })
-    .from(branchPushSettlementOutbox)
-    .innerJoin(
-      branchPushSettlementBatches,
-      eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
-    )
-    .where(
-      and(
-        eq(branchPushSettlementOutbox.documentId, input.documentId),
-        inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
-        excludePushId === undefined
-          ? undefined
-          : ne(branchPushSettlementOutbox.pushId, excludePushId),
-      ),
-    );
-  let joined = 0;
-  for (const target of targets) {
-    const inserted = await db
-      .insert(branchPushOutboxUpdates)
-      .values({
-        pushId: target.pushId,
-        ordinal: target.ordinal,
-        sourceKind: input.source.kind,
-        sourceId,
-        update: Buffer.from(input.update),
-      })
-      .onConflictDoNothing()
-      .returning({ pushId: branchPushOutboxUpdates.pushId });
-    if (inserted.length === 0) continue;
-    await db
-      .update(branchPushSettlementOutbox)
-      .set({
-        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
-        // App-clock → DB-clock convergence for journal admissions is deliberate (2026-07-24 divergence decision).
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(eq(branchPushSettlementOutbox.pushId, target.pushId));
-    joined += 1;
-  }
-  return joined;
 }
 
 async function materializeDurableDocumentBefore(
