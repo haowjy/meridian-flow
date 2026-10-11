@@ -92,10 +92,14 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
       for (const { view, ids } of groups.values()) {
         const documents = identityDocuments(view);
         const rows = await documentRows(db, view).where(inArray(documents.id, ids));
+        const lineages = await tree.lineages(
+          view,
+          rows.map((row) => row.documentId as DocumentId),
+        );
         for (const row of rows) {
           if (!isContextUriScheme(row.scheme)) continue;
           const documentId = row.documentId as DocumentId;
-          const lineage = await tree.lineage(view, documentId);
+          const lineage = lineages.get(documentId);
           if (!lineage) continue;
           const target = { kind: "document", documentId } as const;
           const base: FileFacts = {

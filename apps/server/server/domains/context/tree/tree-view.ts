@@ -235,6 +235,11 @@ export interface TreeReader {
   ): Promise<TreeStateNode[]>;
   /** File facts: in this view, its folder chain; deleted, its last chain; else null. */
   lineage(view: TreeView, id: DocumentId): Promise<DocumentLineage | null>;
+  /** The same lineage facts for a set, with one bulk folder-chain read. */
+  lineages(
+    view: TreeView,
+    ids: readonly DocumentId[],
+  ): Promise<ReadonlyMap<DocumentId, DocumentLineage>>;
   projectOfDocument(id: DocumentId): Promise<ProjectId | null>;
 }
 
@@ -769,19 +774,32 @@ export function createTreeReader(
     });
   }
 
+  async function lineages(view: TreeView, documentIds: readonly DocumentId[]) {
+    const ids = [...new Set(documentIds)].filter(isUuid);
+    const out = new Map<DocumentId, DocumentLineage>();
+    if (ids.length === 0) return out;
+    const shown = await documentRows(view, (vd) => inArray(vd.id, ids));
+    const visible = new Set(shown.map((row) => row.id));
+    const missing = ids.filter((id) => !visible.has(id));
+    const deleted = missing.length ? await loadDocumentIdentityRows(tx(), missing) : [];
+    const located = [...shown, ...deleted.filter((row) => !row.hidden && row.deleted)];
+    const chains = await loadFolderChains(
+      tx(),
+      located.map((row) => row.folderId),
+    );
+    for (const row of located) {
+      const chain = row.folderId === null ? [] : (chains.get(row.folderId) ?? []);
+      out.set(row.id, {
+        status: visible.has(row.id) ? "visible" : "deleted",
+        contextSourceId: row.contextSourceId,
+        folders: chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
+      });
+    }
+    return out;
+  }
+
   async function lineage(view: TreeView, id: DocumentId): Promise<DocumentLineage | null> {
-    if (!isUuid(id)) return null;
-    const [shown] = await documentRows(view, (vd) => eq(vd.id, id));
-    const [row] = shown ? [] : await loadDocumentIdentityRows(tx(), [id]);
-    const located = shown ?? (row && !row.hidden && row.deleted ? row : null);
-    if (!located) return null;
-    const chains = await loadFolderChains(tx(), [located.folderId]);
-    const chain = located.folderId === null ? [] : (chains.get(located.folderId) ?? []);
-    return {
-      status: shown ? "visible" : "deleted",
-      contextSourceId: located.contextSourceId,
-      folders: chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
-    };
+    return (await lineages(view, [id])).get(id) ?? null;
   }
 
   async function occupancy(
@@ -805,6 +823,7 @@ export function createTreeReader(
     occupantsAt,
     treeState,
     lineage,
+    lineages,
     projectOfDocument: (id) => projectOfDocument(tx(), id),
   };
 }
