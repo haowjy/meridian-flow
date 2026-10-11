@@ -10,8 +10,12 @@ export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
 export class ComposerSessionDraft {
   readonly key: string;
-  private readonly record: ReturnType<typeof browserRecord<ComposerDraftSnapshot>>;
+  private readonly record: ReturnType<
+    typeof browserRecord<{ draft: ComposerDraftSnapshot | null; received: string[] }>
+  >;
   private current: ComposerDraftSnapshot | null;
+  private received = new Set<string>();
+  hasReceived = (recordId: string) => this.received.has(recordId);
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private version = 0;
@@ -34,7 +38,12 @@ export class ComposerSessionDraft {
   }
 
   /** One ordered transfer for a rejected cohort, followed by this destination's newer writing. */
-  prependSnapshots(snapshots: ComposerDraftSnapshot[]): boolean {
+  prependSnapshots(snapshots: ComposerDraftSnapshot[], recordIds: string[] = []): boolean {
+    const pending = snapshots.filter(
+      (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
+    );
+    if (!pending.length) return true;
+    snapshots = pending;
     const first = snapshots[0];
     if (!first) return false;
     const all = [...snapshots];
@@ -45,7 +54,9 @@ export class ComposerSessionDraft {
       doc: { type: "doc", content: all.flatMap((snapshot) => snapshot.doc.content ?? []) },
       ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
     };
-    if (!this.record.write(edited)) return false;
+    const received = new Set([...this.received, ...recordIds]);
+    if (!this.record.write({ draft: edited, received: [...received] })) return false;
+    this.received = received;
     this.current = edited;
     this.dirty = false;
     this.publish();
@@ -68,13 +79,24 @@ export class ComposerSessionDraft {
   }
 
   constructor(accountId: string, scope: ComposerDraftScope, storage: StorageSource = "session") {
-    this.key = `meridian:composer-draft:v1:${JSON.stringify([accountId, scope.kind, scope.id])}`;
+    this.key = `meridian:composer-draft:v2:${JSON.stringify([accountId, scope.kind, scope.id])}`;
     this.record = browserRecord(
       storage,
-      { key: this.key, version: 1, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
-      (value) => parseRestorableComposerDraft(value) ?? undefined,
+      { key: this.key, version: 2, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
+      (value) => {
+        if (!value || typeof value !== "object" || !("draft" in value) || !("received" in value))
+          return undefined;
+        if (!Array.isArray(value.received) || !value.received.every((id) => typeof id === "string"))
+          return undefined;
+        const draft = value.draft === null ? null : parseRestorableComposerDraft(value.draft);
+        return value.draft !== null && !draft
+          ? undefined
+          : { draft: draft ?? null, received: value.received as string[] };
+      },
     );
-    this.current = this.record.read() ?? null;
+    const saved = this.record.read();
+    this.current = saved?.draft ?? null;
+    this.received = new Set(saved?.received);
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -104,8 +126,10 @@ export class ComposerSessionDraft {
     const draft = this.current && parseRestorableComposerDraft(this.current);
     const saved =
       !draft || !serializeComposerDraft(draft.doc).text
-        ? this.record.write(undefined)
-        : this.record.write(draft);
+        ? this.record.write(
+            this.received.size ? { draft: null, received: [...this.received] } : undefined,
+          )
+        : this.record.write({ draft, received: [...this.received] });
     if (saved) this.dirty = false;
   };
 }

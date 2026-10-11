@@ -27,7 +27,8 @@ import type { ReplyRetry } from "./useReplyRetry";
 
 export { continuesResponse } from "./transcript-model";
 
-import { UserTurn, type UserTurnRecovery } from "./UserTurn";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
+import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
