@@ -167,12 +167,6 @@ export type BranchCoordinator = {
     actorUserId?: string;
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
-  commitSyncFromDoc(
-    input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
-      sourceDoc: Y.Doc;
-      expectedGeneration: number;
-    },
-  ): Promise<boolean>;
   commitSegmentRows(input: {
     branchId: string;
     expectedGeneration: number;
@@ -656,67 +650,6 @@ export function createBranchCoordinator(input: {
               throw new Error("Segment publication left an unjournaled residual");
             if (!journals.length) return false;
             await persist(snapshot, doc, journals);
-            return true;
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-        }
-      }
-    },
-
-    async commitSyncFromDoc(inputJournal) {
-      let attempt = 0;
-      while (true) {
-        try {
-          return await criticalSections.withBranches([inputJournal.branchId], async () => {
-            const snapshot = await loadSnapshot(inputJournal.branchId);
-            assertWritableBranch(snapshot);
-            if (snapshot.generation !== inputJournal.expectedGeneration) {
-              throw new BranchStaleUpdateError(inputJournal.branchId);
-            }
-            const { doc: cachedDoc } = await materialize(snapshot);
-            const doc = cloneDoc(cachedDoc);
-            const updateData = journalSyncDelta(inputJournal.sourceDoc, doc);
-            if (!updateData) return false;
-            const semanticIr = inputJournal.semanticEditIr;
-            if (inputJournal.source === "agent" && semanticIr) {
-              await admitCertifiedMutation(
-                {
-                  readMutationTarget: () => ({
-                    documentId: snapshot.documentId,
-                    generation: BigInt(snapshot.generation),
-                    doc,
-                  }),
-                  // A response may lower several certified IRs into one atomic branch delta.
-                  // The package validated each IR against its chained runtime revision before
-                  // the ambient response transaction began; rereading the pre-batch target here
-                  // would reject every IR after the first and force the durable unit to split.
-                  readCurrentRevision: async () => semanticIr.inputRevision,
-                  lowerCertifiedMutation: async () => updateData,
-                  admitImmediate: async ({ update }) => {
-                    Y.applyUpdate(doc, update);
-                    await persist(snapshot, doc, [
-                      {
-                        ...inputJournal,
-                        updateData: update,
-                        generation: snapshot.generation,
-                      },
-                    ]);
-                    return { sequence: 0n, joined: 0 };
-                  },
-                },
-                { ir: semanticIr },
-              );
-            } else {
-              Y.applyUpdate(doc, updateData);
-              await persist(snapshot, doc, [
-                {
-                  ...inputJournal,
-                  updateData,
-                  generation: snapshot.generation,
-                },
-              ]);
-            }
             return true;
           });
         } catch (cause) {
