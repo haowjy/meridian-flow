@@ -108,10 +108,10 @@ export interface RuntimeDelivery
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
   /**
    * Applies queued write-mode switches that are due while no reply holds the
-   * chat; a no-op when a claim is held. Called after a control enqueue commits
-   * and before every run start.
+   * chat; answers false, doing nothing, when the run claim is held. Called
+   * after a control enqueue commits and before every run start.
    */
-  applyDueSwitches(threadId: ThreadId): Promise<void>;
+  applyDueSwitches(threadId: ThreadId): Promise<boolean>;
   /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */

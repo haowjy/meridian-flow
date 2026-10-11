@@ -1,13 +1,16 @@
 /**
  * Production-composed model tools in a Work: scratch stays live while drafted
  * writes name the draft (D9, D19), read, search and ls follow the version the
- * writes change (D41), and copies of text and binary files (D24).
+ * writes change (D41), copies of text and binary files (D24), and a chat's
+ * write-mode switch against real repositories (D62).
  */
 
 import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import type { ToolCall } from "../test-support/composed-runtime.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -207,6 +210,147 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(notes.isError).toBeFalsy();
       const noDraft = await call("read", { path: "scratch://notes.md", version: "draft" });
       expect(noDraft.result).toMatchObject({ read: { version: "live" } });
+    });
+
+    describe("write-mode switch (D62)", () => {
+      const SIBLING = {
+        threadId: "00000000-0000-4000-8000-000000000e15",
+        turnId: "00000000-0000-4000-8000-000000000e16",
+      };
+      const switchTo = (
+        runtime: Awaited<ReturnType<typeof runtimes.compose>>,
+        mode: "direct" | "draft",
+      ) =>
+        runtime.app.delivery.enqueueControl({
+          threadId: THREAD.threadId,
+          actorId: USER_ID,
+          id: crypto.randomUUID(),
+          control: { kind: "write_mode", mode },
+        });
+      const switchTurns = async () =>
+        (
+          await db.select().from(schema.turns).where(eq(schema.turns.threadId, THREAD.threadId))
+        ).filter(
+          (turn) => (turn.metadata as { kind?: string } | null)?.kind === "write_mode_switch",
+        );
+      const modeOf = async (threadId: string) =>
+        (
+          await db
+            .select({ mode: schema.threads.aiWriteMode })
+            .from(schema.threads)
+            .where(eq(schema.threads.id, threadId))
+        )[0]?.mode;
+      const create = (call: ToolCall, name: string) =>
+        call("write", { command: "create", path: `manuscript://${name}.md`, content: name });
+
+      beforeEach(async () => {
+        // A switch turn chains after the chat's active leaf.
+        await db
+          .update(schema.threads)
+          .set({ activeLeafTurnId: THREAD.turnId })
+          .where(eq(schema.threads.id, THREAD.threadId));
+      });
+
+      it("keeps a reply's mode past a mid-reply switch, then applies it once at release", async () => {
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        const lease = await runtime.ports.runClaim.startExecution(
+          THREAD.threadId as never,
+          crypto.randomUUID() as never,
+        );
+        if (!lease) throw new Error("Expected the reply's run claim");
+        const reply = await script.begin();
+        expect((await create(reply.call, "before")).result).toMatchObject({
+          destination: "draft",
+        });
+
+        const queued = await switchTo(runtime, "direct");
+        expect(queued.response).toMatchObject({
+          pending: { control: { kind: "write_mode", mode: "direct" } },
+          turnId: null,
+        });
+        expect((await create(reply.call, "after")).result).toMatchObject({
+          destination: "draft",
+        });
+        await reply.save();
+        expect(await switchTurns()).toEqual([]);
+
+        // The release wake applies the switch once.
+        await runtime.ports.runClaim.release(lease);
+        await runtime.app.runStarter.start(THREAD.threadId as never);
+        await processDetachedWork.drain();
+        const turns = await switchTurns();
+        expect(turns).toHaveLength(1);
+        expect(turns[0]).toMatchObject({
+          role: "system",
+          status: "complete",
+          metadata: { mode: "direct", controlMessageId: queued.response.id },
+        });
+        expect(await modeOf(THREAD.threadId)).toBe("direct");
+
+        const next = await script.begin();
+        expect((await create(next.call, "next")).result).toMatchObject({ destination: "live" });
+      });
+
+      it("applies an idle switch past a short claim, moves the Work default and leaves a sibling chat", async () => {
+        await db
+          .update(schema.works)
+          .set({ defaultAiWriteMode: "draft" })
+          .where(eq(schema.works.id, WORK_ID));
+        await db.insert(schema.threads).values({
+          rootThreadId: SIBLING.threadId,
+          id: SIBLING.threadId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Sibling",
+          kind: "primary",
+          status: "idle",
+          aiWriteMode: "draft",
+        });
+        await db.insert(schema.turns).values({
+          id: SIBLING.turnId,
+          threadId: SIBLING.threadId,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: SIBLING.threadId,
+          workId: WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        await bindEditAgent(runtime, THREAD.threadId);
+        const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+
+        // A short claim (idle materialization, say) is busy when the switch arrives.
+        let answer: ReturnType<typeof switchTo> | undefined;
+        await runtime.app.runClaim.withExclusiveThread(THREAD.threadId as never, async () => {
+          answer = switchTo(runtime, "direct");
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          expect(await modeOf(THREAD.threadId), "not applied under the claim").toBe("draft");
+        });
+        const switched = await answer;
+        const [turn] = await switchTurns();
+        expect(switched?.response).toEqual({
+          id: switched?.response.id,
+          pending: null,
+          turnId: turn?.id,
+        });
+        expect(await modeOf(THREAD.threadId)).toBe("direct");
+        const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(after?.defaultAiWriteMode).toBe("direct");
+        expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
+
+        expect(await modeOf(SIBLING.threadId)).toBe("draft");
+        const sibling = await runtimes.script(runtime, SIBLING).begin();
+        expect((await create(sibling.call, "sibling")).result).toMatchObject({
+          destination: "draft",
+        });
+      });
     });
 
     // D31: a create or copy would make its file in the archived Work's frozen draft.

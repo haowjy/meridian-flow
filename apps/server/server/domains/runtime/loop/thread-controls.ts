@@ -3,6 +3,7 @@
  * with boundary reservation. Every request writes its own row, so a replay
  * always finds it and answers that row's state.
  */
+import { setTimeout as sleep } from "node:timers/promises";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ControlBody, ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -10,6 +11,13 @@ import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
 import type { ThreadControls } from "./runtime-delivery.js";
 import type { ThreadLock } from "./thread-lock.js";
+
+/**
+ * Pauses between the route's attempts to apply an idle chat's switch past a
+ * short exclusive claim (about 2 s in all). Short claims finish in
+ * milliseconds; a reply's claim is never waited for.
+ */
+const IDLE_APPLY_RETRY_MS = [10, 25, 50, 100, 200, 400, 400, 400, 400] as const;
 
 export class ThreadControlError extends Error {
   constructor(
@@ -28,12 +36,31 @@ export function createThreadControls(deps: {
   enqueueWithoutWake(draft: MessageDraft): Promise<InboxMessage>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
-  applyDueSwitches(threadId: ThreadId): Promise<void>;
+  /** Applies due switches under the run claim; false when the claim was busy. */
+  applyDueSwitches(threadId: ThreadId): Promise<boolean>;
+  /** Whether a reply holds the chat: its release wake applies the switch. */
+  replyHolds(threadId: ThreadId): Promise<boolean>;
+  /** Wakes the chat after the route stops retrying, so the sweep is never the fallback. */
+  wake(threadId: ThreadId): void;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
   hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
+  /**
+   * An idle chat's switch applies before the route answers. A short claim
+   * (idle materialization, a rebind) only delays it, so retry while no reply
+   * holds the chat. No wake runs beside these attempts: a wake applying the
+   * switch would race the answer. The answer reads the control's state after.
+   */
+  async function applyIdleSwitch(threadId: ThreadId) {
+    for (const pause of [0, ...IDLE_APPLY_RETRY_MS]) {
+      if (pause > 0) await sleep(pause);
+      if (await deps.applyDueSwitches(threadId)) return;
+      if (await deps.replyHolds(threadId)) return;
+    }
+    deps.wake(threadId);
+  }
   return {
     async enqueueControl(input) {
       const draft: MessageDraft = {
@@ -79,7 +106,7 @@ export function createThreadControls(deps: {
         await deps.enqueueWithoutWake(draft);
         return { created: true, apply: true };
       });
-      if (outcome.apply) await deps.applyDueSwitches(input.threadId);
+      if (outcome.apply) await applyIdleSwitch(input.threadId);
       const turn = await deps.findControlTurn(input.threadId, input.id);
       const pending =
         (await deps.pending(input.threadId)).items.find((item) => item.id === input.id) ?? null;

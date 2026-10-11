@@ -72,7 +72,16 @@ pending inbox. No model call and no lease.
 It runs after a switch enqueue commits (the idle case), in `RunStarter.start`
 before every drain (release wake, sweep), and indirectly when run-start
 selection returns `switch`: the run reports no work, and the release wake's
-reread reaches `applyDueSwitches`. A switch enqueue itself schedules no wake.
+reread reaches `applyDueSwitches`.
+
+The control route applies an idle chat's switch itself before answering. A
+short exclusive claim (idle materialization, a rebind) only delays it: the
+route retries for about 2 s while no run lease holds the chat, stops at once
+when a reply holds it (the release wake applies it), and wakes the chat if the
+claim is still busy at the end, so the sweep is never the fallback. No wake
+runs beside these attempts, because a wake applying the switch would race the
+answer; the answer reads the control's state after the attempts, and a switch
+turn recording the control means applied.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
 no receipt, nothing undoable. Because the yield ends the reply, writes before

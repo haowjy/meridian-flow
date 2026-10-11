@@ -77,7 +77,7 @@ export function createDeliveryAdapter(
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
-    runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution">;
+    runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution" | "holder">;
     publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
     workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
@@ -322,9 +322,11 @@ export function createDeliveryAdapter(
    * model call and no lease: a reply never sees its mode change.
    */
   async function applyDueSwitches(threadId: ThreadId) {
-    await deps.runClaim.withExclusiveThread(threadId, async () => {
+    const ran = await deps.runClaim.withExclusiveThread(threadId, async () => {
       while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId))) {}
+      return true;
     });
+    return ran === true;
   }
   async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
     const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
@@ -783,7 +785,7 @@ export function createDeliveryAdapter(
       findMessage: inbox.findMessage,
       enqueue,
       // The control route applies an idle switch itself; a reply's release
-      // wake and the sweep reach one a claim holder kept from it.
+      // wake reaches one the reply kept from it.
       async enqueueWithoutWake(draft) {
         const message = await inbox.enqueue(draft);
         await appendPending(draft.threadId);
@@ -796,6 +798,8 @@ export function createDeliveryAdapter(
         return thread.aiWriteMode;
       },
       applyDueSwitches,
+      replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
+      wake: (id) => schedulePostCommit(() => deps.runStarter.start(id)),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlIds) => {
