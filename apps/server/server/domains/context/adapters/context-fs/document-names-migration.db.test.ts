@@ -1,4 +1,5 @@
 /** Seeded upgrade contract: normalize historical content and every mutable address. */
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -21,6 +22,15 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { useRollbackTestDatabase } from "../../../../test-support/drizzle-reset.js";
+import { createInMemoryCollabDomain } from "../../../collab/index.js";
+import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
+import { createNoopEventSink } from "../../../observability/index.js";
+import { createInMemoryObjectStore } from "../../../storage/index.js";
+import { createProductionUnifiedContextPortFactory } from "../../unified-context-port-factory.js";
+import { createContextUploadContentPort } from "../../uploads/context-upload-content.js";
+import { createDrizzleUploadIntakeRepository } from "../../uploads/drizzle-upload-intake.js";
+import { createUploadIntake } from "../../uploads/upload-intake.js";
+import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { guardWorkContextRestore } from "./document-locations.js";
 
 async function migrate(db: import("@meridian/database").Database) {
@@ -335,6 +345,111 @@ else
       expect(stored.find((row) => row.name === "gone")?.deletedAt).not.toBeNull();
     });
 
+    it.each([
+      "clash",
+      "no-clash",
+      "control",
+    ])("canonicalizes pending reservation (%s)", async (scenario) => {
+      const db = database.current;
+      const userId = crypto.randomUUID(),
+        projectId = crypto.randomUUID(),
+        sourceId = crypto.randomUUID(),
+        documentId = crypto.randomUUID(),
+        workId = crypto.randomUUID();
+      const bytes = new TextEncoder().encode("# Pending upload\n");
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      const fingerprint = createHash("sha256")
+        .update(
+          JSON.stringify([
+            userId,
+            `work:${projectId}:${workId}`,
+            "upload.md",
+            "text/markdown",
+            digest,
+          ]),
+        )
+        .digest("hex");
+      await db.insert(users).values(conformanceUserValues(userId, `pending-${scenario}`));
+      await db.insert(projects).values({ id: projectId, userId, name: "Pending", slug: "pending" });
+      await db.insert(works).values({
+        id: workId,
+        projectId,
+        createdByUserId: userId,
+        name: "No Work",
+        slug: null,
+        isNoWork: true,
+      });
+      await db
+        .insert(contextSources)
+        .values({ id: sourceId, workId, name: "Uploads", slug: "uploads", scope: "work" });
+      if (scenario === "clash")
+        await db.insert(documents).values({
+          contextSourceId: sourceId,
+          name: "upload",
+          extension: "txt",
+          fileType: "text",
+        });
+      const oldPath = scenario === "control" ? "upload" : "upload.md";
+      await db.insert(uploadIntakes).values({
+        projectId,
+        intakeId: "pending",
+        actorUserId: userId,
+        contextSourceId: sourceId,
+        documentId,
+        workId,
+        fingerprint,
+        byteDigest: digest,
+        filename: "upload.md",
+        mimeType: "text/markdown",
+        finalPath: oldPath,
+        objectKey: documentId,
+        fileType: "markdown",
+        canonicalUri: `uploads://@/${oldPath}`,
+        locationRevision: crypto.randomUUID(),
+        state: "reserved",
+      });
+      await migrate(db);
+      const [reservation] = await db
+        .select()
+        .from(uploadIntakes)
+        .where(eq(uploadIntakes.documentId, documentId));
+      expect(reservation?.finalPath).toBe(scenario === "clash" ? "upload (2)" : "upload");
+      expect(reservation?.canonicalUri).toBe(`uploads://@/${reservation?.finalPath}`);
+      expect(reservation?.filename).toBe("upload.md");
+      expect(reservation?.state).toBe("reserved");
+      const collab = createInMemoryCollabDomain();
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        links: createTestDocumentLinkScopes(db),
+        documentSync: collab,
+        manifestMembership: collab,
+        catalogMutations: createDrizzleContextCatalog(db),
+      });
+      const service = createUploadIntake({
+        repository: createDrizzleUploadIntakeRepository(db),
+        content: createContextUploadContentPort(contextPorts),
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createNoopEventSink(),
+      });
+      const request = {
+        intakeId: "pending",
+        actorUserId: userId,
+        owner: { kind: "work" as const, projectId, workId },
+        filename: "upload.md",
+        mimeType: "text/markdown",
+        byteDigest: digest,
+        bytes,
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(await service.intake(request)).toMatchObject({
+          ok: true,
+          value: { documentId, uri: reservation?.canonicalUri },
+        });
+      }
+      const [committed] = await db.select().from(documents).where(eq(documents.id, documentId));
+      expect(committed?.name).toBe(reservation?.finalPath);
+      expect(committed?.extension).toBe("");
+    });
     it.each([
       "pending",
       "case-folded",
