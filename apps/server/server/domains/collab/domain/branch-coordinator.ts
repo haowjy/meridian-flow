@@ -58,6 +58,8 @@ export type CommitBranchMutationInput = PersistBranchInput & {
 };
 
 export type AppendBranchJournalInput = {
+  /** One logical tool write, shared by its segment rows. */
+  documentEditKey?: string;
   branchId: string;
   generation: number;
   /** Rejects a staged reversal if branch history advanced after planning. */
@@ -76,6 +78,7 @@ export type AppendBranchJournalInput = {
 };
 
 export type ResetBranchSnapshotInput = {
+  editDisposition?: "discarded" | "retired";
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
@@ -135,6 +138,7 @@ export type BranchCoordinator = {
     expectedStateVector: Uint8Array;
     expectedState: Uint8Array;
     schemaVersion?: CollabSchemaVersion;
+    editDisposition?: "discarded" | "retired";
   }): Promise<boolean>;
   resetFromDocIfUnchangedWithLease(
     lease: BranchLockLease,
@@ -145,6 +149,7 @@ export type BranchCoordinator = {
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
       schemaVersion?: CollabSchemaVersion;
+      editDisposition?: "discarded" | "retired";
     },
   ): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
@@ -200,6 +205,7 @@ export function createBranchCoordinator(input: {
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
       schemaVersion?: CollabSchemaVersion;
+      editDisposition?: "discarded" | "retired";
     },
   ): Promise<boolean> {
     assertBranchLeaseCovers(lease, resetInput.branchId);
@@ -217,6 +223,7 @@ export function createBranchCoordinator(input: {
       snapshot,
       resetInput.upstream,
       resetInput.schemaVersion ?? snapshot.schemaVersion,
+      resetInput.editDisposition,
     );
     return true;
   }
@@ -314,6 +321,7 @@ export function createBranchCoordinator(input: {
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     schemaVersion: CollabSchemaVersion,
+    editDisposition: "discarded" | "retired" = "discarded",
   ): Promise<void> {
     const resetDoc = createCollabYDoc({ gc: false });
     await replicateFrozenSource(upstream, resetDoc);
@@ -326,6 +334,7 @@ export function createBranchCoordinator(input: {
       expectedState: snapshot.state,
       state,
       stateVector,
+      editDisposition,
       discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
       schemaVersion,
     });

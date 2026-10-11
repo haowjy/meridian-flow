@@ -153,6 +153,7 @@ export function createDrizzleEmptyDraftSettlement(
                   expectedState: branch.state,
                   expectedStateVector: branch.stateVector,
                   schemaVersion: branch.schemaVersion,
+                  editDisposition: "retired",
                 });
                 if (!reset) throw new BranchCasConflictError(branch.branchId);
                 return { draftClosed: true, draftDisposition } as const;

@@ -171,6 +171,10 @@ export type TrailContributionReplacement = {
 export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
 
 export type PreparedDiscardCommit = {
+  restorations?: {
+    receipt: import("@meridian/agent-edit/integration").CapturedPart;
+    rows: BranchJournalRow[];
+  }[];
   expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];

@@ -197,6 +197,7 @@ export function createBranchAgentEditCoordinator(input: {
                     ...(pending.mutation?.branchJournalRevision !== undefined
                       ? { expectedJournalRevision: pending.mutation.branchJournalRevision }
                       : {}),
+                    documentEditKey: pending.mutation?.writeId,
                     updateMeta: pending.meta ?? null,
                     ...(pending.mutation?.semanticEditIr
                       ? { semanticEditIr: pending.mutation.semanticEditIr }

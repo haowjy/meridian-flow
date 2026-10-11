@@ -54,6 +54,7 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
+import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
@@ -495,6 +496,11 @@ async function completeStagedPush(
           )
           .returning({ id: documentYjsUpdates.id })
       : [];
+  for (const [i, row] of journalRows.entries())
+    await placeDraftRows(db, row.branchId, row.generation, [row.id], {
+      kind: "live",
+      seq: authoredRows[i].id,
+    });
   const [canonicalRow] = await db
     .insert(documentYjsUpdates)
     .values({
