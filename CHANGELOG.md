@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Document names accept prose suffixes without displaying them; registered code and data extensions keep their spelling.
+
 - Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.

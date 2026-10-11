@@ -88,11 +88,12 @@ export function classifyFiletype(filetype: string | null | undefined): FiletypeC
 }
 
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
-export const DEFAULT_FILETYPE: Filetype = "text";
+export const DEFAULT_FILETYPE: Filetype = "markdown";
 
 const extToFiletype: Record<string, Filetype> = {
   md: "markdown",
   markdown: "markdown",
+  mdx: "markdown",
   py: "python",
   ts: "typescript",
   tsx: "typescript",
@@ -103,7 +104,7 @@ const extToFiletype: Record<string, Filetype> = {
   yaml: "yaml",
   yml: "yaml",
   csv: "csv",
-  txt: "text",
+  txt: "markdown",
   toml: "text",
   xml: "text",
   ipynb: "notebook",
@@ -113,6 +114,12 @@ const extToFiletype: Record<string, Filetype> = {
   jpeg: "jpg",
   svg: "svg",
 };
+
+export const PROSE_EXTENSIONS: ReadonlySet<string> = new Set(["md", "markdown", "mdx", "txt"]);
+
+export function filetypeForExtension(extension: string): Filetype | null {
+  return extToFiletype[extension.toLowerCase()] ?? null;
+}
 
 /**
  * Derive a {@link Filetype} from a file path.
@@ -130,10 +137,10 @@ export function filetypeForPath(path: string): Filetype {
  * distinguish known text from arbitrary bytes do not treat every blob as text.
  */
 export function filetypeForKnownPath(path: string): Filetype | null {
-  const dot = path.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const extension = path.slice(dot + 1).toLowerCase();
-  return extToFiletype[extension] ?? null;
+  const basename = path.slice(path.lastIndexOf("/") + 1).trim();
+  const dot = basename.lastIndexOf(".");
+  if (dot < 0) return null;
+  return filetypeForExtension(basename.slice(dot + 1));
 }
 
 const mimeToFiletype: Record<string, Filetype> = {
