@@ -2,7 +2,6 @@
 
 import type { Block } from "../codec-types.js";
 import { weightedOrderedMatches } from "../ordered-matching.js";
-import { retainedBlockRuns } from "./retained-block-runs.js";
 
 export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "keep"; old: number; next: number }
@@ -146,7 +145,7 @@ function edgeSimilarity(oldText: string, newText: string): number {
   return shared * 3 >= limit ? shared + 1 : 0;
 }
 
-/** Connected retained runs identify structural boundaries; kept blocks fence each diff. */
+/** Only changed pairs and adjacent unpaired blocks can share structural identity. */
 function recognizeBoundaries(
   steps: BlockAlignmentStep[],
   oldBlocks: readonly Block[],
@@ -157,12 +156,6 @@ function recognizeBoundaries(
     if (end !== steps.length && steps[end].kind !== "keep") continue;
     const gap = steps.slice(start, end);
     start = end + 1;
-    const old = gap.flatMap((step, owner) =>
-      "old" in step ? [{ owner, text: oldBlocks[step.old].textContent }] : [],
-    );
-    const next = gap.flatMap((step, owner) =>
-      "next" in step ? [{ owner, text: newBlocks[step.next].textContent }] : [],
-    );
     const parents = gap.map((_, index) => index);
     const root = (index: number): number => {
       while (parents[index] !== index) {
@@ -182,14 +175,34 @@ function recognizeBoundaries(
       )
         union([index - 1, index]);
     }
-    for (const run of retainedBlockRuns(
-      old.map((block) => block.text),
-      next.map((block) => block.text),
-    ))
-      union([
-        ...run.old.map((index) => old[index].owner),
-        ...run.next.map((index) => next[index].owner),
-      ]);
+    const words = new Intl.Segmenter(undefined, { granularity: "word" });
+    for (let index = 0; index < gap.length; index++) {
+      const pair = gap[index];
+      if (pair.kind !== "change") continue;
+      for (const kind of ["add", "remove"] as const) {
+        const blocks = kind === "add" ? newBlocks : oldBlocks;
+        const pairedIndex = kind === "add" ? pair.next : pair.old;
+        const reference = kind === "add" ? oldBlocks[pair.old] : newBlocks[pair.next];
+        for (const direction of [-1, 1]) {
+          let edge = blocks[pairedIndex].textContent;
+          for (
+            let candidate = index + direction;
+            candidate >= 0 && candidate < gap.length;
+            candidate += direction
+          ) {
+            const step = gap[candidate];
+            if (step.kind === "change") break;
+            if (step.kind !== kind) continue;
+            const text = blocks[step.kind === "add" ? step.next : step.old].textContent;
+            const left = direction < 0 ? text : edge,
+              right = direction < 0 ? edge : text;
+            if (!boundaryContinues(reference.textContent, left, right, words)) break;
+            union([index, candidate]);
+            edge = text;
+          }
+        }
+      }
+    }
     const components = new Map<number, BlockAlignmentStep[]>();
     gap.forEach((step, index) => {
       const key = root(index),
@@ -203,4 +216,65 @@ function recognizeBoundaries(
       for (const step of members) step.structuralBoundary = identity;
     }
   }
+}
+
+const MAX_BOUNDARY_CHARACTERS = 4096;
+const MAX_BOUNDARY_CELLS = 65536;
+
+/** Bounded token LCS: retained prose must continue immediately across this boundary. */
+function boundaryContinues(
+  reference: string,
+  left: string,
+  right: string,
+  words: Intl.Segmenter,
+): boolean {
+  left = left.trimEnd();
+  right = right.trimStart();
+  if (reference.length + left.length + right.length > MAX_BOUNDARY_CHARACTERS) return true;
+  const joined = left + right,
+    boundary = left.length;
+  const parts = (text: string) =>
+    [...words.segment(text)].filter((part) => !/^\s+$/u.test(part.segment));
+  const proposed = parts(joined);
+  const crossing = proposed.find(
+    (part) => part.index < boundary && part.index + part.segment.length > boundary,
+  );
+  const subwords = new Set<string>();
+  if (crossing) {
+    const cut = boundary - crossing.index;
+    subwords.add(crossing.segment);
+    subwords.add(crossing.segment.slice(0, cut));
+    subwords.add(crossing.segment.slice(cut));
+  }
+  const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  const tokenize = (segments: ReturnType<typeof parts>) =>
+    segments.flatMap((part) =>
+      subwords.has(part.segment)
+        ? [...graphemes.segment(part.segment)].map((piece) => ({
+            text: piece.segment,
+            index: part.index + piece.index,
+          }))
+        : [{ text: part.segment, index: part.index }],
+    );
+  const source = tokenize(parts(reference)),
+    target = tokenize(proposed);
+  const split = target.findIndex((token) => token.index >= boundary);
+  if (split <= 0) return false;
+  // The explicit boundary cannot match prose; its neighbors must both be retained.
+  target.splice(split, 0, { text: "", index: boundary });
+  const matches = weightedOrderedMatches(
+    (a, b) => (source[a].text === target[b].text ? 1 : 0),
+    0,
+    source.length,
+    0,
+    target.length,
+    MAX_BOUNDARY_CELLS,
+  );
+  if (!matches) return true;
+  const before = matches.findIndex(([, next]) => next === split - 1);
+  return (
+    before >= 0 &&
+    matches[before + 1]?.[1] === split + 1 &&
+    matches[before + 1][0] === matches[before][0] + 1
+  );
 }

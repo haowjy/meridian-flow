@@ -2,9 +2,11 @@
 import {
   createAgentEditCodecFactory,
   toDocHandle,
+  unwrapBlock,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
@@ -15,6 +17,107 @@ import { createSemanticProvenanceWriter } from "./provenance.js";
 const schema = buildDocumentSchema();
 const model = yProsemirrorModel(schema);
 const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
+
+function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
+  const baseRefs = model.getBlocks(toDocHandle(live));
+  const base = baseRefs.map((block) => model.getText(block));
+  const baseIds = new Set(baseRefs.map((block) => model.getBlockId(block)));
+  const blocks = model.getBlocks(toDocHandle(peer));
+  const target = blocks.map((block) => model.getText(block));
+  const resolve = (anchor: string) => {
+    const position = Y.createAbsolutePositionFromRelativePosition(
+      Y.decodeRelativePosition(Buffer.from(anchor, "base64")),
+      peer,
+    );
+    if (!position) throw new Error("Unresolved display anchor");
+    return position;
+  };
+  const edits = hunks
+    .map((hunk, order) => {
+      const from = resolve(hunk.anchor.relStart),
+        to = resolve(hunk.anchor.relEnd);
+      if (hunk.kind === "block")
+        return {
+          kind: "block" as const,
+          block: from.index,
+          order,
+          inserted: hunk.insertedBlock?.display,
+          deleted: hunk.deletedBlock?.display,
+        };
+      if (from.type instanceof Y.XmlFragment && !(from.type instanceof Y.XmlText))
+        return {
+          kind: "block" as const,
+          block: from.index,
+          order,
+          inserted: undefined,
+          deleted: hunk.deletedText,
+        };
+      const block = blocks.findIndex((ref) => unwrapBlock(ref) === from.type.parent);
+      expect(block).toBeGreaterThanOrEqual(0);
+      const inserted =
+        hunk.spans
+          .map((span) => {
+            const start = resolve(span.anchorFrom),
+              end = resolve(span.anchorTo);
+            expect(start.type).toBe(end.type);
+            return (start.type as Y.XmlText).toString().slice(start.index, end.index);
+          })
+          .join("") ||
+        hunk.insertedText ||
+        "";
+      if (!baseIds.has(model.getBlockId(blocks[block]))) {
+        expect(inserted).toBe(target[block]);
+        return { kind: "block" as const, block, order, inserted, deleted: undefined };
+      }
+      expect(target[block].slice(from.index, to.index)).toBe(inserted);
+      return {
+        kind: "text" as const,
+        block,
+        order,
+        from: from.index,
+        to: to.index,
+        inserted,
+        deleted: hunk.deletedText ?? "",
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.block - a.block ||
+        (b.kind === "text" ? b.from : 0) - (a.kind === "text" ? a.from : 0) ||
+        b.order - a.order,
+    );
+  const displayed = [...target];
+  // Reverse the shown effects to locate their base positions, then apply exactly
+  // those same displayed edits forward. No Yjs updates participate in either pass.
+  for (const edit of edits) {
+    if (edit.kind === "block")
+      displayed.splice(
+        edit.block,
+        edit.inserted === undefined ? 0 : 1,
+        ...(edit.deleted === undefined ? [] : [edit.deleted]),
+      );
+    else
+      displayed[edit.block] =
+        displayed[edit.block].slice(0, edit.from) +
+        edit.deleted +
+        displayed[edit.block].slice(edit.to);
+  }
+  expect(displayed).toEqual(base);
+  for (const edit of [...edits].reverse()) {
+    if (edit.kind === "block")
+      displayed.splice(
+        edit.block,
+        edit.deleted === undefined ? 0 : 1,
+        ...(edit.inserted === undefined ? [] : [edit.inserted]),
+      );
+    else
+      displayed[edit.block] =
+        displayed[edit.block].slice(0, edit.from) +
+        edit.inserted +
+        displayed[edit.block].slice(edit.from + edit.deleted.length);
+  }
+  expect(displayed).toEqual(target);
+}
 
 async function revision(before: string, after: string, draft: boolean) {
   const h = createWriteToolHarness(
@@ -52,7 +155,7 @@ async function revision(before: string, after: string, draft: boolean) {
   });
   const classes = new Map(review.operations.map((op) => [op.closureClassId, op.closureUpdateIds]));
   const isolated = [];
-  for (const ids of classes.values()) {
+  for (const [classId, ids] of classes) {
     const peer = new Y.Doc({ gc: false });
     Y.applyUpdate(peer, Y.encodeStateAsUpdate(live));
     for (const row of rows.filter((row) => ids.some((id) => id === row.id)))
@@ -61,6 +164,14 @@ async function revision(before: string, after: string, draft: boolean) {
     expect(peer.store.pendingDs).toBeNull();
     const nodes = model.projectBlocks(toDocHandle(peer));
     for (const node of nodes) node.check();
+    const operationIds = new Set(
+      review.operations.filter((op) => op.closureClassId === classId).map((op) => op.operationId),
+    );
+    expectDisplayHonesty(
+      live,
+      peer,
+      review.hunks.filter((hunk) => hunk.operationIds.some((id) => operationIds.has(id))),
+    );
     isolated.push(nodes);
     peer.destroy();
   }
@@ -126,16 +237,7 @@ it.each([
       index += count;
     }
     if (random() < 0.5) blocks.push(`Entirely new Ending${sample} waits here.`);
-    const result = await revision(before, blocks.join("\n\n"), draft);
-    for (const nodes of result.isolated) {
-      const text = nodes.map((node) => node.textContent).join("\n\n");
-      // A structural component may not lose or duplicate an original sentence.
-      for (const marker of markers)
-        expect(
-          [...text.matchAll(new RegExp(`\\b${marker}\\b`, "g"))],
-          `sample ${sample}: ${marker}`,
-        ).toHaveLength(1);
-    }
+    await revision(before, blocks.join("\n\n"), draft);
   }
 });
 
@@ -148,11 +250,6 @@ it.each([
     const after = `Alpha road.\n\nBeta dark valley.${sentinel}\n\nGamma sea.\n\nDelta green hill.`;
     const result = await revision(before, after, draft);
     expect(result.classes.size).toBe(draft ? 2 : 1);
-    for (const nodes of result.isolated) {
-      const text = nodes.map((node) => node.textContent).join(" ");
-      for (const marker of ["Alpha", "Beta", "Gamma", "Delta"])
-        expect([...text.matchAll(new RegExp(`\\b${marker}\\b`, "g"))]).toHaveLength(1);
-    }
   }
 });
 
@@ -203,5 +300,61 @@ it.each([
     expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
       result.expected.map((node) => node.toJSON()),
     );
+  }
+});
+
+it.each([
+  false,
+  true,
+])("recognizes compatible word, punctuation and emoji boundary tokenization (draft=%s)", async (draft) => {
+  for (const [before, after] of [
+    ["Alpha Beta", "Alpha\n\nBeta"],
+    ["Alpha Beta.", "Alpha\n\nBeta."],
+    ["👩‍🚀 Hello", "👩‍🚀\n\nHello"],
+  ]) {
+    const result = await revision(before, after, draft);
+    expect(result.classes.size).toBe(1);
+    expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
+      result.expected.map((node) => node.toJSON()),
+    );
+  }
+});
+
+it("keeps generated repeated-phrase substitutions in paired paragraphs independent", async () => {
+  for (let sample = 0; sample < 8; sample++) {
+    const phrase = `under the ancient mountain the silver river wandered ${sample}`;
+    const result = await revision(
+      `Alpha takes ${phrase} sword.\n\nBeta drops a shield. Again ${phrase}.`,
+      `Alpha takes a sword.\n\nBeta drops ${phrase} shield. Again ${phrase}.`,
+      true,
+    );
+    expect(result.classes.size).toBe(2);
+  }
+});
+
+it("recognizes generated pure multi-way splits and merges as one change", async () => {
+  for (let sample = 0; sample < 8; sample++) {
+    const paragraphs = Array.from(
+      { length: 2 + (sample % 4) },
+      (_, i) => `Orchid${sample}x${i} walks through a valley.`,
+    );
+    for (const [before, after] of [
+      [paragraphs.join(" "), paragraphs.join("\n\n")],
+      [paragraphs.join("\n\n"), paragraphs.join(" ")],
+    ]) {
+      const result = await revision(before, after, true);
+      expect(result.classes.size).toBe(1);
+    }
+  }
+});
+
+it("conservatively joins structural windows beyond either budget", async () => {
+  for (const text of ["long ".repeat(850), "word ".repeat(260)]) {
+    const result = await revision(
+      `${text}ending.`,
+      `${text}changed.\n\nEntirely unrelated addition.`,
+      true,
+    );
+    expect(result.classes.size).toBe(1);
   }
 });
