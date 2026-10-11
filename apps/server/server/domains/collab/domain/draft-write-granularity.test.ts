@@ -8,7 +8,7 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import evidence from "./granularity-evidence.json";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
-it("replays each of the 11 evidence classes alone, with 21 whole-word hunks", async () => {
+it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word hunks", async () => {
   const model = yProsemirrorModel(buildDocumentSchema());
   const h = createWriteToolHarness(
     { "chapter.md": evidence.before.join("\n\n") },
@@ -58,7 +58,7 @@ it("replays each of the 11 evidence classes alone, with 21 whole-word hunks", as
   });
   expect(review.hunks).toHaveLength(21);
   const classes = new Map(review.operations.map((op) => [op.closureClassId, op.closureUpdateIds]));
-  expect(classes.size).toBe(11);
+  expect(classes.size).toBe(4);
   expect(review.hunks.filter((h) => h.kind === "text").map((h) => h.deletedText)).toContain("did");
   expect(review.hunks.filter((h) => h.kind === "text").map((h) => h.deletedText)).toContain(
     "bothered",

@@ -6,6 +6,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import { editSegments } from "../apply/segments.js";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -296,3 +297,14 @@ function expectOk(result: ResolveWriteResult): ResolvedEdit[] {
   if (!result.ok) throw new Error(result.error.message);
   return result.edits;
 }
+
+it("groups the same exact word splices by edit, sentence or paragraph", () => {
+  const doc = createDoc("She did what she wanted. She left.");
+  const edits = expectOk(
+    resolve(doc, { command: "replace", content: "I do what I wanted. I left.", in: 1 }),
+  );
+  expect(edits[0].kind).toBe("textRanges");
+  expect(editSegments(doc, model, edits, "edit")).toHaveLength(4);
+  expect(editSegments(doc, model, edits, "sentence")).toHaveLength(2);
+  expect(editSegments(doc, model, edits, "paragraph")).toHaveLength(1);
+});
