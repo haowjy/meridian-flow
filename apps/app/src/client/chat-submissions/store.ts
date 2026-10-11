@@ -16,6 +16,7 @@ import {
   type ComposerDraftSnapshot,
   parseRestorableComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { submissionLockName } from "./lock";
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 2;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v2:";
@@ -119,7 +120,11 @@ function parseSubmission(value: unknown): ChatSubmission | null {
 }
 
 /** Remove after the first production deploy shipping v2 has been live for a release. */
-function rewriteV1ChatSubmissions(storage: ChatSubmissionStorage, accountId: string): void {
+function rewriteV1ChatSubmissions(
+  storage: ChatSubmissionStorage,
+  accountId: string,
+  completed: () => void,
+): void {
   const prefix = `meridian:chat-submissions:v1:${accountId}:`;
   try {
     const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
@@ -151,17 +156,28 @@ function rewriteV1ChatSubmissions(storage: ChatSubmissionStorage, accountId: str
       );
       const entry = old.read();
       if (!entry) continue;
-      const target = browserRecord(
-        () => storage,
-        {
-          key: chatSubmissionStorageKey(accountId, entry.recordId),
-          version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
-          accountId,
-        },
-        (value) => parseSubmission(value) ?? undefined,
-      );
-      // A crash after the v2 write must not overwrite a subsequently re-minted record.
-      if (target.read() || target.write(entry)) old.write(undefined);
+      const migrate = () => {
+        // Re-read under the same thread lock as every drive/remint/retire.
+        const current = old.read();
+        if (!current) return;
+        const target = browserRecord(
+          () => storage,
+          {
+            key: chatSubmissionStorageKey(accountId, current.recordId),
+            version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+            accountId,
+          },
+          (value) => parseSubmission(value) ?? undefined,
+        );
+        // Until deletion succeeds, the v2 copy is deliberately invisible to commands.
+        if (target.read() || target.write(current)) old.write(undefined);
+        completed();
+      };
+      if (typeof navigator !== "undefined" && navigator.locks) {
+        void navigator.locks
+          .request(submissionLockName(accountId, entry.threadId), migrate)
+          .catch(reportError);
+      } else migrate();
     }
   } catch {
     /* Preserve v1 when storage is unavailable. */
@@ -181,7 +197,11 @@ export class DeviceChatSubmissionJournal {
   };
 
   notifyStorageChange(key: string | null): void {
-    if (key === null || key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`)) {
+    if (
+      key === null ||
+      key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`) ||
+      key.startsWith(`meridian:chat-submissions:v1:${this.accountId}:`)
+    ) {
       this.notify();
     }
   }
@@ -213,7 +233,9 @@ export class DeviceChatSubmissionJournal {
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
-    rewriteV1ChatSubmissions(this.storage, accountId);
+    rewriteV1ChatSubmissions(this.storage, accountId, () => {
+      if (this.accountId === accountId) this.notify();
+    });
     this.notify();
   }
 
@@ -231,6 +253,7 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
+        if (this.hasLegacy(accountId, key.slice(prefix.length))) continue;
         let failed = false;
         const parsed = this.recordFor(accountId, key, () => {
           failed = true;
@@ -253,6 +276,7 @@ export class DeviceChatSubmissionJournal {
     const accountId = this.state?.accountId;
     if (!accountId) return null;
     try {
+      if (this.hasLegacy(accountId, recordId)) return null;
       return (
         this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).read() ?? null
       );
@@ -263,12 +287,21 @@ export class DeviceChatSubmissionJournal {
 
   record(accountId: string, entry: ChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
+    try {
+      if (this.hasLegacy(accountId, entry.recordId)) return false;
+    } catch {
+      return false;
+    }
     const written = this.recordFor(
       accountId,
       chatSubmissionStorageKey(accountId, entry.recordId),
     ).write(entry);
     if (written) this.notify();
     return written;
+  }
+
+  private hasLegacy(accountId: string, recordId: string): boolean {
+    return this.storage.getItem(`meridian:chat-submissions:v1:${accountId}:${recordId}`) !== null;
   }
 
   private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
@@ -287,6 +320,11 @@ export class DeviceChatSubmissionJournal {
    */
   retire(accountId: string, recordId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
+    try {
+      if (this.hasLegacy(accountId, recordId)) return false;
+    } catch {
+      return false;
+    }
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
     const retired = this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
       undefined,
