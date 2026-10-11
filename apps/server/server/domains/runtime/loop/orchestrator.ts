@@ -76,7 +76,6 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -236,9 +235,6 @@ export interface OrchestratorDeps {
   toolRegistry: ToolRegistry;
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
-  };
-  workWriteMode: {
-    read(workId: string): Promise<AiWriteMode>;
   };
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
@@ -694,9 +690,8 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-              reservedTurn.writeMode = setupThread.workId
-                ? await deps.workWriteMode.read(setupThread.workId)
-                : "direct";
+              // A reply holds the run claim, so the chat's mode can't change under it (D62).
+              reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
                 result: undefined,
                 events,

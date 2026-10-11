@@ -3,6 +3,7 @@
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
+  type AiWriteMode,
   isWorkArchived,
   type ThreadExecutionContext,
   type Work,
@@ -73,58 +74,62 @@ function currentWorkLines(
 }
 
 /**
- * Where this Work's AI writes land (D9, D40). An archived Work freezes its own
- * scratch and draft (D29, D30); only an agent the action policy lets unarchive
- * is offered that, and only draft mode has auto-apply as a way out (D31).
+ * Where this chat's AI writes land (D9, D62): the chat's mode over its Work.
+ * An archived Work freezes its own scratch and draft (D29, D30); only an agent
+ * the action policy lets unarchive is offered that, and only a draft-mode chat
+ * has auto-apply as a way out (D31).
  */
-function writeModeLines(
-  work: Pick<Work, "archivedAt" | "aiWriteMode">,
-  mayUnarchive: boolean,
-): string[] {
-  if (isWorkArchived(work)) {
-    if (!mayUnarchive) {
+export function writeModeLines(input: {
+  mode: AiWriteMode;
+  archived: boolean;
+  mayUnarchive: boolean;
+}): string[] {
+  if (input.archived) {
+    if (!input.mayUnarchive) {
       return [
         "  writes: archived. This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",
       ];
     }
-    if (work.aiWriteMode === "direct") {
+    if (input.mode === "direct") {
       return [
         "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
       ];
     }
     return [
-      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
     ];
   }
-  if (work.aiWriteMode === "direct")
-    return ["  writes: auto-apply. Your changes go live right away."];
+  if (input.mode === "direct") return ["  writes: auto-apply. Your changes go live right away."];
   return [
     "  writes: draft mode. Your changes wait in this Work's draft, except scratch:// changes, which go live.",
     "  The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
   ];
 }
 
-function currentLines(
-  work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork">,
-  mayUnarchive: boolean,
-): string[] {
-  if (work.isNoWork) return ["current: none", ...writeModeLines(work, mayUnarchive)];
+type ContextWork = Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
+
+function currentLines(work: ContextWork, writes: string[]): string[] {
+  if (work.isNoWork) return ["current: none", ...writes];
   const [identity, ...detailLines] = currentWorkLines(work);
-  return [`current: ${identity}`, ...writeModeLines(work, mayUnarchive), ...detailLines];
+  return [`current: ${identity}`, ...writes, ...detailLines];
 }
 
 export function renderWorkContext(input: {
-  current: Pick<
-    Work,
-    "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork"
-  >;
+  current: ContextWork;
+  /** The chat's write mode (D62). */
+  aiWriteMode: AiWriteMode;
   /** Whether the thread's agent chain may unarchive (D39). */
   mayUnarchive: boolean;
   rootThreadRef?: string;
 }): string {
+  const writes = writeModeLines({
+    mode: input.aiWriteMode,
+    archived: isWorkArchived(input.current),
+    mayUnarchive: input.mayUnarchive,
+  });
   return [
     "<work_context>",
-    ...currentLines(input.current, input.mayUnarchive),
+    ...currentLines(input.current, writes),
     ...(input.rootThreadRef
       ? [
           input.current.isNoWork
@@ -154,10 +159,11 @@ export function createWorkContextReader(deps: {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
       const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
-      const execution: ThreadExecutionContext = threadExecutionContext(current);
+      const execution: ThreadExecutionContext = threadExecutionContext(current, thread.aiWriteMode);
       return {
         text: renderWorkContext({
           current,
+          aiWriteMode: thread.aiWriteMode,
           rootThreadRef: root?.ref ?? undefined,
           mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
         }),
