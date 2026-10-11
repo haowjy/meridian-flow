@@ -1351,8 +1351,12 @@ msgid "Couldn't send."
 msgstr "Couldn't send."
 
 #: src/components/app/composer/Composer.tsx
-msgid "Couldn't send. Your message stays."
-msgstr "Couldn't send. Your message stays."
+msgid "Couldn't send. Nothing was lost."
+msgstr "Couldn't send. Nothing was lost."
+
+#: src/components/app/composer/Composer.tsx
+#~ msgid "Couldn't send. Your message stays."
+#~ msgstr "Couldn't send. Your message stays."
 
 #: src/components/app/composer/Composer.tsx
 #~ msgid "Couldn't send. Your message was not lost."

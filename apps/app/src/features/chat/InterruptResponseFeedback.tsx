@@ -10,10 +10,9 @@
  */
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useRef } from "react";
-
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { ErrorCard } from "./ErrorCard";
 
 export function InterruptResponseFeedback({
   state,

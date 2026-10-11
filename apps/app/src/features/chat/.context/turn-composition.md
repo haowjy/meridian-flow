@@ -166,7 +166,7 @@ send state keyed by `(threadId, turnId, interruptId)` in
 `ThreadStore.interruptResponses`. `CustomBlockRenderer` passes it to the card as
 `responseState`/`retry`: controls stay disabled while pending, including after a
 remount, and a send that is not confirmed renders the shared
-`InterruptResponseFeedback`: the chat's `ErrorCard` ("Couldn't send your
+`InterruptResponseFeedback`: the shared `ErrorCard` ("Couldn't send your
 answer.") with Retry, which replays the stored answer with the same tuple.
 There is one failure state, not a proven and an ambiguous one: Retry is safe
 because the server consumes a pending interrupt once, so a repeat of an answer

@@ -165,7 +165,7 @@ it("draws a refused recording as the failure card and clears it once a send is r
   // The card is the live alert; the words stay in the box and Send is the retry, so no buttons.
   const alert = host.querySelector<HTMLElement>("[role='alert']");
   expect(alert?.getAttribute("data-slot")).toBe("alert");
-  expect(alert?.textContent).toBe("Couldn't send. Your message stays.");
+  expect(alert?.textContent).toBe("Couldn't send. Nothing was lost.");
   expect(alert?.querySelector("button")).toBeNull();
   expect(editorElement()?.textContent).toBe("Keep these words");
 

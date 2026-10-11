@@ -40,5 +40,6 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   unchanged editor words. `onSubmit` returns whether local recording succeeded;
   network admission does not quarantine or lock authoring. A local storage refusal
   keeps the live draft and reports the failure under the message box as the
-  chat's `ErrorCard`, right-aligned, a live alert with no buttons: pressing Send
-  again is the retry. Its sentence may wrap at the narrowest dock.
+  shared `ErrorCard` (`components/app/ErrorCard.tsx`), right-aligned, a live
+  alert with no buttons: pressing Send again is the retry. Its sentence may wrap at the narrowest
+  dock.

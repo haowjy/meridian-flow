@@ -17,13 +17,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
 import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
-import { ErrorCard } from "@/features/chat/ErrorCard";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
@@ -583,7 +583,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <div className="mt-[var(--chat-space-inline)] flex justify-end">
           <ErrorCard inline>
             {/* No buttons: pressing Send again is the retry. The sentence may wrap in a very narrow dock. */}
-            <p className="whitespace-normal">{t`Couldn't send. Your message stays.`}</p>
+            <p className="whitespace-normal">{t`Couldn't send. Nothing was lost.`}</p>
           </ErrorCard>
         </div>
       ) : null}
