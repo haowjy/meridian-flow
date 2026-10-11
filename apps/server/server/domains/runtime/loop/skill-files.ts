@@ -13,7 +13,7 @@
 import { posix } from "node:path";
 import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { type Filetype, parseDocumentFilename } from "@meridian/contracts/protocol";
 import { skillLevel } from "../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import { readThreadSkills } from "./available-skills.js";
@@ -28,7 +28,7 @@ export interface SkillFilesDeps {
 type SkillUri = { skill: null } | { skill: string; path: string };
 
 type SkillFileRead =
-  | { kind: "text"; skill: string; path: string; text: string; filetype: string }
+  | { kind: "text"; skill: string; path: string; text: string; filetype: Filetype }
   | { kind: "binary" }
   | { kind: "not_found" };
 
