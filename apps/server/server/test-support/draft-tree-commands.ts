@@ -471,11 +471,18 @@ export function draftTreeCommands(
       },
       async text(path) {
         const read = await (await port()).read(uri(path));
-        return read.ok ? read.value.content : null;
+        if (read.ok) return read.value.content;
+        if (read.error.code === "not_found") return null;
+        throw new Error(`${uri(path)}: ${JSON.stringify(read.error)}`);
       },
       async idAt(path) {
         const stat = await (await port()).stat(uri(path));
-        return stat.ok ? ((stat.value.documentId ?? null) as DocumentId | null) : null;
+        if (!stat.ok) {
+          if (stat.error.code === "not_found") return null;
+          throw new Error(`${uri(path)}: ${JSON.stringify(stat.error)}`);
+        }
+        if (!stat.value.documentId) throw new Error(`${uri(path)}: stat has no document id`);
+        return stat.value.documentId as DocumentId;
       },
     };
   }
