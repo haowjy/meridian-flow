@@ -8,7 +8,11 @@ import {
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
@@ -33,6 +37,7 @@ import {
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { writeMarkdown } from "./bound-writes.js";
+import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -714,16 +719,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
       model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
-      await branchCoordinator.commitSyncFromDoc({
+      await branchCoordinator.commitSegmentRows({
         branchId: draft.branchId,
         sourceDoc: draft.doc,
         expectedGeneration: draft.generation,
-        source: "writer",
-        actorUserId: USER_ID as never,
-        threadId: THREAD_ID,
-        turnId: null,
-        wId: null,
-        updateMeta: null,
+        rows: [
+          {
+            branchId: draft.branchId,
+            updateData: await captureHistoricalBranchRow(
+              branchCoordinator,
+              draft.branchId,
+              draft.doc,
+            ),
+            source: "writer",
+            actorUserId: USER_ID as never,
+            threadId: THREAD_ID,
+            turnId: null,
+            wId: null,
+            updateMeta: null,
+          },
+        ],
       });
       draft.doc.destroy();
     }
@@ -888,16 +903,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     if (replace) {
       model.insertBlocks(toDocHandle(branch.doc), null, markupCodec.parse("Agent replacement."));
     }
-    const committed = await branchCoordinator.commitSyncFromDoc({
+    const committed = await branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     if (!committed) throw new Error("destructive draft edit did not commit");
@@ -943,16 +968,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
     model.deleteBlock(toDocHandle(branch.doc), doomed);
-    const committed = await branchCoordinator.commitSyncFromDoc({
+    const committed = await branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     if (!committed) throw new Error("sweep classification draft edit did not commit");
@@ -1008,6 +1043,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
+        branch.doc.clientID = allocateDocumentClient(branch.doc);
         const beforeStateVector = Y.encodeStateVector(branch.doc);
         const priorBlock = model.getBlocks(toDocHandle(branch.doc))[0];
         const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
@@ -1070,17 +1106,27 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             beforeStateVector,
           );
         }
-        const committed = await branchCoordinator.commitSyncFromDoc({
+        const committed = await branchCoordinator.commitSegmentRows({
           branchId: branch.branchId,
           sourceDoc: branch.doc,
           expectedGeneration: branch.generation,
-          source: "agent",
-          actorUserId: null,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          wId: null,
-          updateMeta: null,
-          semanticEditIr,
+          rows: [
+            {
+              branchId: branch.branchId,
+              updateData: await captureHistoricalBranchRow(
+                branchCoordinator,
+                branch.branchId,
+                branch.doc,
+              ),
+              source: "agent",
+              actorUserId: null,
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              wId: null,
+              updateMeta: null,
+              semanticEditIr: semanticEditIr,
+            },
+          ],
         });
         if (!committed) throw new Error(`matrix ${step.source} step did not commit`);
       }
@@ -1136,16 +1182,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const block = model.getBlocks(toDocHandle(staged.doc))[0];
       if (!block) throw new Error("pending-dependency draft block is unavailable");
       model.deleteBlock(toDocHandle(staged.doc), block);
-      await branchCoordinator.commitSyncFromDoc({
+      await branchCoordinator.commitSegmentRows({
         branchId: branch.branchId,
         sourceDoc: staged.doc,
         expectedGeneration: staged.generation,
-        source: "agent",
-        actorUserId: null,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        wId: null,
-        updateMeta: null,
+        rows: [
+          {
+            branchId: branch.branchId,
+            updateData: await captureHistoricalBranchRow(
+              branchCoordinator,
+              branch.branchId,
+              staged.doc,
+            ),
+            source: "agent",
+            actorUserId: null,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            wId: null,
+            updateMeta: null,
+          },
+        ],
       });
     } finally {
       staged.doc.destroy();
@@ -1654,16 +1710,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     if (!block) throw new Error("dependency draft block missing");
     const end = model.getText(block).length;
     model.applyTextEdit(toDocHandle(branch.doc), block, { from: end, to: end }, " discarded");
-    await branchCoordinator.commitSyncFromDoc({
+    await branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     const [discarded] = await db
@@ -1697,16 +1763,26 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { from: currentEnd, to: currentEnd },
         " survivor",
       );
-      await branchCoordinator.commitSyncFromDoc({
+      await branchCoordinator.commitSegmentRows({
         branchId: branch.branchId,
         sourceDoc: current.sourceDoc,
         expectedGeneration: current.generation,
-        source: "agent",
-        actorUserId: null,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        wId: null,
-        updateMeta: null,
+        rows: [
+          {
+            branchId: branch.branchId,
+            updateData: await captureHistoricalBranchRow(
+              branchCoordinator,
+              branch.branchId,
+              current.sourceDoc,
+            ),
+            source: "agent",
+            actorUserId: null,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            wId: null,
+            updateMeta: null,
+          },
+        ],
       });
     } finally {
       current.sourceDoc.destroy();
@@ -1822,16 +1898,22 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         const block = model.getBlocks(toDocHandle(doc))[0];
         if (!block) throw new Error("draft block missing before subsequent edit");
         model.deleteBlock(toDocHandle(doc), block);
-        await branchCoordinator.commitSyncFromDoc({
-          branchId,
+        await branchCoordinator.commitSegmentRows({
+          branchId: branchId,
           sourceDoc: doc,
           expectedGeneration: staged.generation,
-          source: "agent",
-          actorUserId: null,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          wId: null,
-          updateMeta: null,
+          rows: [
+            {
+              branchId: branchId,
+              updateData: await captureHistoricalBranchRow(branchCoordinator, branchId, doc),
+              source: "agent",
+              actorUserId: null,
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              wId: null,
+              updateMeta: null,
+            },
+          ],
         });
       } finally {
         staged.doc.destroy();

@@ -7,6 +7,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
   type BranchStore,
@@ -246,12 +247,18 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      coordinator.commitSyncFromDoc({
+      coordinator.commitSegmentRows({
         branchId: "work",
-        sourceDoc,
-        source: "agent",
-        threadId: THREAD_ID,
+        sourceDoc: sourceDoc,
         expectedGeneration: beforeWork.generation,
+        rows: [
+          {
+            branchId: "work",
+            updateData: await captureHistoricalBranchRow(coordinator, "work", sourceDoc),
+            source: "agent",
+            threadId: THREAD_ID,
+          },
+        ],
       }),
     ).resolves.toBe(true);
 

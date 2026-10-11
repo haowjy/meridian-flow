@@ -260,6 +260,7 @@ export function useRollbackTestDatabase(
   databaseUrl: string,
   options?: {
     max?: number;
+    postgres?: NonNullable<Parameters<typeof createDb>[1]>["postgres"];
     /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
     prepareSuite?: (db: Database) => Promise<void>;
   },

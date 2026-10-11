@@ -20,6 +20,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetDatabase(db));
@@ -54,16 +55,22 @@ it.each([
     };
     ai.clientID = 731000;
     edit(ai, 0, 11, 11, " Proposed");
-    await f.branchCoordinator.commitSyncFromDoc({
+    await f.branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: ai,
       expectedGeneration: branch.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(f.branchCoordinator, branch.branchId, ai),
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     const writer = await f.branchCoordinator.readBranch(branch.branchId, async (doc) => clone(doc));
     writer.clientID = 731001;

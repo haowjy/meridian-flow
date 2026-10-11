@@ -954,24 +954,28 @@ export function createDrizzleBranchStore(
             }
           }
         }
-        for (const journal of journals) {
-          await mutatePending([journal.branchId], () =>
-            currentDrizzleDb(db)
-              .insert(branchWriteJournal)
-              .values({
-                branchId: journal.branchId,
-                generation: journal.generation,
-                updateData: Buffer.from(journal.updateData),
-                draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
-                source: journal.source,
-                wId: journal.wId ?? null,
-                toolCallId: journal.toolCallId ?? null,
-                threadId: journal.threadId ?? null,
-                turnId: journal.turnId ?? null,
-                actorUserId: journal.actorUserId ?? null,
-                updateMeta: journal.updateMeta ?? null,
-              })
-              .then(() => undefined),
+        if (journals.length) {
+          await mutatePending(
+            journals.map((journal) => journal.branchId),
+            () =>
+              currentDrizzleDb(db)
+                .insert(branchWriteJournal)
+                .values(
+                  journals.map((journal) => ({
+                    branchId: journal.branchId,
+                    generation: journal.generation,
+                    updateData: Buffer.from(journal.updateData),
+                    draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
+                    source: journal.source,
+                    wId: journal.wId ?? null,
+                    toolCallId: journal.toolCallId ?? null,
+                    threadId: journal.threadId ?? null,
+                    turnId: journal.turnId ?? null,
+                    actorUserId: journal.actorUserId ?? null,
+                    updateMeta: journal.updateMeta ?? null,
+                  })),
+                )
+                .then(() => undefined),
           );
         }
         return true;

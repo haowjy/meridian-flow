@@ -8,6 +8,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./change-trail-postgres-harness.js";
+import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 export async function commitBranchEdit(
@@ -29,17 +30,27 @@ export async function commitBranchEdit(
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;
     mutate(staged.clone);
-    await fixture.branchCoordinator.commitSyncFromDoc({
-      branchId,
+    await fixture.branchCoordinator.commitSegmentRows({
+      branchId: branchId,
       sourceDoc: staged.clone,
       expectedGeneration: staged.generation,
-      source: author.source,
-      actorUserId: author.source === "writer" ? USER_ID : null,
-      threadId: author.threadId === undefined ? THREAD_ID : author.threadId,
-      turnId: author.source === "agent" ? TURN_ID : null,
-      wId: null,
-      toolCallId: author.toolCallId ?? null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branchId,
+          updateData: await captureHistoricalBranchRow(
+            fixture.branchCoordinator,
+            branchId,
+            staged.clone,
+          ),
+          source: author.source,
+          actorUserId: author.source === "writer" ? USER_ID : null,
+          threadId: author.threadId === undefined ? THREAD_ID : author.threadId,
+          turnId: author.source === "agent" ? TURN_ID : null,
+          wId: null,
+          toolCallId: author.toolCallId ?? null,
+          updateMeta: null,
+        },
+      ],
     });
   } finally {
     staged.clone.destroy();

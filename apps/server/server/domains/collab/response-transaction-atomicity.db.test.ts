@@ -21,6 +21,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
 const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
 
@@ -428,16 +429,26 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await fixture.branchCoordinator.commitSyncFromDoc({
+    const committed = await fixture.branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "writer",
-      actorUserId: USER_ID as never,
-      threadId: null,
-      turnId: null,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            fixture.branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "writer",
+          actorUserId: USER_ID as never,
+          threadId: null,
+          turnId: null,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     expect(committed).toBe(true);
