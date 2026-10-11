@@ -19,7 +19,6 @@
 
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
 
 export type LinkTarget =
   /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
@@ -76,20 +75,10 @@ export function linkInputStepsAsideFromReferences(input: string): boolean {
   return Boolean(scheme && !INTERNAL_SCHEMES.has(scheme));
 }
 
-/**
- * A writer-typed target that reads as a document path rather than a hostname.
- * A prose document has no extension (`Chapter 13`), so most names need no
- * signal: a first segment without a dot is never a hostname. Two shapes with a
- * dot still need one. A registered extension (`outline.json`, `chapter.md`)
- * is a file name, whatever TLD it resembles. A first segment with whitespace
- * (`Vol. 2`, `Chapter 1.5`) cannot be a hostname at all.
- */
+/** Host-like first segments retain the original Markdown-path exception. */
 function readsAsDocumentPath(value: string): boolean {
-  const path = value.split(/[?#]/, 1)[0] ?? "";
-  const leaf = path.slice(path.lastIndexOf("/") + 1);
-  const parsed = parseDocumentFilename(leaf);
-  if (parsed.ok && (parsed.value.extension || parsed.value.name !== leaf.trim())) return true;
-  return /\s/.test(path.split("/", 1)[0] ?? "");
+  const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
+  return /\.mdx?($|[?#])/i.test(value) || /\s/.test(firstSegment);
 }
 
 /**

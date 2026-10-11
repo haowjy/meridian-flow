@@ -1,5 +1,6 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
+import { splitDocumentHrefSuffix } from "./document-href.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
 import { decodeWorkSlug } from "./works/index.js";
@@ -327,8 +328,9 @@ function invalidContextUri(uri: string, reason: string): ContextUriParseError {
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const schemeSeparator = uri.indexOf("://");
-  const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
+  const { path: address } = splitDocumentHrefSuffix(uri);
+  const schemeSeparator = address.indexOf("://");
+  const path = schemeSeparator >= 0 ? address.slice(schemeSeparator + 3) : address;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   const parsed = parseDocumentFilename(segment);
