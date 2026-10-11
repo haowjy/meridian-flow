@@ -342,3 +342,76 @@ it("retains unchanged word identities, replaces whole words, and joins writer ty
   expect(review.operations.every((op) => op.closureUpdateIds.some((id) => id === 100))).toBe(true);
   live.destroy();
 });
+
+it.each([
+  false,
+  true,
+])("certifies replacement of a canonical empty paragraph (draft=%s)", async (segmentDraftWrites) => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const h = createWriteToolHarness(
+    { "chapter.md": "" },
+    { segmentDraftWrites, semanticProvenance: createSemanticProvenanceWriter() },
+  );
+  expect(
+    (
+      await h.core.write(
+        { command: "replace", file: "chapter.md", in: 1, content: "Hello world." },
+        { sessionId: "chat", threadId: "chat", turnId: "empty" },
+      )
+    ).result.status,
+  ).toBe("success");
+  expect(
+    model.getBlocks(toDocHandle(h.liveDoc("chapter.md"))).map((block) => model.getText(block)),
+  ).toEqual(["Hello world."]);
+  expect((await h.journal.readForReconstruction("chapter.md")).updates).toHaveLength(1);
+});
+
+it.each([
+  [
+    "Alpha road. Beta valley.\n\nUntouched mountain.",
+    "Alpha road.\n\nUntouched mountain.\n\nBeta valley.",
+    2,
+  ],
+  [
+    "He carries his sword.\n\nUnchanged sentinel.",
+    "He carries his axe.\n\nUnchanged sentinel.\n\ns",
+    2,
+  ],
+  ["He carries his sword.", "He carries his axe.\n\ns", 2],
+  ["Alpha road. Beta valley.", "Alpha road.\n\nBeta dark valley.", 1],
+] as const)("recognizes document boundaries, not substring coincidence: %s", async (before, after, count) => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const h = createWriteToolHarness(
+    { "chapter.md": before },
+    { segmentDraftWrites: true, semanticProvenance: createSemanticProvenanceWriter() },
+  );
+  const live = new Y.Doc({ gc: false });
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
+  expect(
+    (
+      await h.core.write(
+        {
+          command: "replace",
+          file: "chapter.md",
+          in: [1, before.split("\n\n").length],
+          content: after,
+        },
+        { sessionId: "chat", threadId: "chat", turnId: "boundaries" },
+      )
+    ).result.status,
+  ).toBe("success");
+  const rows = (await h.journal.readForReconstruction("chapter.md")).updates.map((row) => ({
+    id: row.seq,
+    actorTurnId: row.meta.actorTurnId ?? null,
+    updateData: row.update,
+  }));
+  const review = computeDraftReviewHunks({
+    liveDoc: live,
+    draftDoc: h.liveDoc("chapter.md"),
+    model,
+    draftUpdates: rows,
+  });
+  expect(rows).toHaveLength(count);
+  expect(new Set(review.operations.map((op) => op.closureClassId)).size).toBe(count);
+  live.destroy();
+});

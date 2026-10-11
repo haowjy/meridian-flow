@@ -162,22 +162,29 @@ deferred in [TODO.md](TODO.md).
 ### Per-write journal deltas
 
 The write command captures the synchronous Yjs `update` events from content
-application and semantic certification, then merges them into one V1 update.
+application and semantic certification, then merges them into the logical write’s V1 update (and retains its ordered
+segment updates for draft journal submission).
 This includes that write's structs and deletes, not tombstones inherited from
 earlier writes. The listener is detached before submission, peer synchronization,
 or recovery, including on failure. Full snapshots remain the rollback and cold
 reconstruction currency; a state-vector diff is not a per-write deletion delta.
 
 Dependencies remain in the original Yjs references and client clocks. Independent
-writes can be reviewed separately when their insertion clients differ. A read
-rebuilds the runtime with a new client; successive writes retaining one runtime
-still require same-client clock-prefix closure.
+writes can be reviewed separately when their insertion clients differ. Live writes retaining one runtime still require same-client clock-prefix closure.
+Draft writes rotate to a fresh client per segment and do not inherit that coupling.
 
 ## Draft write granularity
 
 Flat same-type block rewrites lower to exact whole-word text splices when their
 replay reproduces the target, including marks. The host enables `segmentDraftWrites`
-only for review destinations. A segment executes in one transaction with a fresh
+only for review destinations. The shipped policy is one paragraph per logical
+write, not one paragraph across writes. A segment executes in one transaction with a fresh
 shared-protocol client ID. One staged logical write holds its ordered updates;
 receipts, rollback and before-snapshots stay per tool call. Journal submission
 alone flattens those segments into rows. Live writes capture one merged update.
+
+Recognized adjacent paragraph splits/merges and contiguous inserted or removed
+block runs stay one structural segment. Alignment carries their boundary identity
+into lowering; the segmenter never guesses correspondence from text substrings.
+Different logical writes remain separate unless their Yjs edits are dependent,
+even when they edit the same paragraph.

@@ -275,6 +275,7 @@ export function applyInlineReplacements(
     };
   }
 
+  if (element.length === 0 && current.content.size === 0) element.insert(0, [new Y.XmlText()]);
   const text = element.get(0);
   if (!(text instanceof Y.XmlText) || element.length !== 1) {
     return { ok: false, code: "invalid_write", message: "Text edits require one flat Y.XmlText" };

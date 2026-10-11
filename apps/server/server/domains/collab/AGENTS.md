@@ -20,7 +20,9 @@ editor UI or transport-shell policy.
   and Work publication journal transaction deltas, not cumulative state-vector
   tombstones. Keep genuine dependency closure, including retained cumulative rows
   and same-client clock prefixes. Draft agent writes use one fresh client and one
-  journal row per contiguous visible edit, atomically published per reply.
+  journal row per paragraph per logical write, atomically published per reply.
+  Recognized adjacent splits/merges and contiguous inserted/removed runs stay one
+  segment. Independent writes never join merely for sharing a paragraph.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
 - `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This
