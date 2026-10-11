@@ -8,6 +8,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { goldenAssistantTurn } from "@meridian/contracts/threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import {
   defaultSendResponse,
   scenarioGate,
@@ -144,26 +145,36 @@ describe("ThreadRunController write outcomes", () => {
   });
 });
 
-/** A reply start as the server projects it, naming the user turns it answers. */
-function runStarted(runId: string, answersUserTurnIds: string[] = []) {
+/** A reply start as the server projects it: the user turns it answers and the reply it continues. */
+function runStarted(
+  runId: string,
+  answersUserTurnIds: string[] = [],
+  continuesRunId: string | null = null,
+) {
   return {
     type: EventType.RUN_STARTED,
     threadId: "thread_1",
     runId,
-    rawEvent: { writeMode: "direct", answersUserTurnIds },
+    rawEvent: { writeMode: "direct", answersUserTurnIds, continuesRunId },
   } as never;
 }
 
-function runFinished(runId: string) {
-  return { type: EventType.RUN_FINISHED, threadId: "thread_1", runId } as never;
+/** A reply finish; `continued` when its lease reserved a successor. */
+function runFinished(runId: string, continued = false) {
+  return {
+    type: EventType.RUN_FINISHED,
+    threadId: "thread_1",
+    runId,
+    rawEvent: { continued },
+  } as never;
 }
 
 function snapshotTurn(
   id: string,
-  role: "user" | "assistant",
+  role: "user" | "assistant" | "system",
   position: number,
   prevTurnId: string | null,
-  status: "complete" | "streaming" = "complete",
+  status: "complete" | "streaming" | "error" = "complete",
 ) {
   return { ...goldenAssistantTurn(id, "thread_1", status), role, position, prevTurnId };
 }
@@ -182,6 +193,11 @@ function snapshotOf(
   } as unknown as ThreadSnapshotResponse;
 }
 
+/** What the mounted snapshot owner hands the store before a handoff resumes. */
+function applyArgs(response: ThreadSnapshotResponse) {
+  return [response.thread, response.turns, toThreadSnapshotApplyOptions(response)] as const;
+}
+
 /** A reply A the controller follows, with an admission for M2 that names no reply. */
 async function followAThenQueueM2(scenario: ThreadRunScenario) {
   scenario.resume({ expectedTurnId: "turn-a" });
@@ -192,29 +208,134 @@ async function followAThenQueueM2(scenario: ThreadRunScenario) {
   await scenario.submit("M2");
 }
 
-describe("ThreadRunController mid-run merge", () => {
-  it("keeps one mounted stream across a server-initiated split turn", async () => {
+describe("ThreadRunController same-lease successor", () => {
+  it("follows a steered reply into the successor that names it", async () => {
     const scenario = makeScenario({
       append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
     });
     await scenario.submit("long request");
     scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
-    scenario.emit(
-      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
-      "12",
+    scenario.setAppend(async () =>
+      defaultSendResponse({ userTurnId: "turn-m2", assistantTurnId: "turn-a" }),
     );
+    await scenario.submit("steer");
+    scenario.emit(runFinished("turn-a", true), "12");
     expect(scenario.activeSubscription()?.active).toBe(true);
+    // A is complete: Stop waits for the successor instead of cancelling A.
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([]);
 
-    scenario.emit(runStarted("turn-b"), "13");
+    scenario.emit(runStarted("turn-b", ["turn-m2"], "turn-a"), "13");
     expect(scenario.transport.subscriptions).toHaveLength(1);
-    expect(scenario.activeSubscription()?.active).toBe(true);
     expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
 
+    scenario.emit(runFinished("turn-b"), "14");
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("follows a notice split's successor even when it answers nothing", async () => {
+    const scenario = makeScenario();
+    scenario.resume({ expectedTurnId: "turn-a" });
+    scenario.emit(runFinished("turn-a", true), "12");
+    scenario.emit(runStarted("turn-b", [], "turn-a"), "13");
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
+  });
+
+  it("settles at a plain finish, so another client's next reply gets no Stop", async () => {
+    const scenario = makeScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("M1");
+    scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
+    scenario.emit(runFinished("turn-a"), "12");
+    expect(scenario.activeSubscription()).toBeUndefined();
+
+    scenario.controller.cancel("thread_1");
+    scenario.emit(runStarted("turn-c", ["other-tab-m"]), "13");
+    expect(scenario.transport.cancelRequests).toEqual([]);
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+  });
+
+  it("ignores an unrelated reply that starts right after A while M2 waits", async () => {
+    const scenario = makeScenario();
+    await followAThenQueueM2(scenario);
+    scenario.emit(runFinished("turn-a"), "12");
+    scenario.controller.cancel("thread_1");
+
+    // Another tab's switch applied and its message's reply C started at once.
+    scenario.emit(runStarted("turn-c", ["other-tab-m"]), "13");
     scenario.emit(
-      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-b" } as never,
+      { type: EventType.TEXT_MESSAGE_START, messageId: "turn-c::0", role: "assistant" } as never,
       "14",
     );
-    await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
+    expect(scenario.transport.cancelRequests).toEqual([]);
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+
+    scenario.emit(runFinished("turn-c"), "15");
+    scenario.emit(runStarted("turn-b", ["turn-m2"]), "16");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
+  });
+
+  it("ends a continued follow when another lease starts instead of the successor", async () => {
+    const scenario = makeScenario();
+    scenario.resume({ expectedTurnId: "turn-a" });
+    scenario.emit(runFinished("turn-a", true), "12");
+    scenario.controller.cancel("thread_1");
+
+    scenario.emit(runStarted("turn-c", ["other-tab-m"]), "13");
+    expect(scenario.transport.cancelRequests).toEqual([]);
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("settles when a handoff resumes past the start of the reply that answered M2", async () => {
+    const scenario = makeScenario();
+    await followAThenQueueM2(scenario);
+    scenario.emit(runFinished("turn-a"), "12");
+    // The snapshot owner applied B (answering M2) before the handoff resumes
+    // at a cursor that already includes B's start.
+    scenario.store
+      .getState()
+      .applyThreadSnapshot(
+        ...applyArgs(
+          snapshotOf(
+            [
+              snapshotTurn("turn-m1", "user", 1, null),
+              snapshotTurn("turn-a", "assistant", 2, "turn-m1"),
+              snapshotTurn("turn-m2", "user", 3, "turn-a"),
+              snapshotTurn("turn-b", "assistant", 4, "turn-m2", "streaming"),
+            ],
+            "turn-b",
+          ),
+        ),
+      );
+    scenario.resume({ expectedTurnId: "turn-b", after: "13" });
+
+    scenario.emit(runFinished("turn-b"), "14");
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("binds a Retry's reply, which names the failed reply's user turn, from a handoff", async () => {
+    const scenario = makeScenario({
+      append: async () =>
+        defaultSendResponse({ userTurnId: "turn-m1", assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("M1");
+    scenario.emit(runStarted("turn-f", ["turn-m1"]), "11");
+    scenario.emit({ type: EventType.RUN_ERROR, message: "provider unavailable" } as never, "12");
+    expect(scenario.activeSubscription()).toBeUndefined();
+
+    // Retry holds the chat awake before R is reserved: the handoff resumes
+    // with no running id, and R's start binds and takes Stop.
+    scenario.resume({ after: "12" });
+    scenario.emit(runStarted("turn-r", ["turn-m1"]), "13");
+    expect(scenario.turns().map(({ id }) => id)).toContain("turn-r");
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-r" }]);
+    scenario.emit(runFinished("turn-r"), "14");
+    expect(scenario.activeSubscription()).toBeUndefined();
   });
 });
 

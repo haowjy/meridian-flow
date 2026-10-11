@@ -119,10 +119,12 @@ invocation card; copy comes from structured handle/outcome metadata, never
 notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
 
-The run controller (`client/copilot/ThreadRunController.ts`) binds a send to
-the reply whose `RUN_STARTED` names its user turn (`answersUserTurnIds`), never
-to the next start in the stream. A message queued behind a write-mode switch
-waits for that reply, and a journal gap settles the wait from the snapshot.
+The run controller (`client/copilot/ThreadRunController.ts`) binds a reply by
+identity, never by stream order or timing: the run it observes, the successor
+whose `RUN_STARTED` names that run in `continuesRunId` (after a finish marked
+`continued`), or the reply whose `answersUserTurnIds` names an admitted user
+turn. A message queued behind a write-mode switch waits for its reply; a journal
+gap or a snapshot handoff settles waits from durable turns (`replyReaching`).
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` projection for the whole
