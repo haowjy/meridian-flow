@@ -31,7 +31,9 @@ on pagehide/unmount. Transfer to the submission journal clears it synchronously
 at Send. `useChatSubmissions` rebuilds writer rows and binds one cancellable
 `ChatSubmissionDriver` to the mounted chat; first sends and later sends share
 that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
-this tab. Retry looks up before posting. Edit fences first, prepends the rejected
+this tab. The binding announces only a new failed transition, keyed by the stable
+record id (account-qualified), never a restored rejection. Retry, successful Edit,
+acceptance and unmount clear only that record's alert. Retry looks up before posting. Edit fences first, prepends the rejected
 structured document before newer writing, then retires the journal record.
 Never-created chat Edit returns all its messages and unsent writing to New chat
 in the same pane. Lifecycle transfers publish a new editor mount; typing does
