@@ -484,3 +484,21 @@ it("spells lineage links through their holder, without a chat-only spelling chan
       "scratch://@/c12/x#gate",
     );
 });
+
+it("canonicalizes historical ahead basenames without changing folders, suffixes or identity", () => {
+  const link = { ref: `ahead:${U.open}`, href: "manuscript://book.md/Chapter 15.md?view=1#scene" };
+  const resolution = resolveStoredLink(link, catalog);
+  expect(resolution).toEqual({
+    kind: "ahead",
+    uri: "manuscript://book.md/Chapter 15",
+    suffix: "?view=1#scene",
+  });
+  expect(spellStoredLink(link, holder, resolution, "holder")).toEqual({
+    href: "../book.md/Chapter 15?view=1#scene",
+    address: "manuscript://book.md/Chapter 15",
+  });
+  expect(link).toEqual({
+    ref: `ahead:${U.open}`,
+    href: "manuscript://book.md/Chapter 15.md?view=1#scene",
+  });
+});

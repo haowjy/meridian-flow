@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Historical unresolved links spell canonical prose names without changing their identity or writer labels.
+
 - Preserve prose classification when MIME inference supplies an upload suffix.
 
 - Share destination naming between optimistic clients and server commands, and use the binary naming rule for upload intake.
