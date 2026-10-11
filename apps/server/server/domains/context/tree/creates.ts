@@ -229,8 +229,11 @@ export type LiveCreateFault =
   | CreateFault
   /** What the create was planned against isn't what its locks find. */
   | { code: "candidate_changed" }
-  /** The caller-minted id already names a document. */
-  | { code: "id_taken" };
+  /**
+   * A unique key already holds the row: the caller-minted id. The live-location key would
+   * answer the same, but the caller's namespace lock and occupancy check rule that out.
+   */
+  | { code: "row_exists" };
 
 /** The live row a create inserts when it reveals nothing. */
 export type LiveInsert = {
@@ -284,7 +287,7 @@ export async function createLive(
       ...(id ? { id } : {}),
       ...(provisionalName ? { provisionalName } : {}),
     });
-    return documentId ? Ok({ kind: "inserted", documentId }) : Err({ code: "id_taken" });
+    return documentId ? Ok({ kind: "inserted", documentId }) : Err({ code: "row_exists" });
   }
   const placed = await place(db, {
     targets: [

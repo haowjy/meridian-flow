@@ -1,6 +1,6 @@
 /**
  * The hidden-node lifecycle's vocabulary, with no database dependency, so ports and
- * adapters can name it without importing the Drizzle implementation (`hidden-nodes.ts`).
+ * adapters can name it without importing the Drizzle implementation (`creates.ts`, `end-use.ts`).
  */
 import type { ContextSourceId, DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";

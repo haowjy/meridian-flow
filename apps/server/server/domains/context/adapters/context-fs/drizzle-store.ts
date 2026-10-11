@@ -223,7 +223,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       });
       if (!created.ok) {
         if (created.error.code === "candidate_changed") throw new LiveCreateCandidateChangedError();
-        if (created.error.code === "id_taken") throw new ContextEntryConflictError();
+        if (created.error.code === "row_exists") throw new ContextEntryConflictError();
         return null;
       }
       const outcome = created.value;

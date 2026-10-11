@@ -203,7 +203,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const holderUri = await holderAddress(snapshot, holder);
       for (const uri of writtenAddresses(request.written, holderUri)) addresses.add(uri);
     }
-    // A deleted picture keeps its path only while no other image holds it.
+    // A deleted picture keeps its path only while no other image holds it. Loading by the
+    // row's own deleted flag is a superset of the view's rule: presence is still decided
+    // by identity status alone.
     for (const id of newIds) {
       const row = snapshot.rows.get(id);
       if (row?.deleted && row.image) addresses.add(row.uri);
@@ -597,13 +599,16 @@ function snapshotCatalog(
   miss: (key: string) => void,
 ): HolderCatalog {
   const key = viewKey(view);
-  const statusOf = (row: Row) => snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
+  /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
+  const statusOf = (row: Row) => {
+    const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
+    if (status) return status;
+    miss(`identity:${row.id}`);
+    return UNLOADED;
+  };
   const toDocument = (row: Row): CatalogDocument | null | typeof UNLOADED => {
     const status = statusOf(row);
-    if (!status) {
-      miss(`identity:${row.id}`);
-      return UNLOADED;
-    }
+    if (status === UNLOADED) return UNLOADED;
     if (status.kind === "gone") return null;
     const address =
       status.kind === "deleted"
@@ -627,7 +632,6 @@ function snapshotCatalog(
         (row.projectId === snapshot.personalProjectId && row.scheme === "user"),
     };
   };
-  const occupies = (row: Row) => statusOf(row)?.kind === "visible";
   const atAddress = (uri: string, stems: boolean) => {
     const index = snapshot.views.get(key);
     if (!index) {
@@ -642,12 +646,29 @@ function snapshotCatalog(
   };
   // Pictures by their rows' own addresses; presence, as for every link, is the view's
   // identity status: a hidden tombstone is gone, never a deleted picture at its path.
-  const images = (uri: string) =>
-    (snapshot.byUri.get(uri) ?? []).filter((row) => row.image && row.manuscript);
-  const liveImage = (uri: string) => images(uri).find((row) => occupies(row));
+  // Each answers UNLOADED when any image at the path has no status in this view.
+  const images = (uri: string) => {
+    const found: { row: Row; kind: IdentityStatus["kind"] }[] = [];
+    for (const row of snapshot.byUri.get(uri) ?? []) {
+      if (!row.image || !row.manuscript) continue;
+      const status = statusOf(row);
+      if (status === UNLOADED) return UNLOADED;
+      found.push({ row, kind: status.kind });
+    }
+    return found;
+  };
+  const liveImage = (uri: string) => {
+    const found = images(uri);
+    if (found === UNLOADED) return UNLOADED;
+    return found.find((image) => image.kind === "visible")?.row;
+  };
   const soleDeletedImage = (uri: string) => {
-    const deleted = images(uri).filter((row) => statusOf(row)?.kind === "deleted");
-    return !liveImage(uri) && deleted.length === 1 ? deleted[0] : undefined;
+    const found = images(uri);
+    if (found === UNLOADED) return UNLOADED;
+    const deleted = found.filter((image) => image.kind === "deleted");
+    return !found.some((image) => image.kind === "visible") && deleted.length === 1
+      ? deleted[0]?.row
+      : undefined;
   };
   /** One meaning's lookup: undefined when that key was never loaded. */
   const meaning = (map: Map<string, string | null>, owner: string, aheadId: string) =>
@@ -698,19 +719,28 @@ function snapshotCatalog(
       if (row === undefined) return undefined;
       // Never another project's address: its id names nothing this reader has.
       if (!row?.image || row.projectId !== snapshot.projectId) return null;
-      if (statusOf(row)?.kind === "gone") return null;
-      if (row.manuscript && occupies(row)) return { kind: "path", path: row.path };
+      const status = statusOf(row);
+      if (status === UNLOADED) return undefined;
+      // "gone" is a hidden tombstone, a hidden row no draft uses, or a row with no
+      // spellable address: it names nothing this reader can reach, so it is unspelled like a
+      // missing id. A row in a retired source still spells its last address.
+      if (status.kind === "gone") return null;
+      if (row.manuscript && status.kind === "visible") return { kind: "path", path: row.path };
       if (row.manuscript) {
         if (!snapshot.addresses.has(row.uri)) return undefined;
-        if (soleDeletedImage(row.uri)?.id === row.id) return { kind: "path", path: row.path };
+        const deleted = soleDeletedImage(row.uri);
+        if (deleted === UNLOADED) return undefined;
+        if (deleted?.id === row.id) return { kind: "path", path: row.path };
       }
       return { kind: "last", uri: row.uri };
     },
     assetFor(uri) {
       const live = liveImage(uri);
+      if (live === UNLOADED) return undefined;
       if (live && live.projectId === snapshot.projectId) return live.id;
       if (!snapshot.addresses.has(uri)) return undefined;
       const deleted = soleDeletedImage(uri);
+      if (deleted === UNLOADED) return undefined;
       return deleted && deleted.projectId === snapshot.projectId ? deleted.id : null;
     },
   };

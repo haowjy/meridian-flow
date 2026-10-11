@@ -106,6 +106,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).map((row) => row.draftId);
     }
 
+    /** Every document row of the scenario named `name`, hidden rows and tombstones included. */
+    async function documentsNamed(scenario: DraftTreeScenario, name: string) {
+      return db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.name, name),
+            inArray(documents.contextSourceId, Object.values(scenario.project.sources)),
+          ),
+        );
+    }
+
     /** Folders of the scenario named `name` that aren't tombstones, hidden ones included. */
     async function foldersNamed(scenario: DraftTreeScenario, name: string) {
       return db
@@ -196,7 +209,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await folderAt(scenario, LIVE_TREE, "lore"), "its folder revealed").toBe(lore);
     });
 
-    it("reveals under the candidate's lease when the live create carries content (C-3)", async () => {
+    // The candidate's lease shows in the held-write abort case below.
+    it("reveals the drafted document by path with the live create's content (C-3)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const harbor = await scenario.model(ascension).create("lore/harbor.md", "Harbor, drafted.");
@@ -360,9 +374,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await scenario.writer.create("revealed.md", { documentId: id })).toEqual({
         status: "conflict",
       });
-      expect(await at(scenario, LIVE_TREE, "revealed.md"), "nothing minted").toEqual({
-        kind: "not_found",
-      });
+      // No view can say "no row anywhere": a hidden row or one in another source counts.
+      expect(await documentsNamed(scenario, "revealed"), "nothing minted").toEqual([]);
       expect(await liveStatus(id), "the identity is untouched").toMatchObject(untouched);
       expect(await tombstoned(id), "its row, as it was").toBe(tombstone);
     });
