@@ -419,7 +419,9 @@ export type DraftCreatedRow = { draft: DraftLocation; row: DocumentIdentityRow }
 export async function loadDraftCreatedDocuments(
   db: DrizzleDb,
   draftId: DraftId,
+  only?: readonly string[],
 ): Promise<DraftCreatedRow[]> {
+  if (only?.length === 0) return [];
   const rows = await currentDrizzleDb(db).execute<
     RawIdentityRow & {
       c_context_source_id: string | null;
@@ -437,6 +439,7 @@ export async function loadDraftCreatedDocuments(
       SELECT * FROM documents d WHERE d.id = c.node_id OFFSET 0
     ) d
     WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.created
+      ${only ? sql`AND c.node_id IN (${uuidList(only)})` : sql``}
     ORDER BY c.created_at, c.node_id`);
   return rows.map((row) => ({
     row: identityRow(row),
