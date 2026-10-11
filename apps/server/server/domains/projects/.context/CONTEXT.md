@@ -63,7 +63,7 @@ translate those to `title` and `description` in `ProjectDto`.
   serializes the exact email key before inspecting its owner; it does not define
   additional email canonicalization.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
-  never from `markdown_projection`. Any admission or checkpoint means initialized.
+  never from the Markdown projection. Any admission or checkpoint means initialized.
 - The project, locked No Work, chapter row, initialize-only canonical seed, No Work Uploads source, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning treats the durable readiness flag as authoritative; legacy

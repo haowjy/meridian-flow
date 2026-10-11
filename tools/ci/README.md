@@ -83,14 +83,10 @@ allowlistable outside `apps/server/server/domains/context/tree/`. The schema is
 excluded because it defines the column. The tree-owner glob is added only when
 that module exists and contains findings.
 
-Temporary entries use reasons starting `pending: lane <X>` from the foundation
-reader audit. Each converting lane removes its pending entry; lane V's final
-gate is `rg -c '"pending:' tools/ci/tree-visibility-allowlist.json` = 0 (no
-matches; ripgrep exits 1). The permanent entries already have their final forms:
-`context-fs/drizzle-store.ts` is `["write"]` after lane C's reader conversion,
-and `drizzle-branches.ts` is `["read"]` after lane M's manifest retirement.
-Their reasons are the final audit reasons. Stale detection operates per entry,
-not per form; future changes must keep forms as narrow as the permitted operations.
+Every entry is permanent and its reason is the audit's reason: no entry may be
+temporary (`rg -c '"pending:' tools/ci/tree-visibility-allowlist.json` finds
+none). Stale detection operates per entry, not per form; keep forms as narrow as
+the permitted operations.
 
 To add a fixture, create a `.ts` file in
 `tools/ci/fixtures/tree-visibility/`. Mark each offending source line with
