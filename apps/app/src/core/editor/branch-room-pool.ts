@@ -4,7 +4,9 @@
  * they reset, and rebuilt on request. Branch rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  */
+
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import * as Y from "yjs";
 
 import type { DocumentSession } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
@@ -14,11 +16,13 @@ export type BranchRoomRef = Readonly<{
   currentRoom(): Promise<string | null>;
   changed(): void | Promise<void>;
   writerChanges?(generation: number | null): void;
+  writerLoss?(): void;
 }>;
 export type BranchRoomCarry = Readonly<{
   ref: BranchRoomRef;
   source: { roomKey: string; generation: number };
   carry: Uint8Array;
+  sourceState: Uint8Array;
 }>;
 
 export class BranchRoomPool {
@@ -165,7 +169,12 @@ export class BranchRoomPool {
       ref &&
       room?.kind === "branch" &&
       (disposition === "superseded" || disposition === "rebuild")
-        ? { ref, source: { roomKey, generation: room.generation }, carry }
+        ? {
+            ref,
+            source: { roomKey, generation: room.generation },
+            carry,
+            sourceState: Y.encodeStateAsUpdate(session.document),
+          }
         : null;
     this.rooms.delete(roomKey);
     this.refs.delete(roomKey);

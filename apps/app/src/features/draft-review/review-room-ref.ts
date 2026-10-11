@@ -17,6 +17,12 @@ export function reviewRoomRef(
 ): BranchRoomRef {
   return {
     roomKey,
+    writerLoss() {
+      queryClient.setQueryData(
+        projectQueryKeys.writerHandoffLoss(draft.projectId, draft.documentId),
+        true,
+      );
+    },
     async currentRoom() {
       try {
         const preview = await queryClient.fetchQuery({
