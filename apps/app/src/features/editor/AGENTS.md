@@ -81,3 +81,7 @@ the design, from the primitives.
 → [`surfaces/images/AGENTS.md`](surfaces/images/AGENTS.md)
 → [`surfaces/peer-marks/AGENTS.md`](surfaces/peer-marks/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)
+
+`SessionEditor` owns device reading memory for live Editor and dock mounts through
+`core/editor/use-reading-position.ts`. Review and paint-held mounts stand down;
+explicit destinations win. Do not restore pixels in a second timer or warm-tab path.

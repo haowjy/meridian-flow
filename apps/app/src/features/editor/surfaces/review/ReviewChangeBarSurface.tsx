@@ -61,8 +61,8 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     <ReviewChangeBar
       change={focusedItem.change}
       disabled={view.locked}
-      canApply={view.canApply}
       failure={focusedItem.failure}
+      draftFailure={focusedItem.draftFailure}
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}
     />

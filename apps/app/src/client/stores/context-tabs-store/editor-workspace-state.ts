@@ -5,6 +5,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import { isRecord } from "@/client/storage/browser-record";
 import { sameServerContextTabLocator } from "./context-tab-locator";
 import {
   type ContextTab,
@@ -139,16 +140,9 @@ function withoutResourceOwnership(tab: ContextTab): ContextTab {
 }
 
 function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (
-    !Array.isArray(record.tabs) ||
-    !record.selectedTabIdByWork ||
-    typeof record.selectedTabIdByWork !== "object" ||
-    Array.isArray(record.selectedTabIdByWork)
-  )
-    return null;
-  const tabs = record.tabs.map(parseContextTab);
+  if (!isRecord(value)) return null;
+  if (!Array.isArray(value.tabs) || !isRecord(value.selectedTabIdByWork)) return null;
+  const tabs = value.tabs.map(parseContextTab);
   if (tabs.some((tab) => tab === null)) return null;
   const resourceIds = new Set(
     tabs.filter((tab) => tab && !isEditorContextTab(tab)).map((tab) => tab?.documentId),
@@ -159,7 +153,7 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   if (new Set(instanceIds).size !== instanceIds.length) return null;
   const selections: Record<string, string> = {};
   const byId = new Map(parsedTabs.map((tab) => [tab.documentId, tab]));
-  for (const [workId, documentId] of Object.entries(record.selectedTabIdByWork)) {
+  for (const [workId, documentId] of Object.entries(value.selectedTabIdByWork)) {
     if (!workId || typeof documentId !== "string") return null;
     if (resourceIds.has(documentId)) continue;
     const tab = byId.get(documentId);
@@ -175,34 +169,17 @@ function withoutOwner(tab: ContextTab): ContextTab {
   return rest as ContextTab;
 }
 
-export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapshot | null {
-  if (!raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return null;
-    const record = value as Record<string, unknown>;
-    if (
-      record.version !== 1 ||
-      typeof record.accountId !== "string" ||
-      !record.projects ||
-      typeof record.projects !== "object" ||
-      Array.isArray(record.projects)
-    )
-      return null;
-    const projects: Record<string, ProjectTabsSlice> = {};
-    for (const [projectId, workspace] of Object.entries(record.projects)) {
-      const parsed = parseProjectWorkspace(workspace);
-      if (!parsed) return null;
-      projects[projectId] = parsed;
-    }
-    return {
-      version: 1,
-      accountId: record.accountId,
-      projects,
-    };
-  } catch {
-    return null;
+export function parseEditorWorkspace(
+  value: unknown,
+): EditorWorkspaceSnapshot["projects"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const projects: Record<string, ProjectTabsSlice> = {};
+  for (const [projectId, workspace] of Object.entries(value)) {
+    const parsed = parseProjectWorkspace(workspace);
+    if (!parsed) return undefined;
+    projects[projectId] = parsed;
   }
+  return projects;
 }
 
 export function durableContextTab(tab: ContextTab): ContextTab {

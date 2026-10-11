@@ -1,3 +1,8 @@
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -284,6 +289,7 @@ export type AppServices = {
   eventQuery?: EventQuery;
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
+  accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -372,6 +378,7 @@ export type ProductionAppPorts = {
   agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
+  accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -525,6 +532,7 @@ export async function createProductionAppPorts(input: {
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
@@ -705,6 +713,7 @@ export async function createProductionAppPorts(input: {
     agentRevisions,
     marsPackageFetcher,
     preferences,
+    accountSettings,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -1122,6 +1131,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventQuery: ports.eventQuery,
     marsPackageFetcher: ports.marsPackageFetcher,
     preferences: ports.preferences,
+    accountSettings: ports.accountSettings,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -1182,6 +1192,7 @@ export function createInMemoryAppServices(): AppServices {
       Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
   });
   const preferences = createInMemoryProjectPreferencesRepository();
+  const accountSettings = createInMemoryAccountSettingsRepository();
   const workingSet = createInMemoryWorkingSetRepository();
   const recentDocuments = createInMemoryRecentDocumentsRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
@@ -1495,12 +1506,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureUser() {
         throw new Error("in-memory user repository is not implemented");
       },
-      async getWorkingSetSyncEnabled() {
-        return true;
-      },
-      async updateWorkingSetSyncEnabled(_userId, enabled) {
-        return enabled;
-      },
     },
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     workRepo: {
@@ -1567,6 +1572,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     preferences,
+    accountSettings,
     workingSet,
     recentDocuments,
     orchestrator: {

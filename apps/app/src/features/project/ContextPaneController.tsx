@@ -4,7 +4,7 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
@@ -94,9 +94,6 @@ export function ContextViewerSurfaceController({
   const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
   const removalState = useContextRemovalProject(projectId);
   const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
-  const editorScopeKey = `${projectId}:${routeWorkId}`;
-  const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
-  const retainedActiveTabId = selectedDocumentId ?? null;
 
   const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
   const {
@@ -222,10 +219,6 @@ export function ContextViewerSurfaceController({
     });
   }, [active, contextRemoval, workspaceRoute, projectId, removalState]);
 
-  useLayoutEffect(() => {
-    scrollPositionsRef.current.clear();
-  }, [editorScopeKey]);
-
   // Untitled tabs are store-owned until materialization gives them a server
   // route. Their activation must not depend on search-param validation.
   const paneState = deriveContextPaneState({
@@ -300,59 +293,6 @@ export function ContextViewerSurfaceController({
   function handleCloseTab(documentId: string) {
     settleWriterClose(contextRemoval.writerClose(projectId, documentId));
   }
-
-  useLayoutEffect(() => {
-    if (!active) return;
-    if (!retainedActiveTabId) return;
-    const scroller = findEditorScroller(retainedActiveTabId);
-    if (!scroller) return;
-    const save = () => {
-      scroller.dataset.stableLayoutScrollTop = String(scroller.scrollTop);
-      scroller.dataset.stableLayoutScrollLeft = String(scroller.scrollLeft);
-      scrollPositionsRef.current.set(retainedActiveTabId, {
-        top: scroller.scrollTop,
-        left: scroller.scrollLeft,
-      });
-    };
-    const restore = () => {
-      const position = scrollPositionsRef.current.get(retainedActiveTabId) ?? {
-        top: Number(scroller.dataset.stableLayoutScrollTop ?? 0),
-        left: Number(scroller.dataset.stableLayoutScrollLeft ?? 0),
-      };
-      if (!position) return;
-      scroller.scrollTop = position.top;
-      scroller.scrollLeft = position.left;
-    };
-
-    const hasSavedPosition = scrollPositionsRef.current.has(retainedActiveTabId);
-    let interval: number | null = null;
-    let attachTimer: number | null = null;
-    let restoreTimer: number | null = null;
-    const attachCapture = () => {
-      scroller.addEventListener("scroll", save, { passive: true });
-      interval = window.setInterval(save, 200);
-      save();
-    };
-
-    restore();
-    requestAnimationFrame(() => requestAnimationFrame(restore));
-    if (hasSavedPosition) {
-      restoreTimer = window.setInterval(restore, 100);
-      attachTimer = window.setTimeout(() => {
-        if (restoreTimer) window.clearInterval(restoreTimer);
-        restoreTimer = null;
-        attachCapture();
-      }, 1200);
-    } else {
-      attachCapture();
-    }
-    return () => {
-      if (attachTimer) window.clearTimeout(attachTimer);
-      if (restoreTimer) window.clearInterval(restoreTimer);
-      if (interval) window.clearInterval(interval);
-      scroller.removeEventListener("scroll", save);
-    };
-  }, [active, retainedActiveTabId]);
 
   const handleUntitledBecameNonEmpty = useCallback(
     async (documentId: string) => {
@@ -545,12 +485,4 @@ function settleWriterClose(
 /** Full basename ("chapter-1.md") — matches the name a settled tab displays. */
 function contextRouteFileName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
-}
-
-function findEditorScroller(documentId: string): HTMLElement | null {
-  for (const host of document.querySelectorAll<HTMLElement>("[data-context-editor-document-id]")) {
-    if (host.dataset.contextEditorDocumentId !== documentId) continue;
-    return host.querySelector<HTMLElement>("[data-stable-layout-scroll]");
-  }
-  return null;
 }

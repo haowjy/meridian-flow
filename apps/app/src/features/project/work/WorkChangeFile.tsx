@@ -1,16 +1,4 @@
-/**
- * WorkChangeFile — one draft file in the Work page's "Changes to review": its
- * name (opens the file's review at the top), a New badge, a refusal
- * held on its draft with Dismiss, and a disclosure that expands the row in place
- * to that file's changes. Expanding is the only thing that reads the file's
- * preview, so a Work with many drafts previews none of them until asked.
- *
- * The rows are `DocumentChangeRows` over `useDraftChanges` (the Editor's own
- * model when this draft is its open review). A change row's body opens the
- * file's review focused on that change; Apply, Discard and the chat link act
- * where they are and never change the screen.
- */
-
+/** A Work's pending file, expandable to its changes. Commands act in place; the file name opens review. Preview reads begin only when expanded. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
@@ -22,8 +10,8 @@ import {
 } from "@/client/query/draft-command-record";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { NewBadge } from "@/components/app/NewBadge";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import type { DraftChangesView } from "@/features/draft-review/draft-changes";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
 import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
@@ -50,6 +38,13 @@ export function WorkChangeFile({
   const records = useDraftCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
   const refused = draftCommandFailure(records, draft);
+  const view = useDraftChanges(draft, { controller, enabled: expanded });
+  if (
+    expanded &&
+    (view.status === "gone" ||
+      (view.status === "ready" && view.items.length === 0 && !view.unlisted))
+  )
+    return null;
   const name = file.documentName || file.contextPath || t`Untitled manuscript`;
 
   const review = (focusOperationIds?: readonly string[]) =>
@@ -83,10 +78,9 @@ export function WorkChangeFile({
           onClick={() => review()}
         >
           <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-          {file.isNewDocument ? <NewBadge /> : null}
         </button>
       </div>
-      {refused ? (
+      {refused && !view.items.some((item) => item.draftFailure) ? (
         <InlineErrorRow
           message={<ReviewMessageText failure={refused} />}
           onDismiss={() => clearDraftCommandFailure(draft)}
@@ -94,13 +88,7 @@ export function WorkChangeFile({
       ) : null}
       {expanded ? (
         <div className={cn("pb-1.5", touch ? "pl-11" : "pl-8")}>
-          <FileChanges
-            draft={draft}
-            isNewDocument={file.isNewDocument}
-            controller={controller}
-            touch={touch}
-            onSelect={review}
-          />
+          <FileChanges view={view} touch={touch} onSelect={review} />
         </div>
       ) : null}
     </>
@@ -108,40 +96,24 @@ export function WorkChangeFile({
 }
 
 function FileChanges({
-  draft,
-  isNewDocument,
-  controller,
+  view,
   touch,
   onSelect,
 }: {
-  draft: { projectId: string; workId: string; documentId: string; draftId: string };
-  isNewDocument: boolean;
-  controller: WorkDraftCommands;
+  view: DraftChangesView;
   touch: boolean;
   onSelect: (operationIds: readonly string[]) => void;
 }) {
-  // A new document is applied whole: there is no change list to read.
-  const view = useDraftChanges(draft, { controller, enabled: !isNewDocument });
-  if (isNewDocument) {
-    return (
-      <StateLine>
-        <Trans>New document. Review it to apply.</Trans>
-      </StateLine>
-    );
-  }
   return (
     <DocumentChangeRows
+      showAttribution
       view={view}
       touch={touch}
       onSelect={(change) => onSelect(change.operationIds)}
       standIn={
         view.unlisted ? (
           <StateLine>
-            <Trans>Formatting changes remain. Review the draft to apply or discard them.</Trans>
-          </StateLine>
-        ) : view.status === "gone" ? (
-          <StateLine>
-            <Trans>No changes left</Trans>
+            <Trans>Formatting changes remain</Trans>
           </StateLine>
         ) : null
       }

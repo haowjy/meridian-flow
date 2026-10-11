@@ -43,6 +43,9 @@ function storage(): DockStorage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,
+    removeItem: (key) => {
+      values.delete(key);
+    },
     setItem: (key, value) => {
       values.set(key, value);
     },
@@ -235,11 +238,13 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
     },
     () => ({
       getItem: () => null,
+      removeItem: () => {},
       setItem: () => {
         throw new Error("write");
       },
     }),
     () => ({
+      removeItem: () => {},
       getItem: () => {
         throw new Error("read");
       },
@@ -360,7 +365,7 @@ it.each([
     JSON.stringify({
       version: 1,
       accountId: "account",
-      occupant: { ...document, ...invalid },
+      payload: { occupant: { ...document, ...invalid } },
     }),
   );
   expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();

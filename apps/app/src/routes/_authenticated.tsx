@@ -1,9 +1,10 @@
+import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useCallback, useEffect } from "react";
-import { getAccountSettings } from "@/client/api/account-api";
+import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
@@ -22,9 +23,9 @@ import {
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
-import { WorkingSetSyncPreferenceProvider } from "@/features/account/WorkingSetSyncPreferenceProvider";
 
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
@@ -92,6 +93,7 @@ export const Route = createFileRoute("/_authenticated")({
 
     const now = Date.now();
     const requestInit = ssrApiRequestInit();
+    const accountSettingsReadGeneration = nextAccountSettingsGeneration();
     const settingsPromise = loadAccountSettingsWithDeadline((signal) =>
       getAccountSettings({ ...requestInit, signal }),
     );
@@ -106,6 +108,8 @@ export const Route = createFileRoute("/_authenticated")({
     }
     const currentUser = {
       ...authMe.user,
+      accountSettingsReadGeneration,
+      accountSettings: settingsResult.status === "fulfilled" ? settingsResult.value : null,
       workingSetSyncEnabled:
         settingsResult.status === "fulfilled"
           ? (settingsResult.value?.workingSetSyncEnabled ?? null)
@@ -145,7 +149,12 @@ function AuthenticatedAccountProviderTree({
   user,
 }: {
   now: number;
-  user: { userId: string; workingSetSyncEnabled: boolean | null };
+  user: {
+    userId: string;
+    workingSetSyncEnabled: boolean | null;
+    accountSettings: AccountSettings | null;
+    accountSettingsReadGeneration: number;
+  };
 }) {
   const queryClient = useQueryClient();
   const repairProjectCatalog = useCallback(
@@ -157,9 +166,12 @@ function AuthenticatedAccountProviderTree({
   );
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
-      <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
+      <AccountSettingsProvider
+        serverValue={user.accountSettings}
+        serverReadGeneration={user.accountSettingsReadGeneration}
+      >
         <AuthenticatedProviderTree now={now} user={user} />
-      </WorkingSetSyncPreferenceProvider>
+      </AccountSettingsProvider>
     </AccountFeatureComposition>
   );
 }
@@ -169,7 +181,12 @@ function AuthenticatedProviderTree({
   user,
 }: {
   now: number;
-  user: { userId: string; workingSetSyncEnabled: boolean | null };
+  user: {
+    userId: string;
+    workingSetSyncEnabled: boolean | null;
+    accountSettings: AccountSettings | null;
+    accountSettingsReadGeneration: number;
+  };
 }) {
   const resources = useOptionalAccountResourceReplica();
 

@@ -15,7 +15,7 @@
  * surface lands in the dock slot.
  */
 import { create, type StoreApi, type UseBoundStore } from "zustand";
-import { devtools, persist } from "zustand/middleware";
+import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
 import {
@@ -64,13 +64,40 @@ type PersistedSlotPrefsMap = Partial<Record<DesktopProjectSlotId, Partial<Surfac
 type PersistedSurfacePrefsBlob = {
   prefs?: PersistedSurfacePrefsMap | null;
   slotPrefs?: PersistedSlotPrefsMap | null;
+  railPrefs?: Partial<RailPrefs> | null;
 };
+
+export type RailSectionId = "scratch" | "recent";
+export type RailPrefs = {
+  scratchExpanded: boolean;
+  recentExpanded: boolean;
+  scratchHeight: number | null;
+};
+export const DEFAULT_RAIL_PREFS: RailPrefs = {
+  scratchExpanded: false,
+  recentExpanded: true,
+  scratchHeight: null,
+};
+
+export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
+  return {
+    scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
+    recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
+    scratchHeight:
+      typeof prefs?.scratchHeight === "number" &&
+      Number.isFinite(prefs.scratchHeight) &&
+      prefs.scratchHeight > 0
+        ? Math.round(prefs.scratchHeight)
+        : null,
+  };
+}
 
 export type SlotPrefsMap = { dock: SurfacePrefs };
 
 export type SurfacePrefsState = {
   prefs: SurfacePrefsMap;
   slotPrefs: SlotPrefsMap;
+  railPrefs: RailPrefs;
 };
 
 export type SurfacePrefsActions = {
@@ -78,6 +105,8 @@ export type SurfacePrefsActions = {
   setSurfaceCollapsed: (id: SurfaceId, collapsed: boolean) => void;
   setDockWidth: (widthPx: number) => void;
   setDockCollapsed: (collapsed: boolean) => void;
+  setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
+  setScratchHeight: (height: number | null) => void;
   setHydrated: () => void;
 };
 
@@ -153,6 +182,7 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       (set) => ({
         prefs: DEFAULT_SURFACE_PREFS,
         slotPrefs: { dock: DEFAULT_DOCK_PREFS },
+        railPrefs: DEFAULT_RAIL_PREFS,
         _hydrated: false,
 
         setSurfaceWidth: (id, width) =>
@@ -163,20 +193,54 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({ slotPrefs: patchDockPrefs(state.slotPrefs, { width }) })),
         setDockCollapsed: (collapsed) =>
           set((state) => ({ slotPrefs: patchDockPrefs(state.slotPrefs, { collapsed }) })),
+        setRailExpanded: (id, expanded) =>
+          set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
+        setScratchHeight: (height) =>
+          set((state) => ({
+            railPrefs: normalizeRailPrefs({ ...state.railPrefs, scratchHeight: height }),
+          })),
         setHydrated: () => set({ _hydrated: true }),
       }),
       {
         name: "meridian:project-surface-layout",
-        version: 3,
+        version: 4,
+        storage: createJSONStorage(() => ({
+          getItem: (key) => {
+            try {
+              return window.localStorage.getItem(key);
+            } catch {
+              return null;
+            }
+          },
+          setItem: (key, value) => {
+            try {
+              window.localStorage.setItem(key, value);
+            } catch {
+              /* Layout remains usable in memory. */
+            }
+          },
+          removeItem: (key) => {
+            try {
+              window.localStorage.removeItem(key);
+            } catch {
+              /* Best-effort storage. */
+            }
+          },
+        })),
         merge: (persisted, current) => {
           const blob = (persisted as PersistedSurfacePrefsBlob | null) ?? {};
           return {
             ...current,
             prefs: normalizeSurfacePrefs(blob.prefs),
             slotPrefs: normalizeSlotPrefs(blob.slotPrefs),
+            railPrefs: normalizeRailPrefs(blob.railPrefs),
           };
         },
-        partialize: (state) => ({ prefs: state.prefs, slotPrefs: state.slotPrefs }),
+        partialize: (state) => ({
+          prefs: state.prefs,
+          slotPrefs: state.slotPrefs,
+          railPrefs: state.railPrefs,
+        }),
         skipHydration: true,
       },
     ),
@@ -192,6 +256,8 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
       setSurfaceCollapsed: state.setSurfaceCollapsed,
       setDockWidth: state.setDockWidth,
       setDockCollapsed: state.setDockCollapsed,
+      setRailExpanded: state.setRailExpanded,
+      setScratchHeight: state.setScratchHeight,
       setHydrated: state.setHydrated,
     })),
   );

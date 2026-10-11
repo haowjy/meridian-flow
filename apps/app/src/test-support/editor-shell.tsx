@@ -19,7 +19,10 @@ import { ContextRemovalCoordinator } from "@/features/project/context/context-re
 
 export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const removal = new ContextRemovalCoordinator();
+  const epoch = new AbortController();
   const seams = [
+    vi.spyOn(account, "useAccountId").mockReturnValue("writer"),
+    vi.spyOn(account, "useAccountEpochSignal").mockReturnValue(epoch.signal),
     vi.spyOn(catalog, "useContextCatalogView").mockReturnValue({
       catalog: null,
       isComplete: false,
@@ -60,6 +63,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   return {
     dispose() {
       for (const seam of seams) seam.mockRestore();
+      epoch.abort();
       removal.dispose();
     },
   };

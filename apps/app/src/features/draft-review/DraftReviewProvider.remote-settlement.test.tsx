@@ -256,7 +256,8 @@ describe("DraftReviewProvider remote settlement", () => {
           expect(useDockDocumentStore.getState().occupant?.review).toBeNull();
         }
         expect(
-          JSON.parse(window.sessionStorage.getItem("meridian:dock:v1") ?? "null")?.occupant,
+          JSON.parse(window.sessionStorage.getItem("meridian:dock:v1") ?? "null")?.payload
+            ?.occupant,
         ).toEqual(useDockDocumentStore.getState().occupant);
         expect(admission).toHaveBeenCalledTimes(container === "dock" ? 1 : 0);
         expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);

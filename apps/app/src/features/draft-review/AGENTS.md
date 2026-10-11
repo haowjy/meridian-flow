@@ -1,7 +1,8 @@
 # features/draft-review — changes under review
 
 Shared review state and presentation for the manuscript, document change list,
-Work page and chat strip. One change is one server closure class. Chat and Work
+Work page and chat strip. One change is one server closure class, or one whole-draft item for a new
+document. Chat and Work
 lists can command drafts without opening a review or joining a room.
 
 Read [the lifecycle reference][reference] before changing state or settlement.
@@ -51,8 +52,11 @@ Paths outside this directory are relative to `apps/app/src`.
   their intended review rather than the last rendered selection.
 - Per-change commands send every operation of the class and the viewed revision
   tokens. Whole-draft commands settle the current server branch, not a preview.
-- Unattributed hunks and non-actionable classes remain visible and count toward
-  completion coverage. Synthetic class keys never reach the server.
+- Only new documents are one whole-draft
+  change. Its actions use existing whole commands; synthetic class keys never
+  reach the server. No-hunk/no-operation previews remain formatting-only.
+- Review chrome, strip and change rows each use one line. Lists close on last
+  disposition; only the header shows completion. Success has no toast.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion
   makes one durable; a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
