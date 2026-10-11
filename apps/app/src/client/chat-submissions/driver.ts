@@ -32,6 +32,7 @@ export type SubmissionDriverOptions = {
   finished?(entry: ChatSubmission): void;
   transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
+  transferReceived?(entry: ChatSubmission): boolean;
   timeoutMs?: number;
 };
 
@@ -90,7 +91,9 @@ export class ChatSubmissionDriver {
             .entries()
             .filter(
               (record) =>
-                record.threadId === threadId && !record.state && !tried.has(record.recordId),
+                record.threadId === threadId &&
+                (!record.state || this.options.transferReceived?.(record)) &&
+                !tried.has(record.recordId),
             )
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
           if (!entry) break;
@@ -117,7 +120,9 @@ export class ChatSubmissionDriver {
           .entries()
           .some(
             (record) =>
-              record.threadId === threadId && !record.state && !tried.has(record.recordId),
+              record.threadId === threadId &&
+              (!record.state || this.options.transferReceived?.(record)) &&
+              !tried.has(record.recordId),
           )
       )
         void this.drive(threadId);
@@ -131,6 +136,7 @@ export class ChatSubmissionDriver {
       .entries()
       .find((entry) => entry.submissionId === submissionId);
     if (!original || !this.current()) return Promise.resolve();
+    if (this.options.transferReceived?.(original)) return this.edit(submissionId);
     this.options.status(original, "pending");
     return this.locked(
       original.threadId,
@@ -208,6 +214,21 @@ export class ChatSubmissionDriver {
   private async attempt(original: ChatSubmission, retry: boolean, derived: boolean) {
     let entry = this.read(original.recordId);
     if (!entry || !this.current()) return;
+    if (this.options.transferReceived?.(entry)) {
+      const moving = entry;
+      this.finishEdit(
+        entry,
+        entry.creation
+          ? this.options.journal
+              .entries()
+              .filter(
+                (record) =>
+                  record.threadId === moving.threadId && this.options.transferReceived?.(record),
+              )
+          : [entry],
+      );
+      return;
+    }
     const fresh = this.options.takeFresh(entry.recordId) && !retry;
     if (retry && entry.state) {
       entry = { ...entry, state: undefined };
@@ -318,6 +339,17 @@ export class ChatSubmissionDriver {
     }
   }
 
+  private finishEdit(entry: ChatSubmission, cohort: ChatSubmission[]) {
+    for (const record of cohort) {
+      if (!this.current()) return;
+      if (!this.options.journal.retire(record.recordId)) {
+        this.localFailure(record);
+        return;
+      }
+    }
+    if (this.current()) this.options.edited(entry);
+  }
+
   edit(submissionId: string): Promise<void> {
     const original = this.options.journal
       .entries()
@@ -325,7 +357,7 @@ export class ChatSubmissionDriver {
     if (
       !original?.draft ||
       original.state !== "rejected" ||
-      this.localFailures.has(original.recordId)
+      (this.localFailures.has(original.recordId) && !this.options.transferReceived?.(original))
     )
       return Promise.resolve();
     return this.locked(original.threadId, () =>
@@ -338,8 +370,9 @@ export class ChatSubmissionDriver {
           !this.current()
         )
           return;
-        if (this.localFailures.has(entry.recordId)) return;
-        if (!entry.creation) {
+        const received = this.options.transferReceived?.(entry);
+        if (this.localFailures.has(entry.recordId) && !received) return;
+        if (!entry.creation && !received) {
           const outcome = await this.admissionRequest((signal) =>
             this.options.controller.retireSubmission(
               entry.threadId,
@@ -356,20 +389,24 @@ export class ChatSubmissionDriver {
             this.settle(entry, "accepted");
             return;
           }
-          if (outcome.kind !== "rejected") return;
+          if (outcome.kind !== "rejected") {
+            this.settle(entry, "ambiguous");
+            return;
+          }
         }
         if (!this.current()) return;
         const cohort = entry.creation
           ? this.options.journal
               .entries()
-              .filter((record) => record.threadId === entry.threadId)
+              .filter(
+                (record) =>
+                  record.threadId === entry.threadId &&
+                  (!received || this.options.transferReceived?.(record)),
+              )
               .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           : [entry];
-        if (!this.options.transferForEdit(entry, cohort)) return;
-        for (const { recordId } of cohort) {
-          if (!this.current() || !this.options.journal.retire(recordId)) return;
-        }
-        if (this.current()) this.options.edited(entry);
+        if (!received && !this.options.transferForEdit(entry, cohort)) return;
+        this.finishEdit(entry, cohort);
       }),
     );
   }

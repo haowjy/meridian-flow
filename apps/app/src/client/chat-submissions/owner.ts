@@ -13,7 +13,6 @@ import {
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
-import type { UserTurnRecovery } from "@/features/chat/UserTurn";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import { ChatSubmissionDriver } from "./driver";
@@ -25,6 +24,7 @@ import {
   retireChatSubmission,
 } from "./index";
 import { abortable } from "./lock";
+import type { UserTurnRecovery } from "./presentation";
 import type { ChatSubmission } from "./store";
 
 type Row = {
@@ -202,15 +202,25 @@ export class ChatSubmissionOwner {
         if (row?.attempt?.session === this.session) row.attempt = undefined;
         this.rebuild();
       },
+      transferReceived: (entry) => this.transferDestination(entry).hasReceived(entry.recordId),
       transferForEdit: (entry, cohort) => {
         const snapshots = cohort.flatMap((record) => (record.draft ? [record.draft] : []));
         if (snapshots.length !== cohort.length) return false;
         const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
-        if (entry.creation && source.initialDraft) snapshots.push(source.initialDraft);
-        const destination = entry.creation
-          ? { kind: "new-chat" as const, id: projectId }
-          : { kind: "chat" as const, id: threadId };
-        if (!composerSessionDraft(accountId, destination).prependSnapshots(snapshots)) return false;
+        const target = this.transferDestination(entry);
+        if (
+          entry.creation &&
+          source.initialDraft &&
+          !cohort.some((record) => target.hasReceived(record.recordId))
+        )
+          snapshots.push(source.initialDraft);
+        if (
+          !target.prependSnapshots(
+            snapshots,
+            cohort.map((record) => record.recordId),
+          )
+        )
+          return false;
         if (entry.creation) {
           this.destination = "editing";
           source.handoff();
@@ -226,6 +236,13 @@ export class ChatSubmissionOwner {
             if (current()) options.focusComposer();
           });
       },
+    });
+  }
+
+  private transferDestination(entry: ChatSubmission) {
+    return composerSessionDraft(this.options.accountId, {
+      kind: entry.creation ? "new-chat" : "chat",
+      id: entry.creation ? this.options.projectId : entry.threadId,
     });
   }
 
@@ -269,9 +286,14 @@ export class ChatSubmissionOwner {
         !row.attempt.signal.aborted &&
         row.attempt.submissionId === entry.submissionId;
       if (!pending) row.attempt = undefined;
-      const failure = !pending && (row.status === "error" || row.failed || entry.state);
+      const moving = this.transferDestination(entry).hasReceived(entry.recordId);
+      const failure = moving || (!pending && (row.status === "error" || row.failed || entry.state));
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
+      if (moving) {
+        this.presentation.set(row.turnId, { busy: true });
+        continue;
+      }
       this.presentation.set(row.turnId, {
         onRetry: () => {
           void this.driver.retry(entry.submissionId);

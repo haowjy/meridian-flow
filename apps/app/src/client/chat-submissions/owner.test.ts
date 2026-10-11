@@ -31,7 +31,8 @@ vi.mock("@/client/api/threads-api", async (actual) => ({
   getThreadSnapshot: vi.fn(),
 }));
 
-const account = "account-1";
+let account = "account-1";
+let accountSequence = 0;
 let cleanup: (() => Promise<void>) | undefined;
 function entry(id = "one", text = "First rejected"): ChatSubmission {
   const envelope = serializeComposerDraft(plainComposerDoc(text));
@@ -79,6 +80,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
   return { read: () => owner, dissolved };
 }
 beforeEach(() => {
+  account = `account-${++accountSequence}`;
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.mocked(getThreadSnapshot).mockReset();
@@ -368,11 +370,43 @@ it("two same-thread owners publish rejection and busy to the same readable snaps
   });
   const first = await mount(scenario);
   const second = await mount(scenario);
-  const id = scenario.turns()[0]!.id;
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+  const id = row.id;
   await first.read().driver.drive("thread_1");
   expect(first.read().presentation.get(id)?.onEdit).toBeTypeOf("function");
   expect(second.read().presentation.get(id)?.onEdit).toBeTypeOf("function");
   first.read().presentation.get(id)?.onEdit?.();
   expect(second.read().presentation.get(id)?.busy).toBe(true);
   first.read().dispose();
+});
+
+it("Edit retirement refusal cannot duplicate a transferred record or leave Retry beside it", async () => {
+  recordChatSubmission(account, entry());
+  const scenario = new ThreadRunScenario({
+    retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
+  });
+  const mounted = await mount(scenario);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+  const remove = Storage.prototype.removeItem;
+  const fault = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (
+    this: Storage,
+    key,
+  ) {
+    if (key === chatSubmissionStorageKey(account, "one")) throw new Error("retirement refused");
+    remove.call(this, key);
+  });
+  try {
+    await mounted.read().driver.edit("one");
+    await mounted.read().driver.edit("one");
+    const draft = composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft;
+    expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
+    expect(mounted.read().presentation.get(row.id)?.onRetry).toBeUndefined();
+    expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();
+    await mounted.read().driver.retry("one");
+    expect(scenario.appendRequests).toHaveLength(0);
+  } finally {
+    fault.mockRestore();
+  }
 });

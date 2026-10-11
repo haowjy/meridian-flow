@@ -6,6 +6,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 
 import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
@@ -17,12 +18,6 @@ import type {
 } from "@/rich-content/reference-occurrences";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
-
-export type UserTurnRecovery = {
-  onRetry: () => void;
-  onEdit?: () => void;
-  busy?: boolean;
-};
 
 export type UserTurnProps = {
   turn: Turn;
@@ -130,9 +125,11 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
       ) : null}
       {submissionRecovery && turn.status === "error" ? (
         <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
-            {t`Retry`}
-          </Button>
+          {submissionRecovery.onRetry ? (
+            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
+              {t`Retry`}
+            </Button>
+          ) : null}
           {submissionRecovery.onEdit ? (
             <Button
               type="button"
