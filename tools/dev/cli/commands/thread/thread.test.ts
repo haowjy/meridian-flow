@@ -76,6 +76,18 @@ describe("thread", () => {
     });
   });
 
+  it("send behind a queued switch follows the new reply, not the running one", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "wait behind queued switch", "--json"]);
+    expect(result.stderr).not.toContain("Unparseable");
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "Answered in the new mode",
+    });
+  });
+
   it("send times out with exit 124 instead of hanging", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
     expect(result.code).toBe(EXIT.timeout);

@@ -172,6 +172,38 @@ describe("ThreadRunController mid-run merge", () => {
   });
 });
 
+describe("ThreadRunController send behind a queued switch", () => {
+  it("keeps the running reply while a message it will not answer is admitted", async () => {
+    const scenario = makeScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("first request");
+    scenario.emit(runStarted("turn-a"), "11");
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+
+    // The server names no reply: a new one, after the switch, answers this message.
+    scenario.setAppend(async () =>
+      defaultSendResponse({
+        userTurnId: "turn-user-2",
+        assistantTurnId: null,
+        resumeAfterSeq: "11",
+      }),
+    );
+    await scenario.submit("second request");
+    expect(scenario.turns().map(({ id }) => id)).toContain("turn-a");
+
+    scenario.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
+      "12",
+    );
+    scenario.emit(runStarted("turn-b"), "13");
+    expect(scenario.turns().map(({ id }) => id)).toEqual(
+      expect.arrayContaining(["turn-a", "turn-b"]),
+    );
+    expect(scenario.turns().find(({ id }) => id === "turn-a")?.status).not.toBe("streaming");
+  });
+});
+
 describe("controller gap-result ownership", () => {
   it("does not apply a gap response after its run terminates", async () => {
     vi.useFakeTimers();

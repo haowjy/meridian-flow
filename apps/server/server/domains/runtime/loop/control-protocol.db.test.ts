@@ -1110,6 +1110,7 @@ else
       it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
         let rig: Rig;
         let queued: Awaited<ReturnType<typeof switchMode>> | undefined;
+        let admitted: Awaited<ReturnType<Rig["send"]>> | undefined;
         const gateway = scriptedGateway({
           usage: lowUsage,
           results: [toolUse],
@@ -1122,7 +1123,7 @@ else
               queued = await switchMode(rig, "draft");
               return lock(...args);
             });
-            await rig.send(rig.threadId, "M2 behind the switch");
+            admitted = await rig.send(rig.threadId, "M2 behind the switch");
           },
         });
         rig = await manualFixture({ gateway });
@@ -1165,6 +1166,9 @@ else
           reply.indexOf("M2 behind the switch"),
         );
         expect(tail[2]?.metadata).not.toMatchObject({ delivery: "steer" });
+        // M2 does not join A, so admission names no reply: the client learns
+        // M2's answer from its RUN_STARTED, never A's id.
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, assistantTurnId: null });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
         expect(await threadMode(rig)).toBe("draft");
       });
