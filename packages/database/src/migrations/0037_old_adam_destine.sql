@@ -10,6 +10,29 @@ INSERT INTO document_name_registry VALUES
  ('json','json'),('sh','shell'),('yaml','yaml'),('yml','yaml'),('csv','csv'),('toml','text'),('xml','text'),
  ('ipynb','notebook'),('pdf','pdf'),('png','png'),('jpg','jpg'),('jpeg','jpg'),('svg','svg');
 --> statement-breakpoint
+-- The SQL snapshot of the codec also owns folder comparison (literal spelling is unchanged).
+CREATE FUNCTION pg_temp.document_folder_key(input text) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE n text := btrim(input); e text := ''; suffix text;
+BEGIN
+ suffix := lower(substring(n FROM '[.]([^.]*)$'));
+ IF EXISTS (SELECT 1 FROM document_name_registry WHERE extension = suffix) THEN
+  e := suffix; n := btrim(left(n, length(n) - length(suffix) - 1));
+ END IF;
+ IF EXISTS (SELECT 1 FROM document_name_registry WHERE extension = e AND filetype = 'markdown') THEN
+  e := '';
+  LOOP
+   suffix := lower(substring(n FROM '[.]([^.]*)$'));
+   EXIT WHEN NOT EXISTS (SELECT 1 FROM document_name_registry WHERE extension = suffix AND filetype = 'markdown');
+   n := btrim(left(n, length(n) - length(suffix) - 1));
+  END LOOP;
+ END IF;
+ suffix := lower(substring(n FROM '[.]([^.]*)$'));
+ IF n IN ('', '.', '..') OR (e = '' AND EXISTS (
+   SELECT 1 FROM document_name_registry WHERE extension = suffix AND filetype <> 'markdown'
+ )) THEN RETURN input; END IF;
+ RETURN n || CASE WHEN e = '' THEN '' ELSE '.' || e END;
+END $$;
+--> statement-breakpoint
 CREATE TEMP TABLE document_name_changes ON COMMIT DROP AS
 WITH RECURSIVE folder_paths AS (
  SELECT id, name AS path FROM folders WHERE parent_id IS NULL
@@ -24,17 +47,17 @@ SELECT d.id, d.context_source_id, d.folder_id, d.deleted_at, d.deleted_by_work_i
 FROM documents d LEFT JOIN folder_paths p ON p.id = d.folder_id WHERE d.kind = 'content';
 --> statement-breakpoint
 DO $$
-DECLARE r record; n text; e text; t text; suffix text; is_binary boolean; candidate text; number integer;
+DECLARE r record; n text; e text; t text; suffix text; is_binary boolean; binary_type text; candidate text; number integer;
 BEGIN
- FOR r IN SELECT c.*, d.storage_url FROM document_name_changes c JOIN documents d ON d.id = c.id LOOP
+ FOR r IN SELECT c.*, d.storage_url, d.mime_type FROM document_name_changes c JOIN documents d ON d.id = c.id LOOP
   is_binary := r.storage_url IS NOT NULL OR r.old_type IN ('pdf','image','binary','docx','png','jpg','svg','notebook');
   n := btrim(r.old_name); e := lower(r.old_extension); t := r.old_type;
   IF NOT EXISTS (SELECT 1 FROM document_name_registry WHERE extension = e) THEN
    n := btrim(r.old_name || CASE WHEN r.old_extension = '' THEN '' ELSE '.' || r.old_extension END); e := '';
   END IF;
-  IF NOT is_binary AND (r.old_type = 'markdown' OR e IN ('md','markdown','mdx','txt') OR e = '') THEN
+  IF (NOT is_binary AND r.old_type = 'markdown') OR e IN ('md','markdown','mdx','txt') OR e = '' THEN
    IF e <> '' AND e NOT IN ('md','markdown','mdx','txt') THEN n := n || '.' || e; END IF;
-   e := ''; t := 'markdown';
+   e := ''; IF NOT is_binary THEN t := 'markdown'; END IF;
    LOOP
     suffix := lower(substring(n FROM '[.]([^.]*)$'));
     EXIT WHEN suffix IS NULL OR suffix NOT IN ('md','markdown','mdx','txt');
@@ -42,6 +65,16 @@ BEGIN
    END LOOP;
   ELSIF NOT is_binary THEN
    SELECT filetype INTO t FROM document_name_registry WHERE extension = e;
+  END IF;
+  -- D17: bytes with a prose name take the storage type's registered suffix, if any.
+  IF is_binary AND e = '' THEN
+   binary_type := CASE lower(split_part(coalesce(r.mime_type, ''), ';', 1))
+    WHEN 'application/pdf' THEN 'pdf' WHEN 'image/png' THEN 'png'
+    WHEN 'image/jpeg' THEN 'jpg' WHEN 'image/svg+xml' THEN 'svg'
+    ELSE r.old_type END;
+   SELECT extension INTO e FROM document_name_registry WHERE filetype = binary_type
+    ORDER BY CASE WHEN extension = 'jpeg' THEN 1 ELSE 0 END, extension LIMIT 1;
+   e := coalesce(e, '');
   END IF;
   IF n IN ('', '.', '..') THEN n := 'Untitled'; END IF;
   UPDATE document_name_changes SET name = n, extension = e, filetype = t WHERE id = r.id;
@@ -54,14 +87,28 @@ BEGIN
   LOOP
    suffix := lower(substring(candidate FROM '[.]([^.]*)$'));
    EXIT WHEN NOT (
-    (e = '' AND r.filetype = 'markdown' AND EXISTS (SELECT 1 FROM document_name_registry WHERE extension = suffix AND filetype <> 'markdown'))
+    (e = '' AND EXISTS (SELECT 1 FROM document_name_registry WHERE extension = suffix AND filetype <> 'markdown'))
     OR EXISTS (SELECT 1 FROM folders f WHERE f.context_source_id = r.context_source_id
       AND f.parent_id IS NOT DISTINCT FROM r.folder_id AND (f.deleted_at IS NULL OR f.deleted_by_work_id = r.deleted_by_work_id)
-      AND f.name = candidate || CASE WHEN e = '' THEN '' ELSE '.' || e END)
-    OR (r.deleted_at IS NULL AND EXISTS (SELECT 1 FROM document_name_changes c
+      AND pg_temp.document_folder_key(f.name) = candidate || CASE WHEN e = '' THEN '' ELSE '.' || e END)
+    OR EXISTS (SELECT 1 FROM document_name_changes c
       WHERE c.id <> r.id AND c.context_source_id = r.context_source_id
-      AND c.folder_id IS NOT DISTINCT FROM r.folder_id AND c.deleted_at IS NULL
-      AND c.extension = e AND c.name = candidate AND (c.allocated OR number > 1)))
+      AND c.folder_id IS NOT DISTINCT FROM r.folder_id
+      AND (c.deleted_at IS NULL OR (r.deleted_by_work_id IS NOT NULL AND c.deleted_by_work_id = r.deleted_by_work_id))
+      AND c.extension = e AND c.name = candidate AND (c.allocated OR number > 1))
+    -- Intakes own a second, case-folded namespace. Pending reservations have no content row.
+    OR (EXISTS (SELECT 1 FROM upload_intakes u WHERE u.document_id = r.id AND u.state <> 'deleted')
+      AND (
+       EXISTS (SELECT 1 FROM upload_intakes u WHERE u.context_source_id = r.context_source_id
+         AND u.document_id <> r.id AND u.state <> 'deleted'
+         AND NOT EXISTS (SELECT 1 FROM document_name_changes c WHERE c.id = u.document_id)
+         AND lower(u.final_path) = lower(r.prefix || candidate || CASE WHEN e = '' THEN '' ELSE '.' || e END))
+       OR EXISTS (SELECT 1 FROM document_name_changes c JOIN upload_intakes u ON u.document_id = c.id
+         WHERE c.id <> r.id AND u.context_source_id = r.context_source_id AND u.state <> 'deleted'
+         AND lower(c.prefix || c.name || CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END)
+           = lower(r.prefix || candidate || CASE WHEN e = '' THEN '' ELSE '.' || e END)
+         AND (c.allocated OR number > 1))
+      ))
    );
    number := number + 1; candidate := n || ' (' || number || ')';
   END LOOP;
@@ -153,8 +200,31 @@ BEGIN
  UPDATE document_links p SET address = a.address FROM document_address_changes a WHERE a.kind = 'link' AND p.ctid = a.id::tid;
  UPDATE upload_intakes p SET canonical_uri = a.address FROM document_address_changes a WHERE a.kind = 'upload-uri' AND p.document_id = a.id::uuid;
  UPDATE project_results p SET results_uri = a.address FROM document_address_changes a WHERE a.kind = 'result-uri' AND p.id = a.id::uuid;
+ -- Stage identity-backed intake paths before swapping their final assignments.
+ FOR r IN SELECT a.* FROM document_address_changes a WHERE a.kind = 'upload' ORDER BY a.id LOOP
+  mapped := '__document_name_intake_' || r.id;
+  WHILE EXISTS (SELECT 1 FROM upload_intakes u WHERE lower(u.final_path) = lower(mapped))
+    OR EXISTS (SELECT 1 FROM document_address_changes a WHERE a.kind = 'upload' AND lower(a.address) = lower(mapped))
+  LOOP mapped := mapped || '_'; END LOOP;
+  UPDATE upload_intakes SET final_path = mapped WHERE document_id = r.id::uuid;
+ END LOOP;
  UPDATE upload_intakes p SET final_path = a.address FROM document_address_changes a WHERE a.kind = 'upload' AND p.document_id = a.id::uuid;
 END $$;
+
+--> statement-breakpoint
+WITH rewritten AS (
+ SELECT w.user_id, w.project_id, jsonb_agg(
+   CASE WHEN c.id IS NULL THEN route.value
+    ELSE jsonb_set(route.value, '{path}', to_jsonb(c.prefix || c.name ||
+      CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END)) END ORDER BY route.ordinality
+ ) AS routes
+ FROM project_user_working_sets w
+ CROSS JOIN LATERAL jsonb_array_elements(w.recent_routes) WITH ORDINALITY AS route(value, ordinality)
+ LEFT JOIN document_name_changes c ON c.id::text = route.value->>'documentId'
+ GROUP BY w.user_id, w.project_id
+)
+UPDATE project_user_working_sets w SET recent_routes = r.routes, revision = w.revision + 1, updated_at = now()
+FROM rewritten r WHERE w.user_id = r.user_id AND w.project_id = r.project_id AND w.recent_routes IS DISTINCT FROM r.routes;
 
 --> statement-breakpoint
 -- Catalog entries/commits are derived address checkpoints, not writer content. Fence old
