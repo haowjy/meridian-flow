@@ -63,7 +63,11 @@ export function committedResourceDeletion(
   generation: string,
   transitionId: string,
 ): ResourceRecord["resource"] {
-  const { sessionAdoption: _superseded, ...obligations } = resource.obligations;
+  const {
+    sessionAdoption: _superseded,
+    canonicalRefresh: _unexecutable,
+    ...obligations
+  } = resource.obligations;
   return {
     ...resource,
     canonical: null,

@@ -138,6 +138,7 @@ export function validateResourceRecordUpdate(
     if (!source) throw new Error("Canonical refresh requires a successful move receipt");
   }
   validateNamespaceJournal({
+    terminal: resource.lifecycle.kind === "terminal",
     previous: previous ? { handle: previous.resource.handle, intents: previous.intents } : null,
     next: { handle: resource.handle, intents: next.intents },
     identityRevision: resource.identity.revision,

@@ -644,6 +644,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("resolves folder identity across scope changes without confusing authority hiding with deletion", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      const id = "00000000-0000-4000-8000-000000000942";
+      const foreign = "00000000-0000-4000-8000-000000000943";
+      await db.insert(folders).values([
+        { id, contextSourceId: PROJECT_SOURCE, name: "A" },
+        { id: foreign, contextSourceId: FOREIGN_SOURCE, name: "Foreign" },
+      ]);
+      const lookup = async () =>
+        (
+          await availability.lookup(
+            {
+              projectId: PROJECT as never,
+              documentIds: [],
+              folderIds: [id, foreign, "00000000-0000-4000-8000-000000000944"],
+            },
+            { userId: USER },
+          )
+        ).folderResolutions!;
+      expect(await lookup()).toMatchObject([
+        { folderId: id, kind: "available", entry: { path: ["A"], uri: "manuscript://A" } },
+        { folderId: foreign, kind: "not-visible" },
+        { kind: "not-visible" },
+      ]);
+      await db
+        .update(folders)
+        .set({ contextSourceId: WORK_SOURCE, name: "Moved" })
+        .where(eq(folders.id, id));
+      expect((await lookup())[0]).toMatchObject({
+        kind: "available",
+        entry: {
+          scope: { kind: "work", workId: WORK },
+          path: ["Moved"],
+          uri: "scratch://@draft/Moved",
+        },
+      });
+      await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
+      await db
+        .update(folders)
+        .set({ deletedAt: new Date(), deletedByWorkId: WORK })
+        .where(eq(folders.id, id));
+      expect((await lookup())[0].kind).toBe("authority-unavailable");
+      await db.update(folders).set({ deletedByWorkId: null }).where(eq(folders.id, id));
+      expect((await lookup())[0].kind).toBe("deleted");
+    });
+
     it("rejects invalid schemes, Work authority, scope pairing, and cross-source ancestry", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);

@@ -75,7 +75,9 @@ until an authorized terminal cleanup transition.
 records received evidence separately, and applies it through metadata CAS.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
-refresh obligation; only a later catalog request may update and clear it. Missing
+refresh obligation; a post-receipt catalog or exact-ID availability lookup may
+update and clear it. Authoritative unavailability releases queued work into repair;
+scoped catalog absence cannot do so. Missing
 receipts, canonical authority or matching identity block replay instead of
 inventing success.
 
@@ -98,12 +100,17 @@ File and folder records share immutable journal validation, receipt matching,
 account-bound transport and the CAS replay loop. `owningLocationIntent` is the
 placement ownership rule for both projection and admission; superseded rejected
 receipts remain evidence but cannot reclaim a location. A successful folder
-receipt requires a post-receipt catalog observation before later dispatch.
-Install that observation and its catalog checkpoint together, with the captured
-folder revision fence.
+receipt requires post-receipt canonical observation before later dispatch.
+Catalog observations install atomically with their checkpoint; exact-ID availability
+observations use the same metadata CAS. Both journals share typed settlement policy,
+and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
-Folder overlays rebase paths, URI authority, source/scope and parent ids for the
-folder and every descendant. Projection builds placement and parent links with all
+Folder placement resolves a stable-identity dependency graph through destination
+and ancestor rename chains, independent of record ordering. Missing destinations
+and cycles fall back to canonical placement. Canonical observations can advance
+placement ahead of older catalog membership without reviving stale intent ownership.
+The graph rebases paths, URI authority, source/scope and parent ids for the folder
+and every descendant. Projection builds placement and parent links with all
 nodes present, then suppresses deleted subtrees of that topology, including nodes
 moved into them. Supply the installed destination source and parent
 catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
@@ -121,12 +128,12 @@ location, even when the chosen destination matches the currently displayed locat
 Replay remains bound to stable folder identity, not a stale source-path comparison:
 the immutable request obtains a server outcome even after another client moves it.
 
-Catalog installation owns folder canonical state exactly as it owns files': the
+Catalog and exact-ID availability own folder canonical state just as for files. The
 acquisition fence captures each folder's canonical location and refresh barrier
 before HTTP, and `planFolderCatalogInstallation` clears a barrier only for the
 operation id the fence saw, or follows a canonical location that changed elsewhere
 (a parent moved by anyone). A settled move owns placement only while its refresh is
-outstanding (`owningLocationIntent`); after that the installed location is truth,
+outstanding (`owningLocationIntent`); after that the observed canonical location is truth,
 so a stale destination recorded by an old intention cannot override a later move of
 a parent.
 

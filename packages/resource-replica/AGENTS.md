@@ -8,6 +8,11 @@ Catalog replay installs whole commits. Its cursor and entries describe one
 checkpoint; a scope entry disappearing does not prove that a document was
 deleted globally. Resource content has its own Yjs persistence authority.
 
+Folder placement is an identity dependency graph, not a sequence of path replacements.
+Bind destinations through canonical and historical rename locations; resolve parents
+before children, independently of record order. Missing destinations and cycles fall
+back to canonical placement. Suppress deletions only after placement topology exists.
+
 Namespace intent `settled` means accepted by the server. Rejected work retired
 by a later command (including a reminted create conflict) is terminal
 `superseded`: retain its attempts as evidence, never as executable work or
@@ -24,3 +29,13 @@ the folder settlement; catalog absence or availability never authorizes it.
 Folder delete requests bind stable folder identity as well as path, so offline
 replay refuses replacement folders. Pending deletes hide descendants; refusal
 restores the rows and retains repair evidence.
+
+Both journals classify outcomes through `namespace-journal-policy`: accepted,
+refused, superseded, or unexecutable-after-terminal. Terminal identity absorbs late
+outcomes without applying their effects; immutable transport evidence remains.
+
+Successful moves fence later dispatch until catalog or exact-ID availability installs
+the canonical location. Scoped absence alone never clears that fence. Authoritative
+unavailability releases queued commands into visible repair; a folder tombstone
+retires them as terminal history. Folder availability cannot terminalize descendant
+documents. Only a delete receipt's exact IDs authorize that content transition.

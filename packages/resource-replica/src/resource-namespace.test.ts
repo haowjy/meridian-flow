@@ -107,6 +107,9 @@ function transport(input: {
 }): ResourceNamespaceTransport {
   return {
     accountId: "account",
+    lookupIdentity: async () => {
+      throw new Error("Unexpected availability lookup");
+    },
     readOutcome: input.read ?? (async () => null),
     submit: input.submit ?? (async () => createOutcome()),
   };

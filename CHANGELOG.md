@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Folder moves follow destination and ancestor renames regardless of settlement order. Missing destinations keep their last canonical placement instead of breaking the file catalog.
+- Late refusals cannot restart a deleted resource. Queued deletion resolves through exact identity availability when its folder disappears during a move refresh.
+
 - Deletion continues from canonical identity when an earlier pending move is refused. Moving into a pending-deleted folder hides the placed subtree without breaking the file catalog.
 - Chat Recent hides pending-deleted files and folder descendants until deletion is refused.
 

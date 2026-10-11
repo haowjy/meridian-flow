@@ -70,11 +70,20 @@ function receipt(name: string, ok: boolean, operationId = name): ContextOperatio
       : { ok: false, error: { code: "conflict", uri: `manuscript://${name}` } },
   };
 }
-function reconcile(store: MemoryFolders, transport: Omit<ResourceNamespaceTransport, "accountId">) {
+function reconcile(
+  store: MemoryFolders,
+  transport: Omit<ResourceNamespaceTransport, "accountId" | "lookupIdentity">,
+) {
   return reconcileFolderNamespace({
     key: { handle: "folder" },
     metadata: store,
-    transport: { ...transport, accountId: "account" },
+    transport: {
+      ...transport,
+      accountId: "account",
+      lookupIdentity: async () => {
+        throw new Error("Unexpected availability lookup");
+      },
+    },
     lock: {
       accountId: "account",
       async run(_key, task) {

@@ -1,8 +1,65 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
 import { intentOwnsDeletion } from "./resource-intent-policy";
-import type { NamespaceIntent, ResourceDestination } from "./resource-records";
+import type { NamespaceIntent, NamespaceOutcome, ResourceDestination } from "./resource-records";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
+
+/** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
+export type NamespaceIntentOutcome =
+  | "accepted"
+  | "refused"
+  | "superseded"
+  | "unexecutable-after-terminal";
+
+export function namespaceIntentOutcome(
+  outcome: NamespaceOutcome,
+  terminal = false,
+): NamespaceIntentOutcome {
+  if (terminal) return "unexecutable-after-terminal";
+  return (
+    outcome.kind === "operation"
+      ? outcome.receipt.result.ok
+      : outcome.kind === "create" && outcome.result.status !== "conflict"
+  )
+    ? "accepted"
+    : "refused";
+}
+
+/** Both journals use this transition; effects belong to the identity's own layer. */
+export function settleNamespaceIntent(
+  intents: readonly NamespaceIntent[],
+  intent: NamespaceIntent,
+  disposition: NamespaceIntentOutcome,
+  settledAt: number,
+): NamespaceIntent[] {
+  const state =
+    disposition === "accepted"
+      ? "settled"
+      : disposition === "refused"
+        ? "needs-repair"
+        : disposition;
+  const next = intents.map(
+    (current): NamespaceIntent =>
+      current.intentId === intent.intentId ? { ...current, state, settledAt } : current,
+  );
+  const evidence = intent.attempts.at(-1)?.outcome;
+  return disposition === "refused" && evidence && namespaceIntentOutcome(evidence) === "refused"
+    ? resolveRefusedLocationChain(next, intent)
+    : next;
+}
+
+/** Missing availability releases queued work into a visible repair route, not silent blocking. */
+export function resolveUnavailableNamespace(
+  intents: readonly NamespaceIntent[],
+  terminal: boolean,
+): NamespaceIntent[] {
+  return intents.map(
+    (intent): NamespaceIntent =>
+      intent.state === "pending" || intent.state === "needs-repair"
+        ? { ...intent, state: terminal ? "unexecutable-after-terminal" : "needs-repair" }
+        : intent,
+  );
+}
 
 function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent): boolean {
   return (
@@ -61,6 +118,7 @@ export function validateNamespaceJournal(input: {
   next: Journal;
   identityRevision: number;
   localDeletionAllowed?: boolean;
+  terminal?: boolean;
 }): void {
   const { previous, next, identityRevision, localDeletionAllowed = false } = input;
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
@@ -86,7 +144,8 @@ export function validateNamespaceJournal(input: {
         intent.settledAt < 0 ||
         (intent.state !== "settled" &&
           intent.state !== "needs-repair" &&
-          intent.state !== "superseded"))
+          intent.state !== "superseded" &&
+          intent.state !== "unexecutable-after-terminal"))
     )
       throw new Error("Invalid namespace settlement time");
     const attempts = new Set<string>();
@@ -187,16 +246,15 @@ export function validateNamespaceJournal(input: {
       if (previousIntent?.state !== "settled-locally" && !localDeletionAllowed)
         throw new Error("Local deletion requires proven never-submitted identity");
     }
+    if (intent.state === "unexecutable-after-terminal" && !input.terminal)
+      throw new Error("Non-executable namespace history requires terminal identity");
     const lastAttempt = intent.attempts.at(-1);
     if (intent.state === "submitted" && (!lastAttempt || lastAttempt.outcome))
       throw new Error("Submitted intention requires an unresolved attempt");
     if (intent.state === "received" && !lastAttempt?.outcome)
       throw new Error("Received intention requires a durable outcome");
     const outcome = lastAttempt?.outcome;
-    const accepted =
-      outcome?.kind === "operation"
-        ? outcome.receipt.result.ok
-        : outcome?.kind === "create" && outcome.result.status !== "conflict";
+    const accepted = outcome && namespaceIntentOutcome(outcome) === "accepted";
     if (intent.state === "settled" && !accepted)
       throw new Error("Settled intention requires an accepted outcome");
     if (
@@ -232,7 +290,9 @@ export function validateNamespaceJournal(input: {
     )
       throw new Error("Locally completed namespace work cannot restart");
     if (
-      (oldIntent.state === "settled" || oldIntent.state === "superseded") &&
+      (oldIntent.state === "settled" ||
+        oldIntent.state === "superseded" ||
+        oldIntent.state === "unexecutable-after-terminal") &&
       (intent.state !== oldIntent.state || intent.attempts.length !== oldIntent.attempts.length)
     )
       throw new Error("Terminal intentions cannot restart");

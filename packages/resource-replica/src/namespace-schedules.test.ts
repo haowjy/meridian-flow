@@ -1,244 +1,289 @@
+/** Schedule invariants across both namespace journals, including terminal and refresh boundaries. */
 import assert from "node:assert/strict";
 import { expect, it } from "vitest";
-import * as folder from "./folder-namespace";
+import {
+  installFolderCanonicalRefresh,
+  planFolderDeletion,
+  planFolderLocation,
+  prepareFolderNamespaceAttempt,
+  projectFolderNeedsRepair,
+  recordFolderNamespaceOutcome,
+  settleFolderNamespaceOutcome,
+  validateFolderNamespaceUpdate,
+} from "./folder-namespace";
+import { projectFolderCatalog } from "./folder-projection";
+import { entries, evidence, loc, permutations } from "./namespace-schedule-fixtures";
 import { committedResourceDeletion, planResourceDeletion } from "./resource-deletion";
 import { intentOwnsDeletion } from "./resource-intent-policy";
-import * as ns from "./resource-namespace";
-import { projectResourceLocation } from "./resource-projection";
+import {
+  activeNamespaceIntent,
+  installCanonicalRefresh,
+  prepareNamespaceAttempt,
+  recordNamespaceOutcome,
+  settleNamespaceOutcome,
+} from "./resource-namespace";
+import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
+import type {
+  FolderNamespaceRecord,
+  NamespaceIntent,
+  ResourceDestination,
+  ResourceRecord,
+} from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import { planResourceLocation } from "./resource-state";
 
-const loc = (path: string) => ({
-  scheme: "manuscript",
-  path: `/${path}`,
-  name: path.split("/").at(-1),
-  workId: null,
-});
-function permutations(a: string[]): string[][] {
-  return a.length
-    ? a.flatMap((x, i) => permutations(a.filter((_, j) => i !== j)).map((p) => [x, ...p]))
-    : [[]];
+type Event = "move" | "rename" | "delete" | "refusal" | "remote-delete" | "catalog-refresh";
+type Machine = {
+  intents(): readonly NamespaceIntent[];
+  terminal(): boolean;
+  hidden(): boolean;
+  repair(): boolean;
+  place(destination: ResourceDestination): void;
+  remove(): void;
+  remoteDelete(): void;
+  prepare(): void;
+  resolve(refused: boolean, receiptless: boolean): void;
+  refresh(): void;
+};
+function fileMachine(): Machine {
+  let record: ResourceRecord = {
+    resource: {
+      handle: "f",
+      revision: 1,
+      identity: { documentId: "f", revision: 1 },
+      content: { kind: "unacquired" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      canonical: loc("P/A/doc.md"),
+      lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
+      aliases: {},
+      obligations: {},
+    },
+    intents: [],
+  };
+  validateResourceRecordUpdate(null, record);
+  let sequence = 0;
+  const apply = (write: { next: ResourceRecord } | null) => {
+    if (write) {
+      validateResourceRecordUpdate(record, write.next);
+      record = write.next;
+    }
+  };
+  return {
+    intents: () => record.intents,
+    terminal: () => record.resource.lifecycle.kind === "terminal",
+    hidden: () => projectResourceLocation("p", record) === null,
+    repair: () => Boolean(projectResourceNeedsRepair("p", record)),
+    place: (destination) =>
+      apply(
+        planResourceLocation({
+          record,
+          projectId: "p",
+          intentId: `i${++sequence}`,
+          eligibleAt: 1,
+          destination,
+        }),
+      ),
+    remove: () => apply(planResourceDeletion(record, "p", `i${++sequence}`)),
+    remoteDelete: () =>
+      apply({
+        next: {
+          ...record,
+          resource: {
+            ...committedResourceDeletion(record.resource, "9", "remote"),
+            revision: record.resource.revision + 1,
+          },
+        },
+      }),
+    prepare: () =>
+      apply(
+        prepareNamespaceAttempt(record, {
+          attemptId: `a${++sequence}`,
+          operationId: `o${sequence}`,
+        }),
+      ),
+    resolve: (refused, receiptless) => {
+      const intent = record.intents.find((i) => i.state === "submitted");
+      if (!intent) return;
+      const attempt = intent.attempts.at(-1)!;
+      apply(
+        recordNamespaceOutcome(
+          record,
+          intent.intentId,
+          attempt.attemptId,
+          evidence(attempt, refused, receiptless),
+        ),
+      );
+      apply(settleNamespaceOutcome(record, 100));
+    },
+    refresh: () => {
+      const barrier = record.resource.obligations.canonicalRefresh;
+      if (barrier)
+        apply(
+          installCanonicalRefresh({
+            record,
+            operationId: barrier.operationId,
+            location: loc("B/doc.md"),
+          }),
+        );
+    },
+  };
 }
-it("validates and drains all file/folder journal schedules", () => {
-  const results: any[] = [];
+function folderMachine(): Machine {
+  let record: FolderNamespaceRecord = {
+    projectId: "p",
+    handle: "A",
+    folderId: "A",
+    revision: 1,
+    canonical: loc("P/A"),
+    intents: [],
+  };
+  validateFolderNamespaceUpdate(null, record);
+  let sequence = 0;
+  const apply = (write: { next: FolderNamespaceRecord } | null) => {
+    if (write) {
+      validateFolderNamespaceUpdate(record, write.next);
+      record = write.next;
+    }
+  };
+  const context = () => ({
+    record,
+    projectId: "p",
+    handle: "A",
+    folderId: "A",
+    source: record.canonical,
+    intentId: `i${++sequence}`,
+    operationId: `o${sequence}`,
+  });
+  return {
+    intents: () => record.intents,
+    terminal: () => Boolean(record.terminal),
+    hidden: () =>
+      !projectFolderCatalog("p", entries, [record]).some((entry) => entry.entryId === "A"),
+    repair: () => Boolean(projectFolderNeedsRepair(record)),
+    place: (destination) => apply(planFolderLocation({ ...context(), destination })),
+    remove: () => apply(planFolderDeletion(context())),
+    remoteDelete: () =>
+      apply({ next: { ...record, revision: record.revision + 1, terminal: { generation: "9" } } }),
+    prepare: () =>
+      apply(
+        prepareFolderNamespaceAttempt(record, {
+          attemptId: `a${++sequence}`,
+          operationId: `o${sequence}`,
+        }),
+      ),
+    resolve: (refused, receiptless) => {
+      const intent = record.intents.find((i) => i.state === "submitted");
+      if (!intent) return;
+      const attempt = intent.attempts.at(-1)!;
+      apply(
+        recordFolderNamespaceOutcome(
+          record,
+          intent.intentId,
+          attempt.attemptId,
+          evidence(attempt, refused, receiptless),
+        ),
+      );
+      apply(settleFolderNamespaceOutcome(record, 100));
+    },
+    refresh: () => {
+      if (record.canonicalRefresh)
+        apply(
+          installFolderCanonicalRefresh(record, record.canonicalRefresh.operationId, loc("B/A")),
+        );
+    },
+  };
+}
+const orders = permutations<Event>([
+  "move",
+  "rename",
+  "delete",
+  "refusal",
+  "remote-delete",
+  "catalog-refresh",
+]);
+it("validates and drains all 5,760 file/folder schedules", () => {
+  const failures: {
+    kind: string;
+    receiptless: boolean;
+    auto: boolean;
+    order: Event[];
+    at: string;
+    error: string;
+  }[] = [];
   let passed = 0;
-  let _assertions = 0;
-  for (const kind of ["file", "folder"])
+  for (const kind of ["file", "folder"] as const)
     for (const receiptless of [true, false])
       for (const auto of [true, false])
-        for (const order of permutations([
-          "move",
-          "rename",
-          "delete",
-          "refusal",
-          "remote-delete",
-        ])) {
-          let seq = 0,
-            remote = false,
-            admittedDelete = false;
-          let r: any =
-            kind === "file"
-              ? {
-                  resource: {
-                    handle: "x",
-                    revision: 1,
-                    identity: { documentId: "x", revision: 1 },
-                    content: { kind: "unacquired" },
-                    classification: {
-                      editable: true,
-                      filetype: "markdown",
-                      schemaType: "document",
-                    },
-                    canonical: loc("A"),
-                    lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
-                    aliases: {},
-                    obligations: {},
-                  },
-                  intents: [],
-                }
-              : {
-                  projectId: "p",
-                  handle: "x",
-                  folderId: "x",
-                  revision: 0,
-                  canonical: loc("A"),
-                  intents: [],
-                };
-          const validate =
-            kind === "file" ? validateResourceRecordUpdate : folder.validateFolderNamespaceUpdate;
-          const apply = (w: any) => {
-            if (w) {
-              validate(r, w.next);
-              r = w.next;
-            }
-          };
-          const prep = () =>
-            apply(
-              (kind === "file" ? ns.prepareNamespaceAttempt : folder.prepareFolderNamespaceAttempt)(
-                r,
-                { attemptId: `a${++seq}`, operationId: `o${seq}` },
-              ),
-            );
-          const resolve = (refused: boolean) => {
-            const i = r.intents.find((i: any) => i.state === "submitted");
-            if (!i) return;
-            const a = i.attempts.at(-1),
-              q = a.request;
-            const refusal = {
-              kind: "refusal",
-              operationId: q.body.operationId,
-              error: { code: "conflict", message: "No", source: "system", retryable: false },
-            };
-            const command =
-              q.kind === "delete"
-                ? { kind: "delete", uri: `manuscript://${q.body.path}`, expected: q.body.expected }
-                : {
-                    kind: "move",
-                    sourceUri: `manuscript://${q.body.path}`,
-                    destinationUri: `manuscript://${[q.body.destinationFolderPath, q.body.newName ?? "A"].filter(Boolean).join("/")}`,
-                    expected: q.body.expected,
-                  };
-            const result = refused
-              ? { ok: false, error: { code: "conflict", uri: "manuscript://A" } }
-              : {
-                  ok: true,
-                  value: {
-                    status: "deleted",
-                    deletedDocumentIds: kind === "file" ? ["x"] : [],
-                    availabilityGeneration: "9",
-                  },
-                };
-            const out =
-              refused && receiptless
-                ? refusal
-                : {
-                    kind: "operation",
-                    receipt: { operationId: q.body.operationId, command, result },
-                  };
-            apply(
-              (kind === "file" ? ns.recordNamespaceOutcome : folder.recordFolderNamespaceOutcome)(
-                r,
-                i.intentId,
-                a.attemptId,
-                out as any,
-              ),
-            );
-            apply(
-              (kind === "file" ? ns.settleNamespaceOutcome : folder.settleFolderNamespaceOutcome)(
-                r,
-                100,
-              ),
-            );
-          };
-          let at = "";
+        for (const order of orders) {
+          const machine = kind === "file" ? fileMachine() : folderMachine();
+          let admittedDelete = false,
+            deleteResolved = false,
+            at = "start";
           try {
             for (const event of order) {
               at = event;
-              if (event === "remote-delete") {
-                remote = true;
-                if (kind === "file")
-                  apply({
-                    next: {
-                      ...r,
-                      resource: {
-                        ...committedResourceDeletion(r.resource, "9", "remote"),
-                        revision: r.resource.revision + 1,
-                      },
-                    },
-                  });
-              } else if (event === "refusal") resolve(true);
-              else if (!remote && !r.intents.some(intentOwnsDeletion)) {
+              if (event === "remote-delete") machine.remoteDelete();
+              else if (event === "refusal") machine.resolve(true, receiptless);
+              else if (event === "catalog-refresh") machine.refresh();
+              else if (!machine.terminal() && !machine.intents().some(intentOwnsDeletion)) {
                 if (event === "delete") {
-                  apply(
-                    kind === "file"
-                      ? planResourceDeletion(r, "p", `i${++seq}`)
-                      : folder.planFolderDeletion({
-                          record: r,
-                          projectId: "p",
-                          handle: "x",
-                          folderId: "x",
-                          source: r.canonical,
-                          intentId: `i${++seq}`,
-                          operationId: `o${seq}`,
-                        }),
-                  );
+                  machine.remove();
                   admittedDelete = true;
-                } else {
-                  const path =
-                    kind === "file"
-                      ? projectResourceLocation("p", r)
-                      : folder.projectFolderLocation(r);
-                  assert(path);
-                  const dest = {
+                } else
+                  machine.place({
                     scheme: "manuscript",
                     workId: null,
-                    folderPath:
-                      event === "move" ? "B" : path.path.split("/").slice(1, -1).join("/"),
-                    name: event === "rename" ? "Renamed" : path.name,
-                  };
-                  apply(
-                    kind === "file"
-                      ? planResourceLocation({
-                          record: r,
-                          projectId: "p",
-                          intentId: `i${++seq}`,
-                          eligibleAt: 1,
-                          destination: dest as any,
-                        })
-                      : folder.planFolderLocation({
-                          record: r,
-                          projectId: "p",
-                          handle: "x",
-                          folderId: "x",
-                          source: r.canonical,
-                          intentId: `i${++seq}`,
-                          operationId: `o${seq}`,
-                          destination: dest as any,
-                        }),
-                  );
-                }
+                    folderPath: event === "move" ? "B" : "P",
+                    name: event === "rename" ? "Renamed" : "A",
+                  });
               }
-              if (auto) prep();
-              if (remote && kind === "file") {
-                assert.equal(projectResourceLocation("p", r), null);
-                _assertions++;
-              }
+              if (auto) machine.prepare();
+              if (
+                admittedDelete &&
+                machine
+                  .intents()
+                  .some(
+                    (i) =>
+                      i.desired.kind === "delete" &&
+                      (i.state === "settled" || i.state === "needs-repair"),
+                  )
+              )
+                deleteResolved = true;
+              // Hidden means a live deletion, accepted deletion, or terminal identity; repairs cannot silently hide.
+              assert(
+                !machine.hidden() ||
+                  machine.terminal() ||
+                  machine.intents().some(intentOwnsDeletion),
+              );
+              if (machine.terminal()) assert(machine.hidden());
             }
             at = "drain";
-            for (let j = 0; j < 8; j++) {
-              prep();
-              const active = ns.activeNamespaceIntent(r);
+            for (let step = 0; step < 8; step++) {
+              machine.prepare();
+              const active = activeNamespaceIntent({ intents: machine.intents() });
               if (active?.state !== "submitted") break;
-              resolve(active.desired.kind !== "delete");
+              machine.resolve(active.desired.kind !== "delete", receiptless);
+              machine.refresh();
             }
-            if (admittedDelete && !remote) {
-              assert.equal(ns.activeNamespaceIntent(r), null);
+            assert(!activeNamespaceIntent({ intents: machine.intents() }) || machine.repair());
+            if (admittedDelete && !deleteResolved)
               assert(
-                r.intents.some((i: any) => i.desired.kind === "delete" && i.state === "settled"),
+                machine
+                  .intents()
+                  .some(
+                    (i) =>
+                      i.desired.kind === "delete" &&
+                      (i.state === "settled" ||
+                        i.state === "needs-repair" ||
+                        (machine.terminal() && i.state === "unexecutable-after-terminal")),
+                  ),
               );
-              _assertions += 2;
-            }
-            if (remote && kind === "file") {
-              assert.equal(r.resource.lifecycle.kind, "terminal");
-              assert.equal(projectResourceLocation("p", r), null);
-              _assertions += 2;
-            }
+            if (machine.terminal()) assert(machine.hidden());
             passed++;
-          } catch (e) {
-            results.push({
-              kind,
-              receiptless,
-              auto,
-              order,
-              at,
-              error: String(e),
-              states: r.intents.map((i: any) => i.state),
-              failedDesired: r.intents.find((i: any) => i.state === "received")?.desired.kind,
-              remote,
-              admittedDelete,
-            });
+          } catch (error) {
+            failures.push({ kind, receiptless, auto, order, at, error: String(error) });
           }
         }
-  expect(results).toEqual([]);
-  expect(passed).toBe(960);
+  expect(failures).toEqual([]);
+  expect(passed).toBe(5760);
 });
