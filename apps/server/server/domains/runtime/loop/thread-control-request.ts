@@ -1,12 +1,18 @@
-/** HTTP-facing control validation kept with the control domain contract. */
+/**
+ * HTTP-facing control validation: the contract's control vocabulary, made
+ * strict and with compaction instructions normalized at admission.
+ */
 
-import type { ControlBody } from "@meridian/contracts/threads";
+import {
+  type ControlBody,
+  compactControlBodySchema,
+  writeModeControlBodySchema,
+} from "@meridian/contracts/threads";
 import { z } from "zod";
 import { MAX_USER_MESSAGE_TEXT } from "../admission/user-turn-admission.js";
 
-const compactControlSchema = z
-  .object({
-    kind: z.literal("compact"),
+const compactControlSchema = compactControlBodySchema
+  .extend({
     instructions: z
       .string()
       .transform((value) => value.trim())
@@ -22,13 +28,12 @@ const compactControlSchema = z
         : { kind: control.kind },
   );
 
-const writeModeControlSchema = z
-  .object({ kind: z.literal("write_mode"), mode: z.enum(["direct", "draft"]) })
-  .strict();
-
 export const threadControlRequestSchema = z
   .object({
     id: z.string().uuid(),
-    control: z.discriminatedUnion("kind", [compactControlSchema, writeModeControlSchema]),
+    control: z.discriminatedUnion("kind", [
+      compactControlSchema,
+      writeModeControlBodySchema.strict(),
+    ]),
   })
   .strict();

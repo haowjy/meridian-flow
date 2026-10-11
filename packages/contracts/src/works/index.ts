@@ -1,6 +1,7 @@
-export type AiWriteMode = "direct" | "draft";
+export { type AiWriteMode, aiWriteModeSchema } from "./ai-write-mode.js";
 
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
+import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
 import type { WorkSlug } from "./work-slug.js";
 
