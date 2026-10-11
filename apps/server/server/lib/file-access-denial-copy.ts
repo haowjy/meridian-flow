@@ -50,9 +50,10 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
 }
 
 /**
- * An archived Work's own files are read-only (D29); a write that would land in
- * its draft meets a frozen draft (D30, D31). Only an agent the action policy
- * lets unarchive is offered the call.
+ * An archived Work's own files are read-only (D29); a draft-mode chat's write
+ * that would land in its draft meets a frozen draft (D30, D31), and switching
+ * the chat to auto-apply is the writer's way out (D62). Only an agent the
+ * action policy lets unarchive is offered the call.
  */
 function workArchivedMessage(denial: FileAccessDenied): string {
   const slug = denial.archivedWork?.slug ?? null;
@@ -66,8 +67,8 @@ function workArchivedMessage(denial: FileAccessDenied): string {
   if (denial.destination?.kind === "draft") {
     const frozen = `${work} is archived, so its draft is frozen and this change wasn't made.`;
     return mayUnarchive
-      ? `${frozen} Unarchive it with ${unarchive}, or ask the user to switch ${named} to auto-apply.`
-      : `${frozen} Ask the user to unarchive ${named} or switch it to auto-apply.`;
+      ? `${frozen} Unarchive it with ${unarchive}, or ask the user to switch this chat to auto-apply.`
+      : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;
   }
   return mayUnarchive
     ? `${work} is archived and read-only. Unarchive it with ${unarchive} before changing its files.`

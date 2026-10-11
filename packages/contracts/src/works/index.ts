@@ -96,7 +96,6 @@ export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 export type WorkBindingState = WorkReceiptState & {
   workId: WorkId;
   slug: WorkSlug | null;
-  aiWriteMode: AiWriteMode;
 };
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */
