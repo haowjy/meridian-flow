@@ -1,5 +1,6 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
 import { decodeWorkSlug } from "./works/index.js";
 
@@ -315,11 +316,14 @@ function invalidContextUri(uri: string, reason: string): ContextUriParseError {
 }
 
 /**
- * Derives a document title from the final URI/path segment.
+ * The name a writer sees for the document at the final URI/path segment: the
+ * stored name as the codec spells it. A stored segment is already canonical
+ * (`Chapter 13`, `outline.json`, `Vol. 2`); a segment someone typed is
+ * canonicalized (`ch12.md` and `notes.txt` read `ch12` and `notes`). No
+ * extension is stripped on its own.
  *
- * Context documents use the basename stem as their title. Callers own the
- * fallback because some server notices prefer a document id while writer-facing
- * surfaces use "Untitled document".
+ * Callers own the fallback because some server notices prefer a document id
+ * while writer-facing surfaces use "Untitled document".
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
@@ -327,7 +331,8 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
-  return segment.replace(/\.[^.]+$/, "") || null;
+  const parsed = parseDocumentFilename(segment);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
 }
 
 const missingScratchHandle =

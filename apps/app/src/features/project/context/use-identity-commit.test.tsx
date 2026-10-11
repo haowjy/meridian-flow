@@ -3,7 +3,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useIdentityCommit } from "./use-identity-commit";
+import { deriveIdentityCommitPlan, useIdentityCommit } from "./use-identity-commit";
 
 const NO_WORK = "123e4567-e89b-42d3-a456-426614174000";
 const resources = vi.hoisted(() => ({
@@ -30,8 +30,8 @@ describe("useIdentityCommit", () => {
           resourceHandle: "resource",
           scheme: "scratch",
           workId: NO_WORK,
-          path: "/before.md",
-          name: "before.md",
+          path: "/before",
+          name: "before",
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -44,14 +44,59 @@ describe("useIdentityCommit", () => {
       await act(async () => {
         await rename({
           destination: { scheme: "scratch", folderPath: "", workId: NO_WORK },
-          name: "after.md",
+          name: "after.md", // typed with the suffix; stored without it
         });
       });
       expect(committed).toHaveBeenCalledWith(
         "doc-1",
-        expect.objectContaining({ routeWorkId: NO_WORK, path: "/after.md" }),
+        expect.objectContaining({ routeWorkId: NO_WORK, path: "/after", name: "after" }),
         { isLatest: true },
       );
     });
+  });
+});
+
+describe("deriveIdentityCommitPlan", () => {
+  const tabNamed = (name: string, filetype: "markdown" | "text" = "markdown") =>
+    ({
+      kind: "tracked",
+      documentId: "doc-1",
+      scheme: "manuscript",
+      path: `/${name}`,
+      name,
+      editable: true,
+      filetype,
+      schemaType: "document",
+    }) as const;
+  const destination = { scheme: "manuscript", folderPath: "/", workId: undefined } as const;
+
+  it("treats the stored name typed with a prose suffix as no change", () => {
+    for (const typed of ["Chapter 13", "Chapter 13.md", "Chapter 13.txt", " Chapter 13 "]) {
+      expect(
+        deriveIdentityCommitPlan(tabNamed("Chapter 13"), { destination, name: typed }, null),
+      ).toEqual({ kind: "no-op" });
+    }
+  });
+
+  it("commits the stored name, not the typed one", () => {
+    const plan = deriveIdentityCommitPlan(
+      tabNamed("Chapter 13"),
+      { destination, name: "Chapter 14.md" },
+      null,
+    );
+    expect(plan).toMatchObject({ kind: "commit", desired: { name: "Chapter 14" } });
+  });
+
+  it("keeps a dotted name whole and a visible extension on a bare rename (D13)", () => {
+    expect(
+      deriveIdentityCommitPlan(tabNamed("Chapter 13"), { destination, name: "Vol. 2" }, null),
+    ).toMatchObject({ kind: "commit", desired: { name: "Vol. 2" } });
+    expect(
+      deriveIdentityCommitPlan(
+        tabNamed("config.toml", "text"),
+        { destination, name: "settings" },
+        null,
+      ),
+    ).toMatchObject({ kind: "commit", desired: { name: "settings.toml" } });
   });
 });

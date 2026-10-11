@@ -95,3 +95,26 @@ export function folderDocumentName(filename: string): string {
   const parsed = parseDocumentFilename(filename);
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
 }
+
+/** Destination naming shared by optimistic clients and server commands.
+ * Explicit registered suffixes state the type; other names keep the source extension.
+ * Parsed parts accompany the full name so storage never infers the destination twice.
+ */
+export function storedFilename(
+  typed: string,
+  current?: string | Pick<ParsedDocumentFilename, "extension">,
+):
+  | { ok: true; name: string; filename: ParsedDocumentFilename }
+  | { ok: false; message: string; error: { code: "invalid_name"; message: string } } {
+  const source = typeof current === "string" ? parseDocumentFilename(current) : null;
+  const sourceExtension =
+    typeof current === "object" ? current.extension : source?.ok ? source.value.extension : "";
+  const parsed = parseDocumentFilename(typed, { sourceExtension });
+  return parsed.ok
+    ? {
+        ok: true,
+        name: renderFilename(parsed.value.name, parsed.value.extension),
+        filename: parsed.value,
+      }
+    : { ok: false, message: parsed.error.message, error: parsed.error };
+}

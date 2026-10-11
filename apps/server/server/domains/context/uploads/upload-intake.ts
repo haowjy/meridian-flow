@@ -17,7 +17,7 @@ import {
   filetypeForKnownPath,
   type ParsedDocumentFilename,
   parseDocumentFilename,
-  renderFilename,
+  registeredExtensionForFiletype,
 } from "@meridian/contracts/protocol";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -180,23 +180,6 @@ export function classifyUpload(input: {
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
 }
 
-/** MIME inference supplies the registered type suffix, never a second filename parser. */
-const MIME_EXTENSIONS: Partial<Record<Filetype, string>> = {
-  json: "json",
-  python: "py",
-  typescript: "ts",
-  javascript: "js",
-  shell: "sh",
-  yaml: "yaml",
-  csv: "csv",
-  notebook: "ipynb",
-  pdf: "pdf",
-  png: "png",
-  jpg: "jpg",
-  svg: "svg",
-  docx: "docx",
-};
-
 function fingerprint(input: {
   actorUserId: string;
   owner: UploadOwner;
@@ -258,7 +241,8 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "idempotency_conflict" } };
       const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
       const tracked = classifyFiletype(fileType).kind === "tracked";
-      const inferredExtension = MIME_EXTENSIONS[filetypeForKnownMimeType(mimeType) ?? fileType];
+      const inferredExtension =
+        registeredExtensionForFiletype(filetypeForKnownMimeType(mimeType) ?? fileType) ?? undefined;
       let parsed = parseDocumentFilename(filename, {
         sourceExtension: tracked ? inferredExtension : undefined,
       });

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Share destination naming between optimistic clients and server commands, and use the binary naming rule for upload intake.
+
 - The model sees extensionless prose names in document instructions, tool results, errors and copy receipts.
 - Skills load and list with the same extensionless prose names as documents.
 - Link snapshots resolve typed prose suffixes without losing the target’s identity.

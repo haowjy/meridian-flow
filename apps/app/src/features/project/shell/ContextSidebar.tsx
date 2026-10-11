@@ -5,6 +5,7 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
+import { renderFilename } from "@meridian/contracts/protocol";
 import { Clock } from "lucide-react";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
@@ -53,8 +54,8 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               ) : (
                 <ul>
                   {recent.documents?.map((document) => {
-                    // The tree lists whole file names; the rail names files the same way.
-                    const fileName = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
+                    // The tree lists stored names (a prose document has no extension); the rail names files the same way.
+                    const fileName = renderFilename(document.name, document.extension);
                     return (
                       <li key={document.documentId}>
                         <RailFileRow

@@ -103,3 +103,8 @@ runtime shapes, and observability records.
   (`ProjectContextRequestOptions`). `GET .../context/lineages/:rootThreadId`
   names a lineage by handle and title, trashed first chat included. `WorkingSetRoute` has the same two arms: a
   Work-scoped route carries `workId`, a chat's Scratch route `rootThreadId`.
+
+- `protocol/document-filename.ts` owns input naming: `storedFilename` gives
+  destination names and parsed parts to clients and server commands, while
+  `filenameForBinary` alone chooses a storage suffix for prose-named bytes.
+  Identity parsing never depends on storage kind.

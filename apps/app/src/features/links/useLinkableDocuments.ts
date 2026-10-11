@@ -33,7 +33,7 @@ import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scop
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
   documentId: string;
-  /** The filename without its extension. */
+  /** The stored name: what the writer sees. */
   title: string;
   /** Its canonical Context URI: its address, and what a relative link in it resolves against. */
   uri: string;
@@ -147,14 +147,9 @@ function linkableDocuments(
 ): LinkableDocument[] {
   return catalog.files().map((node) => ({
     documentId: node.documentId,
-    title: documentTitle(node.name),
+    title: node.name,
     uri: node.uri,
     workId,
     ...(rootThreadId ? { rootThreadId } : {}),
   }));
-}
-
-function documentTitle(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot > 0 ? filename.slice(0, dot) : filename;
 }

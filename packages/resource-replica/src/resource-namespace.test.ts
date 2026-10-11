@@ -846,7 +846,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
 
 it("offers the latest queued file name after refusal and retries from accepted placement", () => {
   const before = local();
-  const source = { scheme: "manuscript" as const, path: "/A.md", name: "A.md", workId: null };
+  const source = { scheme: "manuscript" as const, path: "/A", name: "A", workId: null };
   before.resource.canonical = source;
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [];
@@ -863,21 +863,21 @@ it("offers the latest queued file name after refusal and retries from accepted p
     validateResourceRecordUpdate(record, write.next);
     return write.next;
   };
-  const renamed = location(before, "B.md");
-  const submitted = prepareNamespaceAttempt(renamed, { attemptId: "attempt", operationId: "B.md" });
+  const renamed = location(before, "B");
+  const submitted = prepareNamespaceAttempt(renamed, { attemptId: "attempt", operationId: "B" });
   if (!submitted) throw new Error("Missing submission");
-  const queued = location(submitted.next, "C.md");
-  const received = recordNamespaceOutcome(queued, "B.md", "attempt", {
+  const queued = location(submitted.next, "C");
+  const received = recordNamespaceOutcome(queued, "B", "attempt", {
     kind: "operation",
     receipt: {
-      operationId: "B.md",
+      operationId: "B",
       command: {
         kind: "move",
-        sourceUri: "manuscript://A.md",
-        destinationUri: "manuscript://B.md",
+        sourceUri: "manuscript://A",
+        destinationUri: "manuscript://B",
         expected: { kind: "file", nodeId: "document" },
       },
-      result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+      result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
     },
   });
   if (!received) throw new Error("Missing receipt");
@@ -889,9 +889,9 @@ it("offers the latest queued file name after refusal and retries from accepted p
   expect(projectResourceLocation("project", reopened)).toEqual({ ...source, provisional: false });
   const offered = projectResourceNeedsRepair("project", reopened);
   expect(offered).toEqual({
-    intentId: "B.md",
+    intentId: "B",
     kind: "set-location",
-    name: "C.md",
+    name: "C",
   });
   if (!offered) throw new Error("Missing offered repair");
   // The caller retries the offered destination, keeping the original receipt as evidence.
@@ -908,7 +908,111 @@ it("offers the latest queued file name after refusal and retries from accepted p
   const retry = prepareNamespaceAttempt(repair.next, { attemptId: "retry", operationId: "repair" });
   if (!retry) throw new Error("Missing retry");
   expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
-    body: { path: "A.md", newName: "C.md" },
+    body: { path: "A", newName: "C" },
   });
   expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
+});
+
+describe("a name the writer typed with a prose suffix", () => {
+  const moveReceipt = (operationId: string, sourceUri: string, destinationUri: string) =>
+    ({
+      kind: "operation",
+      receipt: {
+        operationId,
+        command: {
+          kind: "move",
+          sourceUri,
+          destinationUri,
+          expected: { kind: "file", nodeId: "document" },
+        },
+        result: { ok: true, value: { movedNodeId: "document", destinationPath: "x" } },
+      },
+    }) satisfies NamespaceOutcome;
+
+  function placed(canonicalName: string): ResourceRecord {
+    const record = local();
+    record.resource.canonical = {
+      scheme: "manuscript",
+      path: `/${canonicalName}`,
+      name: canonicalName,
+      workId: null,
+    };
+    record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    record.intents = [];
+    return record;
+  }
+
+  function submit(record: ResourceRecord, typed: string, folderPath = "") {
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "intent",
+      operationId: "operation",
+      eligibleAt: 1,
+      destination: { scheme: "manuscript", folderPath, name: typed, workId: null },
+    });
+    if (!planned) throw new Error("Missing location command");
+    const prepared = prepareNamespaceAttempt(planned.next, {
+      attemptId: "attempt",
+      operationId: "operation",
+    });
+    if (!prepared) throw new Error("Missing submission");
+    return prepared.next;
+  }
+
+  it("is submitted and projected as the stored name, so the server's receipt is this attempt's", () => {
+    const submitted = submit(placed("Chapter 13"), "Chapter 14.md");
+    const intent = submitted.intents[0];
+    expect(intent?.desired).toMatchObject({ destination: { name: "Chapter 14" } });
+    expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14" } });
+    // The optimistic location is already the name the server answers with.
+    expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
+    expect(
+      recordNamespaceOutcome(
+        submitted,
+        "intent",
+        "attempt",
+        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Chapter 14"),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("moving a document under the name it has, typed with its suffix, asks for no rename", () => {
+    const submitted = submit(placed("Chapter 13"), "Chapter 13.md", "Book");
+    expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
+      body: { destinationFolderPath: "Book" },
+    });
+    expect(submitted.intents[0]?.attempts[0]?.request).not.toHaveProperty("body.newName");
+    expect(
+      recordNamespaceOutcome(
+        submitted,
+        "intent",
+        "attempt",
+        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Book/Chapter 13"),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("keeps the extension of the file a bare name renames", () => {
+    const submitted = submit(placed("config.toml"), "settings");
+    expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
+      body: { newName: "settings.toml" },
+    });
+  });
+
+  it("is stored for a new document too, with no source name to inherit from", () => {
+    const record = local();
+    record.intents = [];
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "intent",
+      operationId: "operation",
+      eligibleAt: 1,
+      destination: { scheme: "manuscript", folderPath: "", name: "Chapter 13.md", workId: null },
+    });
+    expect(planned?.next.intents[0]?.desired).toMatchObject({
+      destination: { name: "Chapter 13" },
+    });
+  });
 });

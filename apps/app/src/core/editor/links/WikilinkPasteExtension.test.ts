@@ -11,13 +11,13 @@ import { createStandaloneEditorExtensions } from "../config";
 import { linkAheadAddress } from "./link-address";
 import type { WikilinkPasteCatalog } from "./wikilink-paste";
 
-const HOLDER = "manuscript://volume-1/chapter-2.md";
+const HOLDER = "manuscript://volume-1/chapter-2";
 const DOCUMENTS = [
   HOLDER,
-  "manuscript://volume-1/chapter-1.md",
-  "manuscript://volume-1/Jade Gate.md",
-  "kb://places/Jade Gate.md",
-  "kb://characters/Lin Feng.md",
+  "manuscript://volume-1/chapter-1",
+  "manuscript://volume-1/Jade Gate",
+  "kb://places/Jade Gate",
+  "kb://characters/Lin Feng",
 ].map((uri, at) => ({ documentId: `00000000-0000-4000-8000-00000000000${at}`, uri }));
 
 const live: Editor[] = [];
@@ -99,7 +99,7 @@ it("keeps the characters when dropped into a code block, and links them dropped 
   const prose = editor(DOCUMENTS, "<p>x</p>");
   drop(prose, 2, { "text/plain": "see [[Lin Feng]] here" });
   expect(links(prose)).toEqual([
-    ["Lin Feng", "kb://characters/Lin Feng.md", "doc:00000000-0000-4000-8000-000000000004"],
+    ["Lin Feng", "kb://characters/Lin Feng", "doc:00000000-0000-4000-8000-000000000004"],
   ]);
 });
 
@@ -115,7 +115,7 @@ it("gives paste without formatting the characters, while an ordinary paste links
   const ordinary = editor(DOCUMENTS);
   paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
   expect(links(ordinary)).toEqual([
-    ["Lin Feng", "kb://characters/Lin Feng.md", "doc:00000000-0000-4000-8000-000000000004"],
+    ["Lin Feng", "kb://characters/Lin Feng", "doc:00000000-0000-4000-8000-000000000004"],
   ]);
 });
 

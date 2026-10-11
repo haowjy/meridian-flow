@@ -25,7 +25,17 @@ swallowing a same-tick `focus()`.
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
 | validate siblings | all siblings | siblings excluding current |
-| select | — | extension-aware selection |
+| select | — | the part before a visible extension; all of a prose name |
+
+Names are compared and submitted as the contracts codec stores them
+(`storedFilename`, `entryNameKey` in `context-entry-name.ts`): a prose name
+has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
+beside `Chapter 13` collides; a bare name keeps the renamed file's visible
+extension (`settings` on `config.toml`); a folder compares as a document name,
+so a folder and a document cannot share one; the codec's `invalid_name`
+message shows on the field. The same name is canonicalized again where the
+resource command is planned (`planResourceLocation`), so the optimistic
+location is the name the server answers with.
 
 ## Dual-trigger caveat
 

@@ -7,7 +7,11 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  parseDocumentFilename,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
@@ -42,8 +46,10 @@ export type CreateEntryForm = InlineEdit & {
 };
 
 /** The durable local reservation protocol currently owns document-schema files only. */
-export function usesResourceDocumentCreate(path: string): boolean {
-  const classification = classifyFiletype(filetypeForPath(path));
+export function usesResourceDocumentCreate(name: string): boolean {
+  const parsed = parseDocumentFilename(name);
+  if (!parsed.ok) return false;
+  const classification = classifyFiletype(parsed.value.filetype);
   return classification.kind === "tracked" && classification.schemaType === "document";
 }
 
@@ -61,16 +67,20 @@ export function useCreateEntryForm({
   const resources = useAccountResourceReplica();
 
   const handleSubmit = useCallback(
-    async (trimmed: string) => {
-      const path = joinContextEntryPath(parent, trimmed);
-      if (kind === "file" && usesResourceDocumentCreate(path)) {
+    async (typed: string) => {
+      // Submit the name the server will store, so the optimistic entry and the
+      // server's answer are the same path and nothing flips when it arrives.
+      const stored = kind === "file" ? storedFilename(typed) : null;
+      const name = stored?.ok ? stored.name : typed;
+      const path = joinContextEntryPath(parent, name);
+      if (kind === "file" && usesResourceDocumentCreate(name)) {
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
         try {
           await resources.setLocation(projectId, reservation.key, {
             scheme,
             folderPath: parent,
-            name: trimmed,
+            name,
             workId: null,
           });
         } finally {
@@ -102,7 +112,13 @@ export function useCreateEntryForm({
 
   return {
     ...form,
-    icon: kind === "folder" ? Folder : fileKindIcon(form.draft || "untitled.md"),
+    icon: kind === "folder" ? Folder : fileKindIcon(iconName(form.draft)),
     placeholder: kind === "folder" ? t`Folder name` : t`File name`,
   };
+}
+
+/** The icon previews the name the file will be stored under; an empty field is prose. */
+function iconName(draft: string): string {
+  const stored = storedFilename(draft);
+  return stored.ok ? stored.name : draft;
 }

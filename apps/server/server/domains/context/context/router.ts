@@ -13,8 +13,8 @@ import {
   type DeleteContextEntryResult,
   filenameForBinary,
   type ParsedDocumentFilename,
-  parseDocumentFilename,
   renderFilename,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -366,11 +366,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
     const segments = dispatch.path.split("/");
     const filename = segments.pop() ?? "";
-    const parsed = parseDocumentFilename(filename, { sourceExtension });
+    const parsed = storedFilename(filename, { extension: sourceExtension ?? "" });
     if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
     const parts = binary
-      ? filenameForBinary(parsed.value, binary.fileType, binary.mimeType)
-      : parsed.value;
+      ? filenameForBinary(parsed.filename, binary.fileType, binary.mimeType)
+      : parsed.filename;
     const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
     return Ok({
       ...dispatch,

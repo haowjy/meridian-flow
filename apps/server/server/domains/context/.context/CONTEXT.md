@@ -18,9 +18,9 @@ alternatives in its message, not another spelling for that data file.
 Lookups use exact parsed parts, not link extension omission. File results return
 the canonical URI. Create-on-existing through `ensureTrackedDocument` reaches
 the same identity for all prose spellings. Untitled documents are `Untitled N`.
-The router consumes copy `sourceExtension` once and passes parsed parts and
-filetype to ContextFS; the tree mover parses destinations with the
-source's actual extension before target inspection and CAS. Same-identity
+`storedFilename` in contracts owns destination naming for optimistic clients,
+the router and the tree mover. Commands consume its parsed parts once, preserving
+the source's actual extension before target inspection and CAS. Same-identity
 renames are in place. Type changes still respect the existing Yjs schema guard.
 
 Binary storage uses `filenameForBinary` after the same parse: prose names take

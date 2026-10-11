@@ -4,7 +4,32 @@ import {
   type ContextEntryValidationError,
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
+import {
+  parseDocumentFilename,
+  renderFilename,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
+
+/**
+ * What two sibling names clash on. A folder compares as a document name, so a
+ * folder `Lore.md` and a document `Lore` are one name and cannot coexist.
+ */
+export function entryNameKey(name: string): string {
+  const bare = name.trim().replace(/\/$/, "");
+  const parsed = parseDocumentFilename(bare);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : bare;
+}
+
+/** Where the part a writer renames ends: before a visible extension, otherwise the whole name. */
+export function entryNameStemEnd(name: string, kind: ContextCreateKind = "file"): number {
+  if (kind === "folder") return name.length;
+  const parsed = parseDocumentFilename(name);
+  const extension = parsed.ok ? parsed.value.extension : "";
+  return extension && name.toLowerCase().endsWith(`.${extension}`)
+    ? name.length - extension.length - 1
+    : name.length;
+}
 
 function validationReason(error: ContextEntryValidationError): string {
   switch (error.reason) {
@@ -35,9 +60,12 @@ export function parentContextEntryPath(path: string): string {
   return cut <= 0 ? "" : path.slice(0, cut);
 }
 
-export function invalidContextEntryNameReason(name: string): string | null {
+/** Why a typed document name is refused, or null; `current` is the stored name being renamed. */
+export function invalidContextEntryNameReason(name: string, current?: string): string | null {
   const result = validateSharedContextEntryName(name);
-  return result.ok ? null : validationReason(result);
+  if (!result.ok) return validationReason(result);
+  const stored = storedFilename(result.value, current);
+  return stored.ok ? null : stored.message;
 }
 
 /** Live severity for the desktop tree's inline create/rename input, shown as a floating overlay (never inline, so rows don't shift). */
@@ -50,19 +78,27 @@ export function validateContextEntryName(
   raw: string,
   siblingNames: readonly string[],
   kind: ContextCreateKind = "file",
+  /** The stored name of the file being renamed; absent when creating. */
+  current?: string,
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   const validation = validateSharedContextEntryName(trimmed);
   if (!validation.ok) return { level: "error", message: validationReason(validation) };
-  const collides = siblingNames.some((name) => name.replace(/\/$/, "") === trimmed);
-  if (collides) {
+  let candidate = trimmed;
+  if (kind === "file") {
+    const stored = storedFilename(trimmed, current);
+    if (!stored.ok) return { level: "error", message: stored.message };
+    candidate = stored.name;
+  }
+  const key = entryNameKey(candidate);
+  if (siblingNames.some((name) => entryNameKey(name) === key)) {
     return {
       level: "error",
       message:
         kind === "folder"
-          ? t`A folder named ${trimmed} already exists in this location.`
-          : t`A file named ${trimmed} already exists in this location.`,
+          ? t`A folder named ${candidate} already exists in this location.`
+          : t`A file named ${candidate} already exists in this location.`,
     };
   }
   if (raw !== trimmed) {
