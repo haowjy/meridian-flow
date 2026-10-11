@@ -1,4 +1,5 @@
 import {
+  folderDocumentName,
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
@@ -108,14 +109,14 @@ function hasOppositeEntry(
         (row) =>
           row.contextSourceId === sourceId &&
           row.parentId === parentId &&
-          row.name === filename &&
+          folderDocumentName(row.name) === filename &&
           row.deletedAt === null,
       )
     : [...backing.documents.values()].some(
         (row) =>
           row.contextSourceId === sourceId &&
           row.folderId === parentId &&
-          renderFilename(row.name, row.extension) === filename &&
+          renderFilename(row.name, row.extension) === folderDocumentName(filename) &&
           isContentDocumentKind(row.kind) &&
           row.deletedAt === null,
       );
@@ -891,15 +892,23 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           input.destinationSourceId,
           treePathSegments(targetParentPath),
         );
+        if (
+          hasOppositeEntry(
+            this.backing,
+            input.destinationSourceId,
+            destParentId,
+            targetBasename,
+            "file",
+          )
+        )
+          return Err({ code: "conflict" });
         const now = this.nextTimestamp();
         if (targetRow) {
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
-        const parsed = parseDocumentFilename(targetBasename, {
-          binary: input.source.filetype === null,
-        });
+        const parsed = parseDocumentFilename(targetBasename);
         if (!parsed.ok) return Err({ code: "invalid_operation" });
         const { name, extension } = parsed.value;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
@@ -948,6 +957,16 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         input.destinationSourceId,
         treePathSegments(targetParentPath),
       );
+      if (
+        hasOppositeEntry(
+          this.backing,
+          input.destinationSourceId,
+          destParentId,
+          targetBasename,
+          "folder",
+        )
+      )
+        return Err({ code: "conflict" });
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {

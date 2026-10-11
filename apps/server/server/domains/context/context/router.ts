@@ -11,7 +11,8 @@ import {
 } from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
-  parseBinaryFilename,
+  filenameForBinary,
+  type ParsedDocumentFilename,
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
@@ -360,17 +361,23 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
   function fileDispatch<T extends Dispatch>(
     dispatch: T,
-    binary = false,
+    binary?: ContextWriteBinaryOptions,
     sourceExtension?: string,
-  ): Result<T, ContextError> {
+  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
     const segments = dispatch.path.split("/");
     const filename = segments.pop() ?? "";
-    const parsed = binary
-      ? parseBinaryFilename(filename, { sourceExtension })
-      : parseDocumentFilename(filename, { sourceExtension });
+    const parsed = parseDocumentFilename(filename, { sourceExtension });
     if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
-    const path = [...segments, renderFilename(parsed.value.name, parsed.value.extension)].join("/");
-    return Ok({ ...dispatch, path, canonical: uriFor(dispatch.scheme, path, dispatch.authority) });
+    const parts = binary
+      ? filenameForBinary(parsed.value, binary.fileType, binary.mimeType)
+      : parsed.value;
+    const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
+    return Ok({
+      ...dispatch,
+      filename: parts,
+      path,
+      canonical: uriFor(dispatch.scheme, path, dispatch.authority),
+    });
   }
 
   /** Claim a new tracked URI through its adapter: the checks both create entries share. */
@@ -451,13 +458,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, false, options?.sourceExtension);
+      const r = fileDispatch(resolved.value, undefined, options?.sourceExtension);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
       const ensured = await callAdapter(canonical, () =>
-        adapter.ensureTrackedDocument(path, options),
+        adapter.ensureTrackedDocument(path, { ...options, parsedFilename: r.value.filename }),
       );
       return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
     },
@@ -588,7 +595,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextWriteResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, true);
+      const r = fileDispatch(resolved.value, options);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("intake");

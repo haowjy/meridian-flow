@@ -667,7 +667,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("serializes opposite-kind creation under the shared namespace lock", async () => {
       const left = new DrizzleContextDocumentStore({ db: committed, contextSourceId: sourceId });
       const right = new DrizzleContextDocumentStore({ db: probe, contextSourceId: sourceId });
-      for (const [index, fileFirst] of [true, false].entries()) {
+      for (const [index, fileFirst] of [true, false, true, false].entries()) {
         const name = `Clash ${index}`;
         const file = () =>
           left.createDocument({
@@ -677,7 +677,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             filetype: "markdown",
             markdown: "",
           });
-        const folder = () => right.createFolder(null, name);
+        const folderName = index < 2 ? name : `${name}.md`;
+        const folder = () => right.createFolder(null, folderName);
         const results = await Promise.allSettled(
           fileFirst ? [file(), folder()] : [folder(), file()],
         );
@@ -688,7 +689,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(
           (await left.listDocuments(null)).filter((row) => row.name === name).length +
-            (await left.listFolders(null)).filter((row) => row.name === name).length,
+            (await left.listFolders(null)).filter((row) => row.name === folderName).length,
         ).toBe(1);
       }
     });

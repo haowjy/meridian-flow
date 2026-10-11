@@ -82,6 +82,9 @@ runtime shapes, and observability records.
   stores empty extension and markdown filetype; registered non-prose suffixes
   keep their lower-case extension, unknown suffixes belong to the name. Move
   and copy pass the source extension explicitly, never infer it from filetype.
+  Binary storage applies `filenameForBinary` to the same parsed parts; no separate
+  binary identity mode exists. Folder clashes use `folderDocumentName` without
+  changing folder spelling.
   Stored parts already render the writer/model name; do not add a display key.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

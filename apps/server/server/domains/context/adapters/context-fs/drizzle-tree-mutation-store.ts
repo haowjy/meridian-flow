@@ -439,6 +439,16 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         input.destinationSourceId,
         treePathSegments(targetParentPath),
       );
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          input.destinationSourceId,
+          destParentId,
+          targetBasename,
+          input.source.kind === "file" ? "file" : "folder",
+        )
+      )
+        rollback("conflict");
       const now = new Date();
 
       if (input.source.kind === "file") {
@@ -459,9 +469,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
         }
 
-        const parsed = parseDocumentFilename(targetBasename, {
-          binary: input.source.filetype === null,
-        });
+        const parsed = parseDocumentFilename(targetBasename);
         if (!parsed.ok) return Err({ code: "invalid_operation" });
         const { name, extension } = parsed.value;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
