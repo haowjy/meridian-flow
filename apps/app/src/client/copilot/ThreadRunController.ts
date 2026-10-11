@@ -302,8 +302,9 @@ export class ThreadRunController {
     ]);
     const current = () => fence() && !signal.aborted;
     if (!current()) return outcome("abandoned");
+    let result: Awaited<ReturnType<LookupAdmissionFn>> | Awaited<ReturnType<RetireAdmissionFn>>;
     try {
-      const result = await abortable(
+      result = await abortable(
         (operation === "retire" ? this.retireAdmissionFn : this.lookupAdmissionFn)({
           threadId,
           submissionId,
@@ -311,27 +312,27 @@ export class ThreadRunController {
         }),
         signal,
       );
-      if (!current()) return outcome("abandoned");
-      if (result.kind === "accepted" || result.kind === "already-accepted") {
-        if (options.optimisticUserTurnId) {
-          this.actions.acknowledgeUserTurn(
-            threadId,
-            options.optimisticUserTurnId,
-            result.userTurnId,
-            result.snapshotFloorNextSeq,
-          );
-        }
-        this.attachAcceptedRun(threadId, result);
-        return outcome("accepted");
-      }
-      if (result.kind === "rejected" || result.kind === "retired") {
-        return outcome("rejected");
-      }
-      if (result.kind === "not-seen") return outcome("not-seen");
-      return outcome("ambiguous");
-    } catch {
-      return outcome(current() ? "ambiguous" : "abandoned");
+    } catch (error) {
+      return outcome(current() ? classifyWriteFailure(error) : "abandoned");
     }
+    if (!current()) return outcome("abandoned");
+    if (result.kind === "accepted" || result.kind === "already-accepted") {
+      if (options.optimisticUserTurnId) {
+        this.actions.acknowledgeUserTurn(
+          threadId,
+          options.optimisticUserTurnId,
+          result.userTurnId,
+          result.snapshotFloorNextSeq,
+        );
+      }
+      this.attachAcceptedRun(threadId, result);
+      return outcome("accepted");
+    }
+    if (result.kind === "rejected" || result.kind === "retired") {
+      return outcome("rejected");
+    }
+    if (result.kind === "not-seen") return outcome("not-seen");
+    return outcome("ambiguous");
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {

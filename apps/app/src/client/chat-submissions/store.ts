@@ -186,7 +186,13 @@ export class DeviceChatSubmissionJournal {
   }
 
   private notify(): void {
-    for (const listener of this.listeners) listener();
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        reportError(error);
+      }
+    }
   }
 
   constructor(private readonly storage: ChatSubmissionStorage) {}

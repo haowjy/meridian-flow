@@ -830,7 +830,9 @@ export function useIsThreadPendingCreation(threadId: string | null | undefined):
   const store = useThreadStoreApi();
   const subscribe = useCallback(
     (listener: () => void) => {
-      const unsubscribeStore = store.subscribe(listener);
+      const unsubscribeStore = store.subscribe((state, previous) => {
+        if (state.pendingCreation !== previous.pendingCreation) listener();
+      });
       const unsubscribeJournal = subscribeChatSubmissions(listener);
       return () => {
         unsubscribeStore();

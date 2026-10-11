@@ -87,7 +87,7 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         if (id) scenario.store.getState().patchTurnStatus(entry.threadId, id, status);
       },
       takeFresh: () => false,
-      transferForEdit: () => null,
+      transferForEdit: () => false,
       edited: () => {},
       ...overrides,
     });
