@@ -78,7 +78,12 @@ export function DockHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {dockDocument ? (
           <>
-            <DockDocumentClose />
+            {/* Close and Open in Editor sit together before the path: both act on the
+                document as a whole, and the path stays one unbroken run. */}
+            <span className="flex shrink-0 items-center gap-0.5">
+              <DockDocumentClose />
+              <DockOpenInEditor projectId={projectId} document={dockDocument} />
+            </span>
             <DockDocumentIdentity projectId={projectId} document={dockDocument} />
           </>
         ) : (
@@ -104,7 +109,6 @@ export function DockHeader({
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
         <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {dockDocument ? <DockOpenInEditor projectId={projectId} document={dockDocument} /> : null}
           {onClose ? (
             <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
           ) : null}
