@@ -7,6 +7,7 @@ import type {
   ProviderErrorResponse,
   Turn,
 } from "@meridian/contracts/threads";
+import { aiWriteModeSchema } from "@meridian/contracts/works";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -180,7 +181,7 @@ export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).pas
 /** An applied write-mode switch: a complete `system` turn whose text block is the model's notice. */
 export const WriteModeSwitchMetadataCodec = z.object({
   kind: z.literal("write_mode_switch"),
-  mode: z.enum(["direct", "draft"]),
+  mode: aiWriteModeSchema,
   controlMessageId: z.string().min(1),
 });
 export type WriteModeSwitchMetadata = z.infer<typeof WriteModeSwitchMetadataCodec>;

@@ -207,6 +207,25 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
+  it("leaves a queued write-mode switch out of the compaction rows", async () => {
+    const pending: ThreadPendingInbox = {
+      items: [
+        {
+          id: "switch-1",
+          seq: 1,
+          intent: "control",
+          control: { kind: "write_mode", mode: "draft" },
+          provenance: { kind: "writer", actorId: "w" },
+          deliveryState: "waiting",
+          summary: "",
+          enqueuedAt: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+    };
+    await act(async () => root.render(<Probe pending={pending} />));
+    expect(latest.queued).toEqual([]);
+  });
+
   it("stops a pending divider through the cancel route and marks it stopping", async () => {
     transport.cancel.mockResolvedValue({ status: "cancelled" });
     await act(async () => latest.stop("c"));

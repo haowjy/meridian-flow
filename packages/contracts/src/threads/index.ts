@@ -6,6 +6,7 @@
 
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
+import type { ControlBody } from "./control-body.js";
 import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
@@ -157,13 +158,12 @@ export type ThreadActivity = {
  */
 export type MessageIntent = "message" | "notice" | "control";
 
-/**
- * Runtime commands take their transcript position at execution, not enqueue.
- * `write_mode` switches one chat's AI write mode once no reply holds the chat.
- */
-export type ControlBody =
-  | { kind: "compact"; instructions?: string }
-  | { kind: "write_mode"; mode: AiWriteMode };
+export {
+  type ControlBody,
+  compactControlBodySchema,
+  controlBodySchema,
+  writeModeControlBodySchema,
+} from "./control-body.js";
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
