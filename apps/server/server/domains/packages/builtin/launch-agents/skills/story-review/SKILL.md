@@ -26,19 +26,19 @@ structural to surface, and each assumes the levels above it are stable:
 
 Each level has a dedicated resource with method and checklist:
 
-- `resources/editorial-review.md`
-- `resources/developmental-edit.md`
-- `resources/line-edit.md`
-- `resources/copyedit.md`
-- `resources/proofreading.md`
+- `resources/editorial-review`
+- `resources/developmental-edit`
+- `resources/line-edit`
+- `resources/copyedit`
+- `resources/proofreading`
 
 For adversarial craft critique (as opposed to editorial review), load:
 
-- `resources/prose-critique.md` — methodology and focus-area routing.
+- `resources/prose-critique` — methodology and focus-area routing.
 - `resources/prose-critique/` — deep resources per focus area (structure,
   character, voice, prose, continuity).
 
 When review incorporates reader-sim data:
 
-- `resources/reader-sim-signal.md` — how to interpret and synthesize
+- `resources/reader-sim-signal` — how to interpret and synthesize
   reader-sim output alongside analytical critique.

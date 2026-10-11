@@ -15,6 +15,7 @@ import {
   formatDocumentFile,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
+import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
@@ -79,6 +80,7 @@ export async function resolveDocumentAddress(
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
+  const canonicalPath = documentPathKey(basePath) + (fragment === undefined ? "" : `#${fragment}`);
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
@@ -108,7 +110,7 @@ export async function resolveDocumentAddress(
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
       return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
-        path,
+        path: canonicalPath,
       });
     }
     // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
@@ -119,7 +121,7 @@ export async function resolveDocumentAddress(
       command,
       contextErrorMessage(ref.error),
       unknownAddress ? "document_not_found" : "invalid_write",
-      unknownAddress ? { path } : {},
+      unknownAddress ? { path: canonicalPath } : {},
     );
   }
   if (ref.value.kind !== "tracked") {
@@ -129,11 +131,11 @@ export async function resolveDocumentAddress(
         ? "The file is binary, so it can't be read as text."
         : "The file is binary, so it can't be edited as text.",
       "binary_file",
-      { path },
+      { path: ref.value.uri },
     );
   }
   if (!ref.value.documentId) {
-    return writeToolError(command, `Document id missing for ${path}`);
+    return writeToolError(command, `Document id missing for ${canonicalPath}`);
   }
   return {
     documentId: ref.value.documentId,
@@ -147,10 +149,22 @@ function buildAgentWriteCommand(
   input: WriteToolInput,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
+  copied?: CopiedSource,
 ): WriteCommand {
   const { path: _path, ...command } = input;
   return {
     ...command,
+    ...("from" in command && command.from && copied
+      ? {
+          from: {
+            ...command.from,
+            path: formatDocumentFile({
+              filePath: copied.copiedFrom.uri,
+              fragment: splitDocumentFile(command.from.path).fragment,
+            }),
+          },
+        }
+      : {}),
     documentId: address.documentId,
     file: formatDocumentFile(address),
     tool_use_id: toolUseId,
@@ -192,7 +206,7 @@ async function writeUnderGrant(
   try {
     written = await deps.documentSync
       .agentEdit()
-      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
+      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,

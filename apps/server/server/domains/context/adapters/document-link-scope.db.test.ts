@@ -192,6 +192,7 @@ if (!RUN) {
           ],
           addresses: [
             "manuscript://part1/target",
+            "manuscript://part1/target.md.md",
             "manuscript://part1/map.png",
             "manuscript://part1/nowhere.png",
           ],
@@ -213,6 +214,7 @@ if (!RUN) {
           .toBe("../later");
         expect.soft(scope.isLive({ ref: `doc:${TARGET}`, href: "x" })).toBe(true);
         expect.soft(scope.documentFor("manuscript://part1/target")?.documentId).toBe(TARGET);
+        expect.soft(scope.documentFor("manuscript://part1/target.md.md")?.documentId).toBe(TARGET);
         expect
           .soft(scope.spellSource({ src: `asset:${MAP}`, ref: null }).href)
           .toBe("part1/map.png");
