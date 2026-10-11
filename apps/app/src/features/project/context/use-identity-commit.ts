@@ -7,6 +7,7 @@ import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
+import { storedEntryName } from "./context-entry-name";
 import {
   type DesiredIdentity,
   destinationOwner,
@@ -76,9 +77,11 @@ export function deriveIdentityCommitPlan(
   editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
+  // Submit and compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
+  const stored = storedEntryName(target.name, tab.kind === "new" ? undefined : location.leaf);
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
-    name: target.name.trim(),
+    name: stored.ok ? stored.name : target.name.trim(),
   };
   if (tab.kind === "new") return { kind: "queue", desired };
 

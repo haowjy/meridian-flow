@@ -6,7 +6,11 @@ import type {
   CatalogFileEntry,
   CatalogScope,
 } from "@meridian/contracts/protocol";
-import { catalogScopeKey } from "@meridian/contracts/protocol";
+import {
+  catalogScopeKey,
+  parseDocumentFilename,
+  renderFilename,
+} from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
   authoritativeReferenceForFile,
@@ -701,7 +705,9 @@ function rowForFile(
 
 /**
  * The link-ahead row for a search, when it names no document the rows already
- * offer exactly (by filename, with or without its extension).
+ * offer exactly: by stored name (`Chapter 13.md` typed is `Chapter 13`), or
+ * by a visible-extension file's name without the extension (`outline` for
+ * `outline.json`), the way a link reaches it.
  */
 function linkAheadRow(
   search: string,
@@ -710,12 +716,19 @@ function linkAheadRow(
 ): LinkAheadRow | null {
   const name = search.trim();
   if (!name) return null;
-  const needle = normalizeReferenceName(name);
+  const typed = parseDocumentFilename(name);
+  const needle = normalizeReferenceName(
+    typed.ok ? renderFilename(typed.value.name, typed.value.extension) : name,
+  );
   const named = ranked.some((row) => {
     if (row.kind !== "file") return false;
-    const label = normalizeReferenceName(row.label);
-    const dot = label.lastIndexOf(".");
-    return label === needle || (dot > 0 && label.slice(0, dot) === needle);
+    if (normalizeReferenceName(row.label) === needle) return true;
+    const stored = parseDocumentFilename(row.label);
+    return (
+      stored.ok &&
+      Boolean(stored.value.extension) &&
+      normalizeReferenceName(stored.value.name) === needle
+    );
   });
   if (named) return null;
   const target = linkAhead(name);
