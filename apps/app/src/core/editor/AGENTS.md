@@ -235,5 +235,9 @@ and navigation contracts.
   room with an outbox drains before teardown; terminal retirement takes its
   carry before destruction and installs the teardown quarantine before delivery.
   `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
-  attempt owns its own retention, waits for first sync, filters missing anchors
-  before a synchronous writer apply, and invalidates draft reads only after ack.
+  attempt retains the successor across retries, waits for first sync, and applies
+  only integrated bytes. Unresolved writer clocks retain their original carry
+  and pending signal, even after a partial replay is acknowledged; only a fully
+  integrated, acknowledged carry invalidates draft reads and clears that signal.
+  Permanently omitted anchors require recovery outside this byte-delivery seam;
+  handoff never resurrects discarded AI content or silently drops a pending tail.
