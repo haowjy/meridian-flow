@@ -121,6 +121,14 @@ reply's Retry (`useReplyRetry.ts`) shares that optimistic half
 [`.context/failed-reply-retry.md`](.context/failed-reply-retry.md). Hand off
 also sits under a delivered writer message; Fork stays on replies.
 
+A failure of the writer's own send is one presentation, `ErrorCard`: a failed
+reply, an unadmitted message, an ask-user answer (`InterruptResponseFeedback`)
+and the composer's refused recording all draw it. An unconfirmed answer is a
+single `failed` state with a safe Retry (the server consumes a pending
+interrupt once), settled by the server's snapshot when the refusal means the
+question is no longer open; see
+[`.context/turn-composition.md`](.context/turn-composition.md).
+
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their
 causal position. Its execution UUID is internal correlation to the matching

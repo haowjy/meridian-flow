@@ -165,14 +165,24 @@ tray.
 send state keyed by `(threadId, turnId, interruptId)` in
 `ThreadStore.interruptResponses`. `CustomBlockRenderer` passes it to the card as
 `responseState`/`retry`: controls stay disabled while pending, including after a
-remount, and a proven or ambiguous send failure renders the shared
-`InterruptResponseFeedback` Retry, which replays the stored answer with the same
-tuple. The agent outcome is never projected locally — it stays server-confirmed
+remount, and a send that is not confirmed renders the shared
+`InterruptResponseFeedback`: the chat's `ErrorCard` ("Couldn't send your
+answer.") with Retry, which replays the stored answer with the same tuple.
+There is one failure state, not a proven and an ambiguous one: Retry is safe
+because the server consumes a pending interrupt once, so a repeat of an answer
+that landed is refused, never applied twice. The card announces as it fails,
+takes focus on Retry then, and stays silent on a remount of an already failed
+state. The agent outcome is never projected locally — it stays server-confirmed
 through the journaled `meridian.interrupt` lifecycle, whose resolution clears
 the local entry. Non-fatal rejection frames (`interrupt_not_pending`,
 `interrupt_correlation_mismatch`) settle that state through
 `ThreadTransport.onInterruptResponseError` instead of tearing down the run
-subscription.
+subscription. Either one also refetches the thread snapshot, because the
+refusal means the server no longer holds the question open for this answer
+(it landed, was answered in another tab, expired, or the run ended): a
+snapshot that shows the block resolved or the turn out of `waiting_interrupt`
+clears the entry even when the live stream delivered nothing, so Retry never
+dead-ends.
 
 ## Vocabulary
 
