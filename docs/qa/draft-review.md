@@ -496,7 +496,8 @@ on refusal, without a navigation change.
   then Ctrl+Z. After each restoration, reload the review and check exact text,
   formatting and alignment. Same-parent attribute Undo deliberately stays
   writer-authored because a manual equal-value re-set is indistinguishable;
-  complete recreated rich paragraphs retain attribution to the original chat.
+  recreated rich paragraphs retain chat attribution only for directly proved
+  restoration slots. Unproved formatted/text slots remain writer-authored.
   Do not use the chat receipt's Undo: this probes the writer's own Undo.
 - For missing-anchor handoff, use the controlled real-Yjs regression rather
   than timing a browser race:

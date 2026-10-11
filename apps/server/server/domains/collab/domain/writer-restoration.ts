@@ -48,7 +48,12 @@ export function certifyWriterRestorations(before: Y.Doc, update: Uint8Array): Re
         target.id.clock === alias.target.clock &&
         source.parentSub === target.parentSub
       ) {
-        let anchored = source.parentSub === null ? sameId(target.rightOrigin, alias.source) : false;
+        // Same-parent map re-sets are indistinguishable from attribute Undo.
+        // List copies must retain the source identity as their right anchor.
+        let anchored =
+          source.parentSub === null &&
+          target.rightOrigin?.client === alias.source.client &&
+          target.rightOrigin.clock === alias.source.clock;
         const sourceParent = source.parent;
         const targetParent = target.parent;
         let sameParent = sourceParent === targetParent;
@@ -73,63 +78,24 @@ export function certifyWriterRestorations(before: Y.Doc, update: Uint8Array): Re
             );
         }
         if (sameParent && sourceParent !== targetParent) {
-          sameParent = completeContainer(sourceParent, targetParent, candidates, after);
-          // redoItem traces to siblings that have already been recreated in the
-          // new parent, skipping those still in the old parent. Formatting
-          // markers can be restored before their preceding text.
-          const priorCopy = (item: Y.Item, clock: number): Y.ID | null => {
-            const sibling = candidates.find(
-              (candidate) =>
-                candidate.source.client === item.id.client &&
-                candidate.source.clock <= clock &&
-                clock < candidate.source.clock + candidate.source.length &&
-                candidate.target.client === target.id.client &&
-                candidate.target.clock + candidate.target.length <= target.id.clock &&
-                itemAt(after, candidate.target.client, candidate.target.clock)?.parent ===
-                  targetParent &&
-                certify(candidate),
-            );
-            return sibling
-              ? Y.createID(
-                  sibling.target.client,
-                  sibling.target.clock + clock - sibling.source.clock,
-                )
-              : null;
-          };
-          const trace = (item: Y.Item | null, side: "left" | "right"): Y.ID | null => {
-            while (item) {
-              const id = priorCopy(item, side === "left" ? item.lastId.clock : item.id.clock);
-              if (id) return id;
-              item = item[side];
-            }
-            return null;
-          };
+          // Yjs must drop cross-parent origins when it recreates a deleted
+          // container. The certified parent identity is then the anchor; the
+          // left sibling must map to the same source slot (never text matching).
+          const left = source.left?.lastId;
           anchored =
-            source.parentSub === null
-              ? sameId(target.origin, trace(source.left, "left")) &&
-                sameId(target.rightOrigin, trace(source.right, "right"))
-              : sameId(target.origin, trace(source, "right")) && target.rightOrigin === null;
-          if (anchored && source.parentSub === null) {
-            // Claims are untrusted: an early copy with no anchors must not
-            // borrow a later sibling's identity and invert the final order.
-            anchored = candidates.every((sibling) => {
-              if (sibling === alias) return true;
-              const otherSource = itemAt(after, sibling.source.client, sibling.source.clock);
-              const otherTarget = itemAt(after, sibling.target.client, sibling.target.clock);
-              if (
-                !otherSource ||
-                !otherTarget ||
-                otherSource.parent !== sourceParent ||
-                otherTarget.parent !== targetParent ||
-                otherSource.parentSub !== null
-              )
-                return true;
-              return sameId(alias.source, sibling.source)
-                ? false
-                : precedes(source, alias.source.clock, otherSource, sibling.source.clock) ===
-                    precedes(target, alias.target.clock, otherTarget, sibling.target.clock);
-            });
-          }
+            target.origin === null
+              ? source.parentSub !== null || left === undefined
+              : !!left &&
+                candidates.some(
+                  (sibling) =>
+                    sibling.source.client === left.client &&
+                    sibling.source.clock <= left.clock &&
+                    left.clock < sibling.source.clock + sibling.source.length &&
+                    sibling.target.client === target.origin?.client &&
+                    sibling.target.clock + left.clock - sibling.source.clock ===
+                      target.origin?.clock &&
+                    certify(sibling),
+                );
         }
         valid = anchored && sameParent && sameContent(source, target, alias);
       }
@@ -184,59 +150,4 @@ function sameContent(source: Y.Item, target: Y.Item, alias: RestorationAlias): b
     JSON.stringify(source.content.getContent().slice(offset, offset + alias.source.length)) ===
     JSON.stringify(target.content.getContent().slice(0, alias.target.length))
   );
-}
-
-function sameId(left: Y.ID | null, right: { client: number; clock: number } | null): boolean {
-  return left === null
-    ? right === null
-    : right !== null && left.client === right.client && left.clock === right.clock;
-}
-
-/** Require a complete bijection of retained source slots and live recreated slots.
- * Selectively omitted browser claims cannot prove where equal-content copies belong.
- */
-function completeContainer(
-  source: Y.Item["parent"],
-  target: Y.Item["parent"],
-  aliases: RestorationAlias[],
-  doc: Y.Doc,
-): boolean {
-  if (!(source instanceof Y.AbstractType) || !(target instanceof Y.AbstractType)) return false;
-  const pairs = aliases.filter((alias) => {
-    const oldItem = itemAt(doc, alias.source.client, alias.source.clock);
-    const newItem = itemAt(doc, alias.target.client, alias.target.clock);
-    return (
-      oldItem?.parent === source &&
-      newItem?.parent === target &&
-      oldItem?.parentSub === newItem?.parentSub
-    );
-  });
-  const covered = (parent: Y.AbstractType<unknown>, side: "source" | "target") => {
-    const items = [...parent._map.values()];
-    for (let item = parent._start; item; item = item.right) items.push(item);
-    return items
-      .filter((item) => side === "source" || !item.deleted)
-      .every((item) => {
-        const ranges = pairs
-          .map((alias) => alias[side])
-          .filter((range) => itemAt(doc, range.client, range.clock) === item)
-          .sort((a, b) => a.clock - b.clock);
-        let clock = item.id.clock;
-        for (const range of ranges) {
-          if (range.clock !== clock || clock + range.length > item.id.clock + item.length)
-            return false;
-          clock += range.length;
-        }
-        return clock === item.id.clock + item.length;
-      });
-  };
-  return covered(source, "source") && covered(target, "target");
-}
-
-function precedes(left: Y.Item, leftClock: number, right: Y.Item, rightClock: number): boolean {
-  if (left === right) return leftClock < rightClock;
-  for (let item = left.right; item; item = item.right) {
-    if (item === right) return true;
-  }
-  return false;
 }
