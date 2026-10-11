@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import { httpErrorStatus } from "@/client/api/http-client";
 import type { BranchRoomCarry, BranchRoomPool } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import { recoverWriterCarry } from "./writer-carry-recovery";
 import { rotateWriterClient } from "./writer-client";
 
 type Carry = BranchRoomCarry;
@@ -11,15 +12,37 @@ type Entry = { retirement: Carry; attempt: AbortController; delivered: boolean }
 type Outcome = "ready" | "retry" | "refused";
 export const WRITER_HANDOFF_ORIGIN = Symbol("writer-handoff");
 
-/** Only updates integrated against the synced baseline, not inherited tombstones or pending structs. */
-export function deliverableUpdate(document: Y.Doc, carry: Uint8Array): Uint8Array | null {
+/** Separate integrated bytes from unresolved writer clocks; neither is an acknowledgement. */
+function deliverableUpdate(
+  document: Y.Doc,
+  retirement: Carry,
+  retired: boolean,
+): {
+  update: Uint8Array | null;
+  pending: boolean;
+  lost: boolean;
+} {
   const clone = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(clone, Y.encodeStateAsUpdate(document));
     const updates: Uint8Array[] = [];
     clone.on("update", (update: Uint8Array) => updates.push(update));
-    Y.applyUpdate(clone, carry);
-    return updates.length ? Y.mergeUpdates(updates) : null;
+    Y.applyUpdate(clone, retirement.carry);
+    const pending = clone.store.pendingStructs;
+    let lost = false;
+    if (pending && retired) {
+      const excluded = new Set(
+        Y.decodeUpdate(retirement.carry).structs.map((item) => item.id.client),
+      );
+      excluded.add(document.clientID);
+      rotateWriterClient(clone, undefined, excluded);
+      lost = recoverWriterCarry(clone, retirement.sourceState, pending.update);
+    }
+    return {
+      update: updates.length ? Y.mergeUpdates(updates) : null,
+      pending: pending !== null && !retired,
+      lost,
+    };
   } finally {
     clone.destroy();
   }
@@ -57,6 +80,7 @@ export class BranchWriterHandoff {
                   ? prior.retirement.source
                   : retirement.source,
               carry: Y.mergeUpdates([prior.retirement.carry, retirement.carry]),
+              sourceState: Y.mergeUpdates([prior.retirement.sourceState, retirement.sourceState]),
             }
           : retirement,
     };
@@ -85,12 +109,20 @@ export class BranchWriterHandoff {
   }
 
   private async deliver(branchId: string, entry: Entry): Promise<void> {
+    const owner = `writer-handoff:${branchId}:${++this.sequence}`;
+    const release = () => this.deps.pool.release(owner);
+    entry.attempt.signal.addEventListener("abort", release, { once: true });
+    try {
+      await this.deliverRetained(branchId, entry, owner);
+    } finally {
+      entry.attempt.signal.removeEventListener("abort", release);
+      release();
+    }
+  }
+
+  private async deliverRetained(branchId: string, entry: Entry, owner: string): Promise<void> {
     let tries = 0;
     while (this.current(branchId, entry)) {
-      const owner = `writer-handoff:${branchId}:${++this.sequence}`;
-      // Abort releases synchronously, even if an HTTP read or rebuild never settles.
-      const release = () => this.deps.pool.release(owner);
-      entry.attempt.signal.addEventListener("abort", release, { once: true });
       let outcome: Outcome = "retry";
       try {
         const roomKey = await entry.retirement.ref.currentRoom();
@@ -111,7 +143,14 @@ export class BranchWriterHandoff {
           if (outcome === "ready" && this.deps.pool.peek(roomKey) !== session) outcome = "retry";
           if (outcome === "ready") {
             // No await between filtering and applying: the baseline cannot change underneath it.
-            const update = deliverableUpdate(session.document, entry.retirement.carry);
+            // A synced newer generation is the durable retirement cut. Missing
+            // source identities cannot arrive from its fenced-off old journal.
+            const { update, pending, lost } = deliverableUpdate(
+              session.document,
+              entry.retirement,
+              room.generation > entry.retirement.source.generation,
+            );
+            if (lost) entry.retirement.ref.writerLoss?.();
             if (update) {
               const clients = new Set(
                 Y.decodeUpdate(entry.retirement.carry).structs.map((s) => s.id.client),
@@ -119,17 +158,20 @@ export class BranchWriterHandoff {
               if (clients.has(session.document.clientID)) {
                 rotateWriterClient(session.document, session.presence.adoptDocumentClient, clients);
               }
-              // The successor outbox owns the filtered bytes now. A later retirement must
-              // not merge the original's discarded anchors back into the next carry.
-              entry.delivered = true;
-              entry.retirement = { ...entry.retirement, carry: update };
+              // Transfer ownership only when every writer clock integrated. A partial
+              // replay must retain the original bytes, including the pending tail.
+              entry.delivered = !pending;
+              if (!pending) entry.retirement = { ...entry.retirement, carry: update };
               Y.applyUpdate(session.document, update, WRITER_HANDOFF_ORIGIN);
               outcome = await this.wait(session, entry, true);
               if (!this.current(branchId, entry)) return;
               if (outcome === "ready" && this.deps.pool.peek(roomKey) !== session)
                 outcome = "retry";
-              if (outcome === "ready") await entry.retirement.ref.changed();
+              if (outcome === "ready" && !pending) await entry.retirement.ref.changed();
             }
+            // Missing anchors may arrive on a later sync. Never call a carry
+            // delivered merely because Yjs emitted no (or only some) updates.
+            if (outcome === "ready" && pending) outcome = "retry";
             if (outcome === "ready") {
               if (!this.current(branchId, entry)) return;
               this.carries.delete(branchId);
@@ -141,9 +183,6 @@ export class BranchWriterHandoff {
       } catch (error) {
         const status = httpErrorStatus(error);
         if (status === 401 || status === 403 || status === 404) outcome = "refused";
-      } finally {
-        entry.attempt.signal.removeEventListener("abort", release);
-        release();
       }
       if (!this.current(branchId, entry)) return;
       if (outcome === "refused" || entry.delivered) {

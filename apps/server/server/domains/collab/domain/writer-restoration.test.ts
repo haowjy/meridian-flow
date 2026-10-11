@@ -2,6 +2,7 @@
 import {
   captureUndoRestorationClaims,
   RESTORATION_CLAIMS_TYPE,
+  type RestorationAlias,
 } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -201,4 +202,374 @@ it("a whole deleted paragraph certifies its restored parent chain and text", () 
   undo.destroy();
   browser.destroy();
   server.destroy();
+});
+
+function richRestoration(kind: "attribute" | "rich paragraph", content = "abcdef") {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 3001;
+  const root = browser.getXmlFragment("prosemirror");
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  text.insert(0, content);
+  root.insert(0, [paragraph]);
+  browser.clientID = 3004;
+  paragraph.setAttribute("align", "left");
+  text.format(2, 2, { bold: true });
+  const aiUpdate = Y.encodeStateAsUpdate(browser);
+  browser.clientID = 3002;
+  const undo = new Y.UndoManager(root);
+  const stop = captureUndoRestorationClaims(browser);
+  if (kind === "attribute") paragraph.setAttribute("align", "right");
+  else root.delete(0, 1);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  undo.undo();
+  const claims = browser.getMap<RestorationAlias>(RESTORATION_CLAIMS_TYPE);
+  return {
+    browser,
+    server,
+    root,
+    claims,
+    aiUpdate,
+    certify: () => certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser)),
+    destroy: () => {
+      stop();
+      undo.destroy();
+      browser.destroy();
+      server.destroy();
+    },
+  };
+}
+
+it.each([
+  "attribute",
+  "rich paragraph",
+] as const)("certifies only directly proved %s restoration slots and leaves the remainder writer-authored", (kind) => {
+  const f = richRestoration(kind);
+  const claims = [...f.claims.values()];
+  expect(claims).toHaveLength(kind === "attribute" ? 1 : 8);
+  expect(f.root.toString()).toBe('<paragraph align="left">ab<bold>cd</bold>ef</paragraph>');
+  const restorationAliases = f.certify();
+  expect(restorationAliases).toHaveLength(kind === "attribute" ? 0 : 5);
+  expect(claims).toEqual(expect.arrayContaining(restorationAliases));
+  const baseDoc = new Y.Doc({ gc: false });
+  const index = indexDraftUpdates({
+    baseDoc,
+    updates: [
+      { id: 1, actorTurnId: "ai-turn", updateData: f.aiUpdate },
+      {
+        id: 2,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(f.server),
+      },
+      {
+        id: 3,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(f.browser),
+        updateMeta: { restorationAliases },
+      },
+    ],
+  });
+  const attribution = index.attributeRanges({
+    insertedRanges: claims.map((alias) => alias.target),
+    deletedRanges: [],
+  });
+  expect(attribution.complete).toBe(true);
+  expect(attribution.insertedAttribution.reduce((sum, range) => sum + range.length, 0)).toBe(
+    kind === "attribute" ? 1 : 11,
+  );
+  const aiClocks = attribution.insertedAttribution
+    .filter((range) => index.byOperationId.get(range.operationId)?.actorTurnId === "ai-turn")
+    .reduce((sum, range) => sum + range.length, 0);
+  expect(aiClocks).toBe(kind === "attribute" ? 0 : 6);
+  baseDoc.destroy();
+  f.destroy();
+});
+
+it("rejects same-content sibling substitutions in a recreated rich paragraph", () => {
+  const f = richRestoration("rich paragraph", "ababab");
+  const textAliases = [...f.claims.entries()].filter(([, alias]) => {
+    const source = f.browser.store.clients
+      .get(alias.source.client)
+      ?.find((item) => item.id.clock === alias.source.clock);
+    return source instanceof Y.Item && source.content instanceof Y.ContentString;
+  });
+  expect(textAliases).toHaveLength(3);
+  const firstEntry = textAliases[0];
+  const lastEntry = textAliases[2];
+  if (!firstEntry || !lastEntry) throw new Error("Missing text restoration aliases");
+  const [firstKey, first] = firstEntry;
+  const [lastKey, last] = lastEntry;
+  f.browser.transact(() => {
+    f.claims.set(firstKey, { source: last.source, target: first.target });
+    f.claims.set(lastKey, { source: first.source, target: last.target });
+  });
+  const certified = f.certify();
+  expect(certified.some((alias) => alias.target.clock === first.target.clock)).toBe(false);
+  expect(certified.some((alias) => alias.target.clock === last.target.clock)).toBe(false);
+  f.destroy();
+});
+
+it("rejects child claims when the restored container has no certified identity", () => {
+  const f = richRestoration("rich paragraph");
+  for (const [key, alias] of f.claims) {
+    if (alias.source.clock === 0) f.claims.delete(key);
+  }
+  expect(f.certify()).toEqual([]);
+  f.destroy();
+});
+
+it.each([
+  "wrong value",
+  "wrong key",
+  "oversized range",
+] as const)("rejects forged attribute restoration with %s", (forgery) => {
+  const f = richRestoration("attribute");
+  const entry = [...f.claims.entries()][0];
+  if (!entry) throw new Error("Missing attribute restoration alias");
+  const [key, alias] = entry;
+  if (forgery === "oversized range") {
+    f.claims.set(key, {
+      source: { ...alias.source, length: 2 },
+      target: { ...alias.target, length: 2 },
+    });
+  } else {
+    const paragraph = f.root.get(0) as Y.XmlElement;
+    // A fresh copy at a different key, or with different content, cannot borrow
+    // the original attribute's author even when its predecessor is tombstoned.
+    const attribute = forgery === "wrong key" ? "title" : "align";
+    const clock = Y.decodeStateVector(Y.encodeStateVector(f.browser)).get(f.browser.clientID) ?? 0;
+    paragraph.setAttribute(attribute, forgery === "wrong value" ? "center" : "left");
+    f.claims.set(key, {
+      source: alias.source,
+      target: { client: f.browser.clientID, clock, length: 1 },
+    });
+  }
+  expect(f.certify()).toEqual([]);
+  f.destroy();
+});
+
+it("rejects manual equal-value attribute retype with forged claim", () => {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 4101;
+  const paragraph = new Y.XmlElement("paragraph");
+  browser.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  paragraph.setAttribute("align", "left");
+  const source = paragraph._map.get("align");
+  if (!source) throw new Error("Missing source attribute");
+  browser.clientID = 4102;
+  paragraph.setAttribute("align", "right");
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  const clock = Y.decodeStateVector(Y.encodeStateVector(browser)).get(browser.clientID) ?? 0;
+  browser.transact(() => {
+    paragraph.setAttribute("align", "left"); // manual edit, no UndoManager
+    browser.getMap(RESTORATION_CLAIMS_TYPE).set("forged", {
+      source: { ...source.id, length: 1 },
+      target: { client: browser.clientID, clock, length: 1 },
+    });
+  });
+  expect(certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser))).toEqual([]);
+});
+
+it("omitted sibling claims cannot license same-content substitution", () => {
+  const f = richRestoration("rich paragraph", "ababab");
+  const entries = [...f.claims.entries()];
+  const getSource = (alias: RestorationAlias) =>
+    f.browser.store.clients
+      .get(alias.source.client)
+      ?.find((item) => item.id.clock === alias.source.clock);
+  const texts = entries.filter(([, alias]) => {
+    const item = getSource(alias);
+    return item instanceof Y.Item && item.content instanceof Y.ContentString;
+  });
+  const firstEntry = texts[0];
+  const lastEntry = texts[2];
+  if (!firstEntry || !lastEntry) throw new Error("Missing text aliases");
+  const [firstKey, first] = firstEntry;
+  const [, last] = lastEntry;
+  for (const [key, alias] of entries) {
+    const source = getSource(alias);
+    if (!(source instanceof Y.Item && source.content instanceof Y.ContentType))
+      f.claims.delete(key);
+  }
+  f.claims.set(firstKey, { source: last.source, target: first.target });
+  expect(f.certify().some((alias) => alias.target.clock === first.target.clock)).toBe(false);
+});
+
+it("recreated writer text cannot borrow equal AI sibling identity", () => {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 4201;
+  const root = browser.getXmlFragment("prosemirror");
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  root.insert(0, [paragraph]);
+  text.insert(0, "ab"); // writer authored
+  const baseDoc = new Y.Doc({ gc: false });
+  Y.applyUpdate(baseDoc, Y.encodeStateAsUpdate(browser));
+  const writerSource = { client: 4201, clock: 2, length: 2 };
+  browser.clientID = 4202;
+  text.insert(2, "ab"); // AI authored
+  const aiUpdate = Y.encodeStateAsUpdate(browser);
+  const aiSource = { client: 4202, clock: 0, length: 2 };
+  browser.clientID = 4203;
+  const undo = new Y.UndoManager(root);
+  captureUndoRestorationClaims(browser);
+  root.delete(0, 1);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  undo.undo();
+  const claims = browser.getMap<RestorationAlias>(RESTORATION_CLAIMS_TYPE);
+  const restoredWriter = [...claims.values()].find(
+    (alias) =>
+      alias.source.client === writerSource.client && alias.source.clock === writerSource.clock,
+  );
+  if (!restoredWriter) throw new Error("Missing writer restoration");
+  expect(restoredWriter).toBeDefined();
+  for (const [key, alias] of claims) {
+    if (alias.source.length === 2) claims.delete(key);
+  }
+  claims.set("forged", { source: aiSource, target: restoredWriter.target });
+  const restorationAliases = certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser));
+  const index = indexDraftUpdates({
+    baseDoc,
+    updates: [
+      { id: 1, actorTurnId: "ai-turn", updateData: aiUpdate },
+      {
+        id: 2,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(server),
+      },
+      {
+        id: 3,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(browser),
+        updateMeta: { restorationAliases },
+      },
+    ],
+  });
+  const attributed = index.attributeRanges({
+    insertedRanges: [restoredWriter.target],
+    deletedRanges: [],
+  });
+  expect(
+    attributed.insertedAttribution.map(
+      (span) => index.byOperationId.get(span.operationId)?.actorTurnId,
+    ),
+  ).not.toContain("ai-turn");
+});
+
+it.each([
+  false,
+  true,
+])("rejects invalid filler coverage in cold attribution (deleted: %s)", (deleted) => {
+  const same = (a: { client: number; clock: number }, b: { client: number; clock: number }) =>
+    a.client === b.client && a.clock === b.clock;
+  const itemAt = (doc: Y.Doc, id: { client: number; clock: number }) =>
+    (doc.store.clients.get(id.client) ?? []).find(
+      (item) => item.id.clock <= id.clock && id.clock < item.id.clock + item.length,
+    );
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 4201;
+  const root = browser.getXmlFragment("prosemirror");
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  root.insert(0, [paragraph]);
+  text.insert(0, "ab");
+  const baseDoc = new Y.Doc({ gc: false });
+  Y.applyUpdate(baseDoc, Y.encodeStateAsUpdate(browser));
+  const writerSource = { client: 4201, clock: 2, length: 2 };
+  browser.clientID = 4202;
+  text.insert(2, "ab");
+  const aiUpdate = Y.encodeStateAsUpdate(browser);
+  const aiSource = { client: 4202, clock: 0, length: 2 };
+  browser.clientID = 4203;
+  const undo = new Y.UndoManager(root);
+  captureUndoRestorationClaims(browser);
+  root.delete(0, 1);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  undo.undo();
+  const claims = browser.getMap<RestorationAlias>(RESTORATION_CLAIMS_TYPE);
+  const writerAlias = [...claims.entries()].find(([, a]) => same(a.source, writerSource));
+  const aiAlias = [...claims.entries()].find(([, a]) => same(a.source, aiSource));
+  if (!writerAlias || !aiAlias) throw new Error("missing text aliases");
+  const firstTarget = writerAlias[1].target;
+  const secondTarget = aiAlias[1].target;
+  // The UndoManager recreates the paragraph/text objects; reacquire the live text container.
+  const restoredParagraph = root.get(0);
+  if (!(restoredParagraph instanceof Y.XmlElement)) throw new Error("missing restored paragraph");
+  const restoredText = restoredParagraph.get(0);
+  if (!(restoredText instanceof Y.XmlText)) throw new Error("missing restored text");
+  // Delete restored second AI `ab`.
+  const secondTargetItem = itemAt(browser, secondTarget);
+  if (!(secondTargetItem instanceof Y.Item)) throw new Error("missing second target item");
+  if (secondTargetItem.parent !== restoredText)
+    throw new Error("AI target is not restored text child");
+  restoredText.delete(2, 2);
+  // Insert zz immediately before restored first writer ab, then delete zz.
+  restoredText.insert(0, "zz");
+  if (deleted) restoredText.delete(0, 2);
+  const zzTargetItem = [...browser.store.clients.values()]
+    .flat()
+    .find(
+      (item) =>
+        item instanceof Y.Item &&
+        item.parent === restoredText &&
+        item.content instanceof Y.ContentString &&
+        item.content.str === "zz",
+    );
+  if (!(zzTargetItem instanceof Y.Item)) throw new Error("missing zz tombstone");
+  const liveFirstItem = itemAt(browser, firstTarget);
+  if (!(liveFirstItem instanceof Y.Item) || liveFirstItem.deleted)
+    throw new Error("first writer target is not live");
+  // Keep parent alias. Replace text claims with the requested forged mapping.
+  claims.set(writerAlias[0], { source: writerSource, target: { ...zzTargetItem.id, length: 2 } });
+  claims.set(aiAlias[0], { source: aiSource, target: { ...liveFirstItem.id, length: 2 } });
+  const update = Y.encodeStateAsUpdate(browser);
+  const certified = certifyWriterRestorations(server, update);
+  const forgedAiAccepted = certified.some(
+    (alias) => same(alias.source, aiSource) && same(alias.target, liveFirstItem.id),
+  );
+
+  const index = indexDraftUpdates({
+    baseDoc,
+    updates: [
+      { id: 1, actorTurnId: "ai-turn", updateData: aiUpdate },
+      {
+        id: 2,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(server),
+      },
+      {
+        id: 3,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: update,
+        updateMeta: { restorationAliases: certified },
+      },
+    ],
+  });
+  const attributed = index.attributeRanges({
+    insertedRanges: [{ ...liveFirstItem.id, length: 2 }],
+    deletedRanges: [],
+  });
+  const forgedAiColdAttribution = attributed.insertedAttribution.some(
+    (span) => index.byOperationId.get(span.operationId)?.actorTurnId === "ai-turn",
+  );
+  expect(attributed.complete).toBe(true);
+  expect(forgedAiColdAttribution).toBe(false);
+  expect(forgedAiAccepted).toBe(false);
+  undo.destroy();
+  browser.destroy();
+  server.destroy();
+  baseDoc.destroy();
 });

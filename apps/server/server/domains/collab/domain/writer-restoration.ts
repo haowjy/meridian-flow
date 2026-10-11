@@ -48,12 +48,12 @@ export function certifyWriterRestorations(before: Y.Doc, update: Uint8Array): Re
         target.id.clock === alias.target.clock &&
         source.parentSub === target.parentSub
       ) {
-        // List restoration is immediately before its source. Map restoration
-        // replaces the retained source at the same key. Neither content nor a
-        // matching parent alone proves the copy belongs to that source.
-        const anchor = source.parentSub === null ? target.rightOrigin : target.origin;
+        // Same-parent map re-sets are indistinguishable from attribute Undo.
+        // List copies must retain the source identity as their right anchor.
         let anchored =
-          anchor?.client === alias.source.client && anchor.clock === alias.source.clock;
+          source.parentSub === null &&
+          target.rightOrigin?.client === alias.source.client &&
+          target.rightOrigin.clock === alias.source.clock;
         const sourceParent = source.parent;
         const targetParent = target.parent;
         let sameParent = sourceParent === targetParent;
