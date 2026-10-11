@@ -7,7 +7,7 @@
  * through the locked kernel, never the active-Work command. And a read that meets a
  * hidden node no draft uses repairs it (§12.4).
  */
-import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
   documentBranches,
@@ -16,7 +16,6 @@ import {
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
-  drafts,
   draftTreeChanges,
   folders,
   linkAheadDraftSettlements,
@@ -24,21 +23,19 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
 import {
   currentDrizzleDb,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../test-support/composed-runtime.js";
+import { typeLink } from "../../test-support/draft-tree-commands.js";
 import {
   type DraftTreeScenario,
   draftTreeScenario,
   type ScenarioRuntime,
-  type ScenarioWork,
 } from "../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
@@ -67,14 +64,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { runtime, s: await draftTreeScenario(db, { runtime, runtimes }) };
     }
 
-    async function live(s: DraftTreeScenario, path: string, content: string) {
-      const created = await s.writer.create(path, { content });
-      if (created.status !== "created" || !created.documentId) {
-        throw new Error(`the writer's ${path} was not created`);
-      }
-      return created.documentId as DocumentId;
-    }
-
     /** A live picture the writer uploaded at `path`. */
     async function livePicture(runtime: ScenarioRuntime, s: DraftTreeScenario, path: string) {
       const { id: projectId, userId } = s.project;
@@ -94,56 +83,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sizeBytes: bytes.byteLength,
         });
       if (!uploaded.ok) throw new Error(JSON.stringify(uploaded.error));
-    }
-
-    /** One saved reply in the Work's draft that replaces `find` in `path`. */
-    async function draftEdit(
-      s: DraftTreeScenario,
-      work: ScenarioWork,
-      path: string,
-      find: string,
-      content: string,
-    ) {
-      const reply = await s.model(work).reply();
-      const uri = `manuscript://${path}`;
-      expect((await reply.call("read", { path: uri })).isError).toBeFalsy();
-      const written = await reply.call("write", { command: "replace", path: uri, find, content });
-      expect(written.isError, JSON.stringify(written.output)).toBeFalsy();
-      await reply.save();
-    }
-
-    /** The writer types a link in the draft's review room for this document. */
-    function typeLink(href: string, aheadId: string) {
-      return (doc: Y.Doc) => {
-        const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText();
-        text.insert(0, "Ori", { link: { href, ref: `ahead:${aheadId}`, title: null } });
-        paragraph.insert(0, [text]);
-        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-      };
-    }
-
-    /** What the resolve route answers, live, for a stored link in a live holder. */
-    async function liveAnswer(
-      s: DraftTreeScenario,
-      ref: string,
-      href: string,
-      holder: { uri: string; id: DocumentId },
-    ) {
-      const { answer } = await s.linkAnswer({
-        view: "live",
-        ref,
-        href,
-        baseUri: holder.uri,
-        holderDocumentId: holder.id,
-      });
-      return answer.state === "document"
-        ? {
-            id: answer.document.id,
-            ...(answer.inDraft ? { inDraft: true } : {}),
-            ...(answer.holderBound ? { bound: true } : {}),
-          }
-        : answer.state;
     }
 
     /** The document row's lifecycle: hidden, tombstoned, and its location version. */
@@ -204,15 +143,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    async function draftsOf(work: ScenarioWork) {
-      return (
-        await db
-          .select({ status: drafts.status })
-          .from(drafts)
-          .where(eq(drafts.originWorkId, work.id as WorkId))
-      ).map((each) => each.status);
-    }
-
     async function rowsNaming(id: DocumentId) {
       return db
         .select({ draftId: draftTreeChanges.draftId })
@@ -238,7 +168,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ];
       const ORI = "manuscript://lore/deep/ori.md";
       // A live ahead ref at the path before any draft creates it: Ascension's create settles it.
-      const one = await live(s, "chapter-one.md", "[Ori](lore/deep/ori.md) waits.");
+      const one = await s.writer.createDocument("chapter-one.md", "[Ori](lore/deep/ori.md) waits.");
       const [registered] = await db
         .select({ aheadId: linkAheadRefs.aheadId })
         .from(linkAheadRefs)
@@ -258,15 +188,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toContainEqual({ documentId: ori });
       // A live holder bound to Ori: chapter two, edited in Beacon, applied alone.
-      const two = await live(s, "chapter-two.md", "Two.");
-      await draftEdit(s, beacon, "chapter-two.md", "Two.", "Two, drafted.");
+      const two = await s.writer.createDocument("chapter-two.md", "Two.");
+      await s.model(beacon).edit("chapter-two.md", "Two.", "Two, drafted.");
       const bound = crypto.randomUUID();
       await s.writer.editDraft(beacon, two, typeLink(ORI, bound));
       expect.soft((await s.apply(beacon, [two], { tokens: "none" }))[0]?.httpStatus).toBe(200);
       const chapterTwo = { uri: "manuscript://chapter-two.md", id: two };
       const chapterOne = { uri: "manuscript://chapter-one.md", id: one };
       expect
-        .soft(await liveAnswer(s, `ahead:${bound}`, ORI, chapterTwo), "bound, in a draft")
+        .soft(
+          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
+          "bound, in a draft",
+        )
         .toEqual({ id: ori, inDraft: true, bound: true });
       // A picture of Beacon's own, with its own bytes (12b-Q2).
       await livePicture(runtime, s, "charts/chart.png");
@@ -292,14 +225,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(await s.view(ascension).stat("lore/deep/ori.md"), "gone from Ascension's view")
         .toMatchObject({ ok: false });
-      expect.soft(await draftsOf(ascension), "an item Discard never closes").toEqual(["active"]);
+      expect
+        .soft(await s.draftStatuses(ascension), "an item Discard never closes")
+        .toEqual(["active"]);
 
       // Beacon discards everything: the last use ends, in one command.
       const beaconDraft = (await s.review(beacon)).items[0]?.draftId ?? "";
       expect
         .soft(await s.discard(beacon, "all"), "Discard all")
         .toEqual({ status: "discarded", draftId: beaconDraft, draftClosed: true });
-      expect.soft(await draftsOf(beacon), "closed").toEqual(["closed"]);
+      expect.soft(await s.draftStatuses(beacon), "closed").toEqual(["closed"]);
       expect
         .soft(await row(ori), "tombstoned once, still hidden")
         .toEqual({ hidden: true, tombstone: true, version: versionBefore + 1n });
@@ -325,19 +260,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toEqual([]);
       expect
-        .soft(await liveAnswer(s, `ahead:${bound}`, ORI, chapterTwo), "the bound link reads gone")
+        .soft(
+          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
+          "the bound link reads gone",
+        )
         .toBe("gone");
       expect
         .soft(
-          await liveAnswer(s, `ahead:${waiting}`, ORI, chapterOne),
+          await s.liveMeaning({ ref: `ahead:${waiting}`, href: ORI, holder: chapterOne }),
           "the live ref: Doesn't exist yet",
         )
         .toBe("missing");
-      const later = await live(s, "lore/deep/ori.md", "A new Ori.");
+      const later = await s.writer.createDocument("lore/deep/ori.md", "A new Ori.");
       expect.soft(later, "a new live document").not.toBe(ori);
       expect
         .soft(
-          await liveAnswer(s, `ahead:${bound}`, ORI, chapterTwo),
+          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
           "which doesn't capture the bound link",
         )
         .toBe("gone");
@@ -378,8 +316,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const plan = await s.model(doomed).create("notes/plan.md", "The plan.");
       await livePicture(runtime, s, "charts/chart.png");
       await s.model(doomed).copy("charts/chart.png", "art/map.png");
-      const chapter = await live(s, "chapter.md", "Live words.");
-      await draftEdit(s, doomed, "chapter.md", "Live words.", "Drafted words.");
+      const chapter = await s.writer.createDocument("chapter.md", "Live words.");
+      await s.model(doomed).edit("chapter.md", "Live words.", "Drafted words.");
       const items = (await s.review(doomed)).items;
       const map = items.find((item) => item.binary)?.documentId as DocumentId;
       const draftId = items[0]?.draftId ?? "";
@@ -390,11 +328,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         s.discard(doomed, "all", { draftId }),
         "the public command refuses",
       ).rejects.toThrow();
-      expect.soft(await draftsOf(doomed), "and left the draft alone").toEqual(["active"]);
+      expect.soft(await s.draftStatuses(doomed), "and left the draft alone").toEqual(["active"]);
       expect.soft(await row(plan), "its create still hidden").toMatchObject({ tombstone: false });
 
       expect.soft(await s.purge(doomed), "purged").toBe(1);
-      expect.soft(await draftsOf(doomed), "its drafts are gone").toEqual([]);
+      expect.soft(await s.draftStatuses(doomed), "its drafts are gone").toEqual([]);
       for (const created of [plan, map]) {
         expect.soft(await row(created), "tombstoned, still hidden").toMatchObject({
           hidden: true,
@@ -424,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const stray = await s.model(drafting).create("lore/stray.md", "Stray.");
       // A bug's leftover: the draft's use is gone, the node is still hidden and live.
       await db.delete(draftTreeChanges).where(eq(draftTreeChanges.nodeId, stray));
-      const holder = await live(s, "chapter.md", "Chapter.");
+      const holder = await s.writer.createDocument("chapter.md", "Chapter.");
       const resolved = await handleDocumentLinkResolveRequest(
         {
           projectRepo: runtime.app.projectRepo,
@@ -508,9 +446,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
-      const chapter = await live(s, "chapter.md", "Live words.");
-      await draftEdit(s, ascension, "chapter.md", "Live words.", "Ascension's words.");
-      await draftEdit(s, beacon, "chapter.md", "Live words.", "Beacon's words.");
+      const chapter = await s.writer.createDocument("chapter.md", "Live words.");
+      await s.model(ascension).edit("chapter.md", "Live words.", "Ascension's words.");
+      await s.model(beacon).edit("chapter.md", "Live words.", "Beacon's words.");
       const staged = await s.model(beacon).reply();
       expect((await staged.call("read", { path: "manuscript://chapter.md" })).isError).toBeFalsy();
       const write = await staged.call("write", {
