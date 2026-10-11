@@ -16,63 +16,41 @@ import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
 import { treeHook } from "./test-hooks.js";
-import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
 import {
   findHiddenFolder,
   loadFolderIdentityRows,
-  loadOppositeKindPairs,
   loadSubtreeNodes,
   type SplitBoundary,
   type SubtreeNode,
 } from "./tree-view-sql.js";
 
-/** Where absorb left a hidden node at a rendered path a node of the other kind also holds (F11). */
-export type AbsorbCollision = { path: string; hidden: NodeRef; other: NodeRef };
-
-export type AbsorbResult = {
-  tombstoned: readonly FolderId[];
-  collisions: readonly AbsorbCollision[];
-};
-
 /**
  * A live folder landed at a hidden folder's path: fold the hidden one into it, recursively
  * (§8.2). Same-named child folders fold into each other; everything else is reparented.
  * Nothing is refused: a hidden node that lands beside a node of the other kind stays
- * hidden there and is reported, and the drafts that use it see a clash (F11).
+ * hidden there; the tree view owns the clash the drafts that use it see (F11).
  */
 export async function absorbHiddenFolder(
   db: Database,
   input: { hidden: FolderId; into: FolderId },
-): Promise<AbsorbResult> {
+): Promise<void> {
   await treeHook("absorb.beforeRepoint");
-  const tombstoned: FolderId[] = [];
-  await fold(db, input.hidden, input.into, tombstoned);
-  return { tombstoned, collisions: await collisionsUnder(db, input.into) };
+  await fold(db, input.hidden, input.into);
 }
 
 /** Find and absorb every hidden folder at a visible folder's own path. */
-export async function absorbAt(db: Database, folder: FolderId): Promise<AbsorbResult> {
+export async function absorbAt(db: Database, folder: FolderId): Promise<void> {
   const [row] = await loadFolderIdentityRows(currentDrizzleDb(db), [folder]);
-  if (!row || row.hidden || row.deleted) return { tombstoned: [], collisions: [] };
-  const tombstoned: FolderId[] = [];
-  const collisions: AbsorbCollision[] = [];
+  if (!row || row.hidden || row.deleted) return;
   for (;;) {
     const hidden = await findHiddenFolder(db, row);
     if (!hidden) break;
-    const absorbed = await absorbHiddenFolder(db, { hidden, into: folder });
-    tombstoned.push(...absorbed.tombstoned);
-    collisions.push(...absorbed.collisions);
+    await absorbHiddenFolder(db, { hidden, into: folder });
   }
-  return { tombstoned, collisions };
 }
 
-async function fold(
-  db: Database,
-  hidden: FolderId,
-  into: FolderId,
-  tombstoned: FolderId[],
-): Promise<void> {
+async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<void> {
   const tx = currentDrizzleDb(db);
   const now = new Date();
   const children = await tx
@@ -95,7 +73,7 @@ async function fold(
       .orderBy(asc(folders.createdAt), asc(folders.id))
       .limit(1);
     if (twin) {
-      await fold(db, child.id, twin.id, tombstoned);
+      await fold(db, child.id, twin.id);
     } else {
       // Also when `into` holds a document of this name: the pair is a collision, not a refusal.
       await tx
@@ -115,22 +93,6 @@ async function fold(
     .set({ parentFolderId: into, updatedAt: now })
     .where(eq(draftTreeChanges.parentFolderId, hidden));
   await tombstoneFolders(db, [hidden]);
-  tombstoned.push(hidden);
-}
-
-async function collisionsUnder(db: Database, root: FolderId): Promise<AbsorbCollision[]> {
-  const tx = currentDrizzleDb(db);
-  const pairs = await loadOppositeKindPairs(tx, root);
-  if (pairs.length === 0) return [];
-  const chains = await loadFolderChains(
-    tx,
-    pairs.map((pair) => pair.parentId),
-  );
-  return pairs.map((pair) => ({
-    path: chainPrefix(chains.get(pair.parentId) ?? []) + pair.name,
-    hidden: pair.hidden,
-    other: pair.other,
-  }));
 }
 
 export type SplitResult = {
