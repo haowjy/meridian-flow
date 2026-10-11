@@ -26,7 +26,7 @@ function createHarness() {
   const list = vi.fn(async (): Promise<DraftReviewItem[]> => []);
   const applyItems = vi.fn<DraftPublication["applyItems"]>(async (): Promise<ApplyResult> => {
     events.push("apply");
-    return { status: "applied", draftId: DRAFT_ID, draftClosed: true, items: [] };
+    return { status: "completed", draftId: DRAFT_ID, draftClosed: true, items: [] };
   });
   const policy = createWorkPushPolicy({
     workPushPolicyStore,

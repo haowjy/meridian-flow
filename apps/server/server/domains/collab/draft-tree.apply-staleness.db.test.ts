@@ -91,7 +91,7 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     expect.soft((await s.review(ascension)).drafts, "rows reviewable").toHaveLength(1);
     const live = s.view("live");
     expect.soft(await live.text("chapter-2.md"), "nothing published").not.toContain("drafted");
-    expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("applied");
+    expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("completed");
     expect.soft(await live.text("chapter-2.md")).toContain("Opening, drafted.");
   });
 
@@ -133,7 +133,7 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
         "its link bound before the transaction",
       )
       .toEqual({ id: harbor });
-    expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("applied");
+    expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("completed");
     expect.soft(await live.text("characters/kael.md")).toContain("Kael, drafted.");
   });
 });

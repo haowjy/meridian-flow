@@ -60,7 +60,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(first?.documentId, "two pictures").not.toBe(second?.documentId);
 
     expect.soft(await s.applyAll(ascension), "payload-only").toMatchObject({
-      status: "applied",
+      status: "completed",
       draftClosed: true,
       items: [{ itemKey: first?.itemKey, status: "applied", notes: [] }],
     });
@@ -73,7 +73,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       path: "manuscript://art/map.png",
     });
     expect.soft(await s.applyAll(beacon), "the second is held").toMatchObject({
-      status: "applied",
+      status: "completed",
       draftClosed: false,
       items: [
         {
@@ -106,7 +106,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     const items = await s.items(ascension);
     const keyOf = (documentId: DocumentId) => itemFor(items, documentId).itemKey;
     expect.soft(await s.applyAll(ascension), "per-item results").toEqual({
-      status: "applied",
+      status: "completed",
       draftId: items[0]?.draftId,
       draftClosed: false,
       items: expect.arrayContaining([
@@ -136,7 +136,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     ]);
     expect.soft(await s.writer.move("ideas/kael", "ideas/kael-file")).toMatchObject({ ok: true });
     expect.soft(await s.applyAll(ascension), "drained: D closes").toMatchObject({
-      status: "applied",
+      status: "completed",
       draftClosed: true,
       items: [{ itemKey: keyOf(notes), status: "applied" }],
     });
@@ -159,9 +159,9 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     });
     expect
       .soft(await s.applyAll(cove, { items: [itemFor(chain, b)] }), "B alone: A stays at b.md")
-      .toMatchObject({ status: "applied", items: [held(b, "dep/b.md")] });
+      .toMatchObject({ status: "completed", items: [held(b, "dep/b.md")] });
     expect.soft(await s.applyAll(cove), "A and what only A frees stay").toMatchObject({
-      status: "applied",
+      status: "completed",
       draftClosed: false,
       items: expect.arrayContaining([
         held(a, "dep/a.md"),
@@ -193,7 +193,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     const grown = await s.applyAll(beacon);
     stop();
     expect.soft(grown, "the staged batch finishes with real results").toEqual({
-      status: "applied",
+      status: "completed",
       draftId: rendered?.draftId,
       draftClosed: false,
       items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],

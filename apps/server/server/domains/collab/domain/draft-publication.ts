@@ -17,7 +17,6 @@ import type {
 } from "./draft-branch-ahead-registration.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import {
-  type ApplyNote,
   DRAFT_TREE_STEP,
   type DraftItemKey,
   type DraftTreePayload,
@@ -236,7 +235,7 @@ export function createDraftPublication(deps: {
           ? (await deps.drafts.byIds([draftId]))[0]?.status === "closed"
           : false;
         return {
-          status: "applied",
+          status: "completed",
           draftId,
           draftClosed,
           items: items.map(({ itemKey }): ApplyItemResult => {

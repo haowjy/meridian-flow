@@ -76,7 +76,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       conflict: { code: "rename_replaced", livePath: "manuscript://characters/kael-fix.md" },
     });
     expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
-      status: "applied",
+      status: "completed",
       draftId: reviewed.draftId,
       draftClosed: true,
       items: [
@@ -140,7 +140,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     const joined = await s.model(beacon).create("characters/kael.md", "Beacon's Kael.");
     expect.soft(joined, "both drafts use one hidden document").toBe(kael);
 
-    expect.soft((await s.applyAll(ascension)).status).toBe("applied");
+    expect.soft((await s.applyAll(ascension)).status).toBe("completed");
     expect.soft(await s.view("live").text("characters/kael.md")).toContain("Ascension's Kael.");
     const [item] = await s.items(beacon);
     expect.soft(item, "Beacon still has it, no longer new").toMatchObject({
@@ -235,7 +235,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       path: "manuscript://atlas/map.md",
     });
     expect.soft(await s.applyAll(ascension)).toMatchObject({
-      status: "applied",
+      status: "completed",
       draftClosed: false,
       items: expect.arrayContaining([
         {
