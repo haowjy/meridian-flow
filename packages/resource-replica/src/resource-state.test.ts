@@ -4,7 +4,7 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
-import { projectResourceNeedsRepair } from "./resource-projection";
+import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -345,8 +345,8 @@ it("keeps typed rename provenance through optimistic placement and transport", (
     const record = reserved();
     record.intents = [];
     record.resource.canonical = {
-      scheme: "user",
-      path: "/config.toml",
+      scheme: "manuscript",
+      path: "/Book/config.toml",
       name: "config.toml",
       workId: null,
     };
@@ -355,13 +355,16 @@ it("keeps typed rename provenance through optimistic placement and transport", (
       projectId: "project",
       intentId: "rename",
       eligibleAt: 0,
-      destination: { scheme: "user", folderPath: "", name: typed, workId: null },
+      destination: { scheme: "manuscript", folderPath: "Book", name: typed, workId: null },
     });
     expect(planned?.next.intents[0]?.desired).toMatchObject({
       typedName: typed,
       destination: { name: typed === "Notes.md" ? "Notes" : "settings" },
     });
     if (!planned) throw new Error("Missing location plan");
+    expect(projectResourceLocation("project", planned.next)?.name).toBe(
+      typed === "Notes.md" ? "Notes" : "settings",
+    );
     planned.next.intents = planned.next.intents.map((intent) => ({
       ...intent,
       state: "needs-repair",
@@ -373,7 +376,16 @@ it("keeps typed rename provenance through optimistic placement and transport", (
       operationId: "operation",
     });
     expect(attempt?.next.intents[0]?.attempts[0]?.request).toMatchObject({
-      body: { newName: typed },
+      kind: "move",
+      scheme: "manuscript",
+      body: {
+        operationId: "operation",
+        path: "Book/config.toml",
+        expected: { kind: "file", nodeId: record.resource.identity.documentId },
+        destinationScheme: "manuscript",
+        destinationFolderPath: "Book",
+        newName: typed,
+      },
     });
   }
 });
