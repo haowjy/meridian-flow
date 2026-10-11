@@ -370,6 +370,10 @@ currently available to the request owner in the requested project.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;
   they never echo syntax-only request URIs as document identity.
+- Intake parses filenames through the document-name codec before reserving a URI.
+  Prose uploads read bytes through the same tracked Markdown path regardless of
+  their typed prose suffix. Original filenames remain in intake metadata and
+  import provenance; collisions use the shared smallest ` (2)` allocator.
 - `uploads://` is intake, not an authoring workspace. F0 owns its authority,
   provisioning, and resolution; F4 owns the actual `UploadIntake` lifecycle. Tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an
