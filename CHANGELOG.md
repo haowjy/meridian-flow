@@ -53,6 +53,7 @@
 ### Fixed
 
 - A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
+- Chat summaries count a section and its whole file as one document, for both reads and edits.
 
 - Passage jumps stay visible when you return to an already-open Editor tab.
 
