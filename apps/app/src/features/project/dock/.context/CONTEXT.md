@@ -44,9 +44,9 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` and `DockHeader` swaps the view switch for a Close document button then the
-document's path and chips (`DockDocumentIdentity`, the identity bar in its header variant) on the
-left, and Open in Editor (an expand button) then the collapse toggle on the right. The document's
+`DockDocumentView` and `DockHeader` swaps the view switch for Close document and Open in Editor
+(an expand button) side by side, then the document's path and chips (`DockDocumentIdentity`, the
+identity bar in its header variant), with the collapse toggle alone on the right. The document's
 own pane chrome then omits the identity bar (`identity: null`), so the filename shows once. Opening a second one
 replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat, unless the writer left it on Changes.
