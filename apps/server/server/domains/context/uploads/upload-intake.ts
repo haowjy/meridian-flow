@@ -241,8 +241,7 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "idempotency_conflict" } };
       const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
       const tracked = classifyFiletype(fileType).kind === "tracked";
-      const inferredExtension =
-        registeredExtensionForFiletype(filetypeForKnownMimeType(mimeType) ?? fileType) ?? undefined;
+      const inferredExtension = registeredExtensionForFiletype(fileType) ?? undefined;
       let parsed = parseDocumentFilename(filename, {
         sourceExtension: tracked ? inferredExtension : undefined,
       });
