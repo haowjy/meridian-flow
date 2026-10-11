@@ -103,7 +103,9 @@ Install that observation and its catalog checkpoint together, with the captured
 folder revision fence.
 
 Folder overlays rebase paths, URI authority, source/scope and parent ids for the
-folder and every descendant. Supply the installed destination source and parent
+folder and every descendant. Projection builds placement and parent links with all
+nodes present, then suppresses deleted subtrees of that topology, including nodes
+moved into them. Supply the installed destination source and parent
 catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
 use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
 old location and expose the latest requested name in the cancelled chain through
@@ -111,7 +113,9 @@ old location and expose the latest requested name in the cancelled chain through
 File repair uses the same destination rule through `projectResourceNeedsRepair`.
 Shared namespace journal policy cancels unsubmitted queued placement commands
 for the refused identity revision and offers the newest cancelled destination,
-without changing immutable intentions or the failed receipt anchor.
+without changing immutable intentions or the failed receipt anchor. A later admitted
+delete of the same identity revision supersedes a subsequently refused placement,
+retaining its attempts and letting deletion dispatch from canonical identity.
 An explicit repair supersedes rejected history and starts from the last canonical
 location, even when the chosen destination matches the currently displayed location.
 Replay remains bound to stable folder identity, not a stale source-path comparison:

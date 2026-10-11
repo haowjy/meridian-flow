@@ -920,3 +920,72 @@ it("offers the latest queued file name after refusal and retries from accepted p
   });
   expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });
+
+it.each([
+  false,
+  true,
+])("deletes canonical file after an overlapping move refusal (%s)", (receiptless) => {
+  const before = local();
+  before.resource.canonical = { scheme: "manuscript", path: "/A.md", name: "A.md", workId: null };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [];
+  const move = planResourceLocation({
+    record: before,
+    projectId: "project",
+    intentId: "move",
+    operationId: "move",
+    eligibleAt: 1,
+    destination: { scheme: "manuscript", folderPath: "", name: "B.md", workId: null },
+  });
+  if (!move) throw new Error("Missing move");
+  const submitted = prepareNamespaceAttempt(move.next, {
+    attemptId: "attempt",
+    operationId: "move",
+  });
+  if (!submitted) throw new Error("Missing submission");
+  const deletion = planResourceDeletion(submitted.next, "project", "delete");
+  if (!deletion) throw new Error("Missing deletion");
+  validateResourceRecordUpdate(submitted.next, deletion.next);
+  const outcome: NamespaceOutcome = receiptless
+    ? {
+        kind: "refusal",
+        operationId: "move",
+        error: {
+          code: "work_missing",
+          message: "Work not found.",
+          source: "system",
+          retryable: false,
+        },
+      }
+    : {
+        kind: "operation",
+        receipt: {
+          operationId: "move",
+          command: {
+            kind: "move",
+            sourceUri: "manuscript://A.md",
+            destinationUri: "manuscript://B.md",
+            expected: { kind: "file", nodeId: "document" },
+          },
+          result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+        },
+      };
+  const received = recordNamespaceOutcome(deletion.next, "move", "attempt", outcome);
+  if (!received) throw new Error("Missing refusal");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Missing settlement");
+  expect(settled.next.intents.map((i) => i.state)).toEqual(["superseded", "pending"]);
+  validateResourceRecordUpdate(received.next, settled.next);
+  expect(settled.next.intents[0]?.attempts[0]?.outcome).toEqual(outcome);
+  const reopened = structuredClone(settled.next);
+  expect(projectResourceNeedsRepair("project", reopened)).toBeNull();
+  const retry = prepareNamespaceAttempt(reopened, {
+    attemptId: "delete-attempt",
+    operationId: "delete",
+  });
+  if (!retry) throw new Error("Missing delete dispatch");
+  expect(retry.next.intents.at(-1)?.attempts[0]?.request).toMatchObject({
+    kind: "delete",
+    body: { path: "A.md", expected: { kind: "file", documentId: "document" } },
+  });
+});

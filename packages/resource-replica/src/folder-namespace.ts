@@ -2,8 +2,8 @@
 
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
-  cancelRefusedLocationChain,
   namespaceRepairDestination,
+  resolveRefusedLocationChain,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
@@ -403,7 +403,7 @@ export function settleFolderNamespaceOutcome(
     if (outcome.receipt.command.kind === "move")
       write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
   } else {
-    write.next.intents = cancelRefusedLocationChain(write.next.intents, intent);
+    write.next.intents = resolveRefusedLocationChain(write.next.intents, intent);
   }
   return write;
 }
