@@ -102,12 +102,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       };
 
       // Tracked create, then delete and recreate at the same path: the second never captures.
-      const chapter = await register("manuscript://ch1.md");
+      const chapter = await register("manuscript://ch1.toml");
       expect(await settlement(chapter)).toBeNull();
-      const first = await create("manuscript://ch1.md");
+      const first = await create("manuscript://ch1.toml");
       expect(await settlement(chapter)).toBe(first);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, first));
-      const second = await create("manuscript://ch1.md");
+      const second = await create("manuscript://ch1.toml");
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);
 
@@ -225,7 +225,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       const noWorkId = (await ports.workAuthorityResolver.noWork(projectId as never))?.workId;
       for (const [filename, mimeType] of [
-        ["delete-target.md", "text/markdown"],
+        ["delete-target.toml", "application/toml"],
         ["delete-target.png", "image/png"],
       ] as const) {
         const deletedRef = await register(`uploads://@/${filename}`);
@@ -271,9 +271,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
 
       // A personal document moved into the project arrives there: live in its manifest, and
       // the ref waiting at the destination settles on it.
-      const castRef = await register("kb://cast.md");
-      const cast = await create("user://cast.md");
-      expect(await port.move("user://cast.md", "kb://cast.md")).toMatchObject({ ok: true });
+      const castRef = await register("kb://cast.toml");
+      const cast = await create("user://cast.toml");
+      expect(await port.move("user://cast.toml", "kb://cast.toml")).toMatchObject({ ok: true });
       const [personal] = await db
         .select({ id: projects.id })
         .from(projects)
@@ -285,10 +285,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
-      const moved = await create("manuscript://drafts/ch2.md");
-      const vacated = await register("manuscript://drafts/ch2.md");
+      const moved = await create("manuscript://drafts/ch2.toml");
+      const vacated = await register("manuscript://drafts/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
-      const destination = await register("manuscript://part-two/ch2.md");
+      const destination = await register("manuscript://part-two/ch2.toml");
       expect(await port.move("manuscript://drafts", "manuscript://part-two")).toMatchObject({
         ok: true,
       });
@@ -296,11 +296,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(vacated)).toBe(moved);
 
       // Work restore: the hidden document reappears at its address and settles the waiting ref.
-      const notes = await create("scratch://@draft/notes.md");
+      const notes = await create("scratch://@draft/notes.toml");
       await ports.workRepo.softDelete(workId as WorkId);
       // Registered while the Work is deleted: it keeps its identity, so the ref registers
       // against it and stays unsettled until the restore makes the address live again.
-      const waiting = await register("scratch://@draft/notes.md");
+      const waiting = await register("scratch://@draft/notes.toml");
       expect(await settlement(waiting)).toBeNull();
       await ports.workRepo.restore(workId as WorkId);
       expect(await settlement(waiting)).toBe(notes);
@@ -341,8 +341,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         id: documentId,
         contextSourceId: SOURCE_ID,
         name,
-        extension: "md",
-        fileType: "markdown",
+        extension: "toml",
+        fileType: "text",
       });
       await fixture.persistence.lifecycle.ensureDocument(documentId);
       const emptyLive = new Y.Doc({ gc: false });
@@ -372,7 +372,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       const aheadId = randomUUID();
       await registry.register([
-        { aheadId, holderProjectId: PROJECT_ID as never, address: `manuscript://${name}.md` },
+        { aheadId, holderProjectId: PROJECT_ID as never, address: `manuscript://${name}.toml` },
       ]);
       // The SQL row exists, but only the draft's manifest holds it: not an arrival yet.
       expect(await settlement(aheadId)).toBeNull();

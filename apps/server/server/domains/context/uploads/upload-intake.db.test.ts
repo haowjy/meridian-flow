@@ -188,7 +188,7 @@ if (!RUN) {
         id: identity.documentId as never,
         contextSourceId: intake.contextSourceId,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await repo.finalize(PROJECT, "delete");
@@ -233,7 +233,7 @@ if (!RUN) {
         id: identity.documentId as never,
         contextSourceId: intake.contextSourceId,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await repo.finalize(PROJECT, "archived");
@@ -330,7 +330,7 @@ if (!RUN) {
         expect.arrayContaining([
           expect.objectContaining({
             entryId: result.value.documentId,
-            uri: "uploads://@/chapter.md",
+            uri: "uploads://@/chapter",
           }),
         ]),
       );

@@ -217,19 +217,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           scheme: "manuscript",
           workId: null,
-          body: parseCreateContextEntryBody({ type: "file", path: "/race.md", content }),
+          body: parseCreateContextEntryBody({ type: "file", path: "/race", content }),
         });
 
       const results = await Promise.all([create("alpha"), create("beta")]);
       expect(results.map((result) => result.status).sort()).toEqual(["conflict", "created"]);
       const winner = results.find((result) => result.status === "created");
-      const read = await port.read("manuscript://race.md");
+      const read = await port.read("manuscript://race");
       expect(read).toEqual({
         ok: true,
         value: {
           content: winner === results[0] ? "alpha\n" : "beta\n",
           documentId: winner?.documentId,
-          uri: "manuscript://race.md",
+          uri: "manuscript://race",
         },
       });
     });
@@ -251,14 +251,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return result.documentId;
       };
 
-      const kbDocumentId = await create(port, "kb", "/kb.md");
+      const kbDocumentId = await create(port, "kb", "/kb");
       await collab.drainHocuspocusPersistence();
       const kbMembership = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
       expect(kbMembership.members).toContain(kbDocumentId);
 
-      const userDocumentId = await create(port, "user", "/user.md");
+      const userDocumentId = await create(port, "user", "/user");
       await collab.drainHocuspocusPersistence();
       const personalProject = (await db.select().from(schema.projects)).find(
         (project) => project.isPersonal,
@@ -270,7 +270,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(userMembership.members).toContain(userDocumentId);
 
       await expect(
-        port.delete("user://user.md", {
+        port.delete("user://user", {
           expected: { kind: "file", documentId: userDocumentId },
         }),
       ).resolves.toMatchObject({
@@ -325,7 +325,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               userId: USER_ID,
               scheme: "scratch",
               workId: WORK_ID,
-              body: parseCreateContextEntryBody({ type: "file", path: "/notes.md", content: "x" }),
+              body: parseCreateContextEntryBody({ type: "file", path: "/notes", content: "x" }),
             }),
         );
 
@@ -403,7 +403,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "legacy-notes",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
 
@@ -439,7 +439,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "retained-id",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db
