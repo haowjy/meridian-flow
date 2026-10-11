@@ -176,3 +176,20 @@ it("retires feedback immediately when the resource is deleted before its deadlin
   expect(stop).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("keeps a folder watch until its folder is seen, and ends it once the folder is gone", async () => {
+  const { store, emit, stop } = harness();
+  const folder = { kind: "folder" as const, id: "folder" };
+  const withFolder = (present: boolean) =>
+    ({
+      ...projection([]),
+      folders: present ? [{ folderId: "folder", intents: [intent()] }] : [],
+    }) as unknown as ResourceProjectionSnapshot;
+  await store.remember("project", folder, "move");
+  emit(withFolder(false));
+  expect(store.get("project", folder)?.operationId).toBe("move");
+  emit(withFolder(true));
+  emit(withFolder(false));
+  expect(store.get("project", folder)).toBeNull();
+  expect(stop).toHaveBeenCalledOnce();
+});
