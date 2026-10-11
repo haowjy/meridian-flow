@@ -332,9 +332,12 @@ seam (journal the transaction's own update); keep the guard.
 Keep cumulative-delete closure: other producers and retained state-vector rows
 can still carry old branch deletions targeting live-base structs. Apply must
 show their operations before replaying those bytes. Delete ranges already
-present on the current live cut are excluded from this edge. Draft agent writes preserve unchanged words and journal each contiguous visible
-edit under a fresh client. Each segment is one transaction and one row; all rows
-of a reply publish atomically. Edits inside pending inserted text join that insertion.
+present on the current live cut are excluded from this edge. Draft agent writes
+preserve unchanged words and journal each paragraph of a logical write under a
+fresh client. Recognized adjacent split/merge boundaries and contiguous inserted
+or removed block runs form one structural segment. Each segment is one transaction
+and one row; all rows of a reply publish atomically. Sharing a paragraph never joins
+independent writes. Edits inside pending inserted text join that insertion.
 
 ### Draft writer client boundaries
 

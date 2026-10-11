@@ -660,12 +660,19 @@ function replaceScope(
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
   let keptBlocks = false;
+  let structuralBoundary: object | undefined;
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
-      edits.push(
-        insertEdit(params, anchor, pendingInsert, serializeReplacementBlocks(ctx, pendingInsert)),
-      );
+      edits.push({
+        ...insertEdit(
+          params,
+          anchor,
+          pendingInsert,
+          serializeReplacementBlocks(ctx, pendingInsert),
+        ),
+        structuralBoundary,
+      });
     }
     for (const block of pendingDelete) {
       edits.push({
@@ -673,18 +680,24 @@ function replaceScope(
         file: params.documentAddress.filePath,
         kind: "delete",
         block,
+        structuralBoundary,
       });
     }
     pendingInsert = [];
     pendingDelete = [];
+    structuralBoundary = undefined;
   };
 
   for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
     switch (step.kind) {
       case "remove":
+        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        structuralBoundary = step.structuralBoundary;
         pendingDelete.push(oldBlocks[step.old]);
         break;
       case "add":
+        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        structuralBoundary = step.structuralBoundary;
         pendingInsert.push(newBlocks[step.next]);
         break;
       case "change": {
@@ -696,6 +709,7 @@ function replaceScope(
           documentId: params.documentAddress.documentId,
           file: params.documentAddress.filePath,
           block: oldBlocks[step.old],
+          structuralBoundary: step.structuralBoundary,
           ...(replacements
             ? {
                 kind: "textRanges" as const,

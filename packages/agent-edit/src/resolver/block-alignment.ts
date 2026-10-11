@@ -2,12 +2,14 @@
 
 import type { Block } from "../codec-types.js";
 import { weightedOrderedMatches } from "../ordered-matching.js";
+import { wordHunks } from "../word-hunks.js";
 
-export type BlockAlignmentStep =
+export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "keep"; old: number; next: number }
   | { kind: "change"; old: number; next: number }
   | { kind: "remove"; old: number }
-  | { kind: "add"; next: number };
+  | { kind: "add"; next: number }
+);
 
 /** Whether `next` may rewrite `old` in place (a `change` step). */
 export type CanPair = (old: Block, next: Block) => boolean;
@@ -63,6 +65,7 @@ export function alignBlocks(
   for (let offset = 0; oldEnd + offset < oldBlocks.length; offset += 1) {
     steps.push({ kind: "keep", old: oldEnd + offset, next: newEnd + offset });
   }
+  recognizeBoundaries(steps, oldBlocks, newBlocks);
   return steps;
 }
 
@@ -141,4 +144,89 @@ function edgeSimilarity(oldText: string, newText: string): number {
   }
   const shared = prefix + suffix;
   return shared * 3 >= limit ? shared + 1 : 0;
+}
+
+/** Word correspondence across adjacent blocks identifies split/merge boundaries before lowering.
+ * Kept blocks fence the correspondence search; unrelated insertions never inherit a boundary.
+ */
+function recognizeBoundaries(
+  steps: BlockAlignmentStep[],
+  oldBlocks: readonly Block[],
+  newBlocks: readonly Block[],
+): void {
+  let start = 0;
+  for (let end = 0; end <= steps.length; end++) {
+    if (end !== steps.length && steps[end].kind !== "keep") continue;
+    const gap = steps.slice(start, end);
+    start = end + 1;
+    if (
+      !gap.some((step) => step.kind === "change") ||
+      !gap.some((step) => step.kind === "add" || step.kind === "remove")
+    )
+      continue;
+    const oldIndices = gap.flatMap((step) => ("old" in step ? [step.old] : []));
+    const newIndices = gap.flatMap((step) => ("next" in step ? [step.next] : []));
+    const positions = (indices: number[], blocks: readonly Block[]) => {
+      let offset = 0;
+      return indices.map((index) => {
+        const from = offset;
+        offset += blocks[index].textContent.length + 2;
+        return { index, from, to: offset - 2 };
+      });
+    };
+    const oldPositions = positions(oldIndices, oldBlocks);
+    const newPositions = positions(newIndices, newBlocks);
+    const before = oldIndices.map((index) => oldBlocks[index].textContent).join("\n\n");
+    const after = newIndices.map((index) => newBlocks[index].textContent).join("\n\n");
+    const correspondences = new Map<number, Set<number>>();
+    let oldCursor = 0,
+      newCursor = 0;
+    const equal = (oldEnd: number) => {
+      const text = before.slice(oldCursor, oldEnd);
+      for (const match of text.matchAll(/[\p{L}\p{N}\p{M}_]+/gu)) {
+        const oldOffset = oldCursor + match.index;
+        const newOffset = newCursor + match.index;
+        const old = oldPositions.find((pos) => oldOffset >= pos.from && oldOffset < pos.to);
+        const next = newPositions.find((pos) => newOffset >= pos.from && newOffset < pos.to);
+        if (!old || !next) continue;
+        const targets = correspondences.get(old.index) ?? new Set<number>();
+        targets.add(next.index);
+        correspondences.set(old.index, targets);
+      }
+      newCursor += oldEnd - oldCursor;
+    };
+    for (const hunk of wordHunks(before, after)) {
+      equal(hunk.from);
+      oldCursor = hunk.to;
+      newCursor += hunk.text.length;
+    }
+    equal(before.length);
+    const owners = new Map<BlockAlignmentStep, Set<BlockAlignmentStep>>();
+    for (const change of gap) {
+      if (change.kind !== "change") continue;
+      for (const structure of gap) {
+        const split =
+          structure.kind === "add" &&
+          correspondences.get(change.old)?.has(change.next) &&
+          correspondences.get(change.old)?.has(structure.next);
+        const merge =
+          structure.kind === "remove" &&
+          correspondences.get(change.old)?.has(change.next) &&
+          correspondences.get(structure.old)?.has(change.next);
+        if (!split && !merge) continue;
+        const group = owners.get(change) ?? new Set([change]);
+        group.add(structure);
+        owners.set(change, group);
+      }
+    }
+    // Only consecutive document boundaries belong to a group, never a skipped block.
+    for (const group of owners.values()) {
+      const members = [...group];
+      const indexes = members.map((step) => gap.indexOf(step)).sort((a, b) => a - b);
+      if (indexes.some((index, offset) => offset > 0 && index !== indexes[offset - 1] + 1))
+        continue;
+      const boundary = {};
+      for (const member of members) member.structuralBoundary = boundary;
+    }
+  }
 }
