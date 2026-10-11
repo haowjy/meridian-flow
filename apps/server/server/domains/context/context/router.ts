@@ -380,7 +380,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     create: (
       adapter: ContextSchemeAdapter,
       path: string,
-    ) => Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>,
+    ) => Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
     const resolved = await resolveMutation(uri, options?.origin);
     if (!resolved.ok) return resolved;
@@ -389,7 +389,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     const permission = r.value.requireCreation(options?.documentId ? "intake" : "entry");
     if (!permission.ok) return permission;
     const { adapter, path, canonical } = r.value;
-    return callAdapter(canonical, () => create(adapter, path));
+    const created = await callAdapter(canonical, () => create(adapter, path));
+    return created.ok ? Ok({ ...created.value, uri: canonical }) : created;
   }
 
   return {

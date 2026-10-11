@@ -140,12 +140,12 @@ export interface ContextSchemeAdapter {
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   createBoundDocument(
     path: string,
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
   locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(

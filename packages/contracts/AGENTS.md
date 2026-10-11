@@ -78,6 +78,11 @@ runtime shapes, and observability records.
   check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
   queued item from the tray or fails its enqueue.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
+- `protocol/document-filename.ts` is the input codec for document basenames. Prose
+  stores empty extension and markdown filetype; registered non-prose suffixes
+  keep their lower-case extension, unknown suffixes belong to the name. Move
+  and copy pass the source extension explicitly, never infer it from filetype.
+  Stored parts already render the writer/model name; do not add a display key.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
 - Blocks describe the writer transcript. Model-only document-text elisions belong

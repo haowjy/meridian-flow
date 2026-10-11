@@ -406,3 +406,27 @@ describe("canonical document naming laws", () => {
     });
   });
 });
+
+it("atomically claims opposite-kind names across in-memory store instances", async () => {
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const left = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  const right = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  for (const [index, fileFirst] of [true, false].entries()) {
+    const name = `Clash ${index}`;
+    const file = () =>
+      left.createDocument({
+        folderId: null,
+        name,
+        extension: "",
+        filetype: "markdown",
+        markdown: "",
+      });
+    const folder = () => right.createFolder(null, name);
+    const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason.message).toBe(
+      "Context entry already exists",
+    );
+  }
+});

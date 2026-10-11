@@ -78,6 +78,7 @@ export interface ContextEnsureTrackedDocumentResult {
 }
 
 export interface ContextCreateTrackedDocumentResult {
+  uri: string;
   documentId: string;
 }
 

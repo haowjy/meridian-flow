@@ -245,6 +245,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async findFolder(parentId: string | null, name: string): Promise<ContextFolder | null> {
+    return this.findFolderRecord(parentId, name);
+  }
+
+  private findFolderRecord(parentId: string | null, name: string): ContextFolder | null {
     for (const folder of this.backing.folders.values()) {
       if (
         folder.contextSourceId === this.sourceId &&
@@ -261,7 +265,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
       throw new ContextEntryConflictError();
-    const existing = await this.findFolder(parentId, name);
+    const existing = this.findFolderRecord(parentId, name);
     if (existing) return existing;
     const folder: FolderRow = {
       id: crypto.randomUUID(),
@@ -281,6 +285,14 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     name: string,
     extension: string,
   ): Promise<ContextDocument | null> {
+    return this.findDocumentRecord(folderId, name, extension);
+  }
+
+  private findDocumentRecord(
+    folderId: string | null,
+    name: string,
+    extension: string,
+  ): ContextDocument | null {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
@@ -307,7 +319,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = this.findDocumentRecord(input.folderId, input.name, input.extension);
     if (existing && existing.fileType !== null) {
       throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
     }
@@ -423,7 +435,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = this.findDocumentRecord(input.folderId, input.name, input.extension);
     if (existing) {
       throw new Error(
         `Duplicate binary document: ${input.name}.${input.extension} in folder ${input.folderId ?? "(root)"}`,
@@ -467,7 +479,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       )
     )
       throw new ContextEntryConflictError();
-    const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    const existing = this.findDocumentRecord(input.folderId, input.name, input.extension);
     if (existing) {
       const row = this.backing.documents.get(existing.id);
       if (!row) throw new Error(`Document row disappeared: ${existing.id}`);
