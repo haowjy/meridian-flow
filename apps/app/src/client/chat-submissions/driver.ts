@@ -29,6 +29,7 @@ export type SubmissionDriverOptions = {
   status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
+  finished?(entry: ChatSubmission): void;
   transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
   timeoutMs?: number;
@@ -139,11 +140,13 @@ export class ChatSubmissionDriver {
         await this.guard(entry, () => this.attempt(entry, true, derived));
       },
       original,
-    ).then(() => {
-      if (!this.current()) return;
-      const remaining = this.read(original.recordId);
-      if (!remaining || remaining.state) return this.drive(original.threadId);
-    });
+    )
+      .finally(() => this.options.finished?.(original))
+      .then(() => {
+        if (!this.current()) return;
+        const remaining = this.read(original.recordId);
+        if (!remaining || remaining.state) return this.drive(original.threadId);
+      });
   }
 
   private async locked(
@@ -179,6 +182,8 @@ export class ChatSubmissionDriver {
       if (!this.current()) return;
       reportError(error);
       this.localFailure(entry);
+    } finally {
+      this.options.finished?.(entry);
     }
   }
 
