@@ -2,66 +2,19 @@
 
 ## [Unreleased]
 
-- File and folder creation share a kind-aware HTTP conflict response, including clashes missing from the client’s sibling snapshot.
-
-- Preserve literal `#` in document titles and escaped link labels; split tool and href suffixes only at their input boundaries.
-
-- Namespace occupancy reports only proven occupant kinds; atomic identity collisions remain unqualified.
-
-- Historical ahead-link spelling preserves the snapshot’s preloaded address key.
-
-- Document-name migration canonicalizes pending upload reservations and resolves collisions before resumable finalization. Finalization verifies the reserved address and identity.
-
-- Namespace creation conflicts identify the occupying file or folder for accurate conflict copy.
-
-- Untitled creation advances past canonical folder aliases and occupied names.
-
-- Link candidate loading follows the shared exact-first and extension-omission contract.
-
-- Historical unresolved links spell canonical prose names without changing their identity or writer labels.
-- Generate link-ahead labels from stored document names, normalize section-qualified activity names using shared URI syntax, and keep scheme-less host addresses external.
-
-- Queued renames inherit extensions from the writer’s current optimistic name, not a stale server location.
-
-- Preserve typed rename and move suffixes through optimistic filing and server requests, including repair retries. Compare folder siblings literally and report the conflict occupant’s kind.
-
-- Preserve prose classification when MIME inference supplies an upload suffix.
-
-- Share destination naming between optimistic clients and server commands, and use the binary naming rule for upload intake.
-
-- The model sees extensionless prose names in document instructions, tool results, errors and copy receipts.
-- Skills load and list with the same extensionless prose names as documents.
-- Link snapshots resolve typed prose suffixes without losing the target’s identity.
-- Document links use the document’s one name, including links written with a prose extension.
-
 ### Changed
 
-- Document-name upgrades preserve upload reservations and deleted Work restore sets, and refresh saved recent-document routes by identity.
+- Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
+- `.txt` files open as prose. Code, data and images keep their extensions.
+- Dotted names stay whole. Renames keep the file type unless a new extension is typed.
+- No prose twins. Files and folders cannot claim the same document name.
+- Imports and uploads keep writer names. Clashes count up with ` (2)`, ` (3)` and onward.
+- Prose downloads end in `.md`. Other downloads keep their filenames.
+- Existing documents and saved addresses use the same names. Name clashes keep every document.
 
-- Binary creation and reads share canonical names, copy destinations consume extension inheritance once, and folder aliases cannot claim a document’s name.
-- A corpus import plans names for the whole batch: already-canonical filenames keep their names, aliases receive deterministic numbered suffixes, and imported folders keep their names beside colliding documents.
-
-- MIME-inferred uploads retain dotted writer names and specific image extensions instead of losing their file type.
-
-- Document downloads add `.md` only for prose, keep non-prose filenames, and carry Unicode names in download headers. Binary downloads serve their bytes with the document name instead of an opaque storage-key redirect.
-
-- Dev document commands accept prose suffixes and report canonical names; seed scenarios use writer titles without `.md`.
-
-- A new project starts with the prose document “Chapter 1”; the mock writer targets that same chapter.
-
-- Corpus and KB imports preserve writer titles and folder names instead of slugging them, and name clashes receive numbered suffixes without replacing existing content.
-
-- Prose uploads use writer names without suffixes, preserve their original filename in metadata, and number name clashes. Extensionless data uploads retain their MIME-derived file type.
-
-- Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
-
-- Document creation reports the canonical URI, including when a prose suffix was typed. Concurrent file and folder claims cannot produce a shared name.
-
-- Existing prose documents, including deleted documents and saved aliases, now use extensionless names. Name clashes keep every document with the next available numbered suffix, and catalog cursors reset to the updated names.
-
-- Document names accept prose suffixes without displaying them; registered code and data extensions keep their spelling. Reads and creates share the same document identity, renames keep non-prose extensions, and files cannot take a sibling folder’s name.
-
-- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
+- A chat message that fails to send says "Couldn't send." on the message itself, with Retry, and Edit when the server refused it, the same way in new chats, existing chats, the side panel and on phones. Retry never sends a message twice, and a refused message stays in the chat until you retry or edit it.
+- The message box clears as soon as you press Send.
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.
 - Reloading keeps the document and view you had open in the side panel.
@@ -107,6 +60,7 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
 - Chat summaries count a section and its whole file as one document, for both reads and edits.
 
 - Passage jumps stay visible when you return to an already-open Editor tab.

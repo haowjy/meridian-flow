@@ -5,12 +5,10 @@
  * is not the current bind is refused, so a late callback cannot leak a row or
  * retire another account's unresolved intent.
  */
-import { composerSessionDraft } from "@/client/composer-drafts";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
-  type FirstSendChatSubmission,
 } from "./store";
 
 export {
@@ -18,8 +16,6 @@ export {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   type ChatSubmission,
   chatSubmissionStorageKey,
-  type ExistingThreadChatSubmission,
-  type FirstSendChatSubmission,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;
@@ -33,6 +29,9 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
   if (!journal) {
     try {
       journal = new DeviceChatSubmissionJournal(browserStorage());
+      window.addEventListener("storage", (event) => {
+        if (event.storageArea === window.localStorage) journal?.notifyStorageChange(event.key);
+      });
     } catch {
       return null;
     }
@@ -58,30 +57,10 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
-export function readChatSubmission(accountId: string, submissionId: string): ChatSubmission | null {
+/** An unavailable read cannot authorize projection retirement or destination changes. */
+export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] | null {
   const current = browserJournal();
-  return current?.accountId === accountId ? current.get(submissionId) : null;
-}
-
-/** A rejected witness is durable, but no longer awaits admission lookup or replay. */
-export function readUnresolvedSubmission(
-  accountId: string,
-  submissionId: string,
-): ChatSubmission | null {
-  const entry = readChatSubmission(accountId, submissionId);
-  return entry?.kind === "existing-thread" && entry.state === "rejected" ? null : entry;
-}
-
-export function readFirstSendSubmission(
-  accountId: string,
-  threadId: string,
-): FirstSendChatSubmission | null {
-  return (
-    readChatSubmissions(accountId).find(
-      (entry): entry is FirstSendChatSubmission =>
-        entry.kind === "first-send" && entry.threadId === threadId,
-    ) ?? null
-  );
+  return current?.accountId === accountId ? current.snapshot() : null;
 }
 
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
@@ -90,29 +69,28 @@ export function recordChatSubmission(accountId: string, entry: ChatSubmission): 
 
 export function retireChatSubmission(
   accountId: string,
-  submissionId: string,
+  recordId: string,
   expectedEpoch?: number,
 ): boolean {
-  return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
+  return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
 }
 
-/** One settlement owner, independent of mounted panes. Transfer words before retiring the witness. */
-export function settleChatSubmission(
+/** In-tab writes and cross-tab storage changes share the same subscription. */
+export function subscribeChatSubmissions(listener: () => void): () => void {
+  return browserJournal()?.subscribe(listener) ?? (() => undefined);
+}
+
+/** Provider-scoped pending flags also cover fork and handoff destinations. */
+export function isThreadAwaitingCreation(
   accountId: string,
-  submissionId: string,
-  outcome: "accepted" | "rejected",
-  expectedEpoch: number,
+  threadId: string | null | undefined,
+  pendingCreation = false,
 ): boolean {
-  const current = browserJournal();
-  if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
-  const entry = current.get(submissionId);
-  if (!entry) return false;
-  if (entry.kind === "existing-thread") {
-    const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
-    if (outcome === "rejected") {
-      if (!entry.draft || !owner.restoreRejected(entry.draft))
-        return current.record(accountId, { ...entry, state: "rejected" });
-    } else if (entry.draft && !owner.acceptSubmitted()) return false;
-  }
-  return current.retire(accountId, submissionId, expectedEpoch);
+  return Boolean(
+    threadId &&
+      (pendingCreation ||
+        readChatSubmissions(accountId).some(
+          (entry) => entry.threadId === threadId && entry.creation,
+        )),
+  );
 }
