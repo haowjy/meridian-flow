@@ -84,7 +84,7 @@ export const documentBranches = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("document_branches_active_work_draft")
+    uniqueIndex("document_branches_active_draft_document")
       .on(table.documentId, table.draftId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     index("document_branches_active_work_draft_by_draft")

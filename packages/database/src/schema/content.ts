@@ -283,7 +283,7 @@ export const documents = pgTable(
       .on(table.contextSourceId, table.name, table.extension)
       .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     // Image path lookups, deleted images included.
-    index("documents_context_images")
+    index("documents_context_all_images")
       .on(table.contextSourceId)
       .where(sql`${table.fileType} = 'image'`),
     index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
