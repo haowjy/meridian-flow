@@ -12,6 +12,7 @@ import { t } from "@lingui/core/macro";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
@@ -24,7 +25,6 @@ import {
   entryNameKey,
   entryNameStemEnd,
   parentContextEntryPath,
-  storedEntryName,
   validateContextEntryName,
 } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
@@ -68,7 +68,7 @@ export function useRenameEntryForm({
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   const storedName = (typed: string) => {
-    const stored = storedEntryName(typed, currentName);
+    const stored = storedFilename(typed, currentName);
     return stored.ok ? stored.name : typed;
   };
   const mutation = useMutation({
