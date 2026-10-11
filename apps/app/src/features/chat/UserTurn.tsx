@@ -124,7 +124,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
               : "mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
           }
         >
-          {submissionRecovery?.moving ? t`Moved to composer.` : t`Couldn't send.`}
+          {submissionRecovery?.moving ? t`Moved to the message box.` : t`Couldn't send.`}
         </p>
       ) : null}
       {submissionRecovery && turn.status === "error" ? (

@@ -2409,8 +2409,12 @@ msgid "Move up"
 msgstr "Move up"
 
 #: src/features/chat/UserTurn.tsx
-msgid "Moved to composer."
-msgstr "Moved to composer."
+#~ msgid "Moved to composer."
+#~ msgstr "Moved to composer."
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
+msgstr "Moved to the message box."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
