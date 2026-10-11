@@ -172,6 +172,22 @@ export class DeviceChatSubmissionJournal {
   private state: { accountId: string } | null = null;
   /** Session fence: bumped on every account bind. Not a durable revision. */
   private bindEpoch = 0;
+  private readonly listeners = new Set<() => void>();
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  notifyStorageChange(key: string | null): void {
+    if (key === null || key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`)) {
+      this.notify();
+    }
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
+  }
 
   constructor(private readonly storage: ChatSubmissionStorage) {}
 
@@ -190,6 +206,7 @@ export class DeviceChatSubmissionJournal {
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     rewriteV1ChatSubmissions(this.storage, accountId);
+    this.notify();
   }
 
   entries(): ChatSubmission[] {
@@ -228,9 +245,12 @@ export class DeviceChatSubmissionJournal {
 
   record(accountId: string, entry: ChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
-    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId)).write(
-      entry,
-    );
+    const written = this.recordFor(
+      accountId,
+      chatSubmissionStorageKey(accountId, entry.recordId),
+    ).write(entry);
+    if (written) this.notify();
+    return written;
   }
 
   private recordFor(accountId: string, key: string) {
@@ -249,8 +269,10 @@ export class DeviceChatSubmissionJournal {
   retire(accountId: string, recordId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
-    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
+    const retired = this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
       undefined,
     );
+    if (retired) this.notify();
+    return retired;
   }
 }

@@ -30,6 +30,9 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
   if (!journal) {
     try {
       journal = new DeviceChatSubmissionJournal(browserStorage());
+      window.addEventListener("storage", (event) => {
+        if (event.storageArea === window.localStorage) journal?.notifyStorageChange(event.key);
+      });
     } catch {
       return null;
     }
@@ -113,4 +116,18 @@ export function settleChatSubmission(
     } else if (entry.draft && !owner.acceptSubmitted()) return false;
   }
   return current.retire(accountId, entry.recordId, expectedEpoch);
+}
+
+/** In-tab writes and cross-tab storage changes share the same subscription. */
+export function subscribeChatSubmissions(listener: () => void): () => void {
+  return browserJournal()?.subscribe(listener) ?? (() => undefined);
+}
+
+/** Provider-scoped pending flags also cover fork and handoff destinations. */
+export function isThreadAwaitingCreation(
+  accountId: string,
+  threadId: string | null | undefined,
+  pendingCreation = false,
+): boolean {
+  return Boolean(threadId && (pendingCreation || readFirstSendSubmission(accountId, threadId)));
 }

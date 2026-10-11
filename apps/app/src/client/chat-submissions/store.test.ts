@@ -195,7 +195,9 @@ it("rewrites only the bound account's v1 words before deleting its old keys", ()
   });
   expect(storage.getItem("meridian:chat-submissions:v1:account:sub-1")).toBeNull();
   expect(storage.getItem("meridian:chat-submissions:v1:account-other:sub-1")).not.toBeNull();
-  journal.record("account", { ...journal.get("sub-1")!, submissionId: "reminted" });
+  const rewritten = journal.get("sub-1");
+  if (!rewritten) throw new Error("Expected rewritten record");
+  journal.record("account", { ...rewritten, submissionId: "reminted" });
   storage.setItem(
     "meridian:chat-submissions:v1:account:sub-1",
     JSON.stringify({ version: 1, accountId: "account", payload: legacy }),
@@ -203,4 +205,20 @@ it("rewrites only the bound account's v1 words before deleting its old keys", ()
   journal.setUser("account-other");
   journal.setUser("account");
   expect(journal.get("sub-1")?.submissionId).toBe("reminted");
+});
+
+it("notifies subscribers on writes, retirement and matching cross-tab storage changes", () => {
+  const { journal } = bound();
+  let notifications = 0;
+  const unsubscribe = journal.subscribe(() => {
+    notifications += 1;
+  });
+  journal.record("account", existingThread());
+  journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:another-record`);
+  journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account-other:record`);
+  journal.retire("account", "sub-1");
+  expect(notifications).toBe(3);
+  unsubscribe();
+  journal.notifyStorageChange(null);
+  expect(notifications).toBe(3);
 });

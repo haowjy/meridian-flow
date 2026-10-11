@@ -418,7 +418,11 @@ describe("real-store first-send retry", () => {
       projectId: "project-1",
       ...message,
       submissionId: "sub-first",
-      agent: { name: "General", slug: "general", selection: firstSend().creation!.agentSelection },
+      agent: {
+        name: "General",
+        slug: "general",
+        selection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
+      },
       workId: "no-work",
       threadActions: scenario.store.getState(),
       selectChat: () => undefined,
