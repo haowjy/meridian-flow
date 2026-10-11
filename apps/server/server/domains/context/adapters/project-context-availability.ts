@@ -413,6 +413,17 @@ export function createDrizzleProjectContextAvailability(
                 reason: "work_deleted",
               } as never;
             }
+            // Lineage sources hide when their last chat is trashed and reopen on restore.
+            // That revokes authority; it does not delete the documents they still own.
+            if (source?.scope === "lineage" && source.deletedAt) {
+              return {
+                kind: "authority-unavailable",
+                documentId,
+                generation,
+                authority,
+                reason: "lineage_hidden",
+              };
+            }
             if (document.deletedAt || source?.deletedAt) {
               return { kind: "deleted", documentId, generation, lastAuthority: authority } as never;
             }
