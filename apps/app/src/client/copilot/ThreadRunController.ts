@@ -11,6 +11,7 @@ import {
   retireUserMessageAdmission,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
+import { abortable } from "@/client/chat-submissions/lock";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
@@ -34,6 +35,7 @@ export type SubscribeLiveOptions = {
 };
 
 export type SubmitOptions = {
+  signal?: AbortSignal;
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
   keepOptimisticOnFailure?: boolean;
@@ -118,6 +120,8 @@ export class ThreadRunController {
   private activeRun: ActiveRun | null = null;
   private admissionLease: object | null = null;
   private admissionEpoch = 0;
+  private leaseLifetime = new AbortController();
+  private leaseTail: Promise<void> = Promise.resolve();
   private recoverySessions = new Set<object>();
   private abortRequested = false;
   private runToken = 0;
@@ -234,29 +238,50 @@ export class ThreadRunController {
       submissionId: envelope.submissionId,
       acceptedRevision: envelope.acceptedRevision,
     });
-    if (!fence()) return outcome("ambiguous");
-    if (this.admissionLease) {
-      // Not dispatched. Keep the row and journal so recovery still owns it.
+    const signal = AbortSignal.any([
+      this.accountSignal,
+      this.leaseLifetime.signal,
+      ...(options.signal ? [options.signal] : []),
+    ]);
+    const current = () => fence() && !signal.aborted;
+    if (!current()) return outcome("ambiguous");
+    const previous = this.leaseTail;
+    let release!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.leaseTail = previous.then(() => completed);
+    try {
+      await abortable(previous, signal);
+    } catch {
+      release();
       return outcome("ambiguous");
     }
-
+    if (!current()) {
+      release();
+      return outcome("ambiguous");
+    }
     const lease = {};
     this.admissionLease = lease;
     try {
       let result: Awaited<ReturnType<AppendUserMessageFn>>;
       try {
-        result = await this.appendUserMessageFn({
-          data: {
-            threadId,
-            submissionId: envelope.submissionId,
-            text: envelope.text,
-            blocks: envelope.blocks,
-            references: envelope.references,
-            activatedSkillSlugs: envelope.activatedSkillSlugs,
-          },
-        });
+        result = await abortable(
+          this.appendUserMessageFn({
+            data: {
+              threadId,
+              submissionId: envelope.submissionId,
+              text: envelope.text,
+              blocks: envelope.blocks,
+              references: envelope.references,
+              activatedSkillSlugs: envelope.activatedSkillSlugs,
+            },
+            signal,
+          }),
+          signal,
+        );
       } catch (error) {
-        if (!fence()) return outcome("ambiguous");
+        if (!current()) return outcome("ambiguous");
         if (classifyWriteFailure(error) === "rejected") {
           this.dropOptimistic(threadId, options);
           return outcome("rejected");
@@ -267,19 +292,19 @@ export class ThreadRunController {
           envelope.acceptedRevision,
           options,
           "lookup",
-          fence,
+          current,
         );
         // A live send cannot conclude "never seen" from a lookup that may race
         // an in-flight admission: keep it ambiguous so recovery owns replay.
         return reconciled.kind === "not-seen" ? outcome("ambiguous") : reconciled;
       }
-      if (!fence()) {
+      if (!current()) {
         // Accepted by the server, but this session no longer owns the thread.
         // A live send bridges the app-scoped row onto the persisted turn (see
         // `StaleAcceptPolicy`); a recovery replay leaves the row so the
         // returning session's own lookup owns the bridge and the retire.
         // Return `ambiguous` either way so the stale session keeps the journal.
-        if (staleAccept === "bridge-row" && options.optimisticUserTurnId) {
+        if (!signal.aborted && staleAccept === "bridge-row" && options.optimisticUserTurnId) {
           this.actions.acknowledgeUserTurn(
             threadId,
             options.optimisticUserTurnId,
@@ -305,6 +330,7 @@ export class ThreadRunController {
     } finally {
       // An old completion must not release a newer destination's admission lease.
       if (this.admissionLease === lease) this.admissionLease = null;
+      release();
     }
   }
 
@@ -384,18 +410,24 @@ export class ThreadRunController {
       submissionId,
       acceptedRevision,
     });
-    if (!fence()) return outcome("ambiguous");
+    const signal = AbortSignal.any([
+      this.accountSignal,
+      ...(options.signal ? [options.signal] : []),
+    ]);
+    const current = () => fence() && !signal.aborted;
+    if (!current()) return outcome("ambiguous");
     try {
-      const result = await (operation === "retire"
-        ? this.retireAdmissionFn
-        : this.lookupAdmissionFn)({
-        threadId,
-        submissionId,
-      });
-      if (!fence()) {
+      const result = await abortable(
+        (operation === "retire" ? this.retireAdmissionFn : this.lookupAdmissionFn)({
+          threadId,
+          submissionId,
+          signal,
+        }),
+        signal,
+      );
+      if (!current()) {
         // A late accepted result is not bridged into the store, so it must not
         // read as acknowledged. A proved refusal still retires the journal.
-        if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
         return outcome("ambiguous");
       }
       if (result.kind === "accepted" || result.kind === "already-accepted") {
@@ -490,6 +522,9 @@ export class ThreadRunController {
     // Prevent an append already in flight from attaching after teardown.
     this.admissionEpoch += 1;
     this.admissionLease = null;
+    this.leaseLifetime.abort();
+    this.leaseLifetime = new AbortController();
+    this.leaseTail = Promise.resolve();
     this.runToken += 1;
     this.cleanupActiveRun();
   }
