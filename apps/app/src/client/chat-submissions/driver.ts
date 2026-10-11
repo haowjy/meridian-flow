@@ -8,7 +8,6 @@ import type { ChatSubmission } from "./store";
 export type SubmissionOutcome = {
   kind: "accepted" | "rejected" | "ambiguous" | "not-seen" | "abandoned";
   submissionId: string;
-  acceptedRevision: number;
 };
 
 export type SubmissionJournal = {
@@ -191,7 +190,7 @@ export class ChatSubmissionDriver {
       }
     }
     const rowId = this.options.row(entry);
-    const options = { optimisticUserTurnId: rowId, keepOptimisticOnFailure: true };
+    const options = { optimisticUserTurnId: rowId };
     let dispatched = false;
     try {
       if (!fresh) {
@@ -205,7 +204,10 @@ export class ChatSubmissionDriver {
           ),
         );
         if (!this.current()) return;
-        if (outcome.kind === "abandoned") return;
+        if (outcome.kind === "abandoned") {
+          this.settle(entry, "ambiguous");
+          return;
+        }
         if (outcome.kind === "accepted") {
           this.settle(entry, "accepted");
           return;
@@ -224,13 +226,16 @@ export class ChatSubmissionDriver {
       const outcome = await this.request((signal) =>
         this.options.controller.recoverSubmission(
           dispatching.threadId,
-          { ...dispatching, acceptedRevision: 0 },
+          dispatching,
           { ...options, signal },
           this.options.session,
         ),
       );
       if (!this.current()) return;
-      if (outcome.kind === "abandoned") return;
+      if (outcome.kind === "abandoned") {
+        this.settle(entry, "ambiguous");
+        return;
+      }
       if (outcome.kind === "ambiguous") {
         await this.reconcileAmbiguous(entry, options);
         return;
@@ -246,7 +251,7 @@ export class ChatSubmissionDriver {
 
   private async reconcileAmbiguous(
     entry: ChatSubmission,
-    options: { optimisticUserTurnId: string; keepOptimisticOnFailure: boolean },
+    options: { optimisticUserTurnId: string },
   ) {
     try {
       const outcome = await this.request((signal) =>
@@ -257,7 +262,7 @@ export class ChatSubmissionDriver {
           this.options.session,
         ),
       );
-      if (!this.current() || outcome.kind === "abandoned") return;
+      if (!this.current()) return;
       this.settle(
         entry,
         outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
@@ -298,7 +303,6 @@ export class ChatSubmissionDriver {
             submissionId,
             {
               optimisticUserTurnId: this.options.row(entry),
-              keepOptimisticOnFailure: true,
               signal,
             },
             this.options.session,
