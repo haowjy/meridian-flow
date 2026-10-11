@@ -21,5 +21,6 @@ export default defineEventHandler(async (event) => {
     request: request.data,
     signal: event.req.signal,
   });
+  if (result.status === "pending") event.res.status = 202;
   return result;
 });

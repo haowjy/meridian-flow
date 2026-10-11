@@ -9,6 +9,7 @@
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
 import type { BranchPushService } from "./branch-push-contracts.js";
+import { PublicationLeasesChangedError } from "./branch-push-transition.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type {
   DraftBranchAheadRegistration,
@@ -57,7 +58,7 @@ export type ApplySelection =
 
 /** Per-item and whole results are the wire's own types (`@meridian/contracts/drafts`). */
 export type ApplyItemResult = DraftApplyItemResult;
-export type ApplyResult = DraftApplyAllResponse;
+export type ApplyResult = Exclude<DraftApplyAllResponse, { status: "pending" }>;
 
 /** A selection that names an item twice: refused before anything registers or stages. */
 export class DuplicateApplyItemError extends Error {
@@ -72,6 +73,17 @@ export class DraftApplyStaleError extends Error {
   constructor(readonly draftId: DraftId) {
     super("The draft changed while it was being applied. Review it, then switch again.");
     this.name = "DraftApplyStaleError";
+  }
+}
+
+/** The staged Apply belongs to recovery; the transport must acknowledge acceptance (F27). */
+export class DraftApplyPendingError extends Error {
+  constructor(
+    readonly draftId: DraftId,
+    cause: PublicationLeasesChangedError,
+  ) {
+    super("The draft is finishing in the background.", { cause });
+    this.name = "DraftApplyPendingError";
   }
 }
 
@@ -184,12 +196,19 @@ export function createDraftPublication(deps: {
           items,
           holderMeanings: [],
         };
-        const pushed = await deps.push.pushBranchesToLive({
-          branchIds,
-          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload) },
-          ...(input.userId ? { pushedByUserId: input.userId } : {}),
-          ...(input.signal ? { signal: input.signal } : {}),
-        });
+        const pushed = await deps.push
+          .pushBranchesToLive({
+            branchIds,
+            payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload) },
+            ...(input.userId ? { pushedByUserId: input.userId } : {}),
+            ...(input.signal ? { signal: input.signal } : {}),
+          })
+          .catch((cause: unknown) => {
+            if (cause instanceof PublicationLeasesChangedError) {
+              throw new DraftApplyPendingError(draftId, cause);
+            }
+            throw cause;
+          });
         if (pushed.refused) {
           const refusal = readDraftTreeRefusal(pushed.refused);
           if (!refusal) throw new Error(`Apply was refused: ${pushed.refused.code}`);

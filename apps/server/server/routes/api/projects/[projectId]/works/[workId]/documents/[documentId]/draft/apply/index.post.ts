@@ -1,4 +1,4 @@
-/** Apply one document of the Work's draft: 200 applied, 409 held or stale. */
+/** Apply one document of the Work's draft: 200 applied, 202 pending, 409 held or stale. */
 import { DraftApplyTokensSchema } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";

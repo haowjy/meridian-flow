@@ -10,6 +10,7 @@ import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contrac
 import type {
   DraftApplyAllRequest,
   DraftApplyAllResponse,
+  DraftApplyPendingResponse,
   DraftApplyRefusalBody,
   DraftApplyResponse,
   DraftApplyResponseAdditions,
@@ -30,7 +31,7 @@ import type { DraftReviewItem } from "../domains/collab/domain/draft-review-item
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
-import { throwDraftPublicationHttpError } from "./draft-publication-http.js";
+import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
 import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
@@ -196,9 +197,12 @@ export async function handleApplyWorkDraftRequest(
         ...(input.tokens ? { tokens: input.tokens } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
       }),
+      true,
     ),
   );
   switch (result.status) {
+    case "pending":
+      return { httpStatus: 202, body: result };
     case "applied":
       return {
         httpStatus: 200,
@@ -216,14 +220,18 @@ export async function handleApplyWorkDraftRequest(
   }
 }
 
-/** The per-document Apply's answer: 200 applied, or 409 held or stale (F14: never `applied`). */
+/** The per-document Apply's answer: 200 applied, 202 pending, or 409 held or stale (F14: never `applied`). */
 export type DraftApplyRouteResult =
-  | { httpStatus: 200; body: DraftApplyResponse & DraftApplyResponseAdditions }
+  | { httpStatus: 202; body: DraftApplyPendingResponse }
+  | {
+      httpStatus: 200;
+      body: Extract<DraftApplyResponse, { status: "applied" }> & DraftApplyResponseAdditions;
+    }
   | { httpStatus: 409; body: DraftApplyRefusalBody };
 
 /**
  * Apply all (§11.5): the items the dock rendered, one server command. The request's
- * draft must be the Work's active one (else `gone`); every status is a 200.
+ * draft must be the Work's active one (else `gone`); pending is 202, settled answers are 200.
  */
 export async function handleApplyAllWorkDraftRequest(
   deps: DraftRouteServices,
@@ -254,6 +262,7 @@ export async function handleApplyAllWorkDraftRequest(
         userId: input.userId,
         ...(input.signal ? { signal: input.signal } : {}),
       }),
+      true,
     ),
   );
   // The service's result is the wire's type.
@@ -345,7 +354,7 @@ export async function handleDiscardWorkDraftRequest(
 
 /**
  * Discard all (§12.3): the whole draft, one server command; it always closes the draft.
- * The request's draft must be the Work's active one (else `gone`); every status is a 200.
+ * The request's draft must be the Work's active one (else `gone`); pending is 202, settled answers are 200.
  */
 export async function handleDiscardAllWorkDraftRequest(
   deps: DraftRouteServices,
@@ -386,11 +395,20 @@ function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpd
   return wire;
 }
 
-async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
+function callDraftReview<T>(
+  promise: Promise<T>,
+  acceptPending: true,
+): Promise<T | DraftApplyPendingResponse>;
+function callDraftReview<T>(promise: Promise<T>): Promise<T>;
+async function callDraftReview<T>(
+  promise: Promise<T>,
+  acceptPending = false,
+): Promise<T | DraftApplyPendingResponse> {
   try {
     return await promise;
   } catch (cause) {
-    throwDraftPublicationHttpError(cause);
+    const pending = draftPublicationHttpAnswer(cause);
+    if (pending && acceptPending) return pending;
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }

@@ -68,7 +68,10 @@ export type DraftApplyNote =
 export type DraftApplyItemResult =
   | { itemKey: string; status: "applied"; notes: DraftApplyNote[] }
   | { itemKey: string; status: "held"; reason: DraftHeldReason };
+/** 202: the batch is staged and recovery is finishing it (F22, F27). `draftId` names the whole draft. */
+export type DraftApplyPendingResponse = { status: "pending"; draftId: string };
 export type DraftApplyAllResponse =
+  | DraftApplyPendingResponse
   | { status: "applied"; draftId: string; draftClosed: boolean; items: DraftApplyItemResult[] }
   | { status: "stale"; draftId: string; staleItemKeys: string[] }
   | { status: "gone"; draftId: string };
@@ -78,6 +81,10 @@ export const DraftApplyTokensSchema = DraftApplyItemRefSchema.omit({ itemKey: tr
 export type DraftApplyTokens = z.infer<typeof DraftApplyTokensSchema>;
 /** The legacy per-document Apply's 200 gains the item's result. */
 export type DraftApplyResponseAdditions = { item: DraftApplyItemResult };
+/** Per-document Apply: confirmed 200 or staged 202. */
+export type DraftApplyHttpResponse =
+  | (import("./review.js").DraftApplyResponse & DraftApplyResponseAdditions)
+  | DraftApplyPendingResponse;
 /** A held or stale per-document Apply answers 409 with this body. */
 export type DraftApplyRefusalBody =
   | { status: "held"; draftId: string; reason: DraftHeldReason }

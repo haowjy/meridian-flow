@@ -438,6 +438,7 @@ export type UpdateWorkWriteModeRequest = {
 };
 
 export type UpdateWorkWriteModeResponse =
+  | import("../drafts/apply.js").DraftApplyPendingResponse
   | { aiWriteMode: AiWriteMode; status: "updated" }
   | {
       aiWriteMode: AiWriteMode;
