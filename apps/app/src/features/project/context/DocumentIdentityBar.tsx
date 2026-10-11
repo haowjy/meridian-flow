@@ -21,7 +21,7 @@ import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { tabLocation } from "./identity-location";
-import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
+import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
@@ -58,7 +58,10 @@ export function DocumentIdentityBar({
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const noteOperationId = useRenameOperation(tab.documentId);
+  const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {
+    kind: "file",
+    id: tab.documentId,
+  });
   const commitIdentity = useIdentityCommit({
     projectId,
     tab,
@@ -70,8 +73,7 @@ export function DocumentIdentityBar({
   // operation is remembered outside it.
   const commit: typeof commitIdentity = async (target) => {
     const outcome = await commitIdentity(target);
-    if (outcome.status === "committed" && outcome.operationId)
-      rememberRenameOperation(tab.documentId, outcome.operationId);
+    if (outcome.status === "committed" && outcome.operationId) remember(outcome.operationId);
     return outcome;
   };
 

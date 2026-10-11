@@ -19,14 +19,17 @@ slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
 **The path navigates; it never edits.** `DocumentPath.tsx` makes each crumb a
-`DrillInMenu` trigger: the area crumb opens inside the area, a folder crumb
-inside that folder, the filename inside its folder, and `…` one level above the
-crumb after it (inside the folder that holds the last folder). The menu
+`DrillInMenu` trigger: each crumb opens the list it sits in, with itself
+highlighted. The area opens the list of areas, a folder opens its parent,
+the filename opens its folder, and `…` opens where the last hidden folder
+sits. An area not offered by the root list opens inside itself instead. The menu
 highlights everything on the document's path and the folder a back row just
 climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
 screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
-Crumb menus carry no actions. Folders collapse into `…` only when the row is
-too narrow, measured from a hidden copy of the full row; the steps are every
+Crumb menus carry no actions. Their Radix roots and triggers stay mounted at
+rest; only the open browsing body acquires catalogs, and its initial trail
+is set once that source resolves. Folders collapse into `…` only when the row is
+too narrow, measured from passive fit candidates of the same row renderer; the steps are every
 folder, the last folder, no folders, then the area as its icon. Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit decision.

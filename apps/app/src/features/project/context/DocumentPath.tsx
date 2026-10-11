@@ -12,20 +12,13 @@
  * measured from passive candidates of the same row renderer.
  */
 import { t } from "@lingui/core/macro";
-import {
-  type ReactElement,
-  type ReactNode,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProject } from "@/client/query/useProjectList";
 import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
-import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
+import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
+import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
@@ -148,7 +141,7 @@ export function shownFolders(count: number, fit: Fit): readonly number[] {
 }
 
 type PathMenu = {
-  tree: Parameters<typeof DrillInMenu>[0]["tree"];
+  tree: Parameters<typeof DrillInMenuBody>[0]["tree"];
   hereIds: readonly string[];
   openAt: DrillNode[];
   onPick: (node: DrillNode) => void;
@@ -167,15 +160,11 @@ function Crumb({
   tooltip?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
   if (!browse || browse.tab.kind === "new") return <span className={classes}>{children}</span>;
   const button = (
     <button
-      ref={buttonRef}
       type="button"
-      onClick={() => setOpen(true)}
       className={cn(
         classes,
         "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent/50 data-[state=open]:text-foreground",
@@ -185,20 +174,10 @@ function Crumb({
     </button>
   );
   const trigger = tooltip ? <TooltipTrigger asChild>{button}</TooltipTrigger> : button;
-  const content = open ? (
-    <OpenCrumbMenu
-      browse={browse}
-      depth={depth}
-      onOpenChange={setOpen}
-      onCloseAutoFocus={(event) => {
-        event.preventDefault();
-        requestAnimationFrame(() => buttonRef.current?.focus());
-      }}
-    >
+  const content = (
+    <DrillInMenuRoot body={<OpenCrumbMenu browse={browse} depth={depth} />}>
       {trigger}
-    </OpenCrumbMenu>
-  ) : (
-    trigger
+    </DrillInMenuRoot>
   );
   return tooltip ? (
     <Tooltip>
@@ -210,35 +189,16 @@ function Crumb({
   );
 }
 
-/** Catalog observers exist only while browsing; the first menu mounts at its final trail. */
-function OpenCrumbMenu({
-  browse,
-  depth,
-  children,
-  onOpenChange,
-  onCloseAutoFocus,
-}: {
-  browse: Browse;
-  depth: number;
-  children: ReactElement;
-  onOpenChange: (open: boolean) => void;
-  onCloseAutoFocus: (event: Event) => void;
-}) {
+/** Acquisition is inside the open boundary; no placeholder tree can flash a wrong level. */
+function OpenCrumbMenu({ browse, depth }: { browse: Browse; depth: number }) {
   const menu = useDocumentPathMenu(browse.projectId, browse.tab, depth);
-  if (!menu) return children;
-  return (
-    <DrillInMenu
-      tree={menu.tree}
-      hereIds={menu.hereIds}
-      openAt={menu.openAt}
-      onPick={menu.onPick}
-      open
-      onOpenChange={onOpenChange}
-      onCloseAutoFocus={onCloseAutoFocus}
-    >
-      {children}
-    </DrillInMenu>
-  );
+  if (!menu)
+    return (
+      <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-1rem)]">
+        <p className="px-2 py-1.5 text-sm text-muted-foreground">{t`Loading…`}</p>
+      </DropdownMenuContent>
+    );
+  return <DrillInMenuBody {...menu} />;
 }
 
 /** The project menu a document's crumbs browse, opened along the document's own path. */

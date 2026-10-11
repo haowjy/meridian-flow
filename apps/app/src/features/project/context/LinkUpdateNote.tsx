@@ -5,60 +5,38 @@
  * receipt's own deadline (settlement plus four seconds, however often its row
  * remounts). A picker move without updated links names its destination instead.
  * Refused moves show nothing.
- * A row with no rename in flight mounts nothing and watches nothing; a watch ends
- * at the deadline. The announcement goes to the app's one polite region, once per
+ * A row with no rename in flight mounts nothing; account-owned operation watches
+ * end at terminal evidence or the deadline, independently of row mounting. The announcement goes to the app's one polite region, once per
  * operation.
  */
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
-import {
-  NAMESPACE_RECEIPT_NOTE_TTL_MS,
-  type NamespaceIntent,
-  type ResourceProjectionSnapshot,
-  settledNamespaceReceipt,
-} from "@meridian/resource-replica";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { announce } from "@/client/stores";
 import { cn } from "@/lib/utils";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
+import { type LinkNoteSubject, renameOperationLifecycle } from "./rename-operation-lifecycle";
+
+export type { LinkNoteSubject } from "./rename-operation-lifecycle";
 
 const FADE_MS = 400;
 
-// Surfaces that remount while a rename lands (the identity bar) keep its operation here.
-const renameOperations = new Map<string, { operationId: string; deadline?: number }>();
-const renameListeners = new Set<() => void>();
-
-export function rememberRenameOperation(documentId: string, operationId: string): void {
-  renameOperations.set(documentId, { operationId });
-  for (const listener of renameListeners) listener();
-}
-
-/** Pending/offline operations have no deadline; settlement alone starts the note's lifetime. */
-function expireRenameOperation(documentId: string, operationId: string, deadline: number): void {
-  const entry = renameOperations.get(documentId);
-  if (!entry || entry.operationId !== operationId || entry.deadline === deadline) return;
-  entry.deadline = deadline;
-  const expire = () => {
-    if (renameOperations.get(documentId) !== entry) return;
-    renameOperations.delete(documentId);
-    for (const listener of renameListeners) listener();
-  };
-  const remaining = deadline - Date.now();
-  if (remaining <= 0) expire();
-  else window.setTimeout(expire, remaining);
-}
-
-export function useRenameOperation(documentId: string): string | null {
-  return useSyncExternalStore(
-    (listener) => {
-      renameListeners.add(listener);
-      return () => renameListeners.delete(listener);
-    },
-    () => renameOperations.get(documentId)?.operationId ?? null,
+/** Selection and observation belong to the replica lifetime, not the row's lifetime. */
+export function useRenameOperation(projectId: string, subject: LinkNoteSubject) {
+  const replica = useOptionalAccountResourceReplica();
+  const lifecycle = replica ? renameOperationLifecycle(replica) : null;
+  const selection = useSyncExternalStore(
+    lifecycle?.subscribe ?? (() => () => {}),
+    () => lifecycle?.get(projectId, subject) ?? null,
     () => null,
   );
+  return {
+    operationId: selection?.operationId ?? null,
+    feedback: selection?.feedback ?? null,
+    remember: (operationId: string) => lifecycle?.remember(projectId, subject, operationId),
+  };
 }
 
 /** Links that follow a settled move; refused moves, deletes and moves without links count none. */
@@ -66,28 +44,6 @@ export function movedLinkCount(receipt: ContextOperationReceipt | null): number 
   if (receipt?.command.kind !== "move") return 0;
   const { result } = receipt as Extract<ContextOperationReceipt, { command: { kind: "move" } }>;
   return result.ok ? (result.value.linkUpdate?.links ?? 0) : 0;
-}
-
-export type LinkNoteSubject = { kind: "file" | "folder"; id: string };
-
-type ProjectionIndex = {
-  files: ReadonlyMap<string, readonly NamespaceIntent[]>;
-  folders: ReadonlyMap<string, readonly NamespaceIntent[]>;
-};
-
-// One index per projection snapshot, shared by every watch on it.
-const indexes = new WeakMap<ResourceProjectionSnapshot, ProjectionIndex>();
-
-function indexOf(snapshot: ResourceProjectionSnapshot): ProjectionIndex {
-  let index = indexes.get(snapshot);
-  if (!index) {
-    index = {
-      files: new Map(snapshot.records.map((r) => [r.resource.identity.documentId, r.intents])),
-      folders: new Map(snapshot.folders.map((f) => [f.folderId, f.intents])),
-    };
-    indexes.set(snapshot, index);
-  }
-  return index;
 }
 
 /** A rename in the same folder is not destination feedback; a placement is. */
@@ -105,58 +61,6 @@ export function movedDestinationName(receipt: ContextOperationReceipt | null): s
   )
     return null;
   return parent.at(-1) || schemeLabel(destination.value.scheme);
-}
-
-type SettledMove = { links: number; deadline: number; destination: string | null };
-
-/** The move's link count and absolute deadline once it settles locally; watches only while `watching`. */
-function useSettledMove(
-  projectId: string,
-  subject: LinkNoteSubject,
-  operationId: string,
-  watching: boolean,
-): SettledMove | null {
-  const replica = useOptionalAccountResourceReplica();
-  const [settled, setSettled] = useState<SettledMove | null>(null);
-  useEffect(() => {
-    if (!watching || !replica) return;
-    return replica.observeProjection(
-      projectId,
-      (snapshot) => {
-        const index = indexOf(snapshot);
-        const intents = (subject.kind === "folder" ? index.folders : index.files).get(subject.id);
-        const intent = intents?.find(
-          (candidate) =>
-            candidate.operationId === operationId ||
-            candidate.attempts.some(
-              (attempt) =>
-                attempt.request.kind !== "create" &&
-                attempt.request.body.operationId === operationId,
-            ),
-        );
-        const receipt = intents ? settledNamespaceReceipt(intents, operationId, Date.now()) : null;
-        // The deadline is known once the move settles locally, whatever the server said.
-        const next =
-          intent?.settledAt === undefined
-            ? null
-            : {
-                links: movedLinkCount(receipt),
-                destination: movedDestinationName(receipt),
-                deadline: intent.settledAt + NAMESPACE_RECEIPT_NOTE_TTL_MS,
-              };
-        if (next) expireRenameOperation(subject.id, operationId, next.deadline);
-        setSettled((previous) =>
-          previous?.links === next?.links &&
-          previous?.deadline === next?.deadline &&
-          previous?.destination === next?.destination
-            ? previous
-            : next,
-        );
-      },
-      () => undefined,
-    );
-  }, [replica, projectId, subject.kind, subject.id, operationId, watching]);
-  return settled;
 }
 
 // Operations already announced; entries leave once their deadline has passed.
@@ -199,10 +103,11 @@ function ActiveNote({
   const [phase, setPhase] = useState<"shown" | "fading" | "gone">("shown");
   // A stacked note opens its line from zero height, so the row grows rather than jumps.
   const [entered, setEntered] = useState(false);
-  const settled = useSettledMove(projectId, subject, operationId, phase !== "gone");
-  const links = settled?.links ?? 0;
+  const selection = useRenameOperation(projectId, subject);
+  const settled = selection.operationId === operationId ? selection.feedback : null;
+  const links = movedLinkCount(settled?.receipt ?? null);
   const deadline = settled?.deadline;
-  const folder = settled?.destination;
+  const folder = movedDestinationName(settled?.receipt ?? null);
   const visible = links > 0 || Boolean(folder);
   const message =
     links > 0
@@ -216,7 +121,7 @@ function ActiveNote({
       setPhase("gone");
       return;
     }
-    // Whatever the receipt said, the watch ends at its deadline.
+    // Presentation follows the operation's absolute settlement deadline.
     const gone = window.setTimeout(() => setPhase("gone"), remaining);
     if (!visible) return () => window.clearTimeout(gone);
     setPhase(remaining <= FADE_MS ? "fading" : "shown");
