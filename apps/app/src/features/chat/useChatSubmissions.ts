@@ -1,4 +1,5 @@
 /** React binding for journal rows and the single submission lifecycle. */
+import { t } from "@lingui/core/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef } from "react";
 import { createProjectThread } from "@/client/api/projects-api";
@@ -22,7 +23,7 @@ import {
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import type { ThreadStoreActions } from "@/client/stores";
+import { announceError, clearAnnouncement, type ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
@@ -73,6 +74,12 @@ export function useChatSubmissions(
       !signal.aborted &&
       getChatSubmissionAccountId() === accountId &&
       getChatSubmissionEpoch() === epoch;
+    const announcementKeys = new Set<string>();
+    const clearRowAnnouncement = (recordId: string) => {
+      const key = `${accountId}:${recordId}`;
+      clearAnnouncement(key);
+      announcementKeys.delete(key);
+    };
     const session = {};
     controller.beginRecoverySession(session);
     failed.current.clear();
@@ -117,6 +124,7 @@ export function useChatSubmissions(
         if (!key.startsWith(`${accountId}:`) || remembered.threadId !== threadId || ids.has(key))
           continue;
         latest.current.actions.removeOptimisticUserTurn(threadId, remembered.turnId);
+        clearRowAnnouncement(key.slice(accountId.length + 1));
         submissionRows.delete(key);
         failed.current.delete(key.slice(accountId.length + 1));
         retired = true;
@@ -188,8 +196,17 @@ export function useChatSubmissions(
       },
       status: (entry, status) => {
         if (!current()) return;
-        if (status === "error") failed.current.add(entry.recordId);
-        else failed.current.delete(entry.recordId);
+        if (status === "error") {
+          if (!failed.current.has(entry.recordId)) {
+            const key = `${accountId}:${entry.recordId}`;
+            announcementKeys.add(key);
+            announceError(t`Couldn't send your message.`, { key });
+          }
+          failed.current.add(entry.recordId);
+        } else {
+          clearRowAnnouncement(entry.recordId);
+          failed.current.delete(entry.recordId);
+        }
         latest.current.actions.patchTurnStatus(threadId, row(entry), status);
         render();
       },
@@ -264,6 +281,7 @@ export function useChatSubmissions(
     });
     return () => {
       lifetime.abort();
+      for (const key of announcementKeys) clearAnnouncement(key);
       controller.endRecoverySession(session);
       if (driver.current === owner) driver.current = null;
       unsubscribe();

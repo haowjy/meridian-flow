@@ -1342,6 +1342,10 @@ msgstr ""
 msgid "Couldn't send your answer."
 msgstr ""
 
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "未能发送你的消息。"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
