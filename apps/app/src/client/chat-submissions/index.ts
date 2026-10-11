@@ -57,6 +57,12 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
+/** An unavailable read cannot authorize projection retirement or destination changes. */
+export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] | null {
+  const current = browserJournal();
+  return current?.accountId === accountId ? current.snapshot() : null;
+}
+
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
   return browserJournal()?.record(accountId, entry) ?? false;
 }
