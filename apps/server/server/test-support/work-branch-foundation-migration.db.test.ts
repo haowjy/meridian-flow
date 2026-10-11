@@ -2,7 +2,7 @@
  * Populated upgrade contract for 0037/0038: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
  */
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ContextSourceId, DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts";
@@ -13,6 +13,13 @@ import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
 import { useComposedRuntimes } from "./composed-runtime.js";
 import { draftTreeCommands } from "./draft-tree-commands.js";
 import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./draft-tree-seeds.js";
+import {
+  isolateSchemas,
+  journalIndex,
+  readMigrationJournal,
+  restoreSchemas,
+  stageThrough,
+} from "./migration-upgrade.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
@@ -54,53 +61,12 @@ async function seedMainShape(sql: postgres.Sql) {
   }
 }
 
-/** Stages the first `n` journal entries of `migrations` in `directory`, as a deploy at that point would. */
-async function stageThrough(
-  migrations: string,
-  directory: string,
-  journal: { entries: { tag: string }[] },
-  n: number,
-) {
-  await cp(migrations, directory, { recursive: true });
-  for (const entry of journal.entries.slice(n)) await rm(path.join(directory, `${entry.tag}.sql`));
-  await writeFile(
-    path.join(directory, "meta/_journal.json"),
-    JSON.stringify({ ...journal, entries: journal.entries.slice(0, n) }),
-  );
-}
-
-const MIGRATIONS = path.resolve(
-  import.meta.dirname,
-  "../../../../packages/database/src/migrations",
-);
+const PREFIX = "foundation_upgrade";
 
 /** The repository's migration journal and the index of the foundation's entry in it. */
 async function readJournal() {
-  const journal = JSON.parse(await readFile(path.join(MIGRATIONS, "meta/_journal.json"), "utf8"));
-  const foundation = journal.entries.findIndex(
-    (entry: { tag: string }) => entry.tag === FOUNDATION,
-  );
-  return { journal, foundation };
-}
-
-/** Moves the database's schemas aside, so the upgrade runs in an empty one. */
-async function isolateSchemas(target: postgres.Sql) {
-  await target.begin(async (tx) => {
-    await tx`ALTER SCHEMA public RENAME TO foundation_upgrade_saved_public`;
-    await tx`ALTER SCHEMA drizzle RENAME TO foundation_upgrade_saved_drizzle`;
-    await tx`CREATE SCHEMA public`;
-    await tx`ALTER EXTENSION pg_trgm SET SCHEMA public`;
-  });
-}
-
-async function restoreSchemas(target: postgres.Sql) {
-  await target.begin(async (tx) => {
-    await tx`ALTER EXTENSION pg_trgm SET SCHEMA foundation_upgrade_saved_public`;
-    await tx`DROP SCHEMA IF EXISTS public CASCADE`;
-    await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await tx`ALTER SCHEMA foundation_upgrade_saved_public RENAME TO public`;
-    await tx`ALTER SCHEMA foundation_upgrade_saved_drizzle RENAME TO drizzle`;
-  });
+  const journal = await readMigrationJournal();
+  return { journal, foundation: journalIndex(journal, FOUNDATION) };
 }
 
 describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
@@ -108,14 +74,13 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
     const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-foundation-upgrade-"));
-    const migrations = MIGRATIONS;
     const { journal, foundation } = await readJournal();
     expect(journal.entries[foundation + 1]?.tag).toBe(ONLINE);
     let isolated = false;
     try {
-      await isolateSchemas(target);
+      await isolateSchemas(target, PREFIX);
       isolated = true;
-      await stageThrough(migrations, directory, journal, foundation);
+      await stageThrough(directory, journal, foundation);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedMainShape(target);
       const projections = await target`
@@ -123,10 +88,10 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         FROM documents WHERE kind = 'content' ORDER BY id`;
       const outbox = await target`SELECT * FROM branch_push_settlement_outbox ORDER BY push_id`;
 
-      await stageThrough(migrations, directory, journal, foundation + 1);
+      await stageThrough(directory, journal, foundation + 1);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
 
-      await stageThrough(migrations, directory, journal, foundation + 2);
+      await stageThrough(directory, journal, foundation + 2);
       // A failed concurrent build leaves an invalid remnant; the runner replaces it.
       await expect(
         target.unsafe(
@@ -241,7 +206,7 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       ).toEqual([]);
     } finally {
       await writer.end();
-      if (isolated) await restoreSchemas(target);
+      if (isolated) await restoreSchemas(target, PREFIX);
       await target.end();
       await rm(directory, { recursive: true, force: true });
     }
@@ -324,7 +289,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
   // app shuts down against the upgraded schema before the saved one comes back.
   afterEach(async () => {
     await db?.close();
-    if (isolated) await restoreSchemas(target);
+    if (isolated) await restoreSchemas(target, PREFIX);
     await target.end();
   });
   const runtimes = useComposedRuntimes(() => {
@@ -336,13 +301,13 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-pending-create-upgrade-"));
     try {
       const { journal, foundation } = await readJournal();
-      await isolateSchemas(target);
+      await isolateSchemas(target, PREFIX);
       isolated = true;
-      await stageThrough(MIGRATIONS, directory, journal, foundation);
+      await stageThrough(directory, journal, foundation);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedPendingCreates(target);
       await rm(directory, { recursive: true, force: true });
-      await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
+      await stageThrough(directory, journal, journal.entries.length);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
     } finally {
       await rm(directory, { recursive: true, force: true });
