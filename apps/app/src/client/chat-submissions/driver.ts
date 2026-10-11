@@ -34,7 +34,7 @@ export type SubmissionDriverOptions = {
   status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
-  transferForEdit(entry: ChatSubmission): string[] | null;
+  transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
   timeoutMs?: number;
 };
@@ -71,7 +71,8 @@ export class ChatSubmissionDriver {
     try {
       return await this.request(operation);
     } catch (error) {
-      return { kind: this.current() ? classifyWriteFailure(error) : "abandoned", submissionId: "" };
+      if (this.current() && !(error instanceof DOMException)) throw error;
+      return { kind: this.current() ? "ambiguous" : "abandoned", submissionId: "" };
     }
   }
 
@@ -171,7 +172,10 @@ export class ChatSubmissionDriver {
   }
 
   private write(entry: ChatSubmission): boolean {
-    if (this.options.journal.record(entry)) return true;
+    if (this.options.journal.record(entry)) {
+      this.localFailures.delete(entry.recordId);
+      return true;
+    }
     this.localFailure(entry);
     return false;
   }
@@ -212,7 +216,7 @@ export class ChatSubmissionDriver {
 
     const rowId = this.options.row(entry);
     const options = { optimisticUserTurnId: rowId };
-    try {
+    {
       if (!fresh) {
         const checking = entry;
         const outcome = await this.admissionRequest((signal) =>
@@ -260,9 +264,6 @@ export class ChatSubmissionDriver {
         return;
       }
       this.settle(entry, outcome.kind === "not-seen" ? "ambiguous" : outcome.kind);
-    } catch (error) {
-      if (!this.current()) return;
-      throw error;
     }
   }
 
@@ -270,23 +271,19 @@ export class ChatSubmissionDriver {
     entry: ChatSubmission,
     options: { optimisticUserTurnId: string },
   ) {
-    try {
-      const outcome = await this.admissionRequest((signal) =>
-        this.options.controller.lookupSubmission(
-          entry.threadId,
-          entry.submissionId,
-          { ...options, signal },
-          this.options.session,
-        ),
-      );
-      if (!this.current()) return;
-      this.settle(
-        entry,
-        outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
-      );
-    } catch (error) {
-      throw error;
-    }
+    const outcome = await this.admissionRequest((signal) =>
+      this.options.controller.lookupSubmission(
+        entry.threadId,
+        entry.submissionId,
+        { ...options, signal },
+        this.options.session,
+      ),
+    );
+    if (!this.current()) return;
+    this.settle(
+      entry,
+      outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
+    );
   }
 
   private settle(entry: ChatSubmission, kind: "accepted" | "rejected" | "ambiguous") {
@@ -340,9 +337,14 @@ export class ChatSubmissionDriver {
         if (outcome.kind !== "rejected") return;
       }
       if (!this.current()) return;
-      const transferred = this.options.transferForEdit(entry);
-      if (!transferred) return;
-      for (const recordId of transferred) {
+      const cohort = entry.creation
+        ? this.options.journal
+            .entries()
+            .filter((record) => record.threadId === entry.threadId)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        : [entry];
+      if (!this.options.transferForEdit(entry, cohort)) return;
+      for (const { recordId } of cohort) {
         if (!this.current() || !this.options.journal.retire(recordId)) return;
       }
       if (this.current()) this.options.edited(entry);

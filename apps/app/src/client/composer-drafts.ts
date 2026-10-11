@@ -30,19 +30,21 @@ export class ComposerSessionDraft {
 
   /** Writer-directed Edit prepends the rejected document without flattening reference atoms. */
   editRejected(snapshot: ComposerDraftSnapshot): boolean {
-    const later = this.current;
-    const edited =
-      later && serializeComposerDraft(later.doc).text
-        ? {
-            ...snapshot,
-            revision: Math.max(snapshot.revision, later.revision) + 1,
-            doc: {
-              type: "doc",
-              content: [...(snapshot.doc.content ?? []), ...(later.doc.content ?? [])],
-            },
-            ownedUploads: [...snapshot.ownedUploads, ...later.ownedUploads],
-          }
-        : snapshot;
+    return this.prependSnapshots([snapshot]);
+  }
+
+  /** One ordered transfer for a rejected cohort, followed by this destination's newer writing. */
+  prependSnapshots(snapshots: ComposerDraftSnapshot[]): boolean {
+    const first = snapshots[0];
+    if (!first) return false;
+    const all = [...snapshots];
+    if (this.current && serializeComposerDraft(this.current.doc).text) all.push(this.current);
+    const edited = {
+      ...first,
+      revision: Math.max(...all.map((snapshot) => snapshot.revision)) + 1,
+      doc: { type: "doc", content: all.flatMap((snapshot) => snapshot.doc.content ?? []) },
+      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
+    };
     if (!this.record.write(edited)) return false;
     this.current = edited;
     this.dirty = false;

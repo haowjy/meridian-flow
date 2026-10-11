@@ -22,7 +22,7 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { clearSubmissionRows, useChatSubmissions } from "./useChatSubmissions";
+import { useChatSubmissions } from "./useChatSubmissions";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -102,7 +102,6 @@ beforeEach(() => {
 afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
-  clearSubmissionRows();
   window.localStorage.clear();
   window.sessionStorage.clear();
 });

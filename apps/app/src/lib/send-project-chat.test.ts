@@ -48,7 +48,6 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     workId: "no-work",
     ...overrides,
     threadActions,
-    rememberRow: () => {},
     selectChat,
   });
   return { result, threadActions, selectChat };

@@ -425,14 +425,7 @@ export function ChatView({
                     ariaLabel={t`Chat`}
                     onRespondToInterrupt={handleRespondToInterrupt}
                     changeTrails={changeTrails.byId}
-                    submissionRecoveryByTurnId={
-                      new Map(
-                        turns.flatMap((turn) => {
-                          const recovery = submissions.rowActions(turn.id);
-                          return recovery ? [[turn.id, recovery] as const] : [];
-                        }),
-                      )
-                    }
+                    submissionRecoveryByTurnId={submissions.presentation}
                     queuedWriterTurnIds={queuedWriterTurnIds}
                     controls={controls}
                     brief={brief}

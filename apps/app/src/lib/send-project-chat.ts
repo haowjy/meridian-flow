@@ -1,10 +1,10 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
-import { type ChatSubmission, recordChatSubmission } from "@/client/chat-submissions";
+import type { ChatSubmission } from "@/client/chat-submissions";
+import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { makeOptimisticThread } from "./optimistic-thread";
 import { deriveTitleFromMessage } from "./thread-title";
 
 export type SendProjectChatArgs = {
@@ -21,13 +21,11 @@ export type SendProjectChatArgs = {
   workId: string;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
-  rememberRow: (recordId: string, threadId: string, turnId: string) => void;
   now?: number;
 };
 
 export type SendProjectChatResult = {
   threadId: string;
-  optimisticUserTurnId: string;
 };
 
 export function sendProjectChat({
@@ -43,7 +41,6 @@ export function sendProjectChat({
   workId,
   threadActions,
   selectChat,
-  rememberRow,
   now,
 }: SendProjectChatArgs): SendProjectChatResult | null {
   const threadId = crypto.randomUUID();
@@ -73,15 +70,13 @@ export function sendProjectChat({
         agentSlug: agent.slug,
       },
     };
-    if (!recordChatSubmission(accountId, submission)) return null;
-    threadActions.ensureThread(
-      makeOptimisticThread({ id: threadId, projectId, title, timestamp, workId, agent }),
-    );
+    if (!recordAndProjectSubmission(accountId, submission, threadActions)) return null;
   }
-
-  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, blocks).id;
-  rememberRow(submissionId, threadId, optimisticUserTurnId);
-  selectChat(threadId);
+  try {
+    selectChat(threadId);
+  } catch (error) {
+    reportError(error);
+  }
   // Mounting the selected destination wakes its submission driver.
-  return { threadId, optimisticUserTurnId };
+  return { threadId };
 }
