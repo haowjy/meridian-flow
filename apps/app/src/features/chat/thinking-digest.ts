@@ -18,8 +18,6 @@ import {
   toolInputObject,
 } from "./tool-command";
 
-export type ThinkingDigestWriteMode = "direct" | "draft";
-
 export type FoldToolCounts = {
   /** Skill slugs the fold loaded, in call order. */
   invokedSkills: Set<string>;
@@ -78,10 +76,7 @@ function isEditCommand(command: ToolCommand): boolean {
   );
 }
 
-export function thinkingDigest(
-  tools: readonly ToolView[],
-  writeMode: ThinkingDigestWriteMode,
-): string | null {
+export function thinkingDigest(tools: readonly ToolView[]): string | null {
   const { invokedSkills, readDocuments, editedDocuments, steps } = countFoldTools(tools);
   const clauses: string[] = [];
 
@@ -106,19 +101,12 @@ export function thinkingDigest(
   if (editedDocuments.size > 0) {
     const carryDocumentNoun = readDocuments.size > 0;
     clauses.push(
-      writeMode === "draft"
-        ? carryDocumentNoun
-          ? t`drafted ${editedDocuments.size}`
-          : plural(editedDocuments.size, {
-              one: "drafted # document",
-              other: "drafted # documents",
-            })
-        : carryDocumentNoun
-          ? t`edited ${editedDocuments.size}`
-          : plural(editedDocuments.size, {
-              one: "edited # document",
-              other: "edited # documents",
-            }),
+      carryDocumentNoun
+        ? t`edited ${editedDocuments.size}`
+        : plural(editedDocuments.size, {
+            one: "edited # document",
+            other: "edited # documents",
+          }),
     );
   }
   if (steps > 0) {

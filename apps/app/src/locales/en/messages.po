@@ -108,8 +108,8 @@ msgstr "{0, plural, one {Changes in # more document did not apply} other {Change
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
-msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
+#~ msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
+#~ msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -1277,8 +1277,8 @@ msgid "Couldn't discard. Check your connection and try again."
 msgstr "Couldn't discard. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't draft"
-msgstr "Couldn't draft"
+#~ msgid "Couldn't draft"
+#~ msgstr "Couldn't draft"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -1790,21 +1790,21 @@ msgid "Draft review"
 msgstr "Draft review"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafted"
-msgstr "Drafted"
+#~ msgid "Drafted"
+#~ msgstr "Drafted"
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "drafted {0}"
-msgstr "drafted {0}"
+#~ msgid "drafted {0}"
+#~ msgstr "drafted {0}"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafted file"
-msgstr "Drafted file"
+#~ msgid "Drafted file"
+#~ msgstr "Drafted file"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafting"
-msgstr "Drafting"
+#~ msgid "Drafting"
+#~ msgstr "Drafting"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -4636,12 +4636,12 @@ msgid "Writing the handoff brief"
 msgstr "Writing the handoff brief"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Wrote"
-msgstr "Wrote"
+#~ msgid "Wrote"
+#~ msgstr "Wrote"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Wrote file"
-msgstr "Wrote file"
+#~ msgid "Wrote file"
+#~ msgstr "Wrote file"
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"

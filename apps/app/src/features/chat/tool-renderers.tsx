@@ -24,7 +24,7 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { copySourcePath, stringInput, toolInputObject } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -41,16 +41,12 @@ import {
   type ToolResultRows,
 } from "./tool-result-preview";
 
-export type ToolRenderContext = {
-  writeMode?: WriteMode;
-};
-
 /** Builds an expand's contents on demand. */
 export type ToolExpand = () => ReactNode;
 
 export type ToolRenderer = {
   /** Single-line summary of the tool action. Already i18n'd. */
-  title: (tool: ToolView, context?: ToolRenderContext) => ReactNode;
+  title: (tool: ToolView) => ReactNode;
   /** Deferred inline expansion. `null` = no expand affordance on this row. */
   expand?: (tool: ToolView) => ToolExpand | null;
 };
@@ -301,8 +297,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
 }
 
-function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
-  const writeMode = context?.writeMode ?? "direct";
+function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
 
@@ -311,15 +306,15 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
   if (tool.isError) {
-    const verb = descriptor.failureVerb(writeMode);
+    const verb = descriptor.failureVerb();
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
 
-  const phrase = toolActivityPhrase(tool, writeMode);
+  const phrase = toolActivityPhrase(tool);
   // A partial call has no settled path yet, so the row names no document —
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
-  if (!path) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
+  if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
   return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
 }
 
@@ -434,7 +429,7 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
 }
 
 function WorkToolTitle({ tool }: { tool: ToolView }) {
-  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  if (tool.isError) return descriptorFor(tool).failureVerb();
   // `block` so truncate applies: the title slot is a flexified span, and an
   // inline child cannot clip its own overflow.
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
@@ -453,7 +448,7 @@ function workExpand(tool: ToolView): ToolExpand | null {
 function phraseTitle(tool: ToolView): ReactNode {
   // A failure is its own claim: `Searched "Elara"` over an error row says the
   // search happened.
-  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  if (tool.isError) return descriptorFor(tool).failureVerb();
   return <PhraseTitle phrase={toolActivityPhrase(tool)} />;
 }
 
@@ -463,7 +458,7 @@ const DEFAULT_RENDERER: ToolRenderer = {
 };
 
 const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
-  title: (tool, context) => <DocumentToolTitle tool={tool} context={context} />,
+  title: (tool) => <DocumentToolTitle tool={tool} />,
   expand: documentExpand,
 };
 

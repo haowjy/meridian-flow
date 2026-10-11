@@ -220,3 +220,6 @@ it scrolls the current chat into view without taking focus from search.
 → [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 → [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the composer strip, the Work page's Changes to review, or the review launcher
+
+Tool activity calls every write an edit, in Draft and direct mode alike. The
+fold digest and tool rows do not consume write mode for copy.
