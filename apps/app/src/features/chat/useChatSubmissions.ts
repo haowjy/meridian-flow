@@ -16,6 +16,7 @@ import { ChatSubmissionDriver } from "@/client/chat-submissions/driver";
 import { composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
+import { removeChatRow } from "@/client/query/chat-projections";
 import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
@@ -39,7 +40,7 @@ export function rememberSubmissionRow(
 ) {
   submissionRows.set(`${accountId}:${recordId}`, { threadId, turnId, fresh });
 }
-export function clearChatSubmissionRecoverySession() {
+export function clearSubmissionRows() {
   submissionRows.clear();
 }
 
@@ -107,6 +108,7 @@ export function useChatSubmissions(
           return;
         unsent.handoff();
         awaitingCreation = false;
+        removeChatRow(queryClient, projectId, threadId);
         latest.current.dissolveChat();
       } else if (records.length > 0) awaitingCreation = records.some((entry) => entry.creation);
       const ids = new Set(records.map((entry) => `${accountId}:${entry.recordId}`));
@@ -181,7 +183,6 @@ export function useChatSubmissions(
       created: (thread) => {
         if (!current()) return;
         latest.current.actions.ensureThread(thread);
-        latest.current.actions.clearPendingCreation({ threadId });
         void invalidateProjectThreadData(queryClient, projectId);
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       },
@@ -191,6 +192,14 @@ export function useChatSubmissions(
         else failed.current.delete(entry.recordId);
         latest.current.actions.patchTurnStatus(threadId, row(entry), status);
         render();
+      },
+      edited: (entry) => {
+        // A different tab can record a complete new intent during the synchronous transfer.
+        // Its record keeps that tab's destination alive; this writer's Edit still leaves here.
+        if (entry.creation && current() && entries().length > 0) {
+          removeChatRow(queryClient, projectId, threadId);
+          latest.current.dissolveChat();
+        }
       },
       transferForEdit: (entry) => {
         if (!current() || !entry.draft) return null;
@@ -223,7 +232,9 @@ export function useChatSubmissions(
           !composerSessionDraft(accountId, { kind: "chat", id: threadId }).editRejected(entry.draft)
         )
           return null;
-        latest.current.focusComposer();
+        requestAnimationFrame(() => {
+          if (current()) latest.current.focusComposer();
+        });
         return [entry.recordId];
       },
     });

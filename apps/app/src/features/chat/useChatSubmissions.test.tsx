@@ -22,7 +22,7 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { clearChatSubmissionRecoverySession, useChatSubmissions } from "./useChatSubmissions";
+import { clearSubmissionRows, useChatSubmissions } from "./useChatSubmissions";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -88,6 +88,8 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   bindChatSubmissions(account);
+  composerSessionDraft(account, { kind: "chat", id: "thread_1" }).handoff();
+  composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).handoff();
   const lock = new MemorySubmissionLock();
   Object.defineProperty(navigator, "locks", {
     configurable: true,
@@ -100,7 +102,7 @@ beforeEach(() => {
 afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
-  clearChatSubmissionRecoverySession();
+  clearSubmissionRows();
   window.localStorage.clear();
   window.sessionStorage.clear();
 });
@@ -184,4 +186,50 @@ it("a cross-tab retirement removes an unresolved optimistic row, not just reject
   );
   expect(scenario.turns()).toEqual([]);
   expect(mounted.dissolved).not.toHaveBeenCalled();
+});
+
+it("dissolves this pane without retiring a message recorded after the transfer read", async () => {
+  const creation = {
+    title: "Opening",
+    workId: null,
+    agentName: "General",
+    agentSlug: "general",
+    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+  };
+  recordChatSubmission(account, { ...entry(), creation });
+  const scenario = new ThreadRunScenario();
+  const mounted = await mount(scenario);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+  const destination = composerSessionDraft(account, { kind: "new-chat", id: "project-1" });
+  const write = Storage.prototype.setItem;
+  let concurrent = false;
+  const intercept = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key,
+    value,
+  ) {
+    write.call(this, key, value);
+    if (key === destination.key && !concurrent) {
+      concurrent = true;
+      recordChatSubmission(account, {
+        ...entry("late", "A later send"),
+        state: undefined,
+        creation,
+      });
+    }
+  });
+  try {
+    await act(async () => mounted.read().rowActions(row.id)?.onEdit?.());
+    await vi.waitFor(() =>
+      expect(readChatSubmissions(account).map((record) => record.recordId)).toEqual(["late"]),
+    );
+    expect(readChatSubmissions(account)[0]?.creation).toEqual(creation);
+    expect(mounted.dissolved).toHaveBeenCalledOnce();
+    expect(
+      destination.initialDraft && serializeComposerDraft(destination.initialDraft.doc).text,
+    ).toBe("First rejected");
+  } finally {
+    intercept.mockRestore();
+  }
 });

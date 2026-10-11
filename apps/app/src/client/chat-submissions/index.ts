@@ -57,13 +57,6 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
-export function readChatSubmission(accountId: string, submissionId: string): ChatSubmission | null {
-  const current = browserJournal();
-  return current?.accountId === accountId
-    ? (current.entries().find((entry) => entry.submissionId === submissionId) ?? null)
-    : null;
-}
-
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
   return browserJournal()?.record(accountId, entry) ?? false;
 }
@@ -74,21 +67,6 @@ export function retireChatSubmission(
   expectedEpoch?: number,
 ): boolean {
   return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
-}
-
-/** Accepted records retire; proved refusals remain durable writer rows. */
-export function settleChatSubmission(
-  accountId: string,
-  submissionId: string,
-  outcome: "accepted" | "rejected",
-  expectedEpoch: number,
-): boolean {
-  const current = browserJournal();
-  if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
-  const entry = current.entries().find((entry) => entry.submissionId === submissionId) ?? null;
-  if (!entry) return false;
-  if (outcome === "rejected") return current.record(accountId, { ...entry, state: "rejected" });
-  return current.retire(accountId, entry.recordId, expectedEpoch);
 }
 
 /** In-tab writes and cross-tab storage changes share the same subscription. */

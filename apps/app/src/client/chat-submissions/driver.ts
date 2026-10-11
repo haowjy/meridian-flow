@@ -36,6 +36,7 @@ export type SubmissionDriverOptions = {
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
   transferForEdit(entry: ChatSubmission): string[] | null;
+  edited(entry: ChatSubmission): void;
   timeoutMs?: number;
 };
 
@@ -218,10 +219,6 @@ export class ChatSubmissionDriver {
         }
       }
       if (!this.current()) return;
-      if (entry.state) {
-        entry = { ...entry, state: undefined };
-        if (!this.options.journal.record(entry)) return;
-      }
       dispatched = true;
       const dispatching = entry;
       const outcome = await this.request((signal) =>
@@ -320,6 +317,7 @@ export class ChatSubmissionDriver {
       for (const recordId of transferred) {
         if (!this.current() || !this.options.journal.retire(recordId)) return;
       }
+      if (this.current()) this.options.edited(entry);
     });
   }
 }
