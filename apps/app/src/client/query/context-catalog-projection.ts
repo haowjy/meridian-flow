@@ -58,7 +58,7 @@ export type CatalogDirectory = {
   path: string;
   uri: string;
   /** A refused rename or move put this folder back; the writer retries from here. */
-  namespaceFailure?: "set-location";
+  namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;
   namespaceRepairMove?: ResourceDestination;
   namespaceFailureAt?: number;

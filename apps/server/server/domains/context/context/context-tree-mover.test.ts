@@ -107,3 +107,15 @@ describe("ContextTreeMover result-aware command ownership", () => {
     ]);
   });
 });
+
+it("refuses a delayed folder delete when a different folder occupies the path", async () => {
+  const mover = new ContextTreeMover();
+  const target = dispatch({
+    canonical: "manuscript://folder",
+    path: "folder",
+    token: { kind: "directory", nodeId: "replacement", sourceId: "source-1", path: "folder" },
+  });
+  await expect(
+    mover.delete(target, { expected: { kind: "folder", nodeId: "original" } }),
+  ).resolves.toEqual(Err({ code: "stale_target", uri: "manuscript://folder" }));
+});

@@ -7,8 +7,10 @@ import {
   type FolderNamespaceStore,
   type FolderNamespaceWrite,
   folderObservationFence,
+  folderOwnsDeletion,
   type NamespaceOutcome,
   planFolderCatalogInstallation,
+  planFolderDeletion,
   planFolderLocation,
   projectFolderLocation,
   projectFolderNeedsRepair,
@@ -156,6 +158,7 @@ it.each([
   expect(projectFolderLocation(reopened.current())).toEqual(source);
   expect(projectFolderNeedsRepair(reopened.current())).toEqual({
     intentId: "B",
+    kind: "set-location",
     name: "C",
     destination: { scheme: "manuscript", folderPath: "", name: "C", workId: null },
   });
@@ -216,4 +219,50 @@ it("retires settled placement only at its fenced canonical refresh", async () =>
   if (!follow) throw new Error("Missing canonical follow");
   await store.commitFolder(follow);
   expect(projectFolderLocation(store.current()).path).toBe("/foreign");
+});
+
+it("admits recursive deletion in the folder journal and settles a delete receipt", async () => {
+  const store = new MemoryFolders();
+  const write = planFolderDeletion({
+    projectId: "project",
+    handle: "folder",
+    folderId: "folder",
+    source,
+    intentId: "delete-folder",
+    operationId: "delete-folder",
+  });
+  if (!write) throw new Error("Missing deletion plan");
+  await store.commitFolder(write);
+  expect(folderOwnsDeletion(store.current())).toBe(true);
+  await reconcile(store, {
+    readOutcome: async () => null,
+    submit: async (_projectId, request) => {
+      expect(request).toMatchObject({
+        kind: "delete",
+        body: { path: "A", expected: { kind: "folder", nodeId: "folder" } },
+      });
+      return {
+        kind: "operation",
+        receipt: {
+          operationId: "delete-folder",
+          command: {
+            kind: "delete",
+            uri: "manuscript://A",
+            expected: { kind: "folder", nodeId: "folder" },
+          },
+          result: {
+            ok: true,
+            value: {
+              status: "deleted",
+              deletedDocumentIds: ["child"],
+              availabilityGeneration: "9",
+            },
+          },
+        },
+      };
+    },
+  });
+  expect(store.current().intents.at(-1)?.state).toBe("settled");
+  expect(folderOwnsDeletion(store.current())).toBe(true);
+  expect(store.current().canonicalRefresh).toBeUndefined();
 });

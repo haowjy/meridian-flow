@@ -161,10 +161,7 @@ function MobileFolderListing({
     ? (catalog?.children(currentDir.entryId).map((child) => child.name) ?? [])
     : [];
 
-  const deleteConfirm = useDeleteConfirmation({
-    projectId,
-    scheme,
-  });
+  const deleteConfirm = useDeleteConfirmation({ projectId });
 
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen

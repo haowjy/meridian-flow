@@ -103,7 +103,7 @@ export function RailScratchSection({
   const sectionRef = useRef<HTMLElement | null>(null);
   // Folders the writer has toggled; a top-level folder starts open, like the tree's.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
-  const deletion = useDeleteConfirmation({ projectId, scheme: "scratch" });
+  const deletion = useDeleteConfirmation({ projectId });
   const { works, noWork } = useWorks(projectId);
   const capabilitiesByOwner = new Map<string, EntryCapabilities>();
   const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {

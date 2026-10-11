@@ -14,12 +14,13 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 A **browse surface** over the account resource replica. The replica owns durable
 resource descriptors, catalog checkpoints, local content access, and file and folder
 namespace work. Terminal document facts remain visible to tab/dock projections even
-when their last catalog entry is gone. Server-proven deletions enter the replica
-into a durable evidence inbox before availability reconciliation. Busy namespace
-locks retry automatically under the account epoch, sharing the file namespace
-receipt's irreversible terminal transition. React Query delivers acquisition results to consumers; it is not a second
-catalog owner. Renames and moves of files and folders are admitted locally and dispatched in
-the background; folder creation and deletion still use the direct context API.
+when their last catalog entry is gone. React Query delivers acquisition results
+but is not a second catalog owner. File and folder deletion and placement
+enter the account namespace journal; accepted deletion receipts settle
+exact descendant IDs atomically. Pending folder deletion hides its subtree;
+refusal restores rows with a delete failure mark. Folder creation uses the direct
+context API. Availability reconciles workspace visibility and session authority;
+it is not a general replica deletion intake.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
@@ -41,8 +42,11 @@ Shared across both shells:
   owner, so Scratch's Work and Earlier notes share a dialog. Resolve archived
   Work capabilities at the list/owner group, not in rows.
   `ContextEntryActions.tsx` renders the same action specification through
-  context menus and kebabs. Closed move pickers acquire no catalogs. Refused
-  moves reopen at their retained destination when it still resolves, otherwise
+  context menus and kebabs. Closed move pickers acquire no catalogs.
+  File and folder deletion both admit replica namespace intents and close the
+  confirmation after local persistence, never after network completion. Refused
+  deletion restores rows with passive failure evidence, not a rename field.
+  Refused moves reopen at their retained destination when it still resolves, otherwise
   at the current parent with the refusal message. Uploads omits generic Delete.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
@@ -51,7 +55,7 @@ Shared across both shells:
 
 - Use `IconButton` / `Button` / `PhoneIconButton` for all interactive controls.
 - Use discriminated `EntryActionTarget`; file targets retain `documentId`
-  through confirmation, while folders carry no document identity.
+  through confirmation, while folders retain their catalog `entryId` (never a document identity).
 - Mobile `DrillRow`: `trailing: ReactNode` separates the tap target from action
   buttons. Never a `drillsIn` boolean.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only

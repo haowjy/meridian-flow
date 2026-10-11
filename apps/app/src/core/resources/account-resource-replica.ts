@@ -5,10 +5,12 @@ import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
   type FolderNamespaceRecord,
+  type FolderNamespaceWrite,
   folderNeedsBackgroundReconciliation,
   installedFolderLocation,
   markResourceCreateEligible,
   planCachedSessionAdoption,
+  planFolderDeletion,
   planFolderLocation,
   planResourceDeletion,
   planResourceLocation,
@@ -37,7 +39,6 @@ import type {
   LocalLineageTerminalPort,
 } from "@/core/editor/document-session-coordination-contract";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
-import { type CommittedDeleteBatch, CommittedDeletionIntake } from "./committed-deletion-intake";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { createResourceCatalogTransport } from "./resource-catalog-transport";
 import type { ResourceContentOpenResult } from "./resource-content-access";
@@ -128,7 +129,6 @@ export class AccountResourceReplica {
   private readonly catalogs: ResourceCatalogAcquisition;
   readonly terminal: LocalLineageTerminalPort;
   private readonly lock;
-  private readonly committedDeletionIntake;
   private readonly lockLifetime = new AbortController();
   private readonly namespace;
   private readonly adoption;
@@ -153,7 +153,6 @@ export class AccountResourceReplica {
   private started = false;
   private stopReconciliation: (() => void) | null = null;
   private readonly retryAll = () => {
-    void this.committedDeletionIntake.retry();
     void this.metadata
       .readProjection("")
       .then(({ records, folders }) => {
@@ -181,11 +180,6 @@ export class AccountResourceReplica {
       onInvalidated(error);
     });
     this.lock = createResourceNamespaceLock({ accountId, epoch: this.lockLifetime.signal });
-    this.committedDeletionIntake = new CommittedDeletionIntake(
-      this.metadata,
-      this.lock,
-      runtime.epochSignal,
-    );
     this.namespace = createResourceNamespaceTransport(accountId, runtime.epochSignal);
     this.content = new ResourceContentAccess(
       accountId,
@@ -305,7 +299,6 @@ export class AccountResourceReplica {
     this.requireOpen();
     if (this.started) return;
     this.started = true;
-    void this.committedDeletionIntake.retry();
     this.stopHints =
       this.connectivityHints?.subscribe(this, (hint) => {
         if (hint === "retry-now") this.retryAll();
@@ -603,10 +596,23 @@ export class AccountResourceReplica {
     folderId: string,
     destination: ResourceDestination,
   ): Promise<{ operationId?: string }> {
+    return this.commitFolderPlan(projectId, folderId, (input) =>
+      planFolderLocation({ ...input, destination }),
+    );
+  }
+
+  async deleteFolder(projectId: string, folderId: string): Promise<void> {
+    await this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+  }
+
+  private async commitFolderPlan(
+    projectId: string,
+    folderId: string,
+    plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
+  ): Promise<{ operationId?: string }> {
     this.requireOpen();
     const key = folderKey(folderId);
     const operationId = crypto.randomUUID();
-    let admitted = false;
     for (;;) {
       const [current, projection] = await Promise.all([
         this.metadata.readFolder(key),
@@ -615,24 +621,20 @@ export class AccountResourceReplica {
       const source =
         current?.canonical ?? installedFolderLocation(projection.catalogs, projectId, folderId);
       if (!source) throw new Error("Folder is unavailable");
-      const write = planFolderLocation({
+      const write = plan({
         record: current,
         projectId,
         handle: key.handle,
         folderId,
         source,
-        destination,
         intentId: crypto.randomUUID(),
         operationId,
       });
-      if (!write) break;
-      if ((await this.metadata.commitFolder(write)) === "committed") {
-        admitted = true;
-        break;
-      }
+      if (!write) return {};
+      if ((await this.metadata.commitFolder(write)) !== "committed") continue;
+      this.scheduleFolder(key);
+      return { operationId };
     }
-    this.scheduleFolder(key);
-    return admitted ? { operationId } : {};
   }
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {
@@ -640,16 +642,6 @@ export class AccountResourceReplica {
       planResourceDeletion(record, projectId, crypto.randomUUID()),
     );
     this.schedule(key);
-  }
-
-  /** Retain server-proven absence before settling UI, even when namespace locks are busy. */
-  acceptCommittedDelete(input: CommittedDeleteBatch): Promise<void> {
-    return this.acceptCommittedDeletes([input]);
-  }
-
-  async acceptCommittedDeletes(inputs: readonly CommittedDeleteBatch[]): Promise<void> {
-    this.requireOpen();
-    await this.committedDeletionIntake.accept(inputs);
   }
 
   private async commitPlan(
@@ -901,7 +893,6 @@ export class AccountResourceReplica {
   beginClose(): void {
     if (this.closing) return;
     this.closing = true;
-    this.committedDeletionIntake.beginClose();
     if (this.started) {
       this.stopHints?.();
       this.stopHints = null;
@@ -920,7 +911,6 @@ export class AccountResourceReplica {
   async finishClose(): Promise<void> {
     this.beginClose();
     await Promise.allSettled([
-      this.committedDeletionIntake.finishClose(),
       this.adoption.finishClose(),
       this.catalogs.finishClose(),
       ...this.runners.values(),

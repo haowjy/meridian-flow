@@ -132,4 +132,7 @@ refs once, against its final tree, through `DocumentArrivals`; see
 
 Lineage source hiding is reversible authority loss (`lineage_hidden`), not document
 deletion. Project-final availability must preserve that distinction so cached
-Scratch resources can return on chat or Work restore.
+Scratch resources can return on chat or Work restore. Independent document
+tombstones still report deletion while their lineage is hidden;
+`deletedByWorkId` identifies reversible cascade-owned tombstones. Folder delete
+commands validate the supplied folder node ID before recursive mutation.

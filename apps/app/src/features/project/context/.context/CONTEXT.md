@@ -53,6 +53,9 @@ A stable resource handle survives document-ID remint; the exact persistence name
 and mounted Y.Doc do not change. The resource descriptor also retains the
 catalog-defined file classification so cached code never reopens as rich text.
 
+Availability becomes durable only through session authority for an adopted
+local-origin document retaining its lineage; all other durable deletions require receipts.
+
 ## Visible Editor ownership
 
 `DesktopProjectController` owns the displayed Editor value for `DesktopProject`.

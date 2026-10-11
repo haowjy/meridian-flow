@@ -1,15 +1,11 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
+import type { ContextOwner } from "@meridian/contracts/protocol";
 import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,10 +26,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import {
-  useAccountResourceReplica,
-  useProjectContextAvailabilityCoordinator,
-} from "./account-feature-context";
+import { useAccountResourceReplica } from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -67,7 +60,7 @@ export type EntryActionTarget = {
   name: string;
   /** Full scheme-relative path. */
   path: string;
-} & ({ kind: "file"; documentId: string } | { kind: "dir" });
+} & ({ kind: "file"; documentId: string } | { kind: "dir"; entryId: string });
 
 export type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
 
@@ -220,24 +213,15 @@ function DropdownActionItems({
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────
 
-export function useDeleteConfirmation({
-  projectId,
-  scheme,
-}: {
-  projectId: string;
-  scheme: ProjectContextTreeScheme;
-}) {
-  const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
+export function useDeleteConfirmation({ projectId }: { projectId: string }) {
+  const [target, setTarget] = useState<DeleteTarget | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const mutation = useDeleteContextEntry(projectId, scheme);
   const resources = useAccountResourceReplica();
   const [localPending, setLocalPending] = useState(false);
-  const availability = useProjectContextAvailabilityCoordinator();
-  const queryClient = useQueryClient();
 
   const requestDelete = useCallback((t: DeleteTarget) => {
     setError(null);
-    setTarget({ ...t, operationId: crypto.randomUUID() });
+    setTarget(t);
   }, []);
   const cancel = useCallback(() => {
     setError(null);
@@ -248,44 +232,26 @@ export function useDeleteConfirmation({
     if (!target) return;
     setError(null);
     try {
+      setLocalPending(true);
       if (target.kind === "file") {
-        setLocalPending(true);
         const key = await resources.keyForDocument(projectId, target.documentId);
         if (!key) throw new Error("Document resource is unavailable");
         await resources.deleteDocument(projectId, key);
-        setTarget(null);
-        return;
+      } else {
+        await resources.deleteFolder(projectId, target.entryId);
       }
-      const result = await mutation.mutateAsync({
-        operationId: target.operationId,
-        path: target.path,
-        ...target.owner,
-        expected: { kind: "folder" },
-      });
-      await availability.acceptCommittedDelete({
-        projectId,
-        deletedDocumentIds: result.deletedDocumentIds,
-        generation: result.availabilityGeneration,
-      });
       setTarget(null);
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextCatalogView(
-          projectId,
-          scheme,
-          isWorkScopedProjectContextScheme(scheme) ? target.owner : undefined,
-        ),
-      });
     } catch (cause) {
       // Keep the target visible so the writer can refresh and retry.
       setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
     } finally {
       setLocalPending(false);
     }
-  }, [availability, projectId, queryClient, resources, scheme, target, mutation]);
+  }, [projectId, resources, target]);
 
   return {
     target,
-    isPending: mutation.isPending || localPending,
+    isPending: localPending,
     error,
     requestDelete,
     cancel,

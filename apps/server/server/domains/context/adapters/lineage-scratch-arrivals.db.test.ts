@@ -105,6 +105,12 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       await expect(lookup()).resolves.toMatchObject({
         resolutions: [{ kind: "authority-unavailable", reason: "lineage_hidden" }],
       });
+      await expect(
+        availability.lookup(
+          { projectId: p as never, documentIds: [deleted] as never },
+          { userId: u },
+        ),
+      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
       const ahead = crypto.randomUUID(),
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();

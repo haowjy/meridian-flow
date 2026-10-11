@@ -149,7 +149,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 5. A new Work note must still open its naming field when it arrives. Cancelling
    the field keeps the note; renaming it clears the pending naming request.
 
-## Restorable lineage Scratch and committed deletion contention
+## Restorable lineage Scratch and folder namespace deletion
 
 1. Create a `zz-probe` No Work chat with `./mf thread create`, and script an AI
    `write create` to `scratch://zz-probe-note.md` on an owned mock-provider stack.
@@ -160,16 +160,30 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 3. Restore with `./mf api POST /api/threads/$THREAD/restore`. Reopen the chat
    and Scratch. The same note must return in the loaded profile, not just in a
    fresh one. Repeat with Work trash/restore cascading over the lineage's chats.
-4. For a recursive folder delete, hold one descendant's account/resource
-   namespace Web Lock in another owned browser tab. Delete the folder. The
-   server command must succeed and the dialog close; release the lock without
-   another delete or refresh. All descendants must become terminal locally.
-   Reload while the lock is held and release it after reload: retained evidence
-   must still settle. Switching accounts fences the old delivery.
-5. A deleted file disappears from Chat Recent despite a cached touches response.
+4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
+   Editor tabs and the document dock. Delete the folder from its list: the
+   dialog and rows disappear after local admission, without waiting for HTTP.
+   Descendant tabs and dock close through resource projection. Repeat offline,
+   reload, then reconnect: the same journal attempt settles from its receipt.
+   Switch accounts during dispatch and return: only the original account settles.
+   Inject a typed nonretryable refusal for one delete: the folder and descendants
+   return, with a delete failure mark and no rename field.
+5. Delete another open folder through `./mf api` using its catalog folder node
+   ID. Availability reconciliation closes its tabs and dock (wake/focus/poll),
+   without a general durable deletion intake (session authority retains its adopted
+   local-origin exception). A delayed delete naming an old folder
+   ID at a replacement folder's path must return `stale_target`.
+6. Delete a Scratch note independently, then trash and restore its No Work chat
+   and its Work. Availability must still say `deleted`, including while its lineage
+   is hidden; the independently deleted note never returns.
+7. A deleted file disappears from Chat Recent despite a cached touches response.
    A live renamed file uses its current catalog name; a not-yet-loaded identity
    may still use its touch-row name.
 
+Known independent issue: a mounted project can recreate a deleted Work's shared
+draft and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
+Record this separately from Scratch availability; never delete real branches to force restoration.
+
 Clean up `zz-probe` notes and chats and close only the owned browser profiles.
-Focused automated proofs: `committed-deletion.test.ts` and
+Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder settlement) and
 `lineage-scratch-arrivals.db.test.ts` (both restore doors).
