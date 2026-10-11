@@ -60,7 +60,8 @@ export type DrillInMenuProps = {
   hereIds: readonly string[];
   /** The folders, outermost first, the menu opens inside. */
   openAt: readonly DrillNode[];
-  actions?: readonly DrillAction[] | ((trail: readonly DrillNode[]) => readonly DrillAction[]);
+  /** Footer actions for the level on screen; the caller closes the menu when one is done. */
+  actions?: (trail: readonly DrillNode[]) => readonly DrillAction[];
   caption?: ReactNode;
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
@@ -122,7 +123,7 @@ export function DrillInMenu({
 
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
-  const currentActions = typeof actions === "function" ? actions(trail) : (actions ?? []);
+  const currentActions = actions?.(trail) ?? [];
 
   return (
     <DropdownMenu open={open} onOpenChange={changeOpen}>
