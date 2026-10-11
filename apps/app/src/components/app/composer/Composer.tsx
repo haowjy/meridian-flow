@@ -23,6 +23,7 @@ import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
+import { ErrorCard } from "@/features/chat/ErrorCard";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
@@ -579,12 +580,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ) : null}
       </div>
       {submitFailure ? (
-        <p
-          role="alert"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
-        >
-          {t`Couldn't send. Your message was not lost.`}
-        </p>
+        <div className="mt-[var(--chat-space-inline)] flex justify-end">
+          <ErrorCard inline>
+            {/* No buttons: pressing Send again is the retry. The sentence may wrap in a very narrow dock. */}
+            <p className="whitespace-normal">{t`Couldn't send. Your message stays.`}</p>
+          </ErrorCard>
+        </div>
       ) : null}
     </div>
   );
