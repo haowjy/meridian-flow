@@ -5,7 +5,7 @@
  *
  * Write tool scripting (optional, for gate probes — does not change default
  * behavior unless present in the user message that triggers a write):
- *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1.md`
+ *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1`
  *   `[[write <uri> overwrite]]` — same with `overwrite: true` on create
  * A user message must include the mock's write trigger before these directives apply.
  *
@@ -54,7 +54,7 @@ function sseLine(payload: unknown): string {
 }
 
 const VERTICAL_SLICE_TRIGGER = "Phase 7 final gate";
-const VERTICAL_SLICE_WRITE_PATH = "manuscript://chapter-1.md";
+const VERTICAL_SLICE_WRITE_PATH = "manuscript://chapter-1";
 
 function messageContentText(message: { role?: string; content?: unknown } | undefined): string {
   const content = message?.content;

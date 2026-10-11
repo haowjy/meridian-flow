@@ -243,10 +243,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await script.begin();
       const bySection = await first.call("write", {
         command: "copy",
-        from: { path: `${CHAPTER}#the-midnight-duel` },
+        from: { path: `${CHAPTER}.md#the-midnight-duel` },
         path: "scratch://duel",
       });
       expect(bySection.isError).toBeFalsy();
+      expect(text(bySection)).toContain(`${CHAPTER}#the-midnight-duel`);
+      expect(text(bySection)).not.toContain(".md");
       await first.save();
 
       const { call: next } = await script.begin();

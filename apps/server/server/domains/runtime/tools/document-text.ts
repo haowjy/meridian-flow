@@ -1,4 +1,5 @@
 /** Tool-owned document-text substitutions; the compaction planner decides staleness. */
+import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import {
@@ -25,9 +26,9 @@ export function staleReadStub(documents: string): string {
 }
 
 function documentsLabel(changed: readonly DocumentRef[], input: JsonObject): string {
+  const { path, suffix } = splitDocumentHrefSuffix(String(input.path ?? "This document"));
   return (
-    changed.map((ref) => ref.uri ?? ref.documentId).join(", ") ||
-    String(input.path ?? "This document")
+    changed.map((ref) => ref.uri ?? ref.documentId).join(", ") || documentPathKey(path) + suffix
   );
 }
 
