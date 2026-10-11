@@ -1,16 +1,92 @@
-/** A deleted-live edit stays reviewable only through its own active draft. */
+/** Draft review respects Work lifecycle while preserving pending items through restore. */
 
-import { works } from "@meridian/database/schema";
+import { documentBranches, drafts, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import {
+  handleApplyAllWorkDraftRequest,
   handleApplyWorkDraftRequest,
+  handleDiscardAllWorkDraftRequest,
+  handleDiscardWorkDraftRequest,
+  handleWorkDraftListRequest,
   handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
+import {
+  handleWorkWriteModeRequest,
+  selectWorkWriteModeServices,
+} from "../../lib/work-write-mode-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { deleteWorkTransition, restoreWork } from "../projects/index.js";
 
 describeDraftTreeDb("deleted-live review preview", (start, db) => {
+  it("refuses a deleted Work's draft routes without provisioning, then restores its pending item", async () => {
+    const { s, runtime } = await start();
+    const work = await s.work("ascension", "draft");
+    const documentId = await s.writer.createDocument("chapter.md", "Live words.");
+    await s.model(work).edit("chapter.md", "Live words.", "Pending words.");
+    const deps = selectDraftRouteServices(runtime.app);
+    const input = { projectId: s.project.id, userId: s.project.userId, workId: work.id };
+    const listed = await handleWorkDraftListRequest(deps, input);
+    expect(listed.items).toHaveLength(1);
+    const item = listed.items[0];
+    if (!item?.draftBranchId) throw new Error("Expected a pending draft branch");
+    const documentInput = { ...input, documentId, draftId: item.draftBranchId };
+    await deleteWorkTransition(
+      { works: runtime.app.workRepo, stopThreadRun: runtime.app.stopThreadRun },
+      work.id,
+    );
+    // Identity snapshots detect provisioning even if a read creates an empty branch.
+    const rows = async () => ({
+      drafts: await db.select({ id: drafts.id }).from(drafts).orderBy(drafts.id),
+      branches: await db
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .orderBy(documentBranches.id),
+    });
+    const deletedRows = await rows();
+    await expect(handleWorkDraftListRequest(deps, input)).rejects.toMatchObject({
+      statusCode: 404,
+      message: "Draft not found",
+    });
+    expect(await rows()).toEqual(deletedRows);
+    for (const request of [
+      () => handleWorkDraftPreviewRequest(deps, documentInput),
+      () => handleApplyWorkDraftRequest(deps, documentInput),
+      () => handleDiscardWorkDraftRequest(deps, documentInput),
+      () =>
+        handleApplyAllWorkDraftRequest(deps, {
+          ...input,
+          request: {
+            draftId: item.draftId,
+            items: [{ itemKey: item.itemKey, locationToken: item.locationToken }],
+          },
+        }),
+      () =>
+        handleDiscardAllWorkDraftRequest(deps, { ...input, request: { draftId: item.draftId } }),
+      () =>
+        handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
+          ...input,
+          aiWriteMode: "direct",
+          pending: "apply",
+        }),
+    ]) {
+      await expect(request()).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Draft not found",
+      });
+    }
+    const restored = await restoreWork(
+      { works: runtime.app.workRepo, workContextNotices: runtime.app.workContextNotices },
+      work.id,
+    );
+    expect(restored.deletedAt).toBeNull();
+    expect((await handleWorkDraftListRequest(deps, input)).items).toEqual(listed.items);
+    const preview = await handleWorkDraftPreviewRequest(deps, documentInput);
+    expect(preview.status).toBe("active");
+    if (preview.status === "active") expect(preview.preview).toContain("Pending words.");
+  });
+
   it("previews pending text, including archived read-only review, but refuses another Work's branch", async () => {
     const { s, runtime } = await start();
     const work = await s.work("ascension", "draft");

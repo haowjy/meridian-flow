@@ -26,6 +26,7 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { Work } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
@@ -55,17 +56,18 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
 }
 
 export async function requireDraftWorkAccess(
-  deps: DraftRouteServices,
+  deps: Pick<DraftRouteServices, "projects" | "works">,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
-): Promise<void> {
+): Promise<Work> {
   const project = await deps.projects.findById(input.projectId);
   if (!project || project.userId !== input.userId || project.deletedAt) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
   const work = await deps.works.findById(input.workId);
-  if (!work || work.projectId !== input.projectId) {
+  if (!work || work.projectId !== input.projectId || work.deletedAt) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
+  return work;
 }
 
 /**

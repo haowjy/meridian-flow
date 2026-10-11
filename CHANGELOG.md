@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Deleted Works no longer serve pending drafts. Restoring a Work keeps its drafts available, without a draft-loading error after deletion.
+
 ### Changed
 
 - Documents and folders an AI draft creates stay out of your Manuscript, and out of other Works, until you apply them. If you create a document the draft already made, you get that same document, with the draft's text waiting for review. Discarding a draft leaves nothing behind: its new documents and folders are gone and their names are free again. A link to a document that exists only in a draft reads "in a draft" instead of missing. Apply all applies every item in one step, so an interruption never leaves the draft half applied.

@@ -4,6 +4,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { resetDraftCommandRecords } from "./draft-command-record";
 import { DraftApplyOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
@@ -33,6 +34,7 @@ function deferred<T>() {
 type Harness = {
   apply: () => Promise<unknown>;
   listed: () => string[];
+  status: () => string;
   queryClient: QueryClient;
 };
 
@@ -40,9 +42,12 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let mutate!: ReturnType<typeof useApplyDraft>["mutateAsync"];
   let drafts: string[] = [];
+  let status = "loading";
   function Capture() {
     mutate = useApplyDraft().mutateAsync;
-    drafts = (useWorkDrafts("project-a", "work-a").drafts ?? []).map((draft) => draft.draftId);
+    const query = useWorkDrafts("project-a", "work-a");
+    drafts = (query.drafts ?? []).map((draft) => draft.draftId);
+    status = query.status;
     return null;
   }
   await withReactRoot(
@@ -57,6 +62,7 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
             (error: unknown) => error,
           ),
         listed: () => drafts,
+        status: () => status,
         queryClient,
       }),
   );
@@ -67,6 +73,25 @@ describe("useApplyDraft", () => {
     vi.clearAllMocks();
     resetDraftCommandRecords();
     api.listWorkDrafts.mockResolvedValue(listing("draft-a"));
+  });
+
+  it("silently drops drafts on a deleted Work's 404 wake, but still exposes other failures", async () => {
+    await withHarness(async ({ listed, status, queryClient }) => {
+      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
+      api.listWorkDrafts.mockRejectedValue(new HttpResponseError("Draft not found", 404, null));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
+      });
+      await vi.waitFor(() => {
+        expect(listed()).toEqual([]);
+        expect(status()).toBe("empty");
+      });
+      api.listWorkDrafts.mockRejectedValue(new HttpResponseError("Unavailable", 503, null));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
+      });
+      await vi.waitFor(() => expect(status()).toBe("error"));
+    });
   });
 
   it("keeps a lost response unknown even when a remote Discard emptied the list", async () => {
