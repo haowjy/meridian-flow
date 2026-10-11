@@ -377,3 +377,33 @@ it("keeps typed rename provenance through optimistic placement and transport", (
     });
   }
 });
+
+it("inherits from the locally visible name when a second rename precedes settlement", () => {
+  const record = reserved();
+  record.intents = [];
+  record.resource.canonical = {
+    scheme: "user",
+    path: "/config.toml",
+    name: "config.toml",
+    workId: null,
+  };
+  const prose = planResourceLocation({
+    record,
+    projectId: "project",
+    intentId: "prose",
+    eligibleAt: 0,
+    destination: { scheme: "user", folderPath: "", name: "settings.md", workId: null },
+  });
+  if (!prose) throw new Error("Missing first rename");
+  const next = planResourceLocation({
+    record: prose.next,
+    projectId: "project",
+    intentId: "next",
+    eligibleAt: 0,
+    destination: { scheme: "user", folderPath: "", name: "Notes", workId: null },
+  });
+  expect(next?.next.intents.at(-1)?.desired).toMatchObject({
+    typedName: "Notes",
+    destination: { name: "Notes" },
+  });
+});

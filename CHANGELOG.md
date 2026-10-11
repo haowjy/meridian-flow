@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Queued renames inherit extensions from the writer’s current optimistic name, not a stale server location.
+
 - Preserve typed rename and move suffixes through optimistic filing and server requests, including repair retries. Compare folder siblings literally and report the conflict occupant’s kind.
 
 - Preserve prose classification when MIME inference supplies an upload suffix.
