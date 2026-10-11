@@ -2,6 +2,7 @@
 import {
   captureUndoRestorationClaims,
   RESTORATION_CLAIMS_TYPE,
+  type RestorationAlias,
 } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -201,4 +202,153 @@ it("a whole deleted paragraph certifies its restored parent chain and text", () 
   undo.destroy();
   browser.destroy();
   server.destroy();
+});
+
+function richRestoration(kind: "attribute" | "rich paragraph", content = "abcdef") {
+  const browser = new Y.Doc({ gc: false });
+  browser.clientID = 3001;
+  const root = browser.getXmlFragment("prosemirror");
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  text.insert(0, content);
+  root.insert(0, [paragraph]);
+  browser.clientID = 3004;
+  paragraph.setAttribute("align", "left");
+  text.format(2, 2, { bold: true });
+  const aiUpdate = Y.encodeStateAsUpdate(browser);
+  browser.clientID = 3002;
+  const undo = new Y.UndoManager(root);
+  const stop = captureUndoRestorationClaims(browser);
+  if (kind === "attribute") paragraph.setAttribute("align", "right");
+  else root.delete(0, 1);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(browser));
+  undo.undo();
+  const claims = browser.getMap<RestorationAlias>(RESTORATION_CLAIMS_TYPE);
+  return {
+    browser,
+    server,
+    root,
+    claims,
+    aiUpdate,
+    certify: () => certifyWriterRestorations(server, Y.encodeStateAsUpdate(browser)),
+    destroy: () => {
+      stop();
+      undo.destroy();
+      browser.destroy();
+      server.destroy();
+    },
+  };
+}
+
+it.each([
+  "attribute",
+  "rich paragraph",
+] as const)("certifies every item of an honest %s restoration", (kind) => {
+  const f = richRestoration(kind);
+  const claims = [...f.claims.values()];
+  expect(claims).toHaveLength(kind === "attribute" ? 1 : 8);
+  expect(f.root.toString()).toBe('<paragraph align="left">ab<bold>cd</bold>ef</paragraph>');
+  const restorationAliases = f.certify();
+  expect(restorationAliases).toHaveLength(claims.length);
+  expect(restorationAliases).toEqual(expect.arrayContaining(claims));
+  const baseDoc = new Y.Doc({ gc: false });
+  const index = indexDraftUpdates({
+    baseDoc,
+    updates: [
+      { id: 1, actorTurnId: "ai-turn", updateData: f.aiUpdate },
+      {
+        id: 2,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(f.server),
+      },
+      {
+        id: 3,
+        actorTurnId: null,
+        actorUserId: "writer",
+        updateData: Y.encodeStateAsUpdate(f.browser),
+        updateMeta: { restorationAliases },
+      },
+    ],
+  });
+  const attribution = index.attributeRanges({
+    insertedRanges: claims.map((alias) => alias.target),
+    deletedRanges: [],
+  });
+  expect(attribution.complete).toBe(true);
+  expect(attribution.insertedAttribution.reduce((sum, range) => sum + range.length, 0)).toBe(
+    kind === "attribute" ? 1 : 11,
+  );
+  expect(
+    attribution.insertedAttribution.every(
+      (range) => index.byOperationId.get(range.operationId)?.actorTurnId === "ai-turn",
+    ),
+  ).toBe(true);
+  baseDoc.destroy();
+  f.destroy();
+});
+
+it("rejects same-content sibling substitutions in a recreated rich paragraph", () => {
+  const f = richRestoration("rich paragraph", "ababab");
+  const textAliases = [...f.claims.entries()].filter(([, alias]) => {
+    const source = f.browser.store.clients
+      .get(alias.source.client)
+      ?.find((item) => item.id.clock === alias.source.clock);
+    return source instanceof Y.Item && source.content instanceof Y.ContentString;
+  });
+  expect(textAliases).toHaveLength(3);
+  const firstEntry = textAliases[0];
+  const lastEntry = textAliases[2];
+  if (!firstEntry || !lastEntry) throw new Error("Missing text restoration aliases");
+  const [firstKey, first] = firstEntry;
+  const [lastKey, last] = lastEntry;
+  f.browser.transact(() => {
+    f.claims.set(firstKey, { source: last.source, target: first.target });
+    f.claims.set(lastKey, { source: first.source, target: last.target });
+  });
+  const certified = f.certify();
+  expect(certified.some((alias) => alias.target.clock === first.target.clock)).toBe(false);
+  expect(certified.some((alias) => alias.target.clock === last.target.clock)).toBe(false);
+  f.destroy();
+});
+
+it("rejects child claims when the restored container has no certified identity", () => {
+  const f = richRestoration("rich paragraph");
+  for (const [key, alias] of f.claims) {
+    if (alias.source.clock === 0) f.claims.delete(key);
+  }
+  expect(f.certify()).toEqual([]);
+  f.destroy();
+});
+
+it.each([
+  "wrong value",
+  "wrong key",
+  "oversized range",
+] as const)("rejects forged attribute restoration with %s", (forgery) => {
+  const f = richRestoration("attribute");
+  const entry = [...f.claims.entries()][0];
+  if (!entry) throw new Error("Missing attribute restoration alias");
+  const [key, alias] = entry;
+  if (forgery === "oversized range") {
+    f.claims.set(key, {
+      source: { ...alias.source, length: 2 },
+      target: { ...alias.target, length: 2 },
+    });
+  } else {
+    const paragraph = f.root.get(0) as Y.XmlElement;
+    // A fresh copy at a different key, or with different content, cannot borrow
+    // the original attribute's author even when its predecessor is tombstoned.
+    const attribute = forgery === "wrong key" ? "title" : "align";
+    const clock = Y.decodeStateVector(Y.encodeStateVector(f.browser)).get(f.browser.clientID) ?? 0;
+    paragraph.setAttribute(attribute, forgery === "wrong value" ? "center" : "left");
+    f.claims.set(key, {
+      source: alias.source,
+      target: { client: f.browser.clientID, clock, length: 1 },
+    });
+  }
+  expect(f.certify()).toEqual([]);
+  f.destroy();
 });
