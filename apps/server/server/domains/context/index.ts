@@ -20,7 +20,7 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-export { joinPath, renderFilename, splitPath } from "./context/paths.js";
+export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
   parseContextUri,

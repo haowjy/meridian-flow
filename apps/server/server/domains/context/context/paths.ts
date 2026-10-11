@@ -31,3 +31,8 @@ export async function allocateFilename(
     if (!(await exists(filename))) return filename;
   }
 }
+
+/** File output is the only place prose gains a suffix; persisted names stay unchanged. */
+export function exportFilename(name: string, extension: string, fileType: string): string {
+  return renderFilename(name, fileType === "markdown" ? "md" : extension);
+}

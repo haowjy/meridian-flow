@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Document downloads add `.md` only for prose, keep non-prose filenames, and carry Unicode names in download headers. Binary downloads serve their bytes with the document name instead of an opaque storage-key redirect.
+
 - Dev document commands accept prose suffixes and report canonical names; seed scenarios use writer titles without `.md`.
 
 - A new project starts with the prose document “Chapter 1”; the mock writer targets that same chapter.
