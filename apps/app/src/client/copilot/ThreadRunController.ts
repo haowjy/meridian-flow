@@ -1,5 +1,5 @@
 /** Owns a thread run from submission through transport recovery. */
-import { EventType } from "@meridian/contracts/protocol";
+import { EventType, isTerminalTurnStatus, readRunStartedMeta } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
@@ -80,21 +80,53 @@ export type ThreadRunControllerOptions = {
   accountId: string;
 };
 
+/**
+ * One followed thread. The state model (what binds, what Stop targets, when it
+ * settles) is the D62 controller model; the invariant is that a start binds
+ * only as the observed run, its same-lease split successor, or the reply that
+ * answers an admitted user turn, never because it came next in the stream.
+ */
 type ActiveRun = {
   threadId: string;
   token: number;
+  /** The observed run: named by admission or resume, or bound from its start. */
   turnId?: string;
+  /** The observed run finished or errored; Stop waits for the next bound start. */
+  ended?: boolean;
+  /** The short window after the observed run's finish for its same-lease successor. */
+  splitBoundaryPending?: boolean;
+  /** User turns admitted with no reply named and not yet seen answered. */
+  awaiting: Set<string>;
+  /** User turn -> the run whose start named it, for every start this thread showed. */
+  seenAnswers: Map<string, string>;
+  /** Make a run the observed one (from its start or from durable state). */
+  bind?: (turnId: string) => void;
   unsubscribe?: () => void;
   dispose?: () => void;
   flush?: () => void;
-  splitBoundaryPending?: boolean;
-  /**
-   * A send admitted with no reply named while this run was followed. Its reply
-   * starts after the followed one ends, so that end (finish or error) keeps the
-   * subscription for the next RUN_STARTED instead of settling.
-   */
-  awaitingQueuedReply?: boolean;
 };
+
+type SnapshotTurn = DeserializedThreadSnapshot["turns"][number];
+
+/** The reply whose request carried this user turn: the assistant turn reached through only non-assistant turns. */
+function replyAnswering(
+  turns: readonly SnapshotTurn[],
+  byId: ReadonlyMap<string, SnapshotTurn>,
+  userTurnId: string,
+): SnapshotTurn | undefined {
+  const reaches = (reply: SnapshotTurn) => {
+    let prev = reply.prevTurnId;
+    while (prev) {
+      if (prev === userTurnId) return true;
+      const turn = byId.get(prev);
+      if (!turn || turn.role === "assistant") return false;
+      prev = turn.prevTurnId;
+    }
+    return false;
+  };
+  const replies = turns.filter((turn) => turn.role === "assistant" && reaches(turn));
+  return replies.find((turn) => !isTerminalTurnStatus(turn.status)) ?? replies.at(-1);
+}
 
 function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -491,14 +523,14 @@ export class ThreadRunController {
     const activeRun = this.activeRun;
     if (!activeRun || activeRun.threadId !== threadId) return;
 
-    // The server-assigned turn id may not exist until RUN_STARTED arrives.
-    // Keep the abort request sticky for this active run so an early Stop click
-    // is not lost while the HTTP append/subscription handshake is still racing.
+    if (activeRun.turnId && !activeRun.ended) {
+      this.abortRequested = false;
+      this.requestCancel(activeRun.threadId, activeRun.turnId);
+      return;
+    }
+    // No live run to name yet (the send's reply hasn't started, or the observed
+    // one ended before it): the next bound start takes this Stop.
     this.abortRequested = true;
-    if (!activeRun.turnId) return;
-
-    this.abortRequested = false;
-    this.requestCancel(activeRun.threadId, activeRun.turnId);
   }
 
   teardown(): void {
@@ -511,38 +543,29 @@ export class ThreadRunController {
 
   private attachAcceptedRun(
     threadId: string,
-    result: { assistantTurnId: string | null; resumeAfterSeq: string },
+    result: { userTurnId: string; assistantTurnId: string | null; resumeAfterSeq: string },
   ): void {
-    if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
-    // Null names no reply for this message: it queued behind a write-mode
-    // switch, so a reply this controller already follows is live, not
-    // abandoned. Keep following it (Stop still targets it) and take the next
-    // RUN_STARTED after it ends as this message's reply.
-    const activeRun = this.activeRun;
-    if (
-      result.assistantTurnId == null &&
-      activeRun?.threadId === threadId &&
-      activeRun.unsubscribe &&
-      (activeRun.turnId !== undefined || activeRun.awaitingQueuedReply)
-    ) {
-      this.activeRun = { ...activeRun, awaitingQueuedReply: true };
-      return;
+    const named = result.assistantTurnId;
+    const run =
+      this.activeRun?.threadId === threadId && this.activeRun.unsubscribe ? this.activeRun : null;
+    // Null names no reply: the message waits for a new one (idle, or queued
+    // behind a write-mode switch, which ends the running reply instead).
+    const answeredBy = named ?? run?.seenAnswers.get(result.userTurnId);
+    if (run) {
+      if (named && run.turnId === undefined) run.bind?.(named);
+      if (answeredBy !== undefined && run.turnId === answeredBy) return;
+      if (answeredBy === undefined) {
+        // This subscription sees every later start, so keep it and wait.
+        run.awaiting.add(result.userTurnId);
+        return;
+      }
     }
-    const token = this.startRun(threadId, {
-      pruneAbandonedTurn: result.assistantTurnId == null,
-    });
+    const token = this.startRun(threadId, { pruneAbandonedTurn: named == null });
+    if (answeredBy === undefined) this.activeRun?.awaiting.add(result.userTurnId);
     this.attachLiveSubscription(threadId, token, {
       after: result.resumeAfterSeq,
-      ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
+      ...(answeredBy ? { expectedTurnId: answeredBy } : {}),
     });
-  }
-
-  private isAttachedToRun(threadId: string, assistantTurnId: string): boolean {
-    const activeRun = this.activeRun;
-    if (!activeRun || activeRun.threadId !== threadId || !activeRun.unsubscribe) return false;
-    // Before RUN_STARTED the client's turn id is unknown; the subscription will
-    // publish it. Once known, it must match the run the server reports.
-    return activeRun.turnId === undefined || activeRun.turnId === assistantTurnId;
   }
 
   /** Release controller-lifetime subscriptions (provider unmount). */
@@ -559,6 +582,10 @@ export class ThreadRunController {
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
+    // Admitted user turns and a waiting Stop are facts about the thread, not
+    // about one subscription: a same-thread resubscribe keeps them.
+    const previous = this.activeRun?.threadId === threadId ? this.activeRun : null;
+    const abortRequested = previous ? this.abortRequested : false;
     this.runToken += 1;
     this.cleanupActiveRun();
     if (options.pruneAbandonedTurn) {
@@ -566,8 +593,13 @@ export class ThreadRunController {
       // is abandoned. Resume/reconnect must preserve the same live row.
       this.actions.pruneStaleAssistantTurns(threadId);
     }
-    this.abortRequested = false;
-    this.activeRun = { threadId, token: this.runToken };
+    this.abortRequested = abortRequested;
+    this.activeRun = {
+      threadId,
+      token: this.runToken,
+      awaiting: previous?.awaiting ?? new Set(),
+      seenAnswers: previous?.seenAnswers ?? new Map(),
+    };
     return this.runToken;
   }
 
@@ -576,12 +608,11 @@ export class ThreadRunController {
     token: number,
     { after, expectedTurnId }: SubscribeLiveOptions,
   ): void {
-    if (!this.isActiveToken(token)) return;
+    const run = this.activeRun;
+    if (!run || !this.isActiveToken(token)) return;
 
     let disposed = false;
-    let awaitingSplitStart = false;
     let splitFinishTimer: ReturnType<typeof setTimeout> | undefined;
-    let currentExpectedTurnId = expectedTurnId;
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
@@ -593,16 +624,28 @@ export class ThreadRunController {
       if (!this.accountSignal.aborted) coalescer.flush();
       disposed = true;
     };
+    const bind = (turnId: string) => {
+      // Flush the previous run before the next enters the durable snapshot owner.
+      if (run.turnId !== turnId) coalescer.flush();
+      if (splitFinishTimer) clearTimeout(splitFinishTimer);
+      run.turnId = turnId;
+      run.ended = false;
+      run.splitBoundaryPending = false;
+      if (this.abortRequested) {
+        this.abortRequested = false;
+        this.requestCancel(threadId, turnId);
+      }
+    };
+    const end = () => {
+      run.ended = true;
+      if (run.awaiting.size === 0) this.cleanupActiveRun();
+    };
 
-    this.activeRun = {
-      ...this.activeRun,
-      threadId,
-      token,
-      turnId: expectedTurnId,
-      dispose: markDisposed,
-      flush: () => {
-        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
-      },
+    run.turnId = expectedTurnId;
+    run.bind = bind;
+    run.dispose = markDisposed;
+    run.flush = () => {
+      if (!disposed && !this.accountSignal.aborted) coalescer.flush();
     };
 
     const unsubscribe = this.transport.subscribe(
@@ -615,73 +658,53 @@ export class ThreadRunController {
             event.type === EventType.RUN_ERROR && error
               ? { ...event, message: error.message }
               : event;
-          // Same-thread replays can contain events from a superseded run; the
-          // runId check is intentionally limited to events that carry runId so
-          // vocabulary events without run identity still pass through unchanged.
-          if (
-            currentExpectedTurnId &&
-            "runId" in effectiveEvent &&
-            effectiveEvent.runId !== currentExpectedTurnId &&
-            !(awaitingSplitStart && effectiveEvent.type === EventType.RUN_STARTED)
-          )
-            return;
-
           if (isDurableBlockEvent(effectiveEvent)) return;
 
-          if (currentExpectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
-            this.actions.ensureAssistantTurn(threadId, currentExpectedTurnId);
+          if (effectiveEvent.type === EventType.RUN_STARTED) {
+            const runId = effectiveEvent.runId;
+            const answers = readRunStartedMeta(effectiveEvent.rawEvent).answersUserTurnIds;
+            for (const userTurnId of answers) run.seenAnswers.set(userTurnId, runId);
+            const answersAwaited = answers.filter((userTurnId) => run.awaiting.has(userTurnId));
+            const unscoped = run.turnId === undefined && !run.ended && run.awaiting.size === 0;
+            // A same-lease steer is journaled as A-finish then B-start, so the
+            // split window takes the next start. Any other start that answers
+            // nothing this controller admitted is another reply's (a replay
+            // from the early admission cursor, or a later queued reply).
+            if (
+              runId !== run.turnId &&
+              !run.splitBoundaryPending &&
+              answersAwaited.length === 0 &&
+              !unscoped
+            )
+              return;
+            for (const userTurnId of answersAwaited) run.awaiting.delete(userTurnId);
+            bind(runId);
+            coalescer.push(effectiveEvent);
+            return;
           }
 
-          if (effectiveEvent.type === EventType.RUN_STARTED) {
-            if (awaitingSplitStart) {
-              // A and B are separate assistant turns in one admitted execution.
-              // Flush A before B enters the durable snapshot owner, but retain the
-              // subscription/token and optimistic writer row across the boundary.
-              coalescer.flush();
-              awaitingSplitStart = false;
-              if (splitFinishTimer) clearTimeout(splitFinishTimer);
-            }
-            currentExpectedTurnId = effectiveEvent.runId;
-            this.activeRun = {
-              ...this.activeRun,
-              threadId,
-              token,
-              turnId: effectiveEvent.runId,
-              splitBoundaryPending: false,
-              awaitingQueuedReply: false,
-              unsubscribe: this.activeRun?.unsubscribe,
-              dispose: markDisposed,
-              flush: () => {
-                if (!disposed && !this.accountSignal.aborted) coalescer.flush();
-              },
-            };
-            if (this.abortRequested) {
-              this.abortRequested = false;
-              this.requestCancel(threadId, effectiveEvent.runId);
-            }
-          }
+          const live = run.turnId !== undefined && !run.ended;
+          const unscoped = run.turnId === undefined && !run.ended && run.awaiting.size === 0;
+          // Between replies, events belong to a run this controller did not bind.
+          if (!live && !unscoped) return;
+          // Same-thread replays can contain events from a superseded run; the
+          // runId check is limited to events that carry runId so vocabulary
+          // events without run identity still pass through unchanged.
+          if (live && "runId" in effectiveEvent && effectiveEvent.runId !== run.turnId) return;
+          if (run.turnId) this.actions.ensureAssistantTurn(threadId, run.turnId);
 
           coalescer.push(effectiveEvent);
 
-          const ended =
-            (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) ||
-            effectiveEvent.type === EventType.RUN_ERROR;
-          if (ended && this.activeRun?.awaitingQueuedReply) {
-            // A queued send's reply starts after this one: follow it, and let a
-            // Stop in between wait for its RUN_STARTED.
-            awaitingSplitStart = true;
-            this.activeRun = { ...this.activeRun, turnId: undefined, splitBoundaryPending: true };
-          } else if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
-            // A same-lease steer is journaled as A-finish then B-start. Keep the
-            // mounted owner alive for that transition; an ordinary terminal run
-            // settles after the short boundary window.
-            awaitingSplitStart = true;
-            this.activeRun = { threadId, token, ...this.activeRun, splitBoundaryPending: true };
+          if (effectiveEvent.type === EventType.RUN_FINISHED && live) {
+            run.ended = true;
+            run.splitBoundaryPending = true;
             splitFinishTimer = setTimeout(() => {
-              if (awaitingSplitStart && this.isActiveToken(token)) this.cleanupActiveRun();
+              if (!this.isActiveToken(token) || !run.splitBoundaryPending) return;
+              run.splitBoundaryPending = false;
+              end();
             }, 250);
           } else if (effectiveEvent.type === EventType.RUN_ERROR) {
-            this.cleanupActiveRun();
+            end();
           }
         },
         onError: (error) => {
@@ -708,23 +731,13 @@ export class ThreadRunController {
       unsubscribe();
       return;
     }
-
-    this.activeRun = {
-      ...this.activeRun,
-      threadId,
-      token,
-      unsubscribe,
-      dispose: markDisposed,
-      flush: () => {
-        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
-      },
-    };
+    run.unsubscribe = unsubscribe;
 
     // If submit() received the turn id from HTTP before RUN_STARTED arrives,
     // an early cancel can execute now instead of waiting for the stream echo.
-    if (this.abortRequested && this.activeRun.turnId) {
+    if (this.abortRequested && run.turnId) {
       this.abortRequested = false;
-      this.requestCancel(this.activeRun.threadId, this.activeRun.turnId);
+      this.requestCancel(threadId, run.turnId);
     }
   }
 
@@ -751,26 +764,26 @@ export class ThreadRunController {
     const abort = new AbortController();
     const signal = AbortSignal.any([this.accountSignal, abort.signal]);
     const recovery = (async () => {
-      while (
-        this.isActiveToken(token) &&
-        !signal.aborted &&
-        !this.activeRun?.splitBoundaryPending
-      ) {
+      while (this.isActiveToken(token) && !signal.aborted) {
+        // Recovery waits out a split window rather than racing its successor.
+        if (this.activeRun?.splitBoundaryPending) {
+          await waitForSnapshotRetry(signal);
+          continue;
+        }
         const snapshot = deserializeThreadSnapshot(
           await this.getThreadSnapshotFn({ data: { threadId }, signal }),
         );
-        if (
-          signal.aborted ||
-          !this.isActiveToken(token) ||
-          this.activeRun?.threadId !== threadId ||
-          this.activeRun.splitBoundaryPending
-        )
-          return;
+        const run = this.activeRun;
+        if (signal.aborted || !this.isActiveToken(token) || run?.threadId !== threadId) return;
+        if (run.splitBoundaryPending) continue;
         if (snapshot.thread.id !== threadId || snapshot.thread.userId !== this.accountId) {
           await waitForSnapshotRetry(signal);
           continue;
         }
-        if (this.applySnapshot(snapshot)) return;
+        if (this.applySnapshot(snapshot)) {
+          this.reconcileWithSnapshot(run, snapshot);
+          return;
+        }
         await waitForSnapshotRetry(signal);
       }
     })().finally(() => {
@@ -780,6 +793,35 @@ export class ThreadRunController {
     });
     this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery, abort });
     return recovery;
+  }
+
+  /**
+   * A gap can swallow the starts and ends this controller waits on. Durable
+   * state settles them: an awaited turn whose reply finished stops the wait
+   * (retiring a Stop aimed at it), a running reply binds, an unanswered turn
+   * keeps waiting. No timeout drops a queued message.
+   */
+  private reconcileWithSnapshot(run: ActiveRun, snapshot: DeserializedThreadSnapshot): void {
+    const byId = new Map(snapshot.turns.map((turn) => [turn.id, turn]));
+    const waited = run.ended === true || run.awaiting.size > 0;
+    const observed = run.turnId ? byId.get(run.turnId) : undefined;
+    if (
+      observed &&
+      !run.ended &&
+      isTerminalTurnStatus(observed.status) &&
+      snapshot.liveState.runningTurnId !== observed.id
+    )
+      run.ended = true;
+    let running: string | undefined;
+    for (const userTurnId of [...run.awaiting]) {
+      const reply = replyAnswering(snapshot.turns, byId, userTurnId);
+      if (!reply) continue;
+      run.awaiting.delete(userTurnId);
+      if (!isTerminalTurnStatus(reply.status)) running = reply.id;
+    }
+    if (running && (run.ended || run.turnId === undefined)) run.bind?.(running);
+    if ((waited || run.ended) && run.awaiting.size === 0 && (run.ended || !run.turnId))
+      this.cleanupActiveRun();
   }
 
   private applySnapshot(snapshot: DeserializedThreadSnapshot): boolean {

@@ -4,7 +4,9 @@ import {
   EventType,
   type RetireAdmissionResult,
   type SendMessageResponse,
+  type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
+import { goldenAssistantTurn } from "@meridian/contracts/threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   defaultSendResponse,
@@ -142,8 +144,52 @@ describe("ThreadRunController write outcomes", () => {
   });
 });
 
-function runStarted(runId: string) {
-  return { type: EventType.RUN_STARTED, threadId: "thread_1", runId } as never;
+/** A reply start as the server projects it, naming the user turns it answers. */
+function runStarted(runId: string, answersUserTurnIds: string[] = []) {
+  return {
+    type: EventType.RUN_STARTED,
+    threadId: "thread_1",
+    runId,
+    rawEvent: { writeMode: "direct", answersUserTurnIds },
+  } as never;
+}
+
+function runFinished(runId: string) {
+  return { type: EventType.RUN_FINISHED, threadId: "thread_1", runId } as never;
+}
+
+function snapshotTurn(
+  id: string,
+  role: "user" | "assistant",
+  position: number,
+  prevTurnId: string | null,
+  status: "complete" | "streaming" = "complete",
+) {
+  return { ...goldenAssistantTurn(id, "thread_1", status), role, position, prevTurnId };
+}
+
+function snapshotOf(
+  turns: ReturnType<typeof snapshotTurn>[],
+  runningTurnId: string | null = null,
+): ThreadSnapshotResponse {
+  return {
+    threadId: "thread_1",
+    thread: { id: "thread_1", userId: "account-1" },
+    turns,
+    nextSeq: "100",
+    actionRequired: false,
+    liveState: { runningTurnId },
+  } as unknown as ThreadSnapshotResponse;
+}
+
+/** A reply A the controller follows, with an admission for M2 that names no reply. */
+async function followAThenQueueM2(scenario: ThreadRunScenario) {
+  scenario.resume({ expectedTurnId: "turn-a" });
+  scenario.emit(runStarted("turn-a", ["turn-m1"]), "11");
+  scenario.setAppend(async () =>
+    defaultSendResponse({ userTurnId: "turn-m2", assistantTurnId: null, resumeAfterSeq: "11" }),
+  );
+  await scenario.submit("M2");
 }
 
 describe("ThreadRunController mid-run merge", () => {
@@ -152,7 +198,7 @@ describe("ThreadRunController mid-run merge", () => {
       append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
     });
     await scenario.submit("long request");
-    scenario.emit(runStarted("turn-a"), "11");
+    scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
     scenario.emit(
       { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
       "12",
@@ -178,7 +224,7 @@ describe("ThreadRunController send behind a queued switch", () => {
       append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
     });
     await scenario.submit("first request");
-    scenario.emit(runStarted("turn-a"), "11");
+    scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
     expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
 
     // The server names no reply: a new one, after the switch, answers this message.
@@ -196,7 +242,7 @@ describe("ThreadRunController send behind a queued switch", () => {
       { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
       "12",
     );
-    scenario.emit(runStarted("turn-b"), "13");
+    scenario.emit(runStarted("turn-b", ["turn-user-2"]), "13");
     expect(scenario.turns().map(({ id }) => id)).toEqual(
       expect.arrayContaining(["turn-a", "turn-b"]),
     );
@@ -208,7 +254,7 @@ describe("ThreadRunController send behind a queued switch", () => {
       append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
     });
     await scenario.submit("first request");
-    scenario.emit(runStarted("turn-a"), "11");
+    scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
     for (const [userTurnId, resumeAfterSeq] of [
       ["turn-user-2", "11"],
       ["turn-user-3", "11"],
@@ -226,7 +272,7 @@ describe("ThreadRunController send behind a queued switch", () => {
     // A's error does not end the queued sends' follow: their reply starts next.
     scenario.emit({ type: EventType.RUN_ERROR, message: "cancelled" } as never, "12");
     expect(scenario.activeSubscription()).toBeDefined();
-    scenario.emit(runStarted("turn-b"), "13");
+    scenario.emit(runStarted("turn-b", ["turn-user-2", "turn-user-3"]), "13");
     expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
     expect(scenario.transport.cancelRequests).toHaveLength(1);
     scenario.controller.cancel("thread_1");
@@ -234,6 +280,155 @@ describe("ThreadRunController send behind a queued switch", () => {
       threadId: "thread_1",
       turnId: "turn-b",
     });
+  });
+});
+
+describe("ThreadRunController follows the reply that answers its message", () => {
+  it.each([
+    ["the admission answer arrives after A finished", true],
+    ["a fresh send is made after A finished", false],
+  ])("waits for M2's reply when %s, inside A's grace window", async (_label, sentBeforeFinish) => {
+    vi.useFakeTimers();
+    const admission = scenarioGate<SendMessageResponse>();
+    const scenario = makeScenario();
+    scenario.resume({ expectedTurnId: "turn-a" });
+    scenario.emit(runStarted("turn-a", ["turn-m1"]), "11");
+    scenario.setAppend(() => admission.promise);
+    const sent = sentBeforeFinish ? scenario.submit("M2") : undefined;
+    scenario.emit(runFinished("turn-a"), "12");
+    const response = defaultSendResponse({
+      userTurnId: "turn-m2",
+      assistantTurnId: null,
+      resumeAfterSeq: "11",
+    });
+    admission.resolve(response);
+    await (sent ?? scenario.submit("M2"));
+
+    // A is complete: Stop waits for M2's reply instead of cancelling A.
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(scenario.activeSubscription()).toBeDefined();
+
+    scenario.emit(runStarted("turn-b", ["turn-m2"]), "13");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    scenario.emit(runFinished("turn-b"), "14");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("keeps waiting for M2's reply when A's start echo arrives after the admission", async () => {
+    const scenario = makeScenario({
+      append: async () => defaultSendResponse({ userTurnId: "turn-m1", assistantTurnId: "turn-a" }),
+    });
+    await scenario.submit("M1");
+    scenario.setAppend(async () =>
+      defaultSendResponse({ userTurnId: "turn-m2", assistantTurnId: null, resumeAfterSeq: "11" }),
+    );
+    await scenario.submit("M2 behind the switch");
+
+    scenario.emit(runStarted("turn-a", ["turn-m1"]), "12");
+    scenario.emit({ type: EventType.RUN_ERROR, message: "A failed" } as never, "13");
+    expect(scenario.activeSubscription()).toBeDefined();
+
+    scenario.emit(runStarted("turn-b", ["turn-m2"]), "14");
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
+  });
+
+  it("settles from a gap snapshot when M2's reply started and finished inside the gap", async () => {
+    const scenario = makeScenario({
+      snapshot: async () =>
+        snapshotOf([
+          snapshotTurn("turn-m1", "user", 1, null),
+          snapshotTurn("turn-a", "assistant", 2, "turn-m1"),
+          snapshotTurn("turn-m2", "user", 3, "turn-a"),
+          snapshotTurn("turn-b", "assistant", 4, "turn-m2"),
+        ]),
+    });
+    await followAThenQueueM2(scenario);
+    scenario.emit(runFinished("turn-a"), "12");
+    scenario.controller.cancel("thread_1");
+
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
+    expect(scenario.snapshotRequests.length).toBeGreaterThan(0);
+    // The Stop aimed at B is retired with it, not carried to a later reply.
+    scenario.resume();
+    scenario.emit(runStarted("turn-c", ["turn-m3"]), "20");
+    expect(scenario.transport.cancelRequests).toEqual([]);
+  });
+
+  it("binds M2's reply from a gap snapshot that shows it still running", async () => {
+    const scenario = makeScenario({
+      snapshot: async () =>
+        snapshotOf(
+          [
+            snapshotTurn("turn-m1", "user", 1, null),
+            snapshotTurn("turn-a", "assistant", 2, "turn-m1"),
+            snapshotTurn("turn-m2", "user", 3, "turn-a"),
+            snapshotTurn("turn-b", "assistant", 4, "turn-m2", "streaming"),
+          ],
+          "turn-b",
+        ),
+    });
+    await followAThenQueueM2(scenario);
+    scenario.emit(runFinished("turn-a"), "12");
+    scenario.controller.cancel("thread_1");
+
+    scenario.reportGap();
+    await vi.waitFor(() =>
+      expect(scenario.transport.cancelRequests).toEqual([
+        { threadId: "thread_1", turnId: "turn-b" },
+      ]),
+    );
+    expect(scenario.activeSubscription()).toBeDefined();
+  });
+
+  it("keeps waiting when a gap snapshot shows M2 still unanswered", async () => {
+    const scenario = makeScenario({
+      snapshot: async () =>
+        snapshotOf([
+          snapshotTurn("turn-m1", "user", 1, null),
+          snapshotTurn("turn-a", "assistant", 2, "turn-m1"),
+          snapshotTurn("turn-m2", "user", 3, "turn-a"),
+        ]),
+    });
+    await followAThenQueueM2(scenario);
+    scenario.emit(runFinished("turn-a"), "12");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scenario.activeSubscription()).toBeDefined();
+    scenario.emit(runStarted("turn-b", ["turn-m2"]), "20");
+    expect(scenario.turns().map(({ id }) => id)).toContain("turn-b");
+  });
+
+  it("ignores a replayed start that answers another message", async () => {
+    const scenario = makeScenario({
+      append: async () =>
+        defaultSendResponse({ userTurnId: "turn-m2", assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("M2");
+
+    // The admission cursor predates the lock: M1's reply replays first.
+    scenario.emit(runStarted("turn-x", ["turn-m1"]), "11");
+    scenario.emit(
+      { type: EventType.TEXT_MESSAGE_START, messageId: "turn-x::0", role: "assistant" } as never,
+      "12",
+    );
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([]);
+    expect(scenario.turns().map(({ id }) => id)).not.toContain("turn-x");
+
+    scenario.emit(runFinished("turn-x"), "13");
+    scenario.emit(runStarted("turn-b", ["turn-m2"]), "14");
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
+    expect(scenario.turns().map(({ id }) => id)).toContain("turn-b");
   });
 });
 
