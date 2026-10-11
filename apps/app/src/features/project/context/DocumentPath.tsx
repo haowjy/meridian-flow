@@ -231,7 +231,6 @@ function OpenCrumbMenu({
       tree={menu.tree}
       hereIds={menu.hereIds}
       openAt={menu.openAt}
-      actions={() => []}
       onPick={menu.onPick}
       open
       onOpenChange={onOpenChange}
