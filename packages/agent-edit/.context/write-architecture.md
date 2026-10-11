@@ -172,3 +172,12 @@ Dependencies remain in the original Yjs references and client clocks. Independen
 writes can be reviewed separately when their insertion clients differ. A read
 rebuilds the runtime with a new client; successive writes retaining one runtime
 still require same-client clock-prefix closure.
+
+## Draft write granularity
+
+Flat same-type block rewrites lower to exact whole-word text splices when their
+replay reproduces the target, including marks. The host enables `segmentDraftWrites`
+only for review destinations. A segment executes in one transaction with a fresh
+shared-protocol client ID. One staged logical write holds its ordered updates;
+receipts, rollback and before-snapshots stay per tool call. Journal submission
+alone flattens those segments into rows. Live writes capture one merged update.

@@ -18,14 +18,14 @@ const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPE
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
-  it("records a whole-scope replace as fresh only when it rewrote every block", () => {
+  it("keeps unchanged punctuation identity even when replacing every block", () => {
     const doc = createDoc("Alpha.\n\nBeta.");
     const intent = (content: string) => {
       const result = resolve(doc, { command: "replace", content, in: [1, 2] });
       return result.ok ? result.ir.intent.kind : result.error.code;
     };
 
-    expect(intent("Gamma.\n\nDelta.")).toBe("fullScopeFreshReplacement");
+    expect(intent("Gamma.\n\nDelta.")).toBe("mappedEdits");
     expect(intent("Alpha.\n\nDelta.")).toBe("mappedEdits");
   });
 
@@ -52,8 +52,8 @@ describe("resolveWrite", () => {
     );
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "block", block: omega });
-    expect(edits[0].kind === "block" ? edits[0].replacement.textContent : null).toBe("ends Omega!");
+    expect(edits[0]).toMatchObject({ kind: "textRanges", block: omega });
+    expect(edits[0].kind === "textRanges" ? edits[0].output : null).toBe("!");
   });
 
   it("decomposes a block range replace across block/delete/insert primitives", () => {
@@ -62,8 +62,8 @@ describe("resolveWrite", () => {
     const range = `${model.getBlockId(alpha)}..${model.getBlockId(gamma)}`;
 
     const fewer = expectOk(resolve(doc, { command: "replace", content: "One", in: range }));
-    expect(fewer.map((edit) => edit.kind)).toEqual(["block", "delete", "delete"]);
-    expect(fewer[0].kind === "block" ? fewer[0].block : null).toBe(alpha);
+    expect(fewer.map((edit) => edit.kind)).toEqual(["textRanges", "delete", "delete"]);
+    expect(fewer[0].kind === "textRanges" ? fewer[0].block : null).toBe(alpha);
     expect(fewer[1].kind === "delete" ? fewer[1].block : null).toBe(beta);
 
     const more = expectOk(
@@ -73,7 +73,7 @@ describe("resolveWrite", () => {
         in: rangeFor("Alpha\n\nBeta"),
       }),
     );
-    expect(more.map((edit) => edit.kind)).toEqual(["block", "block", "insert"]);
+    expect(more.map((edit) => edit.kind)).toEqual(["textRanges", "textRanges", "insert"]);
   });
 
   it("matches find text with NFC normalization while preserving original spans", () => {
@@ -225,7 +225,7 @@ describe("resolveWrite", () => {
         in: fixture.target.displayHash,
       }),
     )[0];
-    expect(displayedReplace.kind === "block" ? displayedReplace.block : null).toBe(
+    expect(displayedReplace.kind === "textRanges" ? displayedReplace.block : null).toBe(
       fixture.target.block,
     );
 

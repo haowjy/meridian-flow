@@ -321,7 +321,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     async commitBranchMutation(
       input: Parameters<NonNullable<typeof realBranchStore.commitBranchMutation>>[0],
     ) {
-      if (input.journal) injectSecondJournalFailure();
+      if (input.journals?.length) injectSecondJournalFailure();
       return realBranchStore.commitBranchMutation?.(input) ?? false;
     },
   };

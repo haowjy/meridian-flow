@@ -913,43 +913,48 @@ export function createDrizzleBranchStore(
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
       return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
-        if (input.journal && input.journal.generation !== input.expectedGeneration) {
+        const journals = input.journals ?? [];
+        if (
+          journals.some(
+            (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+          )
+        )
           throw new BranchMutationRollback();
-        }
         const ok = await updateBranchSnapshot(input);
         if (!ok) throw new BranchMutationRollback();
-        if (input.journal?.expectedJournalWatermark !== undefined) {
-          const [head] = await currentDrizzleDb(db)
-            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-            .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, input.journal.branchId),
-                eq(branchWriteJournal.generation, input.journal.generation),
-              ),
-            );
-          if ((head?.id ?? 0) > input.journal.expectedJournalWatermark) {
-            throw new BranchMutationRollback();
+        for (const journal of journals) {
+          if (journal?.expectedJournalWatermark !== undefined) {
+            const [head] = await currentDrizzleDb(db)
+              .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+              .from(branchWriteJournal)
+              .where(
+                and(
+                  eq(branchWriteJournal.branchId, journal.branchId),
+                  eq(branchWriteJournal.generation, journal.generation),
+                ),
+              );
+            if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
+              throw new BranchMutationRollback();
+            }
+          }
+          if (journal?.expectedJournalRevision !== undefined) {
+            const rows = await currentDrizzleDb(db)
+              .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+              .from(branchWriteJournal)
+              .where(
+                and(
+                  eq(branchWriteJournal.branchId, journal.branchId),
+                  eq(branchWriteJournal.generation, journal.generation),
+                ),
+              )
+              .orderBy(branchWriteJournal.id)
+              .for("update");
+            if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
+              throw new BranchMutationRollback();
+            }
           }
         }
-        if (input.journal?.expectedJournalRevision !== undefined) {
-          const rows = await currentDrizzleDb(db)
-            .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-            .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, input.journal.branchId),
-                eq(branchWriteJournal.generation, input.journal.generation),
-              ),
-            )
-            .orderBy(branchWriteJournal.id)
-            .for("update");
-          if (branchJournalRevision(rows) !== input.journal.expectedJournalRevision) {
-            throw new BranchMutationRollback();
-          }
-        }
-        const journal = input.journal;
-        if (journal)
+        for (const journal of journals) {
           await mutatePending([journal.branchId], () =>
             currentDrizzleDb(db)
               .insert(branchWriteJournal)
@@ -968,6 +973,7 @@ export function createDrizzleBranchStore(
               })
               .then(() => undefined),
           );
+        }
         return true;
       }).catch((cause) => {
         if (cause instanceof BranchMutationRollback) return false;

@@ -40,6 +40,7 @@ export function harness(
   options: {
     lifecycle?: boolean;
     undoClientId?: number;
+    segmentDraftWrites?: boolean;
     createRuntimeDoc?: () => Y.Doc;
     reversalNoticePort?: ReversalNoticePort;
     onResponseLifecycleError?: Parameters<
@@ -82,6 +83,7 @@ export function harness(
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
     undoClientId: options.undoClientId,
+    segmentDraftWrites: options.segmentDraftWrites,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
     ...(options.onResponseLifecycleError

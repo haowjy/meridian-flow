@@ -160,43 +160,49 @@ export function createBranchAgentEditCoordinator(input: {
                   `Thread-peer branch ${snapshot.branchId} has no work-draft upstream`,
                 );
               }
-              const pending = pendingBatch.at(-1);
-              const mutation = pending?.mutation;
-              if (mutation?.mode !== "threadPeer") {
+              const first = pendingBatch[0];
+              if (
+                first?.mutation?.mode !== "threadPeer" ||
+                pendingBatch.some(
+                  (pending) =>
+                    pending.mutation?.mode !== "threadPeer" ||
+                    pending.mutation.branchGeneration !==
+                      (first.mutation?.mode === "threadPeer"
+                        ? first.mutation.branchGeneration
+                        : undefined),
+                )
+              ) {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
-              const sourceHasBranchDelta = await sourceDocHasBranchDelta(
-                input.branchCoordinator,
-                workDraftBranchId,
-                doc,
-              );
-              if (!sourceHasBranchDelta) {
-                input.diagnostics?.stagedWriteNoop({
-                  documentId: docId as DocumentId,
-                  threadId: input.threadId,
-                  branchId: workDraftBranchId,
-                  turnId: pending?.mutation?.turnId ?? null,
-                  writeId: pending?.mutation?.writeId ?? null,
-                });
-                throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
-              }
-              const committed = await input.branchCoordinator.commitSyncFromDoc({
+              const mutation = first.mutation;
+              const committed = await input.branchCoordinator.commitSegmentRows({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
-                source: "agent",
-                wId: pending?.mutation?.wId ?? null,
-                toolCallId: pending?.mutation?.toolCallId ?? null,
-                threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
-                turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
-                ...(mutation.branchJournalWatermark !== undefined
-                  ? { expectedJournalWatermark: mutation.branchJournalWatermark }
-                  : {}),
-                ...(mutation.branchJournalRevision !== undefined
-                  ? { expectedJournalRevision: mutation.branchJournalRevision }
-                  : {}),
-                updateMeta: pending?.meta ?? null,
-                ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
+                rows: pendingBatch.map((pending) => {
+                  if (pending.mutation?.mode !== "threadPeer")
+                    throw new Error("thread_peer_commit_missing_branch_generation");
+                  return {
+                    branchId: workDraftBranchId,
+                    source: "agent",
+                    updateData: pending.update,
+                    wId: pending.mutation?.wId ?? null,
+                    toolCallId: pending.mutation?.toolCallId ?? null,
+                    threadId:
+                      (pending.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
+                    turnId: pending.mutation?.turnId ?? null,
+                    ...(pending.mutation?.branchJournalWatermark !== undefined
+                      ? { expectedJournalWatermark: pending.mutation.branchJournalWatermark }
+                      : {}),
+                    ...(pending.mutation?.branchJournalRevision !== undefined
+                      ? { expectedJournalRevision: pending.mutation.branchJournalRevision }
+                      : {}),
+                    updateMeta: pending.meta ?? null,
+                    ...(pending.mutation?.semanticEditIr
+                      ? { semanticEditIr: pending.mutation.semanticEditIr }
+                      : {}),
+                  };
+                }),
               });
               if (!committed) return result;
               advanceConcurrentJournalWatermark(
@@ -205,11 +211,11 @@ export function createBranchAgentEditCoordinator(input: {
                 docId as DocumentId,
                 input.afterCommit,
                 input.enlistResponseParticipant,
-                pending?.mutation?.writeId,
+                first.mutation?.writeId,
               );
             } else if (pendingBatch.length > 0) {
               const workDraftBranchId = snapshot.upstreamBranchId ?? snapshot.branchId;
-              const pending = pendingBatch.at(-1);
+              const pending = pendingBatch[0];
               input.diagnostics?.stagedWriteNoop({
                 documentId: docId as DocumentId,
                 threadId: input.threadId,
@@ -633,16 +639,6 @@ export function createBranchPendingJournalEntries(
       return batch;
     },
   };
-}
-
-async function sourceDocHasBranchDelta(
-  branchCoordinator: BranchCoordinator,
-  branchId: string,
-  sourceDoc: Y.Doc,
-): Promise<boolean> {
-  return branchCoordinator.readBranch(branchId, async (branchDoc) =>
-    Boolean(yjsDeltaUpdate(sourceDoc, branchDoc)),
-  );
 }
 
 function emptyDocState(): Uint8Array {

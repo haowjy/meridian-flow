@@ -1,6 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
-import { Transform } from "prosemirror-transform";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
@@ -276,12 +275,20 @@ export function applyInlineReplacements(
     };
   }
 
-  const transform = new Transform(current);
+  const text = element.get(0);
+  if (!(text instanceof Y.XmlText) || element.length !== 1) {
+    return { ok: false, code: "invalid_write", message: "Text edits require one flat Y.XmlText" };
+  }
   for (const replacement of [...replacements].reverse()) {
-    transform.replaceWith(replacement.span.from, replacement.span.to, replacement.content);
-    // Project each exact step while the surrounding Yjs transaction remains open.
-    // updateYFragment can then retain equal prose on both sides of every range.
-    writePmBlock(doc, element, transform.doc);
+    const { from, to } = replacement.span;
+    if (to > from) text.delete(from, to - from);
+    let offset = from;
+    replacement.content.forEach((node) => {
+      if (!node.isText) throw new Error("Exact text replacement requires text nodes");
+      const attributes = Object.fromEntries(node.marks.map((mark) => [mark.type.name, mark.attrs]));
+      text.insert(offset, node.text ?? "", attributes);
+      offset += node.text?.length ?? 0;
+    });
   }
   return { ok: true };
 }

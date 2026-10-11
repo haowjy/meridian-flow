@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Review independent AI word edits separately, preserving unchanged text identity and saving each reply atomically.
+
 - Keep an Editor tab’s review when closing the same document or review in the dock.
 
 - Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.

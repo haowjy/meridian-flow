@@ -4,15 +4,9 @@ import {
   type BlockRef,
   toDocHandle,
   unwrapBlock,
+  wordHunks,
 } from "@meridian/agent-edit/integration";
-import {
-  cleanupSemantic,
-  DIFF_DELETE,
-  DIFF_EQUAL,
-  DIFF_INSERT,
-  type Diff,
-  makeDiff,
-} from "@sanity/diff-match-patch";
+import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
 import type { ClockRange } from "./draft-review-attribution.js";
 import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
@@ -420,20 +414,16 @@ function diffWithSurvivingAnchors(live: BlockInfo, draft: BlockInfo): Diff[] {
   for (const anchor of anchors) {
     if (anchor.liveStart < liveOffset || anchor.draftStart < draftOffset) continue;
     diffs.push(
-      ...cleanupSemantic(
-        makeDiff(
-          live.text.slice(liveOffset, anchor.liveStart),
-          draft.text.slice(draftOffset, anchor.draftStart),
-        ),
+      ...wordGapDiff(
+        live.text.slice(liveOffset, anchor.liveStart),
+        draft.text.slice(draftOffset, anchor.draftStart),
       ),
     );
     diffs.push([DIFF_EQUAL, live.text.slice(anchor.liveStart, anchor.liveStart + anchor.length)]);
     liveOffset = anchor.liveStart + anchor.length;
     draftOffset = anchor.draftStart + anchor.length;
   }
-  diffs.push(
-    ...cleanupSemantic(makeDiff(live.text.slice(liveOffset), draft.text.slice(draftOffset))),
-  );
+  diffs.push(...wordGapDiff(live.text.slice(liveOffset), draft.text.slice(draftOffset)));
   return diffs;
 }
 
@@ -689,4 +679,17 @@ function prosemirrorFragment(doc: Y.Doc): Y.XmlFragment {
 
 function encodeRelativePosition(position: Y.RelativePosition): string {
   return encodeTrailPosition(position);
+}
+
+function wordGapDiff(before: string, after: string): Diff[] {
+  const diffs: Diff[] = [];
+  let offset = 0;
+  for (const hunk of wordHunks(before, after)) {
+    if (hunk.from > offset) diffs.push([DIFF_EQUAL, before.slice(offset, hunk.from)]);
+    if (hunk.to > hunk.from) diffs.push([DIFF_DELETE, before.slice(hunk.from, hunk.to)]);
+    if (hunk.text) diffs.push([DIFF_INSERT, hunk.text]);
+    offset = hunk.to;
+  }
+  if (offset < before.length) diffs.push([DIFF_EQUAL, before.slice(offset)]);
+  return diffs;
 }

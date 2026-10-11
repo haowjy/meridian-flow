@@ -170,6 +170,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
         semanticProvenance: input.semanticProvenance,
         defaultThreadId: threadId,
         undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+        segmentDraftWrites: true,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),
         ...input.observability,
       });

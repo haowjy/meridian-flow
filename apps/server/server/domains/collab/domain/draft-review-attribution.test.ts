@@ -396,8 +396,8 @@ describe("draft review attribution", () => {
       expect.objectContaining({
         operationId: "211",
         classification: "rewrite",
-        beforeExcerpt: "tar",
-        afterExcerpt: "a",
+        beforeExcerpt: "targe",
+        afterExcerpt: "agen",
         sourceUpdateIds: [211],
         closureUpdateIds: [211, 212],
         actorTurnId: "turn-agent",

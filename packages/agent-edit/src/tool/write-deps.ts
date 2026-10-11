@@ -42,6 +42,8 @@ export interface CreateWriteToolOptions {
   defaultSessionId?: string;
   defaultThreadId?: string;
   undoClientId?: number;
+  /** Independent edit transactions for review destinations only. */
+  segmentDraftWrites?: boolean;
   createRuntimeDoc?: () => Y.Doc;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
