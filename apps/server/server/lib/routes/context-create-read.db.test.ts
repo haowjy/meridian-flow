@@ -1,8 +1,9 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createContextEntry as createClientContextEntry } from "../../../../app/src/client/api/projects-api.js";
 import {
   createTestDocumentLinkScopes,
   testLinkDeps,
@@ -206,6 +207,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         message: expect.stringMatching(/binary.*upload/i),
       });
       await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
+    });
+
+    it.each([
+      { occupant: "folder", existing: "outline.json", type: "file", path: "outline.json" },
+      { occupant: "file", existing: "Taken", type: "folder", path: "Taken.md" },
+    ] as const)("carries a server-discovered $occupant conflict through the create HTTP client", async ({
+      occupant,
+      existing,
+      type,
+      path,
+    }) => {
+      const { contextPorts } = createFixture();
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body: { type: occupant, path: existing },
+      });
+      const body = { type, path };
+      // No sibling snapshot is supplied: the route, not the app, discovers the clash.
+      const result = await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body,
+      });
+      expect(result).toMatchObject({ status: "conflict", occupantKind: occupant });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify(result), {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            }),
+        ),
+      );
+      try {
+        await expect(createClientContextEntry(PROJECT_ID, "manuscript", body)).resolves.toEqual(
+          result,
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
