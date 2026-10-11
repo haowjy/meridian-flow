@@ -15,7 +15,7 @@ editor UI or transport-shell policy.
   batch, refused `stale` when the review's tokens moved and held per item on a
   path clash. A staged Apply handed to recovery is accepted as 202 `pending`
   (F27), not a failure; link registration failure before staging remains a typed,
-  retryable 503. D40's mode switch stays unchanged while that Apply finishes.
+  retryable 503.
   Discard operates on server-vended review classes rather than
   client-reconstructed turns.
 - Each live document has a durable authority head whose identity, generation,

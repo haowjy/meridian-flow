@@ -198,7 +198,7 @@
   locks taken once by `planAndLock`.
 - **Writer Apply is item-scoped and token-fenced**: a request names items
   (`${draftId}:${documentId}`) with the tokens their review rendered; a token
-  the request lacks (the legacy per-document Apply, D40) is filled from the read
+  the request lacks (the legacy per-document Apply) is filled from the read
   `applyItems` makes, and such a selection reads again once when it turns out
   stale. The server pushes each item's complete current branch, including
   writer rows created after preview, when the tokens still match, else answers

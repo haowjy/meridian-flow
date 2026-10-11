@@ -63,7 +63,7 @@ export async function agentPrincipal(
 
 /**
  * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept (a chat switched to auto-apply, or another chat drafts there; D40, D62),
+ * kept (a chat switched to auto-apply, or another chat drafts there; D62),
  * so the result says `draft`. With
  * no kept draft of this document it reads live, as `draft` always did there.
  */

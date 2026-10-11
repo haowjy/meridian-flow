@@ -175,7 +175,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("lore.md");
     });
 
-    // D40: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
+    // D62: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
     it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
       const script = await startWithChapter("Writer live content.");
       const first = await script.begin();

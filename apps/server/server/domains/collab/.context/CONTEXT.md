@@ -63,11 +63,8 @@ also records each document's last read version per thread (`live` or
 A chat's write mode decides only where its new AI writes go (D62); chats in
 one Work may differ. A draft write never pushes itself live (D59): a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
-there like a kept change, and the dock shows it. Switching to Auto-apply with pending changes needs a
-choice (`work-push-policy.ts`, D40): `apply` applies the whole draft as one
-publication (`applyItems` over every pending item, closing the draft when
-nothing stays; a held item stays as a kept change), then sets the mode; `keep`
-sets only the mode. An archived Work's `apply` refuses under the Work lock (D30). Branches carry no push
+there like a kept change, and the dock shows it. Switching a chat to
+auto-apply touches no draft; Apply stays the writer's command. Branches carry no push
 policy: turn trail work never pushes, and a due work row settles `no_op`
 (`adapters/drizzle-turn-trail-work.ts`); a push or discard completes it
 through the journal trigger.

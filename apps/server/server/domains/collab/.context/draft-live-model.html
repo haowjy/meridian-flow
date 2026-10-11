@@ -170,7 +170,7 @@ prop that drifts.
 <ul class="rule-list">
   <li><strong>Draft-mode AI writes to the branch.</strong>
       <code>createBranchAgentEditCoordinator</code> gives a draft-mode thread
-      no path to live. A Work in direct mode (<code>aiWriteMode: "direct"</code>)
+      no path to live. A chat in direct mode (<code>aiWriteMode: "direct"</code>)
       routes AI writes to the live core instead (<code>composition.ts</code>).
       Either way there is no per-edit accept, no veto, no sweep negotiation.</li>
   <li><strong>The draft continuously pulls from live.</strong>

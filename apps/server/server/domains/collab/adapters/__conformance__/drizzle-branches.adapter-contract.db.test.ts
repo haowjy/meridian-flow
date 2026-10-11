@@ -41,7 +41,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleBranchJournalReadStore,
       createDrizzlePushCommitStore,
       createDrizzleWorkDraftPendingStore,
-      createDrizzleWorkPushPolicyStore,
     } = await import("../drizzle-branch-push.js");
     const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
       "../drizzle-pending-settlement.js"
@@ -188,7 +187,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return {
         journalReadStore,
         commitStore,
-        workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
         workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
         settlementStore: createDrizzlePendingSettlementStore(
           db,

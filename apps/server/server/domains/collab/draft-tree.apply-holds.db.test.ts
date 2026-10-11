@@ -2,8 +2,7 @@
  * Apply all and 5a holds (contract §11.2 step 3, §11.4, §11.5, ledger E-5, E-7a, E-7b):
  * one command with per-item results, an item whose path is taken stays held in the draft
  * while the rest apply, a held picture is a payload-only Apply, the draft closes only when
- * drained, and D40's switch goes through the same command, answering a batch handed to
- * recovery the way Apply does (E-7c).
+ * drained, and a batch handed to recovery answers pending (E-7c).
  */
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it, vi } from "vitest";
@@ -13,10 +12,6 @@ import {
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../../lib/interrupt-boundary.js";
-import {
-  handleWorkWriteModeRequest,
-  selectWorkWriteModeServices,
-} from "../../lib/work-write-mode-route.js";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { makePendingSettlementsDue } from "../../test-support/settlement-claims.js";
@@ -174,8 +169,8 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("dep/a.md"), "X kept").toBe(x);
   });
 
-  it("finishes an Apply whose draft grows mid-flight in the same request, through the route and D40 (E-7b)", async () => {
-    const { runtime, s } = await start();
+  it("finishes an Apply whose draft grows mid-flight in the same request (E-7b)", async () => {
+    const { s } = await start();
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
     const live = s.view("live");
@@ -201,32 +196,8 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("growth/original.md"), "published").toBe(original);
     expect.soft(await live.idAt("growth/late.md"), "the late item stays in D").toBeNull();
     expect.soft(await s.batchStates(), "one batch, completed").toEqual(["completed"]);
-
-    // D40: switching to auto-apply applies the whole draft through the same command and
-    // completes even when the draft grows under it.
-    await s.writer.createDocument("other.md", "Other.");
-    await s.model(beacon).edit("other.md", "Other.", "Other, drafted.");
-    const mira = await s.model(beacon).create("characters/mira.md", "Mira.");
-    const stopAgain = growAtStaging("growth/later.md");
-    const switched = await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
-      projectId: s.project.id,
-      workId: beacon.id,
-      userId: s.project.userId,
-      aiWriteMode: "direct",
-      pending: "apply",
-    });
-    stopAgain();
-    expect.soft(switched).toMatchObject({ aiWriteMode: "direct" });
-    expect.soft(await live.text("other.md")).toContain("Other, drafted.");
-    expect.soft(await live.idAt("characters/mira.md")).toBe(mira);
-    expect.soft(await live.idAt("growth/late.md"), "the earlier late item applied").not.toBeNull();
-    expect.soft(await live.idAt("growth/later.md"), "the newest stays in D").toBeNull();
-    expect.soft(await s.draftStatuses(beacon), "D stays open for it").toEqual(["active"]);
   });
-  it.each([
-    "switch",
-    "all",
-  ] as const)("answers pending when %s outgrows bounded continuation; recovery finishes the batch (E-7c)", async (kind) => {
+  it("answers pending when Apply all outgrows bounded continuation; recovery finishes the batch (E-7c)", async () => {
     const { runtime, s } = await start();
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
@@ -244,7 +215,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     });
     const stopContinue = setCollabHook("applyItems.beforeContinue", grow);
     const draftId = (await s.items(beacon))[0]?.draftId;
-    if (kind === "switch") {
+    {
       const failure = new DraftLinkRegistrationFailedError(draftId as string, []);
       let registrationAnswer: unknown;
       try {
@@ -268,7 +239,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     }
     // Per-document Apply doesn't close D, so ordinary draft growth needs no new leases.
     // Its publication port can still hand off; it uses the same transport mapping.
-    if (kind === "switch") {
+    {
       const item = (await s.items(beacon))[0];
       if (!item?.draftBranchId || !draftId) throw new Error("Missing draft item");
       const deps = selectDraftRouteServices(runtime.app);
@@ -294,17 +265,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     }
     let answer: unknown;
     try {
-      if (kind === "switch") {
-        answer = await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
-          projectId: s.project.id,
-          workId: beacon.id,
-          userId: s.project.userId,
-          aiWriteMode: "direct",
-          pending: "apply",
-        });
-      } else {
-        answer = await s.applyAll(beacon);
-      }
+      answer = await s.applyAll(beacon);
     } catch (cause) {
       answer = cause;
     } finally {
@@ -315,9 +276,6 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect
       .soft(answer, "the handoff is accepted, never failed or updated")
       .toEqual({ status: "pending", draftId });
-    expect
-      .soft((await runtime.ports.workRepo.findById(beacon.id))?.aiWriteMode, "the mode stays")
-      .toBe("draft");
     expect.soft(await s.batchStates(), "one batch, with recovery").toEqual(["pending"]);
     // Handed off unclaimed, with a retry backoff: let it come due.
     await makePendingSettlementsDue(s.db);
