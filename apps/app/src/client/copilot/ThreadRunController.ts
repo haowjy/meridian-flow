@@ -1,6 +1,11 @@
 /** Owns a thread run from submission through transport recovery. */
-import { EventType, isTerminalTurnStatus, readRunStartedMeta } from "@meridian/contracts/protocol";
-import type { JsonValue } from "@meridian/contracts/threads";
+import {
+  EventType,
+  isTerminalTurnStatus,
+  readRunFinishedMeta,
+  readRunStartedMeta,
+} from "@meridian/contracts/protocol";
+import { type AncestryTurn, type JsonValue, replyReaching } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -83,8 +88,9 @@ export type ThreadRunControllerOptions = {
 /**
  * One followed thread. The state model (what binds, what Stop targets, when it
  * settles) is the D62 controller model; the invariant is that a start binds
- * only as the observed run, its same-lease split successor, or the reply that
- * answers an admitted user turn, never because it came next in the stream.
+ * only as the observed run, the successor that names it in `continuesRunId`,
+ * or the reply that answers an admitted user turn, never because it came next
+ * in the stream or soon after a finish.
  */
 type ActiveRun = {
   threadId: string;
@@ -93,8 +99,8 @@ type ActiveRun = {
   turnId?: string;
   /** The observed run finished or errored; Stop waits for the next bound start. */
   ended?: boolean;
-  /** The short window after the observed run's finish for its same-lease successor. */
-  splitBoundaryPending?: boolean;
+  /** The observed run's finish reserved a same-lease successor whose start is still due. */
+  continuing?: boolean;
   /** User turns admitted with no reply named and not yet seen answered. */
   awaiting: Set<string>;
   /** User turn -> the run whose start named it, for every start this thread showed. */
@@ -105,28 +111,6 @@ type ActiveRun = {
   dispose?: () => void;
   flush?: () => void;
 };
-
-type SnapshotTurn = DeserializedThreadSnapshot["turns"][number];
-
-/** The reply whose request carried this user turn: the assistant turn reached through only non-assistant turns. */
-function replyAnswering(
-  turns: readonly SnapshotTurn[],
-  byId: ReadonlyMap<string, SnapshotTurn>,
-  userTurnId: string,
-): SnapshotTurn | undefined {
-  const reaches = (reply: SnapshotTurn) => {
-    let prev = reply.prevTurnId;
-    while (prev) {
-      if (prev === userTurnId) return true;
-      const turn = byId.get(prev);
-      if (!turn || turn.role === "assistant") return false;
-      prev = turn.prevTurnId;
-    }
-    return false;
-  };
-  const replies = turns.filter((turn) => turn.role === "assistant" && reaches(turn));
-  return replies.find((turn) => !isTerminalTurnStatus(turn.status)) ?? replies.at(-1);
-}
 
 function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -478,7 +462,13 @@ export class ThreadRunController {
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
     if (this.disposed || this.accountSignal.aborted) return;
     const token = this.startRun(threadId);
-    this.attachLiveSubscription(threadId, token, options);
+    // A handoff resumes at the snapshot's cursor, which can be past the start
+    // that answered a carried await: settle those from the applied snapshot.
+    const answering = this.settleAnsweredAwaits(this.actions.turns(threadId) ?? []);
+    this.attachLiveSubscription(threadId, token, {
+      ...options,
+      expectedTurnId: options.expectedTurnId ?? answering,
+    });
   }
 
   respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
@@ -612,7 +602,6 @@ export class ThreadRunController {
     if (!run || !this.isActiveToken(token)) return;
 
     let disposed = false;
-    let splitFinishTimer: ReturnType<typeof setTimeout> | undefined;
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
@@ -620,25 +609,24 @@ export class ThreadRunController {
       applyAguiEventToStore(this.actions, threadId, event);
     });
     const markDisposed = () => {
-      if (splitFinishTimer) clearTimeout(splitFinishTimer);
       if (!this.accountSignal.aborted) coalescer.flush();
       disposed = true;
     };
     const bind = (turnId: string) => {
       // Flush the previous run before the next enters the durable snapshot owner.
       if (run.turnId !== turnId) coalescer.flush();
-      if (splitFinishTimer) clearTimeout(splitFinishTimer);
       run.turnId = turnId;
       run.ended = false;
-      run.splitBoundaryPending = false;
+      run.continuing = false;
       if (this.abortRequested) {
         this.abortRequested = false;
         this.requestCancel(threadId, turnId);
       }
     };
-    const end = () => {
+    const end = (continued: boolean) => {
       run.ended = true;
-      if (run.awaiting.size === 0) this.cleanupActiveRun();
+      run.continuing = continued;
+      this.settleIfDone(run);
     };
 
     run.turnId = expectedTurnId;
@@ -662,21 +650,21 @@ export class ThreadRunController {
 
           if (effectiveEvent.type === EventType.RUN_STARTED) {
             const runId = effectiveEvent.runId;
-            const answers = readRunStartedMeta(effectiveEvent.rawEvent).answersUserTurnIds;
+            const { answersUserTurnIds: answers, continuesRunId } = readRunStartedMeta(
+              effectiveEvent.rawEvent,
+            );
             for (const userTurnId of answers) run.seenAnswers.set(userTurnId, runId);
             const answersAwaited = answers.filter((userTurnId) => run.awaiting.has(userTurnId));
             const unscoped = run.turnId === undefined && !run.ended && run.awaiting.size === 0;
-            // A same-lease steer is journaled as A-finish then B-start, so the
-            // split window takes the next start. Any other start that answers
-            // nothing this controller admitted is another reply's (a replay
-            // from the early admission cursor, or a later queued reply).
-            if (
-              runId !== run.turnId &&
-              !run.splitBoundaryPending &&
-              answersAwaited.length === 0 &&
-              !unscoped
-            )
+            const successor = continuesRunId !== null && continuesRunId === run.turnId;
+            // Any other start is another reply's: a replay from the early
+            // admission cursor, another client's send, or a later queued reply.
+            if (runId !== run.turnId && !successor && answersAwaited.length === 0 && !unscoped) {
+              // One run claim per thread: a foreign start after a continued
+              // finish means that lease ended without its successor.
+              if (run.continuing) end(false);
               return;
+            }
             for (const userTurnId of answersAwaited) run.awaiting.delete(userTurnId);
             bind(runId);
             coalescer.push(effectiveEvent);
@@ -685,6 +673,12 @@ export class ThreadRunController {
 
           const live = run.turnId !== undefined && !run.ended;
           const unscoped = run.turnId === undefined && !run.ended && run.awaiting.size === 0;
+          // A failed compaction between a continued finish and its successor
+          // ends that lease; its error carries no run of ours to render.
+          if (effectiveEvent.type === EventType.RUN_ERROR && run.continuing) {
+            end(false);
+            return;
+          }
           // Between replies, events belong to a run this controller did not bind.
           if (!live && !unscoped) return;
           // Same-thread replays can contain events from a superseded run; the
@@ -696,15 +690,9 @@ export class ThreadRunController {
           coalescer.push(effectiveEvent);
 
           if (effectiveEvent.type === EventType.RUN_FINISHED && live) {
-            run.ended = true;
-            run.splitBoundaryPending = true;
-            splitFinishTimer = setTimeout(() => {
-              if (!this.isActiveToken(token) || !run.splitBoundaryPending) return;
-              run.splitBoundaryPending = false;
-              end();
-            }, 250);
+            end(readRunFinishedMeta(effectiveEvent.rawEvent).continued);
           } else if (effectiveEvent.type === EventType.RUN_ERROR) {
-            end();
+            end(false);
           }
         },
         onError: (error) => {
@@ -765,17 +753,11 @@ export class ThreadRunController {
     const signal = AbortSignal.any([this.accountSignal, abort.signal]);
     const recovery = (async () => {
       while (this.isActiveToken(token) && !signal.aborted) {
-        // Recovery waits out a split window rather than racing its successor.
-        if (this.activeRun?.splitBoundaryPending) {
-          await waitForSnapshotRetry(signal);
-          continue;
-        }
         const snapshot = deserializeThreadSnapshot(
           await this.getThreadSnapshotFn({ data: { threadId }, signal }),
         );
         const run = this.activeRun;
         if (signal.aborted || !this.isActiveToken(token) || run?.threadId !== threadId) return;
-        if (run.splitBoundaryPending) continue;
         if (snapshot.thread.id !== threadId || snapshot.thread.userId !== this.accountId) {
           await waitForSnapshotRetry(signal);
           continue;
@@ -797,31 +779,55 @@ export class ThreadRunController {
 
   /**
    * A gap can swallow the starts and ends this controller waits on. Durable
-   * state settles them: an awaited turn whose reply finished stops the wait
-   * (retiring a Stop aimed at it), a running reply binds, an unanswered turn
-   * keeps waiting. No timeout drops a queued message.
+   * state settles them: a continued run's successor or an awaited turn's reply
+   * that is still running binds (taking a waiting Stop), one that finished
+   * ends that wait (retiring the Stop), and an unanswered turn keeps waiting.
+   * No timeout drops a queued message.
    */
   private reconcileWithSnapshot(run: ActiveRun, snapshot: DeserializedThreadSnapshot): void {
-    const byId = new Map(snapshot.turns.map((turn) => [turn.id, turn]));
-    const waited = run.ended === true || run.awaiting.size > 0;
-    const observed = run.turnId ? byId.get(run.turnId) : undefined;
+    const { turns, liveState } = snapshot;
+    // An unscoped follow (no run, nothing awaited) is not waiting on anything to settle.
+    const waited = run.ended === true || run.continuing === true || run.awaiting.size > 0;
+    const observed = run.turnId ? turns.find((turn) => turn.id === run.turnId) : undefined;
     if (
       observed &&
       !run.ended &&
       isTerminalTurnStatus(observed.status) &&
-      snapshot.liveState.runningTurnId !== observed.id
+      liveState.runningTurnId !== observed.id
     )
       run.ended = true;
     let running: string | undefined;
+    if (run.continuing && run.turnId) {
+      const successor = replyReaching(turns, run.turnId);
+      if (successor && !isTerminalTurnStatus(successor.status)) running = successor.id;
+      // No successor yet on a sleeping thread: the lease ended without one.
+      if (successor || (!liveState.runningTurnId && liveState.status?.kind !== "awake"))
+        run.continuing = false;
+    }
+    running = this.settleAnsweredAwaits(turns) ?? running;
+    if (running && (run.ended || run.turnId === undefined)) run.bind?.(running);
+    if (waited) this.settleIfDone(run);
+  }
+
+  /** Drops each awaited user turn that durable turns show answered; returns a live answering reply. */
+  private settleAnsweredAwaits(turns: readonly AncestryTurn[]): string | undefined {
+    const run = this.activeRun;
+    if (!run) return undefined;
+    let running: string | undefined;
     for (const userTurnId of [...run.awaiting]) {
-      const reply = replyAnswering(snapshot.turns, byId, userTurnId);
+      const reply = replyReaching(turns, userTurnId);
       if (!reply) continue;
       run.awaiting.delete(userTurnId);
       if (!isTerminalTurnStatus(reply.status)) running = reply.id;
     }
-    if (running && (run.ended || run.turnId === undefined)) run.bind?.(running);
-    if ((waited || run.ended) && run.awaiting.size === 0 && (run.ended || !run.turnId))
-      this.cleanupActiveRun();
+    return running;
+  }
+
+  /** Settle once nothing this controller follows can still produce a reply. */
+  private settleIfDone(run: ActiveRun): void {
+    if (this.activeRun !== run) return;
+    const live = run.turnId !== undefined && !run.ended;
+    if (!live && !run.continuing && run.awaiting.size === 0) this.cleanupActiveRun();
   }
 
   private applySnapshot(snapshot: DeserializedThreadSnapshot): boolean {
