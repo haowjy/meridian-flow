@@ -6,6 +6,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 
 import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
@@ -16,26 +17,14 @@ import type {
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
+import { ErrorCard } from "./ErrorCard";
 import { useReferenceAvailability } from "./reference-availability";
-
-export type UserTurnRecovery =
-  | {
-      kind: "ambiguous";
-      onCheck: () => void;
-      onRetire: () => void;
-    }
-  | {
-      kind: "rejected";
-      onRetry: () => void;
-      /** Move rejected words into the composer without replacing newer writing. */
-      onEdit?: () => void;
-    };
 
 export type UserTurnProps = {
   turn: Turn;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
-  /** Check submission status / Start over for a recovered ambiguous send. */
+  /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
 
@@ -126,35 +115,47 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           {t`Queued`}
         </p>
       ) : null}
-      {turn.status === "error" ? (
+      {turn.status === "error" && submissionRecovery?.moving ? (
         <p
           data-user-turn-status="error"
           role="status"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {t`Couldn't send.`}
+          {t`Moved to the message box.`}
         </p>
       ) : null}
-      {submissionRecovery?.kind === "ambiguous" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
-            {t`Check submission status`}
-          </Button>
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetire}>
-            {t`Start over`}
-          </Button>
-        </div>
-      ) : null}
-      {submissionRecovery?.kind === "rejected" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
-            {t`Retry`}
-          </Button>
-          {submissionRecovery.onEdit ? (
-            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
-              {t`Edit`}
-            </Button>
-          ) : null}
+      {turn.status === "error" && !submissionRecovery?.moving ? (
+        // Zero intrinsic width so a short message's bubble does not stretch to the card;
+        // the card right-aligns inside the row and overhangs to the left.
+        <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
+          {/* The chat announces the failure once through its own assertive region, and a
+              rejection restored on reload must stay silent, so the card is not an alert. */}
+          <ErrorCard inline announce={false}>
+            <p data-user-turn-status="error" role="status">
+              {t`Couldn't send.`}
+            </p>
+            {submissionRecovery?.onRetry ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={submissionRecovery.onRetry}
+              >
+                {t`Retry`}
+              </Button>
+            ) : null}
+            {submissionRecovery?.onEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={submissionRecovery.busy}
+                onClick={submissionRecovery.onEdit}
+              >
+                {t`Edit`}
+              </Button>
+            ) : null}
+          </ErrorCard>
         </div>
       ) : null}
       {handoff ? (

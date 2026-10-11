@@ -787,8 +787,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr ""
+#~ msgid "Check submission status"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1342,7 +1342,10 @@ msgstr ""
 msgid "Couldn't send your answer."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "未能发送你的消息。"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
@@ -2403,6 +2406,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
+msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -3481,8 +3492,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr ""
+#~ msgid "Start over"
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"

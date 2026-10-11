@@ -119,15 +119,24 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
     snapshotFloorNextSeq: "43",
     status: "accepted",
   });
+  const session = {};
+  controller.current?.beginRecoverySession(session);
   await expect(
-    controller.current?.submit("thread-1", {
-      submissionId: "sub-1",
-      acceptedRevision: 0,
-      text: "hello",
-      blocks: [],
-      references: [],
-      activatedSkillSlugs: [],
-    }),
+    controller.current?.recoverSubmission(
+      "thread-1",
+      {
+        submissionId: "sub-1",
+        text: "hello",
+        blocks: [],
+        references: [],
+        activatedSkillSlugs: [],
+      },
+      {
+        signal: account.signal,
+        optimisticUserTurnId: store.getState().appendUserTurn("thread-1", []).id,
+      },
+      session,
+    ),
   ).resolves.toMatchObject({ kind: "accepted" });
   expect(runs.filter((row) => row.active)).toHaveLength(1);
   closed[0]?.callback(1);
