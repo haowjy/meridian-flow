@@ -106,11 +106,6 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {edited # document} other {edited # documents}}"
-msgstr ""
-
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
@@ -1823,11 +1818,6 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/ReviewChangeRow.tsx
 msgid "Edited"
-msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-msgid "edited {0}"
 msgstr ""
 
 #. placeholder {0}: formatRelativeTime(project.updatedAt, now)

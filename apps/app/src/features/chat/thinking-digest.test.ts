@@ -1,4 +1,4 @@
-/** Tool activity describes edits, independent of the Work's write mode. */
+/** The digest leaves changed documents to the turn receipt. */
 import { i18n } from "@lingui/core";
 import { beforeEach, expect, it } from "vitest";
 import { descriptorFor, toolActivityPhrase } from "./command-descriptor";
@@ -24,11 +24,17 @@ function tool(toolName: string, command?: string): ToolView {
   };
 }
 
-it("counts a created document as an edit and carries the document noun after reads", () => {
+it("omits successful writes and keeps reads without repeating the receipt", () => {
   const create = tool("write", "create");
-  expect(thinkingDigest([create])).toBe("Edited 1 document");
-  expect(thinkingDigest([tool("read"), create, tool("write", "replace")])).toBe(
-    "Read 1 document, edited 1",
+  expect(thinkingDigest([create, tool("write", "replace")])).toBeNull();
+  expect(thinkingDigest([tool("read"), create])).toBe("Read 1 document");
+});
+
+it("keeps skills and steps while omitting successful writes", () => {
+  const skill = { ...tool("skill"), input: { name: "story-review" } };
+  const failedWrite = { ...tool("write", "replace"), isError: true };
+  expect(thinkingDigest([skill, tool("write", "create"), failedWrite])).toBe(
+    "Invoked 'Story Review', 1 step",
   );
 });
 

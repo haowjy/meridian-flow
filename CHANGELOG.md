@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Chat process digests omit successful writes; the turn receipt alone summarizes changed documents. Reads, skills, and steps remain.
+
 - Call chat writes edits in every mode, without a separate drafted label.
 
 - Keep selective review commands beside incomplete changes, preserve readable dock names and whole chat attribution, keep focused controls inside the editor pane, and list this chat’s pending changes in the expanded composer strip.
