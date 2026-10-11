@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Document-name upgrades preserve upload reservations and deleted Work restore sets, and refresh saved recent-document routes by identity.
+
 - Binary creation and reads share canonical names, copy destinations consume extension inheritance once, and folder aliases cannot claim a document’s name.
 
 - Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
