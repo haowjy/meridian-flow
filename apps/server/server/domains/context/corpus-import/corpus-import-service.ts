@@ -1,5 +1,9 @@
 /** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
-import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
+import {
+  type ParsedDocumentFilename,
+  parseDocumentFilename,
+  renderFilename,
+} from "@meridian/contracts/protocol";
 import { allocateFilename, joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
@@ -142,17 +146,26 @@ export function createCorpusImportService({
     };
     const items: CorpusImportItemResult[] = [];
 
-    for (const file of input.files) {
+    const prepared: {
+      file: CorpusImportInputFile;
+      index: number;
+      kind: ReturnType<DocumentConverterPort["classify"]>;
+      title: string;
+      parts: ParsedDocumentFilename;
+      directory: string;
+      converted: ConvertedDocument;
+    }[] = [];
+    for (const [index, file] of input.files.entries()) {
       const kind = converter.classify({ filename: file.filename, mimeType: file.mimeType });
       const title = titleFromFilename(file.filename, kind);
       if (kind === "unsupported") {
-        items.push({
+        items[index] = {
           status: "skipped",
           filename: file.filename,
           title,
           reason: `Unsupported file type${file.mimeType ? `: ${file.mimeType}` : ""}`,
           source: input.source,
-        });
+        };
         continue;
       }
 
@@ -160,32 +173,78 @@ export function createCorpusImportService({
       try {
         converted = await converter.convert(file);
       } catch (error) {
-        items.push({
+        items[index] = {
           status: "failed",
           filename: file.filename,
           title,
           reason: error instanceof Error ? error.message : String(error),
           source: input.source,
-        });
+        };
         continue;
       }
 
       const parsed = parseDocumentFilename(title);
       if (!parsed.ok || parsed.value.filetype !== "markdown") {
-        items.push({
+        items[index] = {
           status: "failed",
           filename: file.filename,
           title,
           reason: parsed.ok ? "A converted document must have a prose name" : parsed.error.message,
           source: input.source,
-        });
+        };
         continue;
       }
-      const directory = targetDirectory(file);
+      prepared.push({
+        file,
+        index,
+        kind,
+        title,
+        parts: parsed.value,
+        directory: targetDirectory(file),
+        converted,
+      });
+    }
+
+    // Folder claims and all desired document names are known before numbering.
+    // A suffix may not steal a name another source file brings into this batch.
+    const desired = new Set<string>();
+    for (const item of prepared) {
+      desired.add(joinPath(item.directory, renderFilename(item.parts.name, item.parts.extension)));
+      const segments = item.directory.split("/");
+      for (let depth = 0; depth < segments.length; depth += 1) {
+        const folder = parseDocumentFilename(segments[depth] ?? "");
+        if (folder.ok)
+          taken.add(
+            joinPath(
+              segments.slice(0, depth).join("/"),
+              renderFilename(folder.value.name, folder.value.extension),
+            ),
+          );
+      }
+    }
+    const sourceName = (file: CorpusImportInputFile) =>
+      (file.relativePath || file.filename).replace(/\\/g, "/");
+    const canonical = (item: (typeof prepared)[number]) =>
+      item.file.filename.split(/[\\/]/).pop() ===
+      renderFilename(item.parts.name, item.parts.extension);
+    prepared.sort(
+      (left, right) =>
+        Number(canonical(right)) - Number(canonical(left)) ||
+        (sourceName(left.file) < sourceName(right.file)
+          ? -1
+          : sourceName(left.file) > sourceName(right.file)
+            ? 1
+            : 0),
+    );
+
+    for (const { file, index, kind, title, parts, directory, converted } of prepared) {
+      const ownDesired = joinPath(directory, renderFilename(parts.name, parts.extension));
       const create = async () => {
-        const filename = await allocateFilename(parsed.value, async (candidate) => {
+        const filename = await allocateFilename(parts, async (candidate) => {
           const path = joinPath(directory, candidate);
-          return taken.has(path) || (await exists(path));
+          return (
+            taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
+          );
         });
         const path = joinPath(directory, filename);
         taken.add(path);
@@ -214,17 +273,17 @@ export function createCorpusImportService({
         write = await create();
       }
       if (!write.ok) {
-        items.push({
+        items[index] = {
           status: "failed",
           filename: file.filename,
           title,
           reason: contextErrorMessage(write.error),
           source: input.source,
-        });
+        };
         continue;
       }
 
-      items.push({
+      items[index] = {
         status: "imported",
         filename: file.filename,
         title,
@@ -232,7 +291,7 @@ export function createCorpusImportService({
         documentId: write.value.documentId,
         source: input.source,
         messages: converted.messages.map((message) => message.message),
-      });
+      };
     }
 
     return {

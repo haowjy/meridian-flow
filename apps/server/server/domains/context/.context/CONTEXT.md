@@ -376,7 +376,11 @@ currently available to the request owner in the requested project.
   import provenance; collisions use the shared smallest ` (2)` allocator.
   Corpus conversion removes only its DOCX source suffix before using the codec;
   imported titles and directories retain their spelling. Atomic creation refuses
-  replacement if another intake claims the allocated name.
+  replacement if another intake claims the allocated name. Whole-batch planning
+  reserves folder names and desired document names before numbering; already-
+  canonical source names win, then source filename order determines allocation.
+  Response items remain in input order. Identity-bound uploads accept one file
+  per request; only corpus intake accepts multi-file and relative-path batches.
 - File output uses `exportFilename`: prose gains `.md` from persisted `fileType`;
   all other documents retain their stored filename. Download headers encode
   Unicode names, and binary document downloads serve bytes with that filename.

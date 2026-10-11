@@ -4,6 +4,8 @@
 
 ### Changed
 
+- A corpus import plans names for the whole batch: already-canonical filenames keep their names, aliases receive deterministic numbered suffixes, and imported folders keep their names beside colliding documents.
+
 - MIME-inferred uploads retain dotted writer names and specific image extensions instead of losing their file type.
 
 - Document downloads add `.md` only for prose, keep non-prose filenames, and carry Unicode names in download headers. Binary downloads serve their bytes with the document name instead of an opaque storage-key redirect.
