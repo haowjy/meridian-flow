@@ -246,10 +246,13 @@ export class ThreadRunScenario {
   }
 
   submit(text: string, options: SubmitOptions = {}, threadId = "thread_1") {
-    return this.controller.submit(
+    const session = {};
+    this.controller.beginRecoverySession(session);
+    return this.controller.recoverSubmission(
       threadId,
       serializeComposerDraft(plainComposerDoc(text)),
       options,
+      session,
     );
   }
 

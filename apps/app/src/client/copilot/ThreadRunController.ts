@@ -39,14 +39,11 @@ export type SubmitOptions = {
   signal?: AbortSignal;
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
-  keepOptimisticOnFailure?: boolean;
-  /** Install mounted durable projections at the accepted cursor before replay starts. */
-  activateProjection?: (after: string) => boolean;
 };
 
 export type SubmissionPayload = Pick<
   ComposerSubmitEnvelope,
-  "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
+  "submissionId" | "text" | "blocks" | "references" | "activatedSkillSlugs"
 >;
 
 type SessionFence = () => boolean;
@@ -116,8 +113,6 @@ export class ThreadRunController {
   private activationGeneration = 0;
 
   private activeRun: ActiveRun | null = null;
-  private admissionEpoch = 0;
-  private leaseLifetime = new AbortController();
   private leaseTail: Promise<void> = Promise.resolve();
   private recoverySessions = new Set<object>();
   private abortRequested = false;
@@ -171,14 +166,6 @@ export class ThreadRunController {
     }
   }
 
-  submit(
-    threadId: string,
-    payload: SubmissionPayload,
-    options: SubmitOptions = {},
-  ): Promise<SubmissionOutcome> {
-    return this.dispatch(threadId, payload, options, this.admissionFence(this.admissionEpoch));
-  }
-
   /** Re-admit a journal-recovered submission under its owning recovery session. */
   recoverSubmission(
     threadId: string,
@@ -187,11 +174,6 @@ export class ThreadRunController {
     session: object,
   ): Promise<SubmissionOutcome> {
     return this.dispatch(threadId, payload, options, this.recoveryFence(session));
-  }
-
-  private admissionFence(admissionEpoch: number): SessionFence {
-    return () =>
-      !this.disposed && !this.accountSignal.aborted && this.admissionEpoch === admissionEpoch;
   }
 
   private recoveryFence(session: object): SessionFence {
@@ -212,11 +194,6 @@ export class ThreadRunController {
     this.recoverySessions.delete(session);
   }
 
-  private dropOptimistic(threadId: string, options: SubmitOptions): void {
-    if (options.keepOptimisticOnFailure || !options.optimisticUserTurnId) return;
-    this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-  }
-
   private async dispatch(
     threadId: string,
     envelope: SubmissionPayload,
@@ -226,11 +203,9 @@ export class ThreadRunController {
     const outcome = (kind: SubmissionOutcome["kind"]): SubmissionOutcome => ({
       kind,
       submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
     });
     const signal = AbortSignal.any([
       this.accountSignal,
-      this.leaseLifetime.signal,
       ...(options.signal ? [options.signal] : []),
     ]);
     const current = () => fence() && !signal.aborted;
@@ -271,7 +246,6 @@ export class ThreadRunController {
       } catch (error) {
         if (!current()) return outcome("abandoned");
         if (classifyWriteFailure(error) === "rejected") {
-          this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
         return outcome("ambiguous");
@@ -285,9 +259,6 @@ export class ThreadRunController {
           result.snapshotFloorNextSeq,
         );
       }
-      if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
-        return outcome("ambiguous");
-      }
       this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
@@ -299,39 +270,24 @@ export class ThreadRunController {
   lookupSubmission(
     threadId: string,
     submissionId: string,
-    options: SubmitOptions = {},
-    session?: object,
+    options: SubmitOptions,
+    session: object,
   ): Promise<SubmissionOutcome> {
-    return this.reconcile(
-      threadId,
-      submissionId,
-      0,
-      options,
-      "lookup",
-      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
-    );
+    return this.reconcile(threadId, submissionId, options, "lookup", this.recoveryFence(session));
   }
 
   retireSubmission(
     threadId: string,
     submissionId: string,
-    options: SubmitOptions = {},
-    session?: object,
+    options: SubmitOptions,
+    session: object,
   ): Promise<SubmissionOutcome> {
-    return this.reconcile(
-      threadId,
-      submissionId,
-      0,
-      options,
-      "retire",
-      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
-    );
+    return this.reconcile(threadId, submissionId, options, "retire", this.recoveryFence(session));
   }
 
   private async reconcile(
     threadId: string,
     submissionId: string,
-    acceptedRevision: number,
     options: SubmitOptions,
     operation: "lookup" | "retire",
     fence: SessionFence,
@@ -339,7 +295,6 @@ export class ThreadRunController {
     const outcome = (kind: SubmissionOutcome["kind"]): SubmissionOutcome => ({
       kind,
       submissionId,
-      acceptedRevision,
     });
     const signal = AbortSignal.any([
       this.accountSignal,
@@ -366,18 +321,10 @@ export class ThreadRunController {
             result.snapshotFloorNextSeq,
           );
         }
-        if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
-          return outcome("ambiguous");
-        }
         this.attachAcceptedRun(threadId, result);
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
-        // Callers choose whether a proved refusal remains attached to its
-        // optimistic row; the chat surface keeps it for Retry/Edit recovery.
-        if (options.optimisticUserTurnId && !options.keepOptimisticOnFailure) {
-          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-        }
         return outcome("rejected");
       }
       if (result.kind === "not-seen") return outcome("not-seen");
@@ -445,12 +392,8 @@ export class ThreadRunController {
     this.requestCancel(activeRun.threadId, activeRun.turnId);
   }
 
-  teardown(): void {
-    // Prevent an append already in flight from attaching after teardown.
-    this.admissionEpoch += 1;
-    this.leaseLifetime.abort();
-    this.leaseLifetime = new AbortController();
-    this.leaseTail = Promise.resolve();
+  teardown(threadId?: string): void {
+    if (threadId && this.activeRun?.threadId !== threadId) return;
     this.runToken += 1;
     this.cleanupActiveRun();
   }
@@ -643,7 +586,7 @@ export class ThreadRunController {
       },
     };
 
-    // If submit() received the turn id from HTTP before RUN_STARTED arrives,
+    // If admission received the turn id from HTTP before RUN_STARTED arrives,
     // an early cancel can execute now instead of waiting for the stream echo.
     if (this.abortRequested && this.activeRun.turnId) {
       this.abortRequested = false;
