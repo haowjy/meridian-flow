@@ -17,8 +17,8 @@
     },
     {
       "path": "apps/server/server/domains/context/adapters/context-fs/document-locations.ts",
-      "forms": ["read", "write"],
-      "reason": "Namespace locks, location-history claims and records, subtree enumeration: identity and history by id, no visibility answer"
+      "forms": ["read"],
+      "reason": "Namespace and moved-row locks, subtree enumeration: identity by id, no visibility answer"
     },
     {
       "path": "apps/server/server/domains/context/adapters/document-link-history.ts",

@@ -25,11 +25,11 @@ import {
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { splitHiddenContents } from "../../tree/folder-normalization.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
+import { bumpLocationVersions } from "../../tree/node-locations.js";
 import { movedDocumentIds, moveNodes } from "../../tree/node-moves.js";
 import { createTreeReader, LIVE_TREE } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
-  bumpLocationVersions,
   lockContextSources,
   lockMovedDocumentRows,
   readTreeLocations,
