@@ -27,6 +27,7 @@ import {
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
 import { documents, works } from "./content";
+import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
@@ -478,6 +479,8 @@ export const documentYjsUpdates = pgTable(
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
+    editId: uuid("edit_id").references(() => documentEdits.id, { onDelete: "set null" }),
+    editPartOrdinal: integer("edit_part_ordinal"),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
