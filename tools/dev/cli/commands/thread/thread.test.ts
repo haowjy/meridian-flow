@@ -88,6 +88,17 @@ describe("thread", () => {
     });
   });
 
+  it("send into a running reply follows its successor to the reply that answers the steer", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "steer into a running reply", "--json"]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "The steered answer",
+    });
+  });
+
   it("send with no admitted reply binds the reply to its own message, not an earlier start", async () => {
     const result = await mf([
       "thread",

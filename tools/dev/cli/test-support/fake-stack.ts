@@ -134,13 +134,17 @@ function createFake() {
     for (const socket of sockets) socket.send(JSON.stringify(frame));
   };
 
-  /** A reply start, naming the user turns it answers as the server does. */
-  const publishStart = (runId: string, answersUserTurnIds: string[]) =>
+  /** A reply start, naming the user turns it answers and the reply it continues, as the server does. */
+  const publishStart = (
+    runId: string,
+    answersUserTurnIds: string[],
+    continuesRunId: string | null = null,
+  ) =>
     publish({
       type: "RUN_STARTED",
       threadId: THREAD_ID,
       runId,
-      rawEvent: { writeMode: null, answersUserTurnIds },
+      rawEvent: { writeMode: null, answersUserTurnIds, continuesRunId },
     } as AGUIEvent);
 
   const runScenario = (text: string) => {
@@ -345,6 +349,71 @@ function createFake() {
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
           }, 20);
         }, 5);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: runningTurnId,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "steer into a running reply") {
+        // The message joins the running reply A, so admission names A. A's
+        // lease splits at its next boundary: A finishes `continued` and B,
+        // which answers this message, continues A.
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const runningTurnId = `turn-running-${runCounter}`;
+        const running: FakeTurn = {
+          id: runningTurnId,
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(running, {
+          id: userTurnId,
+          role: "user",
+          prevTurnId: runningTurnId,
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        setTimeout(() => {
+          running.status = "complete";
+          running.text = "The old reply";
+          const replyId = `turn-reply-${runCounter}`;
+          const reply: FakeTurn = {
+            id: replyId,
+            role: "assistant",
+            prevTurnId: userTurnId,
+            status: "streaming",
+            error: null,
+            text: "",
+          };
+          turns.push(reply);
+          publish({
+            type: "RUN_FINISHED",
+            threadId: THREAD_ID,
+            runId: runningTurnId,
+            rawEvent: { continued: true },
+          } as AGUIEvent);
+          publishStart(replyId, [userTurnId], runningTurnId);
+          setTimeout(() => {
+            const messageId = `${replyId}::0`;
+            publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
+            publish({
+              type: "TEXT_MESSAGE_CONTENT",
+              messageId,
+              delta: "The steered answer",
+            } as AGUIEvent);
+            publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
+            reply.status = "complete";
+            reply.text = "The steered answer";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+          }, 50);
+        }, 20);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
