@@ -278,3 +278,12 @@ pointer close restores the held selection. Keyboard activation moves focus into
 the popover; Escape or close returns focus to the mark's current span. Neither
 hands anything back when another surface opened in its place — Mod+K reaches the
 popover as a close, and the caret then belongs to what opened.
+
+### Writer handoff loss
+
+`WriterHandoffLossNotice` reports unrecoverable typing on the addressed document,
+not on a vanished review or in a global toast. Review room refs write one local
+loss flag per project/document into the account-owned QueryClient. The desktop
+Editor/dock chrome and phone document host render that same dismissible sentence,
+including after review ends or the document is reopened. It does not expire off
+screen, survive account replacement, gate writing, or keep a review active.

@@ -235,9 +235,12 @@ and navigation contracts.
   room with an outbox drains before teardown; terminal retirement takes its
   carry before destruction and installs the teardown quarantine before delivery.
   `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
-  attempt retains the successor across retries, waits for first sync, and applies
-  only integrated bytes. Unresolved writer clocks retain their original carry
-  and pending signal, even after a partial replay is acknowledged; only a fully
-  integrated, acknowledged carry invalidates draft reads and clears that signal.
-  Permanently omitted anchors require recovery outside this byte-delivery seam;
-  handoff never resurrects discarded AI content or silently drops a pending tail.
+  attempt retains the successor across retries and waits for first sync. Missing
+  anchors in a same-generation rebuild may still arrive, so their original carry
+  and pending signal survive partial acknowledgements. A synced newer generation
+  is the durable retirement cut: absent source identities cannot arrive from its
+  fenced old journal. `writer-carry-recovery.ts` re-expresses only pending writer
+  operations with surviving own anchors/parents under a fresh client, transfers
+  their current tombstones, and never replays the retired AI snapshot. The rest
+  is deliberately dropped, reported once through the document-scoped ref, and
+  released; pending evidence lasts only until any rescued update is acknowledged.
