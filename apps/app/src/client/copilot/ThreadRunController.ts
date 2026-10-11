@@ -323,7 +323,7 @@ export class ThreadRunController {
         signal,
       );
     } catch (error) {
-      return outcome(current() ? classifyWriteFailure(error) : "abandoned");
+      return outcome(current() ? "ambiguous" : "abandoned");
     }
     if (!current()) return outcome("abandoned");
     if (result.kind === "accepted" || result.kind === "already-accepted") {

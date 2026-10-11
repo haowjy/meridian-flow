@@ -339,3 +339,20 @@ it("a lock failure reports its cause and fails only the waiting attempt", async 
     vi.unstubAllGlobals();
   }
 });
+
+it("lookup and retirement request refusals never authorize identity change or transfer", async () => {
+  const refusal = async () => {
+    throw new HttpResponseError("auth unavailable", 401, null);
+  };
+  const test = rig({ lookup: refusal, retire: refusal });
+  const initial = { ...record(), creation: undefined, state: "rejected" as const };
+  test.records.set(initial.recordId, initial);
+  const transfer = vi.fn(() => true);
+  const { owner: driver } = test.mount({ transferForEdit: transfer });
+  await driver.retry(initial.submissionId);
+  expect(test.records.get(initial.recordId)?.submissionId).toBe(initial.submissionId);
+  test.records.set(initial.recordId, initial);
+  await driver.edit(initial.submissionId);
+  expect(transfer).not.toHaveBeenCalled();
+  test.dispose();
+});
