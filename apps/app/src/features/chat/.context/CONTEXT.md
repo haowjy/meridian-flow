@@ -57,3 +57,7 @@ Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.
 
 See [`../AGENTS.md`](../AGENTS.md) for the working mental model and entry points.
+
+Submission rows, Edit cohorts and row actions are owned in `client/chat-submissions`.
+The React binding handles mount cancellation, external wakes and keyed alerts only.
+Journal absence never dissolves a destination without authoritative server confirmation.

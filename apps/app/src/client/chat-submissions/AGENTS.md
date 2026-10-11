@@ -2,7 +2,8 @@
 
 Durable, account-stamped journal of unresolved chat-submission intents (P3).
 It is the local witness that lets a reload reconcile or replay a displayed send.
-It is not a thread replica: no assistant turns or rendered rows.
+It is not a thread replica: no assistant turns. The tab owner projects writer rows and
+a single in-memory status/action snapshot; views never enumerate persistence.
 
 - One record per `(accountId, recordId)`, keyed
   `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
@@ -41,13 +42,27 @@ It is not a thread replica: no assistant turns or rendered rows.
   its journal drafts and this tab's unsent writing to New chat before retirement.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec discards a wrong envelope version, a foreign `accountId`, and corrupt
-  JSON without throwing. Storage errors degrade to "no intents", never a crash.
+  JSON without throwing. Unavailable reads retain the last complete snapshot and never sweep rows.
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
-Account bind rewrites v1 records to v2 before removing their old keys. The
+Account bind rewrites v1 under the driver thread lock. A v2 copy is not
+drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The
 bounded rewrite removal trigger is in `.context/TODO`.
 
 Record/retire notify in-tab subscribers; cross-tab localStorage events forward
 to the same listeners. `useIsThreadPendingCreation` synchronously combines
 journal `creation` with the provider-scoped pending flag through
 `useSyncExternalStore`, so uncreated journal destinations never query snapshots.
+
+
+`owner.ts` owns tab row identity, local failure/busy knowledge, durable Send handoff,
+and draft transfer. Both first and existing Send use `recordAndProjectSubmission`;
+after commit, subscriber/projection errors are reported through `reportError`, never
+turned into a resubmittable composer failure. The driver chooses Edit's cohort under
+its lock. Local write failure exposes Retry but never authorizes Edit or re-mint.
+
+An empty journal is not a dissolve signal. An observer that last saw creation
+confirms the server destination: 200 loads it, 404 permits dissolution, and an
+inconclusive response preserves the destination and last-known rows. Only this
+tab's explicit Edit bypasses that check. Pane disposal fences only its recovery
+session; account disposal, not unrelated pane teardown, invalidates admissions.

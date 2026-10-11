@@ -28,8 +28,9 @@ Hosts share the tab-local owner, so a pane change before the debounce flushes
 still hydrates the latest words. Each mount captures its initial snapshot once.
 It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
 on pagehide/unmount. Transfer to the submission journal clears it synchronously
-at Send. `useChatSubmissions` rebuilds writer rows and binds one cancellable
-`ChatSubmissionDriver` to the mounted chat; first sends and later sends share
+at Send. `client/chat-submissions/owner.ts` owns writer rows, command orchestration and the
+in-memory presentation snapshot. `useChatSubmissions` only binds cancellation,
+external wakes and keyed announcements to that owner; first sends and later sends share
 that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
 this tab. The binding announces only a new failed transition, keyed by the stable
 record id (account-qualified), never a restored rejection. Retry, successful Edit,
