@@ -244,3 +244,8 @@ and navigation contracts.
   their current tombstones, and never replays the retired AI snapshot. The rest
   is deliberately dropped, reported once through the document-scoped ref, and
   released; pending evidence lasts only until any rescued update is acknowledged.
+
+Private Yjs reconstruction mechanics live in the browser-safe
+`@meridian/agent-edit/yjs-mutation` adapter, pinned to Yjs 13.6.31. The app's
+carry recovery selects operations and identity mappings; retirement, retry,
+ownership and document loss presentation remain app concerns.

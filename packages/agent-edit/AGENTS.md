@@ -26,7 +26,9 @@ immediate writes use the journal kind returned by submission to restore or recov
 ## Rules
 
 - Public reads go through `read()`; mutations go through `write()` / `reverse()` /
-  response lifecycle APIs.
+  response lifecycle APIs. The narrow browser-safe `./yjs-mutation` subpath is
+  the pinned private-Yjs adapter for host-owned reconstruction transactions; it
+  does not own retirement policy, persistence, attribution or undo orchestration.
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.
