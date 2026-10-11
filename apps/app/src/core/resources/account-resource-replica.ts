@@ -4,7 +4,6 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
-  committedResourceDeletion,
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   installedFolderLocation,
@@ -38,6 +37,7 @@ import type {
   LocalLineageTerminalPort,
 } from "@/core/editor/document-session-coordination-contract";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { type CommittedDeleteBatch, CommittedDeletionIntake } from "./committed-deletion-intake";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { createResourceCatalogTransport } from "./resource-catalog-transport";
 import type { ResourceContentOpenResult } from "./resource-content-access";
@@ -128,6 +128,7 @@ export class AccountResourceReplica {
   private readonly catalogs: ResourceCatalogAcquisition;
   readonly terminal: LocalLineageTerminalPort;
   private readonly lock;
+  private readonly committedDeletionIntake;
   private readonly lockLifetime = new AbortController();
   private readonly namespace;
   private readonly adoption;
@@ -152,6 +153,7 @@ export class AccountResourceReplica {
   private started = false;
   private stopReconciliation: (() => void) | null = null;
   private readonly retryAll = () => {
+    void this.committedDeletionIntake.retry();
     void this.metadata
       .readProjection("")
       .then(({ records, folders }) => {
@@ -179,6 +181,11 @@ export class AccountResourceReplica {
       onInvalidated(error);
     });
     this.lock = createResourceNamespaceLock({ accountId, epoch: this.lockLifetime.signal });
+    this.committedDeletionIntake = new CommittedDeletionIntake(
+      this.metadata,
+      this.lock,
+      runtime.epochSignal,
+    );
     this.namespace = createResourceNamespaceTransport(accountId, runtime.epochSignal);
     this.content = new ResourceContentAccess(
       accountId,
@@ -298,6 +305,7 @@ export class AccountResourceReplica {
     this.requireOpen();
     if (this.started) return;
     this.started = true;
+    void this.committedDeletionIntake.retry();
     this.stopHints =
       this.connectivityHints?.subscribe(this, (hint) => {
         if (hint === "retry-now") this.retryAll();
@@ -634,52 +642,14 @@ export class AccountResourceReplica {
     this.schedule(key);
   }
 
-  /** Install server-proven absence before consumers can reproject a stale catalog entry. */
-  async acceptCommittedDelete(input: {
-    projectId: string;
-    deletedDocumentIds: readonly string[];
-    generation: string;
-  }): Promise<void> {
+  /** Retain server-proven absence before settling UI, even when namespace locks are busy. */
+  acceptCommittedDelete(input: CommittedDeleteBatch): Promise<void> {
+    return this.acceptCommittedDeletes([input]);
+  }
+
+  async acceptCommittedDeletes(inputs: readonly CommittedDeleteBatch[]): Promise<void> {
     this.requireOpen();
-    for (const documentId of new Set(input.deletedDocumentIds)) {
-      // The catalog may already have removed the row. Resolve exact identity in the
-      // account journal, not through current project visibility or remint aliases.
-      const { records } = await this.metadata.readProjection(input.projectId);
-      const known = records.find(({ resource }) => resource.identity.documentId === documentId);
-      if (!known) continue;
-      const key = { handle: known.resource.handle };
-      const result = await this.lock.run(key, () =>
-        this.commitPlan(key, (record) => {
-          if (
-            record.resource.identity.documentId !== documentId ||
-            record.resource.lifecycle.kind === "terminal"
-          )
-            return null;
-          if (
-            record.resource.lifecycle.kind === "acknowledged" &&
-            record.resource.lifecycle.availabilityGeneration !== null &&
-            BigInt(record.resource.lifecycle.availabilityGeneration) > BigInt(input.generation)
-          )
-            return null;
-          return {
-            expectedRevision: record.resource.revision,
-            next: {
-              ...record,
-              resource: {
-                ...committedResourceDeletion(
-                  record.resource,
-                  input.generation,
-                  `delete:${documentId}:${input.generation}`,
-                ),
-                revision: record.resource.revision + 1,
-              },
-            },
-          };
-        }),
-      );
-      if (result.kind !== "acquired")
-        throw new Error("Document namespace is busy; retry deletion settlement");
-    }
+    await this.committedDeletionIntake.accept(inputs);
   }
 
   private async commitPlan(
@@ -931,6 +901,7 @@ export class AccountResourceReplica {
   beginClose(): void {
     if (this.closing) return;
     this.closing = true;
+    this.committedDeletionIntake.beginClose();
     if (this.started) {
       this.stopHints?.();
       this.stopHints = null;
@@ -949,6 +920,7 @@ export class AccountResourceReplica {
   async finishClose(): Promise<void> {
     this.beginClose();
     await Promise.allSettled([
+      this.committedDeletionIntake.finishClose(),
       this.adoption.finishClose(),
       this.catalogs.finishClose(),
       ...this.runners.values(),

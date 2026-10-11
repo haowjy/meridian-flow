@@ -5,12 +5,13 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
+import { useMemo } from "react";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
-import { threadRecentIdentity } from "../context/thread-recent-identity";
+import { threadRecentIdentityIndex } from "../context/thread-recent-identity";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
 import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
@@ -28,6 +29,10 @@ export type ContextSidebarProps = {
 
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const { snapshot } = useAccountResourceProjection(projectId ?? "");
+  const identities = useMemo(
+    () => threadRecentIdentityIndex(projectId ?? "", snapshot),
+    [projectId, snapshot],
+  );
   const recent = useThreadRecentDocuments(threadId);
   const openDocument = useOpenChatDocument(projectId ?? undefined);
   const openRecent = async (documentId: string) => {
@@ -55,14 +60,18 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
             <ul className="pt-1">
               {recent.documents.map((document) => {
                 // The tree lists whole file names; the rail names files the same way.
-                const identity = threadRecentIdentity(projectId ?? "", document, snapshot);
-                const fileName = identity.name;
+                const identity = identities.get(document.documentId);
+                // Match server Recent: deleted documents disappear, not cached-name ghosts.
+                if (identity === null) return null;
+                const fileName =
+                  identity?.name ??
+                  `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
                 return (
                   <li key={document.documentId}>
                     <RailFileRow
                       icon={fileKindIcon(fileName)}
                       name={fileName}
-                      title={identity.path}
+                      title={identity?.path ?? fileName}
                       onOpen={() => void openRecent(document.documentId)}
                     />
                   </li>
