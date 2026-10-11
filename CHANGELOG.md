@@ -12,6 +12,19 @@
 - Document-name upgrades preserve upload reservations and deleted Work restore sets, and refresh saved recent-document routes by identity.
 
 - Binary creation and reads share canonical names, copy destinations consume extension inheritance once, and folder aliases cannot claim a document’s name.
+- A corpus import plans names for the whole batch: already-canonical filenames keep their names, aliases receive deterministic numbered suffixes, and imported folders keep their names beside colliding documents.
+
+- MIME-inferred uploads retain dotted writer names and specific image extensions instead of losing their file type.
+
+- Document downloads add `.md` only for prose, keep non-prose filenames, and carry Unicode names in download headers. Binary downloads serve their bytes with the document name instead of an opaque storage-key redirect.
+
+- Dev document commands accept prose suffixes and report canonical names; seed scenarios use writer titles without `.md`.
+
+- A new project starts with the prose document “Chapter 1”; the mock writer targets that same chapter.
+
+- Corpus and KB imports preserve writer titles and folder names instead of slugging them, and name clashes receive numbered suffixes without replacing existing content.
+
+- Prose uploads use writer names without suffixes, preserve their original filename in metadata, and number name clashes. Extensionless data uploads retain their MIME-derived file type.
 
 - Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
 

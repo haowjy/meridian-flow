@@ -45,7 +45,7 @@ export function createContextUploadContentPort(
         type: "import" as const,
         userId: input.actorUserId,
         source: "upload",
-        filename: input.reservation.finalPath,
+        filename: input.reservation.filename,
         sourceId: input.reservation.intakeId,
       };
       const classification = classifyFiletype(input.reservation.fileType);
