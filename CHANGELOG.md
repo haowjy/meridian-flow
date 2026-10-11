@@ -4,6 +4,8 @@
 
 ### Changed
 
+- MIME-inferred uploads retain dotted writer names and specific image extensions instead of losing their file type.
+
 - Document downloads add `.md` only for prose, keep non-prose filenames, and carry Unicode names in download headers. Binary downloads serve their bytes with the document name instead of an opaque storage-key redirect.
 
 - Dev document commands accept prose suffixes and report canonical names; seed scenarios use writer titles without `.md`.

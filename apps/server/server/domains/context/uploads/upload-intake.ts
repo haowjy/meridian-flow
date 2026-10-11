@@ -258,9 +258,9 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "idempotency_conflict" } };
       const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
       const tracked = classifyFiletype(fileType).kind === "tracked";
-      const inferredExtension = MIME_EXTENSIONS[fileType];
+      const inferredExtension = MIME_EXTENSIONS[filetypeForKnownMimeType(mimeType) ?? fileType];
       let parsed = parseDocumentFilename(filename, {
-        sourceExtension: tracked && !filename.includes(".") ? inferredExtension : undefined,
+        sourceExtension: tracked ? inferredExtension : undefined,
       });
       if (
         parsed.ok &&
