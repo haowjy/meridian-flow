@@ -28,11 +28,7 @@ it("drops old No Work snapshots with empty selection keys or ownerless Scratch t
     { tabs: [scratch], selectedTabIdByWork: { "": scratch.documentId } },
     { tabs: [{ ...scratch, workId: undefined }], selectedTabIdByWork: {} },
   ]) {
-    expect(
-      parseEditorWorkspace(
-        JSON.stringify({ version: 1, accountId: "account", projects: { project } }),
-      ),
-    ).toBeNull();
+    expect(parseEditorWorkspace({ project })).toBeUndefined();
   }
 });
 
@@ -42,13 +38,7 @@ function lineageTab(): ContextTab {
 }
 
 function workspaceWith(tab: ContextTab) {
-  return JSON.stringify({
-    version: 1,
-    accountId: "account",
-    projects: {
-      project: { tabs: [{ ...tab, tabInstanceId: "tab" }], selectedTabIdByWork: {} },
-    },
-  });
+  return { project: { tabs: [{ ...tab, tabInstanceId: "tab" }], selectedTabIdByWork: {} } };
 }
 
 it("shows a chat's Scratch in every Editor, and a Work's Scratch only in its own", () => {
@@ -59,10 +49,10 @@ it("shows a chat's Scratch in every Editor, and a Work's Scratch only in its own
 });
 
 it("restores a chat's Scratch tab only with its lineage and handle, and never with a Work", () => {
-  expect(parseEditorWorkspace(workspaceWith(lineageTab()))).not.toBeNull();
+  expect(parseEditorWorkspace(workspaceWith(lineageTab()))).not.toBeUndefined();
   const noHandle = { ...lineageTab(), rootThreadRef: undefined } as ContextTab;
   const withWork = { ...lineageTab(), workId: "work" } as ContextTab;
   const notScratch = { ...tab("uploads"), workId: undefined, rootThreadId: "root" } as ContextTab;
   for (const invalid of [noHandle, withWork, notScratch])
-    expect(parseEditorWorkspace(workspaceWith(invalid))).toBeNull();
+    expect(parseEditorWorkspace(workspaceWith(invalid))).toBeUndefined();
 });

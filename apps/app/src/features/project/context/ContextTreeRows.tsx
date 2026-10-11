@@ -44,8 +44,8 @@ export type TreeEnv = {
   onRequestDelete: (target: EntryActionTarget) => void;
   onCreateDone: () => void;
   onCreatedFilePath: (path: string) => void;
-  isExpanded: (entryId: string, depth: number) => boolean;
-  toggleEntry: (entryId: string, defaultOpen: boolean) => void;
+  isExpanded: (entryId: string) => boolean;
+  toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
 };
 
@@ -139,12 +139,12 @@ function DirRow({
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
-  const isOpen = env.isExpanded(dir.entryId, depth);
+  const isOpen = env.isExpanded(dir.entryId);
   // A refused rename offers its name field once, as the failure arrives.
   useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
   const toggle = () => {
     if (env.creating) env.onCreateDone();
-    env.toggleEntry(dir.entryId, depth < 2);
+    env.toggleEntry(dir.entryId);
   };
 
   function handleAction(action: EntryAction) {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { hydrateWorkingSet, replaceRecentRoutes } from "@/client/working-set/driver";
 import { buildWorkingSetRoute } from "@/client/working-set/store";
 import type { ConnectivityHint, ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
-import { WorkingSetSyncPreferenceProvider } from "./WorkingSetSyncPreferenceProvider";
+import { AccountSettingsProvider } from "./AccountSettingsProvider";
 
 const account = vi.hoisted(() => ({
   get: vi.fn(),
@@ -25,8 +25,11 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => `account-${account.id}`,
   useAccountEpochSignal: () => account.epoch.signal,
 }));
-vi.mock("./useWorkingSetSyncPreference", () => ({
-  useWorkingSetSyncPreference: () => ({ confirmed: true }),
+vi.mock("./useAccountSettings", () => ({
+  useAccountSettings: () => ({
+    value: { theme: "ink-jade", language: "en", statsForNerds: false },
+    preference: () => ({ confirmed: true }),
+  }),
 }));
 const hints: ConnectivityHintsPort = {
   subscribe: (_source, listener) => {
@@ -57,8 +60,14 @@ afterEach(async () => {
 });
 async function mount(strict = false) {
   root = createRoot(document.createElement("div"));
-  const owner = createElement(WorkingSetSyncPreferenceProvider, {
-    serverValue: true,
+  const owner = createElement(AccountSettingsProvider, {
+    serverReadGeneration: 0,
+    serverValue: {
+      theme: "ink-jade",
+      language: "en",
+      statsForNerds: false,
+      workingSetSyncEnabled: true,
+    },
     children: null,
   });
   await act(() => root?.render(strict ? createElement(StrictMode, null, owner) : owner));

@@ -12,11 +12,16 @@ import {
   readChatSubmissions,
   recordChatSubmission,
 } from "@/client/chat-submissions";
+import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {
   defaultSendResponse,
   scenarioGate,
   ThreadRunScenario,
 } from "@/client/copilot/test-support/ThreadRunScenario";
+import {
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "@/components/app/composer/composer-document";
 import {
   type DerivationIntent,
   resetDerivationsForTest,
@@ -29,6 +34,7 @@ import {
   rememberSubmissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
+import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 const threadsApi = vi.hoisted(() => ({ forkThread: vi.fn(), handoffThread: vi.fn() }));
 vi.mock("@/client/api/threads-api", async (importOriginal) => ({
@@ -66,6 +72,7 @@ afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
   window.localStorage.clear();
+  window.sessionStorage.clear();
   // Session maps outlive a component mount; reset them so module memory cannot
   // leak across tests.
   clearChatSubmissionRecoverySession();
@@ -75,6 +82,7 @@ afterEach(async () => {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
   bindChatSubmissions(ACCOUNT);
 });
 
@@ -103,6 +111,28 @@ async function mount(
 }
 
 describe("useChatSubmissionRecovery", () => {
+  it("does not replay an in-flight lookup after another tab proves rejection", async () => {
+    recordChatSubmission(ACCOUNT, entry());
+    const gate = scenarioGate<AdmissionLookup>();
+    const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
+    let recovery!: ChatSubmissionRecovery;
+    await mount(ACCOUNT, scenario, (value) => {
+      recovery = value;
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+      recordChatSubmission(ACCOUNT, entry({ state: "rejected" }));
+      window.dispatchEvent(new StorageEvent("storage"));
+    });
+    expect(recovery.rejected).toHaveLength(1);
+    await act(async () => {
+      gate.resolve({ kind: "not-seen", submissionId: "sub-1" });
+      await gate.promise;
+    });
+    expect(scenario.appendRequests).toHaveLength(0);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([expect.objectContaining({ state: "rejected" })]);
+  });
+
   it("keeps the journal and row pending when an in-flight lookup settles after unmount", async () => {
     recordChatSubmission(ACCOUNT, entry());
     const gate = scenarioGate<AdmissionLookup>();
@@ -216,12 +246,12 @@ describe("useChatSubmissionRecovery", () => {
         submissionId: "sub-rejected",
         optimisticTurnId: liveTurn.id,
         fingerprint: expect.objectContaining({ text: "Hello" }),
-        draftRetained: true,
       }),
     ]);
-    // A proved rejection retires the durable witness: recovery can never replay
-    // a rejected admission under the same id.
-    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    // Rejected payloads stay durable and are never automatically replayed.
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ state: "rejected", submissionId: "sub-rejected" }),
+    ]);
 
     await act(async () => {
       await latest.current?.retry(liveTurn.id);
@@ -649,5 +679,251 @@ describe("useChatSubmissionRecovery", () => {
       expect(scenario.appendRequests).toHaveLength(0);
       expect(latest.current?.rejected).toHaveLength(1);
     });
+  });
+});
+
+describe("rejected draft ownership", () => {
+  async function setupDraft(scenario = new ThreadRunScenario()) {
+    const doc = plainComposerDoc("Compare ");
+    doc.content?.[0]?.content?.push({
+      type: "composerReference",
+      attrs: {
+        reference: {
+          documentId: "01900000-0000-7000-8000-000000000001",
+          uri: "manuscript://chapter.md",
+          authority: { kind: "project", projectId: "01900000-0000-7000-8000-000000000002" },
+          fileType: "markdown",
+          label: "chapter.md",
+          imageCapable: false,
+          upload: null,
+        },
+      },
+    });
+    const envelope = serializeComposerDraft(doc, 7);
+    let draft!: ReturnType<typeof useComposerSessionDraft>;
+    const root = createRoot(document.createElement("div"));
+    function Pane() {
+      draft = useComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID });
+      return null;
+    }
+    await act(() => root.render(<Pane />));
+    let recovery!: ChatSubmissionRecovery;
+    await mount(ACCOUNT, scenario, (value) => {
+      recovery = value;
+    });
+    draft.updateDraft({ text: envelope.text, snapshot: envelope.draft });
+    recordChatSubmission(ACCOUNT, {
+      ...entry(),
+      text: envelope.text,
+      blocks: [...envelope.blocks],
+      references: [...envelope.references],
+      draft: envelope.draft,
+    });
+    draft.handoff();
+    const row = scenario.store.getState().appendUserTurn(THREAD_ID, envelope.blocks);
+    rememberSubmissionTurnId(ACCOUNT, "sub-1", row.id);
+    return { envelope, draft, root, row, getRecovery: () => recovery };
+  }
+
+  it("transfers a structured rejection after the composer unmounts, before retirement, and survives remount/reload", async () => {
+    const state = await setupDraft();
+    await act(() => state.root.unmount());
+    await cleanup?.();
+    cleanup = undefined;
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    const reloaded = new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID })
+      .initialDraft;
+    expect(reloaded?.doc).toEqual(state.envelope.draft.doc);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    const remount = createRoot(document.createElement("div"));
+    let remountedDraft: ReturnType<typeof useComposerSessionDraft>["initialDraft"] = null;
+    function Pane() {
+      remountedDraft = useComposerSessionDraft(ACCOUNT, {
+        kind: "chat",
+        id: THREAD_ID,
+      }).initialDraft;
+      return null;
+    }
+    await act(() => remount.render(<Pane />));
+    expect(remountedDraft).toEqual(reloaded);
+    await act(() => remount.unmount());
+    // Reload reads the same structured authoring snapshot from storage.
+    expect(reloaded && serializeComposerDraft(reloaded.doc).references).toEqual(
+      state.envelope.references,
+    );
+  });
+
+  it("removes a retired failed row on remount when its words already belong to the composer", async () => {
+    const scenario = new ThreadRunScenario();
+    const state = await setupDraft(scenario);
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    await act(() => state.root.unmount());
+    await cleanup?.();
+    cleanup = undefined;
+    let recovery!: ChatSubmissionRecovery;
+    await mount(ACCOUNT, scenario, (value) => {
+      recovery = value;
+    });
+    expect(scenario.turns()).toEqual([]);
+    expect(recovery.rejected).toEqual([]);
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(state.envelope.draft.doc);
+  });
+
+  it("reconciles a journal rejection on remount and returns its reference atoms before retirement", async () => {
+    const state = await setupDraft();
+    await act(() => state.root.unmount());
+    await cleanup?.();
+    cleanup = undefined;
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "rejected", submissionId, code: "forbidden" }),
+    });
+    await mount(ACCOUNT, scenario, () => undefined);
+    const reloaded = new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID })
+      .initialDraft;
+    expect(reloaded?.doc).toEqual(state.envelope.draft.doc);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+  });
+
+  it("does not replace later writing when rejection transfers ownership", async () => {
+    const state = await setupDraft();
+    await act(() => state.root.unmount());
+    const remount = createRoot(document.createElement("div"));
+    let remountedDraft!: ReturnType<typeof useComposerSessionDraft>;
+    function Pane() {
+      remountedDraft = useComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID });
+      return null;
+    }
+    await act(() => remount.render(<Pane />));
+    const later = serializeComposerDraft(plainComposerDoc("New writing"), 8);
+    remountedDraft.updateDraft({ text: later.text, snapshot: later.draft });
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    await act(() => remount.unmount());
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(later.draft.doc);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ state: "rejected", draft: state.envelope.draft }),
+    ]);
+    await cleanup?.();
+    cleanup = undefined;
+    clearChatSubmissionRecoverySession();
+    const reloadedScenario = new ThreadRunScenario();
+    let reloadedRecovery!: ChatSubmissionRecovery;
+    await mount(ACCOUNT, reloadedScenario, (value) => {
+      reloadedRecovery = value;
+    });
+    expect(reloadedRecovery.rejected[0]?.fingerprint.draft).toEqual(state.envelope.draft);
+    expect(reloadedScenario.lookupRequests).toHaveLength(0);
+    expect(reloadedScenario.appendRequests).toHaveLength(0);
+  });
+
+  it("Retry sends the journal fingerprint and leaves newer draft and references alone", async () => {
+    const scenario = new ThreadRunScenario();
+    const state = await setupDraft(scenario);
+    const later = serializeComposerDraft(plainComposerDoc("New writing"), 8);
+    state.draft.updateDraft({ text: later.text, snapshot: later.draft });
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    await act(() => state.getRecovery().retry(state.row.id));
+    expect(scenario.appendRequests[0]?.data).toMatchObject({
+      text: state.envelope.text,
+      references: state.envelope.references,
+      blocks: state.envelope.blocks,
+    });
+    await act(() => state.root.unmount());
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(later.draft.doc);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+  });
+
+  it("Edit prepends rejected words and reference atoms to newer writing and retires the journal", async () => {
+    const state = await setupDraft();
+    const later = serializeComposerDraft(plainComposerDoc("New writing"), 8);
+    state.draft.updateDraft({ text: later.text, snapshot: later.draft });
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    await act(() => expect(state.getRecovery().edit("sub-1")).toBe(true));
+    await act(() => state.root.unmount());
+    const restored = new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID })
+      .initialDraft;
+    expect(restored?.doc.content).toEqual([
+      ...(state.envelope.draft.doc.content ?? []),
+      ...(later.draft.doc.content ?? []),
+    ]);
+    expect(restored && serializeComposerDraft(restored.doc).references).toEqual(
+      state.envelope.references,
+    );
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+  });
+
+  it("Edit fills an empty composer from a retained rejection", async () => {
+    const state = await setupDraft();
+    state.draft.updateDraft({
+      text: "new",
+      snapshot: serializeComposerDraft(plainComposerDoc("new")).draft,
+    });
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    state.draft.updateDraft({
+      text: "",
+      snapshot: serializeComposerDraft(plainComposerDoc("")).draft,
+    });
+    await act(() => expect(state.getRecovery().edit("sub-1")).toBe(true));
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(state.envelope.draft.doc);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    await act(() => state.root.unmount());
+  });
+
+  it.each([
+    false,
+    true,
+  ])("preserves authoring during Retry even when a remounted editor reuses its local revision (same snapshot: %s)", async (sameSnapshot) => {
+    const gate = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({ append: () => gate.promise });
+    const state = await setupDraft(scenario);
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    state.draft.updateDraft({ text: state.envelope.text, snapshot: state.envelope.draft });
+    window.dispatchEvent(new Event("pagehide"));
+    // Before admission, rejected words belong to the per-tab draft owner.
+    let retry!: Promise<void>;
+    await act(async () => {
+      retry = state.getRecovery().retry(state.row.id);
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft,
+    ).toBeNull();
+    const later = sameSnapshot
+      ? state.envelope
+      : serializeComposerDraft(plainComposerDoc("Writing during Retry"), 8);
+    state.draft.updateDraft({ text: later.text, snapshot: later.draft });
+    gate.resolve(defaultSendResponse());
+    await act(() => retry);
+    await act(() => state.root.unmount());
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(later.draft.doc);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("accepted Retry clears only the unchanged rejected draft (edited: %s)", async (edited) => {
+    const state = await setupDraft();
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    // The pre-fix mounted rejection callback republished this same visible draft.
+    state.draft.updateDraft({ text: state.envelope.text, snapshot: state.envelope.draft });
+    if (edited) {
+      const later = serializeComposerDraft(plainComposerDoc("New writing"), 8);
+      state.draft.updateDraft({ text: later.text, snapshot: later.draft });
+    }
+    await act(() => state.getRecovery().retry(state.row.id));
+    await act(() => state.root.unmount());
+    const reloaded = new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID })
+      .initialDraft;
+    expect(reloaded?.doc ?? null).toEqual(edited ? plainComposerDoc("New writing") : null);
   });
 });

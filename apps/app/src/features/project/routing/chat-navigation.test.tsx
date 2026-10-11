@@ -2,7 +2,7 @@
 /**
  * Chat commands keep the writer's screen: on the Chat screen they navigate;
  * elsewhere they point the dock at the chat and reveal it. The current chat is
- * this browser's own, and a chat the server no longer has is let go.
+ * this tab's own, and a chat the server no longer has is let go.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
@@ -62,6 +62,8 @@ function render(activeScreen: ScreenKey, urlChatId: string | null = null) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
+  window.sessionStorage.clear();
   container = document.createElement("div");
   root = createRoot(container);
   client = new QueryClient();
@@ -71,7 +73,6 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
-  window.localStorage.clear();
 });
 
 it("shows a sent chat on the Chat screen and only remembers it elsewhere", () => {
