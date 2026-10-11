@@ -106,6 +106,15 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
+  it("allocates past folder prose aliases", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Untitled 1.md");
+    await fs.mkdir("Untitled 2.txt");
+    expect(await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).toMatchObject({
+      ok: true,
+      value: { name: "Untitled 3" },
+    });
+  });
   it("rolls back identity when Yjs initialization fails", async () => {
     const collab = createInMemoryCollabDomain();
     let failDurableHeadOnce = true;
