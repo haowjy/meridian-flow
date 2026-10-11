@@ -10,22 +10,20 @@ import { useShallow } from "zustand/react/shallow";
 type AnnouncementState = {
   polite: string;
   assertive: string;
+  assertiveOwner: { key?: string } | null;
 };
 
 type AnnouncementStore = AnnouncementState & {
   setPolite: (message: string) => void;
-  setAssertive: (message: string) => void;
   clearPolite: () => void;
-  clearAssertive: () => void;
 };
 
 const useAnnouncementStore = create<AnnouncementStore>((set) => ({
   polite: "",
   assertive: "",
   setPolite: (polite) => set({ polite }),
-  setAssertive: (assertive) => set({ assertive }),
+  assertiveOwner: null,
   clearPolite: () => set({ polite: "" }),
-  clearAssertive: () => set({ assertive: "" }),
 }));
 
 /** Push a polite announcement. Screen readers announce it at the next pause. */
@@ -36,10 +34,20 @@ export function announce(message: string): void {
 }
 
 /** Push an assertive announcement (errors). Interrupts the current speech. */
-export function announceError(message: string): void {
-  const { clearAssertive, setAssertive } = useAnnouncementStore.getState();
-  clearAssertive();
-  queueMicrotask(() => setAssertive(message));
+export function announceError(message: string, options?: { key: string }): void {
+  const owner = { key: options?.key };
+  useAnnouncementStore.setState({ assertive: "", assertiveOwner: owner });
+  queueMicrotask(() => {
+    // A clear or newer alert also cancels publication that has not reached the DOM yet.
+    if (useAnnouncementStore.getState().assertiveOwner === owner)
+      useAnnouncementStore.setState({ assertive: message });
+  });
+}
+
+/** Clear an alert only while the caller still owns it. */
+export function clearAnnouncement(key: string): void {
+  if (useAnnouncementStore.getState().assertiveOwner?.key === key)
+    useAnnouncementStore.setState({ assertive: "", assertiveOwner: null });
 }
 
 /** React hook for {@link AnnouncementRegion} and components that announce. */
