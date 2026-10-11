@@ -13,7 +13,10 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 A **browse surface** over the account resource replica. The replica owns durable
 resource descriptors, catalog checkpoints, local content access, and file and folder
-namespace work. React Query delivers acquisition results to consumers; it is not a second
+namespace work. Terminal document facts remain visible to tab/dock projections even
+when their last catalog entry is gone. Server-proven deletions enter the replica
+before availability reconciliation, sharing the file namespace receipt's terminal
+transition. React Query delivers acquisition results to consumers; it is not a second
 catalog owner. Renames and moves of files and folders are admitted locally and dispatched in
 the background; folder creation and deletion still use the direct context API.
 
