@@ -22,28 +22,17 @@ function parseContextLocation(uriOrPath: string): ParsedContextLocation {
 }
 
 /**
- * The document's name, and nothing else. Where it lives is not part of what a
- * timeline row claims: the row says what the agent did to a document, and the
- * name's door already goes wherever that document is. The one place location
- * still earns its keep is the dead-route pane, which exists to say a document
- * is missing from a particular section.
+ * The document's name as stored, and nothing else: `Chapter 13`, `outline.json`.
+ * Where it lives is not part of what a timeline row claims: the row says what
+ * the agent did to a document, and the name's door already goes wherever that
+ * document is. The one place location still earns its keep is the dead-route
+ * pane, which exists to say a document is missing from a particular section.
  */
 export function documentDisplayName(uriOrPath: string): string {
   const skillFileName = skillFileDisplayName(uriOrPath);
   if (skillFileName) return skillFileName;
   const { path } = parseContextLocation(uriOrPath);
   return documentTitleFromUri(path) ?? t`Untitled document`;
-}
-
-/**
- * Exact file target for tool activity, retaining the extension to disambiguate
- * it. A skill file is named by its skill instead.
- */
-export function documentFileName(uriOrPath: string): string {
-  const skillFileName = skillFileDisplayName(uriOrPath);
-  if (skillFileName) return skillFileName;
-  const { path } = parseContextLocation(uriOrPath);
-  return path.split("/").filter(Boolean).at(-1) ?? t`Untitled document`;
 }
 
 /**

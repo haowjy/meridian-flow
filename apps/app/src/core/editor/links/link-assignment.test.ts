@@ -26,7 +26,7 @@ const MOVED = "00000000-0000-4000-8000-0000000000ed";
 const DOCUMENTS = [
   { documentId: CH2, uri: HOLDER },
   { documentId: CH1, uri: "manuscript://volume-1/chapter-1.md" },
-  { documentId: LIN, uri: "kb://characters/Lin Feng.md" },
+  { documentId: LIN, uri: "kb://characters/Lin Feng" },
 ];
 
 const live: Editor[] = [];
@@ -112,12 +112,12 @@ it("assigns what each producer writes", () => {
           {
             label: "Lin",
             documentId: LIN,
-            uri: "kb://characters/Lin Feng.md",
+            uri: "kb://characters/Lin Feng",
           },
         );
         return links(target);
       },
-      [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng" }],
     ],
     [
       "@ link-ahead row: ahead ref, extension added",
@@ -176,7 +176,7 @@ it("assigns what each producer writes", () => {
     [
       "[[…]] paste hit: doc ref by catalog id",
       () => wikilinks("[[Lin Feng]]"),
-      [{ text: "Lin Feng", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin Feng", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng" }],
     ],
     [
       "[[…]] paste miss: ahead ref at the link-ahead address",

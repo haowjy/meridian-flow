@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalContextUri, parseContextUri } from "./context-uri.js";
+import { canonicalContextUri, documentTitleFromUri, parseContextUri } from "./context-uri.js";
 
 describe("parseContextUri", () => {
   it("treats Unfiled as a project namespace without Work authority", () => {
@@ -89,5 +89,26 @@ describe("parseContextUri", () => {
     ).toThrow(/does not support authority/);
     expect(() => canonicalContextUri("scratch", "folder/@reserved/file.md")).toThrow(/reserved/);
     expect(() => canonicalContextUri("scratch", "../secret.md", { kind: "none" })).toThrow();
+  });
+});
+
+describe("documentTitleFromUri", () => {
+  it("is the stored name, with no extension stripped on its own", () => {
+    expect(documentTitleFromUri("manuscript://Chapter 13")).toBe("Chapter 13");
+    expect(documentTitleFromUri("manuscript://Book/Vol. 2")).toBe("Vol. 2");
+    expect(documentTitleFromUri("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentTitleFromUri("kb://maps/map.png")).toBe("map.png");
+    expect(documentTitleFromUri("user://config.toml")).toBe("config.toml");
+  });
+
+  it("canonicalizes a name someone typed with a prose suffix", () => {
+    expect(documentTitleFromUri("ch12.md")).toBe("ch12");
+    expect(documentTitleFromUri("manuscript://Book/notes.txt")).toBe("notes");
+    expect(documentTitleFromUri("manuscript://Book/Pic.PNG")).toBe("Pic.png");
+  });
+
+  it("is null for nothing to name", () => {
+    expect(documentTitleFromUri(null)).toBeNull();
+    expect(documentTitleFromUri("manuscript://")).toBeNull();
   });
 });
