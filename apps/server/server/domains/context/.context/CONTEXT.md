@@ -377,6 +377,20 @@ currently available to the request owner in the requested project.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;
   they never echo syntax-only request URIs as document identity.
+- Intake parses filenames through the document-name codec before reserving a URI.
+  Prose uploads read bytes through the same tracked Markdown path regardless of
+  their typed prose suffix. Original filenames remain in intake metadata and
+  import provenance; collisions use the shared smallest ` (2)` allocator.
+  Corpus conversion removes only its DOCX source suffix before using the codec;
+  imported titles and directories retain their spelling. Atomic creation refuses
+  replacement if another intake claims the allocated name. Whole-batch planning
+  reserves folder names and desired document names before numbering; already-
+  canonical source names win, then source filename order determines allocation.
+  Response items remain in input order. Identity-bound uploads accept one file
+  per request; only corpus intake accepts multi-file and relative-path batches.
+- File output uses `exportFilename`: prose gains `.md` from persisted `fileType`;
+  all other documents retain their stored filename. Download headers encode
+  Unicode names, and binary document downloads serve bytes with that filename.
 - `uploads://` is intake, not an authoring workspace. F0 owns its authority,
   provisioning, and resolution; F4 owns the actual `UploadIntake` lifecycle. Tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an

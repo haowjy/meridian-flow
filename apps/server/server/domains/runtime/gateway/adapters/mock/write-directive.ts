@@ -6,7 +6,7 @@
  *   `[[write <uri> overwrite]]` — create with `overwrite: true`
  *
  * Directives apply only when the message triggers a mock write tool call.
- * Without a directive, writes target `manuscript://chapter-1` without overwrite.
+ * Without a directive, writes target `manuscript://Chapter 1` without overwrite.
  */
 
 export type ParsedWriteDirective = {

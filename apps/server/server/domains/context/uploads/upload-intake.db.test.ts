@@ -1,15 +1,33 @@
 /** PostgreSQL conformance for durable upload identity, allocation, and cascade. */
+
 import { createHash } from "node:crypto";
+import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { documents, projects, uploadIntakes, users, works } from "@meridian/database/schema";
+import {
+  contextSources,
+  documents,
+  projects,
+  uploadIntakes,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
-import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
-import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/index.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../collab/test-support/document-link-scopes.js";
+import {
+  createAllowAllFileAccess,
+  FileEditRefusedError,
+  runWithEditGrants,
+} from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
@@ -90,6 +108,7 @@ if (!RUN) {
           ? { kind: "work" as const, projectId: PROJECT, workId: WORK }
           : { kind: "work" as const, projectId: PROJECT, workId: NO_WORK },
       filename: "chapter.md",
+      documentFilename: { name: "chapter", extension: "", filetype: "markdown" as const },
       mimeType: "text/markdown",
       byteDigest: "a".repeat(64),
       fingerprint,
@@ -140,7 +159,7 @@ if (!RUN) {
         expect(first).toEqual(waiter);
         expect(first).toMatchObject({
           ok: true,
-          value: { uri: "uploads://@/chapter.md", fileType: "markdown" },
+          value: { uri: "uploads://@/chapter", fileType: "markdown" },
         });
       } finally {
         await firstDb.delete(users).where(eq(users.id, USER));
@@ -156,7 +175,7 @@ if (!RUN) {
       const collision = await repo.reserve(reservation("two", "none"));
       const work = await repo.reserve(reservation("three", "work"));
       expect(first.kind === "reserved" && first.reservation.canonicalUri).toBe(
-        "uploads://@/chapter.md",
+        "uploads://@/chapter",
       );
       expect(replay.kind === "existing" && replay.reservation.documentId).toBe(
         first.kind !== "conflict" && first.kind !== "owner_unavailable"
@@ -164,11 +183,9 @@ if (!RUN) {
           : "",
       );
       expect(conflict).toEqual({ kind: "conflict" });
-      expect(collision.kind === "reserved" && collision.reservation.finalPath).toBe(
-        "chapter (2).md",
-      );
+      expect(collision.kind === "reserved" && collision.reservation.finalPath).toBe("chapter (2)");
       expect(work.kind === "reserved" && work.reservation.canonicalUri).toBe(
-        "uploads://@draft/chapter.md",
+        "uploads://@draft/chapter",
       );
     });
 
@@ -275,6 +292,97 @@ if (!RUN) {
         .from(uploadIntakes)
         .where(eq(uploadIntakes.documentId, identity.documentId as never));
       expect(after?.state).toBe("finalized");
+    });
+
+    it("stores writer names, preserves original filenames and parses all prose as markdown", async () => {
+      const db = createDb(DATABASE_URL);
+      try {
+        await seed(db);
+        await db.insert(contextSources).values({
+          projectId: PROJECT,
+          scope: "project",
+          slug: "manuscript",
+          name: "Manuscript",
+          adapterType: "local",
+        });
+        const collab = createCollabDomain({
+          ...testLinkDeps(db),
+          db: db,
+          fileAccess: createAllowAllFileAccess(),
+          workProjectionMutation: createTestWorkProjectionMutation(db),
+        });
+        collab.bindHocuspocus(
+          new Hocuspocus({
+            yDocOptions: { gc: false, gcFilter: () => true },
+            onStoreDocument: ({ documentName, document }) =>
+              collab.storeHocuspocusDocument(documentName, document),
+          }),
+        );
+        const catalog = createDrizzleContextCatalog(db);
+        const contextPorts = createProductionUnifiedContextPortFactory({
+          links: createTestDocumentLinkScopes(db),
+          db: db,
+          documentSync: collab,
+          manifestMembership: collab,
+          catalogMutations: catalog,
+        });
+        const service = createUploadIntake({
+          repository: createDrizzleUploadIntakeRepository(db),
+          content: createContextUploadContentPort(contextPorts),
+          objectStore: createInMemoryObjectStore(),
+          eventSink: createNoopEventSink(),
+        });
+        const text =
+          "# Chapter One\n\nThe temperature was <10 degrees. {The crowd roared} *loudly*.";
+        const content = new TextEncoder().encode(text);
+        const cases = [
+          ["Chapter 13.md", "text/markdown", "Chapter 13", "", "markdown"],
+          ["Chapter 13.markdown", "application/octet-stream", "Chapter 13 (2)", "", "markdown"],
+          ["Chapter 13.mdx", "application/octet-stream", "Chapter 13 (3)", "", "markdown"],
+          ["Chapter 13.txt", "text/plain", "Chapter 13 (4)", "", "markdown"],
+          ["Chapter 14", "text/markdown", "Chapter 14", "", "markdown"],
+          ["Chapter 15", "text/plain", "Chapter 15", "", "markdown"],
+          ["config", "application/json", "config", "json", "json"],
+          ["Vol. 2", "application/json", "Vol. 2", "json", "json"],
+          ["Pic.PNG", "image/png", "Pic", "png", "image"],
+          ["Cover", "image/png", "Cover", "png", "image"],
+          ["Binary.txt", "application/pdf", "Binary", "pdf", "pdf"],
+          ["LICENSE", "application/pdf", "LICENSE", "pdf", "pdf"],
+        ];
+        for (const [filename, mimeType, name, extension, fileType] of cases) {
+          const result = await service.intake({
+            ...reservation(filename, "none"),
+            filename,
+            mimeType,
+            bytes: content,
+            byteDigest: createHash("sha256").update(content).digest("hex"),
+          });
+          expect(result).toMatchObject({
+            ok: true,
+            value: { uri: `uploads://@/${name}${extension ? `.${extension}` : ""}`, fileType },
+          });
+          if (!result.ok) throw new Error(result.error.code);
+          const [document] = await db
+            .select()
+            .from(documents)
+            .where(eq(documents.id, result.value.documentId as never));
+          expect(document).toMatchObject({ name, extension, fileType });
+          const [intake] = await db
+            .select()
+            .from(uploadIntakes)
+            .where(eq(uploadIntakes.documentId, result.value.documentId as never));
+          expect(intake?.filename).toBe(filename);
+          if (fileType === "markdown") {
+            expect(await collab.readAsMarkdown(result.value.documentId as never)).toEqual({
+              ok: true,
+              value: `${text.replace("<10", "\\<10").replace("{The", "\\{The")}\n`,
+            });
+          }
+        }
+      } finally {
+        await db.delete(users).where(eq(users.id, USER));
+        await db.close();
+      }
     });
 
     it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {

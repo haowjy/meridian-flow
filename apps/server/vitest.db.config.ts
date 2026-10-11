@@ -55,6 +55,7 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",
   "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
+  "apps/server/server/domains/context/corpus-import/corpus-import.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/context/promotion/adapters/drizzle-result-repository.db.test.ts",
   "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.db.test.ts",
