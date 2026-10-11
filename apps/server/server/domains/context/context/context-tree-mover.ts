@@ -10,8 +10,7 @@ import {
   type DeleteContextEntryResult,
   type Filetype,
   isWorkScopedProjectContextScheme,
-  parseDocumentFilename,
-  renderFilename,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
@@ -344,25 +343,16 @@ export class ContextTreeMover {
     if (!targetPath.ok) return targetPath;
     let destinationFiletype: Filetype | null | undefined;
     if (sourceToken.value.kind === "file") {
-      const sourceParts = parseDocumentFilename(sourceBasename);
-      if (!sourceParts.ok) return Err({ ...sourceParts.error, uri: source.canonical });
       const targetInput = basename(targetPath.value);
-      const targetParts = parseDocumentFilename(targetInput, {
-        sourceExtension: sourceParts.value.extension,
-      });
+      const targetParts = storedFilename(targetInput, sourceBasename);
       if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
       destinationFiletype =
         sourceToken.value.filetype === null &&
-        !targetParts.value.extension &&
-        targetInput.trim() === targetParts.value.name
+        !targetParts.filename.extension &&
+        targetInput.trim() === targetParts.filename.name
           ? null
-          : targetParts.value.filetype;
-      targetPath = Ok(
-        joinPath(
-          dirname(targetPath.value),
-          renderFilename(targetParts.value.name, targetParts.value.extension),
-        ),
-      );
+          : targetParts.filename.filetype;
+      targetPath = Ok(joinPath(dirname(targetPath.value), targetParts.name));
     }
     if (!targetPath.ok) return targetPath;
 

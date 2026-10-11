@@ -10,10 +10,10 @@ export { LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
 export {
   addressDocumentName,
   type CreatableLinkScheme,
-  documentFileName,
   isCreatableLinkScheme,
   isLinkDocumentScheme,
   linkAheadAddress,
+  linkedDocumentName,
   linkTargetAddress,
 } from "./link-address";
 export {
