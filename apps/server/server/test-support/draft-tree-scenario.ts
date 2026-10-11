@@ -4,6 +4,7 @@
  * runtime (`draft-tree-commands.ts`) when one is given. Lock interleavings are
  * `lock-interleave.ts`'s.
  */
+import type { UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import type { useComposedRuntimes } from "./composed-runtime.js";
 import {
@@ -24,18 +25,36 @@ export { itemFor, typeLink } from "./draft-tree-commands.js";
 export type { ScenarioSource, ScenarioWork } from "./draft-tree-seeds.js";
 
 /** Seed verbs always; command verbs need `options.runtime` and `options.runtimes`. */
-export type DraftTreeScenario = DraftTreeWorld & DraftTreeCommands;
+export type DraftTreeScenario = DraftTreeWorld &
+  DraftTreeCommands & {
+    /** A second scenario on the same runtime: another project of this account, or a stranger's. */
+    another(scope: "project" | "account"): Promise<DraftTreeScenario>;
+  };
 
 export async function draftTreeScenario(
   db: Database,
-  options: { runtime?: ScenarioRuntime; runtimes?: ReturnType<typeof useComposedRuntimes> } = {},
+  options: {
+    runtime?: ScenarioRuntime;
+    runtimes?: ReturnType<typeof useComposedRuntimes>;
+    account?: UserId;
+  } = {},
 ): Promise<DraftTreeScenario> {
-  const world = await draftTreeWorld(db);
+  const world = await draftTreeWorld(db, options.account ? { account: options.account } : {});
   const commands = draftTreeCommands(world, () => {
     if (!options.runtime || !options.runtimes) {
       throw new Error("Command verbs need draftTreeScenario(db, { runtime, runtimes })");
     }
     return { runtime: options.runtime, runtimes: options.runtimes };
   });
-  return { ...world, ...commands };
+  return {
+    ...world,
+    ...commands,
+    another: (scope) => {
+      const { account: _, ...runtime } = options;
+      return draftTreeScenario(
+        db,
+        scope === "project" ? { ...runtime, account: world.project.userId } : runtime,
+      );
+    },
+  };
 }

@@ -10,14 +10,7 @@
  * change rows at the draft's location. Folders have no change rows yet, so a draft's
  * folders are the live ones plus the hidden ones its documents sit under.
  */
-import type {
-  ContextSourceId,
-  DocumentId,
-  DraftId,
-  FolderId,
-  ProjectId,
-  WorkId,
-} from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
@@ -34,6 +27,7 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
+import { loadSourceOwners, type SourceOwner } from "./draft-ownership.js";
 import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
@@ -595,40 +589,41 @@ export type RevealIdentityRow = {
   deleted: boolean;
   /** The row's physical source, never a draft's address for it. */
   sourceId: ContextSourceId;
-  projectId: ProjectId | null;
-  /** Active drafts of `projectId` with a `created` row on it. */
-  projectUses: number;
+  owner: SourceOwner;
+  /**
+   * Active drafts with a `created` row on it, in any project: only drafts that may hold
+   * the document ever use it, so a caller that may hold it shares their authority.
+   */
+  activeUses: number;
 };
 
 export async function loadRevealIdentityRow(
   db: DrizzleDb,
   documentId: DocumentId,
-  projectId: ProjectId,
 ): Promise<RevealIdentityRow | null> {
   const [row] = await currentDrizzleDb(db).execute<{
     hidden: boolean;
     deleted: boolean;
     source_id: string;
-    project_id: string | null;
-    project_uses: number;
+    active_uses: number;
   }>(sql`
     SELECT d.hidden, d.deleted_at IS NOT NULL AS deleted, d.context_source_id::text AS source_id,
-      COALESCE(cs.project_id, w.project_id)::text AS project_id,
       (SELECT count(*)::int FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
         WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
-          AND r.status = 'active' AND r.project_id = ${projectId}::uuid) AS project_uses
+          AND r.status = 'active') AS active_uses
     FROM documents d
-    JOIN context_sources cs ON cs.id = d.context_source_id
-    LEFT JOIN works w ON w.id = cs.work_id
     WHERE d.id = ${documentId}::uuid`);
-  return row
+  if (!row) return null;
+  const sourceId = row.source_id as ContextSourceId;
+  const owner = (await loadSourceOwners(db, [sourceId])).get(sourceId);
+  return owner
     ? {
         id: documentId,
         hidden: row.hidden,
         deleted: row.deleted,
-        sourceId: row.source_id as ContextSourceId,
-        projectId: row.project_id as ProjectId | null,
-        projectUses: Number(row.project_uses),
+        sourceId,
+        owner,
+        activeUses: Number(row.active_uses),
       }
     : null;
 }

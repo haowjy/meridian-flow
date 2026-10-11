@@ -26,7 +26,9 @@ level = min(person term, lifecycle term, agent term)
 drafted (`scratch://` and `uploads://` never are) and each source's agent cap.
 File facts resolve the Work through the canonical drafts resolver and read
 `tree.lineage(view, documentId)` for source and nearest-first folder ancestors.
-Hidden identities outside that draft have no facts. There is no closure table.
+Hidden identities outside that draft have no facts, and neither does a Work's
+draft of a document it may not hold (`context/tree/draft-ownership.ts`: its
+project's, or its account's `user://`). There is no closure table.
 
 ## The service (`file-access.ts`)
 
