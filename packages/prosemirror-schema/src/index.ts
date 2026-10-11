@@ -6,7 +6,7 @@
 import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
-import { Doc } from "yjs";
+import { Doc, decodeStateVector, encodeStateVector } from "yjs";
 
 export type { CollabSchemaVersion } from "./collab-schema-version.js";
 export {
@@ -278,3 +278,21 @@ export {
   type RestorationRange,
   restorationAliasesFromMetadata,
 } from "./restoration-claims.js";
+
+/** Allocate independent author identity, excluding every client already held by the document. */
+export function allocateDocumentClient(
+  doc: Doc,
+  excluded: ReadonlySet<number> = new Set(),
+): number {
+  const used = decodeStateVector(encodeStateVector(doc));
+  let client: number;
+  do {
+    client = uint32();
+  } while (
+    isReservedClientId(client) ||
+    client === doc.clientID ||
+    used.has(client) ||
+    excluded.has(client)
+  );
+  return client;
+}

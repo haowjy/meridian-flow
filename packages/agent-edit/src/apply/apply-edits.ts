@@ -4,6 +4,7 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, InlineTextReplacement } from "../ports/model.js";
+import { editSegments } from "./segments.js";
 import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
 type Ref = BlockRef;
@@ -46,6 +47,7 @@ export function applyEdits(
   model: AgentEditModel,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
+  beforeSegment?: () => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -61,32 +63,41 @@ export function applyEdits(
     deletedHashes: new Set(),
   };
 
+  const segments = beforeSegment
+    ? editSegments(doc, model, editList)
+    : editList.map((edit) => [edit]);
   let committedEdits = 0;
-  for (let index = 0; index < editList.length; index += 1) {
-    const planned = preflightEdit(doc, model, editList[index]);
-    if (!planned.ok) {
-      return applyError(planned.code, planned.message, planned.details, { committedEdits });
+  for (const segment of segments) {
+    const plans: PlannedEdit[] = [];
+    for (const edit of segment) {
+      const planned = preflightEdit(doc, model, edit);
+      if (!planned.ok)
+        return applyError(planned.code, planned.message, planned.details, { committedEdits });
+      plans.push(planned.plan);
     }
-
     try {
-      let executionFailure: ApplyFailure | undefined;
+      beforeSegment?.();
+      let failure: ApplyFailure | undefined;
       model.transact(
         doc,
         () => {
-          executionFailure = executePlan(doc, model, planned.plan, accumulator);
+          for (const plan of plans) {
+            failure = executePlan(doc, model, plan, accumulator);
+            if (failure) break;
+          }
         },
         origin,
       );
-      if (executionFailure) return executionFailure;
+      if (failure) return failure;
     } catch (cause) {
       return applyError(
         "partial_failure",
         cause instanceof Error ? cause.message : String(cause),
-        { failedAt: index },
+        { failedAt: committedEdits },
         { committedEdits },
       );
     }
-    committedEdits += 1;
+    committedEdits += segment.length;
   }
 
   return {

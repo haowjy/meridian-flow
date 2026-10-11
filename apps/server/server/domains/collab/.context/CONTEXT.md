@@ -316,8 +316,9 @@ Review classes close over overlapping branch delete sets as well as supplied
 struct references and same-client clock prefixes. Agent-edit writes now journal
 transaction deltas containing only their own deletions, so independent writes
 with distinct insertion clients no longer join through inherited tombstones.
-Thread-peer publication also captures the effective sync transaction on a
-provisional target clone before admission. It must not regenerate durable Work
+Thread-peer publication applies ordered per-segment journal rows to a
+provisional target clone, admits each logical write, and asserts an empty sync
+residual before one snapshot CAS and broadcast. It must not regenerate durable Work
 journal rows with a raw source state-vector diff, which reintroduces the
 tombstones. An unresolved sync dependency is an integrity failure, never a
 partially journaled update. Manifest membership mutations in
@@ -331,9 +332,9 @@ seam (journal the transaction's own update); keep the guard.
 Keep cumulative-delete closure: other producers and retained state-vector rows
 can still carry old branch deletions targeting live-base structs. Apply must
 show their operations before replaying those bytes. Delete ranges already
-present on the current live cut are excluded from this edge. Same-chat writes
-without a runtime rebuild still join through their same-client clock prefix;
-fresh-client-per-write ownership belongs to the thread-peer pool.
+present on the current live cut are excluded from this edge. Draft agent writes preserve unchanged words and journal each contiguous visible
+edit under a fresh client. Each segment is one transaction and one row; all rows
+of a reply publish atomically. Edits inside pending inserted text join that insertion.
 
 ### Draft writer client boundaries
 

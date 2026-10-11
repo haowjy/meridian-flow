@@ -1,6 +1,10 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -130,7 +134,7 @@ class MemoryBranchStore implements BranchStore {
     expectedState?: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
-    journal?: { updateData: Uint8Array };
+    journals?: readonly { updateData: Uint8Array }[];
   }): Promise<boolean> {
     const previousBranch = this.branches.get(input.branchId);
     const ok = this.persist(input, (current) => ({
@@ -144,7 +148,7 @@ class MemoryBranchStore implements BranchStore {
       if (previousBranch) this.branches.set(input.branchId, previousBranch);
       throw new Error("injected journal failure");
     }
-    if (input.journal) this.journal.push(input.journal.updateData);
+    for (const row of input.journals ?? []) this.journal.push(row.updateData);
     return true;
   }
 
@@ -358,3 +362,49 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   }
   return true;
 }
+
+it("publishes ordered segment rows once and rejects reused clients and unjournaled residuals", async () => {
+  const store = new MemoryBranchStore();
+  const base = docWithText("start");
+  store.branches.set("work", branchSnapshot({ branchId: "work", doc: base }));
+  const sourceDoc = materialize(storedBranch(store, "work"));
+  const rows = [];
+  for (let i = 0; i < 40; i++) {
+    sourceDoc.clientID = allocateDocumentClient(sourceDoc);
+    const updates: Uint8Array[] = [];
+    const collect = (update: Uint8Array) => updates.push(update);
+    sourceDoc.on("update", collect);
+    sourceDoc.getText("content").insert(sourceDoc.getText("content").length, ` ${i}`);
+    sourceDoc.off("update", collect);
+    rows.push({
+      branchId: "work",
+      source: "agent" as const,
+      updateData: Y.mergeUpdates(updates),
+      toolCallId: i < 20 ? "first" : "second",
+      wId: i < 20 ? 1 : 2,
+    });
+  }
+  let broadcasts = 0;
+  const coordinator = createBranchCoordinator({ store, onBranchUpdate: () => broadcasts++ });
+  await expect(
+    coordinator.commitSegmentRows({
+      branchId: "work",
+      expectedGeneration: 1,
+      sourceDoc,
+      rows: rows.slice(0, -1),
+    }),
+  ).rejects.toThrow("unjournaled residual");
+  expect(store.journal).toHaveLength(0);
+  await coordinator.commitSegmentRows({ branchId: "work", expectedGeneration: 1, sourceDoc, rows });
+  expect(store.journal).toHaveLength(40);
+  expect(broadcasts).toBe(1);
+  expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
+  await expect(
+    coordinator.commitSegmentRows({
+      branchId: "work",
+      expectedGeneration: 1,
+      sourceDoc,
+      rows: [rows[0]],
+    }),
+  ).rejects.toThrow("reused client");
+});

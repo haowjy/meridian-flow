@@ -150,6 +150,7 @@ export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/rec
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
 export type { ReversalPlan, ReversalSelection } from "./undo/reversal-plan.js";
 export { planRedo, planUndo } from "./undo/reversal-plan.js";
+export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

@@ -95,6 +95,7 @@ export interface ResponseStageUpdateInput {
   runtime: RuntimeDocumentState;
   commandName: DocumentCommandName;
   update: Uint8Array;
+  segments?: readonly Uint8Array[];
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
@@ -116,6 +117,7 @@ export interface ResponseStageUpdateInput {
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
+  segments: readonly Uint8Array[];
   commandName: DocumentCommandName;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
@@ -1047,6 +1049,7 @@ export function createResponseCommitter(deps: {
     docBuffer.updates.push({
       commandName: input.commandName,
       update: input.update,
+      segments: input.segments ?? [input.update],
       meta: input.meta,
       mutation: {
         threadId: input.session.threadId,
@@ -1090,15 +1093,17 @@ export function createResponseCommitter(deps: {
   ): JournalBatchAppendEntry[] {
     return docBuffers
       .flatMap((docBuffer) =>
-        docBuffer.updates.map((entry) => ({
-          stageSeq: entry.stageSeq,
-          journalEntry: {
-            docId: docBuffer.docId,
-            update: entry.update,
-            meta: entry.meta,
-            ...(entry.mutation ? { mutation: entry.mutation } : {}),
-          },
-        })),
+        docBuffer.updates.flatMap((entry) =>
+          entry.segments.map((update) => ({
+            stageSeq: entry.stageSeq,
+            journalEntry: {
+              docId: docBuffer.docId,
+              update,
+              meta: entry.meta,
+              ...(entry.mutation ? { mutation: entry.mutation } : {}),
+            },
+          })),
+        ),
       )
       .sort((left, right) => left.stageSeq - right.stageSeq)
       .map((entry) => entry.journalEntry);

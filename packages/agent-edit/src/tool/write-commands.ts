@@ -1,4 +1,5 @@
 // Mutating and query write command handlers.
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
@@ -56,6 +57,7 @@ export function createWriteCommands(deps: {
     | "semanticProvenance"
     | "links"
     | "onLinkSpliceFallback"
+    | "segmentDraftWrites"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -309,32 +311,37 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    const { result: failure, update } = captureWriteUpdate(runtime.doc, () => {
-      if (overwrite) {
-        semanticEditIr = overwrite.ir;
-        const applied = applyEdits(
-          toDocHandle(runtime.doc),
-          options.model,
-          overwrite.edits,
-          origin,
-        );
-        if (!applied.ok) {
-          restorePreWriteSnapshot(runtime, preWriteSnapshot);
-          return errorResponse(applied.error.code, applied.error.message, address.filePath);
+    const { result: failure, update } = captureWriteUpdate(
+      runtime.doc,
+      (beforeSegment) => {
+        beforeSegment?.();
+        if (overwrite) {
+          semanticEditIr = overwrite.ir;
+          const applied = applyEdits(
+            toDocHandle(runtime.doc),
+            options.model,
+            overwrite.edits,
+            origin,
+          );
+          if (!applied.ok) {
+            restorePreWriteSnapshot(runtime, preWriteSnapshot);
+            return errorResponse(applied.error.code, applied.error.message, address.filePath);
+          }
+          writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
+          touchedHashes = new Set(applied.changedBlocks);
+          deletedHashes = new Set(applied.deletedBlocks);
+          insertedHashes = applied.insertedBlocks;
+        } else {
+          runtime.doc.transact(() => {
+            insertedHashes = options.model
+              .insertBlocks(toDocHandle(runtime.doc), null, written)
+              .map((block) => options.model.getBlockId(block));
+          }, origin);
         }
-        writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
-        touchedHashes = new Set(applied.changedBlocks);
-        deletedHashes = new Set(applied.deletedBlocks);
-        insertedHashes = applied.insertedBlocks;
-      } else {
-        runtime.doc.transact(() => {
-          insertedHashes = options.model
-            .insertBlocks(toDocHandle(runtime.doc), null, written)
-            .map((block) => options.model.getBlockId(block));
-        }, origin);
-      }
-      return undefined;
-    });
+        return undefined;
+      },
+      options.segmentDraftWrites,
+    );
     if (failure) return failure;
     const copied = copiedNodes
       ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
@@ -575,11 +582,26 @@ export function createWriteCommands(deps: {
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const { result: applied, update: ownUpdate } = captureWriteUpdate(runtime.doc, () => {
-      const applied = applyEdits(toDocHandle(runtime.doc), options.model, resolved.edits, origin);
-      if (applied.ok) writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
-      return applied;
-    });
+    const {
+      result: applied,
+      update: ownUpdate,
+      segments,
+    } = captureWriteUpdate(
+      runtime.doc,
+      (beforeSegment) => {
+        const applied = applyEdits(
+          toDocHandle(runtime.doc),
+          options.model,
+          resolved.edits,
+          origin,
+          beforeSegment,
+        );
+        if (applied.ok)
+          writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
+        return applied;
+      },
+      options.segmentDraftWrites,
+    );
     if (!applied.ok) {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
@@ -643,6 +665,7 @@ export function createWriteCommands(deps: {
           runtime,
           commandName: command.command,
           update: ownUpdate,
+          segments,
           meta,
           liveOrigin: mutationUpdateOrigin(actor),
           actor,
@@ -679,25 +702,23 @@ export function createWriteCommands(deps: {
         commandName: command.command,
         runtime,
         links,
-        updates: [
-          {
-            update: ownUpdate,
-            meta,
-            mutation: {
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
-              writeId: writeIdentity.durableId,
-              wId: writeIdentity.ordinal,
-              ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
-              ...mutationMode(interactionContext),
-            },
+        updates: segments.map((update) => ({
+          update,
+          meta,
+          mutation: {
+            threadId: session.threadId,
+            turnId,
+            ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+            actorKind: actor.kind,
+            ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+            ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+            ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
+            writeId: writeIdentity.durableId,
+            wId: writeIdentity.ordinal,
+            ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
+            ...mutationMode(interactionContext),
           },
-        ],
+        })),
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         before,
@@ -923,13 +944,28 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
  * Capture the synchronous content and certification transactions, not a state-vector
  * diff: that diff includes every old tombstone and couples otherwise independent writes.
  */
-function captureWriteUpdate<T>(doc: Y.Doc, write: () => T): { result: T; update: Uint8Array } {
+function captureWriteUpdate<T>(
+  doc: Y.Doc,
+  write: (beforeSegment?: () => void) => T,
+  segmented = false,
+): { result: T; update: Uint8Array; segments: Uint8Array[] } {
   const updates: Uint8Array[] = [];
+  const segments: Uint8Array[] = [];
+  const flush = () => {
+    if (updates.length) {
+      segments.push(Y.mergeUpdates(updates.splice(0)));
+    }
+  };
+  const beforeSegment = () => {
+    flush();
+    doc.clientID = allocateDocumentClient(doc);
+  };
   const collect = (update: Uint8Array) => updates.push(update);
   doc.on("update", collect);
   try {
-    const result = write();
-    return { result, update: Y.mergeUpdates(updates) };
+    const result = write(segmented ? beforeSegment : undefined);
+    flush();
+    return { result, update: Y.mergeUpdates(segments), segments };
   } finally {
     doc.off("update", collect);
   }

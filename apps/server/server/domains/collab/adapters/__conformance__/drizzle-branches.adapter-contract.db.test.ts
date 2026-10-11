@@ -931,12 +931,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedState: branch.state,
         state: updateData,
         stateVector: Y.encodeStateVector(changed),
-        journal: {
-          branchId: branch.branchId,
-          generation: branch.generation + 1,
-          updateData,
-          source: "agent",
-        },
+        journals: [
+          {
+            branchId: branch.branchId,
+            generation: branch.generation + 1,
+            updateData,
+            source: "agent",
+          },
+        ],
       });
       const reloaded = await store.getBranch(branch.branchId);
       const journalRows = await db
@@ -979,14 +981,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedState: branch.state,
         state: Y.encodeStateAsUpdate(changed),
         stateVector: Y.encodeStateVector(changed),
-        journal: {
-          branchId: branch.branchId,
-          generation: branch.generation,
-          expectedJournalWatermark: planned.id,
-          expectedJournalRevision: `${planned.id}:active`,
-          updateData: Y.encodeStateAsUpdate(changed),
-          source: "agent",
-        },
+        journals: [
+          {
+            branchId: branch.branchId,
+            generation: branch.generation,
+            expectedJournalWatermark: planned.id,
+            expectedJournalRevision: `${planned.id}:active`,
+            updateData: Y.encodeStateAsUpdate(changed),
+            source: "agent",
+          },
+        ],
       });
       const reloaded = await store.getBranch(branch.branchId);
       const rows = await db

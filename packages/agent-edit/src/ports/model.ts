@@ -112,7 +112,7 @@ export interface AgentEditModel extends DocumentModel {
   /** Nonempty text delta runs, including nested blocks; undo repair skips more than one. */
   inlineRunCount(block: BlockRef): number;
 
-  /** Apply disjoint same-block replacements through one adapter-owned ProseMirror transform. */
+  /** Apply exact disjoint same-block replacements without trimming common edge characters. */
   applyInlineReplacements(
     doc: DocHandle,
     block: BlockRef,

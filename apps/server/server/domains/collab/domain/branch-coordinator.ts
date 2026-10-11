@@ -54,7 +54,7 @@ export type PersistBranchInput = {
 };
 
 export type CommitBranchMutationInput = PersistBranchInput & {
-  journal?: AppendBranchJournalInput;
+  journals?: readonly AppendBranchJournalInput[];
 };
 
 export type AppendBranchJournalInput = {
@@ -173,6 +173,12 @@ export type BranchCoordinator = {
       expectedGeneration: number;
     },
   ): Promise<boolean>;
+  commitSegmentRows(input: {
+    branchId: string;
+    expectedGeneration: number;
+    sourceDoc: Y.Doc;
+    rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+  }): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
@@ -268,13 +274,13 @@ export function createBranchCoordinator(input: {
   async function persist(
     snapshot: BranchSnapshot,
     doc: Y.Doc,
-    journal?: AppendBranchJournalInput,
+    journals?: readonly AppendBranchJournalInput[],
     publishUpdate?: Uint8Array,
     kind: "mutation" | "pull" = "mutation",
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (!journal && bytesEqual(state, snapshot.state)) return;
+    if (!journals?.length && bytesEqual(state, snapshot.state)) return;
     const mutation = {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
@@ -282,7 +288,7 @@ export function createBranchCoordinator(input: {
       expectedState: snapshot.state,
       state,
       stateVector,
-      ...(journal ? { journal } : {}),
+      ...(journals ? { journals } : {}),
     };
     // Replication creates no reviewable edit. Its CAS must not reacquire the
     // Work lifecycle lock a reader may already hold in another transaction.
@@ -298,7 +304,9 @@ export function createBranchCoordinator(input: {
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
       cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-      const update = journal?.updateData ?? publishUpdate;
+      const update = journals?.length
+        ? Y.mergeUpdates(journals.map((row) => row.updateData))
+        : publishUpdate;
       if (update) input.onBranchUpdate?.({ branchId: snapshot.branchId, update });
     };
     if (currentResponseTransactionId()) {
@@ -419,7 +427,7 @@ export function createBranchCoordinator(input: {
     if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
       throw new BranchStaleUpdateError(inputJournal.branchId);
     }
-    await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+    await persist(snapshot, doc, [{ ...inputJournal, generation: snapshot.generation }]);
     return true;
   }
 
@@ -575,8 +583,9 @@ export function createBranchCoordinator(input: {
             // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
             // failed CAS/rollback must never mutate the cached branch doc.
             const doc = cloneDoc(cachedDoc);
+            assertFreshAgentClient(doc, inputJournal);
             Y.applyUpdate(doc, inputJournal.updateData);
-            await persist(snapshot, doc, inputJournal);
+            await persist(snapshot, doc, [inputJournal]);
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
@@ -592,6 +601,67 @@ export function createBranchCoordinator(input: {
         current.stateVector = Y.encodeStateVector(current.doc);
       }
       input.onBranchUpdate?.(update);
+    },
+
+    async commitSegmentRows(batch) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await criticalSections.withBranches([batch.branchId], async () => {
+            const snapshot = await loadSnapshot(batch.branchId);
+            assertWritableBranch(snapshot);
+            if (snapshot.generation !== batch.expectedGeneration)
+              throw new BranchStaleUpdateError(batch.branchId);
+            const doc = cloneDoc((await materialize(snapshot)).doc);
+            const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
+            // Admission remains per logical write; segment rows keep their own attribution.
+            for (let index = 0; index < journals.length; ) {
+              const first = journals[index];
+              const writeRows = [first];
+              index++;
+              while (
+                index < journals.length &&
+                first.semanticEditIr &&
+                journals[index].semanticEditIr === first.semanticEditIr
+              )
+                writeRows.push(journals[index++]);
+              const apply = () => {
+                for (const row of writeRows) {
+                  assertFreshAgentClient(doc, row);
+                  Y.applyUpdate(doc, row.updateData);
+                }
+              };
+              if (first.semanticEditIr) {
+                const ir = first.semanticEditIr;
+                await admitCertifiedMutation(
+                  {
+                    readMutationTarget: () => ({
+                      documentId: snapshot.documentId,
+                      generation: BigInt(snapshot.generation),
+                      doc,
+                    }),
+                    readCurrentRevision: async () => ir.inputRevision,
+                    lowerCertifiedMutation: async () =>
+                      Y.mergeUpdates(writeRows.map((row) => row.updateData)),
+                    admitImmediate: async () => {
+                      apply();
+                      return { sequence: 0n, joined: 0 };
+                    },
+                  },
+                  { ir },
+                );
+              } else apply();
+            }
+            if (journalSyncDelta(batch.sourceDoc, doc))
+              throw new Error("Segment publication left an unjournaled residual");
+            if (!journals.length) return false;
+            await persist(snapshot, doc, journals);
+            return true;
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
     },
 
     async commitSyncFromDoc(inputJournal) {
@@ -625,11 +695,13 @@ export function createBranchCoordinator(input: {
                   lowerCertifiedMutation: async () => updateData,
                   admitImmediate: async ({ update }) => {
                     Y.applyUpdate(doc, update);
-                    await persist(snapshot, doc, {
-                      ...inputJournal,
-                      updateData: update,
-                      generation: snapshot.generation,
-                    });
+                    await persist(snapshot, doc, [
+                      {
+                        ...inputJournal,
+                        updateData: update,
+                        generation: snapshot.generation,
+                      },
+                    ]);
                     return { sequence: 0n, joined: 0 };
                   },
                 },
@@ -637,11 +709,13 @@ export function createBranchCoordinator(input: {
               );
             } else {
               Y.applyUpdate(doc, updateData);
-              await persist(snapshot, doc, {
-                ...inputJournal,
-                updateData,
-                generation: snapshot.generation,
-              });
+              await persist(snapshot, doc, [
+                {
+                  ...inputJournal,
+                  updateData,
+                  generation: snapshot.generation,
+                },
+              ]);
             }
             return true;
           });
@@ -771,5 +845,19 @@ function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
     return updates.length > 0 ? Y.mergeUpdates(updates) : null;
   } finally {
     probe.destroy();
+  }
+}
+
+/** Draft agent rows own fresh structs; deletes may refer to older clients. */
+function assertFreshAgentClient(doc: Y.Doc, row: AppendBranchJournalInput): void {
+  if (
+    row.source !== "agent" ||
+    (row.updateMeta && typeof row.updateMeta === "object" && "branchReversal" in row.updateMeta)
+  )
+    return;
+  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
+  for (const struct of Y.decodeUpdate(row.updateData).structs) {
+    if (clients.has(struct.id.client))
+      throw new Error(`Agent segment reused client ${struct.id.client}`);
   }
 }
