@@ -22,7 +22,8 @@ keep their plans.
   what D placed.
 
 A path two visible nodes share answers `ambiguous` with every `NodeRef`; a live absorb
-can produce it.
+can produce it. Normalization performs writes only; `treeState` owns observable
+draft clashes.
 
 ## Identity status
 
@@ -54,7 +55,7 @@ target path or a needed folder's path, `deleted_live`, `relocated`, else `none`.
 | `node-rows.ts` | `insertDocumentRow` (the one `documents` insert: hidden or live, text with its projection or storage-backed; a live row claims its location), folder inserts, tombstones, a tombstone's storage release (live Yjs, branches, derived rows, its own link rows) and document locks in id order |
 | `node-locations.ts` | location claims (`claimDocumentLocation`), relocation history (`recordLocationHistory`) and `bumpLocationVersions` |
 | `draft-tree-store.ts` | `draft_tree_changes` writes: `recordCreated` (a draft's `created` rows) and `dropDocumentRows` |
-| `folder-normalization.ts` | what live folder operations do to hidden nodes: a visible folder arriving at a hidden folder's path absorbs it (collisions reported, never refused); a live delete, or a move out of where drafts can hold a folder, splits hidden contents into ancestor-closed hidden twins (`planSplit` from a snapshot, `applySplit` once). Change rows follow |
+| `folder-normalization.ts` | what live folder operations do to hidden nodes: a visible folder arriving at a hidden folder's path absorbs it (never refused; clashes are read through the tree view); a live delete, or a move out of where drafts can hold a folder, splits hidden contents into ancestor-closed hidden twins (`planSplit` from a snapshot, `applySplit` once). Change rows follow |
 | `node-moves.ts` | the phased batch move: `prepareMoves` builds one node-keyed plan before any write, then `vacateMoves`, `installMoves`, `recordMoves`. The live mover runs all four; Apply's draft tree step (`collab/adapters/drizzle-draft-tree-step.ts`) runs prepare, vacate and install before text admission and record after it |
 | `test-hooks.ts` | test-only hook points (`setTreeHook`) that DB suites use to interleave fences; no-ops in production |
 

@@ -25,6 +25,8 @@ the outside; review enforces the inside.
 - **Every namespace lifecycle change bumps `location_version`** on what it changes
   (`node-locations.ts`). A split and an absorb's reparenting move nothing in any view,
   so they bump nothing but the absorbed folder's tombstone.
+- **Normalization is writes-only.** Absorb never refuses a hidden/live clash;
+  `treeState` owns the observable clash in each draft's view.
 - **Tree writes don't refresh the catalog.** They return what they placed or
   tombstoned; the caller reconciles in its own transaction (the store, the mover, the
   Apply step's completion transaction, the Discard kernel).
