@@ -137,10 +137,12 @@ export function readThreadTranscript(
 
 export function appendUserMessage({
   data,
+  signal,
 }: {
   data: AppendUserMessageInput;
+  signal?: AbortSignal;
 }): Promise<SendMessageResponse> {
-  return postJson(apiThreadMessagePath(data.threadId), data);
+  return postJson(apiThreadMessagePath(data.threadId), data, { signal });
 }
 
 export function listThreadAvailableSkills(
@@ -160,15 +162,21 @@ export function listSelectionAvailableSkills(input: {
 export function lookupUserMessageAdmission(input: {
   threadId: string;
   submissionId: string;
+  signal?: AbortSignal;
 }): Promise<AdmissionLookup> {
-  return getJson(apiThreadAdmissionPath(input.threadId, input.submissionId));
+  return getJson(apiThreadAdmissionPath(input.threadId, input.submissionId), {
+    signal: input.signal,
+  });
 }
 
 export function retireUserMessageAdmission(input: {
   threadId: string;
   submissionId: string;
+  signal?: AbortSignal;
 }): Promise<RetireAdmissionResult> {
-  return deleteJson(apiThreadAdmissionPath(input.threadId, input.submissionId));
+  return deleteJson(apiThreadAdmissionPath(input.threadId, input.submissionId), {
+    signal: input.signal,
+  });
 }
 
 export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelTurnResponse> {

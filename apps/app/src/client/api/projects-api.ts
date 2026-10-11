@@ -297,6 +297,7 @@ export async function createProjectThread(
 ): Promise<CreateThreadResponse> {
   return postJson<CreateThreadResponse>(urlFor(apiProjectThreadsPath(projectId), init), data, {
     headers: init?.headers,
+    signal: init?.signal,
   });
 }
 
