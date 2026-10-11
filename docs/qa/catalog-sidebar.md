@@ -86,7 +86,16 @@ returns documents for the populated case.
    sits), and no two crumbs open the same list. Climb with a back row: the folder left behind is
    highlighted, and climbing past the area reaches the area list without a
    heading. Pick a file: it replaces the document beside the chat.
-5. At phone width, confirm existing full-screen document/navigation surfaces
+5. Use `Manuscript/Book 1/Part Two/Act 2/chapter-2.md` to resize the
+   Editor through the full-path boundary (including a 1077px viewport), then
+   drag the Chat dock divider through last-folder, no-folder, and area-icon
+   fits. Folders must collapse before their names or the filename truncate
+   whenever a smaller candidate fits. With last-folder fit, `…` opens inside
+   Book 1 and highlights Part Two; with no-folder or icon fit, it opens inside
+   Part Two and highlights Act 2. An absent link-update note leaves no empty
+   trailing flex item. Close and reopen a crumb: the first displayed menu is
+   already at the correct level, and Escape restores focus to that crumb.
+6. At phone width, confirm existing full-screen document/navigation surfaces
    are unchanged. Do not expect a desktop right panel or add a phone equivalent.
 
 Save screenshots and the two recent-documents responses in the active work

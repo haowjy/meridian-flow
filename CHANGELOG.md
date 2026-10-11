@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Move feedback survives slow or offline settlement and names the destination from the move receipt.
+
 - Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.
 
 - Reloading keeps the document and view you had open in the side panel.
