@@ -45,10 +45,11 @@ export async function createContextEntry(input: {
     origin: { type: "human", userId: input.userId },
   });
   if (!result.ok) {
-    if (result.error.code === "conflict") return { status: "conflict" as const, uri };
+    if (result.error.code === "conflict")
+      return { status: "conflict" as const, uri: result.error.uri };
     contextErrorToHttp(result.error);
   }
-  return { status: "created" as const, documentId: result.value.documentId };
+  return { status: "created" as const, documentId: result.value.documentId, uri: result.value.uri };
 }
 
 export default defineEventHandler(async (event) => {

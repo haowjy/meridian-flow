@@ -1,6 +1,7 @@
 /** Document naming laws, including canonical round trips and explicit destination types. */
 import { describe, expect, it } from "vitest";
 import { parseBinaryFilename, parseDocumentFilename, renderFilename } from "./document-filename.js";
+import { filetypeForKnownPath, filetypeForPath } from "./filetype.js";
 
 describe("document filename codec", () => {
   it("normalizes prose, preserves registered suffixes, and round-trips stored parts", () => {
@@ -42,6 +43,51 @@ describe("document filename codec", () => {
       value: { name: "Pic", extension: "png", filetype: "png" },
     });
     expect(parseBinaryFilename("archive.unknown").ok).toBe(true);
+  });
+  it("round-trips generated dotted names, explicit extensions and inherited destinations", () => {
+    for (const stem of [
+      "chapter",
+      "Chapter 1.5",
+      "Vol. 2",
+      ".hidden",
+      "ch12.draft",
+      "part.md.middle",
+      "data.json",
+    ])
+      for (const suffix of [
+        "",
+        ".md",
+        ".TXT",
+        ".md.md",
+        ".markdown.mdx",
+        ".ts",
+        ".TSX",
+        ".toml",
+        ".xml",
+        ".JSON",
+        ".jpeg",
+        ".PNG",
+        ".unknown",
+      ])
+        for (const sourceExtension of [undefined, "", "json", "toml", "png"]) {
+          const input = ` ${stem}${suffix} `;
+          const result = parseDocumentFilename(input, { sourceExtension });
+          if (result.ok)
+            expect(
+              parseDocumentFilename(renderFilename(result.value.name, result.value.extension)),
+            ).toEqual(result);
+          const binary = parseBinaryFilename(input, { sourceExtension });
+          if (binary.ok)
+            expect(
+              parseBinaryFilename(renderFilename(binary.value.name, binary.value.extension)),
+            ).toEqual(binary);
+        }
+    for (const path of ["chapter", "chapter.draft", "folder.md/chapter"]) {
+      expect(filetypeForPath(path)).toBe("markdown");
+      expect(filetypeForKnownPath(path)).toBeNull();
+    }
+    for (const path of ["chapter.txt", "chapter.mdx", "chapter.MD"])
+      expect(filetypeForKnownPath(path)).toBe("markdown");
   });
   it("refuses empty stems and prose names that impersonate registered non-prose files", () => {
     for (const input of ["", " ", ".", "..", ".md", " .TXT ", "data.json.md", "data.json.txt.md"]) {

@@ -254,7 +254,10 @@ describe("context router scheme creation capabilities", () => {
       port.createTrackedDocument("uploads://@current/notes.md", "notes", {
         documentId: "00000000-0000-4000-8000-000000000001",
       }),
-    ).resolves.toEqual({ ok: true, value: { documentId: "document-new" } });
+    ).resolves.toEqual({
+      ok: true,
+      value: { documentId: "document-new", uri: "uploads://@current/notes" },
+    });
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
     });
