@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Generate link-ahead labels from stored document names, normalize section-qualified activity names, and keep scheme-less host addresses external.
+- Generate link-ahead labels from stored document names, normalize section-qualified activity names using shared URI syntax, and keep scheme-less host addresses external.
 
 - Queued renames inherit extensions from the writer’s current optimistic name, not a stale server location.
 
