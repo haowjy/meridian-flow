@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Documents and folders an AI draft creates stay out of your Manuscript, and out of other Works, until you apply them. If you create a document the draft already made, you get that same document, with the draft's text waiting for review. Discarding a draft leaves nothing behind: its new documents and folders are gone and their names are free again. A link to a document that exists only in a draft reads "in a draft" instead of missing. Apply all applies every item in one step, so an interruption never leaves the draft half applied.
+
 - Reloading keeps the document and view you had open in the side panel.
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
@@ -45,18 +47,6 @@
 - The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
-
-- Development: preserve recursive deletion's outer-command rollback proof after manifest retirement, including tree visibility, tombstones and catalog/availability publication.
-
-- Development: carry manifest retirement across chat-lineage Scratch and regenerate its schema migration after the foundation squash.
-
-- Development: retire the live Yjs manifest and its document-kind column. Project visibility, moves, bootstrap and room admission use the SQL tree without membership registration or reconciliation.
-
-- Development: settlement regression pins cover tentative publication rollback, retained retirement locks, staged thread-peer replies and another owner recovering held text without admitting or resetting it.
-
-- Development: catch quoted and schema-qualified tree tables in raw SQL checks without confusing longer relation names with documents or folders.
-
-- Development: enforce the tree query boundary in `pnpm check` with a self-testing TypeScript AST guard, explicit read/write allowlist and a non-overridable hidden-column rule.
 
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
