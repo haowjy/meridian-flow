@@ -44,7 +44,7 @@ runtime shapes, and observability records.
   `parseRequestId`, so a malformed ref is gone and never reaches a lookup;
   `storedLinkRef` keeps a present malformed attr as a ref so it reaches
   resolution as gone instead of falling back to its address), the only
-  ahead-ref mint, and `aheadAddress` with `hasFileExtension`, the one rule for
+  ahead-ref mint, and `aheadAddress` with `isAheadFilename`, the one rule for
   what address an ahead ref may be registered at (mint and registry alike).
   `document-link.ts` owns the one stored-link resolution (`resolveStoredLink`
   over a host `LinkCatalog`), the one written-link classifier

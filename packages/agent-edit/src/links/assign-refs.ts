@@ -113,9 +113,8 @@ interface Grammar {
   /** Written href → decoded canonical address, ignoring classification; null if none. */
   address(href: string, holderUri: string | null): { uri: string; suffix: string } | null;
   /**
-   * The address passes 1 and 2 compare a written href by. A written link with
-   * no extension names the default-extension address, the spelling ahead
-   * minting stores, so `ch12` still continues a link shown as `ch12.md` after
+   * The address passes 1 and 2 compare a written href by: the codec name
+   * ahead minting stores, so any prose spelling still continues a link after
    * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
    */
   correspondenceKey(href: string, holderUri: string | null): string | null;
