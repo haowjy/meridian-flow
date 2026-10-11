@@ -17,6 +17,23 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const kael = await s.model(ascension).create("characters/kael.md", "Kael guards the gate.");
+    // F26: absent and another view's hidden folder give the same refusal.
+    const beacon = await s.work("Beacon", "draft");
+    const missing = await s.model(beacon).now("ls", { path: "manuscript://missing/" });
+    const hiddenFolder = await s.model(beacon).now("ls", { path: "manuscript://characters/" });
+    for (const answer of [missing, hiddenFolder]) {
+      expect.soft(answer.isError).toBe(true);
+      expect.soft(answer.result).toMatchObject({ code: "not_found" });
+      expect.soft(answer.output).toContain("No folder at manuscript://");
+      expect.soft(answer.output).toContain("Writing a file under this path creates the folder.");
+    }
+    expect
+      .soft((await s.model(ascension).now("ls", { path: "kb://" })).output)
+      .toBe("kb://\n  (empty)");
+    await s.writer.mkdir("empty");
+    expect
+      .soft((await s.model(beacon).now("ls", { path: "manuscript://empty/" })).output)
+      .toBe("manuscript://empty/\n  (empty)");
     const hidden = await s.review(ascension);
     expect.soft(itemFor(hidden.items, kael), "new while hidden").toMatchObject({
       origin: "created",

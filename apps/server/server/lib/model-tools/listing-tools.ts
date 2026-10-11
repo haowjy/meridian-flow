@@ -29,6 +29,7 @@ import {
   type ToolCall,
   type ToolErrorOutput,
   type ToolWiringDeps,
+  toolError,
 } from "./tool-context.js";
 
 async function listingCall(
@@ -56,7 +57,16 @@ export function createLsHandler(deps: ToolWiringDeps) {
     if (isToolError(call)) return call;
     const { context, principal } = call;
     const result = await context.port.list(path, { wordCounts: verbose });
-    if (!result.ok) return contextToolError(result.error);
+    if (!result.ok) {
+      if (result.error.code === "not_found") {
+        return toolError({
+          code: "not_found",
+          message: `No folder at ${result.error.uri}. Writing a file under this path creates the folder.`,
+          details: result.error,
+        });
+      }
+      return contextToolError(result.error);
+    }
     const listed = result.value.entries;
     const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed));
     // Ordinary folders share their container; source and lineage discovery list distinct owners.
