@@ -38,7 +38,7 @@ if (!enabled || !url) {
         .values({ id: sourceId, projectId, name: "Manuscript", slug: "manuscript" });
       await db
         .insert(documents)
-        .values({ id: documentId, contextSourceId: sourceId, name: "chapter", extension: "md" });
+        .values({ id: documentId, contextSourceId: sourceId, name: "chapter", extension: "" });
     });
     afterAll(async () => {
       await processDetachedWork.drain();
@@ -102,7 +102,7 @@ if (!enabled || !url) {
       const entries = await db.select().from(contextCatalogEntries);
       expect(entries).toContainEqual(
         expect.objectContaining({
-          entry: expect.objectContaining({ kind: "file", name: "newest-19.md" }),
+          entry: expect.objectContaining({ kind: "file", name: "newest-19" }),
         }),
       );
       const heads = await db
@@ -173,7 +173,7 @@ if (!enabled || !url) {
       const entries = await db.select().from(contextCatalogEntries);
       expect(entries).toContainEqual(
         expect.objectContaining({
-          entry: expect.objectContaining({ kind: "file", name: "after-apply.md" }),
+          entry: expect.objectContaining({ kind: "file", name: "after-apply" }),
         }),
       );
       const [head] = await db

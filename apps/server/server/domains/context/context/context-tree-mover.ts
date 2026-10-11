@@ -8,7 +8,9 @@
 
 import {
   type DeleteContextEntryResult,
+  type Filetype,
   isWorkScopedProjectContextScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
@@ -189,6 +191,18 @@ export class ContextTreeMover {
 
           const prepared = await this.prepareMove(source, destination, policy);
           if (!prepared.ok) return prepared;
+          if (
+            prepared.value.expectedTarget.state === "occupied" &&
+            prepared.value.expectedTarget.token.nodeId === prepared.value.source.nodeId &&
+            prepared.value.expectedTarget.token.sourceId === prepared.value.source.sourceId
+          ) {
+            return prepared.value.source.kind === "file"
+              ? this.graduateInPlace({ ...source, path: prepared.value.source.path })
+              : Ok({
+                  movedNodeId: prepared.value.source.nodeId,
+                  destinationPath: prepared.value.source.path,
+                });
+          }
           const result = await callAdapter(
             destination.canonical,
             () =>
@@ -321,11 +335,25 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(
+    let targetPath = await this.resolveTarget(
       destination,
       sourceBasename,
       policy.target === "exact",
     );
+    if (!targetPath.ok) return targetPath;
+    let destinationFiletype: Filetype | null | undefined;
+    if (sourceToken.value.kind === "file") {
+      const targetInput = basename(targetPath.value);
+      const targetParts = storedFilename(targetInput, sourceBasename);
+      if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
+      destinationFiletype =
+        sourceToken.value.filetype === null &&
+        !targetParts.filename.extension &&
+        targetInput.trim() === targetParts.filename.name
+          ? null
+          : targetParts.filename.filetype;
+      targetPath = Ok(joinPath(dirname(targetPath.value), targetParts.name));
+    }
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -365,6 +393,7 @@ export class ContextTreeMover {
       ? Ok({
           ...prepared,
           source: sourceToken.value,
+          destinationFiletype,
           graduateProvisionalName:
             policy.target === "exact" && policy.graduateProvisionalName === true,
         })
@@ -420,8 +449,10 @@ export class ContextTreeMover {
     destinationUri: string,
     options?: ContextMoveOptions,
   ): Result<void, ContextError> {
+    if (source.nodeId === existingTarget.nodeId && source.sourceId === existingTarget.sourceId)
+      return Ok(undefined);
     if (source.kind !== existingTarget.kind) {
-      return Err({ code: "invalid_operation", uri: destinationUri });
+      return Err({ code: "conflict", uri: destinationUri });
     }
     if (!options?.overwrite || source.kind === "directory") {
       return Err({ code: "conflict", uri: destinationUri });

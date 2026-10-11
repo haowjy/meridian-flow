@@ -26,8 +26,8 @@ vi.mock("@/client/api/projects-api", () => ({
     status: "created",
     documentId: request.documentId,
     scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
+    path: "/Untitled",
+    name: "Untitled",
   }),
 }));
 
@@ -135,7 +135,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     await replica.setLocation("project", reservation.key, {
       scheme: "scratch",
       folderPath: "",
-      name: "scene.md",
+      name: "scene",
       workId: "work",
       workSlug: "serial",
     });
@@ -165,10 +165,10 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     expect(catalog.children(catalog.root.entryId)).toMatchObject([
       {
         kind: "file",
-        name: "Untitled.md",
+        name: "Untitled",
         provisionalName: false,
         namespaceFailure: "set-location",
-        namespaceRepairName: "scene.md",
+        namespaceRepairName: "scene",
       },
     ]);
   } finally {

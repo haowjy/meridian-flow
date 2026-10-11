@@ -1,5 +1,9 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
-import { type ParsedContextUri, parseContextUri } from "./context-uri.js";
+
+import { type ParsedContextUri, parseContextUri, splitDocumentHrefSuffix } from "./context-uri.js";
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+
+export { splitDocumentHrefSuffix } from "./context-uri.js";
 
 export type ResolvedDocumentHref = { uri: string; suffix: string };
 
@@ -62,9 +66,21 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
   return format(target.value, encodePath(target.value.path));
 }
 
-/** Canonical catalog comparison seam; document types may later normalize it. */
+/** Canonicalize only the filename: folder segments are literal names. */
 export function documentPathKey(path: string): string {
-  return path;
+  const slash = path.lastIndexOf("/");
+  const parsed = parseDocumentFilename(path.slice(slash + 1));
+  return parsed.ok
+    ? path.slice(0, slash + 1) + renderFilename(parsed.value.name, parsed.value.extension)
+    : path;
+}
+
+/** Stored basename keys needed by exact and extension-omitted path matching. */
+export function documentPathCandidateNames(path: string): string[] {
+  const key = documentPathKey(path);
+  const basename = key.slice(key.lastIndexOf("/") + 1);
+  const parsed = parseDocumentFilename(basename);
+  return parsed.ok ? [...new Set([parsed.value.name, basename])] : [basename];
 }
 
 /**
@@ -82,18 +98,15 @@ export function matchDocumentPath<T>(
   if (exact) return exact;
   const loose = candidates.filter((candidate) => {
     const value = pathOf(candidate);
-    const dot = value.lastIndexOf(".");
-    return dot > value.lastIndexOf("/") && documentPathKey(value.slice(0, dot)) === key;
+    const slash = value.lastIndexOf("/");
+    const parsed = parseDocumentFilename(value.slice(slash + 1));
+    return (
+      parsed.ok &&
+      parsed.value.extension !== "" &&
+      value.slice(0, slash + 1) + parsed.value.name === key
+    );
   });
   return loose.length === 1 ? (loose[0] ?? null) : null;
-}
-
-/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
-export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
-  const index = value.search(/[?#]/);
-  return index < 0
-    ? { path: value, suffix: "" }
-    : { path: value.slice(0, index), suffix: value.slice(index) };
 }
 
 function decodePath(path: string): string | null {

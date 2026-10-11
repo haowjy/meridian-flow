@@ -13,7 +13,7 @@ import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
-  constructor() {
+  constructor(readonly occupantKind?: "file" | "folder") {
     super("Context entry already exists");
     this.name = "ContextEntryConflictError";
   }
@@ -98,6 +98,7 @@ export interface ContextDocumentStore {
    * Claim only the SQL/tree identity. The document-creation aggregate owns
    * Yjs initialization and manifest membership around this operation.
    */
+  /** Opposite-kind occupancy throws ContextEntryConflictError with the folder kind. */
   createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
