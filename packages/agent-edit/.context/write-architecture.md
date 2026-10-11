@@ -191,11 +191,11 @@ even when they edit the same paragraph.
 
 Changed pairs never join each other through text correspondence. Only adjacent
 unpaired blocks are split/merge candidates, fenced by kept blocks. Each boundary
-uses a block-local token LCS: retained prose must continue immediately on both
-sides. Intl word tokenization is compatible across both texts; a boundary inside
-a word subdivides its token and boundary pieces into graphemes on both sides.
-Walk outward only after a successful join, without accumulating gap text.
-Windows over 4,096 UTF-16 units or 65,536 table cells join conservatively.
+checks whether the head's last word and tail's first word occur contiguously
+in the unsplit paragraph, ignoring whitespace. Words include adjacent non-space
+punctuation; fragments match by substring and any occurrence counts. On the
+outward walk the already-joined middle piece is used whole. There is no LCS,
+subdivision or cell budget. Windows over 4,096 UTF-16 units join conservatively.
 Structural joins and physical insert/delete runs close into union-find components.
 Consecutive insertion
 edits sharing an old anchor carry one ordered run; execution chains each through

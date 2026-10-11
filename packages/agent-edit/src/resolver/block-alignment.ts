@@ -185,6 +185,7 @@ function recognizeBoundaries(
         const reference = kind === "add" ? oldBlocks[pair.old] : newBlocks[pair.next];
         for (const direction of [-1, 1]) {
           let edge = blocks[pairedIndex].textContent;
+          let middle = false;
           for (
             let candidate = index + direction;
             candidate >= 0 && candidate < gap.length;
@@ -196,9 +197,19 @@ function recognizeBoundaries(
             const text = blocks[step.kind === "add" ? step.next : step.old].textContent;
             const left = direction < 0 ? text : edge,
               right = direction < 0 ? edge : text;
-            if (!boundaryContinues(reference.textContent, left, right, words)) break;
+            if (
+              !boundaryContinues(
+                reference.textContent,
+                left,
+                right,
+                words,
+                middle ? (direction < 0 ? "right" : "left") : undefined,
+              )
+            )
+              break;
             union([index, candidate]);
             edge = text;
+            middle = true;
           }
         }
       }
@@ -219,62 +230,40 @@ function recognizeBoundaries(
 }
 
 const MAX_BOUNDARY_CHARACTERS = 4096;
-const MAX_BOUNDARY_CELLS = 65536;
-
-/** Bounded token LCS: retained prose must continue immediately across this boundary. */
+/** Direct continuation accepts any occurrence, including fragments of a source word. */
 function boundaryContinues(
   reference: string,
   left: string,
   right: string,
   words: Intl.Segmenter,
+  middle?: "left" | "right",
 ): boolean {
-  left = left.trimEnd();
-  right = right.trimStart();
   if (reference.length + left.length + right.length > MAX_BOUNDARY_CHARACTERS) return true;
-  const joined = left + right,
-    boundary = left.length;
-  const parts = (text: string) =>
-    [...words.segment(text)].filter((part) => !/^\s+$/u.test(part.segment));
-  const proposed = parts(joined);
-  const crossing = proposed.find(
-    (part) => part.index < boundary && part.index + part.segment.length > boundary,
-  );
-  const subwords = new Set<string>();
-  if (crossing) {
-    const cut = boundary - crossing.index;
-    subwords.add(crossing.segment);
-    subwords.add(crossing.segment.slice(0, cut));
-    subwords.add(crossing.segment.slice(cut));
-  }
-  const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  const tokenize = (segments: ReturnType<typeof parts>) =>
-    segments.flatMap((part) =>
-      subwords.has(part.segment)
-        ? [...graphemes.segment(part.segment)].map((piece) => ({
-            text: piece.segment,
-            index: part.index + piece.index,
-          }))
-        : [{ text: part.segment, index: part.index }],
-    );
-  const source = tokenize(parts(reference)),
-    target = tokenize(proposed);
-  const split = target.findIndex((token) => token.index >= boundary);
-  if (split <= 0) return false;
-  // The explicit boundary cannot match prose; its neighbors must both be retained.
-  target.splice(split, 0, { text: "", index: boundary });
-  const matches = weightedOrderedMatches(
-    (a, b) => (source[a].text === target[b].text ? 1 : 0),
-    0,
-    source.length,
-    0,
-    target.length,
-    MAX_BOUNDARY_CELLS,
-  );
-  if (!matches) return true;
-  const before = matches.findIndex(([, next]) => next === split - 1);
-  return (
-    before >= 0 &&
-    matches[before + 1]?.[1] === split + 1 &&
-    matches[before + 1][0] === matches[before][0] + 1
-  );
+  const edgeWord = (piece: string, head: boolean) => {
+    const parts = [...words.segment(piece)];
+    let word = -1;
+    for (let index = 0; index < parts.length; index++) {
+      if (!parts[index].isWordLike) continue;
+      word = index;
+      if (!head) break;
+    }
+    if (word < 0) return piece;
+    let start = word,
+      end = word;
+    while (start > 0 && !parts[start - 1].isWordLike && !/\s/u.test(parts[start - 1].segment))
+      start--;
+    while (
+      end + 1 < parts.length &&
+      !parts[end + 1].isWordLike &&
+      !/\s/u.test(parts[end + 1].segment)
+    )
+      end++;
+    return piece.slice(parts[start].index, parts[end].index + parts[end].segment.length);
+  };
+  const normalize = (text: string) => text.replace(/\s+/gu, "");
+  // On the outward walk the already-joined edge is an interior piece, not
+  // another independently selected word fragment.
+  const head = normalize(middle === "left" ? left : edgeWord(left, true));
+  const tail = normalize(middle === "right" ? right : edgeWord(right, false));
+  return head.length > 0 && tail.length > 0 && normalize(reference).includes(head + tail);
 }

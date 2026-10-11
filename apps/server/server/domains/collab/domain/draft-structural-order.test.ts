@@ -348,13 +348,34 @@ it("recognizes generated pure multi-way splits and merges as one change", async 
   }
 });
 
-it("conservatively joins structural windows beyond either budget", async () => {
-  for (const text of ["long ".repeat(850), "word ".repeat(260)]) {
+it("conservatively joins structural windows beyond the character budget", async () => {
+  for (const text of ["long ".repeat(850)]) {
     const result = await revision(
       `${text}ending.`,
       `${text}changed.\n\nEntirely unrelated addition.`,
       true,
     );
     expect(result.classes.size).toBe(1);
+  }
+});
+
+it.each([
+  false,
+  true,
+])("joins three-way subword and repeated-word splits and reverse merges (draft=%s)", async (draft) => {
+  for (const [whole, parts] of [
+    ["abcdefghijkl", ["abc", "de", "fghijkl"]],
+    ["abcdefghijkl", ["abcdefg", "hi", "jkl"]],
+    ["青山绿水长河天地", ["青山", "绿水", "长河天地"]],
+    ["one two one three four five six", ["one two", "one", "three four five six"]],
+    ["one two three four five one six", ["one two three four five", "one", "six"]],
+  ] as const) {
+    for (const [before, after] of [
+      [whole, parts.join("\n\n")],
+      [parts.join("\n\n"), whole],
+    ]) {
+      const result = await revision(before, after, draft);
+      expect(result.classes.size).toBe(1);
+    }
   }
 });
