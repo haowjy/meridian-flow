@@ -307,7 +307,8 @@ sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
 those shapes. Works are archived (visibility) or soft-deleted with a
 30-day restore window; expired Works are permanently purged by the hourly
 `work-purge` recovery job. `deleted_by_work_id` markers on owned rows identify
-the exact set restored during that window. Their FKs are `ON DELETE SET NULL`,
+the exact set restored during that window. Draft branches carry no marker: a
+Work's soft delete leaves its drafts untouched, and purge disposes of them. Their FKs are `ON DELETE SET NULL`,
 so deleting a Work never deletes through a stale marker; the purge deletes
 marked rows explicitly. No Work is a locked Work, not a sharing preference.
 

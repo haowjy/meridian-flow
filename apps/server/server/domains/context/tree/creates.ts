@@ -6,8 +6,8 @@
  *
  * Every function runs in its caller's transaction, which already holds the locks §14
  * names before the document locks taken here: Work rows, the draft row, then namespace
- * advisory locks. A draft's create never seeds live Yjs (its text lives in the draft's
- * branch).
+ * advisory locks. A draft's create never seeds live content: a new text row gets an empty
+ * live Yjs document, and its text lives in the draft's branch.
  */
 import type { ContextSourceId, DocumentId, DraftId, ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";

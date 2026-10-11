@@ -207,7 +207,7 @@ the WebSocket shell, or files and folders. Four neighbors split the rest.
   <!-- context -->
   <rect x="20" y="500" width="400" height="48" rx="9" fill="none" stroke="var(--rule)" stroke-width="1.2"/>
   <text x="220" y="520" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="700">context domain</text>
-  <text x="220" y="537" text-anchor="middle" fill="var(--muted)" font-size="10.5">documents rows, folders, markdown_projection</text>
+  <text x="220" y="537" text-anchor="middle" fill="var(--muted)" font-size="10.5">documents rows, folders, Markdown projections</text>
 </svg>
 <figcaption>
 Three Y.Docs per document, stacked by distance from the manuscript. Writers
@@ -231,7 +231,7 @@ live in direct mode. Every arrow into a Y.Doc is journaled first.
   </tr>
   <tr>
     <td>context domain</td>
-    <td><code>documents</code> rows, folder trees, paths and URIs, and the <code>markdown_projection</code> column.</td>
+    <td><code>documents</code> rows, folder trees, paths and URIs, and the <code>document_markdown_projections</code> table.</td>
     <td>Seeds, content reads and writes, effective reads for a thread. Content is Yjs-canonical; the projection is a cache. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code></span></td>
   </tr>
   <tr>
@@ -996,7 +996,7 @@ Depth: <a href="document-authority-and-schema.md">document authority and schema<
 <!-- ============================================================ -->
 <h2 id="derived">10. Derived outputs on this checkout</h2>
 <p>
-<code>documents.markdown_projection</code> is a text cache of a document's
+<code>document_markdown_projections.markdown</code> is a text cache of a document's
 live content. Yjs is the content authority; the projection is refreshed by
 specific write paths, and some write paths do not refresh it at all.
 </p>
@@ -1009,7 +1009,7 @@ specific write paths, and some write paths do not refresh it at all.
   </tr>
   <tr>
     <td>Context file create, write and edit</td>
-    <td>The context domain writes the operation's markdown into the column: the given content on create, collab's returned serialization on write and edit. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>persistProjection</code></span></td>
+    <td>The context domain writes the operation's markdown into the projection row: the given content on create, collab's returned serialization on write and edit. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>persistProjection</code></span></td>
   </tr>
   <tr>
     <td>AI write tool outside a reply, and tool <code>undo</code>/<code>redo</code></td>
@@ -1044,7 +1044,7 @@ specific write paths, and some write paths do not refresh it at all.
     content through collab: live markdown for ordinary scopes, and the thread's
     effective view (thread peer or Work draft) for a manuscript search inside a
     thread. So search is current even when the projection is stale. The
-    full-text and trigram indexes on <code>markdown_projection</code> exist in
+    full-text and trigram indexes on the projection table exist in
     the schema, but no query on this checkout uses them.
     <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>search</code>, <code>packages/database/src/schema/content.ts</code></span></li>
   <li><strong>Readers that do use it:</strong> the download route falls back to
