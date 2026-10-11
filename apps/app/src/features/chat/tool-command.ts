@@ -3,8 +3,6 @@ import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
-export type WriteMode = "direct" | "draft";
-
 export type ToolCommand =
   | "read"
   | "skim"

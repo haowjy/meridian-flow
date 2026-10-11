@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Call chat writes edits in every mode, without a separate drafted label.
+
 - Keep selective review commands beside incomplete changes, preserve readable dock names and whole chat attribution, keep focused controls inside the editor pane, and list this chat’s pending changes in the expanded composer strip.
 
 - Make draft review more compact: treat a new document as one actionable change, keep controls and attribution on one line, and remove redundant notes, counts, shortcuts and success toasts.

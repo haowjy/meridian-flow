@@ -108,8 +108,8 @@ msgstr ""
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
-msgstr ""
+#~ msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
+#~ msgstr ""
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -1277,8 +1277,8 @@ msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't draft"
-msgstr ""
+#~ msgid "Couldn't draft"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -1790,21 +1790,21 @@ msgid "Draft review"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafted"
-msgstr ""
+#~ msgid "Drafted"
+#~ msgstr ""
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "drafted {0}"
-msgstr ""
+#~ msgid "drafted {0}"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafted file"
-msgstr ""
+#~ msgid "Drafted file"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafting"
-msgstr "起草中"
+#~ msgid "Drafting"
+#~ msgstr "起草中"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -4636,12 +4636,12 @@ msgid "Writing the handoff brief"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Wrote"
-msgstr ""
+#~ msgid "Wrote"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Wrote file"
-msgstr ""
+#~ msgid "Wrote file"
+#~ msgstr ""
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
