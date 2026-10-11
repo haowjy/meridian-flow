@@ -44,6 +44,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
+  "apps/server/server/domains/context/adapters/context-fs/document-names-migration.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
