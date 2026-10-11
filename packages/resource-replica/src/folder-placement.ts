@@ -25,78 +25,56 @@ export function folderPlacementGraph(
       .filter((r) => r.projectId === null || r.projectId === projectId)
       .map((r) => [r.folderId, r]),
   );
-  const aliases = ordered.flatMap((node) => {
+  const key = (location: ResourceLocation) =>
+    JSON.stringify([location.scheme, ownerOf(location), location.path]);
+  const byId = new Map(ordered.map((node) => [node.id, node]));
+  const installedHomes = new Map(ordered.map((node) => [key(node.canonical), node.id]));
+  const historicalHomes = new Map<string, string>();
+  for (const node of ordered) {
     const record = recordsById.get(node.id);
-    return [
-      ...(record ? [{ id: node.id, location: record.canonical }] : []),
+    const homes = [
+      ...(record ? [record.canonical] : []),
       ...(record?.intents ?? []).flatMap((intent) =>
         intent.desired.kind === "set-folder-location"
-          ? [{ id: node.id, location: namespaceDestinationLocation(intent.desired.destination) }]
+          ? [namespaceDestinationLocation(intent.desired.destination)]
           : [],
       ),
     ];
-  });
+    for (const home of homes)
+      if (!historicalHomes.has(key(home))) historicalHomes.set(key(home), node.id);
+  }
   function anchor(location: ResourceLocation, exclude: string, exact: boolean): Edge | null {
-    const canonical = ordered
-      .filter(
-        (node) =>
-          node.id !== exclude &&
-          contains(node.canonical, location) &&
-          (exact ? node.canonical.path === location.path : node.canonical.path !== location.path),
-      )
-      .sort((a, b) => b.canonical.path.length - a.canonical.path.length)[0];
-    if (canonical)
-      return {
-        parent: canonical.id,
-        base: location,
-        suffix: location.path.slice(canonical.canonical.path.length),
-      };
-    if (!exact) return null;
-    const alias = aliases.find(
-      (a) =>
-        a.id !== exclude &&
-        a.location.scheme === location.scheme &&
-        sameOwner(a.location, location) &&
-        a.location.path === location.path,
-    );
-    if (alias) return { parent: alias.id, base: location, suffix: "" };
-    // A child path may name an ancestor's earlier optimistic rename. Translate it back
-    // to installed identity before looking up the actual destination parent.
-    // Each identity can translate at most once on a branch. Revisiting it describes
-    // an alias cycle, not another ancestor. This bounds traversal by simple paths
-    // through the finite identity graph, including path-growing rename cycles.
-    const queue = [{ location, used: new Set<string>() }];
-    const key = (at: ResourceLocation, used: Set<string>) =>
-      JSON.stringify([at.scheme, ownerOf(at), at.path, [...used].sort()]);
-    const seen = new Set<string>([key(location, new Set())]);
-    for (let i = 0; i < queue.length; i++) {
-      const current = queue[i];
-      for (const a of aliases) {
-        if (current.used.has(a.id) || !contains(a.location, current.location)) continue;
-        const node = ordered.find((n) => n.id === a.id);
-        if (!node) continue;
-        const translated = {
-          ...node.canonical,
-          path: node.canonical.path + current.location.path.slice(a.location.path.length),
-        };
-        const used = new Set([...current.used, a.id]);
-        const state = key(translated, used);
-        if (seen.has(state)) continue;
-        seen.add(state);
-        const match = ordered.find(
-          (n) =>
-            n.id !== exclude &&
-            n.canonical.scheme === translated.scheme &&
-            sameOwner(n.canonical, translated) &&
-            n.canonical.path === translated.path,
-        );
-        if (match) return { parent: match.id, base: location, suffix: "" };
-        queue.push({ location: translated, used });
+    const edge = (id: string, suffix: string): Edge | null =>
+      id !== exclude ? { parent: id, base: location, suffix } : null;
+    if (exact) {
+      const direct = installedHomes.get(key(location)) ?? historicalHomes.get(key(location));
+      if (direct && direct !== exclude) return edge(direct, "");
+    }
+    let path = location.path.slice(0, location.path.lastIndexOf("/"));
+    while (path) {
+      const home = { ...location, path };
+      if (!exact) {
+        const id = installedHomes.get(key(home));
+        if (id && id !== exclude) return edge(id, location.path.slice(path.length));
+      } else {
+        // A historical ancestor home names its installed subtree. Bind the
+        // descendant identity directly, not a sequence of historical rewrites.
+        const ancestor = historicalHomes.get(key(home));
+        if (ancestor) {
+          const canonical = byId.get(ancestor)!.canonical;
+          const descendant = installedHomes.get(
+            key({
+              ...canonical,
+              path: canonical.path + location.path.slice(path.length),
+            }),
+          );
+          if (descendant && descendant !== exclude) return edge(descendant, "");
+        }
       }
+      path = path.slice(0, path.lastIndexOf("/"));
     }
     return null;
   }
-  const canonical = new Map<string, Edge>();
   const edges = new Map<string, Edge>();
   for (const node of ordered) {
     const fallback = anchor(node.canonical, node.id, false) ?? {
@@ -104,7 +82,6 @@ export function folderPlacementGraph(
       base: node.canonical,
       suffix: node.canonical.path,
     };
-    canonical.set(node.id, fallback);
     const record = recordsById.get(node.id);
     const desired =
       record &&
@@ -132,37 +109,30 @@ export function folderPlacementGraph(
       : { parent: null, base: target, suffix: target.path };
     edges.set(node.id, destinationInstalled(parent) && (!parentPath || bound) ? edge : fallback);
   }
-  // Cycles have no topological ordering. Retire every cyclic placement together,
-  // rather than letting traversal order choose which writer command wins.
-  for (;;) {
-    const cyclic = new Set<string>();
-    for (const node of ordered) {
-      const path: string[] = [];
-      let id: string | null = node.id;
-      while (id !== null && edges.has(id)) {
-        const at = path.indexOf(id);
-        if (at >= 0) {
-          for (const member of path.slice(at)) cyclic.add(member);
-          break;
-        }
-        path.push(id);
-        id = edges.get(id)?.parent ?? null;
-      }
-    }
-    if (!cyclic.size) break;
-    for (const id of cyclic) edges.set(id, canonical.get(id)!);
-    // Restoring canonical parents can expose another cycle with still-active moves.
-    // Each wave retires more placement edges; canonical edges strictly reduce path depth.
-  }
   const resolved = new Map<string, ResourceLocation>();
-  function resolve(id: string, visiting = new Set<string>()): ResourceLocation {
+  const resolving: string[] = [];
+  const inProgress = new Map<string, number>();
+  function resolve(id: string): ResourceLocation {
     const cached = resolved.get(id);
     if (cached) return cached;
-    const node = ordered.find((n) => n.id === id)!;
-    if (visiting.has(id)) return node.canonical;
-    visiting.add(id);
+    const node = byId.get(id)!;
+    const cycleStart = inProgress.get(id);
+    if (cycleStart !== undefined) {
+      // Every cycle member falls back together; traversal order cannot pick a winner.
+      for (let i = cycleStart; i < resolving.length; i++) {
+        const member = resolving[i];
+        resolved.set(member, byId.get(member)!.canonical);
+      }
+      return node.canonical;
+    }
+    inProgress.set(id, resolving.length);
+    resolving.push(id);
     const edge = edges.get(id)!;
-    const parent = edge.parent ? resolve(edge.parent, visiting) : null;
+    const parent = edge.parent ? resolve(edge.parent) : null;
+    resolving.pop();
+    inProgress.delete(id);
+    const fallback = resolved.get(id);
+    if (fallback) return fallback;
     const path = parent ? parent.path + edge.suffix : edge.suffix;
     const location = {
       ...(parent ?? edge.base),

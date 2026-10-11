@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Deeply nested pending folder renames no longer stall workspace projection when a destination is missing.
+
 - Folder moves and renames keep descendants visible in the tree and move open Editor and dock paths together, including across Works. Folder repair stays reachable even when its catalog row disappears.
 
 - Folder moves follow destination and ancestor renames regardless of settlement order. Missing destinations keep their last canonical placement instead of breaking the file catalog.
