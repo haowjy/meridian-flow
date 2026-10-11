@@ -147,7 +147,10 @@ import { createBranchThreadPeerAgentEditCore } from "./thread-peer-composition.j
 
 export type { DocumentWriteHook } from "./contracts.js";
 
+import type { DetachedWorkTracker } from "../runtime/detached-work.js";
+
 type CollabDomainDeps = {
+  backgroundTasks?: DetachedWorkTracker;
   db: Database;
   /** How links and image sources spell, loaded per document operation (contract §4.4). */
   links: DocumentLinkScopes;
@@ -446,6 +449,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
+    backgroundTasks: deps.backgroundTasks,
     journal: persistence.journal,
     branchStore: branches,
     branchCoordinator,

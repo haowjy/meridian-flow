@@ -50,6 +50,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { collabHook } from "../domain/collab-test-hooks.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -1267,6 +1268,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           current.generation !== captured.generation
         )
           return;
+        await collabHook("checkpoint.afterAuthorityRead");
         const existing = await latestCheckpoint(txDb, docId, captured);
         // A checkpoint names a durable journal cut. A later snapshot at the same
         // cut cannot contain legitimate extra state because admission is journal-first.

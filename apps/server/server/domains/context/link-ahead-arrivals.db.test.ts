@@ -1,4 +1,5 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
+
 import { createHash, randomUUID } from "node:crypto";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
@@ -17,6 +18,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
+import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore } from "../storage/index.js";
 import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
@@ -62,6 +64,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       { workId, name: "Scratch", slug: "scratch", scope: "work" },
     ]);
     const ports = await createProductionAppPorts({
+      backgroundTasks: processDetachedWork,
       db,
       eventSink: createNoopEventSink(),
       environment: { OPENAI_API_KEY: "sk-test-ahead-arrivals" },

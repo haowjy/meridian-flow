@@ -422,6 +422,7 @@ function concurrentRenderBudgetBytes(request: {
 
 export async function createProductionAppPorts(input: {
   db: Database;
+  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -467,7 +468,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = createDetachedWorkTracker();
+  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   let boundCollab: CollabDomain | null = null;
@@ -543,7 +544,12 @@ export async function createProductionAppPorts(input: {
     },
   });
   // One repair on touch for every production tree reader and create (§12.4).
-  const hiddenNodeRepair = createHiddenNodeRepair({ db, eventSink, objects: objectRelease });
+  const hiddenNodeRepair = createHiddenNodeRepair({
+    db,
+    eventSink,
+    objects: objectRelease,
+    backgroundTasks,
+  });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -552,6 +558,7 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
+    backgroundTasks,
     arrivals,
     catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,

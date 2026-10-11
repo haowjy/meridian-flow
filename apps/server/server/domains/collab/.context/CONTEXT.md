@@ -298,3 +298,12 @@ and the view-revision digest share it. It is the Yjs twin of
 Certified derivation retains its location CAS on `documents` and upserts
 `document_markdown_projections` only on a hit, in the same transaction as links and
 watermarks. Location-only writes therefore leave the projection GIN indexes alone.
+
+## Detached room checkpoints
+
+A room store captures its cut and enqueues its checkpoint; completing the store
+or unloading the room does not mean that checkpoint committed. Checkpoint queues
+join the composition's detached-work tracker, so shutdown and DB fixture resets
+await them through the tracker. Standalone collab adapters default to the shared
+tracker; production composition supplies its own and DB compositions supply the
+worker's shared tracker.

@@ -3,6 +3,7 @@
  * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
  * as the ordinary overwrite and certified for one holder.
  */
+
 import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb } from "@meridian/database";
@@ -25,8 +26,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
+import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
 import { materializeRootLineageForDoc } from "./domain/provenance.js";
@@ -95,18 +98,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .insert(threadWorks)
         .values({ threadId, workId: noWorkId, projectId, isPrimary: true });
       const ports = await createProductionAppPorts({
+        backgroundTasks: processDetachedWork,
         db,
         eventSink: createNoopEventSink(),
         environment: { OPENAI_API_KEY: "sk-test-link-binding" },
       });
       const app = composeAppServices(ports);
-      ports.documentSync.bindHocuspocus(
-        new Hocuspocus({
-          yDocOptions: { gc: false, gcFilter: () => true },
-          onStoreDocument: ({ documentName, document }) =>
-            ports.documentSync.storeHocuspocusDocument(documentName, document),
-        }),
-      );
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        onStoreDocument: ({ documentName, document }) =>
+          ports.documentSync.storeHocuspocusDocument(documentName, document),
+      });
+      ports.documentSync.bindHocuspocus(hocuspocus);
       // Runs once, after the next whole-document write is bound and before it applies.
       let afterNextBind: (() => Promise<void>) | null = null;
       const bindMarkdown = ports.documentSync.bindMarkdown;
@@ -447,6 +450,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           later,
         ]);
       } finally {
+        await unloadHocuspocus(hocuspocus);
         await app.shutdown();
       }
     });
