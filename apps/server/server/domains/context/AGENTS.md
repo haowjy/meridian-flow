@@ -129,3 +129,7 @@ manifest members, for drafted sources) whose ref names a moved document
 Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
 refs once, against its final tree, through `DocumentArrivals`; see
 [`.context/CONTEXT.md`](.context/CONTEXT.md#ahead-refs-and-arrivals).
+
+Lineage source hiding is reversible authority loss (`lineage_hidden`), not document
+deletion. Project-final availability must preserve that distinction so cached
+Scratch resources can return on chat or Work restore.

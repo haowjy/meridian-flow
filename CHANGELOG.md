@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.
+
 - Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.
 - Chat Recent follows document renames and moves from the file catalog.
 

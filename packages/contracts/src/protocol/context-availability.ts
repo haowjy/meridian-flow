@@ -90,7 +90,7 @@ export type ProjectContextIdentityResolution =
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       authority: ProjectContextAuthority;
-      reason: "work_deleted" | "project_deleted";
+      reason: "work_deleted" | "project_deleted" | "lineage_hidden";
     }
   | {
       kind: "not-visible";
