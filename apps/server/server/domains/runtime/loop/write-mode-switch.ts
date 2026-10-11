@@ -6,7 +6,12 @@
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { BlockUpsertedRow, Turn } from "@meridian/contracts/threads";
-import { type AiWriteMode, type Work, workLifecycleState } from "@meridian/contracts/works";
+import {
+  type AiWriteMode,
+  isWorkArchived,
+  type Work,
+  workLifecycleState,
+} from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
 import { type ThreadWorksRepository, writeModeSwitchMetadata } from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
@@ -27,7 +32,7 @@ export function writeModeSwitchNotice(
   mode: AiWriteMode,
   mayUnarchive: boolean,
 ): string {
-  const modeText = writeModeLines({ archivedAt: work.archivedAt, aiWriteMode: mode }, mayUnarchive)
+  const modeText = writeModeLines({ mode, archived: isWorkArchived(work), mayUnarchive })
     .map((line) => line.trim().replace(/^writes: [^.]*\.\s*/, ""))
     .join(" ");
   return mode === "direct"

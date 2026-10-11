@@ -2,7 +2,7 @@
  * Whole-document copy of a binary file (D24): the one place a copy depends on
  * how a document is stored. It duplicates the storage object, so deleting
  * either file never removes the other's bytes, and creates the destination
- * with `metadata.copiedFrom` through the copier's own port: in a draft-mode Work
+ * with `metadata.copiedFrom` through the copier's own port: in a draft-mode chat
  * that is a hidden row holding the draft's object, never shared (12b-Q2).
  * Tracked documents copy through agent-edit instead.
  */

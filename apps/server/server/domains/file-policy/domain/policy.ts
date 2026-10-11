@@ -27,7 +27,7 @@ import {
 } from "./types.js";
 
 interface SourceRule {
-  /** Whether a draft-mode Work holds agent writes to this source for review. */
+  /** Whether a draft-mode chat's Work holds agent writes to this source for review. */
   readonly drafted: boolean;
   /** The most any agent may do here, whatever its permission. */
   readonly agentCap: FileAccessLevel;

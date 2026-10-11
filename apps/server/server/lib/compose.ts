@@ -1066,13 +1066,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     accountSkillInstalls: ports.accountSkillInstalls,
     toolRegistry,
     projectPreferences: ports.preferences,
-    workWriteMode: {
-      async read(workId: string) {
-        const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
-        if (!work) throw new Error(`Work not found: ${workId}`);
-        return work.aiWriteMode;
-      },
-    },
     workContext,
     childRunCoordinator,
     interruptRegistry,

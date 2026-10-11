@@ -4,6 +4,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   isWriteModeSwitchTurn,
+  type ThreadRepository,
   type TurnRepository,
   TurnStartConflictError,
 } from "../../threads/index.js";
@@ -45,7 +46,7 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
-  repos: { turns: TurnRepository };
+  repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
@@ -295,6 +296,8 @@ export function createRunSessions(deps: {
         });
         const persisted = await deps.repos.turns.findById(input.replyTurnId);
         const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
+        // A Retry is a new reply, so it runs in the chat's current mode (D62).
+        const thread = await deps.repos.threads.findById(input.threadId);
         const turn =
           persisted ??
           createLocalTurn({
@@ -306,7 +309,7 @@ export function createRunSessions(deps: {
             role: "assistant",
             origin: "assistant",
             status: "pending",
-            writeMode: failedTurn.writeMode ?? undefined,
+            writeMode: thread?.aiWriteMode,
           });
         backgroundTasks.track(run.execute(), "detached reply retry");
         return { created: true as const, turn };

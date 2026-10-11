@@ -93,7 +93,6 @@ export async function runCrossWorkProbe(
     createdByUserId: USER_ID,
     name: "Work B",
     slug: "work-b",
-    defaultAiWriteMode: "draft",
   });
   await db.insert(schema.threads).values({
     rootThreadId: THREAD_B_ID,
@@ -103,6 +102,7 @@ export async function runCrossWorkProbe(
     title: "Work B primary chat",
     kind: "primary",
     status: "idle",
+    aiWriteMode: "draft",
   });
   await db.insert(schema.turns).values({
     id: TURN_B_ID,

@@ -58,7 +58,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Rewrite",
         slug: "rewrite",
-        defaultAiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
@@ -83,6 +82,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Draft-mode tools",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: THREAD.turnId,
@@ -188,9 +188,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await first.save();
       await db
-        .update(schema.works)
-        .set({ defaultAiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .update(schema.threads)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.threads.id, THREAD.threadId));
 
       const { call } = await script.begin();
       const kept = await call("read", { path: CHAPTER, version: "draft" });
@@ -210,7 +210,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // D31: a create or copy would make its file in the archived Work's frozen draft.
-    it("refuses a create or copy into an archived draft-mode Work with D31's copy", async () => {
+    it("refuses a draft-mode chat's create or copy into its archived Work with D31's copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
         .update(schema.works)
@@ -218,7 +218,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, WORK_ID));
       const { call } = await script.begin();
       const frozen =
-        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch @rewrite to auto-apply.';
+        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch this chat to auto-apply.';
 
       for (const args of [
         { command: "create", path: "manuscript://new.md", content: "Never lands." },
@@ -256,9 +256,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls a copy back with its reply", async () => {
       await db
-        .update(schema.works)
-        .set({ defaultAiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .update(schema.threads)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.threads.id, THREAD.threadId));
       const script = await startWithChapter("Writer live content.");
       const { call, responseId } = await script.begin();
 
@@ -402,9 +402,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
-        .update(schema.works)
-        .set({ defaultAiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .update(schema.threads)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.threads.id, THREAD.threadId));
       const script = await startWithChapter("Writer live content.");
       const { call } = await script.begin();
 

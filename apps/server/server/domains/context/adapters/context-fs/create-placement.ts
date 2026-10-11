@@ -22,7 +22,7 @@ import { resolveCreateTarget } from "./create-target.js";
 import type { LiveCreate } from "./live-create.js";
 
 /**
- * People and auto-apply Works are live. A draft-mode Work's thread on a drafted source is
+ * People and auto-apply chats are live. A draft-mode chat on a drafted source is
  * a draft placement: reads see the Work's active draft (live while it has none), and
  * creates make hidden rows in that draft, which the command transaction ensures.
  */
