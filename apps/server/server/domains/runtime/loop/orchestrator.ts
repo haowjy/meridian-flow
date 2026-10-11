@@ -1954,7 +1954,9 @@ async function executeLoop({
         // still yields to the switch instead of failing.
         if (
           yieldRequested ||
-          (!queuedDrain && (await deps.delivery.yieldsAtBoundary(input.threadId)))
+          (!queuedDrain &&
+            currentTurn.role === "assistant" &&
+            (await deps.delivery.yieldsAtBoundary(input.threadId)))
         )
           return yieldExit();
         iteration += 1;
