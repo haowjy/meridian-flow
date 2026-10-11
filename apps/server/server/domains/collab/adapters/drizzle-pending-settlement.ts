@@ -58,9 +58,9 @@ import type {
   PublicationRefusal,
   StagedPublicationMember,
 } from "../domain/ports/settlement-publication.js";
+import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
 import {
   admitSettlementMemberWithinTx,
-  joinAdmissionWithinTx,
   readSettlementCuts,
   readSettlementMember,
   readSettlementMembers,
