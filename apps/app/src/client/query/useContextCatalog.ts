@@ -198,6 +198,7 @@ function overlayResourceCatalogView(
         path: folderPath,
         uri: catalogUri(location, folderPath.join("/")),
         hasChildren: true,
+        navigationOnly: true,
       });
       parentId = folderId;
     }
@@ -306,6 +307,7 @@ function projectCatalogDirectory(
     name: entry.name,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
+    ...(entry.navigationOnly ? { navigationOnly: true } : {}),
     ...(repair
       ? {
           namespaceFailure: repair.kind,

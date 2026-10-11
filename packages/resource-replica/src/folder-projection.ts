@@ -163,34 +163,55 @@ export function createResourcePlacement(
         };
         projected.push(source);
       }
-      let parentId = source.entryId;
-      const path = location.path.split("/").filter(Boolean);
-      for (let depth = 1; depth <= path.length; depth++) {
-        const parts = path.slice(0, depth);
-        const leaf = depth === path.length;
+      projected.push({
+        kind: "folder",
+        entryId: folder.folderId,
+        sourceId: source.entryId,
+        parentId: source.entryId,
+        scope: source.scope,
+        name: location.name,
+        path: location.path.split("/").filter(Boolean),
+        uri: namespaceUri(location)!,
+        hasChildren: false,
+      });
+    }
+    // Install all real identities first. Only then fill unoccupied ancestor homes.
+    // A missing parent must never steal a real recovery identity's children.
+    for (const entry of [...projected]) {
+      if (entry.kind !== "folder") continue;
+      let parentId = entry.sourceId;
+      for (let depth = 1; depth < entry.path.length; depth++) {
+        const parts = entry.path.slice(0, depth);
         const existing = projected.find(
           (row) =>
             row.kind === "folder" &&
-            row.sourceId === source.entryId &&
+            row.sourceId === entry.sourceId &&
+            sameCatalogScope(row.scope, entry.scope) &&
             row.path.join("/") === parts.join("/"),
         );
-        if (!leaf && existing) {
+        if (existing) {
           parentId = existing.entryId;
           continue;
         }
-        const entryId = leaf
-          ? folder.folderId
-          : `repair-parent:${source.entryId}:${parts.join("/")}`;
+        const entryId = `repair-parent:${entry.sourceId}:${parts.join("/")}`;
+        const parsed = parseContextUri(entry.uri);
+        if (!parsed.ok) continue;
         projected.push({
           kind: "folder",
           entryId,
-          sourceId: source.entryId,
+          sourceId: entry.sourceId,
           parentId,
-          scope: source.scope,
+          scope: entry.scope,
           name: parts.at(-1)!,
           path: parts,
-          uri: namespaceUri({ ...location, path: `/${parts.join("/")}` })!,
-          hasChildren: false,
+          uri: namespaceUri({
+            scheme: parsed.value.scheme,
+            path: `/${parts.join("/")}`,
+            name: parts.at(-1)!,
+            ...catalogEntryOwner(entry.scope, parsed.value.authority),
+          })!,
+          hasChildren: true,
+          navigationOnly: true,
         });
         parentId = entryId;
       }
