@@ -32,6 +32,7 @@ export function contextErrorToHttp(error: ContextError): never {
         ),
         409,
       );
+    case "invalid_name":
     case "invalid_operation":
       throw createError({ statusCode: 400, message: error.message ?? "Invalid context operation" });
     case "not_found":

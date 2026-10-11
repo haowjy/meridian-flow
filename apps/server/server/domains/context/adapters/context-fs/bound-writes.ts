@@ -5,7 +5,11 @@
  * the command transaction will hold; the transaction then applies the
  * bound write and checks it was bound for what occupies the path now.
  */
-import { classifyFiletype, type Filetype, filetypeForPath } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type Filetype,
+  parseDocumentFilename,
+} from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { BoundWrite, MarkdownDocumentStore } from "../../../collab/index.js";
@@ -18,7 +22,9 @@ import type { ContextDocument } from "../../ports/context-document-store.js";
 export const DEFAULT_EDITABLE_FILETYPE = "markdown";
 
 export function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
-  const filetype = filetypeForPath(path);
+  const parsed = parseDocumentFilename(path);
+  if (!parsed.ok) return Err(parsed.error);
+  const filetype = parsed.value.filetype;
   if (classifyFiletype(filetype).kind === "tracked") return Ok(filetype);
   return Err(binaryTrackedWriteFault(path));
 }
@@ -88,6 +94,8 @@ export class BoundWrites {
   ): Promise<Result<BoundWrite, AdapterFault>> {
     const { filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return Err(parsed.error);
     const filetype = existing
       ? Ok(existing.filetype ?? DEFAULT_EDITABLE_FILETYPE)
       : trackedFiletypeForPath(filename);

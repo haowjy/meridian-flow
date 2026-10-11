@@ -14,6 +14,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
+import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 
 export type ContextNamespace = {
   projectId: string;
@@ -289,4 +290,30 @@ export async function hasOppositeContextEntry(
     )
     .limit(1);
   return !!row;
+}
+
+/** Check the complete arriving Work tree before restoring either table. */
+export async function guardWorkContextRestore(db: Database, workId: string): Promise<void> {
+  const sources = await currentDrizzleDb(db)
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(eq(contextSources.workId, workId as never));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      sources.map((row) => row.id),
+    ),
+  );
+  const rows = await currentDrizzleDb(db).execute(sql`
+    SELECT d.id FROM documents d JOIN folders f
+      ON f.context_source_id = d.context_source_id AND f.parent_id IS NOT DISTINCT FROM d.folder_id
+      AND f.name = d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END
+    WHERE d.kind = 'content'
+      AND (d.deleted_by_work_id = ${workId}::uuid OR f.deleted_by_work_id = ${workId}::uuid)
+      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
+      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
+    LIMIT 1
+  `);
+  if (rows.length > 0) throw new ContextEntryConflictError();
 }

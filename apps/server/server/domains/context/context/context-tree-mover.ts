@@ -9,6 +9,8 @@
 import {
   type DeleteContextEntryResult,
   isWorkScopedProjectContextScheme,
+  parseDocumentFilename,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
@@ -189,6 +191,18 @@ export class ContextTreeMover {
 
           const prepared = await this.prepareMove(source, destination, policy);
           if (!prepared.ok) return prepared;
+          if (
+            prepared.value.expectedTarget.state === "occupied" &&
+            prepared.value.expectedTarget.token.nodeId === prepared.value.source.nodeId &&
+            prepared.value.expectedTarget.token.sourceId === prepared.value.source.sourceId
+          ) {
+            return prepared.value.source.kind === "file"
+              ? this.graduateInPlace({ ...source, path: prepared.value.source.path })
+              : Ok({
+                  movedNodeId: prepared.value.source.nodeId,
+                  destinationPath: prepared.value.source.path,
+                });
+          }
           const result = await callAdapter(
             destination.canonical,
             () =>
@@ -321,11 +335,29 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(
+    let targetPath = await this.resolveTarget(
       destination,
       sourceBasename,
       policy.target === "exact",
     );
+    if (!targetPath.ok) return targetPath;
+    if (sourceToken.value.kind === "file") {
+      const sourceParts = parseDocumentFilename(sourceBasename, {
+        binary: sourceToken.value.filetype === null,
+      });
+      if (!sourceParts.ok) return Err({ ...sourceParts.error, uri: source.canonical });
+      const targetParts = parseDocumentFilename(basename(targetPath.value), {
+        sourceExtension: sourceParts.value.extension,
+        binary: sourceToken.value.filetype === null,
+      });
+      if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
+      targetPath = Ok(
+        joinPath(
+          dirname(targetPath.value),
+          renderFilename(targetParts.value.name, targetParts.value.extension),
+        ),
+      );
+    }
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -420,8 +452,10 @@ export class ContextTreeMover {
     destinationUri: string,
     options?: ContextMoveOptions,
   ): Result<void, ContextError> {
+    if (source.nodeId === existingTarget.nodeId && source.sourceId === existingTarget.sourceId)
+      return Ok(undefined);
     if (source.kind !== existingTarget.kind) {
-      return Err({ code: "invalid_operation", uri: destinationUri });
+      return Err({ code: "conflict", uri: destinationUri });
     }
     if (!options?.overwrite || source.kind === "directory") {
       return Err({ code: "conflict", uri: destinationUri });

@@ -15,6 +15,7 @@ import {
   formatDocumentFile,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
@@ -70,6 +71,7 @@ export async function resolveDocumentAddress(
   command: DocumentCommandName,
   path: string,
   options: {
+    sourceExtension?: string;
     deferTrackedDocumentSync?: boolean;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
@@ -80,6 +82,9 @@ export async function resolveDocumentAddress(
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
+      ...(options.sourceExtension !== undefined
+        ? { sourceExtension: options.sourceExtension }
+        : {}),
       ...(options.origin ? { origin: options.origin } : {}),
       ...(options.deferTrackedDocumentSync ? { deferDocumentSync: true } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
@@ -94,7 +99,7 @@ export async function resolveDocumentAddress(
     return {
       documentId: ensured.value.documentId,
       uri: ensured.value.uri,
-      filePath: ensured.value.uri.startsWith("scratch://@/") ? ensured.value.uri : basePath,
+      filePath: ensured.value.uri,
       created: ensured.value.created,
     };
   }
@@ -133,7 +138,7 @@ export async function resolveDocumentAddress(
   return {
     documentId: ref.value.documentId,
     uri: ref.value.uri,
-    filePath: ref.value.uri.startsWith("scratch://@/") ? ref.value.uri : basePath,
+    filePath: ref.value.uri,
     ...(fragment === undefined ? {} : { fragment }),
   };
 }
@@ -318,7 +323,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         },
         deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
-          ? { metadata: { copiedFrom: copied.copiedFrom } }
+          ? {
+              metadata: { copiedFrom: copied.copiedFrom },
+              sourceExtension: sourceExtension(copied.copiedFrom.uri),
+            }
           : {}),
       }),
     );
@@ -390,4 +398,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       shown: outcome.shown,
     };
   };
+}
+
+function sourceExtension(uri: string): string {
+  const parsed = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  return parsed.ok ? parsed.value.extension : "";
 }

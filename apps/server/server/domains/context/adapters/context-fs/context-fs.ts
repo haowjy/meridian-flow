@@ -11,6 +11,8 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
+  parseBinaryFilename,
+  parseDocumentFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -32,7 +34,7 @@ import { countWords, createDocumentCreationAggregate } from "../../../collab/ind
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
-import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import { joinPath, renderFilename, splitPath } from "../../context/paths.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
@@ -243,7 +245,9 @@ export class ContextFS implements ContextSchemeAdapter {
         if (!filename) return null;
         const folderId = await this.findFolderId(dir);
         if (folderId === MISSING) return null;
-        const { name, extension } = parseFilename(filename);
+        const parsed = parseDocumentFilename(filename);
+        if (!parsed.ok) return null;
+        const { name, extension } = parsed.value;
         return this.store.findDocument(folderId, name, extension);
       },
     });
@@ -399,13 +403,15 @@ export class ContextFS implements ContextSchemeAdapter {
     const folderId = await this.findFolderId(dir);
     if (folderId === MISSING) return Ok(null);
 
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return Err(parsed.error);
+    const { name, extension } = parsed.value;
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
     if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
 
     const base = {
-      path,
+      path: joinPath(dir.join("/"), renderFilename(doc.name, doc.extension)),
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
@@ -445,7 +451,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const folderId = await this.findFolderId(dir);
     if (folderId === MISSING) return Ok(null);
 
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return Err(parsed.error);
+    const { name, extension } = parsed.value;
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
     if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
@@ -479,7 +487,12 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private holderUri(path: string): string {
-    return canonicalContextUri(this.scheme, path, this.holder.authority);
+    const { dir, filename } = splitPath(path);
+    const parsed = parseDocumentFilename(filename);
+    const canonicalPath = parsed.ok
+      ? joinPath(dir.join("/"), renderFilename(parsed.value.name, parsed.value.extension))
+      : path;
+    return canonicalContextUri(this.scheme, canonicalPath, this.holder.authority);
   }
 
   private async writeInTransaction(
@@ -494,7 +507,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const resolvedFiletype = trackedFiletypeForPath(filename);
     if (!resolvedFiletype.ok) return resolvedFiletype;
     const folderId = await this.ensureFolderId(dir);
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return Err(parsed.error);
+    const { name, extension } = parsed.value;
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
@@ -583,7 +598,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!resolvedFiletype.ok) return resolvedFiletype;
     const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return Err(parsed.error);
+    const { name, extension } = parsed.value;
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing) {
       if (existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
@@ -664,7 +681,8 @@ export class ContextFS implements ContextSchemeAdapter {
     const folderId = await this.ensureFolderId(folderSegments);
     for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
       const documents = await this.store.listDocuments(folderId);
-      const maxNumber = documents.reduce((max, document) => {
+      const folders = await this.store.listFolders(folderId);
+      const maxNumber = [...documents, ...folders].reduce((max, document) => {
         const match = UNTITLED_NAME_PATTERN.exec(document.name);
         if (!match) return max;
         const suffix = Number(match[1]);
@@ -677,7 +695,7 @@ export class ContextFS implements ContextSchemeAdapter {
         id: options.documentId,
         folderId,
         name,
-        extension: "md",
+        extension: "",
         filetype: "markdown",
         content: null,
         provisionalName: true,
@@ -727,11 +745,13 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
     }
-    const resolvedFiletype = trackedFiletypeForPath(filename);
+    const parsed = parseDocumentFilename(filename, { sourceExtension: options?.sourceExtension });
+    if (!parsed.ok) return Err(parsed.error);
+    const { name, extension } = parsed.value;
+    const resolvedFiletype = trackedFiletypeForPath(renderFilename(name, extension));
     if (!resolvedFiletype.ok) return resolvedFiletype;
     const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
-    const { name, extension } = parseFilename(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
@@ -767,7 +787,9 @@ export class ContextFS implements ContextSchemeAdapter {
     }
     return this.commandExecutor.run(async () => {
       const folderId = await this.ensureFolderId(dir);
-      const { name, extension } = parseFilename(filename);
+      const parsed = parseBinaryFilename(filename);
+      if (!parsed.ok) return Err(parsed.error);
+      const { name, extension } = parsed.value;
       const doc = await this.store.createBinaryDocument({
         id: options.documentId,
         folderId,

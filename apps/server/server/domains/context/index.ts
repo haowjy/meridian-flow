@@ -1,5 +1,6 @@
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
+export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
@@ -19,7 +20,7 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
+export { joinPath, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
   parseContextUri,
@@ -68,6 +69,7 @@ export type {
   CreateBinaryDocumentInput,
   CreateDocumentInput,
 } from "./ports/context-document-store.js";
+export { ContextEntryConflictError } from "./ports/context-document-store.js";
 export type {
   BinaryFileEntry,
   BinaryFileRef,
@@ -135,7 +137,6 @@ export {
   type PromotionService,
 } from "./promotion/promotion-service.js";
 export type { ResultProvenance } from "./promotion/result-provenance.js";
-
 export {
   type ScratchLineage,
   type ScratchLineages,

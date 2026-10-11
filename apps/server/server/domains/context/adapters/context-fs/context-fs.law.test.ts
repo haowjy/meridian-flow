@@ -156,7 +156,7 @@ describe("ContextFS createUntitledDocument", () => {
     ]);
     expect(
       outcomes.map((outcome) => (outcome.ok ? outcome.value.name : outcome.error.code)).sort(),
-    ).toEqual(["Untitled 1.md", "Untitled 2.md"]);
+    ).toEqual(["Untitled 1", "Untitled 2"]);
   });
 
   it("returns a conflict after bounded allocation collisions", async () => {
@@ -247,7 +247,7 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
     await expect(context.stat("first/chapter.txt")).resolves.toMatchObject({
       ok: true,
-      value: { documentId: initial.value.documentId, filetype: "text" },
+      value: { documentId: initial.value.documentId, filetype: "markdown" },
     });
     await expect(context.stat("second/chapter.txt")).resolves.toEqual({ ok: true, value: null });
   });
@@ -317,5 +317,92 @@ describe("ContextFS ensureTrackedDocument", () => {
       },
     });
     await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
+  });
+});
+
+describe("canonical document naming laws", () => {
+  it("creates one row for every prose spelling, returns canonical paths and refuses disguised data", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const first = await fs.ensureTrackedDocument("ch12.md");
+    expect(first.ok).toBe(true);
+    for (const path of ["ch12", "ch12.md", "ch12.txt", "ch12.markdown", "ch12.mdx", "ch12.MD.md"]) {
+      expect(await fs.ensureTrackedDocument(path)).toMatchObject({
+        ok: true,
+        value: { created: false, documentId: first.ok ? first.value.documentId : "" },
+      });
+      expect(await fs.stat(path)).toMatchObject({
+        ok: true,
+        value: { path: "ch12", filetype: "markdown" },
+      });
+      expect(await fs.read(path)).toMatchObject({ ok: true, value: { content: "" } });
+    }
+    expect([...backing.documents.values()]).toHaveLength(1);
+    expect(await fs.ensureTrackedDocument("data.json.md")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_name" },
+    });
+    await fs.ensureTrackedDocument("outline.json");
+    expect(await fs.stat("outline")).toEqual({ ok: true, value: null });
+  });
+  it("renames aliases in place and keeps the actual non-prose extension for CAS destinations and copies", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    const prose = await fs.ensureTrackedDocument("ch12");
+    if (!prose.ok) throw new Error("fixture failed");
+    expect(
+      await mover.commitWriterLocation(dispatch("ch12"), dispatch("ch12.md"), {
+        kind: "file",
+        nodeId: prose.value.documentId,
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { destinationPath: "ch12", movedNodeId: prose.value.documentId },
+    });
+    await fs.ensureTrackedDocument("config.toml");
+    expect(
+      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings")),
+    ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
+    expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
+      ok: true,
+    });
+    expect(await fs.stat("copied.toml")).toMatchObject({ ok: true, value: { filetype: "text" } });
+    expect([...backing.documents.values()].map((row) => [row.name, row.extension])).toEqual([
+      ["ch12", ""],
+      ["settings", "toml"],
+      ["copied", "toml"],
+    ]);
+  });
+  it("refuses file/folder clashes in both directions and at exact moves", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Lore");
+    expect(await fs.ensureTrackedDocument("Lore.md")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    await fs.ensureTrackedDocument("Chapter.md");
+    await expect(fs.mkdir("Chapter")).rejects.toThrow("Context entry already exists");
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    expect(await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect(await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
   });
 });
