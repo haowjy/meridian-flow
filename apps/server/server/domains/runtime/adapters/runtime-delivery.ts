@@ -815,7 +815,6 @@ export function createDeliveryAdapter(
       },
       applyDueSwitches,
       replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
-      wake: (id) => schedulePostCommit(() => deps.runStarter.start(id)),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlIds) => {

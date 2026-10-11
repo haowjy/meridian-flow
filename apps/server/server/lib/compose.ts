@@ -93,6 +93,7 @@ import {
   type EventQuery,
   type EventSink,
   emitEvent,
+  unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
   type AccountSkillInstallStore,
@@ -201,6 +202,7 @@ import {
   resolveThreadUserInvocableSkills,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
+import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
 import {
   createInterruptRegistry,
   type InterruptRegistry,
@@ -753,6 +755,21 @@ export async function createProductionAppPorts(input: {
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const { backgroundTasks } = ports;
   const shutdown = { started: false };
+  // A short claim that turned a wake away wakes the chat on release.
+  const runClaim = wakeOnContendedRelease(ports.runClaim, (threadId) => {
+    backgroundTasks.track(
+      wakeIfRunnable(threadId).catch((error) =>
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.wake",
+          name: "contended_release_wake.failed",
+          correlation: { threadId },
+          payload: unknownToEventPayload(error),
+        }),
+      ),
+      "contended claim release wake",
+    );
+  });
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -796,7 +813,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const stopThreadRun = async (threadId: ThreadId) => {
-    const turnId = await ports.runClaim.readRunningTurnId(threadId);
+    const turnId = await runClaim.readRunningTurnId(threadId);
     if (turnId) await runner.cancel(threadId, turnId);
   };
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
@@ -804,7 +821,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     notices: ports.notices,
     runStarter,
     workContext,
@@ -911,7 +928,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    authority: ports.runClaim,
+    authority: runClaim,
     threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
@@ -922,7 +939,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async scanWakes() {
       const page = await sweepWakes({
         delivery,
-        authority: ports.runClaim,
+        authority: runClaim,
         runStarter,
         limit: WAKE_SWEEP_LIMIT,
         afterThreadId: wakeCursor,
@@ -962,7 +979,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
@@ -1079,7 +1096,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     delivery,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
@@ -1093,7 +1110,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     eventSink: ports.eventSink,
     threadLock,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     shutdown,
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
@@ -1163,7 +1180,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recovery,
     handoffBriefs,
     userTurnAdmission,
-    runClaim: ports.runClaim,
+    runClaim: runClaim,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,

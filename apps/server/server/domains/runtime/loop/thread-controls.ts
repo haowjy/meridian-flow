@@ -45,8 +45,6 @@ export function createThreadControls(deps: {
   applyDueSwitches(threadId: ThreadId): Promise<boolean>;
   /** Whether a reply holds the chat: its release wake applies the switch. */
   replyHolds(threadId: ThreadId): Promise<boolean>;
-  /** Wakes the chat after the route stops retrying, so the sweep is never the fallback. */
-  wake(threadId: ThreadId): void;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
@@ -56,7 +54,8 @@ export function createThreadControls(deps: {
    * An idle chat's switch applies before the route answers. A short claim
    * (idle materialization, a rebind) only delays it, so retry while no reply
    * holds the chat. No wake runs beside these attempts: a wake applying the
-   * switch would race the answer. The answer reads the control's state after.
+   * switch would race the answer. A claim that outlasts the retries saw them
+   * turned away, so its release wakes the chat; a reply's release does too.
    */
   async function applyIdleSwitch(threadId: ThreadId) {
     for (const pause of [0, ...IDLE_APPLY_RETRY_MS]) {
@@ -64,7 +63,6 @@ export function createThreadControls(deps: {
       if (await deps.applyDueSwitches(threadId)) return;
       if (await deps.replyHolds(threadId)) return;
     }
-    deps.wake(threadId);
   }
   return {
     async enqueueControl(input) {
