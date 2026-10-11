@@ -51,6 +51,7 @@ export type CatalogFile =
     });
 
 export type CatalogDirectory = {
+  navigationOnly?: true;
   kind: "dir";
   entryId: string;
   parentId: string | null;

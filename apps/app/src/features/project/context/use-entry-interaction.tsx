@@ -62,8 +62,9 @@ export function useEntryInteraction({
     if (!rootThreadRef) throw new Error("Scratch lineage entry requires its URI authority");
     resolvedOwner = { rootThreadId: owner.rootThreadId, rootThreadRef };
   }
-  const actions = entryActions(capabilities, create);
-  useEntryRenameRepair(node, () => setRenaming(true), capabilities.includes("rename"));
+  const actions =
+    node.kind === "dir" && node.navigationOnly ? [] : entryActions(capabilities, create);
+  useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
@@ -97,7 +98,7 @@ export function useEntryInteraction({
     },
   };
   return {
-    renaming: (renaming || Boolean(requestRename)) && capabilities.includes("rename"),
+    renaming: (renaming || Boolean(requestRename)) && actions.includes("rename"),
     rename,
     operationId,
     actions,
@@ -108,7 +109,7 @@ export function useEntryInteraction({
       scheme,
       entry: { id, name: node.name, path: node.path, kind },
       repairMove: node.namespaceRepairMove,
-      open: moving && capabilities.includes("move"),
+      open: moving && actions.includes("move"),
       onOpenChange: setMoving,
       onMoved: remember,
     },

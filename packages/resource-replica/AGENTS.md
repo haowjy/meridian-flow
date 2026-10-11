@@ -49,3 +49,6 @@ row is reconstructed from its journal identity and last known placement, with
 reachable ancestors and source, solely as a recovery row (never deletion proof); a folder tombstone
 retires them as terminal history. Folder availability cannot terminalize descendant
 documents. Only a delete receipt's exact IDs authorize that content transition.
+
+Install real catalog and recovery identities before completing missing ancestry.
+Synthetic ancestors are navigation-only and never own folder management actions.

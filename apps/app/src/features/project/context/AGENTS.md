@@ -27,7 +27,9 @@ contains every known project catalog and folder journal, including other Works.
 Never reconstruct a graph from only journal folders. A folder needing repair
 keeps a reachable recovery row even when its catalog membership or whole source
 is absent. Recovery rows retain stable journal identity and last known home;
-they do not prove the identity is currently visible on the server.
+they do not prove the identity is currently visible on the server. Real recovery
+identities are installed before missing ancestry; synthetic ancestors are
+navigation-only, with no create, rename, move or delete actions.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files

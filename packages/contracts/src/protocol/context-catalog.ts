@@ -40,6 +40,8 @@ export type CatalogFolderEntry = {
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;
+  /** Device-synthesized ancestry has no server folder identity or management actions. */
+  navigationOnly?: true;
 };
 
 type CatalogFileEntryBase = {
