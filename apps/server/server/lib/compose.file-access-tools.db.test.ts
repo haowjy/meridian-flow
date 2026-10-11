@@ -147,11 +147,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
       expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes (read-only)");
+      const search = await call("search", { pattern: "Writer" });
+      expect(search.output).toContain("manuscript://chapter");
+      expect(search.output).not.toContain(".md");
+      const data = crypto.randomUUID();
+      await db.insert(schema.folders).values({ contextSourceId: MANUSCRIPT_ID, name: "scenes" });
+      await db.insert(schema.documents).values({
+        id: data,
+        contextSourceId: MANUSCRIPT_ID,
+        name: "outline",
+        extension: "json",
+        fileType: "json",
+      });
+      await script.runtime.ports.documentSync.recordManifestDocumentCreated(data as never, {
+        projectId: PROJECT_ID as never,
+      });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
-      expect(listed(manuscriptCall)).toEqual([
-        expect.objectContaining({ uri: "manuscript://chapter", readonly: false }),
-      ]);
-      expect(manuscriptCall.output).toBe("manuscript://\n  chapter");
+      expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
+      expect(manuscriptCall.output).not.toContain(".md");
+      const missing = await call("read", { path: "manuscript://missing.md" });
+      expect(missing.output).toContain("path: manuscript://missing");
+      expect(missing.output).not.toContain(".md");
     });
 
     // D37, D51: a switch that couldn't happen says why instead of asking for approval.

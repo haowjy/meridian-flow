@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- The model sees extensionless prose names in document instructions, tool results, errors and copy receipts.
+- Skills load and list with the same extensionless prose names as documents.
+- Link snapshots resolve typed prose suffixes without losing the target’s identity.
+- Document links use the document’s one name, including links written with a prose extension.
+
 ### Changed
 
 - Document-name upgrades preserve upload reservations and deleted Work restore sets, and refresh saved recent-document routes by identity.
