@@ -21,13 +21,10 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import {
-  bumpLocationVersions,
-  recordLocationHistory,
-} from "../../context/adapters/context-fs/document-locations.js";
-import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../../context/document-uri-resolver.js";
+import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {

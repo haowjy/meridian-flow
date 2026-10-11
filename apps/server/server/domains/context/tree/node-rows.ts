@@ -23,12 +23,9 @@ import {
 import { inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import {
-  bumpLocationVersions,
-  claimDocumentLocation,
-} from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
+import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import type { DocumentSlot } from "./tree-view-sql.js";
 
 /** A document's source-relative path from its folder names and stored name. */

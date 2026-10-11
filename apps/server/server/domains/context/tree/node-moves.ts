@@ -23,10 +23,6 @@ import { contextSources, documents, folders, works } from "@meridian/database/sc
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import {
-  bumpLocationVersions,
-  recordLocationHistory,
-} from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
 import {
   absorbAt,
@@ -36,6 +32,7 @@ import {
   type SplitFolder,
   type SplitPlan,
 } from "./folder-normalization.js";
+import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { ensureLiveFolderPath } from "./placement.js";
 import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";

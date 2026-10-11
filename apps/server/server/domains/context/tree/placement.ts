@@ -15,13 +15,10 @@ import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import {
-  bumpLocationVersions,
-  claimDocumentLocation,
-} from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
+import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
 import { treeHook } from "./test-hooks.js";
 import { loadFolderChains } from "./tree-addresses.js";

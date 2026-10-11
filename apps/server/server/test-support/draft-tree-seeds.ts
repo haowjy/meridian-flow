@@ -1,8 +1,8 @@
 /**
  * The draft-tree DB tests' world and seed verbs (contract §16.1): a project with its
  * sources, Works with their primary threads, rows written the way the product's creates
- * leave them, and the link resolve route's answer over this database. No composed
- * runtime: command verbs live in `draft-tree-commands.ts`.
+ * leave them, written through the tree's own row writers. No composed runtime: command
+ * verbs, the link resolve route's answer among them, live in `draft-tree-commands.ts`.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
  * the other project sources.
@@ -11,10 +11,8 @@ import { randomUUID } from "node:crypto";
 import type {
   ContextSourceId,
   DocumentId,
-  DocumentLinkAnswer,
   FolderId,
   ProjectId,
-  ResolveDocumentLinksResponse,
   ThreadId,
   UserId,
   WorkId,
@@ -23,9 +21,6 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
-  draftTreeChanges,
-  folders,
   linkAheadDraftSettlements,
   linkAheadHolderBindings,
   linkAheadRefs,
@@ -36,26 +31,17 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "../domains/collab/adapters/drizzle-drafts.js";
 import { createDrafts, type Drafts } from "../domains/collab/domain/drafts.js";
 import type { Draft } from "../domains/collab/domain/ports/draft-store.js";
-import { createLinkScopeObserver } from "../domains/collab/index.js";
-import { createDrizzleContextCatalog } from "../domains/context/adapters/context-catalog.js";
-import { createDrizzleDocumentLinkHistory } from "../domains/context/adapters/document-link-history.js";
-import { createDrizzleDocumentLinkScopes } from "../domains/context/adapters/document-link-scope.js";
-import { createDocumentLinkResolver } from "../domains/context/document-link-resolution.js";
-import { createDrizzleFileFacts } from "../domains/file-policy/adapters/drizzle-file-facts.js";
-import { createOwnerFileGrants } from "../domains/file-policy/adapters/owner-file-grants.js";
-import { createFileAccess } from "../domains/file-policy/file-access.js";
-import {
-  createDrizzleProjectRepository,
-  createDrizzleProjectWorkAuthorityResolver,
-} from "../domains/projects/index.js";
-import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
+import { lockContextSources } from "../domains/context/adapters/context-fs/document-locations.js";
+import { recordCreated } from "../domains/context/tree/draft-tree-store.js";
+import { insertDocumentRow, insertFolder } from "../domains/context/tree/node-rows.js";
+import { ensureLiveFolderPath, walkFolders } from "../domains/context/tree/placement.js";
+import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 
 export type ScenarioSource = "manuscript" | "kb" | "unfiled";
 
@@ -102,17 +88,6 @@ export interface DraftTreeWorld {
   seedDraftSettlement(work: ScenarioWork, aheadId: string, documentId: DocumentId): Promise<void>;
   /** What the ahead ref means in this holder (an Apply's binding). */
   seedHolderBinding(aheadId: string, holder: DocumentId, documentId: DocumentId): Promise<void>;
-  /**
-   * The resolve route's answer for one stored link, read in a Work's view or live, from
-   * `baseUri` (null for chat) and, when given, the holder pinned by id.
-   */
-  linkAnswer(input: {
-    view: ScenarioWork | "live";
-    ref: string;
-    href: string;
-    baseUri: string | null;
-    holderDocumentId?: DocumentId;
-  }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }>;
 }
 
 const SOURCES: readonly ScenarioSource[] = ["manuscript", "kb", "unfiled"];
@@ -181,52 +156,29 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
     return { sourceId: sources[scheme], dir: segments, filename };
   }
 
-  /** Folders root to leaf: a matching folder with this hiddenness is reused, else made. */
-  async function folderChain(
-    sourceId: ContextSourceId,
-    dir: readonly string[],
-    hidden: boolean,
-  ): Promise<FolderId | null> {
-    let parentId: FolderId | null = null;
-    for (const name of dir) {
-      const [existing] = await db
-        .select({ id: folders.id, hidden: folders.hidden })
-        .from(folders)
-        .where(
-          and(
-            eq(folders.contextSourceId, sourceId),
-            parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-            eq(folders.name, name),
-            isNull(folders.deletedAt),
-          ),
-        );
-      // A live folder serves a hidden create too (a draft places under what it sees).
-      if (existing && (!existing.hidden || hidden)) {
-        parentId = existing.id;
-        continue;
-      }
-      const [created]: { id: FolderId }[] = await db
-        .insert(folders)
-        .values({ contextSourceId: sourceId, parentId, name, hidden })
-        .returning({ id: folders.id });
-      if (!created) throw new Error(`Folder ${name} was not inserted`);
-      parentId = created.id;
-    }
-    return parentId;
+  /** Live folders root to leaf, as `mkdir` makes them: a hidden one at the path is revealed. */
+  function liveFolders(sourceId: ContextSourceId, dir: readonly string[]) {
+    return runInDrizzleTransaction(db, async () => {
+      await lockContextSources(db, [sourceId]);
+      const ensured = await ensureLiveFolderPath(db, { contextSourceId: sourceId, dir });
+      if (!ensured.ok) throw new Error(`Live folders ${dir.join("/")}: ${ensured.error.code}`);
+      return ensured.value.folderId;
+    });
   }
 
+  /** The product's document insert: a live row claims its location, a hidden one doesn't. */
   async function insertDocument(
     sourceId: ContextSourceId,
     folderId: FolderId | null,
     filename: string,
     hidden: boolean,
   ): Promise<DocumentId> {
-    const [row] = await db
-      .insert(documents)
-      .values({ contextSourceId: sourceId, folderId, ...splitFilename(filename), hidden })
-      .returning({ id: documents.id });
-    if (!row) throw new Error(`Document ${filename} was not inserted`);
-    return row.id;
+    const slot = { contextSourceId: sourceId, folderId, ...splitFilename(filename) };
+    const id = await runInDrizzleTransaction(db, () =>
+      insertDocumentRow(db, slot, { kind: "tracked", filetype: "markdown" }, { hidden }),
+    );
+    if (!id) throw new Error(`Document ${filename} was not inserted`);
+    return id;
   }
 
   /** A thread with one assistant turn, primary in `workId`. */
@@ -261,57 +213,6 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
     });
   }
 
-  async function linkAnswer(input: Parameters<DraftTreeWorld["linkAnswer"]>[0]) {
-    const catalog = createDrizzleContextCatalog(db);
-    const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
-    // The product's file policy: the project owner reads its own documents, no one else's.
-    const fileAccess = createFileAccess({
-      facts: createDrizzleFileFacts(db),
-      grants: createOwnerFileGrants(),
-      readAgentChain: async () => [],
-    });
-    const response: ResolveDocumentLinksResponse = await handleDocumentLinkResolveRequest(
-      {
-        projectRepo: createDrizzleProjectRepository({
-          db,
-          catalogLifecycle: catalog,
-          ensureNoWork: async () => {
-            throw new Error("The scenario's project already has its No Work row");
-          },
-        }),
-        documentLinks: createDocumentLinkResolver({
-          catalog,
-          workAuthorityResolver,
-          history: createDrizzleDocumentLinkHistory(db),
-        }),
-        linkScopes: createDrizzleDocumentLinkScopes({
-          db,
-          fileAccess,
-          observer: createLinkScopeObserver(),
-        }),
-        workAuthorityResolver,
-        fileAccess,
-        drafts,
-      },
-      {
-        projectId,
-        userId,
-        request: {
-          workId: input.view === "live" ? null : input.view.id,
-          baseUri: input.baseUri,
-          ...(input.holderDocumentId ? { holderDocumentId: input.holderDocumentId } : {}),
-          links: [{ ref: input.ref, href: input.href }],
-        },
-      },
-    );
-    const [answer] = response.answers;
-    if (!answer) throw new Error("The resolve route answered nothing");
-    return {
-      answer,
-      ...(response.holderUri !== undefined ? { holderUri: response.holderUri } : {}),
-    };
-  }
-
   return {
     db,
     project: { id: projectId, userId, sources },
@@ -338,30 +239,36 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
     draftOf,
     async seedLive(path) {
       const { sourceId, dir, filename } = locate(path);
-      return insertDocument(sourceId, await folderChain(sourceId, dir, false), filename, false);
+      return insertDocument(sourceId, await liveFolders(sourceId, dir), filename, false);
     },
     async seedLiveFolder(path) {
       const { sourceId, dir, filename } = locate(path);
-      const leaf = await folderChain(sourceId, [...dir, filename], false);
+      const leaf = await liveFolders(sourceId, [...dir, filename]);
       if (!leaf) throw new Error(`Scenario path names no folder: ${path}`);
       return leaf;
     },
     async seedHidden(work, path, hiddenOptions = {}) {
       const draft = await draftOf(work);
       const { sourceId, dir, filename } = locate(path);
-      const folderId = await folderChain(sourceId, dir, true);
+      // A draft places under the folders it sees and makes hidden ones past the first gap.
+      const walk = await walkFolders(
+        db,
+        { kind: "draft", draftId: draft.id },
+        sourceId,
+        dir,
+        (gap) => insertFolder(db, { contextSourceId: sourceId, ...gap }, { hidden: true }),
+      );
+      if (walk.kind !== "walked") throw new Error(`Hidden folders ${dir.join("/")}: ${walk.kind}`);
       const documentId =
-        hiddenOptions.join ?? (await insertDocument(sourceId, folderId, filename, true));
-      const { name, extension } = splitFilename(filename);
-      await db.insert(draftTreeChanges).values({
+        hiddenOptions.join ?? (await insertDocument(sourceId, walk.folderId, filename, true));
+      await recordCreated(db, {
         draftId: draft.id,
-        nodeKind: "document",
-        nodeId: documentId,
-        created: true,
-        contextSourceId: sourceId,
-        parentFolderId: folderId,
-        name,
-        extension,
+        documentId,
+        location: {
+          contextSourceId: sourceId,
+          parentFolderId: walk.folderId,
+          ...splitFilename(filename),
+        },
       });
       return documentId;
     },
@@ -388,6 +295,5 @@ export async function draftTreeWorld(db: Database): Promise<DraftTreeWorld> {
         .insert(linkAheadHolderBindings)
         .values({ aheadId, holderDocumentId: holder, documentId });
     },
-    linkAnswer,
   };
 }

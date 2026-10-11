@@ -7,7 +7,7 @@
  * the other project sources, or `user://` for the writer's personal source.
  */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, WorkId } from "@meridian/contracts";
+import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
 import type {
   DraftApplyAllResponse,
   DraftDiscardAllResponse,
@@ -27,6 +27,7 @@ import {
 } from "../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
+import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import {
   type DraftApplyRouteResult,
   handleApplyAllWorkDraftRequest,
@@ -143,6 +144,17 @@ export interface DraftTreeCommands {
   expirePendingClaims(): Promise<void>;
   /** Recovery's pass over every recoverable batch; how many it settled. */
   recover(): Promise<number>;
+  /**
+   * The resolve route's answer for one stored link, read in a Work's view or live, from
+   * `baseUri` (null for chat) and, when given, the holder pinned by id.
+   */
+  linkAnswer(input: {
+    view: ScenarioWork | "live";
+    ref: string;
+    href: string;
+    baseUri: string | null;
+    holderDocumentId?: DocumentId;
+  }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }>;
   /** The stored links in a live document: each one's ref and href. */
   storedLinks(documentId: DocumentId): Promise<{ ref: string | null; href: string }[]>;
   /**
@@ -222,6 +234,37 @@ export function draftTreeCommands(
   const { id: projectId, userId } = world.project;
   const human = () => ({ type: "human" as const, userId });
   const ports = () => composed().runtime.ports;
+
+  /** The resolve route's core over the composed app, as the route handler wires it. */
+  async function linkAnswer(input: Parameters<DraftTreeCommands["linkAnswer"]>[0]) {
+    const { app } = composed().runtime;
+    const response = await handleDocumentLinkResolveRequest(
+      {
+        projectRepo: app.projectRepo,
+        documentLinks: app.documentLinks,
+        linkScopes: app.linkScopes,
+        workAuthorityResolver: app.workAuthorityResolver,
+        fileAccess: app.fileAccess,
+        drafts: app.documentSync.drafts,
+      },
+      {
+        projectId,
+        userId,
+        request: {
+          workId: input.view === "live" ? null : input.view.id,
+          baseUri: input.baseUri,
+          ...(input.holderDocumentId ? { holderDocumentId: input.holderDocumentId } : {}),
+          links: [{ ref: input.ref, href: input.href }],
+        },
+      },
+    );
+    const [answer] = response.answers;
+    if (!answer) throw new Error("The resolve route answered nothing");
+    return {
+      answer,
+      ...(response.holderUri !== undefined ? { holderUri: response.holderUri } : {}),
+    };
+  }
 
   function model(work: ScenarioWork): ScenarioModel {
     async function reply(): Promise<ScenarioReply> {
@@ -530,8 +573,9 @@ export function draftTreeCommands(
           href: link.href,
         })),
       ),
+    linkAnswer,
     async liveMeaning({ ref, href, holder }) {
-      const { answer } = await world.linkAnswer({
+      const { answer } = await linkAnswer({
         view: "live",
         ref,
         href,

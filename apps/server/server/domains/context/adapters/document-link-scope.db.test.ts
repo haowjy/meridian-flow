@@ -22,6 +22,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
@@ -212,6 +213,8 @@ if (!RUN) {
         },
       ]);
     }
+    // The resolve route's answers run over the composed app, as the route handler wires it.
+    const runtimes = useComposedRuntimes(() => db);
     beforeEach(seed);
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);
@@ -373,7 +376,7 @@ if (!RUN) {
     });
 
     it("names the reader's own draft else the oldest, reads binding then draft then live, and never drops a binding silently (L-1)", async () => {
-      const s = await draftTreeScenario(db);
+      const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
         await s.work("Atlas", "draft"),
         await s.work("Beacon", "draft"),
