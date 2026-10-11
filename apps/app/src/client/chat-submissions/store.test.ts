@@ -222,3 +222,48 @@ it("notifies subscribers on writes, retirement and matching cross-tab storage ch
   journal.notifyStorageChange(null);
   expect(notifications).toBe(3);
 });
+
+it("keeps migration unavailable until legacy deletion succeeds, then never resurrects acceptance", () => {
+  const storage = memory();
+  const legacyKey = "meridian:chat-submissions:v1:account:sub-1";
+  storage.setItem(
+    legacyKey,
+    JSON.stringify({
+      version: 1,
+      accountId: "account",
+      payload: { ...existingThread(), kind: "existing-thread", state: "rejected" },
+    }),
+  );
+  const remove = storage.removeItem;
+  let fail = true;
+  storage.removeItem = (key) => {
+    if (key === legacyKey && fail) throw new Error("delete refused");
+    remove(key);
+  };
+  const journal = new DeviceChatSubmissionJournal(storage);
+  journal.setUser("account");
+  expect(journal.entries()).toEqual([]);
+  expect(journal.record("account", { ...existingThread(), submissionId: "premature" })).toBe(false);
+  expect(journal.retire("account", "sub-1")).toBe(false);
+  expect(storage.getItem(legacyKey)).not.toBeNull();
+  fail = false;
+  journal.setUser("other");
+  journal.setUser("account");
+  expect(journal.get("sub-1")?.state).toBe("rejected");
+  expect(journal.record("account", { ...existingThread(), submissionId: "reminted" })).toBe(true);
+  expect(journal.retire("account", "sub-1")).toBe(true);
+  journal.setUser("other");
+  journal.setUser("account");
+  expect(journal.entries()).toEqual([]);
+});
+
+it("unavailable record reads retain the last complete snapshot", () => {
+  const { storage, journal } = bound();
+  journal.record("account", existingThread());
+  expect(journal.entries()).toHaveLength(1);
+  storage.getItem = () => {
+    throw new Error("unavailable");
+  };
+  expect(journal.snapshot()).toBeNull();
+  expect(journal.entries()).toEqual([existingThread()]);
+});

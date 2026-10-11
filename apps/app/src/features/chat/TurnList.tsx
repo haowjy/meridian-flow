@@ -45,7 +45,7 @@ export type TurnListProps = {
   ariaLabel: string;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrails?: Record<string, ChangeTrailShell>;
-  /** Recovered ambiguous submissions, keyed by the restored user turn id. */
+  /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */

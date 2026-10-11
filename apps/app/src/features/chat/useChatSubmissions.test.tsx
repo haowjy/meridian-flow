@@ -7,17 +7,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   bindChatSubmissions,
   type ChatSubmission,
-  chatSubmissionStorageKey,
   readChatSubmissions,
   recordChatSubmission,
 } from "@/client/chat-submissions";
 import { MemorySubmissionLock } from "@/client/chat-submissions/adapters/memory-lock";
 import { composerSessionDraft } from "@/client/composer-drafts";
-import {
-  defaultSendResponse,
-  scenarioGate,
-  ThreadRunScenario,
-} from "@/client/copilot/test-support/ThreadRunScenario";
+import { scenarioGate, ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
 import {
   plainComposerDoc,
   serializeComposerDraft,
@@ -106,129 +101,19 @@ afterEach(async () => {
   window.sessionStorage.clear();
 });
 
-it("Edit bridges an already-accepted submission rather than returning delivered words", async () => {
-  recordChatSubmission(account, entry());
-  const scenario = new ThreadRunScenario({
-    retire: async ({ submissionId }) => ({
-      kind: "already-accepted",
-      submissionId,
-      ...defaultSendResponse(),
-    }),
-  });
-  const mounted = await mount(scenario);
-  const row = scenario.turns()[0];
-  if (!row) throw new Error("No row");
-  await act(async () => mounted.read().rowActions(row.id)?.onEdit?.());
-  await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
-  expect(scenario.turns().map((turn) => turn.id)).toEqual([defaultSendResponse().userTurnId]);
-  expect(composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft).toBeNull();
-  expect(scenario.appendRequests).toHaveLength(0);
-});
-
-it("Edit leaves a pending admission and its writer row untouched", async () => {
-  recordChatSubmission(account, entry());
-  const scenario = new ThreadRunScenario({
-    retire: async ({ submissionId }) => ({ kind: "pending", submissionId }),
-  });
-  const mounted = await mount(scenario);
-  const row = scenario.turns()[0];
-  if (!row) throw new Error("No row");
-  await act(async () => mounted.read().rowActions(row.id)?.onEdit?.());
-  await vi.waitFor(() => expect(scenario.retireRequests).toHaveLength(1));
-  expect(readChatSubmissions(account)).toHaveLength(1);
-  expect(scenario.turns()).toEqual([expect.objectContaining({ id: row.id, status: "error" })]);
-  expect(composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft).toBeNull();
-});
-
-it("Edit dissolves every never-created message in order before newer New chat writing", async () => {
-  const creation = {
-    title: "Opening",
-    workId: null,
-    agentName: "General",
-    agentSlug: "general",
-    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
-  };
-  recordChatSubmission(account, { ...entry(), creation });
-  recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
-  composerSessionDraft(account, { kind: "chat", id: "thread_1" }).editRejected(
-    serializeComposerDraft(plainComposerDoc("Third unsent")).draft,
-  );
-  composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).editRejected(
-    serializeComposerDraft(plainComposerDoc("Fourth existing")).draft,
-  );
-  const scenario = new ThreadRunScenario();
-  const mounted = await mount(scenario);
-  const row = scenario.turns()[0];
-  if (!row) throw new Error("No row");
-  await act(async () => mounted.read().rowActions(row.id)?.onEdit?.());
-  await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
-  const draft = composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).initialDraft;
-  if (!draft) throw new Error("No transferred draft");
-  expect(serializeComposerDraft(draft.doc).text).toBe(
-    "First rejected\nSecond rejected\nThird unsent\nFourth existing",
-  );
-  expect(scenario.turns()).toEqual([]);
-  expect(mounted.dissolved).toHaveBeenCalledOnce();
-  expect(scenario.retireRequests).toHaveLength(0);
-});
-
-it("a cross-tab retirement removes an unresolved optimistic row, not just rejected rows", async () => {
+it("subscribes to journal changes and cancels its own pending recovery on unmount", async () => {
   const gate = scenarioGate<never>();
-  recordChatSubmission(account, { ...entry(), state: undefined });
   const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
   const mounted = await mount(scenario);
-  expect(scenario.turns()).toHaveLength(1);
-  const key = chatSubmissionStorageKey(account, "one");
-  window.localStorage.removeItem(key);
-  await act(async () =>
-    window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage })),
-  );
-  expect(scenario.turns()).toEqual([]);
-  expect(mounted.dissolved).not.toHaveBeenCalled();
-});
-
-it("dissolves this pane without retiring a message recorded after the transfer read", async () => {
-  const creation = {
-    title: "Opening",
-    workId: null,
-    agentName: "General",
-    agentSlug: "general",
-    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
-  };
-  recordChatSubmission(account, { ...entry(), creation });
-  const scenario = new ThreadRunScenario();
-  const mounted = await mount(scenario);
-  const row = scenario.turns()[0];
-  if (!row) throw new Error("No row");
-  const destination = composerSessionDraft(account, { kind: "new-chat", id: "project-1" });
-  const write = Storage.prototype.setItem;
-  let concurrent = false;
-  const intercept = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
-    this: Storage,
-    key,
-    value,
-  ) {
-    write.call(this, key, value);
-    if (key === destination.key && !concurrent) {
-      concurrent = true;
-      recordChatSubmission(account, {
-        ...entry("late", "A later send"),
-        state: undefined,
-        creation,
-      });
-    }
+  await act(async () => {
+    recordChatSubmission(account, { ...entry(), state: undefined });
   });
-  try {
-    await act(async () => mounted.read().rowActions(row.id)?.onEdit?.());
-    await vi.waitFor(() =>
-      expect(readChatSubmissions(account).map((record) => record.recordId)).toEqual(["late"]),
-    );
-    expect(readChatSubmissions(account)[0]?.creation).toEqual(creation);
-    expect(mounted.dissolved).toHaveBeenCalledOnce();
-    expect(
-      destination.initialDraft && serializeComposerDraft(destination.initialDraft.doc).text,
-    ).toBe("First rejected");
-  } finally {
-    intercept.mockRestore();
-  }
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No subscribed row");
+  expect(mounted.read().rowActions(row.id)).toBeNull();
+  await act(async () => window.dispatchEvent(new Event("online")));
+  await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+  await cleanup?.();
+  cleanup = undefined;
+  expect(readChatSubmissions(account)).toHaveLength(1);
 });
