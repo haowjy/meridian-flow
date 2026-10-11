@@ -20,7 +20,9 @@ its Retry away, and the server refuses a Retry that races a run (409), which
 shows the refused note below. An unadmitted message keeps its "Couldn't send."
 Retry on the writer row, not here, drawn in the same `ErrorCard` shell as an
 inline, one-line card that is not itself an alert (the chat announces it once
-through its own region). An inherited failed reply stays read-only.
+through its own region). A failed ask-user answer and the composer's refused
+recording use that shell too (see `turn-composition.md` and the composer's
+AGENTS.md). An inherited failed reply stays read-only.
 
 Every failed reply reads the same, whatever ended it: a reply cut off by a
 shutdown or crash is an ordinary failed reply. The one exception is a provider

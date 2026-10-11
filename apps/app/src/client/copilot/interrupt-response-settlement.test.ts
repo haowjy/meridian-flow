@@ -2,11 +2,11 @@
  * Contract tests for interrupt-response settlement ownership.
  *
  * The controller owns the local settlement for an `interrupt.respond` send:
- * a duplicate `interrupt_not_pending` after a send becomes `ambiguous` (the
- * first attempt likely landed), a correlation mismatch is a retryable `failed`,
- * a socket-generation close is ambiguous without touching another generation,
- * and the matching server resolution event clears the entry. The routing
- * boundary for non-fatal interrupt errors lives in
+ * every send that is not confirmed is a retryable `failed` (a refusal, a
+ * socket-generation close, a closed socket), a refusal also refetches the
+ * thread snapshot so the server's truth can clear the entry, and the matching
+ * server resolution event or a snapshot that shows the question settled
+ * clears it. The routing boundary for non-fatal interrupt errors lives in
  * `dispatch-ws-server-message.test.ts`.
  */
 import type { AGUIEvent, Block, JsonValue, Thread, Turn } from "@meridian/contracts/protocol";
@@ -61,16 +61,52 @@ function interruptKey(interruptId: string = INTERRUPT): string {
 }
 
 describe("interrupt response settlement", () => {
-  it("treats a duplicate interrupt_not_pending as ambiguous, not rejected", () => {
+  it("fails an answer the server no longer holds and asks the server what became of the question", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
 
     scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
 
-    expect(pendingEntry(scenario)).toMatchObject({ status: "ambiguous" });
+    expect(pendingEntry(scenario)).toMatchObject({ status: "failed", value: { value: "yes" } });
+    expect(scenario.snapshotInvalidations).toEqual([THREAD]);
   });
 
-  it("treats a correlation mismatch as a retryable failure", () => {
+  it("clears a failed answer when the refetched snapshot shows the question resolved elsewhere", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.controller.respondInterrupt(response);
+    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
+
+    applySnapshot(
+      scenario,
+      assistantTurn("waiting_interrupt", [
+        interruptBlock(INTERRUPT, { resolvedValue: "no", answerProvenance: "user" }),
+      ]),
+    );
+
+    expect(pendingEntry(scenario)).toBeUndefined();
+  });
+
+  it("clears a failed answer when the refetched snapshot shows the run ended", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.controller.respondInterrupt(response);
+    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
+
+    applySnapshot(scenario, assistantTurn("complete", [interruptBlock(INTERRUPT)]));
+
+    expect(pendingEntry(scenario)).toBeUndefined();
+  });
+
+  it("keeps a failed answer, with its value, while the snapshot still shows the question open", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.controller.respondInterrupt(response);
+    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
+
+    applySnapshot(scenario, assistantTurn("waiting_interrupt", [interruptBlock(INTERRUPT)]));
+
+    expect(pendingEntry(scenario)).toMatchObject({ status: "failed", value: { value: "yes" } });
+  });
+
+  it("treats a correlation mismatch as a retryable failure too", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
 
@@ -82,14 +118,16 @@ describe("interrupt response settlement", () => {
     expect(pendingEntry(scenario)).toMatchObject({ status: "failed" });
   });
 
-  it("marks a sent response ambiguous when its socket generation closes", () => {
+  it("fails a sent response when its socket generation closes, and not another generation's", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
     const generation = scenario.transport.socketGeneration;
 
-    scenario.closeSocket(generation);
+    scenario.closeSocket(generation + 1);
+    expect(pendingEntry(scenario)).toMatchObject({ status: "pending" });
 
-    expect(pendingEntry(scenario)).toMatchObject({ status: "ambiguous" });
+    scenario.closeSocket(generation);
+    expect(pendingEntry(scenario)).toMatchObject({ status: "failed" });
   });
 
   it("still settles to the server resolution after the socket closes", () => {

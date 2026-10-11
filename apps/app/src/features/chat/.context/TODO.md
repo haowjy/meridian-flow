@@ -2,7 +2,7 @@
 
 ## Optimistic interaction contract
 
-- **CHAT-004: Prove interrupt-response settlement at runtime, or scope it explicitly.** Local settlement is implemented and keyed by `(threadId, turnId, interruptId)`: pending/ambiguous/`failed`, socket-generation close, snapshot reconciliation, newest-pending error correlation, and one in-flight response per tuple. Still missing: a browser probe for disconnect-before-ack, Retry, double-submit, and pending-survives-remount (SPEC Phase 6 / A3); contract tests do not substitute. The settlement is memory-only across reload; the server journal owns the outcome.
+- **CHAT-004: Prove interrupt-response settlement at runtime, or scope it explicitly.** Local settlement is implemented and keyed by `(threadId, turnId, interruptId)`: pending/`failed`, socket-generation close, snapshot reconciliation, newest-pending error correlation, and one in-flight response per tuple. Still missing: a browser probe for disconnect-before-ack, Retry, double-submit, and pending-survives-remount (SPEC Phase 6 / A3); contract tests do not substitute. The settlement is memory-only across reload; the server journal owns the outcome.
 
 ## `ls` chevron decision still parses eagerly
 

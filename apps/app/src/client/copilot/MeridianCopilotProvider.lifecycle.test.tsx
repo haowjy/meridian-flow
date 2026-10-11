@@ -50,7 +50,7 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
       invalidateThreadSnapshot() {},
     },
   });
-  const markAmbiguous = vi.spyOn(store.getState(), "markInterruptResponsesForGenerationAmbiguous");
+  const failForGeneration = vi.spyOn(store.getState(), "failInterruptResponsesForGeneration");
   harness.actions = store.getState();
   const runs: Array<{ handlers: ThreadTransportHandlers; active: boolean }> = [];
   const closed: Array<{ callback: (generation: number) => void; active: boolean }> = [];
@@ -140,10 +140,10 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
   ).resolves.toMatchObject({ kind: "accepted" });
   expect(runs.filter((row) => row.active)).toHaveLength(1);
   closed[0]?.callback(1);
-  expect(markAmbiguous).not.toHaveBeenCalled();
+  expect(failForGeneration).not.toHaveBeenCalled();
   account.abort();
   closed.at(-1)?.callback(1);
-  expect(markAmbiguous).not.toHaveBeenCalled();
+  expect(failForGeneration).not.toHaveBeenCalled();
   harness.signal = new AbortController().signal;
   await act(async () =>
     root.render(

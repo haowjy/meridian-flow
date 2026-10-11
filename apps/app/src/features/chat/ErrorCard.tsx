@@ -11,7 +11,9 @@ export type ErrorCardProps = {
   note?: ReactNode;
   /**
    * - `false` → full column width; the row wraps when the column is narrow.
-   * - `true` → hugs its content and never wraps (a writer-row failure).
+   * - `true` → hugs its content and keeps the row on one line (a failure beside
+   *   its controls). A sentence with no controls can set `whitespace-normal` on
+   *   itself to wrap when the pane is narrower than the card.
    */
   inline?: boolean;
   /**
