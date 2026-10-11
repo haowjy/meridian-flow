@@ -52,6 +52,7 @@ function entry(id = "one", text = "First rejected"): ChatSubmission {
 async function mount(scenario: ThreadRunScenario, paused = false) {
   const client = new QueryClient();
   const dissolved = vi.fn();
+  const focused = vi.fn();
   const life = new AbortController();
   const owner = new ChatSubmissionOwner({
     accountId: account,
@@ -65,7 +66,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     changed: () => {},
     failed: () => {},
     clear: () => {},
-    focusComposer: () => {},
+    focusComposer: focused,
     dissolveChat: dissolved,
   });
   owner.rebuild();
@@ -79,7 +80,16 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     scenario.controller.dispose();
     client.clear();
   };
-  return { read: () => owner, dissolved };
+  return {
+    read: () => owner,
+    dissolved,
+    focused,
+    dispose: () => {
+      life.abort();
+      unsubscribe();
+      owner.dispose();
+    },
+  };
 }
 beforeEach(() => {
   account = `account-${++accountSequence}`;
@@ -504,4 +514,43 @@ it.each([
     fault.mockRestore();
     vi.unstubAllGlobals();
   }
+});
+
+it("Edit focuses the invoking pane even when a sibling rebuilt last", async () => {
+  recordChatSubmission(account, entry());
+  const scenario = new ThreadRunScenario();
+  const first = await mount(scenario);
+  const second = await mount(scenario);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+
+  first.read().presentation.get(row.id)?.onEdit?.();
+
+  await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
+  await vi.waitFor(() => expect(first.focused).toHaveBeenCalledOnce());
+  expect(second.focused).not.toHaveBeenCalled();
+  const draft = composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft;
+  expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
+});
+
+it("disposing a sibling does not abandon the invoking pane's in-flight Edit", async () => {
+  recordChatSubmission(account, entry());
+  const gate = scenarioGate<{ kind: "retired"; submissionId: string; code: "retired" }>();
+  const scenario = new ThreadRunScenario({ retire: () => gate.promise });
+  const first = await mount(scenario);
+  const second = await mount(scenario);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+
+  first.read().presentation.get(row.id)?.onEdit?.();
+  await vi.waitFor(() => expect(scenario.retireRequests).toHaveLength(1));
+  expect(second.read().presentation.get(row.id)?.busy).toBe(true);
+  second.dispose();
+  gate.resolve({ kind: "retired", submissionId: "one", code: "retired" });
+
+  await vi.waitFor(() => expect(readChatSubmissions(account)).toEqual([]));
+  const draft = composerSessionDraft(account, { kind: "chat", id: "thread_1" }).initialDraft;
+  expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
+  await vi.waitFor(() => expect(first.focused).toHaveBeenCalledOnce());
+  expect(second.focused).not.toHaveBeenCalled();
 });

@@ -37,10 +37,17 @@ type Row = {
   status?: "error";
   attempt?: { session: object; submissionId: string; signal: AbortSignal };
 };
+type RecoveryState = {
+  recordId: string;
+  submissionId: string;
+  editable?: boolean;
+  busy?: boolean;
+  moving?: boolean;
+};
 type ThreadModel = {
   epoch: number;
   rows: Map<string, Row>;
-  presentation: Map<string, UserTurnRecovery>;
+  presentation: Map<string, RecoveryState>;
   bindings: Set<ChatSubmissionOwner>;
 };
 const models = new Map<string, ThreadModel>();
@@ -126,8 +133,38 @@ type OwnerOptions = {
 export class ChatSubmissionOwner {
   readonly driver: ChatSubmissionDriver;
   private readonly model: ThreadModel;
-  get presentation() {
-    return this.model.presentation;
+  /** Shared eligibility/status, with commands bound only at the invoking pane. */
+  get presentation(): ReadonlyMap<string, UserTurnRecovery> {
+    return new Map(
+      [...this.model.presentation].map(([turnId, state]) => [
+        turnId,
+        {
+          busy: state.busy,
+          moving: state.moving,
+          ...(!state.moving ? { onRetry: () => this.retry(turnId) } : {}),
+          ...(state.editable ? { onEdit: () => this.edit(turnId) } : {}),
+        },
+      ]),
+    );
+  }
+
+  private retry(turnId: string) {
+    const state = this.model.presentation.get(turnId);
+    if (!this.options.current() || !state || state.moving) return;
+    void this.driver.retry(state.submissionId);
+  }
+
+  private edit(turnId: string) {
+    const state = this.model.presentation.get(turnId);
+    if (!this.options.current() || !state?.editable || state.busy) return;
+    const row = this.model.rows.get(key(this.options.accountId, state.recordId));
+    if (!row) return;
+    row.busy = true;
+    this.rebuild();
+    void this.driver.edit(state.submissionId).finally(() => {
+      row.busy = false;
+      this.rebuild();
+    });
   }
   private readonly session = {};
   private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
@@ -295,28 +332,12 @@ export class ChatSubmissionOwner {
       const failure = moving || (!pending && (row.status === "error" || row.failed || entry.state));
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
-      if (moving) {
-        this.presentation.set(row.turnId, { busy: true, moving: true });
-        continue;
-      }
-      this.presentation.set(row.turnId, {
-        onRetry: () => {
-          void this.driver.retry(entry.submissionId);
-        },
-        ...(entry.state === "rejected" && entry.draft && !row.localFailure
-          ? {
-              busy: row.busy,
-              onEdit: () => {
-                if (row.busy) return;
-                row.busy = true;
-                this.rebuild();
-                void this.driver.edit(entry.submissionId).finally(() => {
-                  row.busy = false;
-                  this.rebuild();
-                });
-              },
-            }
-          : {}),
+      this.model.presentation.set(row.turnId, {
+        recordId: entry.recordId,
+        submissionId: entry.submissionId,
+        moving,
+        busy: moving || row.busy,
+        editable: !moving && entry.state === "rejected" && !!entry.draft && !row.localFailure,
       });
     }
     if (retired) actions.invalidateThreadSnapshot(threadId);

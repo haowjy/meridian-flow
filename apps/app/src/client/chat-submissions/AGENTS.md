@@ -3,7 +3,7 @@
 Durable, account-stamped journal of unresolved chat-submission intents (P3).
 It is the local witness that lets a reload reconcile or replay a displayed send.
 It is not a thread replica: no assistant turns. One observable account/thread model owns writer rows, live session/id-fenced
-attempts and the shared status/action snapshot for every mounted pane; views never enumerate persistence.
+attempts and the shared recovery eligibility/status snapshot for every mounted pane; views never enumerate persistence.
 
 - One record per `(accountId, recordId)`, keyed
   `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
@@ -55,7 +55,9 @@ journal `creation` with the provider-scoped pending flag through
 `useSyncExternalStore`, so uncreated journal destinations never query snapshots.
 
 `owner.ts` owns tab row identity, local failure/busy knowledge, durable Send handoff,
-and draft transfer. Pane bindings subscribe to that model, not separate status caches.
+and draft transfer. Pane bindings subscribe to that model, not separate status caches. Each binding exposes
+a command facade whose driver, lifetime, focus and navigation belong to the invoking pane;
+the shared presentation contains no pane-bound callbacks.
 Both first and existing Send use `recordAndProjectSubmission`;
 the caller supplies the actual authoring scope, independently of creation metadata.
 After commit, exact draft handoff precedes fallible projection. Subscriber/projection errors are reported through `reportError`, never
@@ -74,3 +76,9 @@ and external wakes finish its journal retirement without another prepend/admissi
 Receipts survive draft Send/clear and reload in the same tab. They are not shared
 with other tabs: the receipt guarantee is tab-local, not a cross-tab transaction.
 Lookup/retirement request refusal is ambiguity, never rejection proof.
+
+Known limit (tech-lead scope ruling, 2026-10-11): Edit receipts are per tab; if removing
+the journal record fails after Edit moves the words into that tab's message box,
+another tab can still Retry the record. Draft write and removal run in one synchronous
+step, so the only trigger is localStorage removal being refused when storage access
+is denied altogether.
