@@ -425,6 +425,7 @@ describe("per-change Apply (postgres)", () => {
   it.each([
     "live",
     "draft",
+    "same-paragraph-agent",
     "gone",
     "archived",
   ] as const)("refuses %s without publishing", async (kind) => {
@@ -436,6 +437,8 @@ describe("per-change Apply (postgres)", () => {
     const preview = await fixture.collab.draftReview.preview(command);
     if (preview.status !== "active") throw new Error("missing preview");
     if (kind === "draft") await stageText(fixture, branch.branchId, 1, " Later", "writer");
+    if (kind === "same-paragraph-agent")
+      await stageText(fixture, branch.branchId, 0, " Another write", "agent");
     if (kind === "live")
       await harness.seedWriterDocument("Changed live.\n\nBeta base.", "live-change");
     if (kind === "archived")

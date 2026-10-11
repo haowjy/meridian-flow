@@ -285,3 +285,60 @@ it("absorbs overlapping edits before and after a large rewrite, transitively, wh
   expect(await count()).toBe(5);
   live.destroy();
 });
+
+it("retains unchanged word identities, replaces whole words, and joins writer typing inside a pending segment", async () => {
+  const model = yProsemirrorModel(buildDocumentSchema());
+  const h = createWriteToolHarness(
+    { "chapter.md": "She had been told the pass did close." },
+    { segmentDraftWrites: true },
+  );
+  const draft = h.liveDoc("chapter.md");
+  const live = new Y.Doc({ gc: false });
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(draft));
+  const text = draft.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+  const prose = text.get(0) as Y.XmlText;
+  const unchanged = Y.createRelativePositionFromTypeIndex(prose, prose.toString().indexOf("had"));
+  const oldDid = Y.createRelativePositionFromTypeIndex(prose, prose.toString().indexOf("did"));
+  const baselineClients = new Set(Y.decodeStateVector(Y.encodeStateVector(draft)).keys());
+  expect(
+    (
+      await h.core.write(
+        {
+          command: "replace",
+          file: "chapter.md",
+          in: 1,
+          content: "I had been told the pass does close.",
+        },
+        { sessionId: "chat", threadId: "chat", turnId: "pov" },
+      )
+    ).isError,
+  ).toBe(false);
+  expect(Y.createRelativePositionFromTypeIndex(prose, prose.toString().indexOf("had"))).toEqual(
+    unchanged,
+  );
+  const newDoes = Y.createRelativePositionFromTypeIndex(prose, prose.toString().indexOf("does"));
+  expect(newDoes.item).not.toEqual(oldDid.item);
+  if (!newDoes.item) throw new Error("Replacement must have a fresh item identity");
+  expect(baselineClients.has(newDoes.item.client)).toBe(false);
+  const rows = (await h.journal.readForReconstruction("chapter.md")).updates.map((row) => ({
+    id: row.seq,
+    actorTurnId: row.meta.actorTurnId ?? null,
+    updateData: row.update,
+  }));
+  draft.clientID = 12345678;
+  let typing: Uint8Array | undefined;
+  draft.once("update", (update: Uint8Array) => {
+    typing = update;
+  });
+  prose.insert(prose.toString().indexOf("does") + 2, "really");
+  if (!typing) throw new Error("Writer typing must emit an update");
+  const review = computeDraftReviewHunks({
+    liveDoc: live,
+    draftDoc: draft,
+    model,
+    draftUpdates: [...rows, { id: 100, actorTurnId: null, updateData: typing }],
+  });
+  expect(new Set(review.operations.map((op) => op.closureClassId)).size).toBe(1);
+  expect(review.operations.every((op) => op.closureUpdateIds.some((id) => id === 100))).toBe(true);
+  live.destroy();
+});
