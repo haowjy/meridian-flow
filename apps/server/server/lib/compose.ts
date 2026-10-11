@@ -175,6 +175,7 @@ import {
   createToolRegistry,
   createUserTurnAdmission,
   createWorkContextReader,
+  createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
   type Gateway,
@@ -194,6 +195,7 @@ import {
   type UserTurnAdmission,
   type WorkContextNotices,
   type WorkContextReader,
+  writeModeSwitchNotice,
 } from "../domains/runtime/index.js";
 import {
   resolveThreadUserInvocableSkills,
@@ -774,7 +776,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
   const runStarter = createRunStarter(
-    { startDrain: (id) => runner.startDrain(id) },
+    {
+      startDrain: (id) => runner.startDrain(id),
+      applyDueSwitches: (id) => delivery.applyDueSwitches(id),
+    },
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
@@ -804,6 +809,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runStarter,
     workContext,
     publishStatus: publishThreadStatus,
+    writeModeSwitch: createWriteModeSwitchPort({
+      works: ports.workRepo,
+      threadWorks: ports.threadRepos.threadWorks,
+      readChainPermission: ports.readChainPermission,
+    }),
     async publishFinalizedReports(reports) {
       if (!publishReport) throw new Error("Report publisher is not initialized");
       for (const report of reports)
@@ -1242,6 +1252,14 @@ export function createInMemoryAppServices(): AppServices {
     threadLock: createInMemoryThreadLock(),
     runStarter,
     async publishFinalizedReports() {},
+    writeModeSwitch: {
+      async renderNotice(_threadId, mode) {
+        return writeModeSwitchNotice({ archivedAt: null }, mode, false);
+      },
+      async setWorkDefault() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+    },
     schedulePostCommit: (task) => {
       void task();
     },

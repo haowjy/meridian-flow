@@ -53,7 +53,8 @@ export type PreparedRequest = {
 };
 
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
-  const compact = input.control?.body.kind === "compact" ? input.control : null;
+  const control = input.control;
+  const compact = control?.body.kind === "compact" ? { id: control.id, body: control.body } : null;
   const prepared = await prepareBaseRequest({
     ...input,
     controlMessageId: compact?.id ?? input.controlMessageId,

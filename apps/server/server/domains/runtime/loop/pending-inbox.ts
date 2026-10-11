@@ -26,7 +26,9 @@ export function projectPendingInbox(
           id: message.id,
           seq: message.seq,
           intent: message.intent,
-          ...(message.body.kind === "compact" ? { control: message.body } : {}),
+          ...(message.body.kind === "compact" || message.body.kind === "write_mode"
+            ? { control: message.body }
+            : {}),
           provenance: message.provenance,
           deliveryState,
           summary: inboxMessageText(message),

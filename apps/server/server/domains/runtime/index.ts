@@ -154,6 +154,11 @@ export {
   renderWorkContext,
   type WorkContextReader,
 } from "./loop/work-context.js";
+export {
+  createWriteModeSwitchPort,
+  type WriteModeSwitchPort,
+  writeModeSwitchNotice,
+} from "./loop/write-mode-switch.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";

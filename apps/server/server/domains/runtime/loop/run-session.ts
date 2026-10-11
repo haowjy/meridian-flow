@@ -2,7 +2,11 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import {
+  isWriteModeSwitchTurn,
+  type TurnRepository,
+  TurnStartConflictError,
+} from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
@@ -237,6 +241,14 @@ export function createRunSessions(deps: {
     }
   }
 
+  /** A switch applied after a failed reply must not take Retry away; the retry chains after it. */
+  async function pastTrailingSwitches(turn: Turn): Promise<Turn | null> {
+    let current: Turn | null = turn;
+    while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
+      current = await deps.repos.turns.findById(current.prevTurnId as TurnId);
+    return current;
+  }
+
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
@@ -269,7 +281,8 @@ export function createRunSessions(deps: {
         failedTurn.threadId !== input.threadId ||
         failedTurn.role !== "assistant" ||
         failedTurn.status !== "error" ||
-        latestTurn?.id !== failedTurn.id
+        !latestTurn ||
+        (await pastTrailingSwitches(latestTurn))?.id !== failedTurn.id
       )
         throw new ReplyRetryUnavailableError(input.threadId);
 
@@ -278,7 +291,7 @@ export function createRunSessions(deps: {
           threadId: input.threadId,
           drain: true,
           replyTurnId: input.replyTurnId,
-          expectedLeafTurnId: input.failedTurnId,
+          expectedLeafTurnId: latestTurn.id,
         });
         const persisted = await deps.repos.turns.findById(input.replyTurnId);
         const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
@@ -287,9 +300,9 @@ export function createRunSessions(deps: {
           createLocalTurn({
             id: input.replyTurnId,
             threadId: input.threadId,
-            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : failedTurn.id,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : latestTurn.id,
             position:
-              (firstTurn?.role === "compaction" ? firstTurn.position : failedTurn.position) + 1,
+              (firstTurn?.role === "compaction" ? firstTurn.position : latestTurn.position) + 1,
             role: "assistant",
             origin: "assistant",
             status: "pending",

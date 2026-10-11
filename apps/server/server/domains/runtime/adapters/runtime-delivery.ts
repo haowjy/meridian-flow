@@ -9,7 +9,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { next } from "../loop/next-inbox-work.js";
+import { type InboxWorkSelection, next } from "../loop/next-inbox-work.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
@@ -37,6 +37,7 @@ import type {
 } from "../loop/runtime-delivery.js";
 import { createThreadControls } from "../loop/thread-controls.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
+import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
@@ -84,6 +85,7 @@ export function createDeliveryAdapter(
     runStarter: RunStarter;
     schedulePostCommit(task: () => Promise<void>): void;
     publishStatus?(threadId: ThreadId): Promise<void>;
+    writeModeSwitch: WriteModeSwitchPort;
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
@@ -127,19 +129,19 @@ export function createDeliveryAdapter(
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
-    at: "boundary",
+    at: "boundary" | "prefix",
   ): Promise<SelectedDelivery<DeliveryBoundarySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
-    at: "run_start" | "boundary",
+    at: "run_start" | "boundary" | "prefix",
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
-    const pendingBatch = await inbox.selectPending(threadId);
-    const projection = await inbox.readPendingProjection(threadId);
-    const boundIds = new Set(projection.run?.messageIds ?? []);
-    const eligible = pendingBatch.filter((row) => !boundIds.has(row.id));
-    const nextWork = next(eligible, at);
+    const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
+    // Materialization puts every waiting non-command row into the graph in seq
+    // order; it is not a request boundary, so a queued switch never yields it.
+    const nextWork: InboxWorkSelection =
+      at === "prefix" ? prefixRows(eligible) : next(eligible, at);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
-    const rows = nextWork.kind === "none" ? [] : nextWork.rows;
+    const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
     const work = await workBatch(threadId, rows);
     const [notices, thread] = await Promise.all([
@@ -157,8 +159,20 @@ export function createDeliveryAdapter(
       activeLeafTurnId: thread.activeLeafTurnId,
     };
     const selection: DeliverySelection | DeliveryBoundarySelection =
-      at === "run_start" ? { ...selectionFields, next: nextWork } : selectionFields;
+      at === "run_start"
+        ? { ...selectionFields, next: nextWork }
+        : { ...selectionFields, yieldReply: nextWork.kind === "yield" };
     return { selection, pendingBatch, work };
+  }
+  async function eligiblePending(threadId: ThreadId) {
+    const pendingBatch = await inbox.selectPending(threadId);
+    const projection = await inbox.readPendingProjection(threadId);
+    const boundIds = new Set(projection.run?.messageIds ?? []);
+    return {
+      pendingBatch,
+      boundIds,
+      eligible: pendingBatch.filter((row) => !boundIds.has(row.id)),
+    };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
@@ -264,7 +278,7 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId, "boundary");
+    const { selection, work } = await selectForPreparation(threadId, "prefix");
     const turns = await Promise.all(
       work.batch.map((message) => deps.repos.turns.findById(message.id)),
     );
@@ -301,6 +315,52 @@ export function createDeliveryAdapter(
       ? ("pending" as const)
       : ("delivered" as const);
   }
+  /**
+   * Applies the chat's due write-mode switches while no reply holds it. Each
+   * switch is one transaction: the chat's mode, its Work's default (thread
+   * then Work), the switch turn at the active leaf, and the control's ack. No
+   * model call and no lease: a reply never sees its mode change.
+   */
+  async function applyDueSwitches(threadId: ThreadId) {
+    await deps.runClaim.withExclusiveThread(threadId, async () => {
+      while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId))) {}
+    });
+  }
+  async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
+    const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
+    schedulePostCommit(() => deps.publishFinalizedReports(reports));
+    const selected = next(await inbox.selectPending(threadId), "run_start");
+    if (selected.kind !== "switch") return false;
+    const thread = await deps.repos.threads.findById(threadId);
+    if (!thread) return false;
+    const { control } = selected;
+    const mode = control.body.mode;
+    const leaf = thread.activeLeafTurnId as TurnId | null;
+    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
+    const { turn, block } = writeModeSwitchTurn({
+      threadId,
+      prevTurnId: leaf,
+      position: nextTurnPosition(leafTurn),
+      mode,
+      controlMessageId: control.id,
+      notice: await deps.writeModeSwitch.renderNotice(threadId, mode),
+    });
+    await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => {
+      await deps.repos.threads.setAiWriteMode(threadId, mode);
+      if (thread.workId) await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
+      return {
+        result: undefined,
+        events: [
+          { type: "turn.created" as const, turn },
+          { type: "block.upserted" as const, block },
+        ],
+      };
+    });
+    await inbox.ack(threadId, [control.id]);
+    await appendPending(threadId);
+    return true;
+  }
   async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
     // Work mutations already hold Work rows. Taking the thread lock here would
     // invert turn persistence's thread → Work activity order. Immutable markers
@@ -314,6 +374,7 @@ export function createDeliveryAdapter(
     });
   }
   type PreparedAdoption<TCurrent> = {
+    kind: "adopt";
     batch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
     committedWorkIds: string[];
@@ -421,6 +482,7 @@ export function createDeliveryAdapter(
       prepared = { events: [], turns: [], blocks: [], requiresSplit: false };
     }
     return {
+      kind: "adopt",
       batch: orderedBatch,
       selection,
       preparedCurrent,
@@ -609,6 +671,56 @@ export function createDeliveryAdapter(
     };
   }
 
+  type PreparedYield<TCurrent> = {
+    kind: "yield";
+    preparedCurrent?: TCurrent;
+    currentFailure?: unknown;
+  };
+
+  /** A placeholder finishes through its own callbacks; an assistant needs nothing prepared. */
+  async function prepareYield<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+  ): Promise<PreparedYield<TCurrent>> {
+    if (input.current.kind === "assistant") return { kind: "yield" };
+    try {
+      return { kind: "yield", preparedCurrent: await input.prepareCurrent?.() };
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
+      return { kind: "yield", currentFailure: error };
+    }
+  }
+
+  /**
+   * Ends the reply at this request boundary because a message waits behind a
+   * queued switch. Nothing is adopted and no successor is reserved: the
+   * assistant exits through the run's ordinary success close, and a
+   * placeholder completes with its own outcome before the claim is released.
+   * Its receipt stays unacknowledged, so those messages wait for the next run.
+   */
+  async function commitYield<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+    prepared: PreparedYield<TCurrent>,
+  ): Promise<AdoptedBatch<TCurrent>> {
+    const drain = { turns: [], blocks: [], events: [], ackIds: [] };
+    if (input.current.kind === "assistant")
+      return { drain, next: input.currentTurn, split: false, yielded: true };
+    const completed = await input.current.complete(
+      prepared.preparedCurrent,
+      prepared.currentFailure,
+    );
+    await deps.runClaim.release(input.lease);
+    await appendPending(input.lease.threadId);
+    return {
+      drain,
+      next: completed,
+      completed,
+      split: true,
+      terminal: true,
+      yielded: true,
+      preparedCurrent: prepared.preparedCurrent,
+    };
+  }
+
   async function adopt<TCurrent>(
     input: DeliveryBoundary<TCurrent>,
   ): Promise<AdoptedBatch<TCurrent>> {
@@ -616,13 +728,18 @@ export function createDeliveryAdapter(
       threadId: input.lease.threadId,
       select: () => selectForPreparation(input.lease.threadId, "boundary"),
       signal: input.signal,
+      // Cancellation wins over a yield: it is checked under the lock first.
       validate: async () => {
         if ((await leaseStore.lockReceipt(input.lease))?.cancelRequested)
           throw new DOMException("The operation was aborted", "AbortError");
       },
-      prepare: (selection, work) => prepareAdoption(input, selection, work),
-      hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
-      commit: async (_selection, _work, prepared) => commitAdoption(input, prepared),
+      prepare: (selection, work): Promise<PreparedAdoption<TCurrent> | PreparedYield<TCurrent>> =>
+        selection.yieldReply ? prepareYield(input) : prepareAdoption(input, selection, work),
+      // A yield consumes no peeked notices; they wait for the next reply.
+      hasPreparationFailure: (prepared) =>
+        prepared.kind === "yield" || prepared.preparationFailure !== undefined,
+      commit: async (_selection, _work, prepared) =>
+        prepared.kind === "yield" ? commitYield(input, prepared) : commitAdoption(input, prepared),
     });
   }
 
@@ -665,10 +782,24 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
+      // The control route applies an idle switch itself; a reply's release
+      // wake and the sweep reach one a claim holder kept from it.
+      async enqueueWithoutWake(draft) {
+        const message = await inbox.enqueue(draft);
+        await appendPending(draft.threadId);
+        return message;
+      },
+      selectPending: inbox.selectPending,
+      async threadWriteMode(threadId) {
+        const thread = await deps.repos.threads.findById(threadId);
+        if (!thread) throw new Error(`Thread not found: ${threadId}`);
+        return thread.aiWriteMode;
+      },
+      applyDueSwitches,
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
-      acknowledge: async (id, controlId) => {
-        await inbox.ack(id, [controlId]);
+      acknowledge: async (id, controlIds) => {
+        await inbox.ack(id, [...controlIds]);
         await appendPending(id);
       },
       hasCompletedReply: hasCompletedReplyInLineage,
@@ -682,6 +813,10 @@ export function createDeliveryAdapter(
       }
     },
     materializeIdle,
+    applyDueSwitches,
+    async yieldsAtBoundary(threadId) {
+      return next((await eligiblePending(threadId)).eligible, "boundary").kind === "yield";
+    },
     async sweepWorkNotices() {
       let threads = await inbox.pendingWorkThreads(100, workCursor);
       if (threads.length === 0 && workCursor) threads = await inbox.pendingWorkThreads(100);
@@ -786,6 +921,7 @@ export function createDeliveryAdapter(
           : input.cause;
         const finalCause = cause;
         if (input.continueWith && cause.kind === "success") {
+          // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             selection.batch.some((message) => message.intent === "message") ||
@@ -829,6 +965,11 @@ export function createDeliveryAdapter(
       return { kind: "completed", completion };
     },
   };
+}
+
+function prefixRows(eligible: readonly InboxMessage[]): InboxWorkSelection {
+  const rows = eligible.filter((row) => row.intent !== "control");
+  return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
 }
 
 function sameInboxBatch(left: readonly InboxMessage[], right: readonly InboxMessage[]): boolean {

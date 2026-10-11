@@ -24,9 +24,12 @@ import type {
   ThreadPendingInbox,
 } from "@meridian/contracts/threads";
 
+/** This client queues and renders `/compact` only; write-mode switches wait for their own rows. */
+export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
+
 export type LocalSend = {
   id: string;
-  control: ControlBody;
+  control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
 };
 
@@ -44,12 +47,12 @@ export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed";
 
 export type QueuedControl = {
   id: string;
-  control: ControlBody;
+  control: CompactControl;
   status: QueuedControlStatus;
 };
 
 export type ControlAction =
-  | { type: "enqueue"; id: string; control: ControlBody }
+  | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
   | { type: "enqueue_failed"; id: string }
@@ -116,7 +119,7 @@ export function mergeQueuedControls(input: {
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
   for (const item of pending.items) {
-    if (item.intent !== "control" || !item.control) continue;
+    if (item.intent !== "control" || item.control?.kind !== "compact") continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const withdrawal = local.withdrawals.get(item.id);

@@ -45,6 +45,7 @@ import { readPendingInbox } from "../pending-inbox.js";
 import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createWakeIfRunnable } from "../wake-if-runnable.js";
+import { writeModeSwitchNotice } from "../write-mode-switch.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
@@ -194,6 +195,12 @@ export function createRuntimeHarness(
         threadLock,
         runStarter: runStarter ?? { async start() {} },
         async publishFinalizedReports() {},
+        writeModeSwitch: {
+          async renderNotice(_threadId, mode) {
+            return writeModeSwitchNotice({ archivedAt: null }, mode, false);
+          },
+          async setWorkDefault() {},
+        },
         schedulePostCommit:
           schedulePostCommit ??
           ((task) => {
@@ -227,7 +234,10 @@ export function createRuntimeHarness(
   wakeIfRunnable = createWakeIfRunnable({
     delivery: deps.delivery,
     runStarter: createRunStarter(
-      { startDrain: (id) => orchestrator().startDrain(id) },
+      {
+        startDrain: (id) => orchestrator().startDrain(id),
+        applyDueSwitches: (id) => deps.delivery.applyDueSwitches(id),
+      },
       deps.eventSink,
     ),
     shutdown,

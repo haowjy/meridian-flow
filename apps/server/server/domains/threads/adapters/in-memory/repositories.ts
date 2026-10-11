@@ -443,6 +443,11 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
+    async setAiWriteMode(id, mode) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      threads.set(id, { ...thread, aiWriteMode: mode, updatedAt: toIsoString(new Date()) });
+    },
     async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);

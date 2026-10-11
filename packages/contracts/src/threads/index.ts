@@ -157,8 +157,13 @@ export type ThreadActivity = {
  */
 export type MessageIntent = "message" | "notice" | "control";
 
-/** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact"; instructions?: string };
+/**
+ * Runtime commands take their transcript position at execution, not enqueue.
+ * `write_mode` switches one chat's AI write mode once no reply holds the chat.
+ */
+export type ControlBody =
+  | { kind: "compact"; instructions?: string }
+  | { kind: "write_mode"; mode: AiWriteMode };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
