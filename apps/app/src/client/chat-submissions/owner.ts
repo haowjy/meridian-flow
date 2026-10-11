@@ -1,6 +1,8 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 import type { QueryClient } from "@tanstack/react-query";
+import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
+import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { removeChatRow } from "@/client/query/chat-projections";
@@ -17,10 +19,12 @@ import { browserSubmissionLock } from "./adapters/browser-lock";
 import { ChatSubmissionDriver } from "./driver";
 import {
   getChatSubmissionEpoch,
+  readChatSubmissionSnapshot,
   readChatSubmissions,
   recordChatSubmission,
   retireChatSubmission,
 } from "./index";
+import { abortable } from "./lock";
 import type { ChatSubmission } from "./store";
 
 type Row = {
@@ -104,6 +108,8 @@ export class ChatSubmissionOwner {
   readonly driver: ChatSubmissionDriver;
   presentation = new Map<string, UserTurnRecovery>();
   private readonly session = {};
+  private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
+  private reconciling = false;
   private readonly epoch = getChatSubmissionEpoch();
   constructor(private readonly options: OwnerOptions) {
     const { accountId, threadId, projectId, signal, current, controller, actions, queryClient } =
@@ -143,6 +149,7 @@ export class ChatSubmissionOwner {
         );
       },
       created: (thread) => {
+        this.destination = "created";
         actions.ensureThread(thread);
         void invalidateProjectThreadData(queryClient, projectId);
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
@@ -170,7 +177,10 @@ export class ChatSubmissionOwner {
           ? { kind: "new-chat" as const, id: projectId }
           : { kind: "chat" as const, id: threadId };
         if (!composerSessionDraft(accountId, destination).prependSnapshots(snapshots)) return false;
-        if (entry.creation) source.handoff();
+        if (entry.creation) {
+          this.destination = "editing";
+          source.handoff();
+        }
         return true;
       },
       edited: (entry) => {
@@ -196,7 +206,16 @@ export class ChatSubmissionOwner {
   rebuild = () => {
     const { current, accountId, threadId, actions } = this.options;
     if (!current()) return;
-    const records = this.entries();
+    const snapshot = readChatSubmissionSnapshot(accountId);
+    if (!snapshot) return;
+    const records = snapshot.filter((entry) => entry.threadId === threadId);
+    if (this.destination !== "editing" && records.some((entry) => entry.creation))
+      this.destination = "creating";
+    else if (records.length > 0) this.destination = "created";
+    if (!records.length && this.destination === "creating") {
+      void this.reconcileDestination();
+      return;
+    }
     this.presentation = new Map();
     const ids = new Set(records.map((entry) => key(accountId, entry.recordId)));
     let retired = false;
@@ -235,6 +254,48 @@ export class ChatSubmissionOwner {
     if (retired) actions.invalidateThreadSnapshot(threadId);
     this.options.changed();
   };
+
+  /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
+  private async reconcileDestination() {
+    if (this.reconciling) return;
+    this.reconciling = true;
+    const { accountId, threadId, projectId, signal, current, actions, queryClient } = this.options;
+    const timeout = AbortSignal.timeout(15_000);
+    const requestSignal = AbortSignal.any([signal, timeout]);
+    try {
+      const snapshot = await abortable(
+        getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
+        requestSignal,
+      );
+      if (!current()) return;
+      this.destination = "created";
+      actions.ensureThread(deserializeThreadSnapshot(snapshot).thread);
+      this.rebuild();
+    } catch (error) {
+      if (!current()) return;
+      if (error instanceof HttpResponseError && error.status === 404) {
+        // A newer addressed intent may have arrived while confirmation was in flight.
+        const records = readChatSubmissionSnapshot(accountId);
+        if (!records || records.some((entry) => entry.threadId === threadId)) return;
+        const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
+        if (
+          source.initialDraft &&
+          !composerSessionDraft(accountId, { kind: "new-chat", id: projectId }).prependSnapshots([
+            source.initialDraft,
+          ])
+        )
+          return;
+        source.handoff();
+        this.destination = "editing";
+        this.rebuild();
+        removeChatRow(queryClient, projectId, threadId);
+        this.options.dissolveChat();
+      }
+      // Network failures and unavailable reads keep the destination and last-known rows.
+    } finally {
+      this.reconciling = false;
+    }
+  }
 
   submit = async (envelope: ComposerSubmitEnvelope): Promise<boolean> => {
     const { accountId, threadId, projectId, actions, current } = this.options;

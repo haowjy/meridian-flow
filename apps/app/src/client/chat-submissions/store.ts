@@ -172,6 +172,7 @@ export class DeviceChatSubmissionJournal {
   private state: { accountId: string } | null = null;
   /** Session fence: bumped on every account bind. Not a durable revision. */
   private bindEpoch = 0;
+  private lastKnown: ChatSubmission[] = [];
   private readonly listeners = new Set<() => void>();
 
   subscribe = (listener: () => void): (() => void) => {
@@ -211,11 +212,17 @@ export class DeviceChatSubmissionJournal {
     // Per-account storage keys mean another account's records are never read
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
+    this.lastKnown = [];
     rewriteV1ChatSubmissions(this.storage, accountId);
     this.notify();
   }
 
   entries(): ChatSubmission[] {
+    return this.snapshot() ?? this.lastKnown;
+  }
+
+  /** Null means unavailable, never an authoritative empty journal. */
+  snapshot(): ChatSubmission[] | null {
     const accountId = this.state?.accountId;
     if (!accountId) return [];
     const prefix = `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:`;
@@ -224,12 +231,17 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
-        const parsed = this.recordFor(accountId, key).read();
+        let failed = false;
+        const parsed = this.recordFor(accountId, key, () => {
+          failed = true;
+        }).read();
+        if (failed) return null;
         if (parsed) found.push(parsed);
       }
     } catch {
-      return [];
+      return null;
     }
+    this.lastKnown = found;
     return found;
   }
 
@@ -259,11 +271,12 @@ export class DeviceChatSubmissionJournal {
     return written;
   }
 
-  private recordFor(accountId: string, key: string) {
+  private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
     return browserRecord(
       () => this.storage,
       { key, version: CHAT_SUBMISSIONS_SCHEMA_VERSION, accountId },
       (value) => parseSubmission(value) ?? undefined,
+      onError,
     );
   }
 
