@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve prose classification when MIME inference supplies an upload suffix.
+
 - Share destination naming between optimistic clients and server commands, and use the binary naming rule for upload intake.
 
 - The model sees extensionless prose names in document instructions, tool results, errors and copy receipts.
