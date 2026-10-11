@@ -20,7 +20,7 @@ import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-f
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
-/** What went wrong on a file: the strip's own command, else anything held on the draft (a failed Review launch). */
+/** Failures held on a file: selective commands and the draft itself (including Review launches). */
 export type DockFileFailure =
   | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
   | { kind: "draft"; failure: DraftCommandFailure };
@@ -92,7 +92,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     [actionableFiles, runner],
   );
 
-  const fileFailure = (file: DockFile): DockFileFailure | null => {
+  const fileFailures = (file: DockFile): DockFileFailure[] => {
     const ref = {
       projectId,
       workId,
@@ -100,9 +100,11 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       draftId: file.row.draft.draftId,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
-    if (state?.phase === "failed") return { kind: "changes", failure: state };
     const held = draftCommandFailure(records.drafts, ref);
-    return held ? { kind: "draft", failure: held } : null;
+    return [
+      ...(state?.phase === "failed" ? [{ kind: "changes" as const, failure: state }] : []),
+      ...(held ? [{ kind: "draft" as const, failure: held }] : []),
+    ];
   };
 
   return {
@@ -119,7 +121,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     reviewable: reviewable !== null,
     projectId,
     workId,
-    fileFailure,
+    fileFailures,
     review,
     reviewFirst: () => reviewable && review(reviewable),
     apply: () => send("apply"),

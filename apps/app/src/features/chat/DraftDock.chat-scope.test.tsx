@@ -6,7 +6,11 @@ import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  failDraftCommand,
+  failDraftReviewLaunch,
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
@@ -248,6 +252,71 @@ it.each([
         draftId: file.draftId,
       });
       expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
+    },
+    {
+      chatSurface: <Strip />,
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ProjectNavigationProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+it.each([
+  {
+    isNewDocument: false,
+    code: "review-failed" as const,
+    message: "Couldn't open this draft. Try again.",
+  },
+  {
+    isNewDocument: false,
+    code: "apply-offline" as const,
+    message: "Couldn't apply. Check your connection and try again.",
+  },
+  {
+    isNewDocument: true,
+    code: "apply-offline" as const,
+    message: "Couldn't apply. Check your connection and try again.",
+  },
+])("gives a single file's $code one owner after expansion (new: $isNewDocument)", async ({
+  code,
+  message,
+  isNewDocument,
+}) => {
+  const file = { ...draft("chapter-12", [pacing]), isNewDocument };
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    draftId: file.draftId,
+    isNewDocument,
+    operations: [op("1", pacing)],
+  });
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(text()).toContain("1 change"));
+      await act(async () => {
+        const ref = {
+          projectId: "project-a",
+          workId: "work-a",
+          documentId: "chapter-12",
+          draftId: file.draftId,
+        };
+        if (code === "review-failed") failDraftReviewLaunch(ref);
+        else failDraftCommand(ref, { code });
+      });
+      await settleReact(() =>
+        expect(document.querySelector('[aria-label="Collapse changes"]')).not.toBeNull(),
+      );
+      expect(
+        [...document.querySelectorAll('[role="alert"],[role="status"]')].filter(
+          (node) => node.textContent === message,
+        ),
+      ).toHaveLength(1);
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1);
     },
     {
       chatSurface: <Strip />,

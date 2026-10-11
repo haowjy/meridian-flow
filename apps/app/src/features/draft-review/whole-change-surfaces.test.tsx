@@ -4,12 +4,14 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MeridianApiError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { WorkChangeFile } from "@/features/project/work/WorkChangeFile";
 import {
   createReviewScopeFixture,
+  deferredReviewAnswer,
   listed,
   operation,
   preview,
@@ -85,8 +87,8 @@ it.each([
   for (const mode of ["apply", "discard"] as const) {
     const request = mode === "apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
     // Hold at the process boundary: verify admission and optimistic disappearance.
-    if (mode === "apply") fixture.network.applyDraft.mockReturnValue(new Promise(() => {}));
-    else fixture.network.discardDraft.mockReturnValue(new Promise(() => {}));
+    const answer = deferredReviewAnswer<never>();
+    request.mockReturnValue(answer.promise);
     await fixture.render(
       async () => {
         if (kind === "work") {
@@ -111,6 +113,39 @@ it.each([
           draftId: "draft-a",
         });
         expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
+        await settleReact(() => expect(button()).toBeUndefined());
+        expect(
+          document.querySelector("[data-review-change-row],[data-review-change-bar]"),
+        ).toBeNull();
+        await act(async () =>
+          answer.reject(
+            new MeridianApiError(
+              {
+                code: "work_archived",
+                message: "This Work is archived.",
+                source: "system",
+                retryable: false,
+              },
+              403,
+            ),
+          ),
+        );
+        if (kind === "work") {
+          await settleReact(() =>
+            expect(document.querySelector('[aria-label="Changes in Chapter 12"]')).not.toBeNull(),
+          );
+          await act(async () =>
+            document
+              .querySelector<HTMLButtonElement>(
+                '[aria-label="Changes in Chapter 12"][aria-expanded="false"]',
+              )
+              ?.click(),
+          );
+        }
+        await settleReact(() => expect(button()).toBeDefined());
+        expect(
+          document.querySelector("[data-review-change-row],[data-review-change-bar]"),
+        ).not.toBeNull();
       },
       {
         chatSurface: <Surface kind={kind} />,
