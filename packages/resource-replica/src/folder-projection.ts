@@ -2,7 +2,7 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { CatalogEntry } from "@meridian/contracts/protocol";
 import { sameCatalogScope } from "./catalog-scope";
-import { projectFolderLocation } from "./folder-namespace";
+import { folderOwnsDeletion, projectFolderLocation } from "./folder-namespace";
 import { owningLocationIntent } from "./resource-intent-policy";
 import type { FolderNamespaceRecord, ResourceLocation } from "./resource-records";
 import { ownerOf, sameOwner } from "./resource-records";
@@ -53,12 +53,58 @@ export function rebaseFolderResourceLocation(
   return current;
 }
 
+/** Pending deletes hide rows immediately; refusal releases the overlay. */
+export function folderDeletionHidesLocation(
+  projectId: string,
+  location: ResourceLocation,
+  folders: readonly FolderNamespaceRecord[],
+): boolean {
+  return folders.some(
+    (folder) =>
+      (folder.projectId === null || folder.projectId === projectId) &&
+      folder.intents.some(
+        (intent) =>
+          intent.desired.kind === "delete" &&
+          (intent.state === "pending" ||
+            intent.state === "submitted" ||
+            intent.state === "received"),
+      ) &&
+      location.scheme === folder.canonical.scheme &&
+      sameOwner(location, folder.canonical) &&
+      (location.path === folder.canonical.path ||
+        location.path.startsWith(`${folder.canonical.path}/`)),
+  );
+}
+
 /** Supply all destination sources/parents, including other Work catalogs for cross-Work moves. */
 export function projectFolderCatalog(
   projectId: string,
   entries: readonly CatalogEntry[],
   folders: readonly FolderNamespaceRecord[],
 ): readonly CatalogEntry[] {
+  const deleted = new Set(
+    folders
+      .filter(
+        (folder) =>
+          (folder.projectId === null || folder.projectId === projectId) &&
+          folderOwnsDeletion(folder),
+      )
+      .map((folder) => folder.folderId),
+  );
+  const byId = new Map(entries.map((entry) => [entry.entryId, entry]));
+  entries = entries.filter((entry) => {
+    let current = entry;
+    const seen = new Set<string>();
+    for (;;) {
+      if (deleted.has(current.entryId)) return false;
+      if (current.kind !== "file" && current.kind !== "folder") return true;
+      if (seen.has(current.entryId)) throw new Error("Catalog parent cycle");
+      seen.add(current.entryId);
+      const parent = byId.get(current.parentId);
+      if (!parent) return true;
+      current = parent;
+    }
+  });
   if (folderOverlays(projectId, folders).length === 0) return entries;
   const moved = new Set<string>();
   const projected = entries.map((entry): CatalogEntry => {

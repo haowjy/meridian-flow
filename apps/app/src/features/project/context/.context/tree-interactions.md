@@ -72,9 +72,10 @@ Deleting an editable file queues a resource deletion intent and hides the row
 optimistically. A terminal receipt carries exact identity and generation into
 session/removal authority. A rejected deletion restores the row with repair state. Transport
 failure leaves the submitted attempt recoverable and does not prove rejection
-or deletion. Folder deletion still sends the direct context command and admits
-its exact result to the availability coordinator. Tree absence never proves
-document removal.
+or deletion. Folder deletion uses the same account namespace journal: its receipt
+settles the folder and exact descendant identities atomically. Pending deletion
+hides the subtree; refusal restores rows with a failure mark. Tree absence never
+proves document removal.
 
 ## Downlinks
 

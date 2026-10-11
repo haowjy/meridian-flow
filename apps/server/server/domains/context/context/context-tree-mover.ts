@@ -273,7 +273,7 @@ export class ContextTreeMover {
     if (token.value === null) return Err({ code: "not_found", uri: target.canonical });
     if (
       options.expected.kind === "folder"
-        ? token.value.kind !== "directory"
+        ? token.value.kind !== "directory" || token.value.nodeId !== options.expected.nodeId
         : token.value.kind !== "file" || token.value.nodeId !== options.expected.documentId
     ) {
       return Err({ code: "stale_target", uri: target.canonical });

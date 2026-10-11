@@ -395,6 +395,11 @@ export function createDrizzleProjectContextAvailability(
             const { scope, authority, scheme, generation, parentPath } = classification.identity;
             // The same liveness facts the SQL predicates filter on, but this site
             // has to name the one that failed, so it classifies rather than filters.
+            // Independent document deletion remains deletion even when its authority hides.
+            // Work-cascade tombstones belong to the reversible authority lifecycle.
+            if (document.deletedAt && !document.deletedByWorkId) {
+              return { kind: "deleted", documentId, generation, lastAuthority: authority };
+            }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
               return {
                 kind: "authority-unavailable",

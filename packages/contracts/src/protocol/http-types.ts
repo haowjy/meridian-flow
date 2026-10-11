@@ -124,7 +124,7 @@ export type DeleteContextEntryResult = {
 export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
-  expected: { kind: "file"; documentId: string } | { kind: "folder" };
+  expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
 export type MoveContextEntryRequest = {

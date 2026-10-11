@@ -319,14 +319,15 @@ function projectCatalogDirectory(
     uri: entry.uri,
     ...(repair
       ? {
-          namespaceFailure: "set-location" as const,
+          namespaceFailure: repair.kind,
           namespaceRepairName: repair.name,
-          namespaceRepairMove: folder
-            ? refusedMoveDestination(
-                repair.destination,
-                rebaseFolderResourceLocation(projectId, projectFolderLocation(folder), folders),
-              )
-            : undefined,
+          namespaceRepairMove:
+            folder && repair.destination
+              ? refusedMoveDestination(
+                  repair.destination,
+                  rebaseFolderResourceLocation(projectId, projectFolderLocation(folder), folders),
+                )
+              : undefined,
           ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
         }
       : {}),
@@ -405,7 +406,7 @@ export function projectCatalogView(
             ? { namespaceFailure: "delete" as const }
             : repair?.kind === "set-location"
               ? {
-                  namespaceFailure: "set-location" as const,
+                  namespaceFailure: repair.kind,
                   namespaceRepairName: repair.name,
                   namespaceRepairMove: effective
                     ? refusedMoveDestination(repair.destination, effective)

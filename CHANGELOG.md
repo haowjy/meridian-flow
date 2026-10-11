@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- A completed folder deletion no longer reports failure when local file metadata is busy. Settlement retries automatically and survives reload.
+- Folder deletion hides its rows immediately and uses the same durable retry path as file deletion. Refused deletion restores the folder with a failure mark. Delayed deletion cannot delete a replacement folder at the old path.
 - Chat Recent hides known-deleted documents instead of showing their cached names.
 
 - Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.

@@ -1159,6 +1159,10 @@ msgstr ""
 msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't delete this folder. Try again."
+msgstr "无法删除此文件夹，请重试。"
+
 #: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""

@@ -54,9 +54,16 @@ Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
 cache invalidation.
 
-Committed server deletions enter a durable `committedDeletions` inbox in the
-account metadata database before workspace settlement. Intake indexes descriptors
-once per batch and retries busy namespace locks without another confirmation.
-Replay uses exact Document ID and generation fences, never remint aliases. The
-account epoch cancels delivery; remaining evidence survives reload and is drained
-on the next account start. Terminal descriptors remain irreversible.
+Folder deletion is another folder namespace intent (`planFolderDeletion`,
+`AccountResourceReplica.deleteFolder`), admitted by stable folder ID. Its delete
+request carries that ID, and its accepted receipt carries exact deleted document
+IDs and the availability generation. `commitFolder` settles the folder journal
+and terminalizes matching current descendants atomically in one metadata
+transaction, using the file deletion transition and fencing newer generations.
+Pending deletion hides the catalog subtree immediately. Refusal releases the
+optimistic overlay and leaves failure evidence on the restored folder row.
+Namespace retry and account fencing are the only command delivery mechanism.
+Availability reconciliation closes remote-deleted tabs and sessions; it has no
+general durable deletion intake. The inherited session-authority exception for
+adopted local-origin documents is documented in the context feature.
+The schema drops the removed deletion inbox without discarding the journal.

@@ -1,17 +1,24 @@
-/** Folder placement uses the same durable namespace journal without inventing document content. */
+/** Folder placement and recursive deletion share the account namespace journal, without document content. */
 
+import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
   cancelRefusedLocationChain,
   namespaceRepairDestination,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
-import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { committedResourceDeletion } from "./resource-deletion";
+import {
+  intentOwnsDeletion,
+  owningLocationIntent,
+  supersedeRepairableNamespaceWork,
+} from "./resource-intent-policy";
 import {
   activeNamespaceIntent,
   type NamespaceAttemptIds,
   type NamespaceReconcileResult,
   namespaceAttemptWithOutcome,
   namespaceOutcomeMatches,
+  namespaceReceiptIs,
   reconcileNamespaceJournal,
 } from "./resource-namespace";
 import type {
@@ -26,6 +33,8 @@ import type {
   ResourceLocation,
   ResourceNamespaceLock,
   ResourceNamespaceTransport,
+  ResourceRecord,
+  ResourceWrite,
 } from "./resource-records";
 import { ownerOf, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
@@ -51,13 +60,20 @@ export function namespaceDestinationLocation(destination: ResourceDestination): 
   };
 }
 
-export function projectFolderNeedsRepair(
-  record: FolderNamespaceRecord,
-): { intentId: string; name: string; destination: ResourceDestination } | null {
+export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
+  intentId: string;
+  kind: "delete" | "set-location";
+  name: string;
+  destination?: ResourceDestination;
+} | null {
   const failed = record.intents.find((intent) => intent.state === "needs-repair");
+  if (failed?.desired.kind === "delete")
+    return { intentId: failed.intentId, kind: "delete", name: record.canonical.name };
   if (failed?.desired.kind !== "set-folder-location") return null;
   const destination = namespaceRepairDestination(record.intents, failed);
-  return destination ? { intentId: failed.intentId, name: destination.name, destination } : null;
+  return destination
+    ? { intentId: failed.intentId, kind: "set-location", name: destination.name, destination }
+    : null;
 }
 
 /** Work that can progress without a new writer command, as `resourceNeedsBackgroundReconciliation` for files. */
@@ -79,6 +95,66 @@ export function projectFolderLocation(record: FolderNamespaceRecord): ResourceLo
     : record.canonical;
 }
 
+export function folderOwnsDeletion(record: FolderNamespaceRecord): boolean {
+  return record.intents.some(intentOwnsDeletion);
+}
+
+/** Recursive deletion is namespace work; its receipt settles descendants atomically. */
+export function planFolderDeletion(input: {
+  record?: FolderNamespaceRecord | null;
+  projectId: string;
+  handle: string;
+  folderId: string;
+  source: ResourceLocation;
+  intentId: string;
+  operationId: string;
+}): FolderNamespaceWrite | null {
+  const previous = input.record ?? null;
+  if (
+    previous &&
+    ((previous.projectId !== null && previous.projectId !== input.projectId) ||
+      previous.handle !== input.handle ||
+      previous.folderId !== input.folderId)
+  )
+    throw new Error("Folder namespace identity mismatch");
+  const record: FolderNamespaceRecord = previous ?? {
+    projectId: input.source.scheme === "user" ? null : input.projectId,
+    handle: input.handle,
+    folderId: input.folderId,
+    revision: 0,
+    canonical: input.source,
+    intents: [],
+  };
+  if (folderOwnsDeletion(record)) return null;
+  resourceContextAuthority(record.canonical.scheme, record.canonical);
+  const superseded = supersedeRepairableNamespaceWork(record, record.projectId);
+  return {
+    expectedRevision: previous?.revision ?? null,
+    next: {
+      ...record,
+      revision: record.revision + 1,
+      intents: [
+        ...superseded.intents.map((intent) =>
+          intent.state === "pending" && !intent.attempts.length
+            ? { ...intent, state: "cancelled" as const }
+            : intent,
+        ),
+        {
+          projectId: input.projectId,
+          handle: input.handle,
+          intentId: input.intentId,
+          operationId: input.operationId,
+          sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
+          identityRevision: 1,
+          desired: { kind: "delete" },
+          attempts: [],
+          state: "pending",
+        },
+      ],
+    },
+  };
+}
+
 /** New folder records reserve only namespace identity, never a Yjs database or document id. */
 export function planFolderLocation(input: {
   record?: FolderNamespaceRecord | null;
@@ -91,6 +167,7 @@ export function planFolderLocation(input: {
   destination: ResourceDestination;
 }): FolderNamespaceWrite | null {
   const previous = input.record ?? null;
+  if (previous && folderOwnsDeletion(previous)) throw new Error("Folder is being deleted");
   if (
     previous &&
     ((previous.projectId !== null && previous.projectId !== input.projectId) ||
@@ -167,15 +244,15 @@ export function validateFolderNamespaceUpdate(
       (intent) =>
         (next.projectId !== null && intent.projectId !== next.projectId) ||
         intent.identityRevision !== 1 ||
-        intent.desired.kind !== "set-folder-location",
+        (intent.desired.kind !== "set-folder-location" && intent.desired.kind !== "delete"),
     )
   )
-    throw new Error("Folder journal only admits folder placement");
+    throw new Error("Folder journal only admits folder namespace commands");
   if (
     next.intents.some((intent) =>
       intent.attempts.some(
         (attempt) =>
-          attempt.request.kind !== "move" ||
+          attempt.request.kind === "create" ||
           attempt.request.body.expected.kind !== "folder" ||
           attempt.request.body.expected.nodeId !== next.folderId,
       ),
@@ -229,11 +306,31 @@ export function prepareFolderNamespaceAttempt(
   const intent = activeNamespaceIntent(record);
   if (
     intent?.state !== "pending" ||
-    intent.desired.kind !== "set-folder-location" ||
+    (intent.desired.kind !== "set-folder-location" && intent.desired.kind !== "delete") ||
     record.canonicalRefresh
   )
     return null;
   const source = record.canonical;
+  if (intent.desired.kind === "delete") {
+    const request: Extract<NamespaceRequest, { kind: "delete" }> = {
+      kind: "delete",
+      scheme: source.scheme,
+      workId: source.workId,
+      workSlug: source.workSlug ?? null,
+      rootThreadId: source.rootThreadId ?? null,
+      rootThreadRef: source.rootThreadRef ?? null,
+      body: {
+        operationId: intent.operationId ?? ids.operationId,
+        path: pathParts(source.path).join("/"),
+        expected: { kind: "folder", nodeId: record.folderId },
+      },
+    };
+    return replaceIntent(record, intent.intentId, (current) => ({
+      ...current,
+      state: "submitted",
+      attempts: [...current.attempts, { attemptId: ids.attemptId, request }],
+    }));
+  }
   const destination = intent.desired.destination;
   const owners = moveOwnerFields(source, destination);
   const request: Extract<NamespaceRequest, { kind: "move" }> = {
@@ -291,7 +388,9 @@ export function settleFolderNamespaceOutcome(
     intent?.state !== "received" ||
     !outcome ||
     outcome.kind === "create" ||
-    (outcome.kind === "operation" && outcome.receipt.command.kind !== "move")
+    (outcome.kind === "operation" &&
+      outcome.receipt.command.kind !== "move" &&
+      outcome.receipt.command.kind !== "delete")
   )
     return null;
   const accepted = outcome.kind === "operation" && outcome.receipt.result.ok;
@@ -301,11 +400,70 @@ export function settleFolderNamespaceOutcome(
     settledAt,
   }));
   if (outcome.kind === "operation" && accepted) {
-    write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
+    if (outcome.receipt.command.kind === "move")
+      write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
   } else {
     write.next.intents = cancelRefusedLocationChain(write.next.intents, intent);
   }
   return write;
+}
+
+/** Called within the folder settlement's metadata transaction, against current exact identities. */
+export function folderDeletionSettlement(
+  previous: FolderNamespaceRecord | null,
+  next: FolderNamespaceRecord,
+): Extract<ContextOperationReceipt, { command: { kind: "delete" } }> | null {
+  const deletion = next.intents.find(
+    (intent) =>
+      intent.desired.kind === "delete" &&
+      intent.state === "settled" &&
+      previous?.intents.find((old) => old.intentId === intent.intentId)?.state !== "settled",
+  );
+  const outcome = deletion?.attempts.at(-1)?.outcome;
+  if (
+    outcome?.kind !== "operation" ||
+    !namespaceReceiptIs(outcome.receipt, "delete") ||
+    !outcome.receipt.result.ok
+  )
+    return null;
+  return outcome.receipt;
+}
+
+/** Exact IDs and newer catalog generations fence historical recursive-delete receipts. */
+export function planFolderDeletionResources(
+  receipt: Extract<ContextOperationReceipt, { command: { kind: "delete" } }>,
+  resources: readonly ResourceRecord[],
+): ResourceWrite[] {
+  if (!receipt.result.ok) return [];
+  const result = receipt.result.value;
+  const ids = new Set(result.deletedDocumentIds);
+  return resources.flatMap((record): ResourceWrite[] => {
+    const resource = record.resource;
+    if (
+      !ids.has(resource.identity.documentId) ||
+      resource.lifecycle.kind === "terminal" ||
+      (resource.lifecycle.kind === "acknowledged" &&
+        resource.lifecycle.availabilityGeneration !== null &&
+        BigInt(resource.lifecycle.availabilityGeneration) > BigInt(result.availabilityGeneration))
+    )
+      return [];
+    return [
+      {
+        expectedRevision: resource.revision,
+        next: {
+          ...record,
+          resource: {
+            ...committedResourceDeletion(
+              resource,
+              result.availabilityGeneration,
+              receipt.operationId,
+            ),
+            revision: resource.revision + 1,
+          },
+        },
+      },
+    ];
+  });
 }
 
 /** Only a catalog observation captured after settlement may clear the replay barrier. */
@@ -341,7 +499,7 @@ export function reconcileFolderNamespace(input: {
     // A changed source path must reach the server for an authoritative, identity-bound
     // outcome. The immutable request may be refused, but can never wait for a receipt forever.
     replayEligible: (record, _intent, attempt) => {
-      if (attempt.request.kind !== "move") return false;
+      if (attempt.request.kind === "create") return false;
       const request = attempt.request;
       return (
         !record.canonicalRefresh &&

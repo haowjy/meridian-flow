@@ -17,3 +17,10 @@ Typed non-retryable HTTP 4xx refusals also settle namespace attempts when route
 intake rejects before a server receipt exists. Persist that refusal against the
 submitted operation ID, never invent a server receipt. Bare HTTP/network failures
 still need receipt evidence and remain replayable otherwise.
+
+Folder deletion and placement use the same folder namespace journal. A delete
+receipt's exact document IDs authorize atomic descendant terminalization with
+the folder settlement; catalog absence or availability never authorizes it.
+Folder delete requests bind stable folder identity as well as path, so offline
+replay refuses replacement folders. Pending deletes hide descendants; refusal
+restores the rows and retains repair evidence.

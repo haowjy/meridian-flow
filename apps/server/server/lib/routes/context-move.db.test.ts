@@ -316,7 +316,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         operationId,
         receipt: {
           operationId,
-          command: { kind: "delete", uri: "manuscript://missing", expected: { kind: "folder" } },
+          command: {
+            kind: "delete",
+            uri: "manuscript://missing",
+            expected: { kind: "folder", nodeId: crypto.randomUUID() },
+          },
           result: { ok: false, error: { code: "not_found", uri: "manuscript://missing" } },
         },
       });
@@ -423,7 +427,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             kind: "delete",
             uri: "manuscript://rolled-back",
-            expected: { kind: "folder" },
+            expected: { kind: "folder", nodeId: crypto.randomUUID() },
           },
           async () => {
             await port.mkdir("manuscript://rolled-back");

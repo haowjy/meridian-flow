@@ -11,6 +11,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   type FolderNamespaceRecord,
+  folderDeletionHidesLocation,
   projectResourceLocation,
   type ResourceOwner,
   type ResourceRecord,
@@ -120,12 +121,11 @@ function resourcePlacement(
   folders: readonly FolderNamespaceRecord[],
 ) {
   const location = projectResourceLocation(projectId, record);
-  return (
-    location && {
-      ...rebaseFolderResourceLocation(projectId, location, folders),
-      provisional: location.provisional,
-    }
-  );
+  if (!location || folderDeletionHidesLocation(projectId, location, folders)) return null;
+  return {
+    ...rebaseFolderResourceLocation(projectId, location, folders),
+    provisional: location.provisional,
+  };
 }
 
 /** One optimistic tab projection for a durable editable resource. */

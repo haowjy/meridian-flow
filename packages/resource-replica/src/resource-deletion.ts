@@ -57,7 +57,7 @@ export function planResourceDeletion(
   };
 }
 
-/** Server-proven deletion, shared by namespace receipts and exact-ID availability. */
+/** Server-proven deletion from namespace receipts, never availability observations. */
 export function committedResourceDeletion(
   resource: ResourceRecord["resource"],
   generation: string,

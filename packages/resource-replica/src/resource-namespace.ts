@@ -217,7 +217,7 @@ export function namespaceOutcomeMatches(
   )
     return false;
   const receipt = outcome.receipt;
-  if (attempt.request.kind === "delete" && receiptIs(receipt, "delete")) {
+  if (attempt.request.kind === "delete" && namespaceReceiptIs(receipt, "delete")) {
     const source = parseContextUri(receipt.command.uri);
     return (
       source.ok &&
@@ -227,7 +227,7 @@ export function namespaceOutcomeMatches(
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
-  if (attemptIs(attempt, "move") && receiptIs(receipt, "move")) {
+  if (attemptIs(attempt, "move") && namespaceReceiptIs(receipt, "move")) {
     const source = parseContextUri(receipt.command.sourceUri);
     const destination = parseContextUri(receipt.command.destinationUri);
     const currentName = normalizedPath(attempt.request.body.path).split("/").at(-1) ?? "";
@@ -284,7 +284,7 @@ function attemptIs<Kind extends NamespaceRequest["kind"]>(
   return attempt.request.kind === kind;
 }
 
-function receiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
+export function namespaceReceiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
   receipt: ContextOperationReceipt,
   kind: Kind,
 ): receipt is ReceiptOf<Kind> {
@@ -302,7 +302,7 @@ export function namespaceAttemptWithOutcome(
   if (
     attemptIs(attempt, "move") &&
     outcome.kind === "operation" &&
-    receiptIs(outcome.receipt, "move")
+    namespaceReceiptIs(outcome.receipt, "move")
   )
     return {
       attemptId: attempt.attemptId,
@@ -312,7 +312,7 @@ export function namespaceAttemptWithOutcome(
   if (
     attemptIs(attempt, "delete") &&
     outcome.kind === "operation" &&
-    receiptIs(outcome.receipt, "delete")
+    namespaceReceiptIs(outcome.receipt, "delete")
   )
     return {
       attemptId: attempt.attemptId,
@@ -406,7 +406,8 @@ export function settleNamespaceOutcome(
     repair = true;
   } else if (attemptIs(attempt, "move")) {
     const receipt = outcome.receipt;
-    if (!receiptIs(receipt, "move") || !receipt.result.ok || !identityStillMatches) repair = true;
+    if (!namespaceReceiptIs(receipt, "move") || !receipt.result.ok || !identityStillMatches)
+      repair = true;
     else {
       // A historical move receipt proves its command outcome, not the current location.
       // Its refresh obligation blocks later dispatch until a post-receipt catalog read.
@@ -423,7 +424,7 @@ export function settleNamespaceOutcome(
     }
   } else if (attemptIs(attempt, "delete")) {
     const receipt = outcome.receipt;
-    if (!receiptIs(receipt, "delete")) repair = true;
+    if (!namespaceReceiptIs(receipt, "delete")) repair = true;
     else {
       const result = receipt.result;
       if (

@@ -192,10 +192,7 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({
-    projectId,
-    scheme,
-  });
+  const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog

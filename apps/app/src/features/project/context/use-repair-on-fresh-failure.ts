@@ -33,7 +33,9 @@ export function useRepairOnFreshFailure(failedAt: number | undefined, openRepair
 /** All Files and Scratch rows distinguish move refusal from name-only repair. */
 export function useEntryRenameRepair(entry: CatalogNode, openRepair: () => void, allowed = true) {
   useRepairOnFreshFailure(
-    allowed && !entry.namespaceRepairMove ? entry.namespaceFailureAt : undefined,
+    allowed && entry.namespaceFailure === "set-location" && !entry.namespaceRepairMove
+      ? entry.namespaceFailureAt
+      : undefined,
     openRepair,
   );
 }
