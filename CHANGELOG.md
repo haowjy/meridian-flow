@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Corpus and KB imports preserve writer titles and folder names instead of slugging them, and name clashes receive numbered suffixes without replacing existing content.
+
 - Prose uploads use writer names without suffixes, preserve their original filename in metadata, and number name clashes. Extensionless data uploads retain their MIME-derived file type.
 
 - Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
