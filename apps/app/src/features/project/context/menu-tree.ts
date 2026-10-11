@@ -143,3 +143,14 @@ export function menuEntryFor(catalog: CatalogContextView, rowId: string): Catalo
 export function isFolderWithin(path: string, ancestor: string): boolean {
   return path === ancestor || path.startsWith(`${ancestor}/`);
 }
+
+/** A crumb opens the list it sits in; an area absent from the root opens inside itself. */
+export function crumbTrailFor(
+  area: MenuArea | null | undefined,
+  path: string,
+  depth: number,
+): DrillNode[] {
+  if (!area) return [];
+  const trail = [areaNode(area), ...foldersIn(area, path)];
+  return trail.slice(0, depth === 0 && !area.listed ? 1 : depth);
+}
