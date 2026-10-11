@@ -112,3 +112,8 @@ describe("documentTitleFromUri", () => {
     expect(documentTitleFromUri("manuscript://")).toBeNull();
   });
 });
+
+it("drops query and section before deriving a document title", () => {
+  expect(documentTitleFromUri("manuscript://Chapter 13.md#opening")).toBe("Chapter 13");
+  expect(documentTitleFromUri("Chapter 13.md?view=1#opening")).toBe("Chapter 13");
+});
