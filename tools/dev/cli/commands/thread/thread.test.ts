@@ -88,6 +88,23 @@ describe("thread", () => {
     });
   });
 
+  it("send with no admitted reply binds the reply to its own message, not an earlier start", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "wait past an unrelated start",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "The answer to this message",
+    });
+  });
+
   it("send times out with exit 124 instead of hanging", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
     expect(result.code).toBe(EXIT.timeout);

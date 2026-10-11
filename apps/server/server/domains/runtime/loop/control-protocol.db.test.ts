@@ -2,6 +2,7 @@
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { TurnStartConflictError } from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
@@ -1171,6 +1172,74 @@ else
         expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, assistantTurnId: null });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
         expect(await threadMode(rig)).toBe("draft");
+      });
+
+      it("names no reply for a message admitted after the live reply ended and its switch applied", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+        const rig = await manualFixture({ gateway });
+        const a = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+        });
+        const aDone = a.execute();
+        await gateway.untilGatewayBoundary();
+        await switchMode(rig, "draft");
+        // M2 saw A live, then A ends and its release applies the switch before
+        // M2 takes the thread lock: M2 is answered by a new reply, not A.
+        const lock = rig.delivery.withThreadLock;
+        vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
+          gateway.release();
+          await aDone;
+          await processDetachedWork.drain();
+          expect(await threadMode(rig)).toBe("draft");
+          return lock(...args);
+        });
+
+        const admitted = await rig.send(rig.threadId, "M2 after A ended");
+        expect(admitted.assistantTurnId).toBeNull();
+        expect(
+          (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
+        ).not.toMatchObject({ delivery: "steer" });
+
+        await drainControls(rig);
+        const turns = await settled(rig);
+        const answer = turns.find((turn) => turn.prevTurnId === admitted.userTurnId);
+        expect(answer).toMatchObject({ role: "assistant", status: "complete", writeMode: "draft" });
+        expect(answer?.id).not.toBe(a.executionTurnId);
+      });
+
+      it("re-resolves the live reply when admission retries after that reply ended", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+        const rig = await manualFixture({ gateway });
+        const a = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+        });
+        const aDone = a.execute();
+        await gateway.untilGatewayBoundary();
+        // The first attempt sees A live and loses its turn start; A ends before
+        // the retry takes the lock, so the retry must not join A.
+        vi.spyOn(rig.repos, "runTurnStartTransition").mockRejectedValueOnce(
+          new TurnStartConflictError(rig.threadId, "already_running"),
+        );
+        const lock = rig.delivery.withThreadLock;
+        let calls = 0;
+        vi.spyOn(rig.delivery, "withThreadLock").mockImplementation(async (...args) => {
+          if (++calls === 2) {
+            gateway.release();
+            await aDone;
+            await processDetachedWork.drain();
+          }
+          return lock(...args);
+        });
+
+        const admitted = await rig.send(rig.threadId, "M2 retried after A ended");
+
+        expect(calls).toBeGreaterThanOrEqual(2);
+        expect(admitted.assistantTurnId).toBeNull();
+        expect(
+          (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
+        ).not.toMatchObject({ delivery: "steer" });
       });
 
       it.each([
