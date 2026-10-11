@@ -22,8 +22,11 @@ folder record beside the file records. A folder's handle is `folder:<catalog fol
 id>`, so it can never collide with a document's. `setFolderLocation` admits a
 rename or move from the installed catalog's location (never the optimistic
 projection) and the runner dispatches it like a file's. A catalog commit may carry
-folder writes; they apply or fail with the checkpoint, so a canonical refresh never
-lands without the catalog read that proves it.
+folder writes; they apply or fail with the checkpoint. Namespace refresh also uses
+the existing exact-ID availability endpoint, including folder IDs: available identity
+installs canonical location through CAS, unavailable identity exposes queued work
+as repair, and a folder tombstone retires it as terminal history. Scoped absence
+alone cannot clear a refresh. This lookup never terminalizes descendant content.
 
 `ResourceCatalogAcquisition` is the sole cursor/request owner. The HTTP
 adapter only transports snapshots and deltas. Before each request, acquisition
@@ -49,7 +52,9 @@ Browser focus, online events and a bounded 30-second interval retry pending work
 the runner records server attempts and outcomes later. Shutdown unsubscribes the metadata observer, removes retry
 sources, fences new delivery and drains active runners before metadata closes.
 
-The namespace transport uses existing create/move/delete and receipt APIs. The
+The namespace transport uses existing create/move/delete, receipt and exact-ID
+availability APIs. Shared package reconciliation owns refresh progress for both
+files and folders; the account owner has no separate folder refresh loop. The
 Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
 cache invalidation.

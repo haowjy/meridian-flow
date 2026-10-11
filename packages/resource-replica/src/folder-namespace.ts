@@ -2,8 +2,10 @@
 
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
+  namespaceIntentOutcome,
   namespaceRepairDestination,
-  resolveRefusedLocationChain,
+  resolveUnavailableNamespace,
+  settleNamespaceIntent,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
@@ -25,6 +27,7 @@ import type {
   FolderNamespaceRecord,
   FolderNamespaceWrite,
   MetadataCommitResult,
+  NamespaceIdentityAvailability,
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
@@ -96,7 +99,7 @@ export function projectFolderLocation(record: FolderNamespaceRecord): ResourceLo
 }
 
 export function folderOwnsDeletion(record: FolderNamespaceRecord): boolean {
-  return record.intents.some(intentOwnsDeletion);
+  return Boolean(record.terminal) || record.intents.some(intentOwnsDeletion);
 }
 
 /** Recursive deletion is namespace work; its receipt settles descendants atomically. */
@@ -265,7 +268,14 @@ export function validateFolderNamespaceUpdate(
     previous.canonicalRefresh.operationId !== next.canonicalRefresh.operationId
   )
     throw new Error("Folder canonical refresh cannot be replaced");
-  validateNamespaceJournal({ previous, next, identityRevision: 1 });
+  if (previous?.terminal && JSON.stringify(previous.terminal) !== JSON.stringify(next.terminal))
+    throw new Error("Terminal folders cannot be revived");
+  validateNamespaceJournal({
+    previous,
+    next,
+    identityRevision: 1,
+    terminal: Boolean(next.terminal),
+  });
   resourceContextAuthority(next.canonical.scheme, next.canonical);
   if (
     next.canonicalRefresh &&
@@ -307,9 +317,18 @@ export function prepareFolderNamespaceAttempt(
   if (
     intent?.state !== "pending" ||
     (intent.desired.kind !== "set-folder-location" && intent.desired.kind !== "delete") ||
-    record.canonicalRefresh
+    (record.canonicalRefresh && !record.terminal)
   )
     return null;
+  if (record.terminal)
+    return {
+      expectedRevision: record.revision,
+      next: {
+        ...record,
+        revision: record.revision + 1,
+        intents: resolveUnavailableNamespace(record.intents, true),
+      },
+    };
   const source = record.canonical;
   if (intent.desired.kind === "delete") {
     const request: Extract<NamespaceRequest, { kind: "delete" }> = {
@@ -393,18 +412,21 @@ export function settleFolderNamespaceOutcome(
       outcome.receipt.command.kind !== "delete")
   )
     return null;
-  const accepted = outcome.kind === "operation" && outcome.receipt.result.ok;
-  const write = replaceIntent(record, intent.intentId, (current) => ({
-    ...current,
-    state: accepted ? "settled" : "needs-repair",
-    settledAt,
-  }));
-  if (outcome.kind === "operation" && accepted) {
-    if (outcome.receipt.command.kind === "move")
-      write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
-  } else {
-    write.next.intents = resolveRefusedLocationChain(write.next.intents, intent);
-  }
+  const disposition = namespaceIntentOutcome(outcome, Boolean(record.terminal));
+  const write: FolderNamespaceWrite = {
+    expectedRevision: record.revision,
+    next: {
+      ...record,
+      revision: record.revision + 1,
+      intents: settleNamespaceIntent(record.intents, intent, disposition, settledAt),
+    },
+  };
+  if (
+    outcome.kind === "operation" &&
+    disposition === "accepted" &&
+    outcome.receipt.command.kind === "move"
+  )
+    write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
   return write;
 }
 
@@ -481,6 +503,29 @@ export function installFolderCanonicalRefresh(
   };
 }
 
+/** A scoped disappearance asks exact-ID availability; it never terminalizes descendant content. */
+export function installFolderNamespaceAvailability(
+  record: FolderNamespaceRecord,
+  operationId: string,
+  availability: NamespaceIdentityAvailability,
+): FolderNamespaceWrite | null {
+  if (record.canonicalRefresh?.operationId !== operationId) return null;
+  if (availability.kind === "available")
+    return installFolderCanonicalRefresh(record, operationId, availability.location);
+  const { canonicalRefresh: _completed, ...rest } = record;
+  const terminal =
+    availability.kind === "deleted" ? { generation: availability.generation } : record.terminal;
+  return {
+    expectedRevision: record.revision,
+    next: {
+      ...rest,
+      revision: record.revision + 1,
+      ...(terminal ? { terminal } : {}),
+      intents: resolveUnavailableNamespace(record.intents, Boolean(terminal)),
+    },
+  };
+}
+
 export function reconcileFolderNamespace(input: {
   key: ResourceKey;
   metadata: FolderNamespaceStore;
@@ -493,6 +538,24 @@ export function reconcileFolderNamespace(input: {
     ...input,
     read: () => input.metadata.readFolder(input.key),
     commit: (write: FolderNamespaceWrite) => input.metadata.commitFolder(write),
+    refresh: async (record) => {
+      const barrier = record.canonicalRefresh;
+      if (!barrier) return null;
+      const intent = record.intents.find((i) =>
+        i.attempts.some(
+          (a) => a.request.kind !== "create" && a.request.body.operationId === barrier.operationId,
+        ),
+      );
+      if (!intent) return null;
+      return installFolderNamespaceAvailability(
+        record,
+        barrier.operationId,
+        await input.transport.lookupIdentity(intent.projectId, {
+          kind: "folder",
+          id: record.folderId,
+        }),
+      );
+    },
     prepare: prepareFolderNamespaceAttempt,
     recordOutcome: recordFolderNamespaceOutcome,
     settle: (record: FolderNamespaceRecord) => settleFolderNamespaceOutcome(record, input.now?.()),

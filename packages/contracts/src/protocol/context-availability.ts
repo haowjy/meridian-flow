@@ -63,6 +63,7 @@ export interface LiveDocumentSessionAuthority {
 export type ProjectContextIdentityLookupRequest = {
   projectId: ProjectId;
   documentIds: readonly DocumentId[];
+  folderIds?: readonly string[];
 };
 
 export type ProjectContextAuthority =
@@ -104,10 +105,25 @@ export type ProjectContextIdentityResolution =
       reason: "identity_inconsistent";
     };
 
+/** Exact folder identity evidence; scoped catalog absence is deliberately not a tombstone. */
+export type ProjectContextFolderResolution = { folderId: string } & (
+  | {
+      kind: "available";
+      entry: import("./context-catalog.js").CatalogFolderEntry;
+      generation: AvailabilityGeneration;
+    }
+  | { kind: "deleted"; generation: AvailabilityGeneration }
+  | {
+      kind: "not-visible" | "indeterminate" | "authority-unavailable";
+      checkedGeneration: AvailabilityGeneration;
+    }
+);
+
 export type ProjectContextIdentityLookupResult = {
   projectId: ProjectId;
   resolutionId: string;
   resolutions: readonly ProjectContextIdentityResolution[];
+  folderResolutions?: readonly ProjectContextFolderResolution[];
 };
 
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;

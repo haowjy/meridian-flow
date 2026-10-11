@@ -739,29 +739,6 @@ export class AccountResourceReplica {
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
       if (result !== "progressed") return;
-      await this.observeSettledFolder(key);
-    }
-  }
-
-  /**
-   * A successful move blocks the folder's next dispatch until a catalog read begun after
-   * the receipt installs its location. A wake hint can land before the receipt does and
-   * leave the barrier waiting for the next poll, so ask again once it is up.
-   */
-  private async observeSettledFolder(key: ResourceKey): Promise<void> {
-    for (let pass = 0; pass < 3 && !this.closing; pass += 1) {
-      const folder = await this.metadata.readFolder(key);
-      if (!folder?.canonicalRefresh) return;
-      const projectId = folder.intents.find(
-        (intent) => intent.operationId === folder.canonicalRefresh?.operationId,
-      )?.projectId;
-      if (!projectId) return;
-      const { catalogs } = await this.metadata.readProjection(projectId);
-      await Promise.allSettled(
-        catalogs
-          .filter((catalog) => catalog.projectId === projectId)
-          .map((catalog) => this.catalogs.acquire(projectId, catalog.scope)),
-      );
     }
   }
 

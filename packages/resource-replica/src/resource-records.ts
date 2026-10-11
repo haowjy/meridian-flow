@@ -162,6 +162,7 @@ export type NamespaceIntent = ResourceKey & {
     | "received"
     | "settled"
     | "superseded"
+    | "unexecutable-after-terminal"
     | "needs-repair"
     | "cancelled"
     | "settled-locally";
@@ -180,6 +181,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   revision: number;
   canonical: ResourceLocation;
   canonicalRefresh?: { operationId: string };
+  /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
+  terminal?: { generation: string };
   intents: readonly NamespaceIntent[];
 };
 
@@ -242,9 +245,18 @@ export type NamespaceOutcome =
   | { kind: "operation"; receipt: ContextOperationReceipt }
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
+export type NamespaceIdentityAvailability =
+  | { kind: "available"; location: ResourceLocation }
+  | { kind: "deleted"; generation: string }
+  | { kind: "unavailable" };
+
 /** The caller persists the immutable attempt before submit and retains uncertainty on failure. */
 export interface ResourceNamespaceTransport {
   readonly accountId: string;
+  lookupIdentity(
+    projectId: string,
+    identity: { kind: "file" | "folder"; id: string },
+  ): Promise<NamespaceIdentityAvailability>;
   readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
   submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
 }

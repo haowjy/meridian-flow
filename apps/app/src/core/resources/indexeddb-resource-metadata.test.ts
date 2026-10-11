@@ -1,10 +1,19 @@
 /** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
 import "fake-indexeddb/auto";
 import {
+  type NamespaceOutcome,
+  type NamespaceRequest,
   planFolderDeletion,
+  planResourceDeletion,
+  planResourceLocation,
+  prepareFolderNamespaceAttempt,
+  prepareNamespaceAttempt,
   type ResourceRecord,
   type ResourceWrite,
   reconcileFolderNamespace,
+  reconcileResourceNamespace,
+  recordFolderNamespaceOutcome,
+  settleFolderNamespaceOutcome,
 } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
@@ -12,7 +21,7 @@ import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 
 const stores: IndexedDbResourceMetadata[] = [];
 const accounts = new Set<string>();
-function open(account = crypto.randomUUID(), versionChanged = vi.fn()) {
+function open(account: string = crypto.randomUUID(), versionChanged = vi.fn()) {
   accounts.add(account);
   const store = new IndexedDbResourceMetadata(account, versionChanged);
   stores.push(store);
@@ -351,6 +360,9 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
     },
     transport: {
       accountId: store.accountId,
+      lookupIdentity: async () => {
+        throw new Error("Unexpected availability lookup");
+      },
       readOutcome: async () => null,
       submit: async () => ({
         kind: "operation",
@@ -382,4 +394,124 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
     ["survivor", { kind: "acknowledged", availabilityGeneration: "7" }],
     ["two", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
   ]);
+});
+
+it.each([
+  "move",
+  "delete",
+] as const)("retains a refused %s after atomic recursive terminalization", async (kind) => {
+  const store = open();
+  const key = { handle: "child" };
+  const initial = resource(key.handle);
+  initial.intents = [];
+  initial.resource.obligations = {};
+  initial.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  initial.resource.canonical = {
+    scheme: "manuscript",
+    path: "/A/child.md",
+    name: "child.md",
+    workId: null,
+  };
+  await store.commitResource({ expectedRevision: null, next: initial });
+  const planned =
+    kind === "delete"
+      ? planResourceDeletion(initial, "project", "file-intent")
+      : planResourceLocation({
+          record: initial,
+          projectId: "project",
+          intentId: "file-intent",
+          eligibleAt: 1,
+          destination: { scheme: "manuscript", folderPath: "B", name: "child.md", workId: null },
+        });
+  if (!planned) throw new Error("Missing file intent");
+  await store.commitResource(planned);
+  const submitted = prepareNamespaceAttempt(planned.next, {
+    attemptId: "file-attempt",
+    operationId: "file-operation",
+  });
+  if (!submitted) throw new Error("Missing file attempt");
+  await store.commitResource(submitted);
+  const folder = planFolderDeletion({
+    projectId: "project",
+    handle: "folder",
+    folderId: "parent",
+    source: { scheme: "manuscript", path: "/A", name: "A", workId: null },
+    intentId: "parent-delete",
+    operationId: "parent-delete",
+  });
+  if (!folder) throw new Error("Missing folder delete");
+  await store.commitFolder(folder);
+  const parentAttempt = prepareFolderNamespaceAttempt(folder.next, {
+    attemptId: "parent-attempt",
+    operationId: "parent-delete",
+  });
+  if (!parentAttempt) throw new Error("Missing folder attempt");
+  await store.commitFolder(parentAttempt);
+  const received = recordFolderNamespaceOutcome(
+    parentAttempt.next,
+    "parent-delete",
+    "parent-attempt",
+    {
+      kind: "operation",
+      receipt: {
+        operationId: "parent-delete",
+        command: {
+          kind: "delete",
+          uri: "manuscript://A",
+          expected: { kind: "folder", nodeId: "parent" },
+        },
+        result: {
+          ok: true,
+          value: {
+            status: "deleted",
+            deletedDocumentIds: [key.handle],
+            availabilityGeneration: "9",
+          },
+        },
+      },
+    },
+  );
+  if (!received) throw new Error("Missing receipt");
+  await store.commitFolder(received);
+  const settled = settleFolderNamespaceOutcome(received.next, 100);
+  if (!settled) throw new Error("Missing settlement");
+  await store.commitFolder(settled);
+  expect((await store.readResource(key))?.resource.lifecycle.kind).toBe("terminal");
+  const refusal = (request: NamespaceRequest): NamespaceOutcome => {
+    if (request.kind === "create") throw new Error("Unexpected create");
+    return {
+      kind: "refusal",
+      operationId: request.body.operationId,
+      error: { code: "conflict", message: "Refused", source: "system", retryable: false },
+    };
+  };
+  expect(
+    await reconcileResourceNamespace({
+      key,
+      metadata: store,
+      transport: {
+        accountId: store.accountId,
+        lookupIdentity: async () => {
+          throw new Error("Terminal needs no refresh");
+        },
+        readOutcome: async (_project, request) => refusal(request),
+        submit: async () => {
+          throw new Error("Terminal must not dispatch");
+        },
+      },
+      lock: {
+        accountId: store.accountId,
+        run: async (_key, task) => ({ kind: "acquired", value: await task() }),
+      },
+      newAttemptIds: () => ({ attemptId: "unused", operationId: "unused" }),
+      now: () => 100,
+    }),
+  ).toBe("progressed");
+  await store.finishClose();
+  const reopened = await open(store.accountId).readResource(key);
+  expect(reopened?.resource.lifecycle.kind).toBe("terminal");
+  expect(reopened?.intents[0]).toMatchObject({
+    state: "unexecutable-after-terminal",
+    attempts: [{ outcome: { kind: "refusal", operationId: "file-operation" } }],
+  });
 });

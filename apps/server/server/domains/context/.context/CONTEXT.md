@@ -96,7 +96,10 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   generation heads with mutations. A deleted request project or deleted backing
   source project returns `authority-unavailable/project_deleted`; restoring the
   backing project makes the same identity available again. Foreign identities
-  remain indistinguishable from missing IDs.
+  remain indistinguishable from missing IDs. The same lookup accepts exact folder
+  IDs, returning canonical folder entries or independent tombstones. Folder
+  tombstones retire namespace refresh work, never descendant document content;
+  reversible Work/lineage hiding remains authority unavailability.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
   providing `stat`/`read`/`write`/`writeBinary`/`mkdir`/`list`/`search` for all

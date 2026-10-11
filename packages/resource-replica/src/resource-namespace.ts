@@ -5,10 +5,15 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { resolveRefusedLocationChain } from "./namespace-journal-policy";
+import {
+  namespaceIntentOutcome,
+  resolveUnavailableNamespace,
+  settleNamespaceIntent,
+} from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
 import type {
   NamespaceAttempt,
+  NamespaceIdentityAvailability,
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
@@ -51,6 +56,7 @@ export function activeNamespaceIntent(record: {
           intent.state !== "cancelled" &&
           intent.state !== "settled" &&
           intent.state !== "superseded" &&
+          intent.state !== "unexecutable-after-terminal" &&
           intent.state !== "settled-locally",
       ) ?? null
   );
@@ -166,7 +172,14 @@ export function prepareNamespaceAttempt(
 ): ResourceWrite | null {
   const intent = activeNamespaceIntent(record);
   if (intent?.state !== "pending") return null;
-  if (record.resource.lifecycle.kind === "terminal") return null;
+  if (record.resource.lifecycle.kind === "terminal")
+    return {
+      expectedRevision: record.resource.revision,
+      next: {
+        resource: { ...record.resource, revision: record.resource.revision + 1 },
+        intents: resolveUnavailableNamespace(record.intents, true),
+      },
+    };
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
       expectedRevision: record.resource.revision,
@@ -442,16 +455,19 @@ export function settleNamespaceOutcome(
       }
     }
   } else repair = true;
-  const next = replaceIntent({ resource, intents: record.intents }, intent.intentId, (current) => ({
-    ...current,
-    state: repair ? "needs-repair" : "settled",
-    settledAt,
-  }));
-  if (
-    repair &&
-    (outcome.kind === "refusal" || (outcome.kind === "operation" && !outcome.receipt.result.ok))
-  )
-    next.intents = resolveRefusedLocationChain(next.intents, intent);
+  const disposition = namespaceIntentOutcome(
+    outcome,
+    record.resource.lifecycle.kind === "terminal",
+  );
+  const next: ResourceRecord = {
+    resource: { ...resource, revision: record.resource.revision + 1 },
+    intents: settleNamespaceIntent(
+      record.intents,
+      intent,
+      disposition === "accepted" && repair ? "refused" : disposition,
+      settledAt,
+    ),
+  };
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -494,6 +510,29 @@ export function installCanonicalRefresh(input: {
   };
 }
 
+/** Exact-ID lookup resolves a refresh even when the identity left the requested catalog scope. */
+export function installNamespaceAvailability(
+  record: ResourceRecord,
+  operationId: string,
+  availability: NamespaceIdentityAvailability,
+): ResourceWrite | null {
+  if (record.resource.obligations.canonicalRefresh?.operationId !== operationId) return null;
+  if (availability.kind === "available")
+    return installCanonicalRefresh({ record, operationId, location: availability.location });
+  const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: { ...record.resource, revision: record.resource.revision + 1, obligations },
+      // Availability is not a document deletion receipt. Preserve it as a repair, not terminal content authority.
+      intents: resolveUnavailableNamespace(
+        record.intents,
+        record.resource.lifecycle.kind === "terminal",
+      ),
+    },
+  };
+}
+
 function replayEligible(
   record: ResourceRecord,
   intent: NamespaceIntent,
@@ -526,6 +565,24 @@ export function reconcileResourceNamespace(input: {
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
     replayEligible,
+    refresh: async (record) => {
+      const barrier = record.resource.obligations.canonicalRefresh;
+      if (!barrier) return null;
+      const intent = record.intents.find((i) =>
+        i.attempts.some(
+          (a) => a.request.kind !== "create" && a.request.body.operationId === barrier.operationId,
+        ),
+      );
+      if (!intent) return null;
+      return installNamespaceAvailability(
+        record,
+        barrier.operationId,
+        await input.transport.lookupIdentity(intent.projectId, {
+          kind: "file",
+          id: record.resource.identity.documentId,
+        }),
+      );
+    },
   });
 }
 
@@ -549,6 +606,7 @@ export async function reconcileNamespaceJournal<
     outcome: NamespaceOutcome,
   ) => Write | null;
   settle: (record: Record) => Write | null;
+  refresh: (record: Record) => Promise<Write | null>;
   replayEligible: (record: Record, intent: NamespaceIntent, attempt: NamespaceAttempt) => boolean;
 }): Promise<NamespaceReconcileResult> {
   if (
@@ -560,6 +618,11 @@ export async function reconcileNamespaceJournal<
   for (;;) {
     const record = await input.read();
     if (!record) return "idle";
+    const refreshed = await input.refresh(record);
+    if (refreshed) {
+      if ((await input.commit(refreshed)) === "stale") continue;
+      return "progressed";
+    }
     const intent = activeNamespaceIntent(record);
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
