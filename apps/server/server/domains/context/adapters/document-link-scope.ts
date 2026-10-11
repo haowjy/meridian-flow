@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type CatalogDocument,
   type ContextUriScheme,
+  documentPathCandidateNames,
   documentPathKey,
   type LinkView,
   matchDocumentPath,
@@ -230,9 +231,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const uri of uris) {
       const parsed = parseContextUri(uri);
       if (!parsed.ok || !parsed.value.path) continue;
-      const filename = parsed.value.path.slice(parsed.value.path.lastIndexOf("/") + 1);
-      const name = parseDocumentFilename(filename);
-      if (name.ok) names.add(name.value.name);
+      for (const name of documentPathCandidateNames(parsed.value.path)) names.add(name);
     }
     const projects = [snapshot.projectId, snapshot.personalProjectId].filter(
       (id): id is string => id !== null,
