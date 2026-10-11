@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve literal `#` in document titles and escaped link labels; split tool and href suffixes only at their input boundaries.
+
 - Namespace occupancy reports only proven occupant kinds; atomic identity collisions remain unqualified.
 
 - Historical ahead-link spelling preserves the snapshot’s preloaded address key.

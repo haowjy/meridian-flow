@@ -17,7 +17,7 @@
  * unrecognized on the way out, and neither answer can drift from the other.
  */
 
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
+import { CONTEXT_URI_SCHEMES, splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type LinkTarget =
@@ -154,10 +154,9 @@ export function linkTargetHref(target: LinkTarget): string {
 export function linkTargetLabel(target: LinkTarget): string {
   if (target.kind === "external") return target.url;
   const written = target.kind === "scheme" ? target.uri : target.path;
-  const end = written.search(/[?#]/);
-  const path = end < 0 ? written : written.slice(0, end);
+  const { path, suffix } = splitDocumentHrefSuffix(written);
   const name = documentTitleFromUri(safeDecode(path).replace(/\/+$/, ""));
-  return name ? `${name}${end < 0 ? "" : written.slice(end)}` : written;
+  return name ? `${name}${suffix}` : written;
 }
 
 function safeDecode(value: string): string {
