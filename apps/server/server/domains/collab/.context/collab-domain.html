@@ -118,7 +118,7 @@ packages directory. The draft versus live product model has its own page:
   <li><a href="#branches">Branches: pulls, pushes, Apply, Discard</a></li>
   <li><a href="#reversal">Reversal</a></li>
   <li><a href="#schema">Schema fence and repair</a></li>
-  <li><a href="#derived">Derived outputs on this checkout</a></li>
+  <li><a href="#derived">Derived outputs</a></li>
   <li><a href="#composition">The composition root</a></li>
   <li><a href="#deeper">Where to go deeper</a></li>
 </ol>
@@ -304,9 +304,9 @@ without a merge algorithm of our own.
     the peer's delta is committed into the Work draft as one
     <code>branch_write_journal</code> row (source <code>agent</code>).
     <span class="ref"><code>domain/branch-agent-edit.ts</code> <code>createBranchAgentEditCoordinator</code></span></li>
-  <li><strong>Work draft to live (push).</strong> Writer Apply, or an
-    automatic push when the draft's push policy is <code>auto</code>. This is
-    the only edge that needs consent. See <a href="#branches">section 7</a>.</li>
+  <li><strong>Work draft to live (push).</strong> Writer Apply only; a draft
+    write never pushes itself live (D59). This is the only edge that needs
+    consent. See <a href="#branches">section 7</a>.</li>
 </ul>
 <p>
 All branch Y.Docs are created with <code>gc: false</code>, and so are the
@@ -625,10 +625,8 @@ live core instead. <span class="ref"><code>domain/thread-peer-core-pool.ts</code
 <p>
 After commit, <code>finalizeResponseCommit</code> records late-sweep and
 awareness notices, checkpoints each touched thread peer (draft mode), and refreshes the
-markdown projection for each document (<a href="#derived">section 10</a>). If
-the Work draft's push policy is <code>auto</code>, a push is scheduled after
-the database commit.
-<span class="ref"><code>domain/response-write-finalizer.ts</code>, <code>domain/branch-agent-edit.ts</code> <code>scheduleAutoPushAfterCommit</code></span>
+markdown projection for each document (<a href="#derived">section 10</a>).
+<span class="ref"><code>domain/response-write-finalizer.ts</code></span>
 </p>
 
 <div class="invariant">
@@ -640,7 +638,7 @@ instruction to the AI.</p>
 
 <h3 id="push-settlement">Settlement: how a push reaches live</h3>
 <p>
-A push (Apply or automatic) is a staged, fenced transition so that warm and
+A push (an Apply) is a staged, fenced transition so that warm and
 cold execution produce the same live document. Every push one commit stages
 belongs to one <em>settlement batch</em>; a single push is a batch of one.
 </p>
@@ -690,7 +688,7 @@ claims whole and completes with the same code path. Depth lives in
     thread), keyed by Yjs <code>{clientID, clock}</code> identity. It is
     written by push commit and settlement, and by offline reconciliation.
     A direct-mode AI write does not write a trail on this checkout.
-    <span class="ref"><code>adapters/drizzle-branch-push.ts</code> <code>persistRequiredTrail</code>, <code>domain/offline-reconciliation.ts</code>, <code>adapters/drizzle-change-trail-aggregate.ts</code></span></li>
+    <span class="ref"><code>domain/branch-trail-projection.ts</code> <code>persistDurableTrailRecords</code>, <code>domain/offline-reconciliation.ts</code>, <code>adapters/drizzle-change-trail-aggregate.ts</code></span></li>
   <li><strong>Turn trail work.</strong> A database trigger enlists every
     turn-owned <code>branch_write_journal</code> row in
     <code>turn_trail_work</code>. The change-trail worker retries auto-policy
@@ -919,11 +917,12 @@ reserved client ID 999.
 <span class="ref"><code>packages/agent-edit/.context/write-architecture.md</code>, <code>domain/thread-peer-core-pool.ts</code> (<code>undoClientId: AGENT_EDIT_UNDO_CLIENT_ID</code>)</span>
 </p>
 <ul class="rule-list">
-  <li><strong>Which journal.</strong> While the current Work-draft generation
-    holds agent rows for the thread, reversal is branch-scoped and writes a
-    system row into the branch journal. Otherwise, including after Apply
-    empties the branch, it routes to the live utility core.
-    <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>reversalCoreFor</code>, <code>domain/branch-reversal-history.ts</code></span></li>
+  <li><strong>Which journal.</strong> Each write reverses where it landed.
+    Handles in the thread's current Work-draft rows reverse branch-scoped, as a
+    system row in the branch journal; the rest, including writes Apply already
+    pushed, route to the live utility core. A mixed selection runs once per
+    journal.
+    <span class="ref"><code>domain/thread-peer-reversals.ts</code>, <code>domain/reversal-routing.ts</code> <code>splitReversal</code>, <code>domain/branch-reversal-history.ts</code></span></li>
   <li><strong>The live guard is intrinsic.</strong> <code>persistUndo</code>
     re-runs the dependency check and the writer watermark inside the append
     transaction under the document mutation lock, so a writer edit admitted
@@ -994,68 +993,22 @@ Depth: <a href="document-authority-and-schema.md">document authority and schema<
 </p>
 
 <!-- ============================================================ -->
-<h2 id="derived">10. Derived outputs on this checkout</h2>
+<h2 id="derived">10. Derived outputs</h2>
 <p>
-<code>document_markdown_projections.markdown</code> is a text cache of a document's
-live content. Yjs is the content authority; the projection is refreshed by
-specific write paths, and some write paths do not refresh it at all.
+<code>document_markdown_projections</code> and <code>document_links</code> are
+read models of a document's live content, certified by
+<code>document_derivations</code> against a journal-locked durable cut. Yjs is
+the content authority. <code>domain/document-derivations.ts</code> is the one
+projection pipeline: the write hook runs it at once, WebSocket admissions and
+generation replacement schedule it (two-second debounce, ten-second maximum),
+push completion runs it inside the batch's completion transaction, and the
+recovery sweep re-derives anything left stale. The projection feeds search,
+listings and sizes, and the link index; the editor, the AI and downloads read
+live Yjs.
+<span class="ref"><code>domain/document-derivations.ts</code>, <code>adapters/drizzle-document-derivations.ts</code></span>
 </p>
-<div class="scroll">
-<table>
-  <tr><th>Write path</th><th>Projection effect</th></tr>
-  <tr>
-    <td>Collab document API (<code>writeDocument</code>, <code>editDocument</code>, <code>seedFromMarkdown</code>)</td>
-    <td>Written after the write by the document write hook, together with thread, Work and project activity. <span class="ref"><code>domain/markdown-document.ts</code> <code>afterWrite</code>, <code>domain/document-projection-refresher.ts</code></span></td>
-  </tr>
-  <tr>
-    <td>Context file create, write and edit</td>
-    <td>The context domain writes the operation's markdown into the projection row: the given content on create, collab's returned serialization on write and edit. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>persistProjection</code></span></td>
-  </tr>
-  <tr>
-    <td>AI write tool outside a reply, and tool <code>undo</code>/<code>redo</code></td>
-    <td>Refreshed immediately by re-reading live. <span class="ref"><code>lib/model-tools/document-tools.ts</code> (<code>documentSync.refreshDocumentProjection</code>)</span></td>
-  </tr>
-  <tr>
-    <td>AI writes staged in a reply</td>
-    <td>Refreshed per document at response finalization by re-reading <em>live</em>. In draft mode live has not changed, so the projection keeps showing live, not the draft. <span class="ref"><code>domain/response-write-finalizer.ts</code></span></td>
-  </tr>
-  <tr>
-    <td>Receipt Undo/Redo and failed-reply rollback</td>
-    <td>Refreshed after a successful reversal (deferred to commit when inside one). <span class="ref"><code>domain/turn-reversal.ts</code>, <code>domain/turn-reversal-service.ts</code></span></td>
-  </tr>
-  <tr>
-    <td>Push completion (Apply or automatic)</td>
-    <td>Re-derived from the durable journal inside the batch's completion transaction, so it rolls back with the batch. See <a href="#push-settlement">push settlement</a>. <span class="ref"><code>adapters/drizzle-settlement-member.ts</code> <code>admitSettlementMemberWithinTx</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
-  </tr>
-  <tr>
-    <td>Writer typing over the WebSocket</td>
-    <td><span class="gate-word">Not refreshed.</span> The projection stays at the last refresh from some other path. Tracked in <a href="TODO.md">TODO</a>. <span class="ref"><code>hocuspocus-persistence.ts</code></span></td>
-  </tr>
-  <tr>
-    <td>Checkpoint restore</td>
-    <td>Not refreshed by the generation-replacement path. <span class="ref"><code>checkpoints.ts</code> <code>restore</code></span></td>
-  </tr>
-</table>
-</div>
-
-<h3>Who reads it</h3>
-<ul class="rule-list">
-  <li><strong>Search does not.</strong> <code>ContextFS.search</code> reads
-    content through collab: live markdown for ordinary scopes, and the thread's
-    effective view (thread peer or Work draft) for a manuscript search inside a
-    thread. So search is current even when the projection is stale. The
-    full-text and trigram indexes on the projection table exist in
-    the schema, but no query on this checkout uses them.
-    <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>search</code>, <code>packages/database/src/schema/content.ts</code></span></li>
-  <li><strong>Readers that do use it:</strong> the download route falls back to
-    the projection when the Yjs read fails; upload identity lookups return it.
-    Tree visibility is determined by the selected SQL view, not projection or
-    membership repair.
-    <span class="ref"><code>../../routes/api/documents/[documentId]/download.get.ts</code>, <code>../context/uploads/upload-identity.ts</code></span></li>
-</ul>
 <p>
-So on this checkout a stale projection is visible through the download
-fallback and upload identity, not through search or the editor.
+Depth: <a href="CONTEXT.md">durable document derivation</a>.
 </p>
 
 <!-- ============================================================ -->
@@ -1117,7 +1070,7 @@ same interfaces for tests. Rules for this file are in
   <li><a href="reversal.md">Reversal</a></li>
   <li><a href="websocket-concurrency.md">WebSocket concurrency boundary</a></li>
   <li><a href="draft-live-model.html">The draft / live model</a></li>
-  <li><a href="TODO.md">TODO</a> and <a href="FUTURE.md">FUTURE</a>: known gaps, including the projection refresh gap</li>
+  <li><a href="TODO.md">TODO</a> and <a href="FUTURE.md">FUTURE</a>: known gaps</li>
   <li><a href="../../../../../../packages/agent-edit/AGENTS.md">@meridian/agent-edit</a> and its <code>.context/</code></li>
 </ul>
 <h3>In the knowledge base</h3>

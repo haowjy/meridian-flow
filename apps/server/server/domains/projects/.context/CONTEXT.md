@@ -6,7 +6,7 @@ over its owner-gated operations.
 
 ## What it owns
 
-- **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
+- **Default bootstrap** — `ProjectBootstrapRepository.ensureDefaultBootstrap(userId)`
   idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Uploads source. Bootstrap creates no thread.
 - **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a catalog source before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
@@ -27,8 +27,8 @@ translate those to `title` and `description` in `ProjectDto`.
 
 | Contract | Purpose |
 |---|---|
-| `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
-| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
+| `ProjectBootstrapRepository.ensureDefaultBootstrap(userId)` | Returns the converged `ProjectBootstrapResult` for the authenticated user. |
+| `ProjectBootstrapRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |

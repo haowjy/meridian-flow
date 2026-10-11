@@ -57,10 +57,5 @@ chains of depth 1 and 3.
 - **A scratch frame locked its Work twice**, once in `lockSeamWorks` and
   once in `confirmEdit`. The caller now holds the locks.
 
-## Open
-
-- `listAccess` builds facts without folder ancestors, so it can disagree
-  with `authorize` once folder grants exist ([TODO](TODO.md)).
-
 [perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/model-tool-surface/experiments/pr2-perf.md
 [collab-todo]: ../../collab/.context/TODO.md

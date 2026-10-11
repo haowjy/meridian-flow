@@ -80,8 +80,7 @@ whole-program dataflow analysis: wrappers must accept tree views, not raw tables
 entry (covers no finding) or a duplicate path fails the check. A `hidden`
 reference, mutation key or SQL mention associated with either table is never
 allowlistable outside `apps/server/server/domains/context/tree/`. The schema is
-excluded because it defines the column. The tree-owner glob is added only when
-that module exists and contains findings.
+excluded because it defines the column.
 
 Every entry is permanent and its reason is the audit's reason: no entry may be
 temporary (`rg -c '"pending:' tools/ci/tree-visibility-allowlist.json` finds

@@ -7,11 +7,6 @@ to tracking issues. Delete an entry when it ships.
 
 [haowjy/meridian-flow#144](https://github.com/haowjy/meridian-flow/issues/144)
 
-Delete + rename shipped (PR #145): `rename.post.ts`, `delete.post.ts` routes,
-client mutation hooks, desktop context menu + kebab, mobile trailing action
-button. All context routes share `_helpers.ts` (resolveContextRoute,
-sanitizePath, contextErrorToHttp). Inline name forms share `useInlineNameForm`.
-
 Remaining from #144 — **manuscript ordering + drag-reorder:**
 
 Sibling order is derived by the catalog projection (dirs-first, then

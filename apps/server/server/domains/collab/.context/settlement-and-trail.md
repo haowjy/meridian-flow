@@ -193,7 +193,8 @@
   its `afterAdmission` settles them in one `arrivals.settle` call, then binds
   each admitted holder's ahead refs from the meanings staged in the payload,
   never from the draft's settlement table: a target discarded after staging
-  still binds and reads gone. All under Work → draft → namespace → document
+  still binds and reads gone. It reconciles the catalog for every source it
+  touched in the same transaction (F23), so no route refreshes after Apply. All under Work → draft → namespace → document
   locks taken once by `planAndLock`.
 - **Writer Apply is item-scoped and token-fenced**: a request names items
   (`${draftId}:${documentId}`) with the tokens their review rendered; a token
@@ -251,7 +252,9 @@
   against a live holder, commit-fault durability inside the completion
   transaction, and batch atomicity (a fault between admissions leaves nothing
   live, one of two concurrent recoverers settles the batch whole, warm rooms
-  see it only after commit). `branch-push-durable-projection.db.test.ts` owns SQL-dependent
+  see it only after commit). Refusals, holds, lease-set hand-offs and the
+  pre-staging check have their PostgreSQL proofs in
+  `branch-push-settlement-refusals.db.test.ts`. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
   replay, aggregate row version, fold restoration, and journal attribution
   assertions; do not move them to fakes. Pure provenance and policy semantics
   belong to their focused owners rather than to a second PostgreSQL replay graph.
