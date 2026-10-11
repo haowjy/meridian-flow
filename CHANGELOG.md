@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Retain unacknowledged draft typing across generation changes when its Yjs anchors are still missing.
+
 - Give draft Undo and Redo fresh restoration identity so different chats cannot collide, and reverse every segment of a write.
 
 - Review AI revisions as paragraph changes, preserving unchanged text identity and saving each reply atomically.

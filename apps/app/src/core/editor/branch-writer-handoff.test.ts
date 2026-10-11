@@ -8,7 +8,7 @@ import { branchHandoffHarness } from "@/test-support/branch-handoff-harness";
 let runtime: ReturnType<typeof branchHandoffHarness>;
 const room = (generation: number) => branchRoomName("handoff", generation);
 const flush = () => vi.advanceTimersByTimeAsync(0);
-function start(mixed = false) {
+function start() {
   vi.useFakeTimers();
   runtime = branchHandoffHarness();
   runtime.pool.retain("editor", [runtime.ref(room(1))]);
@@ -20,18 +20,7 @@ function start(mixed = false) {
   base.destroy();
   runtime.wire(room(1)).sync(baseline);
   runtime.wire(room(1)).ack();
-  if (mixed) {
-    const ai = new Y.Doc({ gc: false });
-    Y.applyUpdate(ai, baseline);
-    const vector = Y.encodeStateVector(ai);
-    ai.getText("text").delete(2, 1);
-    ai.getText("text").insert(4, "AI");
-    Y.applyUpdate(source.document, Y.encodeStateAsUpdate(ai, vector), runtime.wire(room(1)));
-    source.document.getText("text").insert(0, " WORLD");
-    source.document.getText("text").delete(6, 1);
-    source.document.getText("text").insert(source.document.getText("text").length, "LOST");
-    ai.destroy();
-  } else source.document.getText("text").insert(5, " WORLD");
+  source.document.getText("text").insert(5, " WORLD");
   runtime.locate(async () => room(2));
   return { source, baseline };
 }
@@ -75,7 +64,7 @@ it.each([
   "list first",
   "same room",
 ])("delivers surviving typing after %s with both owners and no mounted review", async (mode) => {
-  const { source, baseline } = start(mode === "same room");
+  const { source, baseline } = start();
   await flush();
   const target = mode === "same room" ? 1 : 2;
   runtime.locate(async () => room(target));
@@ -88,7 +77,7 @@ it.each([
   reset(1, mode === "same room");
   runtime.pool.release("editor");
   runtime.pool.release("refresh");
-  await delivered(target, mode === "same room" ? " WORLDello" : "hello WORLD", baseline);
+  await delivered(target, "hello WORLD", baseline);
   expect(source.document.isDestroyed).toBe(true);
   expect(runtime.pool.peek(room(1))).toBeUndefined();
 });
@@ -177,4 +166,47 @@ it.each([
   expect(wire?.document.store.pendingStructs ?? null).toBeNull();
   expect(runtime.pool.peek(room(2))).toBeUndefined();
   expect(runtime.changed).not.toHaveBeenCalled();
+});
+
+it.each([
+  false,
+  true,
+])("retains an unresolved carry (partial integration: %s) until its anchors arrive", async (partial) => {
+  const { source } = start();
+  const acknowledged = Y.encodeStateAsUpdate(source.document);
+  // Give this writer an omitted AI anchor, then a later independent stroke on
+  // the same client. Yjs cannot integrate that later clock without the first.
+  runtime.wire(room(1)).ack();
+  const omitted = new Y.Doc({ gc: false });
+  Y.applyUpdate(omitted, Y.encodeStateAsUpdate(source.document));
+  omitted.clientID = 5001;
+  omitted.getText("text").insert(2, "gold");
+  const dependency = Y.encodeStateAsUpdate(omitted);
+  Y.applyUpdate(source.document, dependency, runtime.wire(room(1)));
+  if (partial) source.document.getText("text").insert(0, "P");
+  source.document.getText("text").insert(partial ? 5 : 4, "X");
+  source.document.getText("text").insert(source.document.getText("text").length, "!");
+  const expected = source.document.getText("text").toString();
+  await flush();
+  reset(1);
+  await flush();
+  // The successor knows all acknowledged writer clocks, but not the AI copy.
+  const wire = runtime.wire(room(2));
+  wire.sync(acknowledged);
+  await flush();
+  wire.ack();
+  await vi.advanceTimersByTimeAsync(10);
+  expect(runtime.changed).not.toHaveBeenCalled();
+  expect(runtime.pool.peek(room(2))).toBeDefined();
+  expect(runtime.writerChanges).toHaveBeenLastCalledWith(2);
+  expect(wire.document.getText("text").toString()).not.toContain("!");
+  wire.sync(dependency);
+  await vi.advanceTimersByTimeAsync(10);
+  expect(wire.document.getText("text").toString()).toBe(expected);
+  expect(wire.document.store.pendingStructs).toBeNull();
+  wire.ack();
+  await flush();
+  expect(runtime.changed).toHaveBeenCalledTimes(1);
+  expect(runtime.writerChanges).toHaveBeenLastCalledWith(null);
+  omitted.destroy();
 });
