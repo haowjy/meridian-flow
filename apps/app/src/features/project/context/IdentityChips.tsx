@@ -12,9 +12,10 @@ const chipClass = cn(
   IDENTITY_BAR_BOX_CLASS,
 );
 
-/** The invitation an untitled draft carries until it has a home. Jade, because
- *  it asks the writer for something; once the draft is placed, the chip goes
- *  and renaming or moving happens in the lists that show the document. */
+/** Choose a home: the invitation a document in Unfiled carries until it has a
+ *  home. Jade, because it asks the writer for something. Its label is as short
+ *  as a chip on the path can be; the tooltip explains. Once the document is
+ *  placed, the chip goes and renaming or moving happens in the lists. */
 export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
   return (
     // Hoverable: this sentence is said nowhere else, so a magnified reader
@@ -24,20 +25,19 @@ export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
         <button
           type="button"
           // The label hides in a narrow pane (the dock); the button keeps its name.
-          aria-label={t`Choose a home`}
+          aria-label={t`File this document`}
           onClick={onClick}
           className={cn("focus-ring", chipClass, "border-primary/30 bg-primary/10 text-jade-text")}
         >
           <FolderDown aria-hidden className="size-3" />
           <span className="@max-md:hidden">
-            <Trans>Choose a home</Trans>
+            <Trans>File it</Trans>
           </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-60">
         <Trans>
-          This draft is untitled and lives in your Scratch. Click to name it or move it where it
-          belongs.
+          Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project.
         </Trans>
       </TooltipContent>
     </Tooltip>

@@ -18,7 +18,7 @@
 
 - The path above a document is now a way to get around: each part opens the list it sits in, with itself marked: the area among the areas, a folder beside its neighbors, the file name beside the other files, and `…` when folders do not fit. Menus mark where you are, including the folder you just left.
 
-- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker, and Scratch notes can be deleted from the chat's Scratch list. The path no longer has a Rename button; only an untitled draft keeps its Choose a home button.
+- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker, and Scratch notes can be deleted from the chat's Scratch list. The path no longer has a Rename button; only a document still in Unfiled keeps a short File it button, whose tooltip explains where it sits.
 
 - A document open beside the chat shows its path in the panel header instead of a separate title. With nothing open, the panel reads Recent and lists the documents this chat touched.
 

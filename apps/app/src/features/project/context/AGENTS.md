@@ -88,7 +88,7 @@ Shared across both shells:
   document alike), `context-tab-session.tsx` (the session boundary beneath it),
   `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
   `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
-  `IdentityPlacementField.tsx` (Choose a home for an untitled draft, and repair of its refused
+  `IdentityPlacementField.tsx` (Choose a home for a document in Unfiled, and repair of its refused
   placement, committed through `use-identity-commit.ts`). Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,
   remint, and catalog refresh.
