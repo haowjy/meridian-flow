@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
+
 - Document creation reports the canonical URI, including when a prose suffix was typed. Concurrent file and folder claims cannot produce a shared name.
 
 - Existing prose documents, including deleted documents and saved aliases, now use extensionless names. Name clashes keep every document with the next available numbered suffix, and catalog cursors reset to the updated names.
