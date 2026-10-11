@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Prose uploads use writer names without suffixes, preserve their original filename in metadata, and number name clashes. Extensionless data uploads retain their MIME-derived file type.
+
 - Unregistered document suffixes remain part of the name, including names that match built-in JavaScript properties.
 
 - Document creation reports the canonical URI, including when a prose suffix was typed. Concurrent file and folder claims cannot produce a shared name.

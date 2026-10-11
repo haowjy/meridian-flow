@@ -12,8 +12,12 @@ import type {
 import {
   classifyFiletype,
   documentFileTypeFor,
+  filetypeForExtension,
   filetypeForKnownMimeType,
   filetypeForKnownPath,
+  type ParsedDocumentFilename,
+  parseDocumentFilename,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -37,6 +41,7 @@ export interface UploadReservation {
   intakeId: string;
   documentId: string;
   fingerprint: string;
+  filename: string;
   finalPath: string;
   objectKey: string;
   canonicalUri: string;
@@ -60,6 +65,7 @@ export interface UploadIntakeRepository {
     actorUserId: string;
     owner: UploadOwner;
     filename: string;
+    documentFilename: ParsedDocumentFilename;
     mimeType: string;
     byteDigest: string;
     fingerprint: string;
@@ -160,7 +166,8 @@ export function classifyUpload(input: {
   if (textLike) {
     const candidate = byPath ?? byMime ?? "text";
     const classification = classifyFiletype(candidate);
-    if (classification.kind === "tracked") return candidate;
+    if (classification.kind === "tracked")
+      return candidate === "text" && byPath === null ? "markdown" : candidate;
     return classification.kind === "unknown" ? "text" : classification.fileType;
   }
   const candidate = byMime ?? byPath;
@@ -172,6 +179,23 @@ export function classifyUpload(input: {
   }
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
 }
+
+/** MIME inference supplies the registered type suffix, never a second filename parser. */
+const MIME_EXTENSIONS: Partial<Record<Filetype, string>> = {
+  json: "json",
+  python: "py",
+  typescript: "ts",
+  javascript: "js",
+  shell: "sh",
+  yaml: "yaml",
+  csv: "csv",
+  notebook: "ipynb",
+  pdf: "pdf",
+  png: "png",
+  jpg: "jpg",
+  svg: "svg",
+  docx: "docx",
+};
 
 function fingerprint(input: {
   actorUserId: string;
@@ -233,6 +257,22 @@ export function createUploadIntake<Bound>(deps: {
       if (actualDigest !== byteDigest)
         return { ok: false, error: { code: "idempotency_conflict" } };
       const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
+      const tracked = classifyFiletype(fileType).kind === "tracked";
+      const inferredExtension = MIME_EXTENSIONS[fileType];
+      let parsed = parseDocumentFilename(filename, {
+        sourceExtension: tracked && !filename.includes(".") ? inferredExtension : undefined,
+      });
+      if (
+        parsed.ok &&
+        !tracked &&
+        !parsed.value.extension &&
+        inferredExtension &&
+        filetypeForExtension(inferredExtension)
+      ) {
+        parsed = parseDocumentFilename(renderFilename(parsed.value.name, inferredExtension));
+      }
+      if (!parsed.ok)
+        return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
       const canonicalFingerprint = fingerprint({
         actorUserId: raw.actorUserId,
         owner: raw.owner,
@@ -244,7 +284,8 @@ export function createUploadIntake<Bound>(deps: {
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
         owner: raw.owner,
-        filename,
+        filename: raw.filename,
+        documentFilename: parsed.value,
         mimeType,
         byteDigest,
         fingerprint: canonicalFingerprint,
@@ -269,10 +310,10 @@ export function createUploadIntake<Bound>(deps: {
         };
       }
 
-      const tracked = classifyFiletype(reservation.fileType).kind === "tracked";
+      const storedTracked = classifyFiletype(reservation.fileType).kind === "tracked";
       let storageUrl = reservation.storageUrl;
       let storedThisAttempt = false;
-      if (!tracked && !storageUrl) {
+      if (!storedTracked && !storageUrl) {
         const stored = await deps.objectStore.put(reservation.objectKey, raw.bytes, mimeType);
         if (!stored.ok) return { ok: false, error: { code: "storage_failed" } };
         storageUrl = stored.value.storageUrl;
