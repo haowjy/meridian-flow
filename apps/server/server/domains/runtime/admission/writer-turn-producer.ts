@@ -90,14 +90,14 @@ export function createWriterTurnProducer(deps: {
       // `waiting_interrupt` is. Only once the runner owns the thread do we look
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
-      const live = deps.runner.getRunningTurn(threadId);
-      const liveReplyId =
-        live && live.kind !== "compaction"
-          ? (live.turnId ??
-            (await deps.turns.findRunningAssistantId(threadId, {
-              createdAfter: live.startedAt,
-            })))
-          : null;
+      const liveReplyId = async () => {
+        const live = deps.runner.getRunningTurn(threadId);
+        if (!live || live.kind === "compaction") return null;
+        return (
+          live.turnId ??
+          (await deps.turns.findRunningAssistantId(threadId, { createdAfter: live.startedAt }))
+        );
+      };
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??
@@ -115,11 +115,13 @@ export function createWriterTurnProducer(deps: {
           userBlocks: input.blocks,
           // A message sent behind a queued switch ends the live reply instead of
           // joining it, so it is answered by the next reply in the new mode.
-          // Read under the lock: a switch committed before it is ahead of M2.
-          joinedReply: async () =>
-            liveReplyId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId))
-              ? liveReplyId
-              : null,
+          // Both reads happen under the lock on every attempt: a reply that
+          // ended, or a switch committed, before it is visible here.
+          joinedReply: async () => {
+            const replyId = await liveReplyId();
+            if (!replyId) return null;
+            return queuedWriteModeSwitch(await deps.inbox.selectPending(threadId)) ? null : replyId;
+          },
           userTurnMetadata: (joinedReplyId) =>
             writerSendMetadata(turnMetadata, joinedReplyId ? "steer" : "send"),
           delivery: deps.delivery,
