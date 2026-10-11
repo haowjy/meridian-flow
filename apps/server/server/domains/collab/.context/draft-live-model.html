@@ -82,8 +82,9 @@ One document, two surfaces, <strong>one consent point</strong>. Everything in
 the system merges automatically (draft-mode AI edits into the draft, live edits
 into the draft) except a single edge: promoting the <span class="draft-word">draft</span>
 into <span class="live-word">live</span>. That edge is
-<span class="gate-word">Apply</span>, and it belongs to the writer. A Work in
-direct mode has no draft: its AI writes go straight to live.
+<span class="gate-word">Apply</span>, and it belongs to the writer. Each chat
+owns its write mode; a chat in auto-apply (direct) mode writes straight to live,
+whatever its Work's default or its sibling chats do.
 </p>
 
 <figure aria-label="Flow diagram of the draft/live model">
@@ -150,8 +151,8 @@ prop that drifts.
   </tr>
   <tr>
     <td><strong>Who writes</strong></td>
-    <td>The writer and other live sessions, plus the AI when its Work is in direct mode.</td>
-    <td>Draft-mode AI thread peers push every write here; live content pulls in continuously.</td>
+    <td>The writer and other live sessions, plus the AI of a chat in direct (auto-apply) mode.</td>
+    <td>AI peers of draft-mode chats push every write here; live content pulls in continuously.</td>
   </tr>
   <tr>
     <td><strong>Annotations</strong></td>
@@ -263,7 +264,7 @@ cure was one mechanism, enforced by types and keys rather than prose.
   <tr><th>Edge</th><th>Rule</th></tr>
   <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
   <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. The stale-Apply guard (#420) is not built yet.</td></tr>
-  <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode Work's AI writes to the branch, always.</td></tr>
+  <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
 </table>
 </div>
