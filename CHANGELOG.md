@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Namespace occupancy reports only proven occupant kinds; atomic identity collisions remain unqualified.
+
 - Historical ahead-link spelling preserves the snapshot’s preloaded address key.
 
 - Document-name migration canonicalizes pending upload reservations and resolves collisions before resumable finalization. Finalization verifies the reserved address and identity.
