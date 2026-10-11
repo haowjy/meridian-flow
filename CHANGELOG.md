@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep ambiguous browser restoration claims writer-authored, including manual attribute re-sets and omitted sibling claims.
+
 - Preserve chat attribution when writer Undo restores paragraph attributes and formatted paragraphs.
 
 - Retain unacknowledged draft typing across generation changes when its Yjs anchors are still missing.
