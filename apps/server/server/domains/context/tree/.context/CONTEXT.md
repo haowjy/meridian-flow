@@ -51,11 +51,15 @@ given) and the edited documents the caller names, each spelled at D's location a
 its row's, with the first conflict that applies: a clash with another node at the
 target path or a needed folder's path, `deleted_live`, `relocated`, else `none`.
 
+`lineages(view, ids)` is the bulk file-facts reader: visible locations, deleted
+identity fallback and folder chains are read for the set. `lineage` delegates
+for a single id. Neither exposes hidden nodes outside the requested draft.
+
 ## Files
 
 | File | Owns |
 |---|---|
-| `tree-view.ts` | `TreeView`, the `TreeReader` (path and id lookups, `childAt` for one step of a walk, identity status, occupants, tree state, lineage, project of a document) and the re-exported relations |
+| `tree-view.ts` | `TreeView`, the `TreeReader` (path and id lookups, `childAt` for one step of a walk, identity status, occupants, tree state, single and batched lineage, project of a document) and the re-exported relations |
 | `tree-view-sql.ts` | the SQL behind them, and the only reader of the hidden columns. Diagnostic `identityDocuments` / `identityFolders` add non-hidden deleted and malformed rows for availability; hidden tombstones never appear, and diagnostics never authorize bytes |
 | `tree-addresses.ts` | identity rows by id or name and their addresses, hidden and deleted included; `loadFolderChains`; `spellNodeAddresses`, which carries lineage Scratch's `rootThreadId` |
 | `hidden-node-types.ts` | the lifecycle's vocabulary (claims, reveal expectations, create results) with no database import, so ports can name it |

@@ -210,7 +210,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await store.close(third.id, new Date());
       const missing = "00000000-0000-4000-8000-00000000dead" as DocumentId;
 
+      const root = await scenario.seedLive("root.md");
       const ids = [harbor, ledger, tomb, orphan, missing];
+      const liveLineages = await tree.lineages(LIVE_TREE, [...ids, root, root]);
+      expect([...liveLineages.keys()].sort()).toEqual([ledger, root].sort());
+      expect(liveLineages.get(root)).toMatchObject({ status: "visible", folders: [] });
+      expect(liveLineages.get(ledger)).toMatchObject({
+        status: "deleted",
+        folders: [{ id: await folderId("old"), deleted: true }],
+      });
+      const draftLineages = await tree.lineages({ kind: "draft", draftId: first.id }, ids);
+      expect([...draftLineages.keys()].sort()).toEqual([harbor, ledger].sort());
+      expect(draftLineages.get(harbor)).toMatchObject({
+        status: "visible",
+        folders: [{ id: await folderId("world"), deleted: false }],
+      });
+      expect(await tree.lineages(LIVE_TREE, [])).toEqual(new Map());
+
       const live = await tree.identityStatus(LIVE_TREE, ids);
       expect(live.get(harbor)).toMatchObject({
         kind: "hidden",
