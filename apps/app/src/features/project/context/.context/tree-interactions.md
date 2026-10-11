@@ -109,14 +109,16 @@ active leaves only the mark; blur dismisses the field without retrying and Enter
 retries.
 
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
-return the operation id issued at admission; `LinkUpdateNote` reads that receipt
-through `settledNamespaceReceipt` and shows "Updated N links" on its own line under
-the name in the tree, drawer and Work Files rows, inline in the phone listing, or
-after the open document's identity path. The operation registry is keyed by document,
-so a file renamed or moved from any list shows the note in both places. It mounts and
-watches nothing until a rename returns an operation id, lives until the receipt's
-own deadline (settlement plus four seconds, however often its row remounts), ends
-its watch there, and announces once per operation through the app's polite region.
+return the operation id issued at admission; the account-owned lifecycle watches
+its journal receipt and `LinkUpdateNote` shows "Updated N links" on its own line
+under the name in tree, drawer and Work Files rows, inline in the phone listing,
+or after the open document's identity path. Selection is keyed by stable resource
+handle (folder handles for folders). Presentation document IDs resolve through
+the replica's canonical identity/alias policy, so feedback follows remint and
+appears in every mounted surface. Observation starts at admission and ends on
+positive terminal evidence or the receipt's deadline (settlement plus four
+seconds), independently of row mounts. Missing cached records are not terminal
+evidence. Each operation announces once through the app's polite region.
 Picker moves with zero updated links show "Moved to <folder>" after successful
 settlement, with the same lifetime and announcement. Refused moves show nothing.
 Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
