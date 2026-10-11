@@ -88,6 +88,12 @@ type ActiveRun = {
   dispose?: () => void;
   flush?: () => void;
   splitBoundaryPending?: boolean;
+  /**
+   * A send admitted with no reply named while this run was followed. Its reply
+   * starts after the followed one ends, so that end (finish or error) keeps the
+   * subscription for the next RUN_STARTED instead of settling.
+   */
+  awaitingQueuedReply?: boolean;
 };
 
 function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
@@ -508,15 +514,22 @@ export class ThreadRunController {
     result: { assistantTurnId: string | null; resumeAfterSeq: string },
   ): void {
     if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
-    // Null names no reply for this message. A reply this controller is still
-    // following is live, not abandoned: the message queued behind a write-mode
-    // switch, and the fresh subscription carries that reply to its end.
-    const followingLiveRun =
-      this.activeRun?.threadId === threadId &&
-      this.activeRun.turnId !== undefined &&
-      !this.activeRun.splitBoundaryPending;
+    // Null names no reply for this message: it queued behind a write-mode
+    // switch, so a reply this controller already follows is live, not
+    // abandoned. Keep following it (Stop still targets it) and take the next
+    // RUN_STARTED after it ends as this message's reply.
+    const activeRun = this.activeRun;
+    if (
+      result.assistantTurnId == null &&
+      activeRun?.threadId === threadId &&
+      activeRun.unsubscribe &&
+      (activeRun.turnId !== undefined || activeRun.awaitingQueuedReply)
+    ) {
+      this.activeRun = { ...activeRun, awaitingQueuedReply: true };
+      return;
+    }
     const token = this.startRun(threadId, {
-      pruneAbandonedTurn: result.assistantTurnId == null && !followingLiveRun,
+      pruneAbandonedTurn: result.assistantTurnId == null,
     });
     this.attachLiveSubscription(threadId, token, {
       after: result.resumeAfterSeq,
@@ -635,6 +648,7 @@ export class ThreadRunController {
               token,
               turnId: effectiveEvent.runId,
               splitBoundaryPending: false,
+              awaitingQueuedReply: false,
               unsubscribe: this.activeRun?.unsubscribe,
               dispose: markDisposed,
               flush: () => {
@@ -649,7 +663,15 @@ export class ThreadRunController {
 
           coalescer.push(effectiveEvent);
 
-          if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
+          const ended =
+            (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) ||
+            effectiveEvent.type === EventType.RUN_ERROR;
+          if (ended && this.activeRun?.awaitingQueuedReply) {
+            // A queued send's reply starts after this one: follow it, and let a
+            // Stop in between wait for its RUN_STARTED.
+            awaitingSplitStart = true;
+            this.activeRun = { ...this.activeRun, turnId: undefined, splitBoundaryPending: true };
+          } else if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
             // A same-lease steer is journaled as A-finish then B-start. Keep the
             // mounted owner alive for that transition; an ordinary terminal run
             // settles after the short boundary window.
