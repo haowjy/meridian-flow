@@ -91,52 +91,41 @@ export function projectFolderCatalog(
       )
       .map((folder) => folder.folderId),
   );
-  const byId = new Map(entries.map((entry) => [entry.entryId, entry]));
-  entries = entries.filter((entry) => {
-    let current = entry;
-    const seen = new Set<string>();
-    for (;;) {
-      if (deleted.has(current.entryId)) return false;
-      if (current.kind !== "file" && current.kind !== "folder") return true;
-      if (seen.has(current.entryId)) throw new Error("Catalog parent cycle");
-      seen.add(current.entryId);
-      const parent = byId.get(current.parentId);
-      if (!parent) return true;
-      current = parent;
-    }
-  });
-  if (folderOverlays(projectId, folders).length === 0) return entries;
   const moved = new Set<string>();
-  const projected = entries.map((entry): CatalogEntry => {
-    if (entry.kind !== "file" && entry.kind !== "folder") return entry;
-    const parsed = parseContextUri(entry.uri);
-    if (!parsed.ok) throw new Error("Invalid catalog namespace URI");
-    const location: ResourceLocation = {
-      scheme: parsed.value.scheme,
-      path: `/${entry.path.join("/")}`,
-      name: entry.name,
-      ...catalogEntryOwner(entry.scope, parsed.value.authority),
-    };
-    const next = rebaseFolderResourceLocation(projectId, location, folders);
-    if (next === location) return entry;
-    const source = entries.find(
-      (candidate) =>
-        candidate.kind === "source" &&
-        candidate.scheme === next.scheme &&
-        ownerListedInScope(next, next.scheme, candidate.scope, projectId),
-    );
-    if (source?.kind !== "source") throw new Error("Folder destination source is not installed");
-    moved.add(entry.entryId);
-    return {
-      ...entry,
-      name: next.name,
-      path: next.path.split("/").filter(Boolean),
-      scope: source.scope,
-      sourceId: source.entryId,
-      uri: namespaceUri(next),
-    };
-  });
-  return projected.map((entry): CatalogEntry => {
+  const projected =
+    folderOverlays(projectId, folders).length === 0
+      ? entries
+      : entries.map((entry): CatalogEntry => {
+          if (entry.kind !== "file" && entry.kind !== "folder") return entry;
+          const parsed = parseContextUri(entry.uri);
+          if (!parsed.ok) throw new Error("Invalid catalog namespace URI");
+          const location: ResourceLocation = {
+            scheme: parsed.value.scheme,
+            path: `/${entry.path.join("/")}`,
+            name: entry.name,
+            ...catalogEntryOwner(entry.scope, parsed.value.authority),
+          };
+          const next = rebaseFolderResourceLocation(projectId, location, folders);
+          if (next === location) return entry;
+          const source = entries.find(
+            (candidate) =>
+              candidate.kind === "source" &&
+              candidate.scheme === next.scheme &&
+              ownerListedInScope(next, next.scheme, candidate.scope, projectId),
+          );
+          if (source?.kind !== "source")
+            throw new Error("Folder destination source is not installed");
+          moved.add(entry.entryId);
+          return {
+            ...entry,
+            name: next.name,
+            path: next.path.split("/").filter(Boolean),
+            scope: source.scope,
+            sourceId: source.entryId,
+            uri: namespaceUri(next),
+          };
+        });
+  const topology = projected.map((entry): CatalogEntry => {
     if (entry.kind !== "file" && entry.kind !== "folder") return entry;
     if (!moved.has(entry.entryId)) return entry;
     const parentPath = entry.path.slice(0, -1).join("/");
@@ -152,6 +141,21 @@ export function projectFolderCatalog(
     if (parentPath && !parent) throw new Error("Folder destination parent is not installed");
     const parentId = parent?.entryId ?? entry.sourceId;
     return entry.parentId === parentId ? entry : { ...entry, parentId };
+  });
+  // Deletion follows placement: a moved-in node belongs to the deleted destination's subtree.
+  const byId = new Map(topology.map((entry) => [entry.entryId, entry]));
+  return topology.filter((entry) => {
+    let current = entry;
+    const seen = new Set<string>();
+    for (;;) {
+      if (deleted.has(current.entryId)) return false;
+      if (current.kind !== "file" && current.kind !== "folder") return true;
+      if (seen.has(current.entryId)) throw new Error("Catalog parent cycle");
+      seen.add(current.entryId);
+      const parent = byId.get(current.parentId);
+      if (!parent) return true;
+      current = parent;
+    }
   });
 }
 

@@ -1,4 +1,5 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
+import { intentOwnsDeletion } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceDestination } from "./resource-records";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
@@ -12,17 +13,27 @@ function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent
   );
 }
 
-/** Refusal retires the queued placement chain without rewriting its immutable destinations. */
-export function cancelRefusedLocationChain(
+/** Refusal retires queued placement; an admitted later delete also retires its repair blocker. */
+export function resolveRefusedLocationChain(
   intents: readonly NamespaceIntent[],
   failed: NamespaceIntent,
 ): NamespaceIntent[] {
+  const deleted =
+    (failed.desired.kind === "set-location" || failed.desired.kind === "set-folder-location") &&
+    intents.some(
+      (intent) =>
+        intent.sequence > failed.sequence &&
+        intent.identityRevision === failed.identityRevision &&
+        intentOwnsDeletion(intent),
+    );
   return intents.map((intent) =>
-    followsLocationIntent(intent, failed) &&
-    intent.state === "pending" &&
-    intent.attempts.length === 0
-      ? { ...intent, state: "cancelled" }
-      : intent,
+    intent.intentId === failed.intentId && deleted
+      ? { ...intent, state: "superseded" }
+      : followsLocationIntent(intent, failed) &&
+          intent.state === "pending" &&
+          intent.attempts.length === 0
+        ? { ...intent, state: "cancelled" }
+        : intent,
   );
 }
 

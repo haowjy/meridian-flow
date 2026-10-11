@@ -108,5 +108,5 @@ Shared across both shells:
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)
 
 Chat Recent memoizes one catalog identity index per replica snapshot. Known
-terminal documents disappear, matching server Recent filtering; only identities
+terminal and pending-deleted documents disappear, matching server Recent filtering; only identities
 not loaded locally may fall back to touch-row names.

@@ -12,6 +12,7 @@ import {
   planFolderCatalogInstallation,
   planFolderDeletion,
   planFolderLocation,
+  projectFolderCatalog,
   projectFolderLocation,
   projectFolderNeedsRepair,
   type ResourceLocation,
@@ -265,4 +266,169 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
   expect(store.current().intents.at(-1)?.state).toBe("settled");
   expect(folderOwnsDeletion(store.current())).toBe(true);
   expect(store.current().canonicalRefresh).toBeUndefined();
+});
+
+// Both receipt-bearing and intake refusals must release deletion admitted during dispatch.
+it.each([
+  false,
+  true,
+])("deletes canonical folder after an overlapping move refusal (%s)", async (receiptless) => {
+  const store = new MemoryFolders();
+  await command(store, "B");
+  const outcomes: NamespaceOutcome[] = [];
+  await reconcile(store, {
+    readOutcome: async () => null,
+    submit: async (_project, request) => {
+      if (request.kind !== "move") throw new Error("Expected move");
+      await command(store, "C");
+      const write = planFolderDeletion({
+        record: store.current(),
+        projectId: "project",
+        handle: "folder",
+        folderId: "folder",
+        source,
+        intentId: "delete",
+        operationId: "delete",
+      });
+      if (!write) throw new Error("Missing deletion");
+      await store.commitFolder(write);
+      const outcome: NamespaceOutcome = receiptless
+        ? {
+            kind: "refusal",
+            operationId: "B",
+            error: {
+              code: "work_missing",
+              message: "Work not found.",
+              source: "system",
+              retryable: false,
+            },
+          }
+        : { kind: "operation", receipt: receipt("B", false) };
+      outcomes.push(outcome);
+      return outcome;
+    },
+  });
+  expect(store.current().intents.map((i) => i.state)).toEqual([
+    "superseded",
+    "cancelled",
+    "pending",
+  ]);
+  expect(store.current().intents[0]?.attempts[0]?.outcome).toEqual(outcomes[0]);
+  expect(projectFolderNeedsRepair(store.current())).toBeNull();
+  const reopened = new MemoryFolders();
+  reopened.record = structuredClone(store.current());
+  await reconcile(reopened, {
+    readOutcome: async () => null,
+    submit: async (_project, request) => {
+      expect(request).toMatchObject({
+        kind: "delete",
+        body: { path: "A", expected: { kind: "folder", nodeId: "folder" } },
+      });
+      return {
+        kind: "operation",
+        receipt: {
+          operationId: "delete",
+          command: {
+            kind: "delete",
+            uri: "manuscript://A",
+            expected: { kind: "folder", nodeId: "folder" },
+          },
+          result: {
+            ok: true,
+            value: { status: "deleted", deletedDocumentIds: [], availabilityGeneration: "2" },
+          },
+        },
+      };
+    },
+  });
+  expect(reopened.current().intents.map((i) => i.state)).toEqual([
+    "superseded",
+    "cancelled",
+    "settled",
+  ]);
+});
+
+it.each([
+  false,
+  true,
+])("suppresses the placed subtree when its destination is deleted (delete first %s)", async (deleteFirst) => {
+  const moving = new MemoryFolders();
+  const deletion = new MemoryFolders();
+  const move = planFolderLocation({
+    projectId: "project",
+    handle: "folder",
+    folderId: "folder",
+    source,
+    intentId: "move",
+    operationId: "move",
+    destination: { scheme: "manuscript", folderPath: "B", name: "A", workId: null },
+  });
+  const remove = planFolderDeletion({
+    projectId: "project",
+    handle: "destination",
+    folderId: "destination",
+    source: { ...source, path: "/B", name: "B" },
+    intentId: "delete",
+    operationId: "delete",
+  });
+  if (!move || !remove) throw new Error("Missing commands");
+  await moving.commitFolder(move);
+  await deletion.commitFolder(remove);
+  const scope = { kind: "project" as const, projectId: "project" };
+  const entries: CatalogEntry[] = [
+    {
+      kind: "source",
+      entryId: "source",
+      name: "Files",
+      scheme: "manuscript",
+      scope,
+      uri: "manuscript://",
+    },
+    ...[
+      ["folder", "A"],
+      ["destination", "B"],
+    ].map(([entryId, name]) => ({
+      kind: "folder" as const,
+      entryId,
+      name,
+      sourceId: "source",
+      parentId: "source",
+      scope,
+      path: [name],
+      uri: `manuscript://${name}`,
+      hasChildren: true,
+    })),
+    {
+      kind: "folder",
+      entryId: "child",
+      name: "Child",
+      sourceId: "source",
+      parentId: "folder",
+      scope,
+      path: ["A", "Child"],
+      uri: "manuscript://A/Child",
+      hasChildren: false,
+    },
+    {
+      kind: "file",
+      entryId: "document",
+      name: "doc.md",
+      sourceId: "source",
+      parentId: "child",
+      scope,
+      path: ["A", "Child", "doc.md"],
+      uri: "manuscript://A/Child/doc.md",
+      aliases: [],
+      provisionalName: false,
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+    },
+  ];
+  const folders = deleteFirst
+    ? [deletion.current(), moving.current()]
+    : [moving.current(), deletion.current()];
+  expect(projectFolderCatalog("project", entries, folders).map((e) => e.entryId)).toEqual([
+    "source",
+  ]);
 });

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Deletion continues from canonical identity when an earlier pending move is refused. Moving into a pending-deleted folder hides the placed subtree without breaking the file catalog.
+- Chat Recent hides pending-deleted files and folder descendants until deletion is refused.
+
 - Folder deletion hides its rows immediately and uses the same durable retry path as file deletion. Refused deletion restores the folder with a failure mark. Delayed deletion cannot delete a replacement folder at the old path.
 - Chat Recent hides known-deleted documents instead of showing their cached names.
 
