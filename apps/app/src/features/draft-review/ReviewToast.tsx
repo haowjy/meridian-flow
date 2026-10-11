@@ -1,8 +1,4 @@
-/**
- * ReviewToast — the small confirmation after a change is applied or discarded.
- * It says what happened and nothing more: per-change Undo does not exist, so it
- * offers none. Reads from the controller and dismisses itself.
- */
+/** Transient feedback for a change that disappeared elsewhere. Successful dispositions need no toast: optimistic UI shows their result. */
 import { Trans } from "@lingui/react/macro";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -39,8 +35,6 @@ export function ReviewToast({
         className,
       )}
     >
-      {toast.code === "applied" ? <Trans>Applied</Trans> : null}
-      {toast.code === "discarded" ? <Trans>Discarded</Trans> : null}
       {toast.code === "change-gone" ? <Trans>That change is no longer in the draft.</Trans> : null}
     </div>
   );

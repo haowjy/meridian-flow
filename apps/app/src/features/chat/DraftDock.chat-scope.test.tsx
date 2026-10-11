@@ -105,7 +105,6 @@ it("hides the queued chat batch, restores only the refused file, then discards i
   await fixture.render(
     async (probe) => {
       await settleReact(() => expect(text()).toContain("3 changes"));
-      expect(text()).toContain("Lore pass");
       await click("Apply");
       expect(strip()).toBeNull();
       expect(network.applyDraftChanges.mock.calls).toEqual([
@@ -181,6 +180,42 @@ it("hides the queued chat batch, restores only the refused file, then discards i
       );
       expect(navigate).not.toHaveBeenCalled();
       expect(probe().presented.controller.inlineReview).toBeNull();
+    },
+    {
+      chatSurface: <Strip />,
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+            {children}
+          </ProjectNavigationProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+it.each(["Apply", "Discard"])("the strip's new document dispatches whole %s", async (label) => {
+  const file = { ...draft("new-scene", [pacing]), isNewDocument: true };
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    draftId: file.draftId,
+    isNewDocument: true,
+    operations: [op("1", pacing), op("2", pacing)],
+  });
+  const request = label === "Apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
+  request.mockResolvedValue({
+    status: label === "Apply" ? "applied" : "discarded",
+    draftId: file.draftId,
+  } as never);
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(text()).toContain("1 change"));
+      await click(label);
+      expect(request).toHaveBeenCalledWith("project-a", "work-a", "new-scene", {
+        draftId: file.draftId,
+      });
+      expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     },
     {
       chatSurface: <Strip />,

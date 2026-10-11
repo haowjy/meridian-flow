@@ -1,29 +1,20 @@
-/**
- * ReviewChangeBar — the compact one-line bar for the change the writer is
- * looking at: the chat that wrote it, a note when it needs a second look,
- * Discard and Apply. Where it sits (beside the change in the manuscript, above
- * the keyboard on a phone) is its host's business; this is only the bar. On
- * desktop it wraps to two rows when its host is narrow, buttons together on
- * the last.
- *
- * `touch` is the phone's bar: who and why stack on the left, and Discard and
- * Apply are 44px targets on the right. Discard reads just "Discard" there, as
- * "Includes your edits" stands beside it; its accessible name stays in full.
- */
+/** Focused change attribution and Apply/Discard, one row on desktop and phone. Failures stay inline on the acted-on change. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 
-import type { ChangeCommandState } from "@/client/query/draft-command-record";
+import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
+import { ReviewMessageText } from "./ReviewMessageText";
 import type { ReviewChange } from "./review-changes";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
   disabled: boolean;
-  canApply: boolean;
+
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
+  draftFailure?: DraftCommandFailure | null;
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
@@ -33,8 +24,9 @@ export type ReviewChangeBarProps = {
 export function ReviewChangeBar({
   change,
   disabled,
-  canApply,
+
   failure,
+  draftFailure,
   onApply,
   onDiscard,
   touch = false,
@@ -47,46 +39,18 @@ export function ReviewChangeBar({
       data-review-change-bar={change.classId}
       className={cn(
         touch
-          ? "flex flex-col gap-0.5 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
-          : "flex w-fit max-w-full flex-col gap-0.5 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
+          ? "flex items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
+          : "flex w-fit max-w-full items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
         className,
       )}
     >
-      <div
-        className={cn(
-          "flex items-center",
-          touch ? "gap-3 py-0.5" : "flex-wrap gap-x-1.5 gap-y-0.5",
-        )}
-      >
-        <div className={touch ? "flex min-w-0 flex-1 flex-col items-start" : "contents"}>
+      <div className={cn("flex min-w-0 flex-1 items-center", touch ? "gap-3 py-0.5" : "gap-x-1.5")}>
+        <div className={touch ? "flex min-w-0 flex-1 items-center" : "contents"}>
           <ChangeAuthor
             touch={touch}
             attribution={change.attribution}
-            className={
-              touch
-                ? cn(
-                    "inline-flex min-h-11 max-w-[60%] items-center",
-                    // The note sits in the link's padding, so the pair stays two lines tall.
-                    (change.includesWriterEdits || change.merged) && "-mb-3",
-                  )
-                : "max-w-[60%]"
-            }
+            className={touch ? "inline-flex min-h-11 max-w-full items-center" : "max-w-[60%]"}
           />
-          {change.includesWriterEdits ? (
-            <span className="text-meta text-muted-foreground">
-              <Trans>Includes your edits</Trans>
-            </span>
-          ) : null}
-          {change.merged ? (
-            <span className="text-meta text-muted-foreground">
-              <Trans>Check it reads right</Trans>
-            </span>
-          ) : null}
-          {change.actionable ? null : (
-            <span className="text-meta text-muted-foreground">
-              <Trans>Apply draft or Discard draft handles this.</Trans>
-            </span>
-          )}
         </div>
         {change.actionable ? (
           <span
@@ -106,22 +70,24 @@ export function ReviewChangeBar({
             >
               {touch ? <Trans>Discard</Trans> : label}
             </Button>
-            {canApply ? (
-              <Button
-                size="xs"
-                className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
-                disabled={disabled}
-                onClick={onApply}
-              >
-                <Trans>Apply</Trans>
-              </Button>
-            ) : null}
+            <Button
+              size="xs"
+              className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+              disabled={disabled}
+              onClick={onApply}
+            >
+              <Trans>Apply</Trans>
+            </Button>
           </span>
         ) : null}
       </div>
-      {failure ? (
-        <p role="status" className="pr-2 text-meta text-destructive">
-          <ChangeFailureText failure={failure} />
+      {failure || draftFailure ? (
+        <p role="status" className="min-w-0 pr-2 text-meta text-destructive">
+          {draftFailure ? (
+            <ReviewMessageText failure={draftFailure} />
+          ) : failure ? (
+            <ChangeFailureText failure={failure} />
+          ) : null}
         </p>
       ) : null}
     </section>

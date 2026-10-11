@@ -402,9 +402,7 @@ export type ChangeFailureCode =
   /** The change was updated under the writer; the preview is re-read. */
   | "stale"
   /** The change is no longer in the draft. */
-  | "gone"
-  /** A new document's changes cannot be applied one by one. */
-  | "draft-only";
+  | "gone";
 
 type ChangeCommandRecord = ChangeSelection &
   (

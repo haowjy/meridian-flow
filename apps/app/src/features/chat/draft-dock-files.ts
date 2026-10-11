@@ -14,27 +14,16 @@ import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { listablePreview } from "@/features/draft-review/draft-changes";
 import { type ReviewChange, reviewChangesOfPreview } from "@/features/draft-review/review-changes";
 
-/** Another chat that wrote into one of this chat's changes. */
-export type TiedChat = { threadId: string; title: string | null };
-
 export type DockFile = {
   row: ReviewFileTarget;
   name: string;
   status: "loading" | "error" | "ready";
   /** Present when the preview failed to read. */
   retry: (() => void) | null;
-  /** The draft proposes a document not yet in the project: Review-only on the strip. */
-  newDocument: boolean;
   /** This chat's changes in the file, in document order (empty until the preview lands). */
   changes: readonly ReviewChange[];
-  /** The ones Apply and Discard take: every change of the chat the server lets us act on, none for a new document. */
+  /** The ones Apply and Discard take: every actionable change of the chat, including whole-draft items. */
   actionable: readonly ReviewChange[];
-  /** Changes only Apply draft or Discard draft can handle. */
-  needsDraftCommand: number;
-  /** Actionable changes that also hold an edit of another chat, which Apply and Discard take along. */
-  tiedChanges: number;
-  /** The other chats in those changes, latest first. */
-  tiedChats: readonly TiedChat[];
 };
 
 const NO_CHANGES: readonly ReviewChange[] = [];
@@ -54,12 +43,8 @@ export function dockFile(
     row,
     name,
     retry: null,
-    newDocument: row.isNewDocument,
     changes: NO_CHANGES,
     actionable: NO_CHANGES,
-    needsDraftCommand: 0,
-    tiedChanges: 0,
-    tiedChats: [],
   } satisfies Omit<DockFile, "status">;
   if (entry?.status === "error") return { ...base, status: "error", retry: entry.retry };
   if (entry?.status !== "ready") return { ...base, status: "loading" };
@@ -68,62 +53,20 @@ export function dockFile(
   const active = listablePreview(entry.preview);
   if (!active) return { ...base, status: "loading" };
 
-  const newDocument = row.isNewDocument || active.isNewDocument === true;
   const changes = reviewChangesOfPreview(active).filter((change) =>
     change.threadIds.includes(threadId),
   );
-  const actionable = newDocument ? NO_CHANGES : changes.filter((change) => change.actionable);
-  const tiedChats = new Map<string, TiedChat>();
-  let tiedChanges = 0;
-  for (const change of actionable) {
-    const others = change.threadIds.filter((id) => id !== threadId);
-    if (others.length === 0) continue;
-    tiedChanges += 1;
-    if (change.attribution.kind !== "chats") continue;
-    for (const chat of change.attribution.chats) {
-      if (chat.threadId !== threadId && !tiedChats.has(chat.threadId)) {
-        tiedChats.set(chat.threadId, { threadId: chat.threadId, title: chat.title });
-      }
-    }
-  }
   return {
     ...base,
     status: "ready",
-    newDocument,
     changes,
-    actionable,
-    needsDraftCommand: newDocument ? 0 : changes.length - actionable.length,
-    tiedChanges,
-    tiedChats: [...tiedChats.values()],
+    actionable: changes.filter((change) => change.actionable),
   };
 }
 
 /** On the strip while its preview is unread, and once read only if the chat has a change in it. */
 export function isOnStrip(file: DockFile): boolean {
   return file.status !== "ready" || file.changes.length > 0;
-}
-
-/** The notes the writer reads before any click, for one file or for all of them. */
-export type DockNotes = {
-  tiedChanges: number;
-  tiedChats: readonly TiedChat[];
-  needsDraftCommand: number;
-  newDocuments: readonly string[];
-};
-
-export function dockNotes(files: readonly DockFile[]): DockNotes {
-  const tiedChats = new Map<string, TiedChat>();
-  for (const file of files) for (const chat of file.tiedChats) tiedChats.set(chat.threadId, chat);
-  return {
-    tiedChanges: files.reduce((sum, file) => sum + file.tiedChanges, 0),
-    tiedChats: [...tiedChats.values()],
-    needsDraftCommand: files.reduce((sum, file) => sum + file.needsDraftCommand, 0),
-    newDocuments: files.filter((file) => file.newDocument).map((file) => file.name),
-  };
-}
-
-export function hasNotes(notes: DockNotes): boolean {
-  return notes.tiedChanges > 0 || notes.needsDraftCommand > 0 || notes.newDocuments.length > 0;
 }
 
 /** The changes across files, or null while any preview is unread: a count is never read from a partial answer. */

@@ -39,7 +39,10 @@ export function useDraftChanges(
   target: DraftChangesTarget,
   options: {
     /** The caller's own scope: runs the commands of a draft the Editor does not have open. */
-    controller: Pick<WorkDraftCommands, "applyChanges" | "discardChanges" | "dispositionLocked">;
+    controller: Pick<
+      WorkDraftCommands,
+      "applyChanges" | "discardChanges" | "apply" | "discard" | "dispositionLocked"
+    >;
     enabled?: boolean;
   },
 ): DraftChangesView {
@@ -69,15 +72,17 @@ export function useDraftChanges(
 
   const apply = useCallback(
     async (change: ReviewChange) => {
-      if (change.actionable) await runner.applyChanges(draft, selectionOf([change]));
+      if (change.wholeDraft) await runner.apply(documentId, draftId);
+      else if (change.actionable) await runner.applyChanges(draft, selectionOf([change]));
     },
-    [draft, runner.applyChanges],
+    [draft, documentId, draftId, runner.apply, runner.applyChanges],
   );
   const discard = useCallback(
     async (change: ReviewChange) => {
-      if (change.actionable) await runner.discardChanges(draft, selectionOf([change]));
+      if (change.wholeDraft) await runner.discard(documentId, draftId);
+      else if (change.actionable) await runner.discardChanges(draft, selectionOf([change]));
     },
-    [draft, runner.discardChanges],
+    [draft, documentId, draftId, runner.discard, runner.discardChanges],
   );
 
   const status: DraftChangesView["status"] = !entry
@@ -97,7 +102,7 @@ export function useDraftChanges(
       status,
       items: status === "ready" ? items : NO_ITEMS,
       focused: null,
-      canApply: active?.isNewDocument !== true,
+
       locked: controller.dispositionLocked,
       unlisted: status === "ready" && items.length === 0 && !hiding,
       ...(entry?.status === "error" ? { retry: entry.retry } : {}),
@@ -109,7 +114,6 @@ export function useDraftChanges(
       draftId,
       status,
       items,
-      active?.isNewDocument,
       controller.dispositionLocked,
       hiding,
       entry,

@@ -68,7 +68,7 @@ export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 export type ProposalEvidence = { draftGeneration: number; proposal: boolean };
 
 /** What a toast says; the render layer owns the words. */
-export type ReviewToastCode = "applied" | "discarded" | "change-gone";
+export type ReviewToastCode = "change-gone";
 
 export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "error" };
 

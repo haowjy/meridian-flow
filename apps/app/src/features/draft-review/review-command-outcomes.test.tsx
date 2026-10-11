@@ -286,7 +286,7 @@ const loose = {
   deletedText: "Alpha",
   deletedSpans: [],
 };
-it("classified commands never hide or send an unowned hunk, which prevents completion", async () => {
+it("unowned hunks fold into a whole-draft item and still prevent selective completion", async () => {
   fixture.network.getDraftPreview.mockResolvedValue({
     ...previewOf("1"),
     hunks: [
@@ -304,14 +304,8 @@ it("classified commands never hide or send an unowned hunk, which prevents compl
   fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
-    expect(p().header.view.items.map(({ change }) => change.actionable)).toEqual([true, false]);
-    const unowned = p().header.view.items[1].change;
-    await act(async () => {
-      await p().header.view.apply(unowned);
-      await p().header.view.discard(unowned);
-    });
-    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+    expect(p().header.view.items).toHaveLength(1);
+    expect(p().header.view.items[0].change.wholeDraft).toBe(true);
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller.applyChanges(draftA, change("1"));
@@ -412,5 +406,29 @@ it.each([
       await done;
     });
     expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
+  });
+});
+
+it.each([
+  "apply",
+  "discard",
+] as const)("a new document's one change dispatches whole %s", async (mode) => {
+  fixture.network.listWorkDrafts.mockResolvedValue({
+    drafts: [{ ...listed, isNewDocument: true }],
+  });
+  fixture.network.getDraftPreview.mockResolvedValue({ ...preview, isNewDocument: true });
+  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
+  fixture.network.discardDraft.mockResolvedValue({ status: "discarded", draftId: "draft-a" });
+  await fixture.render(async (p) => {
+    await open(p);
+    expect(p().header.view.items).toHaveLength(1);
+    await act(async () => {
+      await p().header.view[mode](p().header.view.items[0].change);
+    });
+    const request = mode === "apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
+    expect(request).toHaveBeenCalledWith("project-a", "work-a", "document-a", {
+      draftId: "draft-a",
+    });
+    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
   });
 });

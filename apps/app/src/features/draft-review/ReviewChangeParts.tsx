@@ -98,7 +98,7 @@ export function ChangeAuthor({
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 flex-wrap items-baseline text-caption text-muted-foreground",
+        "inline-flex min-w-0 overflow-hidden flex-nowrap items-baseline text-caption text-muted-foreground",
         className,
       )}
     >
@@ -182,12 +182,6 @@ export function ChangeFailureText({
       );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
-    case "draft-only":
-      return mode === "apply" ? (
-        <Trans>A new document is applied as a whole. Use Apply draft.</Trans>
-      ) : (
-        <Trans>A new document is discarded as a whole. Use Discard draft.</Trans>
-      );
     case "unknown":
       return mode === "apply" ? (
         <Trans>

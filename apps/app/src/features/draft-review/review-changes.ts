@@ -1,6 +1,6 @@
 /**
  * review-changes — the writer's list of changes under review, one per server
- * closure class, in document order.
+ * closure class or one whole-draft item when selective commands cannot act, in document order.
  *
  * The server owns the class partition (dependency-closed sets of operations
  * that publish or discard together); this module only groups by the required
@@ -43,7 +43,7 @@ export interface ReviewChange {
   /** Every key the manuscript paints this change's marks by. */
   markKeys: string[];
   tone: ReviewChangeTone;
-  /** The writer's own edits are inside this change (half-and-half dot, "Includes your edits"). */
+  /** The writer's own edits are inside this change (half-and-half dot). */
   includesWriterEdits: boolean;
   /** AI and writer edits interleaved so the text cannot be split by author. */
   merged: boolean;
@@ -60,6 +60,8 @@ export interface ReviewChange {
    * `canApplyOrDiscard: false`; Apply draft and Discard draft handle those.
    */
   actionable: boolean;
+  /** This item represents the entire draft, not a selective operation set. */
+  wholeDraft?: boolean;
 }
 
 /**
@@ -140,6 +142,33 @@ export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewC
   let changes = changesOfPreview.get(preview);
   if (!changes) {
     changes = reviewChanges(preview.operations, preview.hunks);
+    // Incomplete attribution cannot be safely split. Like a new document,
+    // present the entire draft as one change backed by whole-draft commands.
+    if (
+      changes.length > 0 &&
+      (preview.isNewDocument || changes.some((change) => !change.actionable))
+    ) {
+      const first = changes[0];
+      const attribution = preview.operations.length
+        ? changeAttribution(preview.operations)
+        : first.attribution;
+      changes = [
+        {
+          ...first,
+          classId: `draft:${preview.draftId}`,
+          operations: [...preview.operations],
+          operationIds: preview.operations.map((op) => op.operationId),
+          markKeys: changes.flatMap((change) => change.markKeys),
+          change: changeTextForHunks(preview.hunks, preview.operations),
+          attribution,
+          threadIds: attributionThreadIds(attribution),
+          includesWriterEdits: changes.some((change) => change.includesWriterEdits),
+          merged: changes.some((change) => change.merged),
+          actionable: true,
+          wholeDraft: true,
+        },
+      ];
+    }
     changesOfPreview.set(preview, changes);
   }
   return changes;

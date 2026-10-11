@@ -58,7 +58,7 @@ export function DocumentChangeRows({
   }
   return (
     <ul className="flex flex-col gap-0.5">
-      {view.items.map(({ change, failure }) => (
+      {view.items.map(({ change, failure, draftFailure }) => (
         <ReviewChangeRow
           touch={touch}
           key={change.classId}
@@ -66,8 +66,8 @@ export function DocumentChangeRows({
           focused={view.focused?.classId === change.classId}
           arrived={arrived.has(change.classId)}
           disabled={view.locked}
-          canApply={view.canApply}
           failure={failure}
+          draftFailure={draftFailure}
           onFocus={() => onSelect(change)}
           onApply={() => void view.apply(change)}
           onDiscard={() => void view.discard(change)}

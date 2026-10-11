@@ -1,39 +1,11 @@
-/**
- * DraftDock — the composer-attached strip for THIS chat's pending changes.
- *
- * Visual model: a jade-tinted strip that sits BEHIND the composer (narrower
- * via horizontal margin, top corners rounded) — the composer keeps its own
- * border and overlaps the strip's top edge, creating a layered look. It mounts
- * only when this chat has a pending change in its Work: a chat with no changes
- * of its own shows no strip, however many drafts the Work holds
- * (`useDraftDock`). No terminal flash, no generating state; the streaming turn
- * in the transcript is sufficient.
- *
- * First line: the file's name (or "N documents") and the count of this chat's
- * changes, which appears once every preview has landed. The notes sit under it,
- * collapsed or expanded, so the writer reads them before any click: a change
- * tied to another chat's edit, changes only Apply draft or Discard draft can
- * handle, and a new document (Review-only). Several files expand to a row per
- * file; the strip ends with "All changes in <Work>" (always for one file, once
- * expanded for several).
- *
- * Apply and Discard act on this chat's changes only, never on a whole draft.
- * Verb order follows the one draft-action grammar: the action that commits is
- * rightmost, Discard sits immediately left of it, and anything backing out
- * (Keep) is leftmost.
- *
- * All visibility derives from draft-review state (the shared previews and
- * command records, never ad hoc queries), so the strip, the editor bar and the
- * transcript can never disagree about what is pending.
- */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; multiple files expand in place. Failures stay on their file. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";
 import { cn } from "@/lib/utils";
-import { DockFailureText, DockNotesText } from "./DraftDockMessages";
-import { type DockFile, dockNotes, hasNotes } from "./draft-dock-files";
+import { DockFailureText } from "./DraftDockMessages";
+import type { DockFile } from "./draft-dock-files";
 import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
@@ -51,24 +23,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   const multi = dock.files.length > 1;
   const only = dock.files[0];
-  const notes = dockNotes(dock.files);
-  const noted = hasNotes(notes);
   const confirming = confirmingDiscard && dock.showCommands;
-  // The Work's whole list; the link is nothing for No Work or a Work not yet named.
-  const footer =
-    !multi || expanded ? (
-      <WorkChangesLink
-        projectId={dock.projectId}
-        workId={dock.workId}
-        className="min-h-7 gap-[var(--chat-space-inline)] rounded-none border-border-subtle border-t px-[var(--chat-card-pad-x)] py-0 text-ink-muted hover:bg-transparent [@media(pointer:coarse)]:min-h-11"
-      />
-    ) : null;
-
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
     <div
-      className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-[var(--chat-space-inline)]"
+      className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)]"
       onClick={(event) => event.stopPropagation()}
     >
       {confirming ? (
@@ -123,14 +83,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={multi ? () => setExpanded((value) => !value) : dock.reviewFirst}
         className={cn(
-          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] py-0.5 text-caption text-prose-foreground",
+          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] py-0.5 text-caption text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
         {/* The summary holds a floor (its basis) and the commands keep their
             width, so a dock too narrow for both sends the commands to their
             own right-aligned line instead of squeezing the name to nothing. */}
-        <div className="flex min-w-0 flex-1 basis-[13rem] items-center gap-[var(--chat-space-inline)]">
+        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)]">
           {multi ? (
             <button
               type="button"
@@ -150,7 +110,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ) : null}
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
-          <span className="min-w-[min(12ch,max-content)] shrink truncate">
+          <span className="min-w-0 shrink truncate">
             {multi ? <Trans>{dock.files.length} documents</Trans> : only?.name}
           </span>
           {dock.changeCount !== null ? (
@@ -159,23 +119,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </span>
           ) : null}
         </div>
-        {noted ? null : commands}
+        {!multi && only ? <FileTrouble dock={dock} file={only} /> : null}
+        {commands}
       </div>
-
-      {noted ? (
-        <>
-          <div className="space-y-0.5 px-[var(--chat-card-pad-x)] pb-1 text-caption text-ink-muted">
-            <DockNotesText notes={notes} />
-          </div>
-          <div className="flex justify-end px-[var(--chat-card-pad-x)] pb-1 text-caption text-prose-foreground">
-            {commands}
-          </div>
-        </>
-      ) : null}
-
-      {/* One document: its trouble sits under the strip. Several: on the
-          file's row, so the strip opens to show it. */}
-      {!multi && only ? <FileTrouble dock={dock} file={only} /> : null}
 
       {multi && expanded ? (
         // Capped so a long list of files scrolls inside the dock instead of
@@ -186,8 +132,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ))}
         </div>
       ) : null}
-
-      {footer}
     </div>
   );
 }
@@ -196,9 +140,8 @@ function ChangeCount({ count }: { count: number }) {
   return <Plural value={count} one="# change" other="# changes" />;
 }
 
-/** One file in the expanded strip: its name, its count, its own notes, and what went wrong on it. */
+/** One expanded file line: name, count, Review and any held failure. */
 function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) {
-  const notes = dockNotes([file]);
   return (
     <div
       data-draft-dock-file={file.row.documentId}
@@ -216,6 +159,7 @@ function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) 
             <ChangeCount count={file.changes.length} />
           </span>
         ) : null}
+        <FileTrouble dock={dock} file={file} row />
         <span className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <ReviewPill
             onClick={() => dock.review(file)}
@@ -223,12 +167,6 @@ function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) 
           />
         </span>
       </div>
-      {hasNotes(notes) ? (
-        <div className="space-y-0.5 pr-[var(--chat-geometry-draft-inset)] pb-1 pl-[var(--chat-geometry-draft-indent)] text-caption text-ink-muted">
-          <DockNotesText notes={notes} row />
-        </div>
-      ) : null}
-      <FileTrouble dock={dock} file={file} row />
     </div>
   );
 }
@@ -293,12 +231,7 @@ function TroubleLine({
 }) {
   return (
     <p
-      className={cn(
-        "flex items-baseline gap-[var(--chat-space-inline)] border-border-subtle border-t py-[var(--chat-card-pad-y)] text-destructive text-caption",
-        row
-          ? "pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)]"
-          : "px-[var(--chat-card-pad-x)]",
-      )}
+      className="flex min-w-0 max-w-[50%] items-center gap-[var(--chat-space-inline)] text-destructive text-caption"
       role="alert"
       {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
     >
@@ -316,7 +249,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       disabled={disabled}
       className="focus-ring inline-flex h-5 shrink-0 items-center justify-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
-      <Trans>Review draft</Trans>
+      <Trans>Review</Trans>
     </button>
   );
 }

@@ -181,17 +181,13 @@ for the lifecycle, execution, preview, and projection contracts.
 **The strip is this chat's changes, not the Work's.** `useDraftDock(threadId)`
 lists the Work's drafts whose `actorThreads` name the chat, reads each one's
 preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
-chat. A chat with none shows no strip. Apply and Discard send one selection
-command per file (the union of this chat's actionable changes, never a whole
-draft) through creation-bound `useWorkDraftCommands` batches, which hide every file's selection at the
-click and returns each as its own command answers (the strip keeps no hide of
-its own); a refusal stays on its file. On a coarse pointer every strip command
-is a 44px target, and a dock too narrow for the summary and the commands wraps
-the commands under the summary rather than squeezing it. A new
-document is Review-only. The notes (a change tied to another chat's edit,
-changes only Apply draft or Discard draft handle, a new document) sit above the
-commands, collapsed or expanded. Work-wide lists and Apply all live on the Work
-page; the strip's last line is the shared `WorkChangesLink` to it.
+chat. A chat with none shows no strip. Apply and Discard send the union of this
+chat's complete classes per file; new documents and incomplete-attribution
+previews are one whole-draft item using existing whole commands. Creation-bound
+Work batches hide every queued item at the click; failure restores its file.
+Summary, count and commands share one row, truncating the name first. Expanded
+file rows share one line each. There are no notes or Work-page footer; Work-wide
+lists and Apply all remain on the Work page. Coarse-pointer targets stay 44px.
 
 ## Transcript viewport (TurnList)
 
