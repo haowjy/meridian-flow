@@ -231,6 +231,11 @@ it.each([
         await settleReact(() =>
           expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
         );
+        expect(
+          [...document.querySelectorAll("[data-draft-dock-file] button")].some(
+            (button) => button.textContent === "new-scene",
+          ),
+        ).toBe(false);
         await act(async () =>
           document
             .querySelector<HTMLButtonElement>(

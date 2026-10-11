@@ -1,4 +1,4 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; multiple files expand in place. Failures stay on their file. */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
@@ -75,9 +75,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   return (
     <div className="@container/dock rounded-t-lg bg-dock-surface" data-draft-dock="settled">
-      {/* The WHOLE first line is the expand/collapse target (several files) or
-          opens the review (one); buttons intercept their own clicks. Tiny
-          chevron-only targets read as broken affordance. */}
+      {/* The whole first line toggles expansion; command buttons intercept their own clicks. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
@@ -115,7 +113,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </span>
           ) : null}
         </div>
-        {!expanded && !multi && only ? <FileTrouble dock={dock} file={only} /> : null}
+        {!multi && only && (!expanded || only.status === "error" || only.changes.length === 0) ? (
+          <FileTrouble dock={dock} file={only} />
+        ) : null}
         {commands}
       </div>
 
@@ -124,7 +124,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         // pushing the transcript off screen above the composer.
         <div className="app-scroll max-h-[min(40svh,20rem)]">
           {dock.files.map((file) => (
-            <DockFileLine key={file.row.documentId} dock={dock} file={file} />
+            <DockFileLine key={file.row.documentId} dock={dock} file={file} showHeader={multi} />
           ))}
         </div>
       ) : null}
@@ -136,8 +136,16 @@ function ChangeCount({ count }: { count: number }) {
   return <Plural value={count} one="# change" other="# changes" />;
 }
 
-/** One file header and the chat's changes, using the same rows as Work Files. */
-function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) {
+/** The chat's changes, with file headers only when the summary names multiple documents. */
+function DockFileLine({
+  dock,
+  file,
+  showHeader,
+}: {
+  dock: DraftDockModel;
+  file: DockFile;
+  showHeader: boolean;
+}) {
   const touch = usePhoneShell() ?? false;
   const view = useDraftChanges(
     {
@@ -158,16 +166,18 @@ function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) 
       data-draft-dock-file={file.row.documentId}
       className="border-border-subtle border-b last:border-b-0"
     >
-      <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
-        <button
-          type="button"
-          className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
-          onClick={() => dock.review(file)}
-        >
-          {file.name}
-        </button>
-        {headerFailure ? <FileTrouble dock={dock} file={file} row /> : null}
-      </div>
+      {showHeader ? (
+        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
+          <button
+            type="button"
+            className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
+            onClick={() => dock.review(file)}
+          >
+            {file.name}
+          </button>
+          {headerFailure ? <FileTrouble dock={dock} file={file} row /> : null}
+        </div>
+      ) : null}
       {file.status !== "error" ? (
         <DocumentChangeRows
           view={{ ...view, items, locked: view.locked || dock.generating }}

@@ -154,7 +154,8 @@ review. Pending last Apply keeps the review editor with marks gone until the
 answer. Closed completion holds “No changes left” in the existing review/path row until
 explicit Next draft or Back to live. Lists close on the last disposition and
 finished Work files leave Changes to review. The chat strip has no notes or
-Work-page footer; one summary row holds count and commands. Change excerpts
+Work-page footer; one summary row holds count and commands. Expanded changes sit
+directly under it for a single document; multiple documents get file headers. Change excerpts
 truncate to keep attribution and actions on the same line. Whole-draft header navigation is an explicit admitted-click effect,
 not an automatic consequence of a selection's closure.
 

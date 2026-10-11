@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Omit the redundant file header when the composer strip expands one document.
+
 - Chat process digests omit successful writes; the turn receipt alone summarizes changed documents. Reads, skills, and steps remain.
 
 - Call chat writes edits in every mode, without a separate drafted label.
