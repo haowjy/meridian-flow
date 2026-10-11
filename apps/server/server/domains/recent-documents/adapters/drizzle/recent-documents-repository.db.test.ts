@@ -108,11 +108,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
       ]);
       await db.insert(documents).values([
-        { id: OWNED, contextSourceId: MANUSCRIPT, name: "chapter", extension: "md" },
-        { id: SCRATCH, contextSourceId: WORK_SCRATCH, name: "scene", extension: "md" },
-        { id: NO_WORK_DOC, contextSourceId: NO_WORK_SCRATCH, name: "aside", extension: "md" },
-        { id: PERSONAL_DOC, contextSourceId: USER_SOURCE, name: "notes", extension: "md" },
-        { id: FOREIGN_DOC, contextSourceId: FOREIGN_SOURCE, name: "secret", extension: "md" },
+        { id: OWNED, contextSourceId: MANUSCRIPT, name: "chapter", extension: "" },
+        { id: SCRATCH, contextSourceId: WORK_SCRATCH, name: "scene", extension: "" },
+        { id: NO_WORK_DOC, contextSourceId: NO_WORK_SCRATCH, name: "aside", extension: "" },
+        { id: PERSONAL_DOC, contextSourceId: USER_SOURCE, name: "notes", extension: "" },
+        { id: FOREIGN_DOC, contextSourceId: FOREIGN_SOURCE, name: "secret", extension: "" },
         {
           id: PDF,
           contextSourceId: MANUSCRIPT,
@@ -121,7 +121,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileType: "pdf",
           mimeType: "application/pdf",
         },
-        { id: DOOMED, contextSourceId: MANUSCRIPT, name: "cut", extension: "md" },
+        { id: DOOMED, contextSourceId: MANUSCRIPT, name: "cut", extension: "" },
       ]);
       return { db, repo: createDrizzleRecentDocumentsRepository({ db }) };
     }
@@ -161,7 +161,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: SCRATCH,
             projectId: PROJECT,
             scheme: "scratch",
-            path: "/scene.md",
+            path: "/scene",
             workSlug: "draft",
           }),
           // No Work resolves to a null work slug.
@@ -169,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: NO_WORK_DOC,
             projectId: PROJECT,
             scheme: "uploads",
-            path: "/aside.md",
+            path: "/aside",
             workSlug: null,
           }),
         ]),
@@ -181,7 +181,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: PERSONAL_DOC,
           projectId: PERSONAL,
           scheme: "user",
-          path: "/notes.md",
+          path: "/notes",
           workSlug: null,
         }),
       ]);
@@ -208,7 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: liveId,
           contextSourceId: MANUSCRIPT,
           name: `live-${index}`,
-          extension: "md",
+          extension: "",
         })),
       );
       for (const liveId of liveIds) {

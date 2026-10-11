@@ -84,15 +84,18 @@ const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition 
 /** Classify registered and persisted filetype metadata without throwing. */
 export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
   if (!filetype) return { kind: "unknown" };
-  return dispositionsByPersistedValue[filetype] ?? { kind: "unknown" };
+  return Object.hasOwn(dispositionsByPersistedValue, filetype)
+    ? (dispositionsByPersistedValue[filetype] ?? { kind: "unknown" })
+    : { kind: "unknown" };
 }
 
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
-export const DEFAULT_FILETYPE: Filetype = "text";
+export const DEFAULT_FILETYPE: Filetype = "markdown";
 
 const extToFiletype: Record<string, Filetype> = {
   md: "markdown",
   markdown: "markdown",
+  mdx: "markdown",
   py: "python",
   ts: "typescript",
   tsx: "typescript",
@@ -103,7 +106,7 @@ const extToFiletype: Record<string, Filetype> = {
   yaml: "yaml",
   yml: "yaml",
   csv: "csv",
-  txt: "text",
+  txt: "markdown",
   toml: "text",
   xml: "text",
   ipynb: "notebook",
@@ -113,6 +116,22 @@ const extToFiletype: Record<string, Filetype> = {
   jpeg: "jpg",
   svg: "svg",
 };
+
+export const PROSE_EXTENSIONS: ReadonlySet<string> = new Set(
+  Object.entries(extToFiletype)
+    .filter(([, type]) => type === "markdown")
+    .map(([extension]) => extension),
+);
+
+/** First registered extension is the preferred spelling when storage supplies the type. */
+export function registeredExtensionForFiletype(filetype: string): string | null {
+  return Object.entries(extToFiletype).find(([, type]) => type === filetype)?.[0] ?? null;
+}
+
+export function filetypeForExtension(extension: string): Filetype | null {
+  const key = extension.toLowerCase();
+  return Object.hasOwn(extToFiletype, key) ? (extToFiletype[key] ?? null) : null;
+}
 
 /**
  * Derive a {@link Filetype} from a file path.
@@ -130,10 +149,10 @@ export function filetypeForPath(path: string): Filetype {
  * distinguish known text from arbitrary bytes do not treat every blob as text.
  */
 export function filetypeForKnownPath(path: string): Filetype | null {
-  const dot = path.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const extension = path.slice(dot + 1).toLowerCase();
-  return extToFiletype[extension] ?? null;
+  const basename = path.slice(path.lastIndexOf("/") + 1).trim();
+  const dot = basename.lastIndexOf(".");
+  if (dot < 0) return null;
+  return filetypeForExtension(basename.slice(dot + 1));
 }
 
 const mimeToFiletype: Record<string, Filetype> = {
@@ -186,7 +205,7 @@ export function filetypeForMimeType(mimeType: string): Filetype {
 export function filetypeForKnownMimeType(mimeType: string): Filetype | null {
   const semi = mimeType.indexOf(";");
   const clean = semi >= 0 ? mimeType.slice(0, semi).trim() : mimeType.trim();
-  return mimeToFiletype[clean] ?? null;
+  return Object.hasOwn(mimeToFiletype, clean) ? (mimeToFiletype[clean] ?? null) : null;
 }
 
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

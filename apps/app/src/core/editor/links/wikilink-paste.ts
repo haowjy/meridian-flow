@@ -27,7 +27,7 @@ import {
   parseContextUri,
   storedHref,
 } from "@meridian/contracts";
-import { filetypeForKnownPath } from "@meridian/contracts/protocol";
+import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 
 import type { AssignedLink, LinkAssignmentDocument } from "./link-assignment";
@@ -108,7 +108,7 @@ function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
       to: start + match[0].length,
       target: { folders: segments, name },
       suffix,
-      label: alias || name.replace(/\.md$/i, ""),
+      label: alias || storedName(name),
     });
   }
   return found.sort((left, right) => left.from - right.from);
@@ -332,14 +332,15 @@ function locate(uri: string, documentId: string | null): Located | null {
   };
 }
 
-/** The lowercased path a target's candidates end with, `.md` implied. */
+/** The lowercased path a target's candidates end with: the last name as stored. */
 function wantedPath(target: WikilinkTarget): string[] {
-  return [...target.folders, documentName(target.name)].map(lower);
+  return [...target.folders, storedName(target.name)].map(lower);
 }
 
-/** A name as a filename: `.md` implied when it names no known extension. */
-function documentName(name: string): string {
-  return filetypeForKnownPath(name) ? name : `${name}.md`;
+/** What a written name is stored as: `Chapter 13.md` is `Chapter 13`, `outline.json` stays. */
+function storedName(name: string): string {
+  const parsed = parseDocumentFilename(name);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : name;
 }
 
 function endsWith(segments: readonly string[], tail: readonly string[]): boolean {

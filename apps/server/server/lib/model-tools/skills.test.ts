@@ -78,12 +78,25 @@ describe("skills:// at the model tools", () => {
       "skills://story-review/../creative-writing-modes/SKILL.md",
     ]) {
       expect(await call("read", { path })).toBe(
-        `status: document_not_found; path: ${path}\n\nFile not found. Check the path with \`ls\`.`,
+        `status: document_not_found; path: ${path.replace(/\.md$/, "")}\n\nFile not found. Check the path with \`ls\`.`,
       );
     }
     expect(await call("ls", { path: "skills://creative-writing-modes" })).toBe(
       "skills://creative-writing-modes/\n  (empty)",
     );
+  });
+
+  it("loads a source SKILL.md at its extensionless model name", async () => {
+    const call = await criticTools();
+    const body = await call("skill", { name: "story-review" });
+    expect(body).toContain("skills://story-review/SKILL\n");
+    expect(body).not.toContain(".md");
+    expect(await call("read", { path: "skills://story-review/SKILL.md" })).toBe(body);
+    expect(await call("read", { path: "skills://story-review/SKILL" })).toBe(body);
+    expect(await call("ls", { path: "skills://story-review" })).not.toContain(".md");
+    expect(
+      await call("read", { path: "skills://story-review/SKILL", format: "outline" }),
+    ).toContain("format: outline");
   });
 
   it("refuses writes to skills://", async () => {

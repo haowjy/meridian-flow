@@ -66,6 +66,7 @@ export type {
   WriteToolInput,
 } from "./tool/command-schema.js";
 export {
+  DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   ReadCommandSchema,
   ReadToolInputSchema,
