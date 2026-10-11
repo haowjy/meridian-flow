@@ -118,6 +118,17 @@ export function createDeliveryAdapter(
   const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
     await clearOrphanedTurn(threadId, turnId);
   };
+  /**
+   * The one orphan repair for every path that takes the claim. A dead reply's
+   * receipt retires with its messages answered; a dead compaction's or seed's
+   * receipt clears and leaves its unanswered messages pending for the next run.
+   * Call under the thread lock and the session claim.
+   */
+  const repairOrphans = (threadId: ThreadId) =>
+    finalizeOrphanedTurns(
+      { ...deps, retireOrphanedReply, clearOrphanedTurn: clearOrphanedTurnForRepair },
+      { threadId },
+    );
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
     pendingBatch: InboxMessage[];
@@ -304,7 +315,7 @@ export function createDeliveryAdapter(
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, () =>
       threadLock.withThreadLock(threadId, async () => {
-        const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
+        const reports = await repairOrphans(threadId);
         schedulePostCommit(() => deps.publishFinalizedReports(reports));
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
       }),
@@ -329,7 +340,7 @@ export function createDeliveryAdapter(
     return ran === true;
   }
   async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
-    const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
+    const reports = await repairOrphans(threadId);
     schedulePostCommit(() => deps.publishFinalizedReports(reports));
     const selected = next(await inbox.selectPending(threadId), "run_start");
     if (selected.kind !== "switch") return false;
@@ -839,15 +850,7 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedTurns(
-          {
-            ...deps,
-            publishStatus: deps.publishStatus,
-            retireOrphanedReply,
-            clearOrphanedTurn: clearOrphanedTurnForRepair,
-          },
-          { threadId: lease.threadId },
-        ),
+        repairOrphans(lease.threadId),
       );
       await deps.publishFinalizedReports(reports);
     },

@@ -25,7 +25,10 @@ failure report without starting again for the retired parent message.
 Every finalized orphan clears the dead turn selector and bound-turn set before
 later work can start. Non-reply repair, including a crashed compaction, clears
 the receipt without acknowledging its adopted messages so the next run can
-deliver them.
+deliver them. Every path that finalizes orphans under the claim (run start,
+idle materialization, applying due write-mode switches) goes through the
+delivery adapter's one `repairOrphans` helper, so none can finalize a turn
+while stranding its receipt.
 
 A reply that reaches a durable failed terminal state, including through orphan
 repair, acknowledges every message it adopted and is never restarted by the

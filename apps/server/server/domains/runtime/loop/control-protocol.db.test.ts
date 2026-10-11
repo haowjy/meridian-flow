@@ -1,4 +1,5 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
@@ -6,6 +7,8 @@ import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
+import { createRunStarter } from "./run-starter.js";
+import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -1257,6 +1260,72 @@ else
           ),
         ).toEqual([]);
         expect(rig.gateway.requests.length - requestsBefore).toBe(1);
+      });
+
+      it("recovers a crashed automatic compaction with one reply to M1 and M2 after the switch", async () => {
+        const rig = await fixture({ gateway: scriptedGateway({ usage: lowUsage }) });
+        const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          role: "compaction",
+          status: "pending",
+        });
+        await switchMode(rig, "draft");
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "M2 follows" },
+          idempotencyKey: "m2-after-crashed-compaction",
+        });
+        // A crash drops the claim's DB session but leaves the lease row and its C/[M1] receipt.
+        const [lease] = await db
+          .select()
+          .from(schema.threadRunLeases)
+          .where(eq(schema.threadRunLeases.threadId, rig.threadId));
+        if (!lease) throw new Error("Expected the compaction's run lease");
+        expect(lease.adoptedMessageIds).toEqual([run.userTurnId]);
+        await rig.runClaim.release({
+          threadId: rig.threadId,
+          runId: run.runId,
+          holderId: "fixture-owner",
+        });
+        await db.insert(schema.threadRunLeases).values(lease);
+        rig.setThreshold(100000);
+        // A replacement process: its own claim, delivery, and wake path.
+        const replacement = createDrizzleRunClaim(db, { holderId: "replacement-worker" });
+        const delivery = createTestDrizzleDelivery(db, {
+          repos: rig.repos,
+          eventWriter: rig.eventWriter,
+          runClaim: replacement,
+        });
+        let recovery!: ReturnType<typeof createOrchestrator>;
+        const wake = createWakeIfRunnable({
+          delivery,
+          runStarter: createRunStarter(
+            {
+              applyDueSwitches: delivery.applyDueSwitches,
+              startDrain: (id) => recovery.startDrain(id),
+            },
+            rig.deps.eventSink,
+          ),
+        });
+        recovery = createOrchestrator({
+          ...rig.deps,
+          runClaim: replacement,
+          delivery,
+          wakeIfRunnable: wake,
+        });
+
+        await wake(rig.threadId);
+        await processDetachedWork.drain();
+
+        expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+
+        expect(rig.gateway.requests).toHaveLength(1);
+        const request = JSON.stringify(rig.gateway.requests[0]?.messages);
+        expect(request).toContain("M1 asks");
+        expect(request).toContain("M2 follows");
+        expect(await threadMode(rig)).toBe("draft");
       });
 
       it("cancels a queued switch with a switch back and never cancels a newer one on replay", async () => {
