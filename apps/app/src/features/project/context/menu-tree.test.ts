@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { shownFolders } from "./DocumentPath";
 import {
   areaNode,
   buildMenuTree,
+  crumbTrailFor,
   foldersIn,
   isFolderWithin,
   type MenuArea,
@@ -135,5 +137,48 @@ describe("folder picker boundaries", () => {
     expect(isFolderWithin("/Act/Scene", "/Act")).toBe(true);
     expect(isFolderWithin("/Act Two", "/Act")).toBe(false);
     expect(isFolderWithin("/", "/Act")).toBe(false);
+  });
+});
+
+describe("crumb opening trails", () => {
+  const nested = area("area:manuscript", "Manuscript", {
+    catalog: catalog("m", [
+      { entryId: "book", kind: "dir", name: "Book", path: "/Book", parent: "m" },
+      { entryId: "part", kind: "dir", name: "Part", path: "/Book/Part", parent: "book" },
+      { entryId: "act", kind: "dir", name: "Act", path: "/Book/Part/Act", parent: "part" },
+      { entryId: "ch", kind: "file", name: "ch.md", path: "/Book/Part/Act/ch.md", parent: "act" },
+    ]),
+  });
+  const path = "/Book/Part/Act/ch.md";
+  const ids = (source: MenuArea, depth: number) =>
+    crumbTrailFor(source, path, depth).map((n) => n.id);
+
+  it("opens a listed area among areas and an unlisted area inside itself", () => {
+    expect(ids(nested, 0)).toEqual([]);
+    expect(ids({ ...nested, listed: false, scheme: "uploads" }, 0)).toEqual(["area:manuscript"]);
+    expect(ids({ ...nested, listed: false, scheme: "scratch" }, 0)).toEqual(["area:manuscript"]);
+    expect(crumbTrailFor(null, path, 0)).toEqual([]);
+  });
+
+  it("opens every folder in its parent and the filename in its folder", () => {
+    expect(ids(nested, 1)).toEqual(["area:manuscript"]);
+    expect(ids(nested, 2)).toEqual(["area:manuscript", "book"]);
+    expect(ids(nested, 3)).toEqual(["area:manuscript", "book", "part"]);
+    expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
+    expect(crumbTrailFor(manuscript, "/root.md", 1).map((n) => n.id)).toEqual(["area:manuscript"]);
+  });
+
+  it.each([
+    ["all", [0, 1, 2], null],
+    ["last", [2], ["area:manuscript", "book"]],
+    ["none", [], ["area:manuscript", "book", "part"]],
+    ["icon", [], ["area:manuscript", "book", "part"]],
+  ] as const)("%s opens ellipsis where its last hidden folder sits", (fit, shown, trail) => {
+    const visible = shownFolders(3, fit);
+    expect(visible).toEqual(shown);
+    const hiddenCount = 3 - visible.length;
+    expect(hiddenCount ? ids(nested, hiddenCount) : null).toEqual(trail);
+    expect(shownFolders(0, fit)).toEqual([]);
+    expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
   });
 });
