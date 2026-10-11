@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Link candidate loading follows the shared exact-first and extension-omission contract.
+
 - Historical unresolved links spell canonical prose names without changing their identity or writer labels.
 
 - Preserve prose classification when MIME inference supplies an upload suffix.

@@ -73,6 +73,14 @@ export function documentPathKey(path: string): string {
     : path;
 }
 
+/** Stored basename keys needed by exact and extension-omitted path matching. */
+export function documentPathCandidateNames(path: string): string[] {
+  const key = documentPathKey(path);
+  const basename = key.slice(key.lastIndexOf("/") + 1);
+  const parsed = parseDocumentFilename(basename);
+  return parsed.ok ? [...new Set([parsed.value.name, basename])] : [basename];
+}
+
 /**
  * The one candidate at a resolved path: the exact path, or else the path with
  * its final extension omitted when exactly one candidate fits. Addresses are

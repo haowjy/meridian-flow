@@ -163,6 +163,24 @@ if (!RUN) {
         },
       ]);
     }
+    it("preloads extension-omitted dotted names independently of other addresses", async () => {
+      await db
+        .update(documents)
+        .set({ name: "config.json", extension: "toml", fileType: "text" })
+        .where(eq(documents.id, TARGET));
+      for (const addresses of [
+        ["manuscript://part1/config.json"],
+        ["manuscript://part1/config.json", "manuscript://part1/config.json.toml"],
+      ]) {
+        await scopes.within({ documentId: HOLDER }, async () => {
+          await scopes.prepare({ holders: [{ documentId: HOLDER, view: LIVE }], addresses });
+          expect(
+            scopes.holder({ documentId: HOLDER, view: LIVE }).documentFor(addresses[0]!)
+              ?.documentId,
+          ).toBe(TARGET);
+        });
+      }
+    });
     beforeEach(seed);
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);
