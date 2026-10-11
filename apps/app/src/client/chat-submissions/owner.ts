@@ -209,9 +209,10 @@ export class ChatSubmissionOwner {
     const snapshot = readChatSubmissionSnapshot(accountId);
     if (!snapshot) return;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
-    if (this.destination !== "editing" && records.some((entry) => entry.creation))
-      this.destination = "creating";
-    else if (records.length > 0) this.destination = "created";
+    if (this.destination !== "editing") {
+      if (records.some((entry) => entry.creation)) this.destination = "creating";
+      else if (records.length > 0) this.destination = "created";
+    }
     if (!records.length && this.destination === "creating") {
       void this.reconcileDestination();
       return;

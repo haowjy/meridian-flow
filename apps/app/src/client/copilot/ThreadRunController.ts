@@ -1,5 +1,9 @@
 /** Owns a thread run from submission through transport recovery. */
-import { EventType } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  type SubmittedReference,
+  type UserMessageBlock,
+} from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
@@ -11,11 +15,9 @@ import {
   retireUserMessageAdmission,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
-import type { SubmissionOutcome } from "@/client/chat-submissions/driver";
 import { abortable } from "@/client/chat-submissions/lock";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
@@ -41,10 +43,18 @@ export type SubmitOptions = {
   optimisticUserTurnId?: string;
 };
 
-export type SubmissionPayload = Pick<
-  ComposerSubmitEnvelope,
-  "submissionId" | "text" | "blocks" | "references" | "activatedSkillSlugs"
->;
+export type SubmissionPayload = {
+  submissionId: string;
+  text: string;
+  blocks: readonly UserMessageBlock[];
+  references: readonly SubmittedReference[];
+  activatedSkillSlugs: readonly string[];
+};
+
+export type SubmissionOutcome = {
+  kind: "accepted" | "rejected" | "ambiguous" | "not-seen" | "abandoned";
+  submissionId: string;
+};
 
 type SessionFence = () => boolean;
 
