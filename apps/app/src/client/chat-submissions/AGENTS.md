@@ -8,9 +8,10 @@ It is not a thread replica: no assistant turns or rendered rows.
   `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
   `prefix + accountId + ":"`, so an account id that is a string prefix of
   another never leaks the longer account's records.
-- One key per submission is deliberate. A tab can only clobber the record it
-  owns, so no whole-record read-modify-write race. Writes need no Web Lock; the
-  driver holds a per-account/thread Web Lock for lifecycle transitions. Account
+- One key per submission is deliberate: a write touches one record, not a
+  whole-journal read-modify-write. New records need no Web Lock; transitions
+  of existing records run under the per-account/thread driver lock, including
+  takeover by another tab. Account
   switch never deletes another account's keys, so A→B→A preserves A's intents.
 - `setUser(accountId)` is the only bind; `epoch` bumps on every rebind. Every
   record/retire takes an explicit `accountId` and is refused when it is not the

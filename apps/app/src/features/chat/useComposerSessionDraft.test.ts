@@ -146,18 +146,3 @@ it("hands the latest words between pane mounts before a debounced write or effec
     actGlobal.IS_REACT_ACT_ENVIRONMENT = previous;
   }
 });
-
-it("does not claim a rejected snapshot when another tab has newer writing", () => {
-  const tabA = storage();
-  const tabB = storage();
-  const a = new ComposerSessionDraft(account, scope, () => tabA);
-  const b = new ComposerSessionDraft(account, scope, () => tabB);
-  const rejected = change("Rejected words");
-  a.updateDraft(rejected);
-  a.handoffSubmitted(rejected.snapshot);
-  b.updateDraft(change("New tab B writing"));
-  expect(b.restoreRejected(rejected.snapshot)).toBe(false);
-  expect(new ComposerSessionDraft(account, scope, () => tabB).initialDraft?.doc).toEqual(
-    plainComposerDoc("New tab B writing"),
-  );
-});

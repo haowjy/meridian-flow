@@ -1,4 +1,4 @@
-/** Tab-local owner shared by authoring panes and admission settlement. */
+/** Tab-local authoring owner for pane continuity, journal hand-off and Edit. */
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   parseRestorableComposerDraft,
@@ -28,20 +28,6 @@ export class ComposerSessionDraft {
     for (const listener of this.listeners) listener();
   }
 
-  /** Transfer rejection ownership before the journal is retired. Never replace later authoring. */
-  restoreRejected(snapshot: ComposerDraftSnapshot): boolean {
-    const text = this.current && serializeComposerDraft(this.current.doc).text;
-    if (text) {
-      this.flush();
-      return false;
-    }
-    this.current = snapshot;
-    this.dirty = true;
-    this.publish();
-    this.flush();
-    return !this.dirty;
-  }
-
   /** Writer-directed Edit prepends the rejected document without flattening reference atoms. */
   editRejected(snapshot: ComposerDraftSnapshot): boolean {
     const later = this.current;
@@ -68,15 +54,6 @@ export class ComposerSessionDraft {
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
     if (this.matches(snapshot)) this.handoff();
   };
-
-  /** Every authoring update after journal hand-off is newer, even with identical words/revision. */
-  acceptSubmitted(): boolean {
-    if (!this.current) {
-      this.handoff();
-      this.publish();
-    } else this.flush();
-    return !this.dirty;
-  }
 
   private matches(snapshot: ComposerDraftSnapshot): boolean {
     // Selection movement is not editing. Normalize both sides so storage parsing
