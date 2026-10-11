@@ -97,10 +97,6 @@ export function createWriterTurnProducer(deps: {
               createdAfter: live.startedAt,
             })))
           : null;
-      // A message sent behind a queued switch ends the live reply instead of
-      // steering it, so it is answered by the next reply in the new mode.
-      const steers =
-        !!assistantTurnId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId));
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??
@@ -116,9 +112,17 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: writerSendMetadata(turnMetadata, steers ? "steer" : "send"),
+          // A message sent behind a queued switch ends the live reply instead of
+          // steering it, so it is answered by the next reply in the new mode.
+          // Read under the lock: a switch committed before it is ahead of M2.
+          userTurnMetadata: async () =>
+            writerSendMetadata(
+              turnMetadata,
+              assistantTurnId && !queuedWriteModeSwitch(await deps.inbox.selectPending(threadId))
+                ? "steer"
+                : "send",
+            ),
           delivery: deps.delivery,
-          inbox: deps.inbox,
           beforePersist: () => deps.requireWritableThread(threadId),
           draft: {
             id: userTurnId,

@@ -1114,7 +1114,13 @@ else
           results: [toolUse],
           onStream: async (call) => {
             if (call !== 1) return;
-            queued = await switchMode(rig, "draft");
+            // Another tab's switch commits after this send reads the inbox but
+            // before it takes the thread lock: the stamp must still say `send`.
+            const lock = rig.delivery.withThreadLock;
+            vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
+              queued = await switchMode(rig, "draft");
+              return lock(...args);
+            });
             await rig.send(rig.threadId, "M2 behind the switch");
           },
         });

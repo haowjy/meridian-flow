@@ -16,7 +16,7 @@ import type { BlockUpsertedRow, JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { InboxReader, MessageDraft } from "./ports.js";
+import type { MessageDraft } from "./ports.js";
 import type { DeliveryProducer, DeliveryTransaction } from "./runtime-delivery.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
@@ -109,9 +109,12 @@ export async function persistWriterEnqueue<T>(input: {
   threadId: ThreadId;
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
-  userTurnMetadata?: JsonValue | null;
+  /**
+   * Resolved under the thread lock on every attempt, so a stamp that depends
+   * on the inbox (send or steer) sees the order this message joins.
+   */
+  userTurnMetadata?: () => Promise<JsonValue | null>;
   delivery: DeliveryProducer;
-  inbox: Pick<InboxReader, "selectPending">;
   /** Atomic admission fence; runs after the thread lock and before writer persistence. */
   beforePersist?: () => Promise<void>;
   draft: MessageDraft;
@@ -130,7 +133,7 @@ export async function persistWriterEnqueue<T>(input: {
             threadId: input.threadId,
             userTurnId: input.userTurnId,
             userBlocks: input.userBlocks,
-            userTurnMetadata: input.userTurnMetadata,
+            userTurnMetadata: await input.userTurnMetadata?.(),
             origin: "writer",
             beforePersist: input.beforePersist,
             producer,

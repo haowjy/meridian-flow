@@ -117,7 +117,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userTurnId: turnId,
           userBlocks: [{ type: "text", text: "Keep writing" }],
           delivery,
-          inbox: delivery,
           draft: {
             id: turnId,
             threadId: THREAD_ID,

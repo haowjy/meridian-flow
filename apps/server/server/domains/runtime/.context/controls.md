@@ -59,7 +59,9 @@ into a cancel or the shutdown failure.
 
 The release wake then applies S, and a new run adopts the waiting messages and
 chains its reply after the switch turn. A writer message sent while a switch is
-queued is stamped `send`, not `steer`.
+queued is stamped `send`, not `steer`. Admission decides the stamp under the
+thread lock that fixes the message's inbox order, and again on a retried
+attempt, so a switch another tab commits first is always seen.
 
 ## Applying a switch
 
