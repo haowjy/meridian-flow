@@ -176,8 +176,8 @@ export async function deleteRequest(url: string, init?: { signal?: AbortSignal }
   }
 }
 
-export async function deleteJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { method: "DELETE" });
+export async function deleteJson<T>(url: string, options?: { signal?: AbortSignal }): Promise<T> {
+  const response = await fetch(url, { method: "DELETE", signal: options?.signal });
   const payload = await readResponsePayload(response);
   if (!response.ok) throw errorFromResponse(payload, response.status);
   return deserializeTransport<T>(payload as T);
