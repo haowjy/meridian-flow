@@ -1,10 +1,18 @@
-/** Populated upgrade contract for 0036/0037: the Work-branch foundation's data moves and online retry. */
+/**
+ * Populated upgrade contract for 0036/0037: the Work-branch foundation's data moves and
+ * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
+ */
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { ContextSourceId, DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts";
+import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
+import { useComposedRuntimes } from "./composed-runtime.js";
+import { draftTreeCommands } from "./draft-tree-commands.js";
+import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./draft-tree-seeds.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
@@ -61,28 +69,51 @@ async function stageThrough(
   );
 }
 
+const MIGRATIONS = path.resolve(
+  import.meta.dirname,
+  "../../../../packages/database/src/migrations",
+);
+
+/** The repository's migration journal and the index of the foundation's entry in it. */
+async function readJournal() {
+  const journal = JSON.parse(await readFile(path.join(MIGRATIONS, "meta/_journal.json"), "utf8"));
+  const foundation = journal.entries.findIndex(
+    (entry: { tag: string }) => entry.tag === FOUNDATION,
+  );
+  return { journal, foundation };
+}
+
+/** Moves the database's schemas aside, so the upgrade runs in an empty one. */
+async function isolateSchemas(target: postgres.Sql) {
+  await target.begin(async (tx) => {
+    await tx`ALTER SCHEMA public RENAME TO foundation_upgrade_saved_public`;
+    await tx`ALTER SCHEMA drizzle RENAME TO foundation_upgrade_saved_drizzle`;
+    await tx`CREATE SCHEMA public`;
+    await tx`ALTER EXTENSION pg_trgm SET SCHEMA public`;
+  });
+}
+
+async function restoreSchemas(target: postgres.Sql) {
+  await target.begin(async (tx) => {
+    await tx`ALTER EXTENSION pg_trgm SET SCHEMA foundation_upgrade_saved_public`;
+    await tx`DROP SCHEMA IF EXISTS public CASCADE`;
+    await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+    await tx`ALTER SCHEMA foundation_upgrade_saved_public RENAME TO public`;
+    await tx`ALTER SCHEMA foundation_upgrade_saved_drizzle RENAME TO drizzle`;
+  });
+}
+
 describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
   it("moves every row it reshapes and survives a retry from any statement of the online half", async () => {
     const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-foundation-upgrade-"));
-    const migrations = path.resolve(
-      import.meta.dirname,
-      "../../../../packages/database/src/migrations",
-    );
-    const journal = JSON.parse(await readFile(path.join(migrations, "meta/_journal.json"), "utf8"));
-    const foundation = journal.entries.findIndex(
-      (entry: { tag: string }) => entry.tag === FOUNDATION,
-    );
+    const migrations = MIGRATIONS;
+    const { journal, foundation } = await readJournal();
     expect(journal.entries[foundation + 1]?.tag).toBe(ONLINE);
     let isolated = false;
     try {
-      await target.begin(async (tx) => {
-        await tx`ALTER SCHEMA public RENAME TO foundation_upgrade_saved_public`;
-        await tx`ALTER SCHEMA drizzle RENAME TO foundation_upgrade_saved_drizzle`;
-        await tx`CREATE SCHEMA public`;
-        await tx`ALTER EXTENSION pg_trgm SET SCHEMA public`;
-      });
+      await isolateSchemas(target);
       isolated = true;
       await stageThrough(migrations, directory, journal, foundation);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
@@ -210,16 +241,171 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       ).toEqual([]);
     } finally {
       await writer.end();
-      if (isolated)
-        await target.begin(async (tx) => {
-          await tx`ALTER EXTENSION pg_trgm SET SCHEMA foundation_upgrade_saved_public`;
-          await tx`DROP SCHEMA IF EXISTS public CASCADE`;
-          await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-          await tx`ALTER SCHEMA foundation_upgrade_saved_public RENAME TO public`;
-          await tx`ALTER SCHEMA foundation_upgrade_saved_drizzle RENAME TO drizzle`;
-        });
+      if (isolated) await restoreSchemas(target);
       await target.end();
       await rm(directory, { recursive: true, force: true });
     }
+  }, 120_000);
+});
+
+/**
+ * `main`'s pending draft creates (pre-foundation shape): an empty live row the live
+ * manifest leaves out, named by an active `manifest_membership` row on the Work's
+ * manifest draft. Alpha created `new.md` and `shared.md` (Beta then drafted text into
+ * it), and created then discarded `gone.md`; `kept.md` is the writer's own empty live
+ * document Alpha drafted into, which `main` showed live. Gamma only ever opened the
+ * manifest's draft.
+ */
+async function seedPendingCreates(sql: postgres.Sql) {
+  const empty = Buffer.from([0, 0]);
+  const vector = Buffer.from([0]);
+  await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'pending-create-upgrade', 'pending@example.test')`;
+  await sql`INSERT INTO projects (id, user_id, name, slug) VALUES (${id(2)}, ${id(1)}, 'Upgrade', 'upgrade')`;
+  await sql`INSERT INTO works (project_id, created_by_user_id, name, is_no_work) VALUES (${id(2)}, ${id(1)}, 'No Work', true)`;
+  await sql`INSERT INTO works (id, project_id, created_by_user_id, name, slug, ai_write_mode) VALUES
+    (${id(3)}, ${id(2)}, ${id(1)}, 'Alpha', 'alpha', 'draft'),
+    (${id(4)}, ${id(2)}, ${id(1)}, 'Beta', 'beta', 'draft'),
+    (${id(5)}, ${id(2)}, ${id(1)}, 'Gamma', 'gamma', 'draft')`;
+  await sql`INSERT INTO context_sources (id, project_id, name, slug, is_primary, sort_order) VALUES
+    (${id(6)}, ${id(2)}, 'manuscript', 'manuscript', true, 0),
+    (${id(7)}, ${id(2)}, 'kb', 'kb', false, 1),
+    (${id(8)}, ${id(2)}, 'unfiled', 'unfiled', false, 2)`;
+  for (const [thread, turn, work] of [
+    [id(20), id(22), id(3)],
+    [id(21), id(23), id(4)],
+  ] as const) {
+    await sql`INSERT INTO threads (id, project_id, root_thread_id, created_by_user_id, title) VALUES (${thread}, ${id(2)}, ${thread}, ${id(1)}, 'Thread')`;
+    await sql`INSERT INTO turns (id, thread_id, position, role, origin, status) VALUES (${turn}, ${thread}, 1, 'assistant', 'assistant', 'complete')`;
+    await sql`INSERT INTO thread_works (thread_id, work_id, project_id) VALUES (${thread}, ${work}, ${id(2)})`;
+  }
+  await sql`INSERT INTO documents (id, context_source_id, name, kind) VALUES
+    (${id(10)}, ${id(6)}, 'manifest', 'manifest'),
+    (${id(11)}, ${id(6)}, 'new', 'content'),
+    (${id(12)}, ${id(6)}, 'shared', 'content'),
+    (${id(13)}, ${id(6)}, 'gone', 'content'),
+    (${id(14)}, ${id(6)}, 'kept', 'content')`;
+  // Each content row's empty Yjs authority, as a create installs it: no update rows yet.
+  for (const n of [11, 12, 13, 14]) {
+    const [checkpoint] = await sql`INSERT INTO document_yjs_checkpoints
+      (document_id, authority_id, authority_generation, attribution_manifest, state, state_vector, up_to_seq, reason)
+      VALUES (${id(n)}, ${id(n)}, 1, ${sql.json({ version: 1, floor: null, attributions: [] })}, ${empty}, ${vector}, 0, 'initial')
+      RETURNING id`;
+    await sql`INSERT INTO document_yjs_heads (document_id, authority_id, latest_update_seq, latest_state_vector, latest_checkpoint_id)
+      VALUES (${id(n)}, ${id(n)}, 0, ${vector}, ${checkpoint?.id})`;
+  }
+  await sql`INSERT INTO document_branches (id, document_id, kind, work_id, status, state, state_vector) VALUES
+    ('alpha-manifest', ${id(10)}, 'work_draft', ${id(3)}, 'active', ${empty}, ${vector}),
+    ('beta-manifest', ${id(10)}, 'work_draft', ${id(4)}, 'active', ${empty}, ${vector}),
+    ('gamma-manifest', ${id(10)}, 'work_draft', ${id(5)}, 'active', ${empty}, ${vector}),
+    ('alpha-new', ${id(11)}, 'work_draft', ${id(3)}, 'active', ${empty}, ${vector}),
+    ('alpha-shared', ${id(12)}, 'work_draft', ${id(3)}, 'active', ${empty}, ${vector}),
+    ('beta-shared', ${id(12)}, 'work_draft', ${id(4)}, 'active', ${empty}, ${vector}),
+    ('alpha-gone', ${id(13)}, 'work_draft', ${id(3)}, 'active', ${empty}, ${vector}),
+    ('alpha-kept', ${id(14)}, 'work_draft', ${id(3)}, 'active', ${empty}, ${vector})`;
+  const membership = (documentId: string, present: boolean) =>
+    sql.json({ kind: "manifest_membership", present, documentId });
+  await sql`INSERT INTO branch_write_journal (branch_id, generation, update_data, draft_base_update_seq, update_meta, status, thread_id) VALUES
+    ('alpha-manifest', 1, ${empty}, 0, ${membership(id(11), true)}, 'active', ${id(20)}),
+    ('alpha-manifest', 1, ${empty}, 0, ${membership(id(12), true)}, 'active', ${id(20)}),
+    ('alpha-manifest', 1, ${empty}, 0, ${membership(id(13), true)}, 'active', ${id(20)}),
+    ('alpha-manifest', 1, ${empty}, 0, ${membership(id(13), false)}, 'active', NULL),
+    ('alpha-new', 1, ${empty}, 0, NULL, 'active', ${id(20)}),
+    ('alpha-shared', 1, ${empty}, 0, NULL, 'active', ${id(20)}),
+    ('beta-shared', 1, ${empty}, 0, NULL, 'active', ${id(21)}),
+    ('alpha-gone', 1, ${empty}, 0, NULL, 'discarded', ${id(20)}),
+    ('alpha-kept', 1, ${empty}, 0, NULL, 'active', ${id(20)})`;
+}
+
+describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (postgres)", () => {
+  const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+  let db: Database | undefined;
+  let isolated = false;
+  // Registered before the runtimes' cleanup, so it runs after it: rooms flush and the
+  // app shuts down against the upgraded schema before the saved one comes back.
+  afterEach(async () => {
+    await db?.close();
+    if (isolated) await restoreSchemas(target);
+    await target.end();
+  });
+  const runtimes = useComposedRuntimes(() => {
+    if (!db) throw new Error("The upgraded database is not open yet");
+    return db;
+  });
+
+  it("stay hidden, listed new in each draft that uses them, revealed and tombstoned by id", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-pending-create-upgrade-"));
+    try {
+      const { journal, foundation } = await readJournal();
+      await isolateSchemas(target);
+      isolated = true;
+      await stageThrough(MIGRATIONS, directory, journal, foundation);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await seedPendingCreates(target);
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+
+    db = createDb(databaseUrl ?? "", { max: 4 });
+    const runtime = await runtimes.compose();
+    const personal = await personalUserSource(db, id(1) as UserId);
+    const project = {
+      id: id(2) as ProjectId,
+      userId: id(1) as UserId,
+      personalId: personal.projectId,
+      sources: {
+        manuscript: id(6) as ContextSourceId,
+        kb: id(7) as ContextSourceId,
+        unfiled: id(8) as ContextSourceId,
+        user: personal.sourceId,
+      },
+    };
+    const world = draftTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
+    const s = { ...world, ...draftTreeCommands(world, () => ({ runtime, runtimes })) };
+    const work = (n: number, thread: number, turn: number, slug: string): ScenarioWork => ({
+      id: id(n) as WorkId,
+      slug,
+      threadId: id(thread) as ScenarioWork["threadId"],
+      turnId: id(turn),
+      mode: "draft",
+    });
+    const alpha = work(3, 20, 22, "alpha");
+    const beta = work(4, 21, 23, "beta");
+    const [created, shared, discarded, kept] = [11, 12, 13, 14].map((n) => id(n) as DocumentId);
+    const isNew = async (of: ScenarioWork) =>
+      (await s.items(of)).filter((item) => item.isNew).map((item) => item.documentId);
+    const tombstoned = async (documentId: string) =>
+      (
+        await target`SELECT deleted_at IS NOT NULL AS gone FROM documents WHERE id = ${documentId}`
+      )[0]?.gone;
+
+    // A pending create is not live; the writer's own empty document still is.
+    const live = s.view("live");
+    expect(await live.idAt("new.md")).toBeNull();
+    expect(await live.idAt("shared.md")).toBeNull();
+    expect(await live.idAt("gone.md")).toBeNull();
+    expect(await live.idAt("kept.md")).toBe(kept);
+    // Each draft that used it lists it new; one `main` discarded is tombstoned.
+    expect((await isNew(alpha)).sort()).toEqual([created, shared].sort());
+    expect(await isNew(beta)).toEqual([shared]);
+    expect(await tombstoned(discarded)).toBe(true);
+    // A Work whose only branch was the manifest's has no draft.
+    expect(await s.draftStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
+
+    // A live create at its path reveals the same identity.
+    expect(await s.writer.create("new.md")).toMatchObject({
+      status: "created",
+      documentId: created,
+    });
+    expect(await live.idAt("new.md")).toBe(created);
+
+    // The last use's Discard tombstones it; an earlier one leaves it to the other draft.
+    await s.discard(alpha, [shared]);
+    expect(await tombstoned(shared)).toBe(false);
+    expect(await isNew(beta)).toEqual([shared]);
+    await s.discard(beta, [shared]);
+    expect(await tombstoned(shared)).toBe(true);
   }, 120_000);
 });

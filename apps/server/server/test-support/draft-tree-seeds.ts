@@ -114,7 +114,7 @@ function splitFilename(filename: string) {
 }
 
 /** The account's personal project and its `user://` source, made once per account. */
-async function personalUserSource(db: Database, userId: UserId) {
+export async function personalUserSource(db: Database, userId: UserId) {
   const [existing] = await db
     .select({ projectId: projects.id, sourceId: contextSources.id })
     .from(projects)
@@ -185,15 +185,29 @@ export async function draftTreeWorld(
     ),
   ) as Record<(typeof SOURCES)[number], ContextSourceId>;
   const personal = await personalUserSource(db, userId);
-  const sources: Record<ScenarioSource, ContextSourceId> = {
-    ...projectSources,
-    user: personal.sourceId,
-  };
+  return draftTreeWorldOver(db, {
+    id: projectId,
+    userId,
+    personalId: personal.projectId,
+    sources: { ...projectSources, user: personal.sourceId },
+  });
+}
+
+/**
+ * A world over a project that already exists (a populated upgrade's, say): its sources
+ * and the Works the scenario names, which `works()` lists before any it makes.
+ */
+export function draftTreeWorldOver(
+  db: Database,
+  project: DraftTreeWorld["project"],
+  existingWorks: readonly WorkId[] = [],
+): DraftTreeWorld {
+  const { id: projectId, userId, sources } = project;
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
     boundary: createDrizzleDraftWriteBoundary(db),
   });
-  const madeWorks: WorkId[] = [];
+  const madeWorks: WorkId[] = [...existingWorks];
 
   function locate(path: string) {
     const { scheme, rel } = sourceOf(path);
@@ -262,7 +276,7 @@ export async function draftTreeWorld(
 
   return {
     db,
-    project: { id: projectId, userId, personalId: personal.projectId, sources },
+    project,
     drafts,
     works: () => madeWorks,
     async work(name, mode) {

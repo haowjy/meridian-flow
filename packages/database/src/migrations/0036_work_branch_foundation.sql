@@ -125,13 +125,10 @@ ALTER TABLE "document_branches" DROP CONSTRAINT "document_branches_work_id_works
 --> statement-breakpoint
 ALTER TABLE "document_branches" DROP CONSTRAINT "document_branches_deleted_by_work_id_works_id_fk";
 --> statement-breakpoint
--- The live manifest companion is retired: its rows are derived from the tree, not writer data.
--- Every remaining row is content, so documents.kind can drop in 0037.
-DELETE FROM "documents" WHERE "kind" = 'manifest';
---> statement-breakpoint
 -- Each document keeps its Markdown projection: copy it off the identity row before the column drops.
+-- The manifest companion retires below and keeps none.
 INSERT INTO "document_markdown_projections" ("document_id", "markdown", "updated_at")
-SELECT "id", "markdown_projection", "updated_at" FROM "documents";
+SELECT "id", "markdown_projection", "updated_at" FROM "documents" WHERE "kind" <> 'manifest';
 --> statement-breakpoint
 ALTER TABLE "documents" ADD COLUMN "hidden" boolean DEFAULT false NOT NULL;
 --> statement-breakpoint
@@ -191,6 +188,78 @@ DELETE FROM "document_branches" WHERE "draft_id" IS NULL;
 --> statement-breakpoint
 -- The ADD COLUMN above already holds this table's ACCESS EXCLUSIVE lock and the backfill rewrote every row.
 ALTER TABLE "document_branches" ALTER COLUMN "draft_id" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (backfilled above under the same lock)
+--> statement-breakpoint
+-- A document a draft created was an empty live row the live manifest left out, and an active
+-- `manifest_membership` row with `present` true on a Work's manifest draft is the evidence:
+-- `main`'s live-manifest reconcile (`listProjectContentDocumentIds`) never published a document
+-- that row names. Its other test, `draftSeedExclusions` (an empty document an active draft
+-- holds), cannot tell a draft's create from an empty document the writer made live and a draft
+-- then edited, which `main` showed live; it only kept reconcile from seeding the first. So the
+-- membership row alone decides: each such document becomes a hidden identity before the
+-- manifest and its journal retire. Folders stay as they are: `main` showed a draft's folders live.
+UPDATE "documents" d SET "hidden" = true
+WHERE d."kind" = 'content' AND EXISTS (
+  SELECT 1 FROM "branch_write_journal" j
+  WHERE j."status" = 'active'
+    AND j."update_meta"->>'kind' = 'manifest_membership'
+    AND j."update_meta"->>'present' = 'true'
+    AND j."update_meta"->>'documentId' = d."id"::text
+);
+--> statement-breakpoint
+-- Each draft still using a hidden document records its create at the document's location: one
+-- whose latest active membership row keeps the document, or one with pending text on it (two
+-- Works drafting one path share the identity). A draft whose membership `main` discarded does not.
+INSERT INTO "draft_tree_changes" ("draft_id", "node_kind", "node_id", "created", "context_source_id", "parent_folder_id", "name", "extension")
+SELECT u."draft_id", 'document', d."id", true, d."context_source_id", d."folder_id", d."name", d."extension"
+FROM "documents" d
+JOIN (
+  SELECT m."draft_id", m."document_id" FROM (
+    SELECT DISTINCT ON (b."draft_id", j."update_meta"->>'documentId')
+      b."draft_id", j."update_meta"->>'documentId' AS "document_id",
+      j."update_meta"->>'present' = 'true' AS "present"
+    FROM "branch_write_journal" j JOIN "document_branches" b ON b."id" = j."branch_id"
+    WHERE j."status" = 'active' AND j."update_meta"->>'kind' = 'manifest_membership'
+    ORDER BY b."draft_id", j."update_meta"->>'documentId', j."id" DESC
+  ) m WHERE m."present"
+  UNION
+  SELECT b."draft_id", b."document_id"::text FROM "document_branches" b
+  WHERE b."kind" = 'work_draft' AND b."status" = 'active' AND EXISTS (
+    SELECT 1 FROM "branch_write_journal" j
+    WHERE j."branch_id" = b."id" AND j."status" IN ('active', 'rollback_pending')
+  )
+) u ON u."document_id" = d."id"::text
+WHERE d."hidden";
+--> statement-breakpoint
+-- A hidden document no draft uses any more (`main` discarded its create) is tombstoned as a last
+-- use's Discard leaves one: its storage goes and the row stays, marked deleted.
+WITH "unused" AS (
+  SELECT d."id" FROM "documents" d
+  WHERE d."hidden" AND d."deleted_at" IS NULL AND NOT EXISTS (
+    SELECT 1 FROM "draft_tree_changes" c WHERE c."node_kind" = 'document' AND c."node_id" = d."id"
+  )
+),
+"reversal_ops" AS (DELETE FROM "document_yjs_reversal_ops" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"reversals" AS (DELETE FROM "document_yjs_reversals" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"mutations" AS (DELETE FROM "agent_edit_mutations" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"heads" AS (DELETE FROM "document_yjs_heads" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"checkpoints" AS (DELETE FROM "document_yjs_checkpoints" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"updates" AS (DELETE FROM "document_yjs_updates" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"branches" AS (DELETE FROM "document_branches" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"derivations" AS (DELETE FROM "document_derivations" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"projections" AS (DELETE FROM "document_markdown_projections" WHERE "document_id" IN (SELECT "id" FROM "unused")),
+"links" AS (DELETE FROM "document_links" WHERE "source_document_id" IN (SELECT "id" FROM "unused"))
+UPDATE "documents" d SET "deleted_at" = now(), "location_version" = d."location_version" + 1
+WHERE d."id" IN (SELECT "id" FROM "unused");
+--> statement-breakpoint
+-- The live manifest companion retires with its branches and their membership journal: its
+-- rows are derived from the tree, not writer data. Every remaining row is content, so
+-- documents.kind can drop in 0037.
+DELETE FROM "documents" WHERE "kind" = 'manifest';
+--> statement-breakpoint
+-- A Work whose only branch was on the manifest drafted nothing writer-visible: its draft goes.
+DELETE FROM "drafts" r
+WHERE NOT EXISTS (SELECT 1 FROM "document_branches" b WHERE b."draft_id" = r."id")
+  AND NOT EXISTS (SELECT 1 FROM "draft_tree_changes" c WHERE c."draft_id" = r."id");
 --> statement-breakpoint
 -- Foreign keys and checks are validated in 0037, outside this transaction.
 --> statement-breakpoint
