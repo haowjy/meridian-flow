@@ -266,7 +266,7 @@ it.each([
     next: {
       ...record,
       resource: {
-        ...committedResourceDeletion(record.resource, "9", "parent-delete"),
+        ...committedResourceDeletion(record.resource, "9", "parent-delete", "9"),
         revision: record.resource.revision + 1,
       },
     },

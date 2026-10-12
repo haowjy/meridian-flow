@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
 - Reacquire unversioned catalog checkpoints after a device metadata upgrade without removing document content or queued namespace work.
 - Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
 - Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
