@@ -87,6 +87,28 @@ describe("fixture vault", () => {
 });
 
 describe("syntax boundaries", () => {
+  it.each([
+    "%% secret %%",
+    "<!-- secret -->",
+  ])("keeps prose following inline comment %s", (comment) => {
+    const { findings } = scanObsidian(comment + " [[Visible]] #tag ==highlight==");
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Visible" },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "tag")).toMatchObject([{ tag: "tag" }]);
+    expect(findings.filter((finding) => finding.kind === "highlight")).toMatchObject([
+      { text: "highlight" },
+    ]);
+  });
+
+  it("does not let a fence inside a comment hide later comment delimiters", () => {
+    const { findings } = scanObsidian("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(2);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "real" },
+    ]);
+  });
+
   it("never links or counts special syntax inside code and comments", () => {
     const input =
       "`[[span]] #tag ==no== %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";

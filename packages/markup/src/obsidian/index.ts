@@ -83,10 +83,47 @@ function mask(source: string, ranges: readonly ObsidianRange[]): string {
   for (const span of [...ranges].sort((a, b) => a.from - b.from)) {
     if (span.from < cursor) continue;
     result += source.slice(cursor, span.from);
-    result += source.slice(span.from, span.to).replace(/[^\r\n]/g, " ");
+    // Non-whitespace placeholders preserve offsets without manufacturing indented code.
+    result += source.slice(span.from, span.to).replace(/[^\r\n]/g, "x");
     cursor = span.to;
   }
   return result + source.slice(cursor);
+}
+
+type Comment = Extract<ObsidianFinding, { kind: "comment" }>;
+
+/** Earlier opaque comments take precedence over any Markdown syntax in their contents. */
+function discoverComments(source: string, excluded: readonly ObsidianRange[]): Comment[] {
+  const hidden = [...excluded];
+  const comments: Comment[] = [];
+  let code: ObsidianRange[] | null = null;
+  for (const match of source.matchAll(/%%|<!--/g)) {
+    const from = match.index;
+    const opener = { from, to: from + match[0].length };
+    if (escaped(source, from) || overlaps(opener, hidden)) continue;
+    if (!code) {
+      code = [];
+      walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
+        const span = range(node);
+        if (span && (node.type === "code" || node.type === "inlineCode")) code?.push(span);
+      });
+    }
+    if (overlaps(opener, code)) continue;
+    const syntax = match[0] === "%%" ? "obsidian" : "html";
+    const delimiter = syntax === "obsidian" ? "%%" : "-->";
+    const end = source.indexOf(delimiter, opener.to);
+    const comment: Comment = {
+      kind: "comment",
+      syntax,
+      from,
+      to: end < 0 ? source.length : end + delimiter.length,
+    };
+    comments.push(comment);
+    hidden.push(comment);
+    // Fences/backticks in this comment must not govern the next opener.
+    code = null;
+  }
+  return comments;
 }
 
 /** Reports syntax only: it never resolves targets, validates YAML, or rewrites prose. */
@@ -100,26 +137,9 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
   const frontmatter = splitObsidianFrontmatter(source).frontmatter;
   const findings: ObsidianFinding[] = frontmatter ? [frontmatter] : [];
   const hidden: ObsidianRange[] = frontmatter ? [frontmatter] : [];
-  const code: ObsidianRange[] = [];
-  walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
-    const span = range(node);
-    if (span && (node.type === "code" || node.type === "inlineCode")) code.push(span);
-  });
-  for (const match of source.matchAll(/%%|<!--/g)) {
-    const from = match.index;
-    if (
-      escaped(source, from) ||
-      overlaps({ from, to: from + match[0].length }, [...hidden, ...code])
-    )
-      continue;
-    const syntax: "obsidian" | "html" = match[0] === "%%" ? "obsidian" : "html";
-    const delimiter = syntax === "obsidian" ? "%%" : "-->";
-    const end = source.indexOf(delimiter, from + match[0].length);
-    const to = end < 0 ? source.length : end + delimiter.length;
-    const comment = { kind: "comment" as const, syntax, from, to };
-    findings.push(comment);
-    hidden.push(comment);
-  }
+  const comments = discoverComments(source, hidden);
+  findings.push(...comments);
+  hidden.push(...comments);
 
   // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];

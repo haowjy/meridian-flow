@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Obsidian comments no longer hide following prose or leak links when their contents include code fences.
+
 - Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
 
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
