@@ -35,10 +35,15 @@ stable reversal-result identity.
   takes the transition lock. Preparation includes the locked live cut in a draft.
 - **Effect and rollback**: `hasEffect` compares visible prose and managed manifest
   membership to the draft's last pulled `liveCut`. Lists, counts and Work
-  publication use effect or blocking, not row count. Pull snapshot/effect updates
-  enlist the same Work projection transaction participant as writes, without
-  reacquiring lifecycle locks. Committed live inverses recover the canonical live
-  room before pulling drafts, even when there is no active draft. Card outcomes
+  publication use effect or blocking, and both counts share one predicate
+  (`shared/work-draft-pending-count.ts`). Pull snapshot/effect updates enlist the
+  same Work projection participant as writes, so an effect change takes a Work
+  SQL row lock even without a lifecycle helper. Each branch pull therefore commits
+  snapshot, effect and projection in its own root transaction before acquiring
+  the next branch mutex; receipts and inverses take branch mutexes before Work
+  rows. Root pulls escape the caller's transaction, so callers must not await one
+  while holding Work locks (inverses defer it until after commit). Committed live
+  inverses recover the canonical live room before pulling drafts, even when there is no active draft. Card outcomes
   carry committed per-document destinations; a draft Undo explicitly says Apply
   is needed to change the manuscript. Only Apply/Discard retire an
   empty generation. Failed-response rollback selects by response and transitions
