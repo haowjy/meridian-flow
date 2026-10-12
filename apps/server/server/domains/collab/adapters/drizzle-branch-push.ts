@@ -1,6 +1,6 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
@@ -8,7 +8,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -16,6 +16,7 @@ import {
   lockDraftBranchWorks,
   runWithActiveWorkDrafts,
 } from "../../../shared/work-draft-lifecycle.js";
+import { countPendingWorkDrafts } from "../../../shared/work-draft-pending-count.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -343,38 +344,7 @@ export function createDrizzleWorkPushPolicyStore(
 export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
   return {
     async countPendingByWorkIds(workIds) {
-      if (workIds.length === 0) return new Map();
-      const rows = await currentDrizzleDb(db)
-        .select({
-          workId: documentBranches.workId,
-          count: countDistinct(documentBranches.id),
-        })
-        .from(documentBranches)
-        .innerJoin(
-          branchWriteJournal,
-          and(
-            eq(branchWriteJournal.branchId, documentBranches.id),
-            eq(branchWriteJournal.generation, documentBranches.generation),
-            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        )
-        .where(
-          and(
-            inArray(documentBranches.workId, workIds),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
-            sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
-              or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
-          ),
-        )
-        .groupBy(documentBranches.workId);
-
-      return new Map(
-        rows.flatMap(({ workId, count }) =>
-          workId === null ? [] : [[workId as WorkId, Number(count)] as const],
-        ),
-      );
+      return countPendingWorkDrafts(currentDrizzleDb(db), workIds);
     },
     async listReviewableEvidenceForWork(workId) {
       const rows = await currentDrizzleDb(db)

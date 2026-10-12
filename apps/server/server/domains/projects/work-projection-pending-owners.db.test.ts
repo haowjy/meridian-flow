@@ -19,6 +19,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -141,6 +142,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(documentBranches)
         .set({ hasEffect: true })
         .where(eq(documentBranches.id, BRANCH_ID));
+      const counts = createDrizzleWorkDraftPendingStore(db);
+      expect(
+        await counts.countPendingByWorkIds(["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" as never]),
+      ).toEqual(new Map());
+      expect(await counts.countPendingByWorkIds([WORK_ID as never])).toEqual(
+        new Map([[WORK_ID, 1]]),
+      );
       const before = await projectionState();
       const input = {
         branchId: BRANCH_ID,
@@ -168,6 +176,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
           .hasEffect,
       ).toBe(false);
+      expect(await counts.countPendingByWorkIds([WORK_ID as never])).toEqual(new Map());
       expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
       expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0n);
       expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);

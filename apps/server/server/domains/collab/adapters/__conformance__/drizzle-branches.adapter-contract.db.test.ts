@@ -366,7 +366,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
-      const live = docWithText("live base");
+      // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
+      const model = yProsemirrorModel(buildDocumentSchema());
+      const codec = mdxCodec({ schema: buildDocumentSchema() });
+      const proseDoc = (text: string) => {
+        const doc = createCollabYDoc({ gc: false });
+        model.insertBlocks(toDocHandle(doc), null, codec.parse(text));
+        return doc;
+      };
+      const live = proseDoc("live base");
       const work = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -377,7 +385,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         store,
         onBranchReset: ({ generation }) => resets.push(generation),
       });
-      const draft = docWithText("draft row before discard");
+      const draft = proseDoc("draft row before discard");
       await coordinator.commitUpdate({
         branchId: work.branchId,
         updateData: Y.encodeStateAsUpdate(draft),

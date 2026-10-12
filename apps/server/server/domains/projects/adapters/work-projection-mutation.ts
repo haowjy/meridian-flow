@@ -1,14 +1,15 @@
 /** Canonical transaction participant for every mutation visible in a Works snapshot. */
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchWriteJournal, documentBranches, works } from "@meridian/database/schema";
-import { and, countDistinct, eq, inArray, sql } from "drizzle-orm";
+import { documentBranches, works } from "@meridian/database/schema";
+import { inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
   enlistDrizzleTransactionParticipant,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { countPendingWorkDrafts } from "../../../shared/work-draft-pending-count.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 
@@ -79,37 +80,6 @@ export function createWorkProjectionMutation(input: {
     }
   }
 
-  async function pendingCounts(workIds: readonly WorkId[]): Promise<Map<WorkId, number>> {
-    if (workIds.length === 0) return new Map();
-    const rows = await currentDrizzleDb(input.db)
-      .select({ workId: documentBranches.workId, count: countDistinct(documentBranches.id) })
-      .from(documentBranches)
-      .innerJoin(
-        branchWriteJournal,
-        and(
-          eq(branchWriteJournal.branchId, documentBranches.id),
-          eq(branchWriteJournal.generation, documentBranches.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      )
-      .where(
-        and(
-          inArray(documentBranches.workId, workIds),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-          sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
-          sql`((${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
-            or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string')`,
-        ),
-      )
-      .groupBy(documentBranches.workId);
-    return new Map(
-      rows.flatMap(({ workId, count }) =>
-        workId === null ? [] : [[workId as WorkId, Number(count)] as const],
-      ),
-    );
-  }
-
   const mutation: WorkProjectionMutation = {
     async publishWorks(workIds) {
       await runInDrizzleTransaction(input.db, () => enrollPublication(workIds));
@@ -143,9 +113,9 @@ export function createWorkProjectionMutation(input: {
         const workIds = [
           ...new Set(branchRows.flatMap(({ workId }) => (workId ? [workId] : []))),
         ].sort() as WorkId[];
-        const before = await pendingCounts(workIds);
+        const before = await countPendingWorkDrafts(currentDrizzleDb(input.db), workIds);
         const result = await operation();
-        const after = await pendingCounts(workIds);
+        const after = await countPendingWorkDrafts(currentDrizzleDb(input.db), workIds);
         await mutation.touchWorks(
           workIds.filter((workId) => (before.get(workId) ?? 0) !== (after.get(workId) ?? 0)),
         );
