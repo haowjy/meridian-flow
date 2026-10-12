@@ -1,5 +1,6 @@
 /** `thread` commands end to end against the fake stack: refs, send-and-wait outcomes, events, view. */
 
+import { EventType } from "@meridian/contracts/protocol";
 import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
@@ -538,7 +539,69 @@ describe("thread", () => {
       await isolated.close();
     }
   });
-  it("timeout reports owed when no turn is running", async () => {
+  it("tail times out with an awake lease after an orphan error and empty inbox", async () => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.snapshotPolicy.awake = true;
+      isolated.turns.push({
+        id: "orphan-turn",
+        role: "assistant",
+        status: "error",
+        error: "orphaned",
+        text: "",
+      });
+      isolated.publish({ type: EventType.RUN_ERROR, message: "orphaned" });
+      isolated.publish({
+        type: EventType.CUSTOM,
+        name: "meridian.inbox.changed",
+        value: { items: [] },
+      });
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--since",
+        "0",
+        "--until-idle",
+        "--timeout",
+        "100ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.timeout);
+      const records = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(records).toContainEqual(expect.objectContaining({ type: "turn.failed" }));
+      expect(records).toContainEqual(
+        expect.objectContaining({ type: "event", name: "meridian.inbox.changed" }),
+      );
+      expect(records.at(-1)).toMatchObject({
+        outcome: "timeout",
+        reason: "lease_awake",
+        stillRunning: null,
+        owed: [],
+        snapshotStale: true,
+        next: [`./mf thread tail ${THREAD_ID} --until-idle`],
+      });
+      const text = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--until-idle",
+        "--timeout",
+        "100ms",
+      ]);
+      expect(text.code).toBe(EXIT.timeout);
+      expect(text.stderr).toContain(
+        "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed",
+      );
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("timeout is unconfirmed when the snapshot looks idle but no outcome was proven", async () => {
     const isolated = await startFakeStack();
     try {
       isolated.snapshotPolicy.running = false;
@@ -555,7 +618,7 @@ describe("thread", () => {
       expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
         type: "result",
         outcome: "timeout",
-        reason: "owed",
+        reason: "unconfirmed",
         stillRunning: null,
         owed: [],
       });

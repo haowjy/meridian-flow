@@ -13,7 +13,7 @@ import {
 } from "../../core/command";
 
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { type Claim, finishResult, snapshotActivity, terminalResult } from "./result";
+import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
 import { followThread } from "./stream";
 
 export const threadTailCommand: CommandSpec = {
@@ -110,25 +110,17 @@ export const threadTailCommand: CommandSpec = {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
       if (error instanceof CliError && error.code === "timeout") {
-        const activity = lastSnapshot ? snapshotActivity(lastSnapshot) : null;
+        const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
         return finishResult(
           ctx.out,
           terminalResult(
             "thread.tail",
-            {
-              outcome: "timeout",
-              reason: activity ? (activity.stillRunning ? "running" : "owed") : "unconfirmed",
-            },
+            { outcome: "timeout", reason },
             {
               threadId,
               turns: [...turnIds],
-              ...(activity ? { ...activity, snapshotStale: true } : { snapshotUnavailable: true }),
-              next: [
-                ...(activity?.stillRunning
-                  ? [`./mf thread cancel ${threadId} --turn ${activity.stillRunning.turnId}`]
-                  : []),
-                `./mf thread tail ${threadId} --until-idle`,
-              ],
+              ...report,
+              ...(lastSnapshot ? { snapshotStale: true } : { snapshotUnavailable: true }),
             },
           ),
         );
