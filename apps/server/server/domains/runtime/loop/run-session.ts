@@ -295,6 +295,14 @@ export function createRunSessions(deps: {
       };
       const replay = await accepted();
       if (replay) return replay;
+      // A refusal can rest on reads that raced this request's own reservation
+      // elsewhere; that reservation commits with the leaf it moves, so a later
+      // acceptance read sees it. Another tab's request id never matches.
+      const refuse = async () => {
+        const raced = await accepted();
+        if (raced) return raced;
+        throw new ReplyRetryUnavailableError(input.threadId);
+      };
 
       const [failedTurn, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
@@ -306,9 +314,7 @@ export function createRunSessions(deps: {
         if ((await authority.readOpenExecutionId(input.threadId)) === null)
           throw new ReplyRetryPendingError(input.threadId);
         // The holder reserved: it is this request's only if it recorded its id.
-        const raced = await accepted();
-        if (raced) return raced;
-        throw new ReplyRetryUnavailableError(input.threadId);
+        return refuse();
       }
       if (
         !failedTurn ||
@@ -318,21 +324,39 @@ export function createRunSessions(deps: {
         !latestTurn ||
         (await pastTrailingSwitches(latestTurn))?.id !== failedTurn.id
       )
-        throw new ReplyRetryUnavailableError(input.threadId);
+        return refuse();
 
+      let run: PreparedRun;
       try {
-        const run = await prepare({
+        run = await prepare({
           threadId: input.threadId,
           drain: true,
           replyTurnId: input.replyTurnId,
           retryOf: input.failedTurnId,
           expectedLeafTurnId: latestTurn.id,
         });
-        const persisted = await deps.repos.turns.findById(input.replyTurnId);
-        const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
-        // A Retry is a new reply, so it runs in the chat's current mode (D62).
-        const thread = await deps.repos.threads.findById(input.threadId);
-        const turn =
+      } catch (error) {
+        const raced = await accepted();
+        if (raced) return raced;
+        // Another holder took the claim before its lease row was visible.
+        if (error instanceof TurnStartConflictError)
+          throw new ReplyRetryPendingError(input.threadId);
+        if (error instanceof NoPendingWakeError)
+          throw new ReplyRetryUnavailableError(input.threadId);
+        throw error;
+      }
+      // This call owns the prepared execution: it runs before any read that
+      // only describes the answer, so a failing read can't strand it. The
+      // execution is the answer; the reply is best-effort decoration.
+      backgroundTasks.track(run.execute(), "detached reply retry");
+      const describe = async (prepared: PreparedRun): Promise<Turn> => {
+        const [persisted, firstTurn, thread] = await Promise.all([
+          deps.repos.turns.findById(input.replyTurnId),
+          deps.repos.turns.findById(prepared.executionTurnId),
+          // A Retry is a new reply, so it runs in the chat's current mode (D62).
+          deps.repos.threads.findById(input.threadId),
+        ]);
+        return (
           persisted ??
           createLocalTurn({
             id: input.replyTurnId,
@@ -344,20 +368,15 @@ export function createRunSessions(deps: {
             origin: "assistant",
             status: "pending",
             writeMode: thread?.aiWriteMode,
-            executionId: run.executionId,
-          });
-        backgroundTasks.track(run.execute(), "detached reply retry");
-        return { created: true as const, turn, executionId: run.executionId };
-      } catch (error) {
-        const raced = await accepted();
-        if (raced) return raced;
-        // Another holder took the claim before its lease row was visible.
-        if (error instanceof TurnStartConflictError)
-          throw new ReplyRetryPendingError(input.threadId);
-        if (error instanceof NoPendingWakeError)
-          throw new ReplyRetryUnavailableError(input.threadId);
-        throw error;
-      }
+            executionId: prepared.executionId,
+          })
+        );
+      };
+      const turn = await describe(run).catch((error: unknown) => {
+        observe(input.threadId, "retry.describe_failed", error);
+        return null;
+      });
+      return { created: true as const, turn, executionId: run.executionId };
     },
     startDrain,
     getRunningTurn(threadId: ThreadId) {

@@ -1988,6 +1988,124 @@ else
         expect(await deliveredBy(m1.id)).toBe(f1?.id);
       });
 
+      async function failedReply(rig: Awaited<ReturnType<typeof fixture>>, key: string) {
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Answer M1." },
+          idempotencyKey: key,
+        });
+        await drainControls(rig);
+        await processDetachedWork.drain();
+        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        expect(failed).toMatchObject({ role: "assistant", status: "error" });
+        return failed?.id as never;
+      }
+
+      it.each([
+        { first: "assistant", threshold: 100000 },
+        { first: "compaction", threshold: 2500 },
+      ])("runs a Retry whose answer read fails after it reserved its $first", async ({
+        first,
+        threshold,
+      }) => {
+        const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+        const rig = await manualFixture({ gateway });
+        const failedTurnId = await failedReply(rig, `retry-describe-${first}`);
+        rig.setThreshold(threshold);
+        const replyTurnId = crypto.randomUUID() as never;
+        // The replay lookup reads the reply first; the next read describes the answer.
+        const findById = rig.repos.turns.findById.bind(rig.repos.turns);
+        let replyReads = 0;
+        rig.repos.turns.findById = async (id) => {
+          if (id === replyTurnId && ++replyReads === 2) throw new Error("turn read unavailable");
+          return findById(id);
+        };
+        const answer = await rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId,
+          replyTurnId,
+        });
+        rig.repos.turns.findById = findById;
+        expect(answer.executionId).toEqual(expect.any(String));
+        const reservation = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId);
+        expect(reservation).toMatchObject({ role: first, executionId: answer.executionId });
+
+        await processDetachedWork.drain();
+        expect(await rig.repos.turns.findById(replyTurnId)).toMatchObject({
+          status: "complete",
+          executionId: answer.executionId,
+        });
+        expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+        expect(await endsOf(answer.executionId)).toBe(1);
+        expect(await leaseRow(rig.threadId)).toBeUndefined();
+      });
+
+      it("answers a same-id replay that read the leaf after its own Retry reserved", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+        const rig = await manualFixture({ gateway });
+        const failedTurnId = await failedReply(rig, "retry-replay-race");
+        const retry = {
+          threadId: rig.threadId,
+          failedTurnId,
+          replyTurnId: crypto.randomUUID() as never,
+        };
+        // The winner holds the claim with no lease row and nothing reserved.
+        const claimed = gate();
+        const proceed = gate();
+        const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+        rig.runClaim.startExecution = async (threadId, executionId, settle) =>
+          startExecution(threadId, executionId, async () => {
+            await settle();
+            claimed.open();
+            await proceed.promise;
+          });
+        const winner = rig.orchestrator.retryReply(retry);
+        await claimed.promise;
+        await expect(rig.orchestrator.retryReply(retry)).rejects.toMatchObject({
+          code: "retry_pending",
+        });
+
+        // The repeated replay reads status (asleep) before the winner reserves,
+        // and the leaf only after the winner's reply finished.
+        const latestRead = gate();
+        const latestReleased = gate();
+        const getLatestByThread = rig.repos.turns.getLatestByThread.bind(rig.repos.turns);
+        rig.repos.turns.getLatestByThread = async (threadId) => {
+          rig.repos.turns.getLatestByThread = getLatestByThread;
+          latestRead.open();
+          await latestReleased.promise;
+          return getLatestByThread(threadId);
+        };
+        const statusRead = gate();
+        const read = rig.runClaim.read.bind(rig.runClaim);
+        rig.runClaim.read = async (threadId) => {
+          rig.runClaim.read = read;
+          const state = await read(threadId);
+          statusRead.open();
+          return state;
+        };
+        const replay = rig.orchestrator.retryReply(retry);
+        await Promise.all([latestRead.promise, statusRead.promise]);
+        rig.runClaim.startExecution = startExecution;
+        proceed.open();
+        const accepted = await winner;
+        await processDetachedWork.drain();
+        expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+        latestReleased.open();
+
+        expect(await replay).toMatchObject({
+          created: false,
+          turn: { id: retry.replyTurnId },
+          executionId: accepted.executionId,
+        });
+        // Another tab's request id is still refused.
+        await expect(
+          rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
+        ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      });
+
       it("abandons an execution whose terminal write failed, and the next claim holder settles it first", async () => {
         const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
         const rig = await manualFixture({ gateway });

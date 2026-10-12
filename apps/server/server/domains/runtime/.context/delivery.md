@@ -27,11 +27,12 @@ transcript ancestry or stream order.
   acknowledged) through a start-time compaction to the first assistant; its
   first reservation records `metadata.retryOf` and `metadata.retryReplyId`.
   `RUN_STARTED.rawEvent` repeats `{ writeMode, executionId,
-  reservedForUserTurnIds }`. The reserved-for list is a hint, never proof.
+  reservedForUserTurnIds, position }`. The reserved-for list is a hint, never
+  proof; `position` (`Turn.position`) orders an execution's turns.
 - **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
   message rows it actually transitions record `delivered_by_turn_id` with
-  `delivered_at` and journal one `messages.delivered { byTurnId, executionId,
-  userTurnIds }`. Deliverers: response persistence (`ackWithResponse`, the
+  `delivered_at` and journal one `messages.delivered { byTurnId,
+  byTurnPosition, executionId, userTurnIds }`. Deliverers: response persistence (`ackWithResponse`, the
   current assistant), a failed or cancelled assistant's close, a terminal
   placeholder, a failed successor, assistant orphan repair. A child run's
   pre-reservation abort delivers with no turn. Controls and notices record
@@ -41,7 +42,11 @@ transcript ancestry or stream order.
   (`Turn.delivery`).
 - **End.** `endExecution` replaces every in-transaction release: it deletes the
   row and journals `execution.ended` only when some turn carries the
-  execution, so an execution that reserved nothing is never observable. The
+  execution, so an execution that reserved nothing is never observable. Every
+  live landing of an execution's last terminal turn ends it in that commit: a
+  close, a terminal placeholder or yield, and a compaction successor whose
+  preparation failed (`commitAdoption` returns it `terminal`, so the run exits
+  without a second landing). The
   run owner's cleanup calls `releaseExecution`: unlock only when the row is
   gone, end when every reserved turn is terminal, otherwise **abandon**
   (expire the row now, unlock, journal nothing). `settleStaleExecution` runs

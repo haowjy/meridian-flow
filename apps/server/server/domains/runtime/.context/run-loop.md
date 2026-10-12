@@ -59,7 +59,10 @@ exclusive claim holders still use the sweep as their liveness backstop.
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
 latest failed assistant reply on an idle primary or subagent thread; eligibility
 is checked before the claim and its expected leaf is checked again after the
-claim. A repeated client ID returns the same assistant turn. See the
+claim. A repeated client ID is answered with the same execution from durable
+facts, rechecked before any definitive refusal. Once `prepare` returns, the
+Retry hands the run to execution before any read that only describes the
+answer, so no exit after preparation can strand a heartbeating claim. See the
 [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,

@@ -116,9 +116,9 @@ export function createDeliveryAdapter(
     });
   };
   /** The turn current when an execution acknowledges messages, and its execution. */
-  type Deliverer = { turnId: TurnId; executionId: string | null };
-  const deliveredBy = (lease: Lease, turnId: TurnId): Deliverer => ({
-    turnId,
+  type Deliverer = { turn: { id: string; position: number | null }; executionId: string | null };
+  const deliveredBy = (lease: Lease, turn: Pick<Turn, "id" | "position">): Deliverer => ({
+    turn,
     executionId: lease.executionId,
   });
   /**
@@ -128,11 +128,12 @@ export function createDeliveryAdapter(
    */
   const ack = async (threadId: ThreadId, ids: readonly string[], by: Deliverer | null = null) => {
     if (ids.length === 0) return;
-    const delivered = await inbox.ack(threadId, [...ids], by?.turnId ?? null);
+    const delivered = await inbox.ack(threadId, [...ids], (by?.turn.id as TurnId) ?? null);
     if (delivered.length === 0) return;
     await deps.eventWriter.appendEvent(threadId, {
       type: "messages.delivered",
-      byTurnId: by?.turnId ?? null,
+      byTurnId: by?.turn.id ?? null,
+      byTurnPosition: by?.turn.position ?? null,
       executionId: by?.executionId ?? null,
       userTurnIds: delivered,
     });
@@ -161,7 +162,10 @@ export function createDeliveryAdapter(
     const ids = await clearOrphanedTurn(threadId, turnId);
     if (!ids) return;
     const orphan = await deps.repos.turns.findById(turnId);
-    await ack(threadId, ids, { turnId, executionId: orphan?.executionId ?? null });
+    await ack(threadId, ids, {
+      turn: { id: turnId, position: orphan?.position ?? null },
+      executionId: orphan?.executionId ?? null,
+    });
     await appendPending(threadId);
   };
   const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
@@ -709,7 +713,7 @@ export function createDeliveryAdapter(
           }),
           { afterEvents: () => recordShown(currentTurn.id) },
         );
-        await ack(threadId, drain.ackIds, deliveredBy(lease, currentTurn.id as TurnId));
+        await ack(threadId, drain.ackIds, deliveredBy(lease, currentTurn));
         drain.ackIds = [];
         await endExecution(lease);
         next = completed;
@@ -796,7 +800,11 @@ export function createDeliveryAdapter(
         },
       });
       next = completion.turn;
-      await ack(threadId, drain.ackIds, deliveredBy(lease, next.id as TurnId));
+      await ack(threadId, drain.ackIds, deliveredBy(lease, next));
+      // The failed successor is the execution's last turn: it ends in this
+      // commit, and the run exits on the terminal disposition, not a throw.
+      await endExecution(lease);
+      terminal = true;
     }
     if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
       await appendPending(threadId);
@@ -915,7 +923,7 @@ export function createDeliveryAdapter(
   /** A failed or cancelled assistant delivers its messages: they are never taken on again. */
   async function acknowledgeFailedReply(lease: Lease, turn: Turn, messageIds: readonly string[]) {
     if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await ack(lease.threadId, messageIds, deliveredBy(lease, turn.id as TurnId));
+      await ack(lease.threadId, messageIds, deliveredBy(lease, turn));
   }
 
   return {
@@ -1035,13 +1043,13 @@ export function createDeliveryAdapter(
       if (!result) throw new NoPendingWakeError(lease.threadId);
       return result.value;
     },
-    ackWithResponse: (lease, ids, byTurnId, persist) =>
+    ackWithResponse: (lease, ids, byTurn, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
         const result = await persist();
         if (ids.length > 0) {
           if (!(await leaseStore.clearReceipt(lease, ids)))
             throw new Error("Cannot ack after losing live run lease");
-          await ack(lease.threadId, ids, deliveredBy(lease, byTurnId));
+          await ack(lease.threadId, ids, deliveredBy(lease, byTurn));
           await appendPending(lease.threadId);
         }
         return result;

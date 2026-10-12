@@ -1316,6 +1316,52 @@ else
       ).toHaveLength(1);
     });
 
+    it("ends the execution in the commit that lands a failed compaction successor", async () => {
+      const rig = await fixture();
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const endsOf = async (executionId: string) =>
+        (
+          await db
+            .select({ payload: schema.eventJournal.payload })
+            .from(schema.eventJournal)
+            .where(eq(schema.eventJournal.eventType, "execution.ended"))
+        ).filter(({ payload }) => (payload as { executionId: string }).executionId === executionId)
+          .length;
+      const split = rig.delivery.splitAndContinue;
+      let landed: { open: string | null; ended: number; successor: string | undefined } | null =
+        null;
+      rig.delivery.splitAndContinue = async (input) => {
+        if (input.current.kind !== "placeholder") return split(input);
+        const result = await split({
+          ...input,
+          prepareNextContext: async () => {
+            throw new Error("successor context read unavailable");
+          },
+        });
+        // Read as soon as the landing commit returns, before the run's cleanup.
+        landed = {
+          open: await rig.runClaim.readOpenExecutionId(rig.threadId),
+          ended: await endsOf(run.executionId),
+          successor: (await rig.repos.turns.findById(result.next.id as never))?.status,
+        };
+        return result;
+      };
+      expect(await run.execute()).toMatchObject({ status: "error" });
+      expect(landed).toEqual({ open: null, ended: 1, successor: "error" });
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-2);
+      expect(tail.map((turn) => [turn.role, turn.status, turn.executionId])).toEqual([
+        ["compaction", "complete", run.executionId],
+        ["assistant", "error", run.executionId],
+      ]);
+      // Cleanup after the terminal landing ends nothing twice.
+      expect(await endsOf(run.executionId)).toBe(1);
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
+    });
+
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {
       const { currentDrizzleDb } = await import("../../../shared/drizzle-transaction.js");
       const rig = await fixture();
