@@ -15,7 +15,10 @@ Check desktop and 390px in light and dark:
   default scales, its font is 11.375px in chat and 13px in the editor.
 - The code copy button is hidden at rest, appears on hover or keyboard focus,
   and copies only the source, not token markup. Clipboard failure never reports
-  success. External links open a new tab.
+  success. External links open a new tab and retain the outbound arrow. Internal links use
+  the same document-family chips as the Editor.
+- Every top-level block pair has an 8px gap, including table/code wrappers,
+  rules, headings, lists and quotes. Outer margins are zero.
 
 Streaming and reference/skill occurrence turns still use Streamdown at this
 migration stage. Their visual differences are not a settled-renderer regression.
