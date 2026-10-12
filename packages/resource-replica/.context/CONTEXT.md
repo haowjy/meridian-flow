@@ -114,12 +114,23 @@ observations use the same metadata CAS. Both journals share typed settlement pol
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
 Terminal is not forever. Deletion ownership is versioned: `confirmedDeletionVersion`
-reads an accepted delete's receipt version, and terminal records hold their deletion's
-`observationVersion`. Catalog installation compares a present entry with that held
-version; only strictly newer evidence revives (`revivedResourceWrite`, folder
-installation dropping `terminal`), and the validators admit exactly that transition:
-newer version, acknowledged with a canonical location, unacquired content, no
-outstanding purge cleanup, `revivedFrom` naming the superseded transition.
+reads an accepted delete's receipt version, and every terminal document holds the
+namespace version that proved its deletion in `lifecycle.deletionVersion`. A delete
+receipt (`committedResourceDeletion`) stores the receipt's version. The editor's
+exact-ID terminal (`publishResourceTerminal`) stores the version that exact-ID
+availability reported with the deletion. It reaches the terminal through the
+`terminal-remove` command, the `revokeDocument` session effect, the stored
+`terminal-local` room authority and `TerminalLineageReceipt`. Either path keeps the
+higher version when both apply. Folders hold their tombstone's `observationVersion`.
+Catalog installation compares a present entry with the deletion version, never with a
+pre-deletion `observationVersion`. A request that starts after the terminal can still
+replay history from before the deletion, one page at a time. Only strictly newer
+evidence revives (`revivedResourceWrite`, folder installation dropping `terminal`). A
+terminal document without a deletion version never revives from a catalog. The
+validators admit exactly that transition: newer than the deletion version,
+acknowledged with a canonical location, unacquired content, no outstanding purge
+cleanup, `revivedFrom` naming the superseded transition. A terminal never loses or
+lowers its deletion version.
 `unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
 its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
 

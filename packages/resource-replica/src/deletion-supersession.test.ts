@@ -13,6 +13,7 @@ import { installFolderNamespaceAvailability } from "./folder-namespace";
 import { entries, move, node, outcome, scope, submit } from "./namespace-schedule-fixtures";
 import { planResourceDeletion } from "./resource-deletion";
 import type { NamespaceRequest } from "./resource-records";
+import { validateResourceRecordUpdate } from "./resource-records-policy";
 import { acknowledgeResourceTerminalCleanup, publishResourceTerminal } from "./resource-state";
 import { ReplicaHarness } from "./test-support/replica-harness";
 
@@ -178,7 +179,13 @@ describe("evidence at or below the deletion's version never resurrects it", () =
     const held = structuredClone(terminal);
     held.resource.content = { kind: "exact", databaseName: "exact-f", schema: null };
     replica.records.set(held.resource.handle, held);
-    const purge = { documentId: "f", generation: "9", transitionId, exactDatabaseName: "exact-f" };
+    const purge = {
+      documentId: "f",
+      generation: "9",
+      transitionId,
+      exactDatabaseName: "exact-f",
+      deletionVersion: "5",
+    };
     const purging = publishResourceTerminal({ record: held, ...purge });
     replica.commitResource(required(purging));
     const restored = at("7", [source, node("f", "doc.md", "s", "file")]);
@@ -207,10 +214,91 @@ describe("evidence at or below the deletion's version never resurrects it", () =
       generation: terminal.generation,
       transitionId: terminal.transitionId,
       exactDatabaseName: "exact-f",
+      deletionVersion: "5",
     };
     expect(publishResourceTerminal({ record: replica.document("f"), ...purge })).toBeNull();
     expect(
       acknowledgeResourceTerminalCleanup({ record: replica.document("f"), ...purge }),
     ).toBeNull();
+  });
+
+  /** f known at version 1 with local content, then the editor's exact-ID terminal and purge. */
+  function editorTerminal(deletionVersion: string | null): ReplicaHarness {
+    const replica = new ReplicaHarness("p");
+    replica.install(at("1", [source, node("f", "doc.md", "s", "file")]));
+    const known = structuredClone(replica.document("f"));
+    known.resource.content = { kind: "exact", databaseName: "exact-f", schema: null };
+    replica.records.set(known.resource.handle, known);
+    const purge = {
+      documentId: "f",
+      generation: "9",
+      transitionId: "editor-purge",
+      exactDatabaseName: "exact-f",
+      deletionVersion,
+    };
+    replica.commitResource(required(publishResourceTerminal({ record: known, ...purge })));
+    replica.commitResource(
+      required(acknowledgeResourceTerminalCleanup({ record: replica.document("f"), ...purge })),
+    );
+    return replica;
+  }
+
+  it("an editor terminal holds its exact-ID deletion version: older history stays deleted, a later restore revives", () => {
+    const replica = editorTerminal("8");
+    expect(replica.document("f").resource.lifecycle).toMatchObject({ deletionVersion: "8" });
+    // A request started after the terminal can still replay presence from before the deletion.
+    for (const stale of ["7", "8"]) {
+      replica.install(at(stale, [source, node("f", "moved.md", "s", "file")]));
+      expect(replica.document("f").resource.lifecycle.kind).toBe("terminal");
+      expect(replica.projection().ids).toEqual([]);
+    }
+    replica.install(at("9", [source, node("f", "doc.md", "s", "file")]));
+    expect(replica.document("f").resource).toMatchObject({
+      lifecycle: { kind: "acknowledged" },
+      content: { kind: "unacquired" },
+      observationVersion: "9",
+    });
+    expect(replica.projection().ids).toEqual(["f"]);
+  });
+
+  it("a terminal without a deletion version never revives from a catalog page", () => {
+    const replica = editorTerminal(null);
+    replica.install(at("99", [source, node("f", "doc.md", "s", "file")]));
+    expect(replica.document("f").resource.lifecycle.kind).toBe("terminal");
+    const held = replica.document("f");
+    const forced = structuredClone(held);
+    forced.resource = {
+      ...forced.resource,
+      revision: held.resource.revision + 1,
+      content: { kind: "unacquired" },
+      canonical: { scheme: "manuscript", path: "/doc", name: "doc", workId: null },
+      observationVersion: "99",
+      lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+      revivedFrom: { generation: "9", transitionId: "editor-purge" },
+    };
+    expect(() => validateResourceRecordUpdate(held, forced)).toThrow("newer server observations");
+  });
+
+  it("a later delete receipt never lowers the editor terminal's deletion version", () => {
+    const replica = new ReplicaHarness("p");
+    replica.install(at("1", [source, node("f", "doc.md", "s", "file")]));
+    const request = replica.requestDocumentDeletion("f");
+    const known = structuredClone(replica.document("f"));
+    known.resource.content = { kind: "exact", databaseName: "exact-f", schema: null };
+    replica.records.set(known.resource.handle, known);
+    replica.commitResource(
+      required(
+        publishResourceTerminal({
+          record: known,
+          documentId: "f",
+          generation: "9",
+          transitionId: "editor-purge",
+          exactDatabaseName: "exact-f",
+          deletionVersion: "8",
+        }),
+      ),
+    );
+    replica.settleDocumentDeletion("f", deleted(request, "5", ["f"]));
+    expect(replica.document("f").resource.lifecycle).toMatchObject({ deletionVersion: "8" });
   });
 });

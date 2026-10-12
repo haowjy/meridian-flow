@@ -108,12 +108,18 @@ it("publishes and acknowledges exact terminal cleanup without removing recovery 
     generation: "9",
     transitionId: "delete-9",
     exactDatabaseName: "database",
+    deletionVersion: "4",
   });
   if (!terminal) throw new Error("Expected terminal transition");
   validateResourceRecordUpdate(record, terminal.next);
   expect(terminal.next.resource).toMatchObject({
     canonical: null,
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "delete-9" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "delete-9",
+      deletionVersion: "4",
+    },
     obligations: {
       cleanup: { obligationId: "delete-9", exactDatabaseName: "database" },
     },
@@ -137,6 +143,7 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     kind: "terminal",
     generation: "9",
     transitionId: "namespace-operation",
+    deletionVersion: "6",
   };
 
   const handedOff = publishResourceTerminal({
@@ -145,10 +152,16 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     generation: "9",
     transitionId: "session-drain",
     exactDatabaseName: "database",
+    deletionVersion: "5",
   });
 
   expect(handedOff?.next.resource).toMatchObject({
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "session-drain" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "session-drain",
+      deletionVersion: "6",
+    },
     obligations: {
       cleanup: { obligationId: "session-drain", exactDatabaseName: "database" },
     },

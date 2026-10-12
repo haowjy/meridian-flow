@@ -76,11 +76,18 @@ export function committedResourceDeletion(
     canonicalRefresh: _unexecutable,
     ...obligations
   } = resource.obligations;
+  // An editor terminal may already hold newer exact-ID deletion evidence; keep the higher.
+  const held =
+    resource.lifecycle.kind === "terminal" ? resource.lifecycle.deletionVersion : undefined;
+  const deletionVersion =
+    held !== undefined && !newerCanonicalObservation(observationVersion, held)
+      ? held
+      : observationVersion;
   return {
     ...resource,
     canonical: null,
     observationVersion,
     obligations,
-    lifecycle: { kind: "terminal", generation, transitionId },
+    lifecycle: { kind: "terminal", generation, transitionId, deletionVersion },
   };
 }

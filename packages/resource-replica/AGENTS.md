@@ -77,15 +77,17 @@ outcomes without applying their effects; immutable transport evidence remains.
 
 **A later restore supersedes a confirmed deletion; stale evidence never does.** A
 confirmed deletion is owned by the server version that confirmed it: the accepted
-delete receipt's `observationVersion`, or the held version on a terminal record (its
-delete receipt's or exact-ID tombstone's). A strictly newer catalog or exact-ID
-observation of the identity as present (Apply restores deleted documents and
+delete receipt's `observationVersion`, or a terminal record's deletion version (its
+delete receipt's, the editor's exact-ID deletion evidence, or a folder tombstone's). A
+terminal document must carry that version: one without it never revives from a catalog,
+because replayed pre-deletion history looks newer than its stale held version. A
+strictly newer catalog or exact-ID observation of the identity as present (Apply restores deleted documents and
 ancestors) supersedes it: accepted delete intents stop owning deletion
 (`intentOwnsDeletionAt`), a folder's terminal witness clears, and a terminal document
 returns acknowledged at the server's location with unacquired content and a
 `revivedFrom` witness, so its deleted lineage's late purge cannot re-terminalize it.
-Equal or older pages, and pages requested before the terminal transition, lose. A
-document whose content purge is outstanding revives on the first catalog after it.
+Equal or older pages (including history replayed after the terminal), and pages
+requested before the terminal transition, lose. A document whose content purge is outstanding revives on the first catalog after it.
 
 Successful moves fence later dispatch until catalog or exact-ID availability installs
 the canonical location. Scoped absence alone never clears that fence. Authoritative
