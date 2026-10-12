@@ -63,6 +63,8 @@ export interface InverseSelection {
   direction: "invert" | "reapply";
 }
 export interface ComputedInverseEdit {
+  /** Host policy may give an edit its own stack action within an atomic command. */
+  actionId?: string;
   targetEditId: string;
   parts: (CapturedPart & { targets: EditTarget[] })[];
 }

@@ -26,6 +26,8 @@ export type WriteErrorStatus =
   | "cant_redo_held"
   | "cant_redo_elsewhere"
   | "cant_redo_users_undo"
+  | "insufficient_undo"
+  | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
   | "read_required"
@@ -210,6 +212,8 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "partial":
     case "nothing_to_undo":
     case "nothing_to_redo":
+    case "insufficient_undo":
+    case "insufficient_redo":
     case "expired":
       return true;
     default:

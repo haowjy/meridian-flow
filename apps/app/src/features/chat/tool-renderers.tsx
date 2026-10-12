@@ -24,7 +24,7 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject } from "./tool-command";
+import { copySourcePath, documentToolFailed, stringInput, toolInputObject } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -243,13 +243,15 @@ function documentFailureDocumentName(tool: ToolView): string | null {
  */
 function isRereadPause(tool: ToolView): boolean {
   return (
-    tool.isError && tool.toolName === "write" && documentFailureStatus(tool) === "read_required"
+    documentToolFailed(tool) &&
+    tool.toolName === "write" &&
+    documentFailureStatus(tool) === "read_required"
   );
 }
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return tool.isError && !isRereadPause(tool);
+  return documentToolFailed(tool) && !isRereadPause(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -305,7 +307,7 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
     const verb = t`Paused to reread`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
-  if (tool.isError) {
+  if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
@@ -329,7 +331,7 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 function documentExpand(tool: ToolView): ToolExpand | null {
   // The next rows (the read, then the retried write) say what happened.
   if (isRereadPause(tool)) return null;
-  if (tool.isError) {
+  if (documentToolFailed(tool)) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
     );

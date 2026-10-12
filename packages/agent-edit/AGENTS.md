@@ -58,7 +58,9 @@ restoration lineage, and admission. The browser-safe `yjs-mutation.ts` owns
 retained-struct lookup, visibility, splitting, redone hydration/capture and
 low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
 per target edit, with transaction-delta parts and aliases; the host persists
-those edits under one action ID. Normalization is per edit, never per action.
+those edits under the policy's action IDs. Model Undo uses one action per target
+edit, including multi-edit counts committed atomically; card actions may group
+edits. Normalization is per edit, never per action.
 This primitive does not route commands or choose destinations. The server uses
 it for receipt actions, failed-response rollback and the model's per-document
 undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable

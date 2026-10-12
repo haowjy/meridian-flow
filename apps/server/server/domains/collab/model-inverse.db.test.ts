@@ -190,12 +190,12 @@ describe("model document stack", () => {
           },
           context,
         );
-      expect(await write("undo", 4)).toMatchObject({ status: "nothing_to_undo" });
+      expect(await write("undo", 4)).toMatchObject({ status: "insufficient_undo" });
       expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       if (schedule === "count") {
         expect(await write("undo", 3)).toMatchObject({ status: "success" });
         expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-        expect(await write("redo")).toMatchObject({ status: "success" });
+        expect(await write("redo", 3)).toMatchObject({ status: "success" });
       } else {
         for (const text of ["Silver", "Gold", "Beta"]) {
           expect(await write("undo")).toMatchObject({ status: "success" });
@@ -210,6 +210,90 @@ describe("model document stack", () => {
       }
       expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+  it.each([
+    ["live", "count"],
+    ["draft", "count"],
+    ["live", "stepwise"],
+    ["draft", "stepwise"],
+    ["live", "short"],
+    ["draft", "short"],
+    ["live", "rollback"],
+    ["draft", "rollback"],
+  ] as const)("two-edit undo in %s supports %s redo", async (destination, schedule) => {
+    const { harness, view, context, responseId, target } = await fixture();
+    try {
+      const core = view.collab.agentEdit();
+      const address = { documentId: ALPHA_ID, file: "alpha.md" };
+      const initial =
+        destination === "live"
+          ? { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) }
+          : context;
+      await core.read(address, initial);
+      await core.write({ ...address, command: "replace", find: "Beta", content: "Gold" }, initial);
+      await core.write(
+        { ...address, command: "replace", find: "Gold", content: "Silver" },
+        initial,
+      );
+      await harness.commit(responseId);
+      const [draft] = await view.collab.draftReview.list(target);
+      const prose = () =>
+        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draft.draftId);
+      const responseIdentity = { providerResponseId: responseId, editScopeId: randomUUID() };
+      const inverse = { ...initial, responseIdentity };
+      const write = (command: "undo" | "redo", count = 1) =>
+        core.write({ ...address, command, count }, inverse);
+      expect(await write("undo", 2)).toMatchObject({
+        status: "success",
+        result: { message: "undone: w2, w1" },
+      });
+      expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
+      if (schedule === "rollback") {
+        const actions = await db
+          .select()
+          .from(schema.documentEdits)
+          .where(eq(schema.documentEdits.editScopeId, responseIdentity.editScopeId));
+        expect(actions).toHaveLength(2);
+        expect(new Set(actions.map((action) => action.actionId)).size).toBe(2);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await view.collab.finalizeResponseRollback(responseIdentity, {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+          });
+          expect(await prose()).toBe("Alpha Silver.\n\nBlue.\n");
+        }
+        expect(await write("redo")).toMatchObject({ status: "nothing_to_redo" });
+        expect(await write("undo", 2)).toMatchObject({ status: "success" });
+      } else if (schedule === "short") {
+        expect(await write("redo", 3)).toMatchObject({
+          status: "insufficient_redo",
+          result: { message: expect.stringContaining("Only 2 edits to redo") },
+        });
+        expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
+        expect(await write("redo", 2)).toMatchObject({ status: "success" });
+      } else if (schedule === "stepwise") {
+        expect(await write("redo")).toMatchObject({
+          status: "success",
+          result: { message: "redone: w1" },
+        });
+        expect(await prose()).toBe("Alpha Gold.\n\nBlue.\n");
+        expect(await write("redo")).toMatchObject({
+          status: "success",
+          result: { message: "redone: w2" },
+        });
+      } else {
+        expect(await write("redo", 2)).toMatchObject({
+          status: "success",
+          result: { message: "redone: w1, w2" },
+        });
+      }
+      expect(await prose()).toBe(
+        schedule === "rollback" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Silver.\n\nBlue.\n",
+      );
     } finally {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();

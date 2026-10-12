@@ -21,6 +21,7 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import type { ToolView } from "./group-delivery-segments";
 import {
   copySourcePath,
+  documentToolFailed,
   humanizeSkillSlug,
   stringInput,
   type ToolCommand,
@@ -292,7 +293,9 @@ export function humanizeToolName(toolName: string): string {
 
 /** The phrase for the tool's current protocol state, never guessed from timing. */
 export function toolActivityPhrase(tool: ToolView): ToolActivityPhrase {
-  const vocabulary = descriptorFor(tool).phrases(tool);
+  const descriptor = descriptorFor(tool);
+  if (documentToolFailed(tool)) return { verb: descriptor.failureVerb() };
+  const vocabulary = descriptor.phrases(tool);
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }
 
