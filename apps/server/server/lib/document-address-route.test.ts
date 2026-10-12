@@ -3,6 +3,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentAddressInput } from "../domains/context/ports/document-address.js";
+import {
+  createFileAccess,
+  createOwnerFileGrants,
+  type FileFacts,
+} from "../domains/file-policy/index.js";
 import { handleDocumentAddressRequest } from "./document-address-route.js";
 
 function fixture() {
@@ -106,4 +111,54 @@ it("refuses a validated review when the draft read grant is denied", async () =>
   const { input, deps, review } = fixture();
   deps.fileAccess.authorizeAt.mockResolvedValue({ denied: true });
   expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });
+});
+
+it("admits an archived Work's review for its owner, but not another account, through the real file policy", async () => {
+  const { input, deps, review, resolved } = fixture();
+  deps.workRepo.findById.mockResolvedValue({
+    id: "work",
+    slug: "review",
+    projectId: "project",
+    archivedAt: new Date(),
+  });
+  const facts: FileFacts = {
+    target: { kind: "document", documentId: "document" },
+    projectId: "project" as never,
+    ownerAccountId: "account" as never,
+    projectDeleted: false,
+    ownerWork: null,
+    deleted: false,
+    scheme: "manuscript",
+    self: { kind: "document", id: "document" },
+    ancestors: [{ kind: "project", id: "project" as never }],
+    draftWork: {
+      id: "work" as never,
+      slug: "review",
+      isNoWork: false,
+      archived: true,
+      deleted: false,
+    },
+  };
+  const access = createFileAccess({
+    facts: {
+      load: async ({ draftWorkId }) => (draftWorkId === facts.draftWork?.id ? facts : null),
+      loadList: async () => new Map(),
+    },
+    grants: createOwnerFileGrants(),
+    readAgentChain: async () => [],
+  });
+  const services = { ...deps, fileAccess: access };
+  expect(await handleDocumentAddressRequest(services, input, review)).toEqual(resolved);
+  expect(
+    await handleDocumentAddressRequest(services, { ...input, userId: "another-account" }, review),
+  ).toEqual({ kind: "unavailable" });
+  // The owner's admitted read must not also grant mutation on this frozen draft.
+  expect(
+    await access.authorizeAt(
+      { accountId: input.userId as never },
+      facts.target,
+      { kind: "draft", workId: "work" as never, workSlug: "review" },
+      "edit",
+    ),
+  ).toMatchObject({ denied: true, reason: "work_archived" });
 });
