@@ -28,7 +28,14 @@ it.each([
   "uncertified writer formatting copy",
 ])("reviews, Applies and Discards %s with exact content and attribution", (group) => {
   if (group === "text restoration with novel rich effects") {
-    for (const variant of ["plain", "bold", "attribute", "node"] as const)
+    for (const variant of [
+      "plain",
+      "bold",
+      "attribute",
+      "node",
+      "remove bold",
+      "remove italic",
+    ] as const)
       verifyTextRestoration(variant);
   } else if (group === "structural blocks") {
     verifyRichChange("list type", "- Alpha", "1. Alpha");
@@ -440,24 +447,37 @@ function verifyReplacementTrail(
   );
 }
 
-function verifyTextRestoration(variant: "plain" | "bold" | "attribute" | "node") {
-  const live = createDoc("base"),
+function verifyTextRestoration(
+  variant: "plain" | "bold" | "attribute" | "node" | "remove bold" | "remove italic",
+) {
+  const removing = variant.startsWith("remove ");
+  const mark = variant === "remove italic" ? "em" : "strong";
+  const baseline = variant === "remove italic" ? "*base*" : removing ? "**base**" : "base";
+  const live = createDoc(baseline),
     draft = cloneDoc(live);
   const target = variant === "bold" ? "**alpha**" : "alpha";
   const rows: { id: number; actorTurnId: string; updateData: Uint8Array }[] = [];
   try {
-    for (const [index, markdown] of ["alpha", "beta", target].entries()) {
+    const first = variant === "remove italic" ? "*alpha*" : removing ? "**alpha**" : "alpha";
+    for (const [index, markdown] of [first, "beta", target].entries()) {
       draft.clientID = 300 + index;
       const updates: Uint8Array[] = [];
       const capture = (update: Uint8Array) => updates.push(update);
       draft.on("update", capture);
       try {
         draft.transact(() => {
-          model.applyBlockReplacement(
-            toDocHandle(draft),
-            model.getBlocks(toDocHandle(draft))[0],
-            codec.parse(markdown).blocks[0],
-          );
+          if (removing && index > 0) {
+            const text = unwrapBlock(model.getBlocks(toDocHandle(draft))[0]).get(0) as Y.XmlText;
+            text.delete(0, text.length);
+            text.insert(0, markdown);
+            if (index === 1) text.format(0, text.length, { [mark]: {} });
+          } else {
+            model.applyBlockReplacement(
+              toDocHandle(draft),
+              model.getBlocks(toDocHandle(draft))[0],
+              codec.parse(markdown).blocks[0],
+            );
+          }
           if (index === 2 && variant === "node") {
             const paragraph = unwrapBlock(model.getBlocks(toDocHandle(draft))[0]);
             paragraph.delete(0, paragraph.length);
