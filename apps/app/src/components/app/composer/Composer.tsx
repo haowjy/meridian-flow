@@ -521,10 +521,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     >
       {submitFailure ? (
         // Inside the frame, above the words: the Composer owns it, so every host draws it the same
-        // and it never stacks against the strips above the box. No buttons: Send is the retry.
+        // and it never stacks against the strips above the box. Send is the retry; X dismisses.
         <div className="mb-[var(--chat-space-inline)] flex px-[var(--chat-space-inline)]">
-          <ErrorCard inline>
-            <p className="whitespace-normal">{t`Couldn't send. Nothing was lost.`}</p>
+          <ErrorCard
+            inline
+            onDismiss={() => {
+              setSubmitFailure(false);
+              editor?.commands.focus(undefined, { scrollIntoView: false });
+            }}
+          >
+            <p className="whitespace-normal">{t`Couldn't send.`}</p>
           </ErrorCard>
         </div>
       ) : null}

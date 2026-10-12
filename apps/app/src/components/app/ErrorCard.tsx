@@ -1,7 +1,9 @@
-import { CircleAlert } from "lucide-react";
+import { t } from "@lingui/core/macro";
+import { CircleAlert, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 export type ErrorCardProps = {
@@ -21,13 +23,25 @@ export type ErrorCardProps = {
    * has its own announcement or the card can appear from restored state.
    */
   announce?: boolean;
+  /**
+   * A failure the writer may leave as it is. Adds a small X ("Dismiss") at the end of
+   * the row; the caller removes the card. Its touch target grows on coarse pointers
+   * without making the row taller.
+   */
+  onDismiss?: () => void;
 };
 
 /**
  * The destructive-tinted card every chat failure uses: icon, a row for the
  * sentence and its controls, and an optional note beneath.
  */
-export function ErrorCard({ children, note, inline = false, announce = true }: ErrorCardProps) {
+export function ErrorCard({
+  children,
+  note,
+  inline = false,
+  announce = true,
+  onDismiss,
+}: ErrorCardProps) {
   return (
     <Alert
       variant="destructive"
@@ -53,6 +67,15 @@ export function ErrorCard({ children, note, inline = false, announce = true }: E
           )}
         >
           {children}
+          {onDismiss ? (
+            <IconButton
+              className="shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:size-11"
+              aria-label={t`Dismiss`}
+              onClick={onDismiss}
+            >
+              <X aria-hidden className="size-3.5" />
+            </IconButton>
+          ) : null}
         </div>
         {note}
       </AlertDescription>
