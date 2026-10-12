@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Import-door regression checks cover simultaneous writer edits, ahead-link arrivals and Manuscript name collisions.
+
 - Reading an import landing inside its transaction never publishes uncommitted text to open editors.
 
 - Restoring a checkpoint never makes an edited import placeholder eligible for replacement again.

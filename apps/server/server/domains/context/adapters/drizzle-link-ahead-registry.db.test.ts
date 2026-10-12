@@ -285,6 +285,83 @@ if (!RUN) {
       ).toBeNull();
     });
 
+    it.each(
+      (["identity", "arrival"] as const).flatMap((first) =>
+        [false, true].map((rollback) => ({ first, rollback })),
+      ),
+    )("identity versus arrival first=$first rollback=$rollback uses the committed CAS winner", async ({
+      first,
+      rollback,
+    }) => {
+      await insertDocument(database, "manuscript", DOCUMENT);
+      await database.update(documents).set({ name: "moved" }).where(eq(documents.id, DOCUMENT));
+      await newRegistry(database).register([registration]);
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const taken = notification("settlement row locked");
+      const identity = () => newRegistry(database).settleRef(AHEAD, DOCUMENT as never);
+      const arrival = () =>
+        runInDrizzleTransaction(arrivalConnection, async () => {
+          await lockContextSources(arrivalConnection, [SOURCE]);
+          await insertDocument(arrivalConnection, "manuscript", DOCUMENT_2);
+          return newRegistry(arrivalConnection).settleArrivals([DOCUMENT_2 as never]);
+        });
+      // Independent root transactions on distinct connections; the first keeps its row lock
+      // until the second is observed waiting on PostgreSQL, not just until its call returns.
+      const producer = taken.from(
+        runInDrizzleTransaction(first === "identity" ? database : arrivalConnection, async () => {
+          const result = first === "identity" ? await identity() : await arrival();
+          taken.notify();
+          await held;
+          if (rollback) throw new Error("rollback first settlement");
+          return result;
+        }),
+      );
+      const ownedProducer = producer.catch((error) => {
+        if (!rollback) throw error;
+        expect(error.message).toBe("rollback first settlement");
+        return null;
+      });
+      let competitor: Promise<unknown> | undefined;
+      try {
+        await taken.wait();
+        competitor = first === "identity" ? arrival() : identity();
+        for (let attempt = 0; ; attempt++) {
+          const waiting = await gateConnection.execute<{ count: number }>(sql`
+            SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query ILIKE '%link_ahead_refs%'
+          `);
+          if ((waiting[0]?.count ?? 0) > 0) break;
+          if (attempt >= WAIT_MS / 20) throw new Error("settlement did not contend on the row");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(await settledIds()).toEqual([null]);
+        release();
+        const [, loser] = await Promise.all([ownedProducer, competitor]);
+        const winner = rollback
+          ? first === "identity"
+            ? DOCUMENT_2
+            : DOCUMENT
+          : first === "identity"
+            ? DOCUMENT
+            : DOCUMENT_2;
+        expect(await settledIds()).toEqual([winner]);
+        expect(loser).toEqual(
+          first === "identity" ? (rollback ? 1 : 0) : { settled: rollback, documentId: winner },
+        );
+        expect(await newRegistry(database).settleRef(AHEAD, DOCUMENT as never)).toEqual({
+          settled: false,
+          documentId: winner,
+        });
+      } finally {
+        release();
+        await Promise.allSettled([ownedProducer, competitor]);
+      }
+    });
+
     it("identity settlement rolls back with its caller", async () => {
       const registry = newRegistry(database);
       await registry.register([registration]);
