@@ -7,6 +7,7 @@
 - Show every removed and inserted run in change-row excerpts, in document order; only the row width truncates the display.
 - Keep phone review tap targets inside their own horizontal boxes and remove empty whole-document Work expand controls.
 - Close, rename and settle review tabs by their exact Work, draft and mounted instance. Applying one Work’s review no longer hides another Work’s live document.
+- Keep typing in the writer’s paragraph after per-change Discard, preserving native input before review repaint and restoring the latest caret by text and block identity.
 
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 

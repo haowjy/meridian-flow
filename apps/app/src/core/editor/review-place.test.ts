@@ -12,6 +12,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { model, operation, span, textHunk } from "../../test-support/inline-review-editor";
 import { createEditorConfig } from "./config";
 import { createLocalPresence } from "./local-presence";
 import {
@@ -39,10 +40,11 @@ function paragraph(text: string) {
   return block;
 }
 
-function mount(doc: Y.Doc) {
+function mount(doc: Y.Doc, enableDraftInlineReview = false) {
   const editor = new Editor(
     createEditorConfig({
       document: doc,
+      enableDraftInlineReview,
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
     }),
@@ -273,4 +275,73 @@ it("counts the view among the blocks when the cover holds no items at all", () =
     named: false,
   });
   expect(found?.text).toBe("Yes.");
+});
+
+it("keeps native typing's latest caret through review projection and a generation swap", async () => {
+  const doc = new Y.Doc();
+  doc
+    .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
+    .insert(0, [paragraph("Heading"), paragraph("Writer paragraph")]);
+  const old = mount(doc, true);
+  old.editor.commands.setInlineReviewModel(
+    model(
+      [operation("a1", "agent")],
+      [
+        textHunk(
+          old.editor,
+          "h1",
+          ["a1"],
+          { from: 1, to: 8 },
+          { spans: [span(old.editor, "a1", 1, 8)] },
+        ),
+      ],
+    ),
+  );
+  old.editor.view.focus();
+  // Browser input can precede the observer's delivery while React projects the command.
+  const text = old.editor.view.dom.lastElementChild?.firstChild as Text;
+  text.appendData(" typed");
+  const selection = window.getSelection();
+  selection?.setBaseAndExtent(text, text.length, text, text.length);
+  old.editor.view.dom.dispatchEvent(
+    new InputEvent("input", { bubbles: true, inputType: "insertText", data: " typed" }),
+  );
+  old.editor.commands.setInlineReviewMarksVisible(false);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  captureReviewPlace("typing", old.editor, true);
+  const nextDoc = new Y.Doc();
+  Y.applyUpdate(nextDoc, Y.encodeStateAsUpdate(doc));
+  nextDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph("Peer block")]);
+  const next = mount(nextDoc);
+  restoreReviewPlace("typing", next.editor);
+  expect(next.editor.state.selection.$head.parent.textContent).toBe("Writer paragraph typed");
+  expect(next.editor.state.selection.$head.parentOffset).toBe("Writer paragraph typed".length);
+});
+
+it("falls back within the same surviving block when a caret's text type is absent in the refork", () => {
+  const doc = new Y.Doc({ gc: false });
+  doc
+    .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
+    .insert(0, [paragraph("Heading"), paragraph("Writer paragraph")]);
+  const nextDoc = new Y.Doc({ gc: false });
+  Y.applyUpdate(nextDoc, Y.encodeStateAsUpdate(doc));
+  const block = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
+  // The old generation acquired a text type that the successor does not have.
+  const run = new Y.XmlText();
+  block.insert(1, [run]);
+  run.insert(0, " pending");
+  const old = mount(doc);
+  old.editor.commands.setTextSelection(old.editor.state.doc.content.size - 1);
+  captureReviewPlace("missing-text", old.editor, false);
+  nextDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph("Peer block")]);
+  const nextBlock = nextDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(2) as Y.XmlElement;
+  (nextBlock.get(0) as Y.XmlText).insert(0, "A peer inserted this long prefix. ");
+  const next = mount(nextDoc);
+  restoreReviewPlace("missing-text", next.editor);
+  expect(next.editor.state.selection.$head.parent.textContent).toBe(
+    "A peer inserted this long prefix. Writer paragraph",
+  );
+  expect(next.editor.state.selection.$head.parentOffset).toBe(
+    "A peer inserted this long prefix. Writer paragraph".length,
+  );
 });

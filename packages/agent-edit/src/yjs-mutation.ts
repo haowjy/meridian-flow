@@ -21,6 +21,24 @@ export function findItem(document: Y.Doc, id: Y.ID): Y.Item | null {
   return item instanceof Y.Item ? item : null;
 }
 
+/** Visible text-run edges, by item identity, for a host's nearest-survivor fallback. */
+export function textItemBoundaryPositions(text: Y.XmlText): Y.RelativePosition[] {
+  const positions: Y.RelativePosition[] = [];
+  for (let item = text._start; item; item = item.right) {
+    if (item.deleted || !item.countable) continue;
+    positions.push(
+      new Y.RelativePosition(text._item?.id ?? null, null, item.id, 0),
+      new Y.RelativePosition(
+        text._item?.id ?? null,
+        null,
+        Y.createID(item.id.client, item.id.clock + item.length - 1),
+        -1,
+      ),
+    );
+  }
+  return positions;
+}
+
 /** Root identity without exposing the private parent item to hosts. */
 export function rootTypeKey(item: Y.Item): string | null {
   const parent = item.parent;

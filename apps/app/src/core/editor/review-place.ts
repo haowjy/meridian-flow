@@ -13,6 +13,7 @@
  */
 
 import { getBlockItemId } from "@meridian/agent-edit";
+import { textItemBoundaryPositions } from "@meridian/agent-edit/yjs-mutation";
 import { blockItemKey, operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
@@ -34,8 +35,10 @@ import {
 type PlacePoint = {
   /** The top-level block holding it, counted without blocks a Discard in flight hides. */
   block: number;
-  /** Distance from the start of that block. */
-  offset: number;
+  /** Its block identity, independent of blocks restored or inserted above it. */
+  blockId: string | null;
+  /** Nearest source text-run edges, ordered by distance, all held by identity. */
+  near: Uint8Array[];
   /** Its Yjs identity, when the item survives into the successor. */
   rel: Uint8Array | null;
 };
@@ -142,13 +145,32 @@ function pointAt(
   runtime: RelativePositionRuntime | null,
   layout: BlockLayout,
   position: number,
+  keys: readonly string[] | null,
 ): PlacePoint {
   const $position = editor.state.doc.resolve(position);
   const index = $position.index(0);
-  const start = $position.depth > 0 ? $position.before(1) : position;
+  const candidates: { rel: Uint8Array; distance: number }[] = [];
+  const collect = (type: Y.XmlElement | Y.XmlText) => {
+    if (type instanceof Y.XmlText && runtime) {
+      for (const rel of textItemBoundaryPositions(type)) {
+        const at = resolveRelativePosition(runtime, rel);
+        if (at !== null)
+          candidates.push({
+            rel: Y.encodeRelativePosition(rel),
+            distance: Math.abs(at - position),
+          });
+      }
+    } else if (type instanceof Y.XmlElement) {
+      for (const child of type.toArray())
+        if (child instanceof Y.XmlElement || child instanceof Y.XmlText) collect(child);
+    }
+  };
+  const block = runtime?.yFragment.get(index);
+  if (block instanceof Y.XmlElement) collect(block);
   return {
     block: layout.shownBefore[index] ?? layout.shown,
-    offset: position - start,
+    blockId: keys?.[index] ?? null,
+    near: candidates.sort((a, b) => a.distance - b.distance).map(({ rel }) => rel),
     rel: encode(runtime, position),
   };
 }
@@ -158,20 +180,32 @@ function resolvePoint(
   runtime: RelativePositionRuntime | null,
   layout: BlockLayout,
   point: PlacePoint,
+  blocks: ReadonlyMap<string, number>,
 ): number | null {
   const size = editor.state.doc.content.size;
-  if (point.rel && runtime) {
+  const start = point.blockId
+    ? (blocks.get(point.blockId) ?? null)
+    : blockPosition(layout, point.block);
+  const node = start === null ? null : editor.state.doc.nodeAt(start);
+  const minimum = start === null ? null : start + (node?.isLeaf ? 0 : 1);
+  const maximum = start === null ? null : start + Math.max(0, (node?.nodeSize ?? 1) - 1);
+  for (const rel of point.rel ? [point.rel, ...point.near] : point.near) {
+    if (!runtime) break;
     try {
-      const resolved = resolveRelativePosition(runtime, Y.decodeRelativePosition(point.rel));
-      if (resolved !== null) return resolved;
+      const resolved = resolveRelativePosition(runtime, Y.decodeRelativePosition(rel));
+      if (
+        resolved !== null &&
+        (minimum === null || maximum === null || (resolved >= minimum && resolved <= maximum))
+      )
+        return resolved;
     } catch {
       // A malformed or foreign anchor falls back to the block.
     }
   }
-  const start = blockPosition(layout, point.block);
-  if (start === null) return null;
-  const node = editor.state.doc.nodeAt(start);
-  return Math.min(start + Math.min(point.offset, Math.max(0, (node?.nodeSize ?? 1) - 1)), size);
+  if (start === null || minimum === null || maximum === null) return null;
+  // No old text survived. Stay inside the surviving block, never at the
+  // document-start selection or a block chosen by its former ordinal.
+  return Math.min(minimum, size);
 }
 
 /**
@@ -199,12 +233,13 @@ export function captureReviewPlace(key: string, editor: Editor, focus: boolean):
       };
       break;
     }
+    const keys = blockKeys(editor, runtime);
     const { anchor, head } = editor.state.selection;
     places.set(key, {
       viewport,
       caret: {
-        anchor: pointAt(editor, runtime, layout, anchor),
-        head: pointAt(editor, runtime, layout, head),
+        anchor: pointAt(editor, runtime, layout, anchor, keys),
+        head: pointAt(editor, runtime, layout, head, keys),
       },
       focus,
     });
@@ -256,8 +291,11 @@ export function restoreReviewPlace(
     const runtime = relativePositionRuntimeFromState(editor.state);
     const layout = blockLayout(editor);
     if (place.caret) {
-      const from = resolvePoint(editor, runtime, layout, place.caret.anchor);
-      const to = resolvePoint(editor, runtime, layout, place.caret.head);
+      const blocks = new Map(
+        blockKeys(editor, runtime)?.map((id, at) => [id, layout.blocks[at]?.position ?? 0]),
+      );
+      const from = resolvePoint(editor, runtime, layout, place.caret.anchor, blocks);
+      const to = resolvePoint(editor, runtime, layout, place.caret.head, blocks);
       if (from !== null) {
         const { doc } = editor.state;
         const end = to ?? from;
