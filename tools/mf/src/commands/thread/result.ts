@@ -58,12 +58,20 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
   if ((result.outcome === "complete" || result.outcome === "failed") && result.finalText)
     out.text(result.finalText.trim());
   const running = result.stillRunning as { turnId: string; status: string } | null | undefined;
+  const emptyIdleTail =
+    result.command === "thread.tail" &&
+    result.outcome === "complete" &&
+    result.idle === true &&
+    Array.isArray(result.turns) &&
+    result.turns.length === 0;
   out.note(
-    running && result.outcome === "timeout"
-      ? result.snapshotStale
-        ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
-        : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
-      : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
+    emptyIdleTail
+      ? "complete: chat idle, no turn ran during the wait"
+      : running && result.outcome === "timeout"
+        ? result.snapshotStale
+          ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
+          : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
+        : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
