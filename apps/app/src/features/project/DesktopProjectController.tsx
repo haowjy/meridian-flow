@@ -160,7 +160,7 @@ export function useDesktopEditorPresentation<
     selection: removal.selection,
   });
   const resource = resolved.tab
-    ? projectResourceTab(input.projectId, resolved.tab, projection.records, projection.folders)
+    ? projectResourceTab(input.projectId, resolved.tab, projection.records, projection.placement)
     : null;
   const tab =
     resource?.kind === "removed" || resource?.kind === "terminal"
@@ -176,8 +176,10 @@ export function useDesktopEditorPresentation<
 }
 export function useDesktopDockPresentation(projectId: string, screen: ScreenKey) {
   const { document } = useDockView(screen, projectId);
-  const { records, folders } = useAccountResourceProjection(projectId);
-  const projected = document ? projectResourceTab(projectId, document.tab, records, folders) : null;
+  const { records, placement } = useAccountResourceProjection(projectId);
+  const projected = document
+    ? projectResourceTab(projectId, document.tab, records, placement)
+    : null;
   const gone = projected?.kind === "removed" || projected?.kind === "terminal";
   const close = useDockViewStore((state) => state.closeDocument);
   useEffect(() => {

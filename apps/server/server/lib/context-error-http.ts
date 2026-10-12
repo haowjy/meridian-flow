@@ -27,6 +27,14 @@ export function contextErrorToHttp(error: ContextError): never {
         statusCode: 409,
         message: "Context location changed; retry the operation",
       });
+    case "destination_missing":
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "destination_missing",
+          "The destination folder is no longer available.",
+        ),
+        409,
+      );
     case "stale_target":
       return throwHttpInterrupt(
         meridianErrorFromSystem(

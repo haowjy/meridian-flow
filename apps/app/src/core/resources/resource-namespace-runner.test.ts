@@ -22,7 +22,7 @@ function open(accountId: string) {
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
   for (const account of accounts)
-    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`);
+    await Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`);
   accounts.clear();
 });
 
@@ -71,6 +71,9 @@ it("recovers a committed remote create after response loss and browser restart",
   await first.commitResource({ expectedRevision: null, next: local() });
   const lostResponse: ResourceNamespaceTransport = {
     accountId,
+    lookupIdentity: async () => {
+      throw new Error("Unexpected availability lookup");
+    },
     readOutcome: async () => null,
     async submit() {
       expect((await first.readResource(local().resource))?.intents[0]?.state).toBe("submitted");
@@ -112,6 +115,9 @@ it("recovers a committed remote create after response loss and browser restart",
       lock: immediateLock(accountId),
       transport: {
         accountId,
+        lookupIdentity: async () => {
+          throw new Error("Unexpected availability lookup");
+        },
         readOutcome: async () => null,
         submit,
       },

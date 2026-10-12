@@ -8,6 +8,7 @@ import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
+import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
 export class AccountFeatureLifetime {
   readonly runtime;
@@ -16,6 +17,7 @@ export class AccountFeatureLifetime {
   readonly availability;
   readonly resources;
   readonly opener;
+  readonly renameOperations;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
@@ -52,6 +54,7 @@ export class AccountFeatureLifetime {
             },
             connectivityHints,
           );
+    this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
     if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
@@ -72,6 +75,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
+    this.renameOperations?.dispose();
     this.resources?.beginClose();
     this.runtime.beginClose();
     this.featureLease.suspend();

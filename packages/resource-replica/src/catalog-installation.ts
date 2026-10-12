@@ -1,4 +1,5 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
+
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileClassification,
@@ -6,10 +7,13 @@ import type {
   CatalogFolderEntry,
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
 import { installCanonicalRefresh } from "./resource-namespace";
 import {
+  ownerOf,
+  type ParentRef,
   type ResourceCatalogCheckpoint,
   type ResourceDescriptor,
   type ResourceLocation,
@@ -21,13 +25,17 @@ import { resourceLineageOwner } from "./resource-work-authority";
 
 export type CatalogObservationFence = Readonly<{
   /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
-  folders?: ReadonlyMap<string, { canonical: ResourceLocation; refreshOperationId?: string }>;
+  folders?: ReadonlyMap<
+    string,
+    { revision: number; canonical: ResourceLocation; refreshOperationId?: string }
+  >;
   /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
   resources?: ReadonlyMap<
     string,
     {
       revision: number;
       canonical: ResourceLocation | null;
+      canonicalParent?: ParentRef;
       classification: CatalogFileClassification;
     }
   >;
@@ -107,6 +115,16 @@ export function catalogEntryLocation(
   };
 }
 
+/** Server catalog parent ids are identity evidence, even when the parent row is absent. */
+export function catalogEntryParent(
+  entry: CatalogFileEntry | CatalogFolderEntry,
+  location: ResourceLocation,
+): ParentRef {
+  return entry.parentId === entry.sourceId
+    ? { kind: "root", scheme: location.scheme, owner: ownerOf(location) }
+    : { kind: "folder", folderId: entry.parentId };
+}
+
 export function sameResourceLocation(
   left: ResourceLocation | null,
   right: ResourceLocation | null,
@@ -167,36 +185,44 @@ function observedResourceWrite(input: {
   record: ResourceRecord;
   location: ResourceLocation;
   classification: CatalogFileClassification;
+  parent: ParentRef;
   fence: CatalogObservationFence;
+  observationVersion: string;
 }): ResourceWrite | null {
-  const { record, location, classification, fence } = input;
+  const { record, location, classification, parent, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "acknowledged") return null;
+  const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
   if (!observed) return null;
   if (
     observed.revision !== current.revision &&
     (!sameResourceLocation(observed.canonical, current.canonical) ||
+      JSON.stringify(observed.canonicalParent) !== JSON.stringify(current.canonicalParent) ||
       !sameClassification(observed.classification, current.classification))
   )
     return null;
 
   const refresh = current.obligations.canonicalRefresh;
   const refreshed = refresh
-    ? installCanonicalRefresh({ record, operationId: refresh.operationId, location })
+    ? installCanonicalRefresh({
+        record,
+        operationId: refresh.operationId,
+        location,
+        parent,
+        observationVersion: input.observationVersion,
+      })
     : null;
-  const changed =
-    refreshed !== null ||
-    !sameResourceLocation(current.canonical, location) ||
-    !sameClassification(current.classification, classification);
+  if (!newer) return refreshed;
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
-  if (!changed) return null;
   const next: ResourceDescriptor = {
     ...base,
     revision: current.revision + 1,
     classification,
     canonical: location,
+    canonicalParent: parent,
+    observationVersion: input.observationVersion,
     obligations,
   };
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
@@ -211,6 +237,8 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     content: { kind: "unacquired" },
     classification: classificationFor(entry),
     canonical: location,
+    canonicalParent: catalogEntryParent(entry, location),
+    observationVersion: entry.observationVersion,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
     obligations: {},
@@ -245,7 +273,9 @@ export function planCatalogInstallation(input: {
         record: current,
         location,
         classification: classificationFor(entry),
+        parent: catalogEntryParent(entry, location),
         fence,
+        observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
       continue;

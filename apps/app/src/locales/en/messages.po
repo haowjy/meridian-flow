@@ -137,7 +137,7 @@ msgid "{0} finished"
 msgstr "{0} finished"
 
 #. placeholder {0}: schemeLabel(locatedTab.scheme)
-#: src/features/project/dock/DockDocumentTitle.tsx
+#: src/features/project/context/DocumentPath.tsx
 msgid "{0} for {ownerName}"
 msgstr "{0} for {ownerName}"
 
@@ -540,6 +540,11 @@ msgstr "All Work"
 msgid "All your devices"
 msgstr "All your devices"
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Already in {0}"
+msgstr "Already in {0}"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
@@ -843,8 +848,8 @@ msgid "Choose a document or enter a web address or document path."
 msgstr "Choose a document or enter a web address or document path."
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "Choose a home"
-msgstr "Choose a home"
+#~ msgid "Choose a home"
+#~ msgstr "Choose a home"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -1036,8 +1041,8 @@ msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Context"
-msgstr "Context"
+#~ msgid "Context"
+#~ msgstr "Context"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1187,6 +1192,10 @@ msgstr "Couldn't delete this document. Try again."
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't delete this folder. Try again."
+msgstr "Couldn't delete this folder. Try again."
+
 #: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr "Couldn't discard. Check your connection and try again."
@@ -1266,6 +1275,18 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't move this entry. Try again."
+msgstr "Couldn't move this entry. Try again."
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
+msgstr "Couldn't move to {failedFolder}. Try again or pick another folder."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
@@ -1326,6 +1347,10 @@ msgstr "Couldn't rename this folder. Try again."
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
 msgstr "Couldn’t rename this Work. Try again."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't rename. Use Rename in the file list to try again."
+msgstr "Couldn't rename. Use Rename in the file list to try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -1888,8 +1913,11 @@ msgstr "fig:terrace"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
+#: src/features/project/context/IdentityChips.tsx
+msgid "File it"
+msgstr "File it"
+
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr "File name"
@@ -1897,6 +1925,10 @@ msgstr "File name"
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "File suggestions"
 msgstr "File suggestions"
+
+#: src/features/project/context/IdentityChips.tsx
+msgid "File this document"
+msgstr "File this document"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2327,6 +2359,7 @@ msgid "Loading Work…"
 msgstr "Loading Work…"
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/context/DocumentPath.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -2415,6 +2448,10 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move {name}"
+msgstr "Move {name}"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr "Move column left"
@@ -2439,9 +2476,23 @@ msgstr "Move row down"
 msgid "Move row up"
 msgstr "Move row up"
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to {0}"
+msgstr "Move to {0}"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Move…"
+msgstr "Move…"
+
+#. placeholder {0}: folder ?? ""
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "Moved to {0}"
+msgstr "Moved to {0}"
 
 #: src/features/chat/UserTurn.tsx
 #~ msgid "Moved to composer."
@@ -2669,6 +2720,10 @@ msgstr "Not compacted"
 msgid "Not created"
 msgstr "Not created"
 
+#: src/features/project/context/IdentityChips.tsx
+msgid "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
+msgstr "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
+
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
@@ -2767,8 +2822,8 @@ msgid "Open conversation"
 msgstr "Open conversation"
 
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "Open document"
-msgstr "Open document"
+#~ msgid "Open document"
+#~ msgstr "Open document"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
@@ -2972,6 +3027,7 @@ msgstr "Reading text size"
 msgid "Reason: {0}"
 msgstr "Reason: {0}"
 
+#: src/features/project/dock/DockHeader.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr "Recent"
@@ -3077,10 +3133,9 @@ msgstr "Removed"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/IdentityChips.tsx
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -3094,8 +3149,8 @@ msgid "Rename project: {title}"
 msgstr "Rename project: {title}"
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "Rename this document or move it somewhere else in your project."
-msgstr "Rename this document or move it somewhere else in your project."
+#~ msgid "Rename this document or move it somewhere else in your project."
+#~ msgstr "Rename this document or move it somewhere else in your project."
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
@@ -3722,6 +3777,11 @@ msgstr "That document couldn't be found."
 msgid "That file is binary."
 msgstr "That file is binary."
 
+#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "that folder"
+msgstr "that folder"
+
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That image could not be read."
 msgstr "That image could not be read."
@@ -4008,8 +4068,8 @@ msgid "This document is still opening."
 msgstr "This document is still opening."
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
-msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
@@ -4063,6 +4123,10 @@ msgstr "This image never finished uploading."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "This link can no longer be edited. Close the form and try again."
 msgstr "This link can no longer be edited. Close the form and try again."
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "This location is unavailable. Refresh and try again."
+msgstr "This location is unavailable. Refresh and try again."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This note is empty. Open it in the Editor to write."
