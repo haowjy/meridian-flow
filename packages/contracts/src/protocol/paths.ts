@@ -199,14 +199,6 @@ export function apiProjectLinksResolvePath(projectId: string): string {
   return `${apiProjectPath(projectId)}/links/resolve`;
 }
 
-export function apiProjectContextKbImportPath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import`;
-}
-
-export function apiProjectContextKbImportDriveFixturePath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import-drive-fixture`;
-}
-
 export function apiThreadPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}`;
 }

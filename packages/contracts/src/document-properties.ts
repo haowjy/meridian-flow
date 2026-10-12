@@ -4,12 +4,14 @@ export function readStoredDocumentProperties(metadata: unknown): StoredDocumentP
   if (!metadata || typeof metadata !== "object" || !("properties" in metadata)) return null;
   const value = metadata.properties;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const keys = Object.keys(value);
+  const keys = Reflect.ownKeys(value);
   return keys.length === 2 &&
+    keys.includes("format") &&
+    keys.includes("text") &&
     "format" in value &&
     value.format === "yaml" &&
     "text" in value &&
     typeof value.text === "string"
-    ? { format: "yaml", text: value.text }
+    ? (value as StoredDocumentProperties)
     : null;
 }
