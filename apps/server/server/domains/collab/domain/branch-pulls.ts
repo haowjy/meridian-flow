@@ -93,7 +93,7 @@ export function createBranchPullService(input: {
 
   async function pullLive(documentId: DocumentId): Promise<void> {
     // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. The root transaction re-lists: a branch can close in
+    // release) for them. Re-list before pulling: a branch can close in
     // between, and one opened since waits for the next pull.
     if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
     // Snapshot before the root transaction opens: the snapshot takes its own
@@ -101,11 +101,12 @@ export function createBranchPullService(input: {
     // hold every pooled connection and wait on each other forever.
     const liveDoc = await liveSnapshot(documentId);
     try {
-      await input.rootTransaction(async () => {
-        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-        }
-      });
+      // Commit snapshot, effect and projection before taking another branch mutex.
+      // A receipt owns branch mutexes before Work rows, so retaining a Work row
+      // lock across the next mutex would reverse that order.
+      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+        await input.rootTransaction(() => input.branchCoordinator.pullFromDoc(branchId, liveDoc));
+      }
     } finally {
       liveDoc.destroy();
     }
