@@ -397,15 +397,25 @@ it("reloads a draft-only review from its Work list, without catalog membership",
   const restored = await restoreDockDocument(candidate, {
     ...replica,
     resources: replica.resources,
-    readWorkDrafts: async () => [
-      {
-        ...listed,
-        documentId: "doc",
-        draftId: "draft",
-        isNewDocument: true,
-        contextLocation: { scheme: "manuscript", path: "/Current.md" },
-      },
-    ],
+    readWorkDrafts: async (project, work) => {
+      expect([project, work]).toEqual(["project", "work"]);
+      return [
+        {
+          ...listed,
+          documentId: "doc",
+          draftId: "other-draft",
+          isNewDocument: true,
+          contextLocation: { scheme: "kb", path: "/Wrong.md" },
+        },
+        {
+          ...listed,
+          documentId: "doc",
+          draftId: "draft",
+          isNewDocument: true,
+          contextLocation: { scheme: "manuscript", path: "/Current.md" },
+        },
+      ];
+    },
   });
   expect(replica.resources.readProjection).not.toHaveBeenCalled();
   await expect(

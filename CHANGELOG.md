@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Close, rename and settle review tabs by their exact Work, draft and mounted instance. Applying one Work’s review no longer hides another Work’s live document.
+
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.

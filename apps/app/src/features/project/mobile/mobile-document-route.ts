@@ -54,6 +54,7 @@ export function resolveMobileDocumentRoute(input: {
    * is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
+  selectedTabInstanceId?: string;
   addressState?: AddressState;
   catalog: CatalogContextView | null;
   isError: boolean;
@@ -81,6 +82,7 @@ export function resolveMobileDocumentRoute(input: {
         boundDocumentId: input.boundDocumentId,
         catalog: input.catalog,
         workspaceTabs: input.workspaceTabs,
+        selectedTabInstanceId: input.selectedTabInstanceId,
       })
     : { kind: "absent" as const };
   const resolved =
@@ -112,7 +114,10 @@ export function useMobileDocumentRoute(input: {
   addressState?: AddressState;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
-  const { tabs: workspaceTabs } = useContextTabs(input.projectId);
+  const { tabs: workspaceTabs, selectedTabInstanceIdByWork } = useContextTabs(input.projectId);
+  const selectedTabInstanceId = input.workId
+    ? selectedTabInstanceIdByWork?.[input.workId]
+    : undefined;
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
     selection.status === "bound" &&
@@ -138,6 +143,7 @@ export function useMobileDocumentRoute(input: {
         rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,
+        selectedTabInstanceId,
         addressState: input.addressState,
         catalog,
         isError,
@@ -146,6 +152,7 @@ export function useMobileDocumentRoute(input: {
     [
       boundDocumentId,
       workspaceTabs,
+      selectedTabInstanceId,
       catalog,
       input.addressState,
       input.enabled,
