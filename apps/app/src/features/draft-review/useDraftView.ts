@@ -7,9 +7,14 @@ import {
 } from "@/client/query/draft-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { usePresentedDraftReview } from "./DraftReviewProvider";
-import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
+import {
+  type DraftChangesData,
+  type DraftChangesView,
+  listablePreview,
+  useChangeItems,
+} from "./draft-changes";
 import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
-import { useReviewChanges } from "./useReviewChanges";
+import { useOpenReviewChanges } from "./useOpenReviewChanges";
 import type { WorkDraftCommands } from "./useWorkDraftCommands";
 
 const EMPTY: readonly ReviewChange[] = [];
@@ -35,7 +40,7 @@ export function useDraftView(
     presented.workId === draft.workId &&
     open?.documentId === draft.documentId &&
     open.draftId === draft.draftId;
-  const painted = useReviewChanges(presented, { enabled: sharing });
+  const painted = useOpenReviewChanges(presented, { enabled: sharing });
   const entry = useDraftPreviews(enabled && !sharing ? [draft] : [], { openReview: open })[0];
   const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
   const { items, hiding } = useChangeItems(
@@ -51,18 +56,25 @@ export function useDraftView(
         : entry.status === "ready" && entry.preview.status === "gone"
           ? "gone"
           : "loading";
+  const data: DraftChangesData = sharing
+    ? {
+        documentId: painted.documentId,
+        draftId: painted.draftId,
+        status: painted.status,
+        items: painted.items,
+        unlisted: painted.unlisted,
+      }
+    : {
+        documentId: draft.documentId,
+        draftId: draft.draftId,
+        status,
+        items: status === "ready" ? items : [],
+        unlisted: status === "ready" && items.length === 0 && !hiding,
+        ...(entry?.status === "error" ? { retry: entry.retry } : {}),
+      };
   return {
-    ...(sharing
-      ? painted
-      : {
-          documentId: draft.documentId,
-          draftId: draft.draftId,
-          status,
-          items: status === "ready" ? items : [],
-          focused: null,
-          unlisted: status === "ready" && items.length === 0 && !hiding,
-          ...(entry?.status === "error" ? { retry: entry.retry } : {}),
-        }),
+    ...data,
+    focused: null,
     locked,
     apply: async (change) => {
       await controller.commandChange("apply", draft, change.target);

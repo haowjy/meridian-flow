@@ -100,11 +100,9 @@ export function useWorkDraftCommands({
         : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
     const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
       runWholeDraftIntent(
-        queryClient,
         { ...scope, documentId: draft.documentId, draftId: draft.draftId },
         mode,
         () => sendWhole(mode, draft),
-        threadId,
       );
     const commandChange = (
       mode: "apply" | "discard",

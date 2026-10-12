@@ -72,9 +72,8 @@ export interface ReviewChange {
    */
   threadIds: string[];
   /**
-   * Apply and Discard act on this change. False for an unclassified hunk with
-   * no operation, and for every member of a class the server flags
-   * `canApplyOrDiscard: false`; Apply draft and Discard draft handle those.
+   * The authorized command target. Unclassified hunks and incomplete classes
+   * are display-only; only new documents authorize whole-draft disposition.
    */
   target: ChangeTarget;
 }
@@ -289,7 +288,6 @@ export type ChangeTarget =
 
 export type DraftView = {
   changes: readonly ReviewChange[];
-  target: ChangeTarget;
 };
 
 const views = new WeakMap<ActivePreview, DraftView>();
@@ -299,7 +297,7 @@ export function draftView(preview: ActivePreview): DraftView {
   let view = views.get(preview);
   if (!view) {
     const changes = changesOf(preview);
-    view = { changes, target: targetOfChanges(changes) };
+    view = { changes };
     views.set(preview, view);
   }
   return view;

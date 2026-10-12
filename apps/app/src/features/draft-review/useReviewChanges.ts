@@ -7,19 +7,15 @@
  * Takes the controller explicitly. A surface outside the presenting host's
  * boundary must pass the presented review's controller, never the ambient one.
  *
- * A change the writer has applied or discarded is already gone from the
- * preview this reads (`useDraftPreview`), and a change that failed is back with
- * its reason.
+ * Retained presentation data is shared with listed surfaces; this binding adds
+ * only the open review's focus, stepping and command behavior.
  */
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
-import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
-import { type ActivePreview, previewWithoutKeys } from "@/client/query/draft-projection";
-import { useDraftPreview } from "@/client/query/useDraftPreview";
-import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
-import { adoptsGeneration } from "./draft-review-session";
-import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
+import type { DraftChangesView } from "./draft-changes";
+import { type ReviewChange, resolveFocusedChange } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
+import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
 /** The open review's model: a draft's changes plus the review's focus, stepping and completion. */
 export type ReviewChangesView = DraftChangesView & {
@@ -40,96 +36,12 @@ export type ReviewChangesView = DraftChangesView & {
   step: (direction: 1 | -1) => void;
 };
 
-const NO_ITEMS: ReviewChangesView["items"] = [];
-const NO_CHANGES: readonly ReviewChange[] = [];
-
-/** The open review's draft and its changes, derived once per preview. */
-export function useOpenReviewChanges(
-  controller: DraftReviewController,
-  options?: { enabled?: boolean },
-) {
-  // A surface outside the open review reads nothing.
-  const inline = options?.enabled === false ? null : controller.inlineReview;
-  const documentId = inline?.documentId ?? null;
-  const draftId = inline?.draftId ?? null;
-  const { preview, observed } = useDraftPreview(
-    controller.projectId,
-    controller.workId,
-    documentId,
-    draftId,
-    {
-      enabled: inline !== null,
-    },
-  );
-  const active = listablePreview(preview);
-  // The review lists the changes of the generation it shows. A preview of
-  // another one is the next proposal on its way in (the review re-enters it) or
-  // the close's own reset: it is not this review's to list.
-  const shown = inline?.draftGeneration;
-  const own =
-    active && (shown === undefined || active.draftGeneration === shown)
-      ? reviewChangesOfPreview(active)
-      : null;
-  // While the review and its preview disagree about the generation (the next
-  // one is arriving, or the cache lags behind it), the draft's last observation
-  // of the generation the writer was acting on stays, projected under the
-  // intents as they are now: its rows keep taking clicks, and a click already
-  // made is not in it. Each click is resolved against the draft as it is when it
-  // is sent. Only the draft's own earlier observation is kept, never another's.
-  const held = useRef<{ draftId: string | null; observed: ActivePreview | null }>({
-    draftId: null,
-    observed: null,
-  });
-  if (own && observed?.status === "active") held.current = { draftId, observed };
-  const records = useChangeCommandRecords();
-  const heldObserved = held.current.draftId === draftId ? held.current.observed : null;
-  const hiddenKey = draftId
-    ? [
-        ...intentKeys(records, {
-          projectId: controller.projectId,
-          workId: controller.workId,
-          documentId: documentId ?? "",
-          draftId,
-        }).hidden,
-      ]
-        .sort()
-        .join(",")
-    : "";
-  const heldChanges = useMemo(() => {
-    if (!heldObserved) return NO_CHANGES;
-    const hidden = new Set(hiddenKey ? hiddenKey.split(",") : []);
-    const projected = previewWithoutKeys(heldObserved, hidden);
-    return projected.status === "active" ? reviewChangesOfPreview(projected) : NO_CHANGES;
-  }, [heldObserved, hiddenKey]);
-  // A newer preview with nothing to review is the close's own reset: that is not held.
-  const keeping =
-    own === null &&
-    active !== null &&
-    heldObserved !== null &&
-    shown !== undefined &&
-    (active.draftGeneration < shown || reviewChangesOfPreview(active).length > 0);
-  const changes = own ?? (keeping ? heldChanges : NO_CHANGES);
-  const settling = keeping && changes.length > 0;
-  return { inline, documentId, draftId, preview, active, changes, settling };
-}
-
 export function useReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
 ): ReviewChangesView {
-  const { inline, documentId, draftId, preview, active, changes, settling } = useOpenReviewChanges(
-    controller,
-    options,
-  );
-  const draftRef = useMemo(
-    () =>
-      documentId && draftId
-        ? { projectId: controller.projectId, workId: controller.workId, documentId, draftId }
-        : null,
-    [controller.projectId, controller.workId, documentId, draftId],
-  );
-  const { items, hiding } = useChangeItems(draftRef, changes);
-
+  const { documentId, draftId, changes, items, completing, finished, unlisted, status } =
+    useOpenReviewChanges(controller, options);
   // The review owns the focus (class and operations); this only reads it.
   const focused = resolveFocusedChange(changes, controller.focus);
   const focusedIndex = focused ? changes.indexOf(focused) : -1;
@@ -193,32 +105,12 @@ export function useReviewChanges(
   const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
   const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
 
-  const completion = inline?.completion;
-  const completing = completion?.phase === "pending" ? completion.mode : null;
-  const status: ReviewChangesView["status"] = !inline
-    ? "idle"
-    : active
-      ? adoptsGeneration(inline, {
-          draftGeneration: active.draftGeneration,
-          proposal: reviewChangesOfPreview(active).length > 0,
-        }) && !settling
-        ? "loading"
-        : "ready"
-      : preview?.status === "corrupt"
-        ? "error"
-        : preview?.status === "gone"
-          ? "gone"
-          : "loading";
-  const finished = completion?.phase === "closed";
-  const unlisted =
-    !finished && status === "ready" && completing === null && items.length === 0 && !hiding;
-
   return {
     documentId,
     draftId,
     status,
     // A draft the server closed has nothing to list, whatever a stale read still holds.
-    items: completion?.phase === "closed" ? NO_ITEMS : items,
+    items,
     focused,
     focusedIndex,
 

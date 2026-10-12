@@ -60,7 +60,9 @@ async function reconnect() {
 it("a stale last Discard ignores bogus closure and restores the refreshed change with its reason", async () => {
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("2"));
   const answer = deferredReviewAnswer<DraftDiscardResponse>();
-  fixture.network.discardDraft.mockReturnValueOnce(answer.promise);
+  fixture.network.discardDraft
+    .mockReturnValueOnce(answer.promise)
+    .mockResolvedValue({ status: "stale", draftId: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
     let done!: Promise<unknown>;

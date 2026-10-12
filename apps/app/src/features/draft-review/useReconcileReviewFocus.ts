@@ -13,7 +13,7 @@
 import { useEffect } from "react";
 import { resolveFocusedChange } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
-import { useOpenReviewChanges } from "./useReviewChanges";
+import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
 export function useReconcileReviewFocus(controller: DraftReviewController): void {
   const { documentId, draftId, changes } = useOpenReviewChanges(controller);
