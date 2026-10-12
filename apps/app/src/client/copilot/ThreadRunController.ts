@@ -16,6 +16,7 @@ import {
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import { abortable } from "@/client/chat-submissions/lock";
+import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
@@ -52,7 +53,14 @@ export type SubmissionPayload = {
 };
 
 export type SubmissionOutcome = {
-  kind: "accepted" | "rejected" | "ambiguous" | "not-seen" | "abandoned";
+  kind:
+    | "accepted"
+    | "rejected"
+    | "ambiguous"
+    | "not-seen"
+    | "abandoned"
+    | "deleted"
+    | "project-deleted";
   submissionId: string;
 };
 
@@ -252,6 +260,9 @@ export class ThreadRunController {
         );
       } catch (error) {
         if (!current()) return outcome("abandoned");
+        const availability = threadAvailability(error, this.accountId);
+        if (availability === "deleted" || availability === "project-deleted")
+          return outcome(availability);
         if (classifyWriteFailure(error) === "rejected") {
           return outcome("rejected");
         }
@@ -314,8 +325,12 @@ export class ThreadRunController {
         }),
         signal,
       );
-    } catch {
-      return outcome(current() ? "ambiguous" : "abandoned");
+    } catch (error) {
+      if (!current()) return outcome("abandoned");
+      const availability = threadAvailability(error, this.accountId);
+      if (availability === "deleted" || availability === "project-deleted")
+        return outcome(availability);
+      return outcome("ambiguous");
     }
     if (!current()) return outcome("abandoned");
     if (result.kind === "accepted" || result.kind === "already-accepted") {

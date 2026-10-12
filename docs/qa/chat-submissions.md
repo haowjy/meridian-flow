@@ -94,3 +94,32 @@ not the later client move/navigation policy.
 The DB gate contract also covers deleted parent projects, Work-cascade markers,
 purges, and disagreeing creator/project-owner rows. Run it with
 `pnpm test:db -- thread-deletion-proof`.
+
+## Deleted-chat browser cleanup
+
+Use the mock-model worktree and a named browser session. Seed a chat titled
+"Arc 2 notes" with `./mf thread create --title 'Arc 2 notes'`. Abort only message
+POSTs to produce a failed writer row ("Make the elder colder"), then type more
+words in its box. Delete through `./mf api DELETE /api/threads/<id>`, remove the
+abort, and click Retry. New chat must contain the failed row then the box text,
+ahead of any older New chat writing, under the titled plural notice. Reload:
+words and notice remain exactly once. Dismiss the X: words remain. Repeat and
+Send: the note is gone and the new chat receives the words once.
+
+Repeat with an untitled chat, a collapsed dock, the chat kept warm behind All
+chats, and a dock covered by Changes or a document. Hidden chats move nothing.
+For a visible chat's own Delete, nothing moves; successful DELETE clears the
+journal and box. Delete a disposable parent project through the API: its chat's
+attested project deletion clears without transfer or a note. A random missing
+chat id must retain main's existing fallback and never run deletion cleanup.
+
+Reload with journal records and session boxes for off-screen deleted and live
+chats. The one bind pass clears only attested deleted destinations (up to four
+requests concurrently, 15 seconds each). In two browser tabs, deleting in one
+may remove the other's failed rows before that tab learns of deletion. This is
+accepted: the other tab still moves its own box once it learns. No extra lock
+prevents this rough edge.
+
+Capture the titled and untitled note in desktop Chat, a 360px dock, and a 390px
+phone, each in light and dark. Crop out account identity and hide the TanStack
+launcher. These captures verify real responsive wrapping, not fixture markup.

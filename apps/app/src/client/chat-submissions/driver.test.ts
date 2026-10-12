@@ -390,3 +390,58 @@ it("a failed successor creation rewrite also fails its attempted predecessor", a
   );
   test.dispose();
 });
+
+it("stops on owner-attested deletion from send, lookup or retire, without rejecting or retrying the row", async () => {
+  const { MeridianApiError } = await import("@/client/api/meridian-error");
+  const deleted = new MeridianApiError(
+    {
+      code: "thread_deleted",
+      message: "deleted",
+      retryable: false,
+      source: "system",
+      details: { authenticatedUserId: "account-1" },
+    },
+    404,
+  );
+  for (const operation of ["send", "lookup", "retire"] as const) {
+    const r = rig({
+      append: async () => {
+        throw deleted;
+      },
+      lookup: async () => {
+        throw deleted;
+      },
+      retire: async () => {
+        throw deleted;
+      },
+    });
+    const record = r.records.get("record-1");
+    if (!record) throw new Error("Fixture missing");
+    r.records.set(record.recordId, {
+      ...record,
+      creation: undefined,
+      state: operation === "retire" ? "rejected" : undefined,
+    });
+    let disposition = "";
+    try {
+      const { owner } = r.mount({
+        takeFresh: () => operation === "send",
+        deleted: async (_entry, reason) => {
+          disposition = reason;
+        },
+      });
+      if (operation === "retire") await owner.edit("sub-1");
+      else await owner.drive("thread_1");
+      expect(disposition).toBe("deleted");
+      expect(r.records.get("record-1")?.state).toBe(
+        operation === "retire" ? "rejected" : undefined,
+      );
+      const requests = r.scenario.appendRequests.length;
+      await owner.retry("sub-1");
+      await owner.drive("thread_1");
+      expect(r.scenario.appendRequests).toHaveLength(requests);
+    } finally {
+      r.dispose();
+    }
+  }
+});

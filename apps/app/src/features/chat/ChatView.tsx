@@ -319,6 +319,16 @@ export function ChatView({
       navigation.forgetChat(threadId);
       void navigation.openNewChat(undefined, { replace: true });
     },
+    {
+      visible: active,
+      title: activeThread?.title === "New chat" ? null : (activeThread?.title ?? null),
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (navigation.display.kind === "thread")
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
   );
   useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);

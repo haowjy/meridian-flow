@@ -330,6 +330,10 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "<0>{title}</0> was deleted."
+msgstr "<0>{title}</0> was deleted."
+
 #: src/features/chat/derivation/InheritedMarks.tsx
 #: src/features/chat/derivation/ThreadReferenceChip.tsx
 #: src/features/chat/SpawnReportCard.tsx
@@ -343,6 +347,10 @@ msgstr "<0>Handed off from </0><1/>"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
 msgstr "3 by 3, header row"
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "A chat you had open was deleted."
+msgstr "A chat you had open was deleted."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -1629,6 +1637,7 @@ msgstr "Discard changes"
 
 #: src/components/app/ErrorCard.tsx
 #: src/components/app/InlineErrorRow.tsx
+#: src/features/chat/DeletedChatNotice.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -3926,6 +3935,10 @@ msgstr "This chat now uses {0}."
 msgid "This chat uses {0}."
 msgstr "This chat uses {0}."
 
+#: src/client/api/meridian-error.ts
+msgid "This chat was deleted."
+msgstr "This chat was deleted."
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's current Work could not be found. Refresh the page and try again."
@@ -4062,6 +4075,10 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
+
+#: src/client/api/meridian-error.ts
+msgid "This project was deleted."
+msgstr "This project was deleted."
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
@@ -4490,6 +4507,14 @@ msgstr "Your edits and the AI's overlapped here, so both were combined into one.
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
 msgstr "Your message"
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "Your message is below."
+msgstr "Your message is below."
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "Your messages are below."
+msgstr "Your messages are below."
 
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
