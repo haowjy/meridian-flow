@@ -29,3 +29,44 @@ describe("restorable draft selection", () => {
     expect(restored?.selection).toEqual({ anchor: 1, head: 1 });
   });
 });
+
+it("projects unique owned uploads in occurrence order without changing the submitted message", () => {
+  const upload = {
+    intakeId: "intake-1",
+    documentId: "doc-1",
+    uri: "kb://notes.md",
+    locationRevision: "rev-1",
+  };
+  const reference = {
+    documentId: upload.documentId,
+    uri: upload.uri,
+    label: "notes",
+    imageCapable: false,
+    upload: null,
+  };
+  const doc = plainComposerDoc("Compare ");
+  doc.content?.[0]?.content?.push(
+    ...[reference, { ...reference, upload }, { ...reference, upload }].map((value) => ({
+      type: "composerReference",
+      attrs: { reference: value },
+    })),
+  );
+  const message = serializeComposerDraft(doc, 7, { anchor: 2, head: 2 });
+  expect(message.draft).toEqual({
+    doc,
+    revision: 7,
+    selection: { anchor: 2, head: 2 },
+    ownedUploads: [upload],
+  });
+  expect(message.text).toBe(
+    "Compare [notes](kb://notes.md)[notes](kb://notes.md)[notes](kb://notes.md)",
+  );
+  expect(message.references).toEqual([
+    {
+      documentId: upload.documentId,
+      uri: upload.uri,
+      purpose: "draft-upload",
+      intakeId: upload.intakeId,
+    },
+  ]);
+});

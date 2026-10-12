@@ -146,3 +146,44 @@ describe("non-editor CLI-shaped message documents", () => {
     expect(message.activatedSkillSlugs).toEqual(["revise"]);
   });
 });
+
+it("visits every reference once while draft uploads win admission in either order", () => {
+  const reference = {
+    documentId: "01900000-0000-7000-8000-000000000001",
+    uri: "kb://notes.md",
+    label: "notes",
+    imageCapable: false,
+  };
+  const uploaded = { ...reference, upload: { intakeId: "intake-1" } };
+  for (const occurrences of [
+    [reference, uploaded, reference],
+    [uploaded, reference, uploaded],
+  ]) {
+    const visited: unknown[] = [];
+    const message = serializeMessageDoc(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: occurrences.map((value) => ({
+              type: "composerReference",
+              attrs: { reference: value },
+            })),
+          },
+        ],
+      },
+      { onReference: (value) => visited.push(value) },
+    );
+    expect(visited).toEqual(occurrences);
+    expect(message.blocks.filter((block) => block.type === "reference")).toHaveLength(3);
+    expect(message.references).toEqual([
+      {
+        documentId: reference.documentId,
+        uri: reference.uri,
+        purpose: "draft-upload",
+        intakeId: "intake-1",
+      },
+    ]);
+  }
+});
