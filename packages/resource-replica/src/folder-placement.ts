@@ -27,7 +27,10 @@ export function folderPlacementGraph(
       .map((r) => [r.folderId, r]),
   );
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const homes = new Map([...byId.values()].map((n) => [qualifiedHome(n.canonical), n.id]));
+  const homes = new Map([
+    ...[...byId.values()].map((n) => [qualifiedHome(n.canonical), n.id] as const),
+    ...[...recordsById.values()].map((r) => [qualifiedHome(r.canonical), r.folderId] as const),
+  ]);
   function canonicalEdge(location: ResourceLocation): ResourceDestination {
     let path = location.path.slice(0, location.path.lastIndexOf("/"));
     while (path) {

@@ -98,3 +98,18 @@ it("cycle fallback preserves an independently renamed canonical parent", () => {
     }
   }
 });
+
+it("does not synthesize navigation ancestors for a suppressed incomplete subtree", () => {
+  const rows = [entries[0], node("P", "P"), node("A", "P/missing/A", "P")];
+  const projected = createResourcePlacement("p", rows, [del("P", "P")]).projectCatalog(rows);
+  expect(projected).toEqual([entries[0]]);
+});
+
+it("binds document observations to a parent's exact canonical home ahead of its checkpoint", () => {
+  const record = move("B", "C", "D");
+  const graph = folderPlacementGraph("p", [{ id: "B", canonical: loc("B") }], [record]);
+  expect(graph.place(loc("C/doc.md")).location).toMatchObject({
+    path: "/D/doc.md",
+    name: "doc.md",
+  });
+});

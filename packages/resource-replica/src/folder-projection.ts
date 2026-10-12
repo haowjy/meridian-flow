@@ -47,11 +47,12 @@ export function createResourcePlacement(
         .map((node) => [node.id, node]),
     ).values(),
   ];
+  const installedIds = new Set(nodes.map((node) => node.id));
   // Journals retain known identities even when their catalog membership disappears.
   for (const folder of folders)
     if (
       (folder.projectId === null || folder.projectId === projectId) &&
-      !nodes.some((node) => node.id === folder.folderId)
+      !installedIds.has(folder.folderId)
     )
       nodes.push({ id: folder.folderId, canonical: folder.canonical });
   const sourceFor = (location: ResourceLocation) =>
@@ -88,7 +89,7 @@ export function createResourcePlacement(
     const rows = [
       ...new Map([...entries, ...input].map((entry) => [entry.entryId, entry])).values(),
     ];
-    const projected = rows.map((entry): CatalogEntry => {
+    let projected = rows.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const location = locations.get(entry.entryId);
       const record = byDocument.get(entry.entryId);
@@ -162,6 +163,17 @@ export function createResourcePlacement(
         hasChildren: false,
       });
     }
+    // Suppression is a result of the identity walk, before navigation gap completion.
+    // Hidden incomplete subtrees must not leave synthesized parents behind.
+    projected = projected.filter((entry) => {
+      if (entry.kind !== "file" && entry.kind !== "folder") return true;
+      if (entry.kind === "folder") return !graph.hidden(entry.entryId);
+      const record = byDocument.get(entry.entryId);
+      const location = locations.get(entry.entryId);
+      return record
+        ? Boolean(resourceLocation(record))
+        : !location || !graph.place(location).hidden;
+    });
     // One qualified-home index installs real rows before navigation-only gaps.
     const homeKey = (sourceId: string, path: string) => JSON.stringify([sourceId, path]);
     const homes = new Map(
@@ -206,20 +218,10 @@ export function createResourcePlacement(
         parentId = row.entryId;
       }
     }
-    return projected.flatMap((entry): CatalogEntry[] => {
-      if (entry.kind !== "file" && entry.kind !== "folder") return [entry];
-      const record = byDocument.get(entry.entryId);
-      const location = locations.get(entry.entryId);
-      if (
-        entry.kind === "folder"
-          ? graph.hidden(entry.entryId)
-          : record
-            ? !resourceLocation(record)
-            : location && graph.place(location).hidden
-      )
-        return [];
+    return projected.map((entry): CatalogEntry => {
+      if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const parent = homes.get(homeKey(entry.sourceId, entry.path.slice(0, -1).join("/")));
-      return [{ ...entry, parentId: parent?.entryId ?? entry.sourceId }];
+      return { ...entry, parentId: parent?.entryId ?? entry.sourceId };
     });
   }
 
