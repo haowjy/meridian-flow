@@ -125,7 +125,13 @@ higher version when both apply. Folders hold their tombstone's `observationVersi
 Catalog installation compares a present entry with the deletion version, never with a
 pre-deletion `observationVersion`. A request that starts after the terminal can still
 replay history from before the deletion, one page at a time. Only strictly newer
-evidence revives (`revivedResourceWrite`, folder installation dropping `terminal`). A
+evidence revives, and which evidence counts differs by kind. A document revives only
+from a strictly newer catalog entry (`revivedResourceWrite`); exact-ID presence does
+not revive it (`settleNamespaceOutcome` and `installCanonicalRefresh` skip terminal
+records). A folder revives from a strictly newer canonical observation (catalog
+installation dropping `terminal`); exact-ID presence clears its witness only through
+a pending canonical refresh after a move (`installFolderNamespaceAvailability` into
+`installFolderCanonicalRefresh`). A
 terminal document without a deletion version never revives from a catalog. The
 validators admit exactly that transition: newer than the deletion version,
 acknowledged with a canonical location, unacquired content, no outstanding purge

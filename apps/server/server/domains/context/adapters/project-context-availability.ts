@@ -285,53 +285,6 @@ export function createDrizzleProjectContextAvailability(
   eventSink?: EventSink,
 ): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
   return {
-    async reserve(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const state = enlistDrizzleTransactionParticipant(advanceParticipant);
-        await holdPublisherFence(tx, state);
-        if (state.generation === undefined) {
-          const result = await tx.execute<{ generation: string }>(
-            sql`select nextval(${sql.raw(`'${contextAvailabilityGeneration.seqName}'`)})::text as generation`,
-          );
-          const value = result[0]?.generation;
-          if (!value) throw new Error("Failed to reserve availability generation");
-          state.generation = BigInt(value);
-        }
-        if (input)
-          await publishNamespaceVersion(tx, [
-            ...input.projectIds.map(projectKey),
-            ...input.userIds.map(userKey),
-          ]);
-        return String(state.generation);
-      });
-    },
-
-    async publishReserved(input) {
-      await runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const keys = [...input.projectIds.map(projectKey), ...input.userIds.map(userKey)].sort();
-        if (keys.length === 0) return;
-        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-        await tx
-          .insert(contextAvailabilityHeads)
-          .values(keys.map((authorityKey) => ({ authorityKey, generation: 0n })))
-          .onConflictDoNothing({ target: contextAvailabilityHeads.authorityKey });
-        for (const authorityKey of keys) {
-          await tx.execute(
-            sql`select authority_key from context_availability_heads where authority_key = ${authorityKey} for update`,
-          );
-        }
-        await tx
-          .update(contextAvailabilityHeads)
-          .set({
-            generation: sql`greatest(${contextAvailabilityHeads.generation}, ${BigInt(input.generation)})`,
-            updatedAt: new Date(),
-          })
-          .where(inArray(contextAvailabilityHeads.authorityKey, keys));
-      });
-    },
-
     async advance(input) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
