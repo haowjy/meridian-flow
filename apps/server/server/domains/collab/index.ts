@@ -12,6 +12,8 @@ export {
   type BindHolder,
   type BindMarkdownInput,
   type BoundWrite,
+  createImportLinkBinder,
+  type ImportLinkBinder,
   type LinkBinder,
   LinkBindingInsideTransactionError,
 } from "./domain/link-binding.js";

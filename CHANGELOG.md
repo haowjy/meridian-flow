@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Server import writes can bind note links to planned identities, reporting invalid targets and minted ahead links.
+
 - Server ahead links can settle to a planned document identity without changing an existing settlement.
 
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
