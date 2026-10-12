@@ -1,5 +1,5 @@
 /**
- * WsThreadTransport — the production `ThreadTransport` over `/api/threads/ws`.
+ * ThreadSocketClient — the production `ThreadTransport` over `/api/threads/ws`.
  *
  * Owns the thread-domain control plane: per-thread subscribe/resume, gap
  * detection, server-"connected" gating, and connection-state fan-out to
@@ -10,14 +10,13 @@
  */
 import {
   type AGUIEvent,
+  type CancelTurnResponse,
   compareSeq,
   type MeridianError,
   parseWsServerMessage,
   type SequencedEvent,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import { cancelTurn } from "@/client/api/threads-api";
-import { buildThreadsWsUrl } from "./dev-transport";
 
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
@@ -29,16 +28,20 @@ import type {
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
-} from "./ThreadTransport";
+} from "./thread-transport";
 import {
   type ActiveThreadSubscription,
   selectNewestSeq,
   WsThreadSubscriptionRegistry,
 } from "./ws-thread-subscription";
 
-type WsThreadTransportOptions = SocketLifecycleOptions;
+export type ThreadSocketClientOptions = SocketLifecycleOptions & {
+  url: () => string;
+  toError: (error: MeridianError) => Error;
+  cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
+};
 
-export class WsThreadTransport implements ThreadTransport {
+export class ThreadSocketClient implements ThreadTransport {
   private readonly socket: SocketLifecycleController;
   private readonly subscriptions = new WsThreadSubscriptionRegistry();
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
@@ -53,10 +56,10 @@ export class WsThreadTransport implements ThreadTransport {
   private wantsConnection = false;
   private serverConnected = false;
 
-  constructor(options: WsThreadTransportOptions = {}) {
+  constructor(private readonly options: ThreadSocketClientOptions) {
     this.socket = new SocketLifecycleController(
       {
-        buildUrl: () => buildThreadsWsUrl(),
+        buildUrl: options.url,
         wantsConnection: () => this.wantsConnection,
         onOpen: () => {
           this.serverConnected = false;
@@ -185,7 +188,7 @@ export class WsThreadTransport implements ThreadTransport {
   }
 
   cancel(threadId: string, turnId: string) {
-    return cancelTurn({ data: { threadId, turnId } });
+    return this.options.cancelTurn(threadId, turnId);
   }
 
   private ensureConnected(): void {
@@ -209,6 +212,7 @@ export class WsThreadTransport implements ThreadTransport {
 
     dispatchWsServerMessage(message, {
       subscriptions: this.subscriptions,
+      toError: this.options.toError,
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
       handleGap: (gap) => this.handleGap(gap),

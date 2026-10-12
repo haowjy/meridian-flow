@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /** The real provider replays controller ownership without publishing a dead context value. */
+
+import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
-import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
 import { MeridianCopilotProvider, useMeridianAgent } from "./MeridianCopilotProvider";
 import type { ThreadRunController } from "./ThreadRunController";
 

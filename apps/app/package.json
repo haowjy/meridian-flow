@@ -87,7 +87,8 @@
     "y-indexeddb": "9.0.12",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "@meridian/thread-client": "workspace:*"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

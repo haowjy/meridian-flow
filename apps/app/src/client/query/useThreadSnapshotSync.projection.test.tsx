@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Mounted snapshot owner and run controller share one durable transcript store. */
 import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,7 +10,6 @@ import { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { ThreadCachePort } from "@/client/stores/thread-store/thread-cache";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
-import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
 import { threadQueryKeys } from "./thread-query-keys";
 import { useThreadSnapshotSync } from "./useThreadSnapshotSync";
 
