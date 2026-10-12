@@ -49,15 +49,20 @@ snapshot) replaces that.
   failed reply: like Retry, the note belongs to the current reply only.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
-  failed reply: once the server has stored a reply under that id, the re-send
-  replays (200 with that turn), including a reply that follows the compaction
-  its Retry started. While the chat is still busy (for example that compaction
-  is running and the reply is not stored yet) the re-send is refused like any
-  other and the stand-in goes. The refused note shows only while the failed
-  reply is the latest turn, so here the running divider below it carries the
-  state. The lost request did land, so the run goes on, and its reply still
-  lands under the id the writer minted, from the snapshot. A failed or stopped
-  compaction in the snapshot settles the Retry chain and drops the stand-in.
+  failed reply. If the lost request landed, the server answers the replay with
+  the execution it started (`{ executionId, turn }`, `turn` null until the reply
+  is reserved), or `retry_pending` (503) while it can't tell yet. Pending
+  answers repeat the same id after the response's `Retry-After`, up to
+  `RETRY_PENDING_ATTEMPTS` automatic sends; past that the stand-in is lost again,
+  unresolved and retryable, never refused.
+- **Its run ends without the reply.** The stand-in keeps the execution its
+  Retry answered. When the response was lost it reads that execution off the
+  turn whose `metadata.retryReplyId` is the stand-in's id (the request's first
+  reserved turn, often a compaction). Once the controller's run facts
+  (`ThreadRunController.runFacts`) show that execution ended and none of its
+  turns is the requested reply (a stopped compaction), nothing will create it
+  and the stand-in goes. Placement next to a compaction is never evidence: a
+  mode switch can sit between the failed reply and its compaction.
 
 Pressing Retry moves focus to the transcript (the button leaves with the error
 block) and follows the tail so the new reply is in view. A stand-in has no
@@ -67,5 +72,6 @@ is announced once and is not reported as a failed run.
 `useRetryStandIns.ts` owns this optimistic half for both this Retry and the
 handoff brief's: the stand-in list, placement after the turn it followed
 (`placeStandIns` in `retry-stand-ins.ts`), reconciliation by id, the refused
-set, and the lost-request re-send. Each caller supplies the POST and the
-stand-in's shape.
+set, and the lost-request re-send. Each caller supplies the POST, the
+stand-in's shape and, for a reply, when its reservation ended (`retired`). A
+handoff brief holds no execution; its seed's id is its only identity.
