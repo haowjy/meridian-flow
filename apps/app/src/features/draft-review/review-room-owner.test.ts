@@ -164,7 +164,9 @@ describe("review-room transition table", () => {
     expect(shown(state)).toEqual(result);
     if (result?.generation === 2 && result.completion === null) {
       expect(state.marksVisible).toBe(true);
-      if (state.surface.kind === "inline") expect(state.surface.focus).toBeUndefined();
+      // The focused change survives a generation change; surfaces find it again by its operations.
+      if (state.surface.kind === "inline")
+        expect(state.surface.focus).toEqual({ classId: "class-1", operationIds: ["1"] });
     }
   });
 });

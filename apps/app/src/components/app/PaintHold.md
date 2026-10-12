@@ -31,6 +31,12 @@ prose are not loading. `PaintScope` excludes warm hidden tabs, the parked Editor
 pane (by visible screen, never route acquisition readiness), warm live under review and a constructing hidden review from pending and
 capture. Viewers are unmarked apart from their delayed skeleton and fail open.
 
+The cover's markup is set once when it mounts (React would reset `innerHTML` on
+every render and erase patches). `patchCover` changes that copy for later facts the
+copy cannot know (a Discard accepted under the cover); `afterRelease` runs work
+in the task that lifts the cover, before paint, for restoring a place the new
+content could not hold while covered.
+
 The real page and copy are inert during a hold; the copy is unannounced, excludes
 inactive scopes and strips ids. Editor scroll offsets survive. Page focus moves
 to the host's status line, then returns to the frame; outside focus stays put.

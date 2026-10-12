@@ -5,7 +5,7 @@ export {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";
-export { inlineReviewClassNames } from "./decorations";
+export { inlineReviewClassNames, restoreRenderedChanges } from "./decorations";
 export {
   buildInlineReviewModel,
   changeOperationIds,

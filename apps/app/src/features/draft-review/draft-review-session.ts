@@ -289,8 +289,10 @@ function onInline(
 /**
  * The one transition that moves the shown generation: the review takes up
  * generation `generation` in place. Its completion is the claim's when the
- * claim acted on that generation and nothing otherwise; the focus is dropped,
- * and the room is the caller's (cleared when unknown, so a fresh read follows).
+ * claim acted on that generation and nothing otherwise; the focus is kept (the
+ * change is found again by its class and operations, or `useReconcileReviewFocus`
+ * lets it go), and the room is the caller's (cleared when unknown, so a fresh
+ * read follows).
  */
 function reenter(
   review: InlineDraftReview,
@@ -298,7 +300,7 @@ function reenter(
   completion: ReviewCompletion | undefined,
   roomName: string | undefined,
 ): InlineDraftReview {
-  const { completion: _left, focus: _focus, roomName: _room, roomError: _error, ...kept } = review;
+  const { completion: _left, roomName: _room, roomError: _error, ...kept } = review;
   return {
     ...kept,
     draftGeneration: generation,

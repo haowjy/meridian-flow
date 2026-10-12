@@ -118,6 +118,27 @@ settled)` still synchronizes the body, header and completion focus in layout.
 A draft-only tab without a review shows a terminal Close card. Surface wrappers
 carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
 
+**Seamless generation change.** A Discard re-forks the draft and the review
+editor is replaced; the writer must not see it. (1) *Original from the click:* a
+discarded change stays in the inline model flagged `restoring`; its insertion is
+hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
+removed text is drawn as plain prose (`meridian-review-restored`). A Discard
+accepted while a cover already holds the old review is applied to the cover's
+DOM (`PaintHold.patchCover`, `restoreRenderedChanges`). A refusal drops the
+flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
+takes the first visible block (Yjs anchor, stable block index, pixel offset), the
+caret and focus ownership in the commit that removes the review editor
+(`core/editor/review-place.ts`, memory only, keyed by draft). The successor
+shows only once it has synced, carried the writer's unsent edits and projected
+the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
+the viewport and focus in the task that lifts the cover. A writer's explicit
+navigation in between (`noteReviewNavigation`) wins. The same place is applied to
+the warm live editor when a last Apply or Discard hands the page over. (3)
+*Chrome is the draft's:* `shown` is not cleared by a generation change, so the
+header, change list and phone sheet stay; the open review's list is held while
+the review and its preview disagree about the generation. A Discard leaves the
+viewport where it is (Apply still advances to the next change).
+
 For generation, completion and command ordering, use the
 [draft-review lifecycle reference](../../draft-review/.context/draft-review.md).
 `SessionEditor` constructs the common surface; `EditorView` composes review-only

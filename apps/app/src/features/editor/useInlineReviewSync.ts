@@ -16,6 +16,7 @@
  * receives them.
  */
 
+import type { ReviewOperation } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -35,7 +36,12 @@ export interface UseInlineReviewSyncOptions {
    * room this editor is not in. Undefined while the review has not learned it.
    */
   draftGeneration?: number;
-  onInlineModelAvailable?: (identity: string, documentId: string, draftId: string) => void;
+  onInlineModelAvailable?: (
+    identity: string,
+    documentId: string,
+    draftId: string,
+    operations?: readonly ReviewOperation[],
+  ) => void;
 }
 
 export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
@@ -48,9 +54,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     draftGeneration,
     onInlineModelAvailable,
   } = options;
-  const { preview } = useDraftPreview(projectId, workId, documentId, draftId, {
+  const { inline } = useDraftPreview(projectId, workId, documentId, draftId, {
     enabled: Boolean(projectId && workId && documentId && draftId),
   });
+  const preview = inline?.preview ?? null;
+  const restoring = inline?.restoring;
 
   // The last preview payload pushed into the plugin, so React re-renders around
   // unrelated state don't re-dispatch it. Compared by reference, not by the
@@ -77,16 +85,17 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     const hunks = preview.hunks;
 
     const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
-    if (lastPushedPreviewRef.current === preview) return;
+    if (lastPushedPreviewRef.current === inline) return;
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
       operations,
       hunks,
+      restoring,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedPreviewRef.current = preview;
-    onInlineModelAvailable?.(previewIdentity, documentId, reviewId);
-  }, [editor, preview, draftGeneration, documentId, onInlineModelAvailable]);
+    lastPushedPreviewRef.current = inline;
+    onInlineModelAvailable?.(previewIdentity, documentId, reviewId, operations);
+  }, [editor, inline, draftGeneration, documentId, onInlineModelAvailable]);
 }
