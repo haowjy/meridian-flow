@@ -252,6 +252,7 @@ async function execute(
           const request = {
             draftId: draft.draftId,
             operationIds: [...command.selection.operationIds],
+            ...(mode === "discard" ? { closureClassIds: [...command.selection.classIds] } : {}),
             liveRevisionToken: command.basis.liveRevisionToken,
             draftRevisionToken: command.basis.draftRevisionToken,
           };

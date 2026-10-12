@@ -180,6 +180,7 @@ export async function handleDiscardWorkDraftRequest(
     documentId: DocumentId;
     draftId: string;
     userId: UserId;
+    closureClassIds?: string[];
     operationIds?: string[];
     liveRevisionToken?: string;
     draftRevisionToken?: string;
@@ -269,6 +270,7 @@ function throwReadFailure(code: string): never {
 
 /** Presence chooses selective Discard; malformed selections can never widen its scope. */
 export function parseDraftDiscardSelection(input: {
+  closureClassIds?: unknown;
   operationIds?: unknown;
   liveRevisionToken?: unknown;
   draftRevisionToken?: unknown;
@@ -287,19 +289,27 @@ export function parseDraftDiscardSelection(input: {
       typeof input.liveRevisionToken !== "string" ||
       !input.liveRevisionToken ||
       typeof input.draftRevisionToken !== "string" ||
-      !input.draftRevisionToken
+      !input.draftRevisionToken ||
+      !Array.isArray(input.closureClassIds) ||
+      !input.closureClassIds.length ||
+      input.closureClassIds.some((id) => typeof id !== "string" || !id.trim())
     )
       return { status: "stale" };
     return {
       status: "ready",
       command: {
+        closureClassIds: input.closureClassIds,
         operationIds: input.operationIds,
         liveRevisionToken: input.liveRevisionToken,
         draftRevisionToken: input.draftRevisionToken,
       },
     };
   }
-  if (Object.hasOwn(input, "liveRevisionToken") || Object.hasOwn(input, "draftRevisionToken"))
+  if (
+    Object.hasOwn(input, "liveRevisionToken") ||
+    Object.hasOwn(input, "draftRevisionToken") ||
+    Object.hasOwn(input, "closureClassIds")
+  )
     throw createError({ statusCode: 400, message: "revision tokens require operationIds" });
   return { status: "ready", command: {} };
 }

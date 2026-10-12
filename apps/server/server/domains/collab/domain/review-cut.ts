@@ -7,6 +7,7 @@ import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
+  BranchPushCommitConflictError,
   branchJournalRevision,
   DraftChangeRefusal,
 } from "./branch-push-contracts.js";
@@ -94,7 +95,12 @@ export function selectReviewCut(
   model: YProsemirrorDocumentModel,
   snapshot: BranchSnapshot,
   rows: readonly BranchJournalRow[],
-  command: { operationIds: string[]; liveRevisionToken?: string; draftRevisionToken?: string },
+  command: {
+    operationIds: string[];
+    liveRevisionToken?: string;
+    draftRevisionToken?: string;
+    closureClassIds?: string[];
+  },
   requireCompleteClass: boolean,
 ) {
   // Selection must describe the exact basis the existing durability protocol
@@ -104,11 +110,13 @@ export function selectReviewCut(
     !bytesEqual(cut.branch.state, snapshot.state) ||
     branchJournalRevision(reviewRows(cut)) !== branchJournalRevision(rows)
   )
-    throw new DraftChangeRefusal("stale");
+    throw requireCompleteClass
+      ? new DraftChangeRefusal("stale")
+      : new BranchPushCommitConflictError(snapshot.branchId);
   const { preview } = deriveReviewCut(cut, model);
   if (
     command.liveRevisionToken !== preview.liveRevisionToken ||
-    command.draftRevisionToken !== preview.draftRevisionToken
+    (requireCompleteClass && command.draftRevisionToken !== preview.draftRevisionToken)
   )
     throw new DraftChangeRefusal("stale");
   if (requireCompleteClass && preview.isNewDocument) throw new DraftChangeRefusal("draft_only");
@@ -122,6 +130,17 @@ export function selectReviewCut(
     preview.operations.filter((op) => requested.has(op.operationId)).map((op) => op.closureClassId),
   );
   const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
+  if (!requireCompleteClass) {
+    // Discard names the closed members once. Unrelated branch admissions can
+    // move the observation token, but may neither veto nor widen this command.
+    const expected = new Set(command.closureClassIds);
+    if (
+      !expected.size ||
+      expected.size !== classes.size ||
+      [...classes].some((id) => !expected.has(id))
+    )
+      throw new DraftChangeRefusal("stale");
+  }
   if (
     selected.some(
       (op) =>

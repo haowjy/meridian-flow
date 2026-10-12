@@ -54,8 +54,11 @@ joining a caller's older tree snapshot. Returned bytes and scopes are detached;
 the snapshot closes before rich-difference derivation.
 
 The draft token hashes this observation, including both link views and history
-statuses. Selection also compares it with the branch and review rows supplied
-by the existing admission protocol; a mismatch refuses as stale. Admission's
+statuses. Apply fences that token; Discard fences the displayed closure class
+IDs instead, so independent draft typing cannot invalidate its selected members.
+Selection also compares the cut with the branch and review rows supplied
+by the existing admission protocol; a mismatch refuses Apply as stale and
+retries Discard through its snapshot-CAS owner. Admission's
 current authority and live revision fences remain unchanged. Corrupt preview
 reads return a typed `corrupt` refusal without resetting any state. The review
 error surface offers the addressed whole **Discard draft** command. Its existing
@@ -456,9 +459,13 @@ removal belongs to the row that actually removed it.
 
 Apply and Discard share one operation-to-closure resolver, run inside their
 branch critical section and again on each snapshot-CAS retry. Per-change Discard now
-requires the displayed live/draft revision tokens; missing or changed tokens
-return `stale` without modifying the draft. Discard still expands a requested
-operation to its entire server-vended class; Apply requires all class members.
+requires the displayed live revision and exact `closureClassIds`; missing
+admission evidence, a changed live revision, or changed class membership returns
+`stale` without modifying the draft. The draft revision is still carried as the
+displayed observation, but unrelated journal admissions do not veto Discard.
+Discard resolves operations to current classes and compares their complete
+membership tokens before selecting journal rows. Apply requires all class members
+and unchanged live/draft revision tokens.
 Whole-document Discard remains unfenced.
 
 ### Review read efficiency

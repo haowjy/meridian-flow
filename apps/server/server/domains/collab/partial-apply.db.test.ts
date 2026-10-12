@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
@@ -835,22 +835,17 @@ describe("ReviewCut concurrent capture (postgres)", () => {
     const appendedState = Y.encodeStateAsUpdate(proposed);
     const appendedVector = Y.encodeStateVector(proposed);
     proposed.destroy();
-    let insertedId: number | undefined;
     inject = async () => {
       await db.transaction(async (tx) => {
         if (mutation === "append") {
-          const [row] = await tx
-            .insert(schema.branchWriteJournal)
-            .values({
-              branchId: branch.branchId,
-              generation: original.generation,
-              source: "writer",
-              actorUserId: USER_ID,
-              updateData: Buffer.from(appended),
-              draftBaseUpdateSeq: 0,
-            })
-            .returning({ id: schema.branchWriteJournal.id });
-          insertedId = row.id;
+          await tx.insert(schema.branchWriteJournal).values({
+            branchId: branch.branchId,
+            generation: original.generation,
+            source: "writer",
+            actorUserId: USER_ID,
+            updateData: Buffer.from(appended),
+            draftBaseUpdateSeq: 0,
+          });
           await tx
             .update(schema.documentBranches)
             .set({ state: Buffer.from(appendedState), stateVector: Buffer.from(appendedVector) })
@@ -869,12 +864,16 @@ describe("ReviewCut concurrent capture (postgres)", () => {
       });
     };
     async function restore() {
-      if (insertedId !== undefined) {
-        await db
-          .delete(schema.branchWriteJournal)
-          .where(eq(schema.branchWriteJournal.id, insertedId));
-        insertedId = undefined;
-      }
+      // A successful selective Discard re-journals survivors in its successor
+      // generation. Restore this boundary's original fixture, not those aliases.
+      await db
+        .delete(schema.branchWriteJournal)
+        .where(
+          and(
+            eq(schema.branchWriteJournal.branchId, branch.branchId),
+            ne(schema.branchWriteJournal.id, firstId),
+          ),
+        );
       await db
         .update(schema.branchWriteJournal)
         .set({ status: "active" })
@@ -915,7 +914,14 @@ describe("ReviewCut concurrent capture (postgres)", () => {
             ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
             : await fixture.collab.draftReview.discardWorkDraft(request);
         enabled = false;
-        expect(result).toMatchObject({ status: "stale" });
+        expect(result).toMatchObject({
+          status: action === "discard" ? (mutation === "append" ? "discarded" : "gone") : "stale",
+        });
+        if (action === "discard" && mutation === "append") {
+          expect(await fixture.draftMarkdown(branch.branchId)).toBe(
+            "Alpha base.\n\nBeta base. Concurrent\n",
+          );
+        }
       }
       enabled = false;
       expect(seen).toBeGreaterThan(target);

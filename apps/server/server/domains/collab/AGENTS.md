@@ -12,8 +12,10 @@ editor UI or transport-shell policy.
 - A Work draft is shared by every thread editing the same document in that Work.
   Document Apply publishes its whole current branch. Per-change Apply and Discard
   share server-vended dependency-closed classes, never client-reconstructed turns.
-  Per-change Apply and Discard fence both preview revisions at durable commit;
-  document Apply and whole Discard remain unfenced.
+  Per-change Apply fences both preview revisions. Discard fences the live revision
+  and exact server-vended class membership, not unrelated draft typing. Both
+  use current-cut snapshot CAS at durable commit; document Apply and whole
+  Discard remain unfenced.
 - Writer source rows retain their identities through attribution. Only dependency
   closure owns change membership; block proximity never joins writer edits.
 - Independent deleting edits from separate chats stay separate: forward writes

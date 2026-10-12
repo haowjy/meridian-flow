@@ -100,12 +100,16 @@ it.each([
     const selection = {
       ...request,
       operationIds: preview.operations.map((operation) => operation.operationId),
+      closureClassIds: [
+        ...new Set(preview.operations.map((operation) => operation.closureClassId)),
+      ],
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
     };
-    await (command === "apply"
+    const disposition = await (command === "apply"
       ? f.collab.draftReview.applyWorkDraftChanges(selection)
       : f.collab.draftReview.discardWorkDraft(command === "discard-change" ? selection : request));
+    expect(disposition).toMatchObject({ status: command === "apply" ? "applied" : "discarded" });
     expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(0);
     const liveBeforeReplay = await harness.liveMarkdown(ALPHA_ID);
     const next = await f.branchCoordinator.readBranch(branch.branchId, async (doc, state) => ({
