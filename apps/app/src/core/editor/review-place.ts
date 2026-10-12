@@ -142,7 +142,7 @@ function resolvePoint(
  */
 export function captureReviewPlace(key: string, editor: Editor, focus: boolean): void {
   const pane = paneOf(editor);
-  if (!pane || !pane.clientHeight) return;
+  if (!pane?.clientHeight) return;
   try {
     const runtime = relativePositionRuntimeFromState(editor.state);
     const top = paneTop(pane);

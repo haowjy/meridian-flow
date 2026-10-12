@@ -50,10 +50,6 @@
   -webkit-user-select: none;
 }
 
-.meridian-editor .ProseMirror .meridian-review-restored > p + p {
-  margin-top: 0.9em;
-}
-
 /* Removed live text — a read-only widget (never document text) struck through
    where it used to be. Crimson when the AI removed it, gold when the writer
    did, so everything the writer did reads gold. Unselectable by design: the
@@ -133,6 +129,10 @@
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-block > p + p {
+  margin-top: 0.9em;
+}
+
+.meridian-editor .ProseMirror .meridian-review-restored > p + p {
   margin-top: 0.9em;
 }
 
