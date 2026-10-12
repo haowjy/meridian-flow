@@ -251,7 +251,6 @@ export function createThreadPeerCorePool(input: {
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
-  const activeResponseIds = new Map<ThreadId, Set<string>>();
   const responses = new Map<string, ResponseRecord>();
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
@@ -294,12 +293,13 @@ export function createThreadPeerCorePool(input: {
 
   async function evictIdleCores(): Promise<void> {
     while (cores.size > maxThreadCores) {
-      const oldest = [...cores.keys()].find((threadId) => !activeResponseIds.get(threadId)?.size);
+      const oldest = [...cores.keys()].find(
+        (threadId) => ![...responses.values()].some((record) => record.threadId === threadId),
+      );
       if (!oldest) break;
       const evicted = cores.get(oldest);
       await evicted?.invalidateThread("", oldest);
       cores.delete(oldest);
-      activeResponseIds.delete(oldest);
     }
   }
 
@@ -321,23 +321,22 @@ export function createThreadPeerCorePool(input: {
       reversals: new Map(),
     };
     responses.set(responseId, record);
-    if (id) {
-      const active = activeResponseIds.get(id) ?? new Set<string>();
-      active.add(responseId);
-      activeResponseIds.set(id, active);
-    }
     return record;
   }
 
   async function untrackResponse(responseId: string): Promise<void> {
-    const record = responses.get(responseId);
     responses.delete(responseId);
-    if (record?.threadId) {
-      const active = activeResponseIds.get(record.threadId);
-      active?.delete(responseId);
-      if (active?.size === 0) activeResponseIds.delete(record.threadId);
-    }
     await evictIdleCores();
+  }
+
+  // Residency is a cache; open response participants remain owners after eviction.
+  function ownersForThread(threadId: ThreadId): Set<AgentEditCore> {
+    const owners = new Set<AgentEditCore>();
+    const resident = cores.get(threadId);
+    if (resident) owners.add(resident);
+    for (const record of responses.values())
+      if (record.threadId === threadId) for (const core of record.participants) owners.add(core);
+    return owners;
   }
 
   function seenKey(threadId: string, documentId: DocumentId): string {
@@ -678,23 +677,27 @@ export function createThreadPeerCorePool(input: {
             lastSeen.delete(key);
           }
         }
-        const residentCore = cores.get(id);
-        try {
-          if (residentCore) await residentCore.invalidateThread(docId, threadId);
-        } catch (cause) {
-          errors.push(cause);
-        }
-        cores.delete(id);
-        activeResponseIds.delete(id);
-      } else {
-        for (const [id, core] of [...cores]) {
+        for (const core of ownersForThread(id)) {
           try {
-            await core.invalidateThread(docId, id);
+            await core.invalidateThread(docId, threadId);
           } catch (cause) {
             errors.push(cause);
           }
+        }
+        cores.delete(id);
+      } else {
+        const threads = new Set(cores.keys());
+        for (const record of responses.values()) if (record.threadId) threads.add(record.threadId);
+        for (const id of threads) {
+          for (const core of ownersForThread(id)) {
+            if (core === input.liveUtilityCore) continue; // Invalidated globally below.
+            try {
+              await core.invalidateThread(docId, id);
+            } catch (cause) {
+              errors.push(cause);
+            }
+          }
           cores.delete(id);
-          activeResponseIds.delete(id);
         }
         try {
           await input.liveUtilityCore.invalidateThread(docId, threadId);
