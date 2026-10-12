@@ -49,6 +49,7 @@ export function applyEdits(
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
   beforeSegment?: () => void,
+  certifySegment?: (segment: readonly ResolvedEdit[]) => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -87,6 +88,7 @@ export function applyEdits(
             failure = executePlan(doc, model, plan, accumulator);
             if (failure) break;
           }
+          if (!failure) certifySegment?.(segment);
         },
         origin,
       );

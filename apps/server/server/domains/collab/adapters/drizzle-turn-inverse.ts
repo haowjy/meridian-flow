@@ -15,6 +15,7 @@ import {
   type EditOrigin,
   works,
 } from "@meridian/database";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -219,10 +220,21 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           for (const edit of plan.computed.edits) {
             const receipts = [];
             for (const computedPart of edit.parts) {
-              Y.applyUpdate(view, computedPart.update);
-              const provenance = captureMutationUpdates(view, () =>
-                appendInverseRestorationFacts(view, computedPart.aliases),
-              );
+              const client =
+                Y.decodeUpdate(computedPart.update).structs[0]?.id.client ??
+                allocateDocumentClient(view);
+              const provenance = captureMutationUpdates(view, () => {
+                view.transact(() => {
+                  Y.applyUpdate(view, computedPart.update);
+                  const planningClient = view.clientID;
+                  view.clientID = client;
+                  try {
+                    appendInverseRestorationFacts(view, computedPart.aliases);
+                  } finally {
+                    view.clientID = planningClient;
+                  }
+                });
+              });
               const part = {
                 ...computedPart,
                 update: provenance.length

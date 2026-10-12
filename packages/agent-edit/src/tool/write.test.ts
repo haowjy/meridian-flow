@@ -539,7 +539,7 @@ describe("write tool dispatch", () => {
       { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
       context,
     );
-    expectOutcome(failed, "internal_error", true);
+    expectOutcome(failed, "partial_failure", true);
     expect(writeCertifiedFacts).toHaveBeenCalledOnce();
 
     const reread = await ctx.core.read({ file: "chapter.md" }, context);

@@ -1604,19 +1604,21 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const priorBlock = model.getBlocks(toDocHandle(doc))[0];
       const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-      const fact = doc
-        .getArray<{
-          target: { clientID: number; clock: number; length: number };
-          root: { clientID: number; clock: number; length: number };
-        }>(PROVENANCE_TARGETS_TYPE)
-        .toArray()
-        .find(
-          ({ target }) =>
-            source &&
-            target.clientID === source.clientID &&
-            target.clock <= source.clock &&
-            target.clock + target.length >= source.clock + source.length,
-        );
+      const facts = [
+        ...doc
+          .getMap<{
+            target: { clientID: number; clock: number; length: number };
+            root: { clientID: number; clock: number; length: number };
+          }>(PROVENANCE_TARGETS_TYPE)
+          .values(),
+      ];
+      const fact = facts.find(
+        ({ target }) =>
+          source &&
+          target.clientID === source.clientID &&
+          target.clock <= source.clock &&
+          target.clock + target.length >= source.clock + source.length,
+      );
       const replacement = markupCodec.parse(restored).blocks[0];
       if (!priorBlock || !source || !fact || !replacement) {
         throw new Error("carried checkpoint root is unavailable for restoration");

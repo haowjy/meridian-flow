@@ -58,12 +58,12 @@ describe("per-write journal encoding", () => {
       classes: 2,
     },
     {
-      name: "one chat retains its clock chain without a read",
+      name: "one chat keeps independent fresh-client writes without a read",
       sameChat: true,
       reread: false,
       sentence: false,
       dependent: false,
-      classes: 1,
+      classes: 2,
     },
     {
       name: "B edits text supplied by A",
