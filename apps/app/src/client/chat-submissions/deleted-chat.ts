@@ -86,7 +86,7 @@ export async function cleanDeletedChat(
       );
       const receipts = drafts.map((entry) => entry.recordId);
       const box = source.initialDraft;
-      if (box) {
+      if (box && serializeComposerDraft(box.doc).text) {
         snapshots.push(box);
         receipts.push(`deleted-box:${threadId}:${box.revision}`);
       }
