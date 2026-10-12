@@ -37,6 +37,13 @@ it("keeps backward-affecting Markdown in the same parse unit", () => {
     "first\n\nsecond\n\nthird",
     "\n\nfirst\n\nsecond",
     "```ts\nconst n = 1;\n\nconst m = 2;\n```\n\nafter",
+    "```txt\n> ```\n\nhello\n```\n\nafter",
+    "```txt\n    ```\n\nhello\n```\n\nafter",
+    "- ```mermaid\n  graph TD\n  A --> B\n  ```\n\nafter",
+    "> - ```mermaid\n>   graph TD\n>   A --> B\n>   ```\n\nafter",
+    "- parent\n  - inner\n\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n\nafter",
+    "````txt\n```\n\ncode\n  ````\n\nafter",
+    "```txt\n~~~\n\ncode\n```\n\nafter",
     "~~~~ts\n```\n\ncode\n~~~~\n\nafter",
     "- first\n\n  second paragraph\n\n  - nested\n\n- next\n\nafter",
     "> first\n\n> second\n\nafter",
@@ -102,4 +109,13 @@ it("shows every code append immediately and preserves blocks when the turn settl
   expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
   await render(<StreamingText text={"```ts\nconst reset = 7;"} />);
   expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");
+});
+
+it("tracks list-contained diagram closure and keeps checkboxes in settled units", () => {
+  const open = "- ```mermaid\n  graph TD\n  A --> B";
+  expect(splitMarkdownBlocks(open).openFence).toBe(true);
+  expect(splitMarkdownBlocks(`${open}\n  \`\`\``).openFence).toBe(false);
+  for (const first of ["- [x] first", "- [ ] first", "ordinary [brackets]"]) {
+    expect(splitMarkdownBlocks(`${first}\n\nsettled\n\ntail`).blocks).toHaveLength(3);
+  }
 });
