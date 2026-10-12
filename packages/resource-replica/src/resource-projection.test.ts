@@ -17,8 +17,8 @@ it("projects only the requesting project's durable location intention", () => {
   }).next;
   record.resource.canonical = {
     scheme: "user",
-    path: "/shared.md",
-    name: "shared.md",
+    path: "/shared",
+    name: "shared",
     workId: null,
   };
   const placed = planResourceLocation({
@@ -26,7 +26,7 @@ it("projects only the requesting project's durable location intention", () => {
     projectId: "project-a",
     intentId: "place",
     eligibleAt: 1,
-    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening" },
   });
   if (!placed) throw new Error("Expected placement");
 
@@ -39,12 +39,12 @@ it("projects only the requesting project's durable location intention", () => {
     })),
   ).toMatchObject({
     scheme: "manuscript",
-    path: "/chapters/opening.md",
+    path: "/chapters/opening",
     provisional: false,
   });
   expect(projectResourceLocation("project-b", placed.next)).toMatchObject({
     scheme: "user",
-    path: "/shared.md",
+    path: "/shared",
   });
   // Lowest-level contract: naming remains complete after placement ownership retires.
   const settled = placed.next;
@@ -65,11 +65,11 @@ it("projects only the requesting project's durable location intention", () => {
       command: {
         destinationParent: { kind: "folder" as const, folderId: "chapters" },
         kind: "move",
-        sourceUri: "user://shared.md",
-        destinationUri: "manuscript://chapters/opening.md",
+        sourceUri: "user://shared",
+        destinationUri: "manuscript://chapters/opening",
         expected: { kind: "file", nodeId: "document" },
       },
-      result: { ok: true, value: { destinationPath: "chapters/opening.md" } },
+      result: { ok: true, value: { destinationPath: "chapters/opening" } },
     },
   });
   if (!received) throw new Error("Missing filing outcome");
@@ -79,12 +79,12 @@ it("projects only the requesting project's durable location intention", () => {
   intent.state = "settled";
   received.next.resource.canonical = {
     scheme: "manuscript",
-    path: "/moved/opening.md",
-    name: "opening.md",
+    path: "/moved/opening",
+    name: "opening",
     workId: null,
   };
   expect(projectResourceLocation("project-a", received.next)).toMatchObject({
-    path: "/moved/opening.md",
+    path: "/moved/opening",
     provisional: false,
   });
 });
@@ -138,7 +138,7 @@ it("projects link-created suffix folders once per home, following the anchor unt
       destination: {
         parent: { kind: "folder", folderId: "anchor" },
         createFolders: ["New Arc", "Part 1"],
-        name: `${id}.md`,
+        name: `${id}`,
       },
     });
     if (!planned) throw new Error("Missing filing");
@@ -147,8 +147,8 @@ it("projects link-created suffix folders once per home, following the anchor unt
   const catalog = [
     entries[0],
     anchor,
-    node("first", "first.md", "s", "file"),
-    node("second", "second.md", "s", "file"),
+    node("first", "first", "s", "file"),
+    node("second", "second", "s", "file"),
   ];
   const rows = createResourcePlacement("p", catalog, [anchorMove]).projectCatalog(catalog, records);
   expect(
@@ -157,8 +157,8 @@ it("projects link-created suffix folders once per home, following the anchor unt
     ),
   ).toEqual(["Renamed/New Arc", "Renamed/New Arc/Part 1"]);
   expect(rows.filter((row) => row.kind === "file").map((row) => row.path.join("/"))).toEqual([
-    "Renamed/New Arc/Part 1/first.md",
-    "Renamed/New Arc/Part 1/second.md",
+    "Renamed/New Arc/Part 1/first",
+    "Renamed/New Arc/Part 1/second",
   ]);
   const real = [
     ...catalog,

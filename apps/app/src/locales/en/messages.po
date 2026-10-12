@@ -350,8 +350,16 @@ msgid "A file named {0} already exists in this location."
 msgstr "A file named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
-msgstr "A file named {trimmed} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr "A file named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
+msgstr "A file named {name} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr "A file named {trimmed} already exists in this location."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +367,16 @@ msgid "A folder named {0} already exists in this location."
 msgstr "A folder named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
-msgstr "A folder named {trimmed} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr "A folder named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
+msgstr "A folder named {name} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr "A folder named {trimmed} already exists in this location."
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -512,6 +528,10 @@ msgstr "All chats"
 msgid "All Work"
 msgstr "All Work"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "All your devices"
+msgstr "All your devices"
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Already in {0}"
@@ -520,6 +540,10 @@ msgstr "Already in {0}"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
+msgstr "An entry named {name} already exists in this location."
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -788,8 +812,8 @@ msgstr "Chats in this Work share its goal and scratch files."
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr "Check submission status"
+#~ msgid "Check submission status"
+#~ msgstr "Check submission status"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1107,6 +1131,7 @@ msgstr "Couldn't check Work"
 msgid "Couldn't compact"
 msgstr "Couldn't compact"
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
@@ -1345,6 +1370,7 @@ msgstr "Couldn’t save the goal. Try again."
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
@@ -1361,7 +1387,10 @@ msgstr "Couldn't send a message to {line}"
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "Couldn't send your message."
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
@@ -2404,11 +2433,6 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
-#. placeholder {0}: entry.name
-#: src/features/project/context/EntryMovePicker.tsx
-#~ msgid "Move {0}"
-#~ msgstr "Move {0}"
-
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Move {name}"
 msgstr "Move {name}"
@@ -2454,6 +2478,14 @@ msgstr "Move…"
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
 msgstr "Moved to {0}"
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr "Moved to composer."
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
+msgstr "Moved to the message box."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -2981,6 +3013,7 @@ msgid "Reason: {0}"
 msgstr "Reason: {0}"
 
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr "Recent"
 
@@ -3122,8 +3155,12 @@ msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopens your last document and chat when you switch devices"
-msgstr "Reopens your last document and chat when you switch devices"
+msgid "Reopens the documents you had open when you switch devices."
+msgstr "Reopens the documents you had open when you switch devices."
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Reopens your last document and chat when you switch devices"
+#~ msgstr "Reopens your last document and chat when you switch devices"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3175,8 +3212,12 @@ msgid "Restoring"
 msgstr "Restoring"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume where I left off on any device"
-msgstr "Resume where I left off on any device"
+msgid "Resume my documents on any device"
+msgstr "Resume my documents on any device"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Resume where I left off on any device"
+#~ msgstr "Resume where I left off on any device"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -3526,8 +3567,8 @@ msgstr "Start a Work"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr "Start over"
+#~ msgid "Start over"
+#~ msgstr "Start over"
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"
@@ -3840,6 +3881,14 @@ msgstr "Theme"
 #: src/core/editor/images/image-uploads.ts
 msgid "There is nowhere left to put that picture."
 msgstr "There is nowhere left to put that picture."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences follow your account wherever you sign in."
+msgstr "These preferences follow your account wherever you sign in."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences stay on this device to suit your screen."
+msgstr "These preferences stay on this device to suit your screen."
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"

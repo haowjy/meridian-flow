@@ -50,7 +50,7 @@ function local(): ResourceRecord {
   };
 }
 
-function createOutcome(name = "Untitled.md"): Extract<NamespaceOutcome, { kind: "create" }> {
+function createOutcome(name = "Untitled"): Extract<NamespaceOutcome, { kind: "create" }> {
   return {
     kind: "create",
     result: {
@@ -180,8 +180,8 @@ describe("namespace record transitions", () => {
     expect(settled?.next.resource).toMatchObject({
       canonical: {
         scheme: "unfiled",
-        path: "/drafts/Untitled.md",
-        name: "Untitled.md",
+        path: "/drafts/Untitled",
+        name: "Untitled",
         workId: null,
       },
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
@@ -205,8 +205,8 @@ describe("namespace record transitions", () => {
     const before = local();
     before.resource.canonical = {
       scheme: "unfiled",
-      path: "/drafts/Document.md",
-      name: "Document.md",
+      path: "/drafts/Document",
+      name: "Document",
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "old" };
@@ -230,7 +230,7 @@ describe("namespace record transitions", () => {
       operationId: "operation",
       command: {
         kind: "delete",
-        uri: "unfiled://drafts/Document.md",
+        uri: "unfiled://drafts/Document",
         expected: { kind: "file", documentId: "document" },
       },
       result: {
@@ -261,8 +261,8 @@ describe("namespace record transitions", () => {
     const before = local();
     before.resource.canonical = {
       scheme: "unfiled",
-      path: "/before.md",
-      name: "before.md",
+      path: "/before",
+      name: "before",
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
@@ -272,7 +272,8 @@ describe("namespace record transitions", () => {
         intentId: "move",
         desired: {
           kind: "set-location",
-          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after.md" },
+          typedName: "after",
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after" },
         },
       },
     ];
@@ -292,13 +293,13 @@ describe("namespace record transitions", () => {
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
-          sourceUri: "unfiled://before.md",
-          destinationUri: "manuscript://chapters/after.md",
+          sourceUri: "unfiled://before",
+          destinationUri: "manuscript://chapters/after",
           expected: { kind: "file", nodeId: "document" },
         },
         result: {
           ok: true,
-          value: { movedNodeId: "document", destinationPath: "chapters/after.md" },
+          value: { movedNodeId: "document", destinationPath: "chapters/after" },
         },
       },
     });
@@ -308,8 +309,8 @@ describe("namespace record transitions", () => {
     );
     received.next.resource.canonical = {
       scheme: "manuscript",
-      path: "/externally-renamed.md",
-      name: "externally-renamed.md",
+      path: "/externally-renamed",
+      name: "externally-renamed",
       workId: null,
     };
     const settled = settleNamespaceOutcome(received.next);
@@ -325,8 +326,8 @@ describe("namespace record transitions", () => {
     const before = local();
     before.resource.canonical = {
       scheme: "unfiled",
-      path: "/before.md",
-      name: "before.md",
+      path: "/before",
+      name: "before",
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
@@ -336,7 +337,8 @@ describe("namespace record transitions", () => {
         intentId: "move",
         desired: {
           kind: "set-location",
-          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after.md" },
+          typedName: "after",
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after" },
         },
       },
       {
@@ -362,13 +364,13 @@ describe("namespace record transitions", () => {
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
-          sourceUri: "unfiled://before.md",
-          destinationUri: "manuscript://chapters/after.md",
+          sourceUri: "unfiled://before",
+          destinationUri: "manuscript://chapters/after",
           expected: { kind: "file", nodeId: "document" },
         },
         result: {
           ok: true,
-          value: { movedNodeId: "document", destinationPath: "chapters/after.md" },
+          value: { movedNodeId: "document", destinationPath: "chapters/after" },
         },
       },
     });
@@ -390,8 +392,8 @@ describe("namespace record transitions", () => {
       operationId: "move-operation",
       location: {
         scheme: "manuscript",
-        path: "/chapters/after.md",
-        name: "after.md",
+        path: "/chapters/after",
+        name: "after",
         workId: null,
       },
     });
@@ -408,7 +410,7 @@ describe("namespace record transitions", () => {
     expect(deletion?.next.intents[1]?.attempts[0]?.request).toMatchObject({
       kind: "delete",
       scheme: "manuscript",
-      body: { path: "chapters/after.md" },
+      body: { path: "chapters/after" },
     });
   });
 
@@ -416,8 +418,8 @@ describe("namespace record transitions", () => {
     const before = local();
     before.resource.canonical = {
       scheme: "unfiled",
-      path: "/before.md",
-      name: "before.md",
+      path: "/before",
+      name: "before",
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
@@ -444,7 +446,7 @@ describe("namespace record transitions", () => {
           operationId: "operation",
           command: {
             kind: "delete",
-            uri: "unfiled://replacement.md",
+            uri: "unfiled://replacement",
             expected: { kind: "file", documentId: "document" },
           },
           result: {
@@ -464,8 +466,8 @@ describe("namespace record transitions", () => {
     const before = local();
     before.resource.canonical = {
       scheme: "scratch",
-      path: "/note.md",
-      name: "note.md",
+      path: "/note",
+      name: "note",
       workId: "work-a",
       workSlug: "alpha",
     };
@@ -493,7 +495,7 @@ describe("namespace record transitions", () => {
           operationId: "operation",
           command: {
             kind: "delete",
-            uri: "scratch://@beta/note.md",
+            uri: "scratch://@beta/note",
             expected: { kind: "file", documentId: "document" },
           },
           result: {
@@ -515,8 +517,8 @@ describe("a chat's Scratch owner", () => {
     const record = local();
     record.resource.canonical = {
       scheme: "scratch",
-      path: "/duel/beats.md",
-      name: "beats.md",
+      path: "/duel/beats",
+      name: "beats",
       workId: null,
       rootThreadId: "root-c12",
       rootThreadRef: "c12",
@@ -533,9 +535,10 @@ describe("a chat's Scratch owner", () => {
         intentId: "move-out",
         desired: {
           kind: "set-location",
+          typedName: "beats",
           destination: {
             parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
-            name: "beats.md",
+            name: "beats",
           },
         },
       },
@@ -595,7 +598,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c12/duel/beats.md"),
+        receipt("scratch://@/c12/duel/beats"),
       ),
     ).not.toThrow();
     expect(() =>
@@ -603,7 +606,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c40/duel/beats.md"),
+        receipt("scratch://@/c40/duel/beats"),
       ),
     ).toThrow("does not match current attempt");
   });
@@ -649,8 +652,8 @@ describe("namespace reconciliation", () => {
         status: "already-materialized" as const,
         documentId: "document",
         scheme: "unfiled" as const,
-        path: "/drafts/Untitled.md",
-        name: "Untitled.md",
+        path: "/drafts/Untitled",
+        name: "Untitled",
       },
     }));
     await expect(
@@ -727,8 +730,8 @@ it.each([
   const before = local();
   before.resource.canonical = {
     scheme: "scratch",
-    path: "/before.md",
-    name: "before.md",
+    path: "/before",
+    name: "before",
     workId: "work",
     workSlug: "notes",
   };
@@ -739,9 +742,10 @@ it.each([
       intentId: "move",
       desired: {
         kind: "set-location",
+        typedName: "after",
         destination: {
           parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
-          name: "after.md",
+          name: "after",
         },
       },
     },
@@ -776,8 +780,8 @@ it.each([
                     owner: { workId: "work", workSlug: "notes" },
                   },
                   kind: "move",
-                  sourceUri: "scratch://@notes/before.md",
-                  destinationUri: "scratch://@notes/after.md",
+                  sourceUri: "scratch://@notes/before",
+                  destinationUri: "scratch://@notes/after",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -786,7 +790,7 @@ it.each([
                     code: "context_unavailable",
                     reason,
                     workSlug: "notes",
-                    uri: "scratch://@notes/after.md",
+                    uri: "scratch://@notes/after",
                   },
                 },
               },
@@ -795,14 +799,14 @@ it.each([
   });
   expect(result).toBe("needs-repair");
   expect(store.record.resource.identity.documentId).toBe("document");
-  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before");
   expect(projectResourceNeedsRepair("project", store.record)).toEqual({
     intentId: "move",
     kind: "set-location",
-    name: "after.md",
+    name: "after",
     destination: {
       parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
-      name: "after.md",
+      name: "after",
     },
   });
   const noReplay = vi.fn();
@@ -846,16 +850,16 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@notes/before.md",
+              uri: "scratch://@notes/before",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before.md" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before" } },
           },
         }),
       }),
     }),
   ).toBe("needs-repair");
-  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before");
   expect(projectResourceNeedsRepair("project", store.record)?.kind).toBe("delete");
 });
 
@@ -863,8 +867,8 @@ it("restores a rejected delete after retry and admits another delete", async () 
   const before = local();
   before.resource.canonical = {
     scheme: "scratch",
-    path: "/note.md",
-    name: "note.md",
+    path: "/note",
+    name: "note",
     workId: "work",
     workSlug: "alpha",
   };
@@ -892,23 +896,23 @@ it("restores a rejected delete after retry and admits another delete", async () 
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
-                uri: "scratch://@alpha/note.md",
+                uri: "scratch://@alpha/note",
                 expected: { kind: "file", documentId: "document" },
               },
-              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note.md" } },
+              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note" } },
             },
           }),
         }),
       }),
     ).toBe("needs-repair");
-    expect(projectResourceLocation("project", store.record)?.path).toBe("/note.md");
+    expect(projectResourceLocation("project", store.record)?.path).toBe("/note");
   }
   expect(planResourceDeletion(store.record, "project", "delete-3")).not.toBeNull();
 });
 
 it("offers the latest queued file name after refusal and retries from accepted placement", () => {
   const before = local();
-  const source = { scheme: "manuscript" as const, path: "/A.md", name: "A.md", workId: null };
+  const source = { scheme: "manuscript" as const, path: "/A", name: "A", workId: null };
   before.resource.canonical = source;
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [];
@@ -928,18 +932,18 @@ it("offers the latest queued file name after refusal and retries from accepted p
     validateResourceRecordUpdate(record, write.next);
     return write.next;
   };
-  const renamed = location(before, "B.md");
+  const renamed = location(before, "B");
   const submitted = prepareNamespaceAttempt(
     renamed,
-    { attemptId: "attempt", operationId: "B.md" },
+    { attemptId: "attempt", operationId: "B" },
     (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
   );
   if (!submitted) throw new Error("Missing submission");
-  const queued = location(submitted.next, "C.md");
-  const received = recordNamespaceOutcome(queued, "B.md", "attempt", {
+  const queued = location(submitted.next, "C");
+  const received = recordNamespaceOutcome(queued, "B", "attempt", {
     kind: "operation",
     receipt: {
-      operationId: "B.md",
+      operationId: "B",
       command: {
         destinationParent: {
           kind: "root" as const,
@@ -947,11 +951,11 @@ it("offers the latest queued file name after refusal and retries from accepted p
           owner: { workId: null },
         },
         kind: "move",
-        sourceUri: "manuscript://A.md",
-        destinationUri: "manuscript://B.md",
+        sourceUri: "manuscript://A",
+        destinationUri: "manuscript://B",
         expected: { kind: "file", nodeId: "document" },
       },
-      result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+      result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
     },
   });
   if (!received) throw new Error("Missing receipt");
@@ -963,12 +967,12 @@ it("offers the latest queued file name after refusal and retries from accepted p
   expect(projectResourceLocation("project", reopened)).toEqual({ ...source, provisional: false });
   const offered = projectResourceNeedsRepair("project", reopened);
   expect(offered).toEqual({
-    intentId: "B.md",
+    intentId: "B",
     kind: "set-location",
-    name: "C.md",
+    name: "C",
     destination: {
       parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
-      name: "C.md",
+      name: "C",
     },
   });
   if (!offered) throw new Error("Missing offered repair");
@@ -993,7 +997,7 @@ it("offers the latest queued file name after refusal and retries from accepted p
   );
   if (!retry) throw new Error("Missing retry");
   expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
-    body: { path: "A.md", newName: "C.md" },
+    body: { path: "A", newName: "C" },
   });
   expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });
@@ -1003,7 +1007,7 @@ it.each([
   true,
 ])("deletes canonical file after an overlapping move refusal (%s)", (receiptless) => {
   const before = local();
-  before.resource.canonical = { scheme: "manuscript", path: "/A.md", name: "A.md", workId: null };
+  before.resource.canonical = { scheme: "manuscript", path: "/A", name: "A", workId: null };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [];
   const move = planResourceLocation({
@@ -1014,7 +1018,7 @@ it.each([
     eligibleAt: 1,
     destination: {
       parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
-      name: "B.md",
+      name: "B",
     },
   });
   if (!move) throw new Error("Missing move");
@@ -1052,11 +1056,11 @@ it.each([
               owner: { workId: null },
             },
             kind: "move",
-            sourceUri: "manuscript://A.md",
-            destinationUri: "manuscript://B.md",
+            sourceUri: "manuscript://A",
+            destinationUri: "manuscript://B",
             expected: { kind: "file", nodeId: "document" },
           },
-          result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+          result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
         },
       };
   const received = recordNamespaceOutcome(deletion.next, "move", "attempt", outcome);
@@ -1079,7 +1083,7 @@ it.each([
   if (!retry) throw new Error("Missing delete dispatch");
   expect(retry.next.intents.at(-1)?.attempts[0]?.request).toMatchObject({
     kind: "delete",
-    body: { path: "A.md", expected: { kind: "file", documentId: "document" } },
+    body: { path: "A", expected: { kind: "file", documentId: "document" } },
   });
 });
 
@@ -1093,7 +1097,7 @@ it("refuses a move receipt for a different captured destination parent", () => {
       destinationWorkSlug: null,
       body: {
         operationId: "operation",
-        path: "A.md",
+        path: "A",
         expected: { kind: "file", nodeId: "document" },
         destinationScheme: "manuscript",
         destinationFolderPath: "B",
@@ -1107,12 +1111,12 @@ it("refuses a move receipt for a different captured destination parent", () => {
       operationId: "operation",
       command: {
         kind: "move",
-        sourceUri: "manuscript://A.md",
-        destinationUri: "manuscript://B/A.md",
+        sourceUri: "manuscript://A",
+        destinationUri: "manuscript://B/A",
         expected: { kind: "file", nodeId: "document" },
         destinationParent: { kind: "folder", folderId: "replacement" },
       },
-      result: { ok: true, value: { destinationPath: "B/A.md" } },
+      result: { ok: true, value: { destinationPath: "B/A" } },
     },
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
@@ -1125,8 +1129,8 @@ it("matches immutable identity moves after the destination's path and owner chan
   const before = local();
   before.resource.canonical = {
     scheme: "unfiled",
-    path: "/before.md",
-    name: "before.md",
+    path: "/before",
+    name: "before",
     workId: null,
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
@@ -1136,7 +1140,8 @@ it("matches immutable identity moves after the destination's path and owner chan
       intentId: "move",
       desired: {
         kind: "set-location",
-        destination: { parent: { kind: "folder", folderId: "parent" }, name: "before.md" },
+        typedName: "before",
+        destination: { parent: { kind: "folder", folderId: "parent" }, name: "before" },
       },
     },
   ];
@@ -1153,12 +1158,12 @@ it("matches immutable identity moves after the destination's path and owner chan
         operationId: "operation",
         command: {
           kind: "move",
-          sourceUri: "unfiled://before.md",
-          destinationUri: "manuscript://Renamed/before.md",
+          sourceUri: "unfiled://before",
+          destinationUri: "manuscript://Renamed/before",
           destinationParent: { kind: "folder", folderId: "parent" },
           expected: { kind: "file", nodeId: "document" },
         },
-        result: { ok: true, value: { destinationPath: "Renamed/before.md" } },
+        result: { ok: true, value: { destinationPath: "Renamed/before" } },
       },
     }),
   ).not.toThrow();
@@ -1166,7 +1171,7 @@ it("matches immutable identity moves after the destination's path and owner chan
 
 it("retains a missing-folder suffix in immutable transport and receipt matching", () => {
   const record = local();
-  record.resource.canonical = { scheme: "unfiled", path: "/A.md", name: "A.md", workId: null };
+  record.resource.canonical = { scheme: "unfiled", path: "/A", name: "A", workId: null };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   record.intents = [
     {
@@ -1174,10 +1179,11 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
       intentId: "move",
       desired: {
         kind: "set-location",
+        typedName: "A",
         destination: {
           parent: { kind: "folder", folderId: "anchor" },
           createFolders: ["New Arc", "Part 1"],
-          name: "A.md",
+          name: "A",
         },
       },
     },
@@ -1206,8 +1212,8 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
       operationId: "operation",
       command: {
         kind: "move",
-        sourceUri: "unfiled://A.md",
-        destinationUri: "kb://Renamed/New Arc/Part 1/A.md",
+        sourceUri: "unfiled://A",
+        destinationUri: "kb://Renamed/New Arc/Part 1/A",
         expected: { kind: "file", nodeId: "document" },
         destinationParent: {
           kind: "folder",
@@ -1215,7 +1221,7 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
           createFolders: ["New Arc", "Part 1"],
         },
       },
-      result: { ok: true, value: { destinationPath: "Renamed/New Arc/Part 1/A.md" } },
+      result: { ok: true, value: { destinationPath: "Renamed/New Arc/Part 1/A" } },
     },
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
@@ -1226,4 +1232,126 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
     createFolders: ["Part 1"],
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
+});
+
+describe("a name the writer typed with a prose suffix", () => {
+  const moveReceipt = (operationId: string, sourceUri: string, destinationUri: string) =>
+    ({
+      kind: "operation",
+      receipt: {
+        operationId,
+        command: {
+          kind: "move",
+          sourceUri,
+          destinationUri,
+          expected: { kind: "file", nodeId: "document" },
+          destinationParent: destinationUri.includes("/Book/")
+            ? { kind: "folder", folderId: "Book" }
+            : { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        },
+        result: { ok: true, value: { movedNodeId: "document", destinationPath: "x" } },
+      },
+    }) satisfies NamespaceOutcome;
+
+  function placed(canonicalName: string): ResourceRecord {
+    const record = local();
+    record.resource.canonical = {
+      scheme: "manuscript",
+      path: `/${canonicalName}`,
+      name: canonicalName,
+      workId: null,
+    };
+    record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    record.intents = [];
+    return record;
+  }
+
+  function submit(record: ResourceRecord, typed: string, folderPath = "") {
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "intent",
+      operationId: "operation",
+      eligibleAt: 1,
+      destination: {
+        parent: folderPath
+          ? { kind: "folder", folderId: "Book" }
+          : { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        name: typed,
+      },
+    });
+    if (!planned) throw new Error("Missing location command");
+    const prepared = prepareNamespaceAttempt(
+      planned.next,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      () => ({ scheme: "manuscript", path: "/Book", name: "Book", workId: null }),
+    );
+    if (!prepared) throw new Error("Missing submission");
+    return prepared.next;
+  }
+
+  it("is submitted and projected as the stored name, so the server's receipt is this attempt's", () => {
+    const submitted = submit(placed("Chapter 13"), "Chapter 14.md");
+    const intent = submitted.intents[0];
+    expect(intent?.desired).toMatchObject({ destination: { name: "Chapter 14" } });
+    expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14.md" } });
+    // The optimistic location is already the name the server answers with.
+    expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
+    expect(
+      recordNamespaceOutcome(
+        submitted,
+        "intent",
+        "attempt",
+        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Chapter 14.md"),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("moving a document under the name it has, typed with its suffix, asks for no rename", () => {
+    const submitted = submit(placed("Chapter 13"), "Chapter 13.md", "Book");
+    expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
+      body: { destinationFolderPath: "Book" },
+    });
+    expect(submitted.intents[0]?.attempts[0]?.request).toHaveProperty(
+      "body.newName",
+      "Chapter 13.md",
+    );
+    expect(
+      recordNamespaceOutcome(
+        submitted,
+        "intent",
+        "attempt",
+        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Book/Chapter 13.md"),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("keeps the extension of the file a bare name renames", () => {
+    const submitted = submit(placed("config.toml"), "settings");
+    expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
+      body: { newName: "settings" },
+    });
+  });
+
+  it("is stored for a new document too, with no source name to inherit from", () => {
+    const record = local();
+    record.intents = [];
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "intent",
+      operationId: "operation",
+      eligibleAt: 1,
+      destination: {
+        parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        name: "Chapter 13.md",
+      },
+    });
+    expect(planned?.next.intents[0]?.desired).toMatchObject({
+      destination: { name: "Chapter 13" },
+    });
+  });
 });

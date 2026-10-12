@@ -198,6 +198,7 @@ function localPlacement(): ResourceRecord {
         identityRevision: 1,
         desired: {
           kind: "set-location",
+          typedName: "Opening.md",
           destination: { parent: { kind: "folder", folderId: "chapters" }, name: "Opening.md" },
         },
         attempts: [],

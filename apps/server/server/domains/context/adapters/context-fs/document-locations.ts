@@ -1,4 +1,5 @@
 /** Transactional namespace claims and direct-to-identity document location history. */
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -14,6 +15,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
+import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 
 export type ContextNamespace = {
   projectId: string;
@@ -251,7 +253,7 @@ export async function recordDocumentMove(
   }
 }
 
-/** Caller holds the logical namespace lock; files and folders share rendered names. */
+/** Caller holds the logical namespace lock; folder aliases participate in document claims. */
 export async function hasOppositeContextEntry(
   db: Database,
   sourceId: string,
@@ -261,19 +263,17 @@ export async function hasOppositeContextEntry(
 ): Promise<boolean> {
   const tx = currentDrizzleDb(db);
   if (kind === "file") {
-    const [row] = await tx
-      .select({ id: folders.id })
+    const siblings = await tx
+      .select({ name: folders.name })
       .from(folders)
       .where(
         and(
           eq(folders.contextSourceId, sourceId),
           parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, filename),
           isNull(folders.deletedAt),
         ),
-      )
-      .limit(1);
-    return !!row;
+      );
+    return siblings.some((row) => folderDocumentName(row.name) === filename);
   }
   const [row] = await tx
     .select({ id: documents.id })
@@ -283,10 +283,63 @@ export async function hasOppositeContextEntry(
         eq(documents.contextSourceId, sourceId),
         contentDocumentPredicate(),
         parentId === null ? isNull(documents.folderId) : eq(documents.folderId, parentId),
-        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${filename}`,
+        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${folderDocumentName(filename)}`,
         isNull(documents.deletedAt),
       ),
     )
     .limit(1);
   return !!row;
+}
+
+/** Check the complete arriving Work tree before restoring either table. */
+export async function guardWorkContextRestore(db: Database, workId: string): Promise<void> {
+  const sources = await currentDrizzleDb(db)
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(eq(contextSources.workId, workId as never));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      sources.map((row) => row.id),
+    ),
+  );
+  const rows = await currentDrizzleDb(db).execute<{
+    source: string;
+    parent: string | null;
+    name: string;
+    kind: "file" | "folder";
+    arriving: boolean;
+  }>(sql`
+    SELECT d.context_source_id AS source, d.folder_id AS parent,
+      d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
+      'file' AS kind, coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
+    FROM documents d WHERE d.kind = 'content'
+      AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
+    UNION ALL
+    SELECT f.context_source_id, f.parent_id, f.name, 'folder',
+      coalesce(f.deleted_by_work_id = ${workId}::uuid, false)
+    FROM folders f WHERE f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
+  `);
+  const files = new Map<string, boolean>();
+  const directories = new Map<string, boolean>();
+  const folderAliases = new Map<string, boolean>();
+  const key = (row: (typeof rows)[number], name: string) =>
+    JSON.stringify([row.source, row.parent, name]);
+  for (const row of rows) {
+    const namespace = row.kind === "file" ? files : directories;
+    const literal = key(row, row.name);
+    if (namespace.has(literal) && (row.arriving || namespace.get(literal)))
+      throw new ContextEntryConflictError();
+    namespace.set(literal, row.arriving || namespace.get(literal) === true);
+    if (row.kind === "folder") {
+      const alias = key(row, folderDocumentName(row.name));
+      folderAliases.set(alias, row.arriving || folderAliases.get(alias) === true);
+    }
+  }
+  for (const [name, arriving] of files)
+    if (folderAliases.has(name) && (arriving || folderAliases.get(name)))
+      throw new ContextEntryConflictError();
 }

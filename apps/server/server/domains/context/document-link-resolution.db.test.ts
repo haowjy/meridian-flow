@@ -84,8 +84,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Manuscript",
       });
       await db.insert(documents).values([
-        { id: namedOnly, contextSourceId: source, name: "named", extension: "md" },
-        { id: noWorkOnly, contextSourceId: source, name: "no-work", extension: "md" },
+        { id: namedOnly, contextSourceId: source, name: "named", extension: "" },
+        { id: noWorkOnly, contextSourceId: source, name: "no-work", extension: "" },
       ]);
       const { createHarness } = await import(
         "../collab/test-support/change-trail-postgres-harness.js"
@@ -114,10 +114,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         };
         const links = [
-          { ref: `doc:${namedOnly}`, href: "manuscript://named.md" },
-          { ref: `doc:${noWorkOnly}`, href: "manuscript://no-work.md" },
+          { ref: `doc:${namedOnly}`, href: "manuscript://named" },
+          { ref: `doc:${noWorkOnly}`, href: "manuscript://no-work" },
         ];
-        for (const baseUri of [null, "scratch://@/c1/holder.md"]) {
+        for (const baseUri of [null, "scratch://@/c1/holder"]) {
           const response = await handleDocumentLinkResolveRequest(deps, {
             projectId: p,
             userId: u as never,
@@ -155,7 +155,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .insert(documents)
-        .values({ id: documentId, contextSourceId: sourceId, name, extension: "md" });
+        .values({ id: documentId, contextSourceId: sourceId, name, extension: "" });
       return documentId;
     }
     it("opens all canonical schemes, explicit other Work and no-Work targets", async () => {
@@ -170,7 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["uploads", noWork, "@/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
-        const uri = `${scheme}://${qualifier}Gate.md`;
+        const uri = `${scheme}://${qualifier}Gate`;
         expect(
           await r.resolve({ projectId: p, userId: u, workId: a, target: { kind: "scheme", uri } }),
         ).toMatchObject({
@@ -179,6 +179,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId,
         });
       }
+    });
+    it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
+      const r = resolver();
+      const data = await add("manuscript", "outline");
+      await database.current
+        .update(documents)
+        .set({ extension: "json", fileType: "json" })
+        .where(eq(documents.id, data));
+      const resolve = (path: string) =>
+        r.resolve({
+          projectId: p,
+          userId: u,
+          target: { kind: "scheme", uri: `manuscript://${path}` },
+        });
+      expect(await resolve("outline")).toMatchObject({
+        documentId: data,
+        uri: "manuscript://outline.json",
+      });
+      const prose = crypto.randomUUID();
+      const [row] = await database.current
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, data));
+      if (!row) throw new Error("Missing data fixture");
+      await database.current.insert(documents).values({
+        id: prose,
+        contextSourceId: row.contextSourceId,
+        name: "outline",
+        extension: "",
+      });
+      for (const path of ["outline", "outline.md", "outline.txt"])
+        expect(await resolve(path)).toMatchObject({
+          documentId: prose,
+          uri: "manuscript://outline",
+        });
+      expect(await resolve("outline.json")).toMatchObject({ documentId: data });
     });
     it("resolves a contextual address in the current Work only, and archived but not deleted authority", async () => {
       const r = resolver();
@@ -189,7 +225,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://Gate.md" },
+          target: { kind: "scheme", uri: "scratch://Gate" },
         }),
       ).toMatchObject({ documentId: local });
       expect(
@@ -197,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: null,
-          target: { kind: "scheme", uri: "scratch://Gate.md" },
+          target: { kind: "scheme", uri: "scratch://Gate" },
         }),
       ).toBeNull();
       await database.current.update(works).set({ archivedAt: new Date() }).where(eq(works.id, b));
@@ -206,16 +242,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate.md" },
+          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
         }),
-      ).toMatchObject({ scheme: "scratch", path: "Gate.md" });
+      ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
       expect(
         await r.resolve({
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate.md" },
+          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
         }),
       ).toBeNull();
       await database.current
@@ -237,13 +273,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
       if (!target) throw new Error("target fixture missing");
       const tree = new DrizzleContextTreeMutationStore(db);
-      const source = await tree.inspect(target.contextSourceId, "old.md");
+      const source = await tree.inspect(target.contextSourceId, "old");
       if (source?.kind !== "file") throw new Error("source fixture missing");
       expect(
         await tree.commitMove({
           source,
           destinationSourceId: target.contextSourceId,
-          destinationPath: "new.md",
+          destinationPath: "new",
           expectedTarget: { state: "absent" },
           overwrite: false,
           graduateProvisionalName: true,
@@ -254,12 +290,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const input = {
         projectId: p,
         userId: u,
-        target: { kind: "scheme" as const, uri: "manuscript://old.md" },
+        target: { kind: "scheme" as const, uri: "manuscript://old" },
       };
       const chat = { ...input, previousLocations: true };
       expect(await r.resolve(chat)).toMatchObject({
         documentId: targetId,
-        uri: "manuscript://new.md",
+        uri: "manuscript://new",
       });
       expect(await r.resolve(input)).toBeNull();
       const occupant = crypto.randomUUID();
@@ -267,7 +303,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: occupant,
         contextSourceId: target.contextSourceId,
         name: "old",
-        extension: "md",
+        extension: "",
       });
       expect(await r.resolve(chat)).toMatchObject({ documentId: occupant });
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
@@ -297,14 +333,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: note,
         contextSourceId: lineageSource,
         name: "note",
-        extension: "md",
+        extension: "",
       });
       const rows = [
-        { id: note, uri: "scratch://@/c1/note.md", workId: null, rootThreadId: root },
-        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named.md", workId: b },
-        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal.md", workId: noWork },
-        { id: await add("manuscript", "chapter"), uri: "manuscript://chapter.md", workId: null },
-        { id: await add("user", "personal"), uri: "user://personal.md", workId: null },
+        { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
+        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal", workId: noWork },
+        { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
+        { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
@@ -350,7 +386,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documents.id, live));
       const sibling = async (name: string) => {
         const id = crypto.randomUUID();
-        await db.insert(documents).values({ id, contextSourceId, name, extension: "md" });
+        await db.insert(documents).values({ id, contextSourceId, name, extension: "" });
         return id;
       };
       const deleted = await sibling("deleted");
@@ -372,7 +408,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .insert(documents)
-        .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "md" });
+        .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "" });
       const settled = crypto.randomUUID();
       const unsettled = crypto.randomUUID();
       const settledGone = crypto.randomUUID();
@@ -382,19 +418,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           aheadId: settledGone,
           projectId: p,
           scheme: "manuscript",
-          path: "deleted.md",
+          path: "deleted",
           settledDocumentId: deleted,
         },
         // Rule 4: unsettled, answered by the document at its exact address.
-        { aheadId: occupied, projectId: p, scheme: "manuscript", path: "live.md" },
+        { aheadId: occupied, projectId: p, scheme: "manuscript", path: "live" },
         {
           aheadId: settled,
           projectId: p,
           scheme: "manuscript",
-          path: "live.md",
+          path: "live",
           settledDocumentId: live,
         },
-        { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later.md" },
+        { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later" },
       ]);
       // A discarded draft creation keeps its row but no manifest lists it.
       const liveMembers = [live, deleted, secret];
@@ -426,26 +462,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: p,
         userId: u as never,
         request: {
-          baseUri: "manuscript://holder.md",
+          baseUri: "manuscript://holder",
           links: [
-            { ref: `doc:${live}`, href: "manuscript://old-live.md" },
-            { ref: `doc:${deleted}`, href: "manuscript://deleted.md" },
-            { ref: `doc:${discarded}`, href: "manuscript://discarded.md" },
-            { ref: `doc:${secret}`, href: "manuscript://secret.md" },
-            { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
-            { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
-            { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
-            { ref: `ahead:${settledGone}`, href: "manuscript://deleted.md" },
-            { ref: `ahead:${occupied}`, href: "manuscript://live.md" },
-            { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
-            { ref: null, href: "live.md" },
+            { ref: `doc:${live}`, href: "manuscript://old-live" },
+            { ref: `doc:${deleted}`, href: "manuscript://deleted" },
+            { ref: `doc:${discarded}`, href: "manuscript://discarded" },
+            { ref: `doc:${secret}`, href: "manuscript://secret" },
+            { ref: `doc:${foreign}`, href: "manuscript://foreign" },
+            { ref: `ahead:${settled}`, href: "manuscript://elsewhere" },
+            { ref: `ahead:${unsettled}`, href: "manuscript://later#scene" },
+            { ref: `ahead:${settledGone}`, href: "manuscript://deleted" },
+            { ref: `ahead:${occupied}`, href: "manuscript://live" },
+            { ref: "doc:not-a-uuid", href: "manuscript://live" },
+            { ref: null, href: "live" },
             { ref: null, href: "https://example.com" },
           ],
         },
       });
       const liveDocument = {
         state: "document",
-        document: { id: live, title: "live", scheme: "manuscript", path: "live.md" },
+        document: { id: live, title: "live", scheme: "manuscript", path: "live" },
         inDraft: false,
       };
       expect(response.answers).toMatchObject([
@@ -455,7 +491,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { state: "gone" },
         { state: "gone" },
         liveDocument,
-        { state: "missing", uri: "manuscript://later.md" },
+        { state: "missing", uri: "manuscript://later" },
         { state: "gone" },
         liveDocument,
         { state: "gone" },
@@ -491,7 +527,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         request: {
           rootThreadId: root,
           baseUri: null,
-          links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded.md" }],
+          links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
         },
       });
       expect(noWorkDraft.answers).toMatchObject([
@@ -515,7 +551,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             request: {
               baseUri: null,
               workId: foreignWork,
-              links: [{ ref: `doc:${live}`, href: "manuscript://live.md" }],
+              links: [{ ref: `doc:${live}`, href: "manuscript://live" }],
             },
           }),
         )

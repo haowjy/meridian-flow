@@ -54,6 +54,8 @@ interface PreparedContextMoveBase {
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
+  /** Resolved by the destination codec; null keeps an unregistered binary name. */
+  destinationFiletype?: Filetype | null;
   source: Extract<ContextLocationToken, { kind: "file" }>;
   /** The exact writer-location command ends provisional naming on commit. */
   graduateProvisionalName: boolean;
@@ -81,7 +83,7 @@ export type ContextTreeMutationError =
   | { code: "destination_missing" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "invalid_operation" }
   | { code: "not_found" };
 

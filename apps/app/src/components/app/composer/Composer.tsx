@@ -5,7 +5,7 @@ import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { ArrowUp, Paperclip, RotateCcw } from "lucide-react";
+import { ArrowUp, Paperclip } from "lucide-react";
 import {
   forwardRef,
   type ReactNode,
@@ -46,12 +46,12 @@ import {
   ComposerUploadNode,
   composerReferenceContent,
   composerSelection,
-  mergeComposerDraftSnapshots,
   plainComposerDoc,
   restoreComposerSelection,
   serializeComposerDraft,
 } from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
+import { useRestoredReferences } from "./useRestoredReferences";
 
 export type {
   ComposerDraftChange,
@@ -62,12 +62,6 @@ export type {
   ComposerSubmitEnvelope,
 } from "./composer-document";
 export { serializeComposerDraft } from "./composer-document";
-
-export type ComposerSubmitOutcome =
-  | Readonly<{ kind: "accepted"; submissionId: string; acceptedRevision: number }>
-  | Readonly<{ kind: "rejected"; submissionId: string; acceptedRevision: number }>
-  | Readonly<{ kind: "ambiguous"; submissionId: string; acceptedRevision: number }>
-  | Readonly<{ kind: "not-seen"; submissionId: string; acceptedRevision: number }>;
 
 export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
 
@@ -95,13 +89,9 @@ export type ComposerUploadPort = Readonly<{
 export type ComposerProps = {
   /** Hydrated before mounting; later prop changes never replace writer input. */
   initialDraft?: ComposerDraftSnapshot | null;
-  onSubmit: (
-    envelope: ComposerSubmitEnvelope,
-  ) => ComposerSubmitOutcome | Promise<ComposerSubmitOutcome>;
+  onSubmit: (envelope: ComposerSubmitEnvelope) => Promise<boolean>;
   onOpenReference?: (reference: AuthoritativeReference) => void;
   onDraftChange?: (change: ComposerDraftChange) => void;
-  onCheckSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
-  onRetireSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
@@ -134,20 +124,12 @@ export type ComposerHandle = {
   hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
-  restoreFailedSubmission: (
-    id: string,
-    submitted: ComposerDraftSnapshot,
-    later?: ComposerDraftSnapshot | null,
-    expectedRevision?: number,
-  ) => boolean;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
   const {
     onSubmit,
     onDraftChange,
-    onCheckSubmission,
-    onRetireSubmission,
     onStop,
     running = false,
     placeholder,
@@ -166,9 +148,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
   const revision = useRef(initialDraft?.revision ?? 0);
-  const restored = useRef(new Set<string>());
   const inFlight = useRef<ComposerSubmitEnvelope | null>(null);
-  const [quarantined, setQuarantined] = useState<ComposerSubmitEnvelope | null>(null);
   const mountedRef = useRef(true);
   const scopeRef = useRef(uploadScope);
   scopeRef.current = uploadScope;
@@ -183,7 +163,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
-  const [locked, setLocked] = useState(false);
   const [submitFailure, setSubmitFailure] = useState(false);
   const [hasContent, setHasContent] = useState(() => {
     if (!initialDraft) return false;
@@ -321,6 +300,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
     },
   });
+  useRestoredReferences(editor, initialDraft, referenceCatalog);
   useLayoutEffect(() => {
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);
@@ -378,17 +358,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       hasContent: () => hasContent,
       snapshot,
       restoreSnapshot,
-      restoreFailedSubmission: (id, submitted, later, expectedRevision) => {
-        if (expectedRevision !== undefined && expectedRevision !== revision.current) return false;
-        if (restored.current.has(id)) return true;
-        if (!editor || editor.isDestroyed) return false;
-        restored.current.add(id);
-        return restoreSnapshot(
-          later && later.revision > submitted.revision
-            ? mergeComposerDraftSnapshots(submitted, later)
-            : submitted,
-        );
-      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -399,42 +368,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     };
   }, []);
 
-  const settle = useCallback(
-    async (envelope: ComposerSubmitEnvelope, outcome: ComposerSubmitOutcome) => {
-      if (!editor || !mountedRef.current || editor.isDestroyed) return;
-      if (
-        outcome.submissionId !== envelope.submissionId ||
-        outcome.acceptedRevision !== envelope.acceptedRevision
-      )
-        return;
-      if (outcome.kind === "ambiguous" || outcome.kind === "not-seen") {
-        setQuarantined(envelope);
-        setLocked(true);
-        return;
-      }
-      setQuarantined((current) =>
-        current?.submissionId === envelope.submissionId ? null : current,
-      );
-      setLocked(false);
-      if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
-        editor.commands.clearContent(true);
-      }
-      if (outcome.kind === "rejected" && revision.current !== envelope.acceptedRevision) {
-        const later = snapshot();
-        restoreSnapshot(
-          later.revision > envelope.draft.revision
-            ? mergeComposerDraftSnapshots(envelope.draft, later)
-            : envelope.draft,
-        );
-      }
-      editor.commands.focus(undefined, { scrollIntoView: false });
-    },
-    [editor, restoreSnapshot, snapshot],
-  );
-
   async function submit() {
-    if (!editor || submitDisabled || pending || locked || inFlight.current || editor.isEmpty)
-      return;
+    if (!editor || submitDisabled || pending || inFlight.current || editor.isEmpty) return;
     const envelope = serializeComposerDraft(
       editor.getJSON(),
       revision.current,
@@ -451,19 +386,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       return;
     }
     inFlight.current = envelope;
-    const outcome = await Promise.resolve(onSubmit(envelope)).catch(
-      (): ComposerSubmitOutcome => ({
-        kind: "rejected",
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      }),
-    );
+    const recorded = await Promise.resolve(onSubmit(envelope)).catch(() => false);
     inFlight.current = null;
-    // A rejected send is not cleared: keep the draft and surface the local
-    // failure on the composer instead of silently dropping it.
-    setSubmitFailure(outcome.kind === "rejected");
-    await settle(envelope, outcome);
+    if (!mountedRef.current || editor.isDestroyed) return;
+    setSubmitFailure(!recorded);
+    if (recorded && revision.current === envelope.acceptedRevision) {
+      suppressDraftChangeRef.current = true;
+      editor.commands.clearContent(true);
+      suppressDraftChangeRef.current = false;
+    }
+    editor.commands.focus(undefined, { scrollIntoView: false });
   }
+
   async function attach(file: File, retryIntakeId?: string, retryPosition?: number) {
     if (!editor || !resolvedUploadPort || !scopeRef.current) return;
     const intakeId = retryIntakeId ?? crypto.randomUUID();
@@ -616,37 +550,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </Button>
           </>
         ) : null}
-        {quarantined && onCheckSubmission ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t`Check submission status`}
-            onClick={() =>
-              void onCheckSubmission(quarantined).then((result) => settle(quarantined, result))
-            }
-          >
-            <RotateCcw className="size-4" />
-          </Button>
-        ) : null}
-        {quarantined && onRetireSubmission ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t`Start over`}
-            onClick={() =>
-              void onRetireSubmission(quarantined).then((result) => settle(quarantined, result))
-            }
-          >
-            <span aria-hidden>×</span>
-          </Button>
-        ) : null}
+
         <Button
           type="button"
           size="icon-sm"
           onClick={() => (showStop ? onStop?.() : void submit())}
-          disabled={!showStop && (!hasContent || submitDisabled || pending > 0 || locked)}
+          disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
           aria-label={showStop ? t`Stop` : t`Send message`}
           aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
           className={running ? "relative rounded-full" : "rounded-field"}

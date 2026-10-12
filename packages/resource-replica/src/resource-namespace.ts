@@ -157,7 +157,7 @@ function requestFor(
         .filter(Boolean)
         .join("/"),
       ...owners.body,
-      ...(destination.name !== source.name ? { newName: destination.name } : {}),
+      newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
     },
   };
 }

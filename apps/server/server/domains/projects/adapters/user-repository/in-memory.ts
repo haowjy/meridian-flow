@@ -9,7 +9,6 @@ import {
 
 type UserRow = EnsureUserInput & {
   id: UserId;
-  workingSetSyncEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -33,31 +32,11 @@ export function createInMemoryUserRepository(): UserRepository {
       const row = {
         ...input,
         id: existing?.id ?? (randomUUID() as UserId),
-        workingSetSyncEnabled: existing?.workingSetSyncEnabled ?? true,
         createdAt: existing?.createdAt ?? timestamp,
         updatedAt: timestamp,
       };
       rowsByExternalId.set(input.externalId, row);
       return row.id;
-    },
-    async getWorkingSetSyncEnabled(userId: UserId): Promise<boolean> {
-      for (const row of rowsByExternalId.values()) {
-        if (row.id === userId) return row.workingSetSyncEnabled;
-      }
-      return true;
-    },
-    async updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean> {
-      for (const [externalId, row] of rowsByExternalId.entries()) {
-        if (row.id === userId) {
-          rowsByExternalId.set(externalId, {
-            ...row,
-            workingSetSyncEnabled: enabled,
-            updatedAt: now(),
-          });
-          return enabled;
-        }
-      }
-      throw new Error("User settings update did not find the authenticated user");
     },
   };
 }

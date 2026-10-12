@@ -78,7 +78,9 @@ up the folder's server-canonical location; an absent or terminal destination ent
 move repair without a fabricated transport attempt. Folder receipt matching uses
 that parent identity, creation suffix and leaf name rather than the parent's potentially changed
 path or owner. Root moves still match qualified URI authority. Source identity
-and URI remain immutable evidence.
+and URI remain immutable evidence. File intents retain typed names for immutable
+transport while the contracts filename codec supplies canonical optimistic names.
+Folder suffix names stay literal and share main's document-alias collision checks.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
 refresh obligation; a post-receipt catalog or exact-ID availability lookup may

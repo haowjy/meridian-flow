@@ -38,6 +38,8 @@ export type CatalogMenuSource = {
     rowId: string,
   ): { node: CatalogNode; catalog: CatalogContextView; owner: ContextOwner } | null;
   tree: DrillTree;
+  /** All listed catalogs have resolved; only then may the rail prune stale folders. */
+  ready: boolean;
   /** The tab a picked note opens as. */
   tabFor(rowId: string): ServerContextTab | null;
 };
@@ -54,7 +56,7 @@ function useScratchArea(
   projectId: string,
   source: ScratchSource | null,
   { listed, id }: { listed: boolean; id: string },
-): MenuArea | null {
+): (MenuArea & { complete: boolean }) | null {
   const primary = useContextCatalogView(projectId, "scratch", {
     ...(source?.owner ?? {}),
     enabled: source !== null,
@@ -62,7 +64,7 @@ function useScratchArea(
   const earlier = useContextCatalogView(projectId, "scratch", {
     ...contextOwner(null, source?.earlierRootThreadId),
     enabled: Boolean(source?.earlierRootThreadId),
-  }).catalog;
+  });
   return useMemo(
     () =>
       source
@@ -74,13 +76,14 @@ function useScratchArea(
             title: source.heading,
             icon: schemeIcon("scratch"),
             catalog: primary.catalog,
+            complete: primary.isComplete && (!source.earlierRootThreadId || earlier.isComplete),
             listed,
             earlier: source.earlierRootThreadId
-              ? { catalog: earlier, rootThreadId: source.earlierRootThreadId }
+              ? { catalog: earlier.catalog, rootThreadId: source.earlierRootThreadId }
               : undefined,
           }
         : null,
-    [earlier, id, listed, primary.catalog, source],
+    [earlier.catalog, earlier.isComplete, id, listed, primary.catalog, primary.isComplete, source],
   );
 }
 
@@ -109,6 +112,7 @@ export function useCatalogMenuSource({
   );
   return {
     tree,
+    ready: area?.complete ?? false,
     tabFor: (rowId) => menuTabFor(areas, rowId),
     entryFor: (rowId) => {
       const catalogs = area

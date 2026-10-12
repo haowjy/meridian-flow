@@ -12,6 +12,7 @@ import {
   type ContextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,7 +23,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { invalidContextEntryNameReason } from "./context-entry-name";
+import {
+  entryNameKey,
+  entryNameStemEnd,
+  invalidContextEntryNameReason,
+} from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
@@ -100,7 +105,8 @@ export function IdentityPlacementField({
   useEffect(() => {
     const input = inputRef.current;
     input?.focus();
-    if (input?.value) input.select();
+    // Only the part before a visible extension: `outline` in `outline.json`.
+    if (input?.value) input.setSelectionRange(0, entryNameStemEnd(input.value));
   }, []);
 
   useEffect(() => {
@@ -187,7 +193,9 @@ export function IdentityPlacementField({
     ? `${[schemeLabel(destination.scheme), ...treeSegments(destination.folderPath)].join("/")}/`
     : "";
 
-  const liveReason = noteValue.trim() ? invalidContextEntryNameReason(noteValue.trim()) : null;
+  const liveReason = noteValue.trim()
+    ? invalidContextEntryNameReason(noteValue.trim(), location.leaf)
+    : null;
   const localCollision = useMemo(
     () =>
       findCollision(
@@ -195,6 +203,7 @@ export function IdentityPlacementField({
         destination?.scheme ?? location.scheme,
         destination?.folderPath ?? location.parentPath,
         noteValue.trim(),
+        location.leaf,
         location.path,
       ),
     [allEntries, destination, location, noteValue],
@@ -251,7 +260,7 @@ export function IdentityPlacementField({
       setCommitReason(t`Name is required`);
       return;
     }
-    const reason = invalidContextEntryNameReason(name);
+    const reason = invalidContextEntryNameReason(name, location.leaf);
     if (reason) {
       setCommitReason(reason);
       setNoteValue(value);
@@ -263,6 +272,7 @@ export function IdentityPlacementField({
         destination?.scheme ?? location.scheme,
         destination?.folderPath ?? location.parentPath,
         name,
+        location.leaf,
         location.path,
       )
     ) {
@@ -426,13 +436,17 @@ function findCollision(
   entries: readonly AnnotatedFileSuggestion[],
   scheme: ProjectContextTreeScheme,
   folderPath: string,
-  name: string,
+  typed: string,
+  currentName: string,
   currentPath: string | null,
 ): LocalCollision {
-  if (!name) return null;
+  if (!typed) return null;
+  // The same name by the codec's spelling: `Chapter 12.md` finds `Chapter 12`.
+  const stored = storedFilename(typed, currentName);
+  const key = entryNameKey(stored.ok ? stored.name : typed);
   return (
     folderChildren(entries, scheme, folderPath).find(
-      (entry) => entry.name === name && entry.path !== currentPath,
+      (entry) => entryNameKey(entry.name) === key && entry.path !== currentPath,
     ) ?? null
   );
 }
@@ -466,7 +480,7 @@ function suggestionForSession(
     session.document.getXmlFragment(session.fragmentName),
   );
   if (!suggestion || tab.kind === "new") return suggestion;
-  const extensionIndex = tab.name.lastIndexOf(".");
-  const extension = extensionIndex > 0 ? tab.name.slice(extensionIndex) : "";
+  // The suggestion carries the file's visible extension (`.json`); a prose name has none.
+  const extension = tab.name.slice(entryNameStemEnd(tab.name));
   return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
 }

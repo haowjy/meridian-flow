@@ -61,3 +61,8 @@ documents. Only a delete receipt's exact IDs authorize that content transition.
 
 Install real catalog and recovery identities before completing missing ancestry.
 Synthetic ancestors are navigation-only and never own folder management actions.
+
+File location intents retain `typedName` independently of their canonical optimistic
+destination. Dispatch sends the typed name so an explicit prose suffix cannot be
+misread as source-extension inheritance. Receipt commands witness typed requests;
+the receipt result and optimistic location carry canonical stored names.

@@ -36,6 +36,7 @@ it.each([
               ? { kind: "delete" }
               : {
                   kind,
+                  typedName: id,
                   destination: {
                     parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
                     name: id,

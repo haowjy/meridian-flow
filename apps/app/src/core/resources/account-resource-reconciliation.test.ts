@@ -30,8 +30,8 @@ vi.mock("@/client/api/projects-api", () => ({
     status: "created",
     documentId: request.documentId,
     scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
+    path: "/Untitled",
+    name: "Untitled",
   }),
 }));
 
@@ -138,7 +138,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     databaseName = content.session.persistenceName ?? undefined;
     await replica.setLocation("project", reservation.key, {
       parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "serial" } },
-      name: "scene.md",
+      name: "scene",
     });
     // File first, type second, refuse third. The content owner is a real local Yjs session.
     content.session.document.getText("prose").insert(0, "The dragon survives.");
@@ -172,10 +172,10 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     expect(catalog.children(catalog.root.entryId)).toMatchObject([
       {
         kind: "file",
-        name: "Untitled.md",
+        name: "Untitled",
         provisionalName: false,
         namespaceFailure: "set-location",
-        namespaceRepairName: "scene.md",
+        namespaceRepairName: "scene",
       },
     ]);
   } finally {

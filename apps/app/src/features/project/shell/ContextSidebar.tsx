@@ -5,6 +5,8 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
+import { renderFilename } from "@meridian/contracts/protocol";
+import { Clock } from "lucide-react";
 import { useMemo } from "react";
 import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
@@ -14,7 +16,7 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
+import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
@@ -51,33 +53,34 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-          {/* The header names the panel (Recent), so the list carries no heading of its own. */}
-          {recent.status === "loading" ? (
-            <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
-          ) : recent.status === "error" ? (
-            <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
-          ) : recent.documents?.length ? (
-            <ul className="pt-1">
-              {recent.documents.map((document) => {
-                // The tree lists whole file names; the rail names files the same way.
-                const identity = identities.get(document.documentId);
-                // Match server Recent: deleted documents disappear, not cached-name ghosts.
-                if (identity === null) return null;
-                const fileName =
-                  identity?.name ??
-                  `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
-                return (
-                  <li key={document.documentId}>
-                    <RailFileRow
-                      icon={fileKindIcon(fileName)}
-                      name={fileName}
-                      title={identity?.path ?? fileName}
-                      onOpen={() => void openRecent(document.documentId)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+          {recent.status === "loading" || recent.status === "error" || recent.documents?.length ? (
+            <CollapsibleRailSection title={t`Recent`} icon={Clock} preferenceId="recent">
+              {recent.status === "loading" ? (
+                <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
+              ) : recent.status === "error" ? (
+                <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
+              ) : (
+                <ul>
+                  {recent.documents?.map((document) => {
+                    // The tree lists stored names (a prose document has no extension); the rail names files the same way.
+                    const identity = identities.get(document.documentId);
+                    if (identity === null) return null;
+                    const fileName =
+                      identity?.name ?? renderFilename(document.name, document.extension);
+                    return (
+                      <li key={document.documentId}>
+                        <RailFileRow
+                          icon={fileKindIcon(fileName)}
+                          name={fileName}
+                          title={identity?.path ?? fileName}
+                          onOpen={() => void openRecent(document.documentId)}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CollapsibleRailSection>
           ) : null}
         </div>
       </DockShell>

@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { readFirstSendSubmission } from "@/client/chat-submissions";
+import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -68,7 +68,7 @@ export type ChatNavigation = {
   /** The Chat screen: the current chat, or the index when there is none. */
   showChatScreen: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
   /** The Chat screen's index; in the dock, an empty composer. */
-  openNewChat: (workId?: string) => Promise<void>;
+  openNewChat: (workId?: string, options?: { replace?: boolean }) => Promise<void>;
   openChatIndex: () => Promise<void>;
   /** Open the dock, showing the chat or the document it holds. */
   revealDock: (view: DockReveal) => void;
@@ -124,8 +124,8 @@ export function useProjectChatNavigation({
   );
   const display = computeChatDisplay(activeScreen, urlChatId, currentThreadId);
   const surfaceThreadId = chatSurfaceThreadId(display);
-  const [recoveringFirstSend] = useState(
-    () => surfaceThreadId !== null && readFirstSendSubmission(accountId, surfaceThreadId) !== null,
+  const [recoveringFirstSend] = useState(() =>
+    isThreadAwaitingCreation(accountId, surfaceThreadId),
   );
   const [channels] = useState(createChannels);
   const [newChatRequest, setNewChatRequest] = useState<NewChatRequest | null>(null);
@@ -167,8 +167,11 @@ export function useProjectChatNavigation({
       openChatIndex,
       revealDock: (view: DockReveal) => channels.dockReveal.request(view),
       showChatScreen,
-      openNewChat: async (workId?: string) => {
-        if (onChatScreen()) return openChatIndex();
+      openNewChat: async (workId?: string, options?: { replace?: boolean }) => {
+        if (onChatScreen()) {
+          await go({ kind: "chat-index" }, { replace: options?.replace ?? false });
+          return;
+        }
         remember(null);
         channels.dockReveal.request("chat");
         setNewChatRequest({
@@ -194,7 +197,7 @@ export function useProjectChatNavigation({
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
   }, [urlChatId, remember]);
-  useMissingChatFallback(accountId, surfaceThreadId, () => {
+  useMissingChatFallback(surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "chat-index" }, { replace: true });
@@ -218,10 +221,8 @@ export function useProjectChatNavigation({
  * go. A 404 recorded before the chat was last pending creation is the benign
  * race of a first send, not a missing chat, even once the send is acknowledged.
  */
-function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
-  const pendingCreation = useIsThreadPendingCreation(threadId);
-  const firstSend = !!threadId && readFirstSendSubmission(accountId, threadId) !== null;
-  const pending = pendingCreation || firstSend;
+function useMissingChatFallback(threadId: string | null, onMissing: () => void) {
+  const pending = useIsThreadPendingCreation(threadId);
   const { error, errorUpdatedAt } = useQuery({
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,

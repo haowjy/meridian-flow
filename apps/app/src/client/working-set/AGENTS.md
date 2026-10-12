@@ -19,9 +19,10 @@ Key rules:
   reducer before any further push.
 - Sync consent fails closed — only a successfully resolved `true`
   enables the driver. The account-lifetime
-  `WorkingSetSyncPreferenceProvider` owns the confirmed value and calls
-  `configureWorkingSetSync`; the loader prop seeds it only before the first
-  local revision, so a stale loader echo cannot re-enable or disable sync.
+  `AccountSettingsProvider` owns the confirmed value and calls
+  `configureWorkingSetSync`. Pending or failed intents own the displayed choice;
+  confirmed values drive sync and are the only values relayed or cached.
+  Newer ordered reads may replace settled choices.
 - Hydration adoption runs once per mounted project identity in the project
   route bootstrap's layout commit, before `ReadableProjectRoute` mounts (and
   once more when a project being created receives its route data). Never

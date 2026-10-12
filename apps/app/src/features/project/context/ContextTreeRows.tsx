@@ -12,6 +12,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
+import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
@@ -45,8 +46,8 @@ export type TreeEnv = {
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   onRequestDelete: (target: DeleteTarget) => void;
-  isExpanded: (entryId: string, depth: number) => boolean;
-  toggleEntry: (entryId: string, defaultOpen: boolean) => void;
+  isExpanded: (entryId: string) => boolean;
+  toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
 };
 
@@ -74,7 +75,7 @@ export function TreeChildren({
 }) {
   const env = useTreeEnv();
   const children = env.catalog.children(parentId);
-  const siblingNames = children.map((child) => child.name);
+  const siblings = children;
   return (
     <>
       {env.creation?.creating?.parentPath === parentPath ? (
@@ -82,14 +83,14 @@ export function TreeChildren({
           kind={env.creation?.creating.kind}
           parent={parentPath}
           depth={depth}
-          siblingNames={siblingNames}
+          siblings={siblings}
         />
       ) : null}
       {children.map((child) =>
         child.kind === "dir" ? (
-          <DirRow key={child.entryId} dir={child} depth={depth} siblingNames={siblingNames} />
+          <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
         ) : (
-          <FileRow key={child.entryId} file={child} depth={depth} siblingNames={siblingNames} />
+          <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
         ),
       )}
     </>
@@ -131,27 +132,27 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
 export function ContextTreeEntry({
   node,
   depth,
-  siblingNames,
+  siblings,
 }: {
   node: ContextNode;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   return node.kind === "dir" ? (
-    <DirRow dir={node} depth={depth} siblingNames={siblingNames} />
+    <DirRow dir={node} depth={depth} siblings={siblings} />
   ) : (
-    <FileRow file={node} depth={depth} siblingNames={siblingNames} />
+    <FileRow file={node} depth={depth} siblings={siblings} />
   );
 }
 
 function DirRow({
   dir,
   depth,
-  siblingNames,
+  siblings,
 }: {
   dir: Extract<ContextNode, { kind: "dir" }>;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const interaction = useEntryInteraction({
@@ -162,12 +163,12 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    siblingNames,
+    siblings,
   });
-  const isOpen = env.isExpanded(dir.entryId, depth);
+  const isOpen = env.isExpanded(dir.entryId);
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
-    env.toggleEntry(dir.entryId, depth < 2);
+    env.toggleEntry(dir.entryId);
   };
   if (interaction.renaming) {
     return (
@@ -223,11 +224,11 @@ function DirRow({
 function FileRow({
   file,
   depth,
-  siblingNames,
+  siblings,
 }: {
   file: ContextFile;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const interaction = useEntryInteraction({
@@ -238,7 +239,7 @@ function FileRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    siblingNames,
+    siblings,
   });
   const select = () => env.onSelectFile(env.scheme, file);
   if (interaction.renaming) {
@@ -307,12 +308,12 @@ function CreateRow({
   kind,
   parent,
   depth,
-  siblingNames,
+  siblings,
 }: {
   kind: ContextCreateKind;
   parent: string;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const creation = env.creation;
@@ -322,7 +323,7 @@ function CreateRow({
     scheme: env.scheme,
     kind,
     parent,
-    siblingNames,
+    siblings,
     onDone: creation.done,
     onCreated: kind === "file" ? creation.createdFile : undefined,
   });

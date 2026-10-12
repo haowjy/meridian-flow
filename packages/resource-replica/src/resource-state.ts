@@ -1,5 +1,5 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
-import { assertAvailabilityGeneration } from "@meridian/contracts/protocol";
+import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -96,12 +96,21 @@ export function planResourceLocation(input: {
     record.intents,
     Boolean(record.resource.obligations.canonicalRefresh),
   );
+  // Compute the optimistic name once, retaining the input for server dispatch.
+  const stored = storedFilename(
+    input.destination.name,
+    latest?.desired.kind === "set-location"
+      ? latest.desired.destination.name
+      : record.resource.canonical?.name,
+  );
+  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
-    JSON.stringify(latest.desired.destination) === JSON.stringify(input.destination)
+    latest.desired.typedName === input.destination.name &&
+    JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
   const intent: NamespaceIntent = {
@@ -112,7 +121,8 @@ export function planResourceLocation(input: {
     identityRevision: record.resource.identity.revision,
     desired: {
       kind: "set-location",
-      destination: input.destination,
+      typedName: input.destination.name,
+      destination,
     },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],

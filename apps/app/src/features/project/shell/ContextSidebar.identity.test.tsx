@@ -19,6 +19,7 @@ vi.mock("../dock/DockShell", () => ({
   DockShell: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("./RailSection", () => ({
+  CollapsibleRailSection: ({ children }: { children: React.ReactNode }) => children,
   RailFileRow: ({ name, title }: { name: string; title: string }) => (
     <button type="button" title={title}>
       {name}

@@ -135,6 +135,7 @@ it("lets delete supersede a failed location and dispatch next", () => {
       identityRevision: 1,
       desired: {
         kind: "set-location",
+        typedName: "Renamed.md",
         destination: {
           parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
           name: "Renamed.md",
