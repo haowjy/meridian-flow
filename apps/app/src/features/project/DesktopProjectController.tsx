@@ -178,6 +178,8 @@ export function useDesktopEditorPresentation<
     }),
     tabs: workspace.tabs,
     selectedTabId: workspace.selectedTabIdByWork[presentation.mounted?.editorWorkId ?? ""],
+    selectedTabInstanceId:
+      workspace.selectedTabInstanceIdByWork?.[presentation.mounted?.editorWorkId ?? ""],
     selection: removal.selection,
   });
   const resource = resolved.tab

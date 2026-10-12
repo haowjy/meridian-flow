@@ -22,10 +22,11 @@ import type { OptimisticContextTab } from "./context-pane-state";
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
+  activeTabInstanceId?: string;
   reviewingTabId?: string | null;
   optimisticTab?: OptimisticContextTab | null;
-  onSelect: (documentId: string) => void;
-  onClose: (documentId: string) => void;
+  onSelect: (tab: ContextTab) => void;
+  onClose: (tab: ContextTab) => void;
   onNewDocument?: () => void;
   onShowRecents?: () => void;
   /** Whether that chooser is the surface on screen, so the control reads as current. */
@@ -41,6 +42,7 @@ export type ContextTabBarProps = {
 export function ContextTabBar({
   tabs,
   activeTabId,
+  activeTabInstanceId,
   reviewingTabId,
   optimisticTab,
   onSelect,
@@ -95,19 +97,23 @@ export function ContextTabBar({
         )}
       >
         {tabs.map((tab, index) => {
-          const active = tab.documentId === activeTabId;
+          const isActive = (member: ContextTab) =>
+            activeTabInstanceId
+              ? member.tabInstanceId === activeTabInstanceId
+              : member.documentId === activeTabId;
+          const active = isActive(tab);
           const previous = tabs[index - 1];
           return (
             <TabChip
               key={tab.tabInstanceId ?? tab.documentId}
               tab={tab}
               active={active}
-              reviewing={tab.documentId === reviewingTabId}
+              reviewing={active && tab.documentId === reviewingTabId}
               // Divider only between two adjacent inactive tabs — the active
               // tab's canvas shape provides its own separation.
-              divider={!active && previous !== undefined && previous.documentId !== activeTabId}
-              onSelect={() => onSelect(tab.documentId)}
-              onClose={() => onClose(tab.documentId)}
+              divider={!active && previous !== undefined && !isActive(previous)}
+              onSelect={() => onSelect(tab)}
+              onClose={() => onClose(tab)}
             />
           );
         })}

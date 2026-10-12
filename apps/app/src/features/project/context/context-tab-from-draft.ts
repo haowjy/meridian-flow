@@ -6,9 +6,9 @@
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
  * tree manifest entry is missing, so review entry builds the tab from draft
- * metadata instead. `openTab` is idempotent by documentId and merges
- * metadata, so when the real tree entry appears after Apply the same tab is
- * refreshed in place, never duplicated.
+ * metadata instead. Review overlays are idempotent by document, Work and draft;
+ * mounted instance IDs and tokens fence their close and promotion. Live
+ * metadata can enrich every overlay without changing those identities.
  *
  * Filetype/schema derive purely from the path (same contracts registry the
  * tree uses): a prose document's stored name has no extension and is markdown,

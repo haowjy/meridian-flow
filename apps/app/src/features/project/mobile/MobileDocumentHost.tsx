@@ -93,7 +93,7 @@ function MobileDraftOnlyDocumentHost({
       documentId={tab.documentId}
       // A draft-only document has no live version to return to: its review closes the document.
       onCloseDraftOnly={() => {
-        const closing = removal.writerClose(projectId, tab.documentId);
+        const closing = removal.writerClose(projectId, tab);
         if (closing instanceof Promise) closing.catch((error: unknown) => reportError(error));
       }}
     >

@@ -163,7 +163,7 @@ export function ContextDocumentHost({
                 onCloseDraftOnly={
                   onCloseDraftOnly ??
                   (() => {
-                    const closing = removal.writerClose(projectId, tab.documentId);
+                    const closing = removal.writerClose(projectId, tab);
                     if (closing instanceof Promise) closing.catch(reportError);
                   })
                 }
