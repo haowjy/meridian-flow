@@ -2799,6 +2799,7 @@ msgstr "Kept as written"
 msgid "Kept with what you wrote"
 msgstr "Kept with what you wrote"
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -2970,6 +2971,7 @@ msgstr "Looking for the document this link names."
 msgid "Manage billing"
 msgstr "Manage billing"
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -5202,6 +5204,7 @@ msgstr "Undo is no longer available."
 msgid "Undoing…"
 msgstr "Undoing…"
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -5286,6 +5289,7 @@ msgstr "Uploads"
 msgid "Usage"
 msgstr "Usage"
 
+#: src/features/import/finding-copy.ts
 #: src/features/project/context/context-schemes.ts
 msgid "User"
 msgstr "User"

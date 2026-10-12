@@ -2799,6 +2799,7 @@ msgstr ""
 msgid "Kept with what you wrote"
 msgstr ""
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -2970,6 +2971,7 @@ msgstr ""
 msgid "Manage billing"
 msgstr ""
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -5202,6 +5204,7 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/import/finding-copy.ts
 #: src/features/import/import-coordinator.ts
 #: src/features/import/ImportReportPage.tsx
 #: src/features/project/context/context-schemes.ts
@@ -5286,6 +5289,7 @@ msgstr ""
 msgid "Usage"
 msgstr ""
 
+#: src/features/import/finding-copy.ts
 #: src/features/project/context/context-schemes.ts
 msgid "User"
 msgstr ""
