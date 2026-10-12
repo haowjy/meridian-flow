@@ -305,8 +305,8 @@ Editor value. An explicit latest-wins route handoff carries review commands into
 the matching Editor. A matching committed Editor may claim immediately; other
 destinations claim after navigation. Claims require Work, document identity,
 mounted document, and draft membership to agree. Review addresses bind the
-selected branch to its document through the Work draft list before local path
-resolution; a colliding live catalog entry never substitutes for that identity. The document address persists
+Work and branch immediately, with server admission supplying document identity.
+The draft list loads in parallel for presentation and hidden-create gating; a colliding live catalog entry never substitutes for that identity. The document address persists
 the draft identity, so reload restores through the same handoff. Unknown or refused
 selectors stay on their unavailable/error destination; only owned Exit or deliberate
 navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
