@@ -309,13 +309,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID]);
       const moved = await catalog.snapshot(scope);
       await catalog.refreshSources([SOURCE_ID], [folderId]);
+      const republished = await catalog.snapshot(scope);
       const replay = await catalog.changes(scope, moved.cursor);
       expect(replay.kind).toBe("delta");
       if (replay.kind !== "delta") throw new Error("Expected retained move commit");
       expect(replay.commits).toHaveLength(1);
       expect(replay.commits[0]?.changes).toEqual([
         { operation: "invalidate-subtree", ordinal: 0, rootEntryId: folderId },
-        ...moved.entries
+        ...republished.entries
           .filter((entry) => entry.entryId === folderId || entry.entryId === DOCUMENT_ID)
           .map((entry, index) => ({ operation: "upsert", ordinal: index + 1, entry })),
       ]);

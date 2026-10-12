@@ -556,15 +556,8 @@ export function createDrizzleContextCatalog(
         .from(contextCatalogEntries)
         .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
-      for (let i = 0; i < authoritative.length; i++) {
-        const entry = authoritative[i]!;
-        const old = oldById.get(entry.entryId);
-        if ((entry.kind === "folder" || entry.kind === "file") && old?.kind === entry.kind) {
-          const { observationVersion: _new, ...value } = entry;
-          const { observationVersion: _old, ...previous } = old;
-          if (stableJson(value) === stableJson(previous)) authoritative[i] = old;
-        }
-      }
+      // Deduplicate complete observations below: equal payloads with newer namespace
+      // versions still publish, including moves back before deferred repair catches up.
       const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
       // Replay clears the old subtree before installing this commit. Restore every
       // survivor, including entries already published by a separate repair and

@@ -48,9 +48,14 @@ if (!enabled || !url) {
     });
 
     it.each([
-      "file",
-      "folder",
-    ] as const)("publishes newer provenance when a %s returns to its previous name before repair", async (kind) => {
+      { kind: "file", invalidate: true },
+      { kind: "folder", invalidate: true },
+      { kind: "file", invalidate: false },
+      { kind: "folder", invalidate: false },
+    ] as const)("publishes newer provenance on $kind ABA before repair (invalidate=$invalidate)", async ({
+      kind,
+      invalidate,
+    }) => {
       const table = kind === "file" ? documents : folders;
       const entryId = kind === "file" ? documentId : "00000000-0000-4000-8000-000000000905";
       if (kind === "folder") {
@@ -87,7 +92,7 @@ if (!enabled || !url) {
       async function rename(name: string) {
         return runInDrizzleTransaction(db, async () => {
           await currentDrizzleDb(db).update(table).set({ name }).where(eq(table.id, entryId));
-          return catalog.refreshSources([sourceId], [entryId]);
+          return catalog.refreshSources([sourceId], invalidate ? [entryId] : []);
         });
       }
       await rename("Middle");
@@ -141,8 +146,7 @@ if (!enabled || !url) {
         .from(contextAvailabilityHeads)
         .where(eq(contextAvailabilityHeads.authorityKey, `project:${projectId}`));
       expect(String(head.generation)).toBe(latestGeneration);
-      // A subsequent no-op refresh deduplicates equal evidence, not newer observations.
-      await catalog.refreshProject(projectId);
+      // A subsequent authoritative read does not rewrite historical replay evidence.
       expect((await catalog.snapshot(scope)).cursor).toBe(final.cursor);
     });
 

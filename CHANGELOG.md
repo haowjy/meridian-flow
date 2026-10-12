@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
+
 - Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
 - Reacquire unversioned catalog checkpoints after a device metadata upgrade without removing document content or queued namespace work.
 - Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
