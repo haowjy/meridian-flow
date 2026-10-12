@@ -105,6 +105,9 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after
   commit and cannot fail a mutation.
+  Catalog publication deduplicates complete observations, including namespace
+  versions: a return to an earlier payload still publishes newer provenance,
+  even when deferred repair never saw the intermediate location.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
