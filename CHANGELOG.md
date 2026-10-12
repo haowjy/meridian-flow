@@ -2,33 +2,18 @@
 
 ## [Unreleased]
 
-### Added
-
-- A repeatable headless-Chrome benchmark for chat Markdown streaming and transcript mounting.
-
 ### Changed
 
-- User messages, document previews and compact chat text now use the manuscript renderer while preserving references, skill tokens and authored line breaks.
-- Chat draws Mermaid diagrams when their fences close, keeps open fences as code, and opens web links in a new tab.
-
-- Streaming chat now uses the manuscript renderer, repairs only the live Markdown tail, and keeps completed blocks in place when a reply settles.
-
-- Settled chat Markdown now shares the manuscript's document styles, with tight lists, syntax-highlighted code and a hover-only copy action at chat scale.
+- Chat shows Markdown the way the Editor shows the document it becomes: the same headings, tight lists, quotes, tables, links and highlighted code, at chat's smaller size. Your own messages, file previews and compact chat text use it too, keeping references, skills and line breaks. Code shows Copy on hover, diagrams draw once their fence closes, web links open in a new tab, and long replies stream more smoothly.
 
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
 - A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
 
 ### Fixed
 
-- Chat images now use the Editor's browser-source allowlist.
-
-- Chat keeps literal fence delimiters in code, waits for list-contained diagram fences to close, and reuses settled blocks in replies with checkboxes.
-
-- Chat reference identity no longer spans separate authored links with the same destination.
-
 - Unaligned table headers now line up with their cells in chat and the Editor. Explicit column alignment is unchanged.
 
-- Chat separates every document block and restores the manuscript’s outbound link markers and internal link chips.
+- Task lists (`- [ ]`, `- [x]`) show their checkboxes in chat and the Editor.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
