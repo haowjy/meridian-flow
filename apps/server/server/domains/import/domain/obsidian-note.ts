@@ -14,14 +14,23 @@ import {
 
 const codec = mdxCodec({ schema: buildDocumentSchema() });
 export interface ConvertedObsidianNote {
+  /** The note as written, with converted destinations at their addresses; for reading only. */
   markdown: string;
   properties: StoredDocumentProperties | null;
   aliases: string[];
   findings: ImportFinding[];
-  /** Occurrence numbers in the binder's codec walk, including images. */
+  /**
+   * What binding parses: every converted destination is a unique placeholder,
+   * so each source link is its own occurrence even where real addresses would
+   * make adjacent links one run.
+   */
+  template: string;
+  /** Planned identity per occurrence of `template`'s parse, including images. */
   targets: Map<number, string>;
-  /** The same Markdown with these target ids spelled at other addresses; structure is unchanged. */
-  respell(uris: ReadonlyMap<string, string>): string;
+  /** Written href per converted occurrence of `template`'s parse. */
+  hrefs: Map<number, string>;
+  /** Spell these target ids at other addresses; occurrences are unchanged. */
+  readdress(uris: ReadonlyMap<string, string>): void;
 }
 /** One converted destination: its target identity and how its address is spelled. */
 interface Written {
@@ -166,27 +175,44 @@ export function convertObsidianNote(
   let template = scan.source;
   for (const edit of edits.sort((a, b) => b.from - a.from))
     template = template.slice(0, edit.from) + edit.text + template.slice(edit.to);
-  const pattern = new RegExp(`${nonce}-(\\d+)-z`, "g");
+  const exact = new RegExp(`^${nonce}-(\\d+)-z$`);
   const targets = new Map<number, string>();
+  /** Occurrence of the template's parse → its entry in `written`. */
+  const converted = new Map<number, number>();
   walkLinkOccurrences(codec.parse(template).blocks).forEach((occurrence, index) => {
     const href = occurrence.attrs.href;
-    const match = typeof href === "string" ? new RegExp(`^${pattern.source}$`).exec(href) : null;
-    const id = match ? written[Number(match[1])]?.targetId : null;
-    if (id) targets.set(index, id);
+    const match = typeof href === "string" ? exact.exec(href) : null;
+    const entry = match ? written[Number(match[1])] : undefined;
+    if (!entry) return;
+    converted.set(index, Number(match?.[1]));
+    if (entry.targetId) targets.set(index, entry.targetId);
   });
-  const respell = (uris: ReadonlyMap<string, string>) =>
-    template.replace(pattern, (_, index: string) => {
-      const entry = written[Number(index)];
-      const address = (entry.targetId && uris.get(entry.targetId)) || entry.href;
-      // The bare destination as formatMarkdownLink spells it, angle brackets included.
-      return formatMarkdownLink("", `${address}${entry.fragment}`).slice(3, -1);
-    });
-  return {
-    markdown: respell(new Map()),
+  // The bare destination as formatMarkdownLink spells it, angle brackets included.
+  const spell = (href: string) => formatMarkdownLink("", href).slice(3, -1);
+  const note: ConvertedObsidianNote = {
+    markdown: "",
     properties,
     aliases: parsed.aliases,
     findings,
+    template,
     targets,
-    respell,
+    hrefs: new Map(),
+    readdress(uris) {
+      const spelled = written.map((entry) =>
+        spell(`${(entry.targetId && uris.get(entry.targetId)) || entry.href}${entry.fragment}`),
+      );
+      note.markdown = template.replace(
+        new RegExp(`${nonce}-(\\d+)-z`, "g"),
+        (_, index: string) => spelled[Number(index)] ?? "",
+      );
+      // Each destination parsed alone, so its href is exactly what the written link parses to.
+      const alone = [...converted.values()].map((entry) => `[x](${spelled[entry]})`);
+      const hrefs = walkLinkOccurrences(codec.parse(alone.join("\n\n")).blocks);
+      note.hrefs = new Map(
+        [...converted.keys()].map((index, position) => [index, hrefs[position]?.attrs.href ?? ""]),
+      );
+    },
   };
+  note.readdress(new Map());
+  return note;
 }

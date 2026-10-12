@@ -103,6 +103,37 @@ describe("planned link binding", () => {
     expect(result.invalidTargets).toEqual([]);
   });
 
+  it("adjacent occurrences sharing a written href keep their own identities", async () => {
+    const subject = setup();
+    const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;
+    const result = await subject.planned.bindMarkdown({
+      holder: { documentId: HOLDER },
+      markdown: "[a](p0)[b](p1)[c](p2) [web](https://example.com)",
+      hrefs: new Map([
+        [0, "kb://A"],
+        [1, "kb://A"],
+        [2, "kb://A"],
+      ]),
+      targets: new Map([
+        [0, A],
+        [1, PLANNED],
+        [2, B],
+      ]),
+      pending: new Set([PLANNED]),
+    });
+    const occurrences = walkLinkOccurrences(result.blocks);
+    expect(occurrences.map(({ label, attrs }) => [label, attrs.href])).toEqual([
+      ["a", "kb://A"],
+      ["b", "kb://A"],
+      ["c", "kb://A"],
+      ["web", "https://example.com"],
+    ]);
+    expect(occurrences[0]?.attrs.ref).toBe(`doc:${A}`);
+    expect(occurrences[1]?.attrs.ref).toMatch(/^ahead:/);
+    expect(occurrences[2]?.attrs.ref).toBe(`doc:${B}`);
+    expect(result.aheadRefs).toEqual([{ occurrence: 1, ref: occurrences[1]?.attrs.ref }]);
+  });
+
   it("an invalid id binds nothing rather than falling back to the written occupant", async () => {
     const subject = setup();
     const invalidId = "not-an-id" as DocumentId;

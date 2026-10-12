@@ -85,7 +85,7 @@ export async function prepareImportedNote(
           : null);
       if (uri) uris.set(targetId, uri);
     }
-    converted.markdown = converted.respell(uris);
+    converted.readdress(uris);
   }
   return { converted, settings, root };
 }

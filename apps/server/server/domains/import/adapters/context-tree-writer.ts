@@ -128,13 +128,14 @@ export function createContextImportTreeWriter(deps: {
           })),
       });
     },
-    async bind(entry, text, targets, pending) {
+    async bind(entry, { text, targets, hrefs, pending }) {
       if (entry.kind === "code")
         return deps.binder.bindPlannedCode(entry.id as never, entry.filetype, text);
       return deps.binder.bindMarkdown({
         holder: { documentId: entry.id as never },
         markdown: text,
         targets: targets as never,
+        hrefs,
         pending: pending as never,
       });
     },

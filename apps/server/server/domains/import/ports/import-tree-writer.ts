@@ -10,6 +10,15 @@ export interface ImportParent {
   children: { kind: "folder" | "file"; name: string; extension: string }[];
 }
 export class ParentMovedError extends Error {}
+/** One entry's content to bind; occurrences are numbered in `text`'s own parse. */
+export interface ImportWrite {
+  text: string;
+  targets?: ReadonlyMap<number, string>;
+  /** Written hrefs of converted occurrences; `text` spells them apart as placeholders. */
+  hrefs?: ReadonlyMap<number, string>;
+  /** Planned ids bound by an ahead ref while not yet live, never by address. */
+  pending?: ReadonlySet<string>;
+}
 export interface ImportTreeWriter {
   existingLinks(): Promise<ImportLinkCandidate[]>;
   setProperties(
@@ -22,13 +31,7 @@ export interface ImportTreeWriter {
   parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
   lockDocument(id: string): Promise<boolean>;
   create(parent: ImportParent, nodes: ImportEntry[]): Promise<void>;
-  /** `pending`: planned ids bound by an ahead ref while not yet live, never by address. */
-  bind(
-    entry: ImportEntry,
-    text: string,
-    targets?: ReadonlyMap<number, string>,
-    pending?: ReadonlySet<string>,
-  ): Promise<BoundWrite | null>;
+  bind(entry: ImportEntry, write: ImportWrite): Promise<BoundWrite | null>;
   aheadTargets(
     bound: BoundWrite,
     holderUri: string,

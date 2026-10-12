@@ -137,7 +137,14 @@ export interface ImportLinkBinder {
   bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
 }
 export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
+  /** Identity per occurrence of `markdown`'s own parse. */
   targets?: ReadonlyMap<number, DocumentId>;
+  /**
+   * Written href per occurrence of `markdown`'s own parse. `markdown` spells
+   * these destinations apart, so adjacent links that share an address stay
+   * separate occurrences through assignment; equal results merge only after.
+   */
+  hrefs?: ReadonlyMap<number, string>;
   /**
    * Planned identities that may not exist yet. A target among them that is not
    * live gets a fresh ahead ref at its written address, settled later by id; the
@@ -245,7 +252,26 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const { markdown } = input;
     if (schemaType === "code") return finish([codeBlock(markdown, filetype)], markdown);
 
-    const written = deps.codec.parse(markdown).blocks;
+    const parsed = deps.codec.parse(markdown).blocks;
+    const spelled = walkLinkOccurrences(parsed);
+    for (const occurrence of [...(input.targets?.keys() ?? []), ...(input.hrefs?.keys() ?? [])]) {
+      if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= spelled.length)
+        throw new RangeError(`Invalid link occurrence: ${occurrence}`);
+    }
+    // Occurrences keep the parsed boundaries; only their hrefs are the written ones.
+    const occurrences = spelled.map((occurrence, index) => {
+      const href = input.hrefs?.get(index);
+      return href === undefined
+        ? occurrence
+        : { ...occurrence, attrs: { ...occurrence.attrs, href } };
+    });
+    const written = input.hrefs?.size
+      ? rebuildOccurrences(
+          parsed,
+          spelled,
+          occurrences.map(({ attrs }) => attrs),
+        )
+      : parsed;
     await deps.links.prepare({
       holders: documentId ? [{ documentId, view }] : [],
       refs: [...(input.targets?.values() ?? [])]
@@ -258,7 +284,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const scope: HolderLinkScope = documentId
       ? deps.links.holder({ documentId, view })
       : deps.links.reader({ uri: holderUri, view });
-    const occurrences = walkLinkOccurrences(written);
     const assigned = assignOccurrences({
       old: walkLinkOccurrences(previous ?? []),
       written: occurrences,
@@ -267,10 +292,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     });
     const invalidTargets: { occurrence: number; documentId: DocumentId }[] = [];
     const pendingMints: AheadMint[] = [];
-    for (const [occurrence] of input.targets ?? []) {
-      if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= occurrences.length)
-        throw new RangeError(`Invalid link occurrence: ${occurrence}`);
-    }
     const attrs = occurrences.map((occurrence, index) => {
       const target = input.targets?.get(index);
       if (!input.targets?.has(index)) return assigned.attrs[index];
@@ -303,7 +324,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       }
       return { ...occurrence.attrs, ref };
     });
-    const nodes = rebuildOccurrences(written, occurrences, attrs);
+    const nodes = rebuildOccurrences(parsed, spelled, attrs);
     const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
     const minted = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
     const awaiting = pendingMints.filter(({ ref }) => keptRefs.has(ref));
@@ -325,7 +346,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       if (planned && input.against) throw new Error("Import binding is fresh only");
       if (planned && input.view && input.view.kind !== "live")
         throw new Error("Import binding requires a live view");
-      if (!planned && "targets" in input)
+      if (!planned && ("targets" in input || "hrefs" in input))
         throw new Error("Planned targets require the import binder");
       const key =
         "documentId" in input.holder

@@ -511,7 +511,17 @@ export function createImportService(deps: {
         const bound =
           entry.kind === "binary"
             ? null
-            : await tree.bind(entry, converted?.markdown ?? text, targets, pending);
+            : await tree.bind(
+                entry,
+                converted
+                  ? {
+                      text: converted.template,
+                      targets,
+                      hrefs: converted.hrefs,
+                      pending,
+                    }
+                  : { text },
+              );
         const ahead = bound?.aheadRefs.length
           ? tree
               .aheadTargets(

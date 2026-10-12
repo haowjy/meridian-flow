@@ -267,9 +267,9 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     });
     expect((await ok(context().read("kb://Old"))).content.trim()).toBe("Imported sects");
   });
-  function imageSelection() {
+  function imageSelection(chapter = "![[map.png]]") {
     const selection = loose({
-      "Chapter.md": "![[map.png]]",
+      "Chapter.md": chapter,
       "attachments/map.png": new Uint8Array([137, 80, 78, 71, 0, 1]),
     });
     selection.manifest.roots = [
@@ -400,6 +400,38 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
       "kb://vault/attachments/map (2).png",
     );
+  });
+  async function landHolder(text: string) {
+    const selection = loose({ "Holder.md": text, "A.md": "target" });
+    const service = createImportService(ports()),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    return service.land(projectId, plan.importId, 0, selection.bytes[0]);
+  }
+  it("adjacent links to one selected note are separate occurrences and the holder lands", async () => {
+    expect((await landHolder("[[A]][[A]]")).state).toBe("landed");
+    expect((await ok(context().read("kb://Holder"))).content).toContain("(A)");
+  });
+  it("a link after adjacent selected links keeps its own destination", async () => {
+    expect((await landHolder("[[A]][[A]] [web](https://example.com)")).state).toBe("landed");
+    expect((await ok(context().read("kb://Holder"))).content).toContain(
+      "[web](https://example.com)",
+    );
+  });
+  it("adjacent links naming distinct identities at one address stay separate", async () => {
+    const selection = imageSelection("[[map.png]][file](kb://vault/attachments/map.png)");
+    const service = createImportService(ports()),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    await competitorAtPlannedPicture();
+    expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
+      "landed",
+    );
+    expect((await service.land(projectId, plan.importId, 1, selection.bytes[1])).uri).toBe(
+      "kb://vault/attachments/map (2).png",
+    );
+    const content = (await ok(context().read("kb://vault/Chapter"))).content;
+    // The converted link follows the planned picture; the hand-written one names the file there.
+    expect(content).toContain("map (2).png");
+    expect(content).toMatch(/\[file\]\([^)]*attachments\/map\.png\)/);
   });
   it("a link whose selected target was deleted names its text and the selected file", async () => {
     const selection = loose({ "Holder.md": "See [[Target|the target]].", "Target.md": "Gone" }),

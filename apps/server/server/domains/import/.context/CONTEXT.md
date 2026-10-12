@@ -47,9 +47,12 @@ ranking, the same one paste uses. Frontmatter is stored verbatim in
 metadata.properties with derived metadata.aliases.
 
 Conversion edits only Markdown destination spans the scanner reports, and
-writes every converted destination as a placeholder until the codec walk has
-numbered occurrences. Target ids therefore travel by occurrence; two targets
-sharing a current address, or a hand-written link to it, never swap identity.
+writes every converted destination as a unique placeholder. The binder parses
+that template, so each source link is its own occurrence, and receives the
+target id and written href per occurrence. Refs are assigned before real
+addresses could merge adjacent links into one run: two targets sharing a
+current address, a hand-written link to it, or a link after them never swap
+identity or destination. The readable Markdown is never reparsed for binding.
 
 Binaries and code have no row until they land. The binder receives them as
 pending ids: one already live binds to itself, otherwise it mints an ahead ref
