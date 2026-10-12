@@ -4,9 +4,14 @@
  * gate shared by route handlers; depends inward on the ProjectRepository port.
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type {
+  Project,
+  ProjectAvailabilityCode,
+  ProjectAvailabilityDetails,
+} from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
 import type { ProjectRepository } from "./ports/project-repository.js";
 
 export type RequireProjectOwnerOptions = {
@@ -21,14 +26,21 @@ export async function requireProjectOwner(
   options?: RequireProjectOwnerOptions,
 ): Promise<Project> {
   const project = await repos.projects.findById(projectId);
-  if (!project) {
-    throw createError({ statusCode: 404, message: "Project not found" });
-  }
-  if (project.userId !== userId) {
+  if (!project || project.userId !== userId) {
     throw createError({ statusCode: 404, message: "Project not found" });
   }
   if (!options?.includeSoftDeleted && project.deletedAt) {
-    throw createError({ statusCode: 404, message: "Project not found" });
+    throwHttpInterrupt(
+      {
+        code: "project_deleted" satisfies ProjectAvailabilityCode,
+        // Keep the generic message: SSR and existing unavailable paths use it.
+        message: "Project not found",
+        retryable: false,
+        source: "system",
+        details: { authenticatedUserId: userId } satisfies ProjectAvailabilityDetails,
+      },
+      404,
+    );
   }
   return project;
 }

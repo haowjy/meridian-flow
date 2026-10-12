@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ErrorCard } from "@/components/app/ErrorCard";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
@@ -113,6 +113,10 @@ export type ComposerProps = {
   availableSkills?: readonly ComposerAvailableSkill[] | null;
   /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
+  /** The host's own notes (`NoticeCard`s), stacked above the box with the Composer's failure. */
+  notices?: ReactNode;
+  /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
+  attached?: ReactNode;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -145,6 +149,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     referenceCatalog = null,
     availableSkills = null,
     commands = null,
+    notices,
+    attached,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
@@ -510,90 +516,97 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onStop?.();
     }
   };
-  return (
-    <div
-      data-composer=""
-      className={cn(
-        "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
-        variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
-      )}
-      aria-busy={busy || pending > 0 || undefined}
+  const failureCard = submitFailure ? (
+    <NoticeCard
+      tone="error"
+      onDismiss={() => {
+        setSubmitFailure(false);
+        editor?.commands.focus(undefined, { scrollIntoView: false });
+      }}
     >
-      {submitFailure ? (
-        // Inside the frame, above the words: the Composer owns it, so every host draws it the same
-        // and it never stacks against the strips above the box. Send is the retry; X dismisses.
-        <div className="mb-[var(--chat-space-inline)] flex px-[var(--chat-space-inline)]">
-          <ErrorCard
-            inline
-            onDismiss={() => {
-              setSubmitFailure(false);
-              editor?.commands.focus(undefined, { scrollIntoView: false });
-            }}
-          >
-            <p className="whitespace-normal">{t`Couldn't send.`}</p>
-          </ErrorCard>
+      <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
+    </NoticeCard>
+  ) : null;
+  return (
+    <>
+      {notices || failureCard ? (
+        // Above the box and its strips, as wide as the box: every note above the box is the
+        // same card in the same place, whoever raised it. Send is the failure's retry.
+        <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
+          {notices}
+          {failureCard}
         </div>
       ) : null}
-      <EditorContent
-        editor={editor}
-        data-placeholder={placeholder ?? rotatingPlaceholder}
-        onKeyDownCapture={keyDown}
-      />
-      {editor ? <AtReferenceMenu editor={editor} /> : null}
-      {editor ? <ComposerCommandMenu editor={editor} /> : null}
-      <div className="mt-[var(--chat-space-inline)] flex items-center gap-[var(--chat-space-inline)]">
-        <div className="min-w-0 flex-1">{toolbarLeft}</div>
-        {resolvedUploadPort ? (
-          <>
-            <input
-              ref={fileRef}
-              className="sr-only"
-              type="file"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void attach(file);
-                event.target.value = "";
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t`Attach file`}
-              onClick={() => fileRef.current?.click()}
-            >
-              <Paperclip className="size-4" />
-            </Button>
-          </>
-        ) : null}
-
-        <Button
-          type="button"
-          size="icon-sm"
-          onClick={() => (showStop ? onStop?.() : void submit())}
-          disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
-          aria-label={showStop ? t`Stop` : t`Send message`}
-          aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-          className={running ? "relative rounded-full" : "rounded-field"}
-        >
-          {showStop ? (
-            <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
-          ) : (
-            <ArrowUp className="size-4" />
-          )}
-          {running && hasContent ? (
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
-            />
+      {attached}
+      <div
+        data-composer=""
+        className={cn(
+          "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
+          variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
+        )}
+        aria-busy={busy || pending > 0 || undefined}
+      >
+        <EditorContent
+          editor={editor}
+          data-placeholder={placeholder ?? rotatingPlaceholder}
+          onKeyDownCapture={keyDown}
+        />
+        {editor ? <AtReferenceMenu editor={editor} /> : null}
+        {editor ? <ComposerCommandMenu editor={editor} /> : null}
+        <div className="mt-[var(--chat-space-inline)] flex items-center gap-[var(--chat-space-inline)]">
+          <div className="min-w-0 flex-1">{toolbarLeft}</div>
+          {resolvedUploadPort ? (
+            <>
+              <input
+                ref={fileRef}
+                className="sr-only"
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void attach(file);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t`Attach file`}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Paperclip className="size-4" />
+              </Button>
+            </>
           ) : null}
-        </Button>
-        {submitDisabledReason ? (
-          <span id={disabledReasonId} className="sr-only">
-            {submitDisabledReason}
-          </span>
-        ) : null}
+
+          <Button
+            type="button"
+            size="icon-sm"
+            onClick={() => (showStop ? onStop?.() : void submit())}
+            disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
+            aria-label={showStop ? t`Stop` : t`Send message`}
+            aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
+            className={running ? "relative rounded-full" : "rounded-field"}
+          >
+            {showStop ? (
+              <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
+            ) : (
+              <ArrowUp className="size-4" />
+            )}
+            {running && hasContent ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+              />
+            ) : null}
+          </Button>
+          {submitDisabledReason ? (
+            <span id={disabledReasonId} className="sr-only">
+              {submitDisabledReason}
+            </span>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </>
   );
 });

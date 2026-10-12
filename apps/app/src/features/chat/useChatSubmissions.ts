@@ -7,7 +7,12 @@ import {
   getChatSubmissionEpoch,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
+import {
+  cleanDeletedChat,
+  registerDeletedChatSurface,
+} from "@/client/chat-submissions/deleted-chat";
 import { ChatSubmissionOwner } from "@/client/chat-submissions/owner";
+import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -22,14 +27,15 @@ export function useChatSubmissions(
   actions: ThreadStoreActions,
   focusComposer: () => void,
   dissolveChat: () => void,
+  deletion?: { visible: boolean; title: string | null; leave(moved: boolean): void },
 ) {
   const queryClient = useQueryClient();
   const transport = useOptionalThreadTransport();
   const accountSignal = useOptionalAccountEpochSignal();
   const driver = useRef<ChatSubmissionOwner | null>(null);
   const [, render] = useReducer((value: number) => value + 1, 0);
-  const latest = useRef({ actions, focusComposer, dissolveChat });
-  latest.current = { actions, focusComposer, dissolveChat };
+  const latest = useRef({ actions, focusComposer, dissolveChat, deletion });
+  latest.current = { actions, focusComposer, dissolveChat, deletion };
 
   useEffect(() => {
     const lifetime = new AbortController();
@@ -66,8 +72,20 @@ export function useChatSubmissions(
       focusComposer: () => latest.current.focusComposer(),
       dissolveChat: () => latest.current.dissolveChat(),
     });
+    const unregisterDeletion = registerDeletedChatSurface(accountId, threadId, {
+      visible: () => latest.current.deletion?.visible ?? false,
+      title: () => latest.current.deletion?.title ?? null,
+      recordIds: owner.shownRecordIds,
+      leave: (moved) => latest.current.deletion?.leave(moved),
+    });
     driver.current = owner;
     owner.rebuild();
+    const availability = threadAvailability(
+      queryClient.getQueryState(threadQueryKeys.snapshot(threadId))?.error,
+      accountId,
+    );
+    if (availability === "deleted" || availability === "project-deleted")
+      void cleanDeletedChat(accountId, threadId, projectId, availability).catch(reportError);
     const wake = () => {
       if (current()) void owner.driver.drive(threadId);
     };
@@ -82,6 +100,16 @@ export function useChatSubmissions(
     const unsubscribeQuery = queryClient.getQueryCache().subscribe((event) => {
       if (
         event.type === "updated" &&
+        event.action.type === "error" &&
+        current() &&
+        JSON.stringify(event.query.queryKey) === JSON.stringify(threadQueryKeys.snapshot(threadId))
+      ) {
+        const availability = threadAvailability(event.query.state.error, accountId);
+        if (availability === "deleted" || availability === "project-deleted")
+          void cleanDeletedChat(accountId, threadId, projectId, availability).catch(reportError);
+      }
+      if (
+        event.type === "updated" &&
         event.action.type === "success" &&
         JSON.stringify(event.query.queryKey) === JSON.stringify(threadQueryKeys.snapshot(threadId))
       )
@@ -91,6 +119,7 @@ export function useChatSubmissions(
       if (state.kind === "connected") wake();
     });
     return () => {
+      unregisterDeletion();
       lifetime.abort();
       for (const key of announcementKeys) clearAnnouncement(key);
       owner.dispose();
