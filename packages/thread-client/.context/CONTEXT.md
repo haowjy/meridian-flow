@@ -36,8 +36,9 @@ walking the document again. Draft snapshots and upload lifecycle ownership stay 
 ## Thread wire protocol and recovery
 
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
-`resume`, `pong`, and `interrupt.respond`; its server vocabulary is `connected`,
-`subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
+`resume`, `pong`, `interrupt.respond`, `catalog.subscribe`, and
+`catalog.unsubscribe`; its server vocabulary is `connected`, `subscribed`,
+`event`, `gap`, `error`, `ping`, and `context-catalog-hint`. Turn cancellation is an HTTP
 operation through the injected `cancelTurn` port, not a WebSocket message. Keep
 these names aligned with `@meridian/contracts/protocol` rather than inferring them from UI actions.
 
