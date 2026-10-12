@@ -1,41 +1,30 @@
-/** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
-import { createHash } from "node:crypto";
+/** Work-draft listing, preview, Apply, and Discard orchestration. */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
 } from "@meridian/contracts/drafts";
-import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
 import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
-  BranchJournalReadStore,
   BranchJournalRow,
   BranchPushService,
   BranchReviewService,
   PushToLiveResult,
 } from "./branch-push-contracts.js";
 import { DraftChangeRefusal } from "./branch-push-contracts.js";
-import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
 import { documentEffectsEqual } from "./document-content.js";
-import { documentRevision } from "./document-revision.js";
-import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type {
   ApplicationBranchStore,
   WorkDraftDiscard,
   WorkDraftEmptySettlement,
 } from "./ports/application-branch-store.js";
-import {
-  type DocumentLinkScopes,
-  type HolderLinkScope,
-  LIVE_VIEW,
-} from "./ports/document-link-scope.js";
+import type { ReadReviewCut } from "./ports/review-cut.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
+import { deriveReviewCut, selectReviewCut } from "./review-cut.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export type DraftReviewDiagnostics = {
@@ -49,13 +38,9 @@ export type DraftReviewDiagnostics = {
 
 export function createWorkDraftReviewService(input: {
   diagnostics: DraftReviewDiagnostics;
-  /** Preview and selective disposition prepare both holders from one tree snapshot. */
-  links: DocumentLinkScopes;
   branches: ApplicationBranchStore;
   discardWorkDraft: WorkDraftDiscard;
   settleEmptyDraft: WorkDraftEmptySettlement;
-  branchCoordinator: BranchCoordinator;
-  branchJournal: BranchJournalReadStore;
   branchPush: BranchPushService;
   branchReview: BranchReviewService;
   workDraftPending: WorkDraftPending;
@@ -63,7 +48,7 @@ export function createWorkDraftReviewService(input: {
   agentEdit: ThreadPeerAgentEditCore;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   resolveDocumentUris(documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
-  readLiveReviewCut(documentId: string): Promise<{ doc: Y.Doc; revision: string }>;
+  readReviewCut: ReadReviewCut;
 }): CollabDrafts {
   async function resolveDraftOnlyDocumentIds(command: {
     projectId?: ProjectId;
@@ -131,117 +116,19 @@ export function createWorkDraftReviewService(input: {
     workId: WorkId;
     draftId: string;
   }) {
-    return input.links.within({ documentId: command.documentId }, async () => {
-      const liveState = await input.readLiveReviewCut(command.documentId);
-      const liveDoc = liveState.doc;
-      let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
-      try {
-        let branch: { branchId: string; generation: number; doc: Y.Doc };
-        try {
-          branch = await input.branches.resolveWorkDraftBranchForWork({
-            documentId: command.documentId,
-            workId: command.workId,
-            liveDoc,
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCorruptError)) throw cause;
-          const corrupt = await input.branches.getBranch(cause.branchId);
-          if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
-          await input.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
-          await input.agentEdit.invalidateThread(command.documentId, "");
-          notice = {
-            code: "branch_corrupt_reset",
-            message: "Review state was repaired from the live document.",
-          };
-          branch = await input.branches.resolveWorkDraftBranchForWork({
-            documentId: command.documentId,
-            workId: command.workId,
-            liveDoc,
-          });
-        }
-        if (branch.branchId !== command.draftId) throw new Error("draft_not_found");
-        try {
-          const rows = await input.branchJournal.listReviewableJournalRows(
-            branch.branchId,
-            branch.generation,
-          );
-          const draftUpdates = reviewUpdates(rows);
-          const scope = await prepareReviewScope(command, liveDoc, branch.doc);
-          const review = computeDraftReviewHunks({
-            liveDoc,
-            draftDoc: branch.doc,
-            model: input.model,
-            draftUpdates,
-          });
-          if (review.diagnostics.length)
-            input.diagnostics.unattributedHunks({
-              documentId: command.documentId,
-              draftId: command.draftId,
-              hunkIds: review.diagnostics.map((diagnostic) => diagnostic.hunkId),
-            });
-          const threadIds = [
-            ...new Set(
-              rows
-                .filter((row) => row.source === "agent" && row.threadId)
-                .map((row) => row.threadId as string),
-            ),
-          ];
-          const titles = await input.resolveThreadTitles(threadIds);
-          const operations = review.operations.map((operation) => {
-            if (operation.kind !== "agent") return operation;
-            const row = rows.find(
-              (row) =>
-                operation.sourceUpdateIds.includes(row.id as never) &&
-                row.source === "agent" &&
-                row.threadId,
-            );
-            return row?.threadId
-              ? {
-                  ...operation,
-                  actorThreadId: row.threadId,
-                  ...(row.toolCallId ? { actorToolCallId: row.toolCallId } : {}),
-                  ...(titles.has(row.threadId)
-                    ? { actorThreadTitle: titles.get(row.threadId) }
-                    : {}),
-                }
-              : operation;
-          });
-          return {
-            status: "active" as const,
-            draftId: command.draftId,
-            draftGeneration: branch.generation,
-            reviewRoomName: branchRoomName(branch.branchId, branch.generation),
-            isNewDocument: await isDraftOnlyManifestDocument(command),
-            liveRevisionToken: liveState.revision,
-            draftRevisionToken: draftReviewRevision(branch.generation, branch.doc, rows, scope),
-
-            operations,
-            hunks: review.hunks,
-            ...(notice ? { notice } : {}),
-          };
-        } finally {
-          branch.doc.destroy();
-        }
-      } finally {
-        liveDoc.destroy();
-      }
+    const cut = await input.readReviewCut(command).catch((cause) => {
+      if (cause instanceof DraftChangeRefusal && cause.status === "gone") return null;
+      throw cause;
     });
-  }
-
-  async function prepareReviewScope(
-    command: { documentId: DocumentId; workId: WorkId },
-    liveDoc: Y.Doc,
-    draftDoc: Y.Doc,
-  ) {
-    const holder = {
-      documentId: command.documentId,
-      view: { kind: "draft" as const, workId: command.workId },
-    };
-    await input.links.prepare({
-      holders: [{ documentId: command.documentId, view: LIVE_VIEW }, holder],
-      docs: [liveDoc, draftDoc],
-    });
-    return input.links.holder(holder);
+    if (!cut) return { status: "gone" as const, draftId: command.draftId };
+    const { preview, diagnostics } = deriveReviewCut(cut, input.model);
+    if (diagnostics.length)
+      input.diagnostics.unattributedHunks({
+        documentId: command.documentId,
+        draftId: command.draftId,
+        hunkIds: diagnostics.map((diagnostic) => diagnostic.hunkId),
+      });
+    return preview;
   }
 
   async function pushNewDocumentToLiveWithManifest(command: {
@@ -362,63 +249,14 @@ export function createWorkDraftReviewService(input: {
       draftRevisionToken?: string;
       documentId: DocumentId;
       workId: WorkId;
+      projectId?: ProjectId;
     },
     requireCompleteClass: boolean,
   ) {
-    return async (snapshot: BranchSnapshot, rows: BranchJournalRow[]) =>
-      input.links.within({ documentId: command.documentId }, async () => {
-        const liveCut = await input.readLiveReviewCut(command.documentId);
-        const liveDoc = liveCut.doc;
-        const draftDoc = createCollabYDoc({ gc: false });
-        try {
-          Y.applyUpdate(draftDoc, snapshot.state);
-          const draftUpdates = reviewUpdates(rows);
-          const scope = await prepareReviewScope(command, liveDoc, draftDoc);
-          const draftRevisionToken = draftReviewRevision(
-            snapshot.generation,
-            draftDoc,
-            rows,
-            scope,
-          );
-          if (
-            command.liveRevisionToken !== liveCut.revision ||
-            command.draftRevisionToken !== draftRevisionToken
-          )
-            throw new DraftChangeRefusal("stale");
-          const preview = computeDraftReviewHunks({
-            liveDoc,
-            draftDoc,
-            model: input.model,
-            draftUpdates,
-          });
-          const requested = new Set(command.operationIds);
-          if (
-            !requested.size ||
-            [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
-          )
-            throw new DraftChangeRefusal("gone");
-          const classes = new Set(
-            preview.operations
-              .filter((op) => requested.has(op.operationId))
-              .map((op) => op.closureClassId),
-          );
-          const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
-          if (selected.some((op) => op.canApplyOrDiscard === false))
-            throw new DraftChangeRefusal("incomplete_class");
-
-          if (requireCompleteClass && selected.some((op) => !requested.has(op.operationId)))
-            throw new DraftChangeRefusal("incomplete_class");
-          return {
-            journalIds: [...new Set(selected.flatMap((op) => op.closureUpdateIds))],
-            expectedLiveRevision: liveCut.revision,
-            operationIds: selected.map((op) => op.operationId),
-            closureClassIds: [...classes],
-          };
-        } finally {
-          liveDoc.destroy();
-          draftDoc.destroy();
-        }
-      });
+    return async (snapshot: BranchSnapshot, rows: BranchJournalRow[]) => {
+      const cut = await input.readReviewCut({ ...command, draftId: snapshot.branchId });
+      return selectReviewCut(cut, input.model, snapshot, rows, command, requireCompleteClass);
+    };
   }
 
   async function applyWorkDraftChanges(
@@ -440,8 +278,6 @@ export function createWorkDraftReviewService(input: {
         pushedByUserId: command.userId,
         signal: command.signal,
         selectRows: async (snapshot, rows) => {
-          if (await isDraftOnlyManifestDocument(command))
-            throw new DraftChangeRefusal("draft_only");
           const selection = await reviewSelection(command, true)(snapshot, rows);
           appliedOperations = selection.operationIds;
           appliedClasses = selection.closureClassIds;
@@ -542,29 +378,4 @@ function manuscriptContextPath(uri: string | null): string | null {
   if (!uri?.startsWith("manuscript://")) return null;
   const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
   return path ? `/${path}` : null;
-}
-
-function reviewUpdates(rows: readonly BranchJournalRow[]) {
-  return rows.map((row) => ({
-    id: row.id,
-    actorTurnId: row.turnId,
-    actorUserId: row.actorUserId,
-    updateData: row.updateData,
-    updateMeta: row.updateMeta,
-  }));
-}
-
-function draftReviewRevision(
-  generation: number,
-  doc: Y.Doc,
-  rows: readonly BranchJournalRow[],
-  scope: HolderLinkScope,
-): string {
-  const journal = rows
-    .map((row) => `${row.id}:${row.status}`)
-    .sort()
-    .join(",");
-  return `d1:${createHash("sha256")
-    .update(`${generation}:${documentRevision(doc, scope)}:${journal}`)
-    .digest("base64url")}`;
 }

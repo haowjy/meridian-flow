@@ -27,7 +27,8 @@ import {
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
+import { readLiveReviewRevision } from "../adapters/drizzle-draft-review-live.js";
+import { createDrizzleReviewCut } from "../adapters/drizzle-review-cut.js";
 import {
   createDrizzleEmptyDraftSettlement,
   createDrizzleWorkDraftDiscard,
@@ -257,6 +258,9 @@ export type ChangeTrailHarnessOptions = {
   ids?: ChangeTrailScenarioIds;
   /** Default: a static scope, whose tokens ignore the tree. */
   links?: DocumentLinkScopes;
+  reviewCut?: (
+    read: import("../domain/ports/review-cut.js").ReadReviewCut,
+  ) => import("../domain/ports/review-cut.js").ReadReviewCut;
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
@@ -646,7 +650,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       liveCoordinator,
       durableBranchJournalReadStore,
     ),
-    links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,
@@ -655,8 +658,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       liveCoordinator,
     ),
     branches: branchStore,
-    branchCoordinator,
-    branchJournal: durableBranchJournalReadStore,
     branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
@@ -664,7 +665,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit,
     resolveDocumentUris: createDocumentUrisResolver(db),
     resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
-    readLiveReviewCut: createDrizzleDraftReviewLive(db, persistence.journal),
+    readReviewCut: (options.reviewCut ?? ((read) => read))(
+      createDrizzleReviewCut({
+        db,
+        journal: persistence.journal,
+        branches: branchStore,
+        rows: durableBranchJournalReadStore,
+        links,
+        resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
+      }),
+    ),
   });
   const collab = {
     agentEdit: () => agentEdit,
@@ -1753,9 +1763,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       branchId: branch.branchId,
       selectRows: async () => ({
         journalIds: [discarded.id],
-        expectedLiveRevision: (
-          await createDrizzleDraftReviewLive(db, persistence.journal)(ALPHA_ID)
-        ).revision,
+        expectedLiveRevision: await readLiveReviewRevision(db, ALPHA_ID),
       }),
       reviewedByUserId: USER_ID,
     });

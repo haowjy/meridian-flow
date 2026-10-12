@@ -35,6 +35,26 @@ thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
 state a later `read` forks from.
 
+## Review authority cut
+
+Preview and selective disposition consume the same `ReadReviewCut` port and
+pure `domain/review-cut.ts` derivation. The adapter's first branch read fixes a
+root read-only repeatable-read snapshot. Branch generation/bytes, all history
+statuses, live journal/head, manifest memberships, thread titles and prepared
+link scopes join that snapshot. It uses no room reads, pulls, provisioning or
+repair. Missing manifest drafts inherit the captured live membership without
+creating a branch. Pinned memberships open a fresh link scope rather than
+joining a caller's older tree snapshot. Returned bytes and scopes are detached;
+the snapshot closes before rich-difference derivation.
+
+The draft token hashes this observation, including both link views and history
+statuses. Selection also compares it with the branch and review rows supplied
+by the existing admission protocol; a mismatch refuses as stale. Admission's
+current authority and live revision fences remain unchanged. Corrupt preview
+reads refuse without resetting any state. Repair is an explicit coordinator
+command (`resetFromDoc`), followed by thread-core invalidation, never a preview
+side effect.
+
 ## One save per reply
 
 The thread-peer pool is the only model read/write entry point. Each call
