@@ -143,7 +143,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       dir: string[] = [],
     ): NodeMove => ({
       node: { kind: "document", id: id as DocumentId },
-      to: { contextSourceId: sourceId as ContextSourceId, dir, name, extension: "md" },
+      to: { contextSourceId: sourceId as ContextSourceId, dir, name, extension: "" },
     });
 
     /** No temporary vacate name survives anywhere in these sources. */
@@ -162,10 +162,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("splits a nested hidden document off a deleted folder into twins at its path (F-1)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const kept = await scenario.seedLive("world/places/kept.md");
+      const kept = await scenario.seedLive("world/places/kept");
       const world = await scenario.seedLiveFolder("world");
       const places = await scenario.seedLiveFolder("world/places");
-      const harbor = await scenario.model(ascension).create("world/places/harbor.md", "Harbor.");
+      const harbor = await scenario.model(ascension).create("world/places/harbor", "Harbor.");
       const draft = await scenario.draftOf(ascension);
       const before = await document(harbor);
 
@@ -216,21 +216,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect.objectContaining({ deleted: true, locationVersion: 1n }),
         ]);
       expect
-        .soft(await idAt(scenario, ascension, "world/places/harbor.md"), "the draft still sees it")
+        .soft(await idAt(scenario, ascension, "world/places/harbor"), "the draft still sees it")
         .toBe(harbor);
-      expect
-        .soft(await idAt(scenario, "live", "world/places/harbor.md"), "live does not")
-        .toBeNull();
+      expect.soft(await idAt(scenario, "live", "world/places/harbor"), "live does not").toBeNull();
     });
 
     it("moves hidden contents with a folder between project sources and repoints their source (F-2)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const rival = await scenario.work("Rival", "draft");
-      const outline = await scenario.seedLive("notes/outline.md");
+      const outline = await scenario.seedLive("notes/outline");
       const notes = await scenario.seedLiveFolder("notes");
-      const idea = await scenario.model(ascension).create("notes/idea.md", "Idea.");
-      const plan = await scenario.model(rival).create("notes/deep/plan.md", "Plan.");
+      const idea = await scenario.model(ascension).create("notes/idea", "Idea.");
+      const plan = await scenario.model(rival).create("notes/deep/plan", "Plan.");
       const [ideaBefore, planBefore] = [await document(idea), await document(plan)];
 
       expect
@@ -239,8 +237,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const kb = scenario.project.sources.kb;
       for (const [work, id, path, before] of [
-        [ascension, idea, "notes/idea.md", ideaBefore],
-        [rival, plan, "notes/deep/plan.md", planBefore],
+        [ascension, idea, "notes/idea", ideaBefore],
+        [rival, plan, "notes/deep/plan", planBefore],
       ] as const) {
         const draft = await scenario.draftOf(work);
         expect.soft(await document(id), `${path}: moved along, hidden`).toMatchObject({
@@ -256,28 +254,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.soft(await idAt(scenario, work, path), `${path}: not left behind`).toBeNull();
         expect.soft(await idAt(scenario, "live", `kb://${path}`), `${path}: not live`).toBeNull();
       }
-      expect.soft(await idAt(scenario, "live", "kb://notes/outline.md")).toBe(outline);
+      expect.soft(await idAt(scenario, "live", "kb://notes/outline")).toBe(outline);
       expect.soft((await folder(notes)).locationVersion, "the moved folder's version").toBe(1n);
 
       // The batch primitive's final namespace includes what moving folders carry (F-R1).
       const m = scenario.project.sources.manuscript;
       const a = await scenario.seedLiveFolder("a");
-      await scenario.seedLive("a/x.md");
-      const c = await scenario.seedLive("c.md");
+      await scenario.seedLive("a/x");
+      const c = await scenario.seedLive("c");
       expect
         .soft(await batchMove([m], [toFolder(a, m, "b"), toDocument(c, m, "x", ["b"])]))
         .toEqual({ ok: false, code: "conflict" });
       const e = await scenario.seedLiveFolder("e");
-      await scenario.seedLiveFolder("e/x.md");
-      const f = await scenario.seedLive("f.md");
+      await scenario.seedLiveFolder("e/x");
+      const f = await scenario.seedLive("f");
       expect
         .soft(await batchMove([m], [toFolder(e, m, "g"), toDocument(f, m, "x", ["g"])]))
         .toEqual({ ok: false, code: "conflict" });
-      expect.soft(await idAt(scenario, "live", "f.md"), "a refused batch moves nothing").toBe(f);
+      expect.soft(await idAt(scenario, "live", "f"), "a refused batch moves nothing").toBe(f);
       // A selected child vacating the slot its folder carries frees it.
       const h = await scenario.seedLiveFolder("h");
-      const hx = await scenario.seedLive("h/x.md");
-      const k = await scenario.seedLive("k.md");
+      const hx = await scenario.seedLive("h/x");
+      const k = await scenario.seedLive("k");
       expect
         .soft(
           await batchMove(
@@ -286,11 +284,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
         )
         .toEqual({ ok: true });
-      expect.soft(await idAt(scenario, "live", "i/x.md"), "freed slot").toBe(k);
-      expect.soft(await idAt(scenario, "live", "z.md"), "selected child").toBe(hx);
+      expect.soft(await idAt(scenario, "live", "i/x"), "freed slot").toBe(k);
+      expect.soft(await idAt(scenario, "live", "z"), "selected child").toBe(hx);
       // A swap leaves no alias at a path the final tree occupies (F-R3).
-      const sDoc = await scenario.seedLive("s.md");
-      const tDoc = await scenario.seedLive("t.md");
+      const sDoc = await scenario.seedLive("s");
+      const tDoc = await scenario.seedLive("t");
       expect
         .soft(await batchMove([m], [toDocument(sDoc, m, "t"), toDocument(tDoc, m, "s")]))
         .toEqual({ ok: true });
@@ -302,7 +300,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .where(
               and(
                 eq(documentPreviousLocations.contextSourceId, m),
-                inArray(documentPreviousLocations.path, ["s.md", "t.md"]),
+                inArray(documentPreviousLocations.path, ["s", "t"]),
               ),
             ),
           "swap history",
@@ -326,11 +324,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           into === "project"
             ? "world"
             : `scratch://@${(await scenario.work("Notes", "direct")).slug}/world`;
-        const map = await scenario.seedLive(`${origin}/places/map.md`);
+        const map = await scenario.seedLive(`${origin}/places/map`);
         const places = await scenario.seedLiveFolder(`${origin}/places`);
-        const harbor = await scenario
-          .model(ascension)
-          .create(`${origin}/places/harbor.md`, "Harbor.");
+        const harbor = await scenario.model(ascension).create(`${origin}/places/harbor`, "Harbor.");
         const draft = await scenario.draftOf(ascension);
 
         expect
@@ -364,12 +360,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect
           .soft(
-            await idAt(scenario, ascension, `${origin}/places/harbor.md`),
+            await idAt(scenario, ascension, `${origin}/places/harbor`),
             `${destination}: the draft still sees it`,
           )
           .toBe(harbor);
         expect
-          .soft(await idAt(scenario, "live", `${destination}/places/map.md`), destination)
+          .soft(await idAt(scenario, "live", `${destination}/places/map`), destination)
           .toBe(map);
       }
 
@@ -382,9 +378,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const ascension = await scenario.work("Ascension overlap", "draft");
       const draft = await scenario.draftOf(ascension);
       // The parent leaves the project; the child stays in it, so its hidden contents follow it.
-      await scenario.seedLive("p/r/visible.md");
+      await scenario.seedLive("p/r/visible");
       const [p, r] = [await scenario.seedLiveFolder("p"), await scenario.seedLiveFolder("p/r")];
-      const followed = await scenario.model(ascension).create("p/r/hidden.md", "Hidden.");
+      const followed = await scenario.model(ascension).create("p/r/hidden", "Hidden.");
       const followedBefore = await document(followed);
       expect
         .soft(await batchMove(sources, [toFolder(p, elsewhere, "p"), toFolder(r, kb, "r")]))
@@ -399,12 +395,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: kb,
         parentFolderId: r,
       });
-      expect.soft(await idAt(scenario, ascension, "kb://r/hidden.md")).toBe(followed);
+      expect.soft(await idAt(scenario, ascension, "kb://r/hidden")).toBe(followed);
       // The parent stays in the project; the child leaves, so its hidden contents split off
       // under twins at the original path, the moved parent included.
-      await scenario.seedLive("q/t/visible.md");
+      await scenario.seedLive("q/t/visible");
       const [q, t] = [await scenario.seedLiveFolder("q"), await scenario.seedLiveFolder("q/t")];
-      const stayed = await scenario.model(ascension).create("q/t/hidden.md", "Hidden.");
+      const stayed = await scenario.model(ascension).create("q/t/hidden", "Hidden.");
       const stayedBefore = await document(stayed);
       expect
         .soft(await batchMove(sources, [toFolder(q, kb, "q"), toFolder(t, elsewhere, "t")]))
@@ -426,7 +422,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect.soft(tTwin.parentId, "not the moved q").not.toBe(q);
       expect.soft((await changeRow(draft.id, stayed))?.parentFolderId).toBe(kept.folderId);
-      expect.soft(await idAt(scenario, ascension, "q/t/hidden.md")).toBe(stayed);
+      expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
       expect.soft(await parkedNames(sources), "no parked name persists").toEqual([]);
     });
 
@@ -435,7 +431,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const ascension = await scenario.work("Ascension", "draft");
       const kaelFile = await scenario.seedLive("drafts/kael");
       const drafts = await scenario.seedLiveFolder("drafts");
-      const notes = await scenario.model(ascension).create("ideas/kael/notes.md", "Notes.");
+      const notes = await scenario.model(ascension).create("ideas/kael/notes", "Notes.");
       const draft = await scenario.draftOf(ascension);
       const hiddenKael = (await document(notes)).folderId;
       const hiddenIdeas = (await folder(hiddenKael)).parentId;
@@ -490,13 +486,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const notes = await scenario.seedLiveFolder("notes");
-      const existing = await scenario.model(ascension).create("ideas/first.md", "First.");
+      const existing = await scenario.model(ascension).create("ideas/first", "First.");
       const hiddenIdeas = (await document(existing)).folderId;
       const { bWaited, by } = await race(
         committed,
         {
           rename: () => scenario.writer.move("notes", "ideas"),
-          create: () => scenario.model(ascension).create("ideas/second.md", "Second."),
+          create: () => scenario.model(ascension).create("ideas/second", "Second."),
         },
         first,
         at,
@@ -515,7 +511,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect.soft((await changeRow(draft.id, id))?.parentFolderId, "its row too").toBe(notes);
       }
-      expect.soft(await idAt(scenario, ascension, "ideas/second.md")).toBe(second);
+      expect.soft(await idAt(scenario, ascension, "ideas/second")).toBe(second);
     });
 
     it.each([
@@ -527,14 +523,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }) => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      await scenario.seedLive("world/places/kept.md");
+      await scenario.seedLive("world/places/kept");
       const places = await scenario.seedLiveFolder("world/places");
-      const existing = await scenario.model(ascension).create("world/places/first.md", "First.");
+      const existing = await scenario.model(ascension).create("world/places/first", "First.");
       const { bWaited, by } = await race(
         committed,
         {
           remove: () => scenario.writer.delete("world"),
-          create: () => scenario.model(ascension).create("world/places/second.md", "Second."),
+          create: () => scenario.model(ascension).create("world/places/second", "Second."),
         },
         first,
         at,
@@ -554,7 +550,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect.soft((await changeRow(draft.id, id))?.parentFolderId, "its row too").toBe(twin);
       }
-      expect.soft(await idAt(scenario, ascension, "world/places/second.md")).toBe(second);
+      expect.soft(await idAt(scenario, ascension, "world/places/second")).toBe(second);
     });
   });
 }

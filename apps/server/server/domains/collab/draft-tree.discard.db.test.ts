@@ -166,17 +166,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
-      const ORI = "manuscript://lore/deep/ori.md";
+      const ORI = "manuscript://lore/deep/ori";
       // A live ahead ref at the path before any draft creates it: Ascension's create settles it.
-      const one = await s.writer.createDocument("chapter-one.md", "[Ori](lore/deep/ori.md) waits.");
+      const one = await s.writer.createDocument("chapter-one", "[Ori](lore/deep/ori) waits.");
       const [registered] = await db
         .select({ aheadId: linkAheadRefs.aheadId })
         .from(linkAheadRefs)
-        .where(eq(linkAheadRefs.path, "lore/deep/ori.md"));
+        .where(eq(linkAheadRefs.path, "lore/deep/ori"));
       const waiting = registered?.aheadId ?? "";
-      const ori = await s.model(ascension).create("lore/deep/ori.md", "Ascension's Ori.");
+      const ori = await s.model(ascension).create("lore/deep/ori", "Ascension's Ori.");
       expect
-        .soft(await s.model(beacon).create("lore/deep/ori.md", "Beacon's Ori."), "joined")
+        .soft(await s.model(beacon).create("lore/deep/ori", "Beacon's Ori."), "joined")
         .toBe(ori);
       expect
         .soft(
@@ -188,13 +188,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toContainEqual({ documentId: ori });
       // A live holder bound to Ori: chapter two, edited in Beacon, applied alone.
-      const two = await s.writer.createDocument("chapter-two.md", "Two.");
-      await s.model(beacon).edit("chapter-two.md", "Two.", "Two, drafted.");
+      const two = await s.writer.createDocument("chapter-two", "Two.");
+      await s.model(beacon).edit("chapter-two", "Two.", "Two, drafted.");
       const bound = crypto.randomUUID();
       await s.writer.editDraft(beacon, two, typeLink(ORI, bound));
       expect.soft((await s.apply(beacon, [two], { tokens: "none" }))[0]?.httpStatus).toBe(200);
-      const chapterTwo = { uri: "manuscript://chapter-two.md", id: two };
-      const chapterOne = { uri: "manuscript://chapter-one.md", id: one };
+      const chapterTwo = { uri: "manuscript://chapter-two", id: two };
+      const chapterOne = { uri: "manuscript://chapter-one", id: one };
       expect
         .soft(
           await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
@@ -217,13 +217,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(await row(ori), "kept for Beacon")
         .toMatchObject({ hidden: true, tombstone: false });
       expect
-        .soft(await s.view(beacon).read("lore/deep/ori.md"), "Beacon still reads it")
+        .soft(await s.view(beacon).read("lore/deep/ori"), "Beacon still reads it")
         .toMatchObject({
           ok: true,
           value: { content: expect.stringContaining("Beacon's Ori.") },
         });
       expect
-        .soft(await s.view(ascension).stat("lore/deep/ori.md"), "gone from Ascension's view")
+        .soft(await s.view(ascension).stat("lore/deep/ori"), "gone from Ascension's view")
         .toMatchObject({ ok: false });
       expect
         .soft(await s.draftStatuses(ascension), "an item Discard never closes")
@@ -271,7 +271,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           "the live ref: Doesn't exist yet",
         )
         .toBe("missing");
-      const later = await s.writer.createDocument("lore/deep/ori.md", "A new Ori.");
+      const later = await s.writer.createDocument("lore/deep/ori", "A new Ori.");
       expect.soft(later, "a new live document").not.toBe(ori);
       expect
         .soft(
@@ -287,8 +287,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
-      const ori = await s.model(ascension).create("lore/ori.md", "Ascension's Ori.");
-      expect.soft(await s.model(beacon).create("lore/ori.md", "Beacon's Ori.")).toBe(ori);
+      const ori = await s.model(ascension).create("lore/ori", "Ascension's Ori.");
+      expect.soft(await s.model(beacon).create("lore/ori", "Beacon's Ori.")).toBe(ori);
       const versionBefore = (await row(ori))?.version ?? 0n;
 
       // Ascension holds Ori's locks having seen Beacon's use; Beacon's Discard all waits.
@@ -313,11 +313,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("purges a deleted Work's drafts through the kernel, never the public Discard (D-3)", async () => {
       const { runtime, s } = await start();
       const doomed = await s.work("Doomed", "draft");
-      const plan = await s.model(doomed).create("notes/plan.md", "The plan.");
+      const plan = await s.model(doomed).create("notes/plan", "The plan.");
       await livePicture(runtime, s, "charts/chart.png");
       await s.model(doomed).copy("charts/chart.png", "art/map.png");
-      const chapter = await s.writer.createDocument("chapter.md", "Live words.");
-      await s.model(doomed).edit("chapter.md", "Live words.", "Drafted words.");
+      const chapter = await s.writer.createDocument("chapter", "Live words.");
+      await s.model(doomed).edit("chapter", "Live words.", "Drafted words.");
       const items = (await s.review(doomed)).items;
       const map = items.find((item) => item.binary)?.documentId as DocumentId;
       const draftId = items[0]?.draftId ?? "";
@@ -351,7 +351,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branches: 0,
         });
       expect
-        .soft(await s.view("live").read("chapter.md"), "and its live text")
+        .soft(await s.view("live").read("chapter"), "and its live text")
         .toMatchObject({ ok: true, value: { content: expect.stringContaining("Live words.") } });
     });
 
@@ -359,10 +359,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const eventSink = createInMemoryEventSink();
       const { runtime, s } = await start({ eventSink });
       const drafting = await s.work("Drafting", "draft");
-      const stray = await s.model(drafting).create("lore/stray.md", "Stray.");
+      const stray = await s.model(drafting).create("lore/stray", "Stray.");
       // A bug's leftover: the draft's use is gone, the node is still hidden and live.
       await db.delete(draftTreeChanges).where(eq(draftTreeChanges.nodeId, stray));
-      const holder = await s.writer.createDocument("chapter.md", "Chapter.");
+      const holder = await s.writer.createDocument("chapter", "Chapter.");
       const resolved = await handleDocumentLinkResolveRequest(
         {
           projectRepo: runtime.app.projectRepo,
@@ -377,9 +377,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: s.project.userId,
           request: {
             workId: null,
-            baseUri: "manuscript://chapter.md",
+            baseUri: "manuscript://chapter",
             holderDocumentId: holder,
-            links: [{ ref: `doc:${stray}`, href: "lore/stray.md" }],
+            links: [{ ref: `doc:${stray}`, href: "lore/stray" }],
           },
         },
       );
@@ -406,13 +406,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
-      const ori = await s.model(ascension).create("lore/ori.md", "Ascension's Ori.");
-      expect.soft(await s.model(beacon).create("lore/ori.md", "Beacon's Ori."), "joined").toBe(ori);
+      const ori = await s.model(ascension).create("lore/ori", "Ascension's Ori.");
+      expect.soft(await s.model(beacon).create("lore/ori", "Beacon's Ori."), "joined").toBe(ori);
       const staged = await s.model(beacon).reply();
-      expect((await staged.call("read", { path: "manuscript://lore/ori.md" })).isError).toBeFalsy();
+      expect((await staged.call("read", { path: "manuscript://lore/ori" })).isError).toBeFalsy();
       const write = await staged.call("write", {
         command: "replace",
-        path: "manuscript://lore/ori.md",
+        path: "manuscript://lore/ori",
         find: "Beacon's Ori.",
         content: "BEACON STAGED TEXT.",
       });
@@ -433,7 +433,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toContain(ori);
       expect
-        .soft(await s.view(beacon).read("lore/ori.md"), "Beacon's staged text survived")
+        .soft(await s.view(beacon).read("lore/ori"), "Beacon's staged text survived")
         .toMatchObject({
           ok: true,
           value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
@@ -446,14 +446,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
-      const chapter = await s.writer.createDocument("chapter.md", "Live words.");
-      await s.model(ascension).edit("chapter.md", "Live words.", "Ascension's words.");
-      await s.model(beacon).edit("chapter.md", "Live words.", "Beacon's words.");
+      const chapter = await s.writer.createDocument("chapter", "Live words.");
+      await s.model(ascension).edit("chapter", "Live words.", "Ascension's words.");
+      await s.model(beacon).edit("chapter", "Live words.", "Beacon's words.");
       const staged = await s.model(beacon).reply();
-      expect((await staged.call("read", { path: "manuscript://chapter.md" })).isError).toBeFalsy();
+      expect((await staged.call("read", { path: "manuscript://chapter" })).isError).toBeFalsy();
       const write = await staged.call("write", {
         command: "replace",
-        path: "manuscript://chapter.md",
+        path: "manuscript://chapter",
         find: "Beacon's words.",
         content: "BEACON STAGED TEXT.",
       });
@@ -483,7 +483,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(saved.refused, "Beacon's reply refuses nothing").toEqual([]);
       expect.soft(saved.receipts.map((receipt) => receipt.documentId)).toContain(chapter);
       expect
-        .soft(await s.view(beacon).read("chapter.md"), "Beacon's staged text survived")
+        .soft(await s.view(beacon).read("chapter"), "Beacon's staged text survived")
         .toMatchObject({
           ok: true,
           value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
@@ -494,7 +494,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { runtime, s } = await start();
       const [doomed, beacon] = [await s.work("Doomed", "draft"), await s.work("Beacon", "draft")];
       await s.writer.mkdir("carry");
-      const ori = await s.model(doomed).create("carry/sub/ori.md", "Text.");
+      const ori = await s.model(doomed).create("carry/sub/ori", "Text.");
       await runtime.ports.workRepo.softDelete(doomed.id);
       await db
         .update(works)
@@ -523,7 +523,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         created = runOutsideDrizzleTransaction(() =>
           s.model(beacon).now("write", {
             command: "create",
-            path: "kb://carry/sub/new.md",
+            path: "kb://carry/sub/new",
             content: "Beacon's new text.",
           }),
         );
@@ -555,7 +555,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(made?.isError, `Beacon's create: ${JSON.stringify(made?.output)}`).toBeFalsy();
       expect.soft(await row(ori), "ori tombstoned").toMatchObject({ tombstone: true });
       expect
-        .soft(await s.view(beacon).read("kb://carry/sub/new.md"), "Beacon reads its create")
+        .soft(await s.view(beacon).read("kb://carry/sub/new"), "Beacon reads its create")
         .toMatchObject({
           ok: true,
           value: { content: expect.stringContaining("Beacon's new text.") },
@@ -576,10 +576,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const eventSink = createInMemoryEventSink();
       const { s } = await start({ eventSink });
       const [first, second] = [await s.work("First", "draft"), await s.work("Second", "draft")];
-      const stray = await s.model(first).create("lore/stray.md", "Stray.");
+      const stray = await s.model(first).create("lore/stray", "Stray.");
       // A bug's leftover: the draft's use is gone, the node is still hidden and live.
       await db.delete(draftTreeChanges).where(eq(draftTreeChanges.nodeId, stray));
-      const made = await s.model(second).create("lore/stray.md", "Second's stray.");
+      const made = await s.model(second).create("lore/stray", "Second's stray.");
       expect.soft(made, "a fresh document, not the stray").not.toBe(stray);
       expect.soft(await row(stray), "the stray tombstoned").toMatchObject({ tombstone: true });
       expect

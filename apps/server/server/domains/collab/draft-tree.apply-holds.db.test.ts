@@ -93,13 +93,57 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await sign({ kind: "live" }), "never live").toBe("document_not_found");
   });
 
+  // #766 x F11: drafts and live creates share the name codec, and the shared document and
+  // folder namespace is claimed in each view, so a hidden node never vetoes a live entry.
+  it("names one canonical row across prose spellings and holds a folder-alias clash at Apply", async () => {
+    const { s } = await start();
+    const ascension = await s.work("Ascension", "draft");
+    const rival = await s.work("Rival", "draft");
+    const live = s.view("live");
+
+    const kael = await s.model(ascension).create("characters/Kael", "Kael, drafted.");
+    expect
+      .soft(await s.model(rival).create("characters/Kael.txt", "Kael, the rival's."), "joined")
+      .toBe(kael);
+    expect.soft(await live.idAt("characters/Kael.md"), "hidden").toBeNull();
+    expect
+      .soft(await s.writer.create("characters/Kael.md"), "a live create of any spelling reveals it")
+      .toEqual({ status: "created", documentId: kael });
+    expect.soft(await live.idAt("characters/Kael"), "one canonical row, live").toBe(kael);
+
+    // A visible folder alias holds the document name in the draft's view as it does live.
+    await s.writer.mkdir("lore/Lore.md");
+    const refused = await (await s.model(ascension).reply()).call("write", {
+      command: "create",
+      path: "manuscript://lore/Lore",
+      content: "Refused.",
+    });
+    expect.soft(refused.isError, "a draft can't create under a folder's alias").toBe(true);
+
+    // A hidden document never vetoes the live folder; Apply holds the draft's item instead.
+    const map = await s.model(ascension).create("atlas/Map", "Map, drafted.");
+    await s.writer.mkdir("atlas/Map.md");
+    const items = await s.items(ascension);
+    expect.soft(await s.applyAll(ascension), "held at its taken name").toMatchObject({
+      status: "completed",
+      items: expect.arrayContaining([
+        {
+          itemKey: itemFor(items, map).itemKey,
+          status: "held",
+          reason: { code: "path_taken", path: "manuscript://atlas/Map" },
+        },
+      ]),
+    });
+    expect.soft(await live.idAt("atlas/Map"), "still hidden").toBeNull();
+  });
+
   it("applies all as one command with per-item results, holds a clash and closes only when drained (E-7a)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
-    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
-    await s.model(ascension).edit("chapter.md", "Opening.", "Opening, drafted.");
-    const kael = await s.model(ascension).create("characters/kael.md", "Kael.");
-    const notes = await s.model(ascension).create("ideas/kael/notes.md", "Notes.");
+    const chapter = await s.writer.createDocument("chapter", "Opening.");
+    await s.model(ascension).edit("chapter", "Opening.", "Opening, drafted.");
+    const kael = await s.model(ascension).create("characters/kael", "Kael.");
+    const notes = await s.model(ascension).create("ideas/kael/notes", "Notes.");
     await s.writer.createDocument("drafts/kael", "A file named kael.");
     expect.soft(await s.writer.move("drafts", "ideas")).toMatchObject({ ok: true });
 
@@ -120,9 +164,9 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       ]),
     });
     const live = s.view("live");
-    expect.soft(await live.text("chapter.md")).toContain("Opening, drafted.");
-    expect.soft(await live.idAt("characters/kael.md")).toBe(kael);
-    expect.soft(await live.idAt("ideas/kael/notes.md"), "held: still hidden").toBeNull();
+    expect.soft(await live.text("chapter")).toContain("Opening, drafted.");
+    expect.soft(await live.idAt("characters/kael")).toBe(kael);
+    expect.soft(await live.idAt("ideas/kael/notes"), "held: still hidden").toBeNull();
     expect.soft(await s.draftStatuses(ascension), "a held item keeps D open").toEqual(["active"]);
     expect.soft(await s.apply(ascension, [notes]), "the legacy Apply of a held item").toEqual([
       {
@@ -145,12 +189,12 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     // 5a's dependency (E-R2): A is held at dep/a.md; B needs dep/b.md, which only A's move
     // back would free, so B is held too; independent C applies. Never a whole-batch stale.
     const cove = await s.work("Cove", "draft");
-    const a = await s.model(cove).create("dep/a.md", "A, drafted.");
-    await s.writer.create("dep/a.md", { content: "Writer's A." });
-    expect.soft(await s.writer.move("dep/a.md", "dep/b.md")).toMatchObject({ ok: true });
-    const x = await s.writer.createDocument("dep/a.md", "X.");
-    const b = await s.model(cove).create("dep/b.md", "B, drafted.");
-    const c = await s.model(cove).create("dep/c.md", "C, drafted.");
+    const a = await s.model(cove).create("dep/a", "A, drafted.");
+    await s.writer.create("dep/a", { content: "Writer's A." });
+    expect.soft(await s.writer.move("dep/a", "dep/b")).toMatchObject({ ok: true });
+    const x = await s.writer.createDocument("dep/a", "X.");
+    const b = await s.model(cove).create("dep/b", "B, drafted.");
+    const c = await s.model(cove).create("dep/c", "C, drafted.");
     const chain = await s.items(cove);
     const held = (documentId: DocumentId, path: string) => ({
       itemKey: itemFor(chain, documentId).itemKey,
@@ -158,20 +202,20 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       reason: { code: "path_taken", path: `manuscript://${path}` },
     });
     expect
-      .soft(await s.applyAll(cove, { items: [itemFor(chain, b)] }), "B alone: A stays at b.md")
-      .toMatchObject({ status: "completed", items: [held(b, "dep/b.md")] });
+      .soft(await s.applyAll(cove, { items: [itemFor(chain, b)] }), "B alone: A stays at b")
+      .toMatchObject({ status: "completed", items: [held(b, "dep/b")] });
     expect.soft(await s.applyAll(cove), "A and what only A frees stay").toMatchObject({
       status: "completed",
       draftClosed: false,
       items: expect.arrayContaining([
-        held(a, "dep/a.md"),
-        held(b, "dep/b.md"),
+        held(a, "dep/a"),
+        held(b, "dep/b"),
         { itemKey: itemFor(chain, c).itemKey, status: "applied", notes: [] },
       ]),
     });
-    expect.soft(await live.idAt("dep/c.md"), "C applied").toBe(c);
-    expect.soft(await live.idAt("dep/b.md"), "A still at b.md").toBe(a);
-    expect.soft(await live.idAt("dep/a.md"), "X kept").toBe(x);
+    expect.soft(await live.idAt("dep/c"), "C applied").toBe(c);
+    expect.soft(await live.idAt("dep/b"), "A still at b").toBe(a);
+    expect.soft(await live.idAt("dep/a"), "X kept").toBe(x);
   });
 
   it("finishes an Apply whose draft grows mid-flight in the same request, through the route and D40 (E-7b)", async () => {
@@ -187,9 +231,9 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       });
       return remove;
     };
-    const original = await s.model(beacon).create("growth/original.md", "Original, drafted.");
+    const original = await s.model(beacon).create("growth/original", "Original, drafted.");
     const [rendered] = await s.items(beacon);
-    const stop = growAtStaging("growth/late.md");
+    const stop = growAtStaging("growth/late");
     const grown = await s.applyAll(beacon);
     stop();
     expect.soft(grown, "the staged batch finishes with real results").toEqual({
@@ -198,16 +242,16 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       draftClosed: false,
       items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],
     });
-    expect.soft(await live.idAt("growth/original.md"), "published").toBe(original);
-    expect.soft(await live.idAt("growth/late.md"), "the late item stays in D").toBeNull();
+    expect.soft(await live.idAt("growth/original"), "published").toBe(original);
+    expect.soft(await live.idAt("growth/late"), "the late item stays in D").toBeNull();
     expect.soft(await s.batchStates(), "one batch, completed").toEqual(["completed"]);
 
     // D40: switching to auto-apply applies the whole draft through the same command and
     // completes even when the draft grows under it.
-    await s.writer.createDocument("other.md", "Other.");
-    await s.model(beacon).edit("other.md", "Other.", "Other, drafted.");
-    const mira = await s.model(beacon).create("characters/mira.md", "Mira.");
-    const stopAgain = growAtStaging("growth/later.md");
+    await s.writer.createDocument("other", "Other.");
+    await s.model(beacon).edit("other", "Other.", "Other, drafted.");
+    const mira = await s.model(beacon).create("characters/mira", "Mira.");
+    const stopAgain = growAtStaging("growth/later");
     const switched = await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
       projectId: s.project.id,
       workId: beacon.id,
@@ -217,10 +261,10 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     });
     stopAgain();
     expect.soft(switched).toMatchObject({ aiWriteMode: "direct" });
-    expect.soft(await live.text("other.md")).toContain("Other, drafted.");
-    expect.soft(await live.idAt("characters/mira.md")).toBe(mira);
-    expect.soft(await live.idAt("growth/late.md"), "the earlier late item applied").not.toBeNull();
-    expect.soft(await live.idAt("growth/later.md"), "the newest stays in D").toBeNull();
+    expect.soft(await live.text("other")).toContain("Other, drafted.");
+    expect.soft(await live.idAt("characters/mira")).toBe(mira);
+    expect.soft(await live.idAt("growth/late"), "the earlier late item applied").not.toBeNull();
+    expect.soft(await live.idAt("growth/later"), "the newest stays in D").toBeNull();
     expect.soft(await s.draftStatuses(beacon), "D stays open for it").toEqual(["active"]);
   });
   it.each([
@@ -230,7 +274,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     const { runtime, s } = await start();
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
-    const original = await s.model(beacon).create("growth/original.md", "Original, drafted.");
+    const original = await s.model(beacon).create("growth/original", "Original, drafted.");
     // A second chat of the Work grows the draft at staging and at every continuation, past
     // the bounded re-leasing: the staged batch goes to recovery (F22).
     let grown = 0;
@@ -322,6 +366,6 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     // Handed off unclaimed, with a retry backoff: let it come due.
     await makePendingSettlementsDue(s.db);
     expect.soft(await s.recover(), "recovery finishes it").toBe(1);
-    expect.soft(await s.view("live").idAt("growth/original.md"), "published").toBe(original);
+    expect.soft(await s.view("live").idAt("growth/original"), "published").toBe(original);
   });
 });

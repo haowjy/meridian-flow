@@ -429,14 +429,14 @@ if (!RUN) {
       const db = createDb(DATABASE_URL, { max: 12 });
       afterAll(() => db.close());
       const runtimes = useComposedRuntimes(() => db);
-      const KAEL = "manuscript://lore/kael.md";
+      const KAEL = "manuscript://lore/kael";
 
       async function start() {
         const runtime = await runtimes.compose();
         const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
         // The model's create is a hidden row in the Work's draft.
-        const kael = await scenario.model(work).create("lore/kael.md", "Kael, the smith.");
+        const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         const draft = await scenario.draftOf(work);
         return { runtime, scenario, work, kael, draft };
       }
@@ -496,7 +496,7 @@ if (!RUN) {
 
       it("registers the writer's link typed in the draft's review room, and leaves no row past a close it waited on (L-3)", async () => {
         const { runtime, scenario, work, kael, draft } = await start();
-        const chapter = await scenario.model(work).create("chapter-two.md", "The forge was cold.");
+        const chapter = await scenario.model(work).create("chapter-two", "The forge was cold.");
         // The client mints the ahead ref as the writer types; the server has never seen it.
         const typeLink = (aheadId: string) => (doc: Y.Doc) => {
           const paragraph = new Y.XmlElement("paragraph");
@@ -535,12 +535,12 @@ if (!RUN) {
 
         // A live save the draft pulls in, with no journal row and no new generation (F18):
         // the text Apply would publish changed, so the cut must say so.
-        const one = await scenario.writer.create("chapter-one.md", { content: "One." });
+        const one = await scenario.writer.create("chapter-one", { content: "One." });
         const chapterOne = one.documentId as DocumentId;
         const edit = await scenario.model(work).reply();
         await edit.call("write", {
           command: "insert",
-          path: "manuscript://chapter-one.md",
+          path: "manuscript://chapter-one",
           find: "One.",
           content: " Two.",
         });
@@ -550,7 +550,7 @@ if (!RUN) {
           draftId: draft.id,
           branchIds: [pulledBranch.branchId],
         });
-        await scenario.writer.write("chapter-one.md", "One.\n\n[Kael](lore/kael.md)");
+        await scenario.writer.write("chapter-one", "One.\n\n[Kael](lore/kael)");
         await runtime.ports.documentSync.flushBranchLivePull(chapterOne);
         const pulledState = await runtime.ports.documentSync.loadHocuspocusBranchState(
           pulledBranch.branchId,
@@ -583,7 +583,7 @@ if (!RUN) {
           const paragraph = new Y.XmlElement("paragraph");
           const text = new Y.XmlText();
           text.insert(0, "Notes", {
-            link: { href: "scratch://@ghost-work/notes.md", ref: `ahead:${ghost}`, title: null },
+            link: { href: "scratch://@ghost-work/notes", ref: `ahead:${ghost}`, title: null },
           });
           paragraph.insert(0, [text]);
           doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
@@ -595,7 +595,7 @@ if (!RUN) {
         expect.soft(unregistrable, "a ready cut that names the unregistrable ref").toMatchObject({
           status: "ready",
           cut: { draftId: draft.id, branches: [{ branchId }] },
-          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes.md" }],
+          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes" }],
         });
         expect
           .soft(await meanings(beside), "the independent valid ref still registers")
