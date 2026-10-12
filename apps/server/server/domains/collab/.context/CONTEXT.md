@@ -389,7 +389,10 @@ canonical change; only same-identity changes use rich-field-only evidence.
 Publication carries explicit before/after canonical block identities through to
 the durable trail; display hashes and serialized prose never supply identity.
 The model-undo engine still needs legacy text/tombstone restoration inference.
-That text inference cannot transfer novel format, attribute or node ownership.
+That text inference cannot transfer novel format, attribute or node ownership,
+including deletions. Rich removals keep their supplying row alongside the
+restored prose through co-located effect coverage, without changing text ownership.
+The text/tombstone guesses retire with the old model-undo engine in undo step 4.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
