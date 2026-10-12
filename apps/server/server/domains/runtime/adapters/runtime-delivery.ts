@@ -590,6 +590,9 @@ export function createDeliveryAdapter(
       });
       next = completion.turn;
       await inbox.ack(threadId, drain.ackIds);
+      // This failed successor is terminal; a crash before failure-close must
+      // not leave a selector whose receipt recovery can no longer retire.
+      await deps.runClaim.release(lease);
     }
     if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
       await appendPending(threadId);
