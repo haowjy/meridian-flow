@@ -468,3 +468,62 @@ describe("controller stream routing is fenced by seq", () => {
     expect(textOf(scenario, "b")).toBe("B output");
   });
 });
+
+describe("case 9: an ordinary steer, then Stop of the successor", () => {
+  it("keeps A's final line after the steer and routes Stop to the successor", async () => {
+    const scenario = makeScenario({
+      append: async () =>
+        defaultSendResponse({ userTurnId: "m1", steersTurnId: null, resumeAfterSeq: "74999" }),
+    });
+    await scenario.submit("ORDINARY");
+    scenario.emit(inbox("m1"), "75001");
+    scenario.emit(runStarted("a", "x", ["m1"]), "78000");
+    scenario.emit(textStart("a:0"), "79000");
+    scenario.emit(textDelta("a:0", "Ordinary first"), "79001");
+    scenario.emit(delivered("a", "x", ["m1"]), "87000");
+    scenario.emit(inbox(), "88000");
+    scenario.setAppend(async () =>
+      defaultSendResponse({ userTurnId: "m2", steersTurnId: "a", resumeAfterSeq: "93999" }),
+    );
+    await scenario.submit("STEER");
+    scenario.emit(inbox("m2"), "94001");
+    // The mounted owner's refresh for that inbox frame lands while A still runs.
+    scenario.controller.observeSnapshot(
+      "thread_1",
+      snapshotResponse({
+        turns: [
+          snapshotTurn("m1", "user", { deliveredBy: "a" }),
+          snapshotTurn("a", "assistant", {
+            executionId: "x",
+            reservedFor: ["m1"],
+            status: "streaming",
+          }),
+          snapshotTurn("m2", "user"),
+        ],
+        openExecutionId: "x",
+        runningTurnId: "a",
+        pendingWriterMessages: ["m2"],
+        resumeAfterSeq: "94999",
+        nextSeq: "95000",
+      }),
+    );
+    scenario.emit(textStart("a:3"), "95000");
+    scenario.emit(textDelta("a:3", "ordinary boundary"), "95001");
+    scenario.emit(runFinished("a"), "102000");
+    scenario.emit(runStarted("b", "x", ["m2"]), "103000");
+    scenario.controller.flushPendingDeltas("thread_1");
+    expect(textOf(scenario, "a")).toContain("ordinary boundary");
+
+    scenario.controller.cancel("thread_1");
+    await vi.waitFor(() =>
+      expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "b" }]),
+    );
+    scenario.emit(delivered("b", "x", ["m2"]), "108000");
+    scenario.emit(executionEnded("x"), "109000");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual({
+      following: false,
+      waiting: false,
+    });
+    expect(textOf(scenario, "a")).toContain("ordinary boundary");
+  });
+});
