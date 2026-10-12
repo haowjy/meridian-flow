@@ -126,7 +126,7 @@ it.each([
 it.each([
   "created-parent",
   "surviving-text",
-] as const)("refuses stale Discard when %s dependency arrives after the displayed preview", async (shape) => {
+] as const)("refuses gone Discard when %s dependency replaces the clicked class", async (shape) => {
   const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.", "discard-arrival");
@@ -165,13 +165,16 @@ it.each([
     await stage("writer");
     const arrived = await f.collab.draftReview.preview(command);
     if (arrived.status !== "active") throw new Error("missing arrival preview");
+    expect(arrived.operations.map((op) => op.closureClassId)).not.toContain(
+      preview.operations[0].closureClassId,
+    );
     const request = fencedRequest(
       command,
       preview,
       preview.operations.map((op) => op.operationId),
     );
     expect(await f.collab.draftReview.discardWorkDraft(request)).toEqual({
-      status: "stale",
+      status: "gone",
       draftId: branch.branchId,
     });
     const after = await f.collab.draftReview.preview(command);

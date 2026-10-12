@@ -263,13 +263,15 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     ]);
     expect(api.discardDraft).toHaveBeenCalledTimes(2);
     expect(api.discardDraft.mock.calls[0]?.[3]).toMatchObject({
-      operationIds: ["2"],
+      closureClassIds: [a.closureClassId],
       admissionTokens: [a.admissionToken],
     });
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
-      operationIds: ["30"],
+      closureClassIds: [b.closureClassId],
       admissionTokens: [b.admissionToken],
     });
+    for (const call of api.discardDraft.mock.calls)
+      expect(call[3]).not.toHaveProperty("operationIds");
     for (const thread of ["thread-a", "thread-b"]) {
       expect(invalidations).toHaveBeenCalledWith({
         queryKey: threadQueryKeys.liveLineageRoot(thread),
@@ -308,7 +310,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     await settleReact(() => expect(api.discardDraft).toHaveBeenCalledTimes(2));
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
       draftId: "draft-b",
-      operationIds: ["4"],
+      closureClassIds: [c.closureClassId],
     });
     bindDraftCommandAccount("account-b");
     answer.resolve(discarded);
@@ -366,7 +368,8 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
       expect(api.discardDraft, situation).toHaveBeenCalledTimes(retry ? 2 : 1);
       if (retry)
         expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
-          operationIds: ["30"],
+          closureClassIds: [b.closureClassId],
+          admissionTokens: [b.admissionToken],
           draftRevisionToken: "draft-2",
           liveRevisionToken: "fresh-live",
         });

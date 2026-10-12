@@ -151,7 +151,6 @@ export async function reviewChange(
   const command = {
     ...target,
     userId: USER_ID as never,
-    operationIds: [op.operationId],
     closureClassIds: [op.closureClassId],
     admissionTokens: [op.admissionToken],
     liveRevisionToken: preview.liveRevisionToken,
@@ -159,7 +158,10 @@ export async function reviewChange(
   };
   expect(
     await (apply
-      ? fixture.collab.draftReview.applyWorkDraftChanges(command)
+      ? fixture.collab.draftReview.applyWorkDraftChanges({
+          ...command,
+          operationIds: [op.operationId],
+        })
       : fixture.collab.draftReview.discardWorkDraft(command)),
   ).toMatchObject({ status: apply ? "applied" : "discarded" });
 }

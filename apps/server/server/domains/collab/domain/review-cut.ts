@@ -102,7 +102,7 @@ export function selectReviewCut(
   snapshot: BranchSnapshot,
   rows: readonly BranchJournalRow[],
   command: {
-    operationIds: string[];
+    operationIds?: string[];
     liveRevisionToken?: string;
     draftRevisionToken?: string;
     closureClassIds?: string[];
@@ -129,27 +129,32 @@ export function selectReviewCut(
   if (requireCompleteClass && preview.isNewDocument) throw new DraftChangeRefusal("draft_only");
   const requested = new Set(command.operationIds);
   if (
-    !requested.size ||
-    [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
+    requireCompleteClass &&
+    (!requested.size ||
+      [...requested].some((id) => !preview.operations.some((op) => op.operationId === id)))
   )
     throw new DraftChangeRefusal("gone");
-  const classes = new Set(
-    preview.operations.filter((op) => requested.has(op.operationId)).map((op) => op.closureClassId),
-  );
+  const classes = requireCompleteClass
+    ? new Set(
+        preview.operations
+          .filter((op) => requested.has(op.operationId))
+          .map((op) => op.closureClassId),
+      )
+    : new Set(command.closureClassIds);
+  if (
+    !classes.size ||
+    [...classes].some((id) => !preview.operations.some((op) => op.closureClassId === id))
+  )
+    throw new DraftChangeRefusal("gone");
   const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
   if (!requireCompleteClass) {
-    // UI identity is not admission: fence complete closed rows and rich effect.
-    // Independent typing can move the draft observation without changing either.
-    const expected = new Set(command.closureClassIds);
+    // Clicked classes survive re-journaling; only their unchanged evidence admits.
     const expectedTokens = new Set(command.admissionTokens);
     const currentTokens = new Set(selected.map((op) => op.admissionToken));
     if (
       !expectedTokens.size ||
       expectedTokens.size !== currentTokens.size ||
-      [...currentTokens].some((token) => !expectedTokens.has(token)) ||
-      !expected.size ||
-      expected.size !== classes.size ||
-      [...classes].some((id) => !expected.has(id))
+      [...currentTokens].some((token) => !expectedTokens.has(token))
     )
       throw new DraftChangeRefusal("stale");
   }

@@ -181,7 +181,6 @@ export type DraftDiscardResponse = {
 };
 export type DraftDiscardRequest = {
   draftId: string;
-  operationIds?: string[];
   /** Required for per-change Discard; absent for whole-document Discard. */
   liveRevisionToken?: string;
   draftRevisionToken?: string;
