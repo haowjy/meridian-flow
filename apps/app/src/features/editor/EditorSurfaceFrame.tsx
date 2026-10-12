@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
+  /** Notes about this document (schema repair, a fenced session), prose-aligned above the toolbar. */
+  notices?: ReactNode;
   /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
   children: ReactNode;
@@ -45,6 +47,7 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
 }
 
 export function EditorSurfaceFrame({
+  notices,
   toolbar,
   children,
   editor,
@@ -55,6 +58,9 @@ export function EditorSurfaceFrame({
   return (
     // The container the column insets answer to: the pane, not the viewport.
     <div className="@container flex min-h-0 flex-1 flex-col">
+      {notices ? (
+        <div className={cn(editorColumnChrome, "flex shrink-0 flex-col gap-2 pt-3")}>{notices}</div>
+      ) : null}
       {toolbar ? (
         <div className="flex h-9 shrink-0 items-center">
           {/* The toolbar's geometry is fixed (ten controls, one order), so a

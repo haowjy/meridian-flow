@@ -613,12 +613,18 @@ function ActiveSessionEditorView({
             <SyncStatus session={session} />
           </div>
         ) : null}
-        {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
-        {snapshot.schemaRepairs.length > 0 ? (
-          <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
-        ) : null}
         <TrackedEditorCanvas
           editor={editor}
+          notices={
+            snapshot.schemaFence || snapshot.schemaRepairs.length > 0 ? (
+              <>
+                {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
+                {snapshot.schemaRepairs.length > 0 ? (
+                  <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
+                ) : null}
+              </>
+            ) : undefined
+          }
           toolbar={
             showToolbar ? (
               <DocumentToolbar
@@ -671,17 +677,20 @@ function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) 
 
 function TrackedEditorCanvas({
   editor,
+  notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   return (
     <EditorSurfaceFrame
+      notices={notices}
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
