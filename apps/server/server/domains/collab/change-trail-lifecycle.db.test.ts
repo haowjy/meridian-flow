@@ -4,7 +4,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { drizzleFileAccess } from "../../test-support/file-grants.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
-import { invalidateTrailOwners } from "./adapters/drizzle-trail-owners.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -275,22 +274,17 @@ describe("change trail (postgres)", () => {
     "cancelled",
     "error",
   ])("settles an empty %s turn after restart", async (status) => {
-    await db.transaction(async (tx) => {
-      await invalidateTrailOwners(tx, { turnIds: [TURN_ID] });
-      await tx.update(schema.turns).set({ status }).where(eq(schema.turns.id, TURN_ID));
-    });
+    await db.update(schema.turns).set({ status }).where(eq(schema.turns.id, TURN_ID));
     const coldDb = createTestDatabase();
     try {
       const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
       await cold.reconcileTerminalOwners();
       await cold.reconcileTerminalOwners();
       const [shell] = await coldDb.select().from(schema.changeTrailShells);
-      const [turn] = await coldDb.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
       expect(shell).toMatchObject({
         state: "settled",
         changeCount: 0,
         documentCount: 0,
-        reconciledRevision: turn.trailDirtyRevision,
       });
     } finally {
       await closeDatabase(coldDb);
@@ -310,8 +304,7 @@ describe("change trail (postgres)", () => {
         draftId: branchId,
         userId: USER_ID,
       });
-      const [owner] = await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
-      expect(owner.trailDirtyRevision).toBeGreaterThan(settled.reconciledRevision);
+      expect(await db.select().from(schema.changeTrailDirtyLog)).not.toEqual([]);
       warm.destroyWarmState();
       const coldDb = createTestDatabase();
       try {
@@ -322,7 +315,6 @@ describe("change trail (postgres)", () => {
         expect(shell).toMatchObject({
           state: "settled",
           version: settled.version + 3,
-          reconciledRevision: owner.trailDirtyRevision,
         });
       } finally {
         await closeDatabase(coldDb);
@@ -333,12 +325,9 @@ describe("change trail (postgres)", () => {
   });
 
   it("commits receipt and placement invalidation atomically, then recovers without a warm owner", async () => {
-    const revision = async () =>
-      (await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID)))[0]
-        .trailDirtyRevision;
+    const revision = async () => (await db.select().from(schema.changeTrailDirtyLog)).length;
     const initial = await revision();
     const receipt = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
-      await invalidateTrailOwners(tx, { owners: [{ threadId: THREAD_ID, turnId: TURN_ID }] });
       const [edit] = await tx
         .insert(schema.documentEdits)
         .values({
@@ -369,24 +358,22 @@ describe("change trail (postgres)", () => {
     expect(await revision()).toBe(initial);
     expect(await db.select().from(schema.documentEdits)).toEqual([]);
     const id = await db.transaction(receipt);
+    expect(await revision()).toBeGreaterThan(initial);
     const admitted = await revision();
-    expect(admitted).toBeGreaterThan(initial);
     await db.transaction(async (tx) => {
-      await invalidateTrailOwners(tx, { editIds: [id] });
       await tx
         .update(schema.documentEditParts)
         .set({ placement: { kind: "discarded" } })
         .where(eq(schema.documentEditParts.editId, id));
     });
-    const placed = await revision();
-    expect(placed).toBeGreaterThan(admitted);
+    expect(await revision()).toBeGreaterThan(admitted);
     const coldDb = createTestDatabase();
     try {
       const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
       await cold.reconcileTerminalOwners();
       await cold.reconcileTerminalOwners();
       expect(await coldDb.select().from(schema.changeTrailShells)).toEqual([
-        expect.objectContaining({ state: "settled", reconciledRevision: placed }),
+        expect.objectContaining({ state: "settled" }),
       ]);
     } finally {
       await closeDatabase(coldDb);

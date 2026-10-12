@@ -418,21 +418,19 @@ async function reconcileTerminalOwners(
       tx.execute(sql`
       SELECT * FROM (
         SELECT shell.id, owner.thread_id, owner.id AS turn_key, owner.id AS turn_id
-        FROM turns owner
-        LEFT JOIN change_trail_shells shell ON shell.turn_id = owner.id
+        FROM turns owner LEFT JOIN change_trail_shells shell ON shell.turn_id = owner.id
           AND shell.thread_id = owner.thread_id AND shell.owner_kind = 'turn'
-        WHERE owner.trail_dirty_revision > 0 AND (
-          (owner.status IN ('complete', 'cancelled', 'error') AND (shell.id IS NULL OR shell.state <> 'settled'))
-          OR (shell.state = 'settled' AND owner.trail_dirty_revision > shell.reconciled_revision)
-        )
-        UNION ALL
-        SELECT shell.id, shell.thread_id, '00000000-0000-0000-0000-000000000000'::uuid AS turn_key, NULL::uuid AS turn_id
-        FROM change_trail_shells shell JOIN threads owner ON owner.id = shell.thread_id
-        WHERE shell.owner_kind = 'shared' AND (
-          (shell.state = 'settled' AND owner.trail_dirty_revision > shell.reconciled_revision) OR (shell.state <> 'settled' AND NOT EXISTS (
-            SELECT 1 FROM turns WHERE turns.thread_id = shell.thread_id AND turns.status NOT IN ('complete', 'cancelled', 'error')
-          ))
-        )
+        WHERE (shell.state <> 'settled' OR EXISTS (
+          SELECT 1 FROM change_trail_dirty_log signal
+          WHERE signal.thread_id = owner.thread_id AND signal.turn_id = owner.id
+        )) AND (shell.id IS NOT NULL OR owner.status IN ('complete', 'cancelled', 'error'))
+        UNION
+        SELECT shell.id, candidates.thread_id, '00000000-0000-0000-0000-000000000000'::uuid AS turn_key, NULL::uuid AS turn_id
+        FROM (
+          SELECT thread_id FROM change_trail_dirty_log WHERE turn_id IS NULL
+          UNION SELECT thread_id FROM change_trail_shells WHERE owner_kind = 'shared' AND state <> 'settled'
+        ) candidates LEFT JOIN change_trail_shells shell
+          ON shell.thread_id = candidates.thread_id AND shell.owner_kind = 'shared'
       ) candidates
       ${after ? sql`WHERE (thread_id, turn_key) > (${after.thread_id}::uuid, ${after.turn_key}::uuid)` : sql``}
       ORDER BY thread_id, turn_key LIMIT 100
@@ -450,46 +448,63 @@ async function reconcileTerminalOwners(
       ...row,
       id:
         row.id ??
-        trailIdForOwner({
-          kind: "turn",
-          threadId: row.thread_id,
-          turnId: row.turn_id as string,
-        }),
+        trailIdForOwner(
+          row.turn_id
+            ? {
+                kind: "turn",
+                threadId: row.thread_id,
+                turnId: row.turn_id,
+              }
+            : { kind: "shared", threadId: row.thread_id, turnId: null },
+        ),
     }));
     if (owners.length === 0) return undefined;
     const ids = owners.map((owner) => owner.id).sort();
     for (const id of ids) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
-    await tx
-      .insert(changeTrailShells)
-      .values(
-        owners.map((owner) => ({
-          id: owner.id,
-          threadId: owner.thread_id as ThreadId,
-          turnId: owner.turn_id as TurnId | null,
-          ownerKind: owner.turn_id ? ("turn" as const) : ("shared" as const),
-          changeCount: 0,
-          documentCount: 0,
-        })),
-      )
-      .onConflictDoNothing();
-    // Read after the locks, in one statement. A commit after this cut stays dirty:
-    // the shell acknowledges only this revision and never locks an owner row.
+    const newTurns = owners.filter((owner) => owner.turn_id);
+    if (newTurns.length)
+      await tx
+        .insert(changeTrailShells)
+        .values(
+          newTurns.map((owner) => ({
+            id: owner.id,
+            threadId: owner.thread_id as ThreadId,
+            turnId: owner.turn_id as TurnId,
+            ownerKind: "turn" as const,
+            changeCount: 0,
+            documentCount: 0,
+          })),
+        )
+        .onConflictDoNothing();
+    // DELETE and readiness share a snapshot. Later commits, even lower sequences,
+    // remain signals; rollback restores consumption along with shell/outbox writes.
     const cuts = await tx.execute(sql`
-      SELECT shell.*, CASE WHEN shell.owner_kind = 'turn' THEN owner.trail_dirty_revision
-        ELSE thread.trail_dirty_revision END AS dirty_revision,
+      WITH consumed AS (
+        DELETE FROM change_trail_dirty_log signal WHERE ${sql.join(
+          owners.map(
+            (owner) =>
+              sql`(signal.thread_id = ${owner.thread_id}::uuid AND signal.turn_id IS NOT DISTINCT FROM ${owner.turn_id}::uuid)`,
+          ),
+          sql` OR `,
+        )}
+        RETURNING thread_id, turn_id, seq
+      )
+      SELECT shell.*,
+        EXISTS (SELECT 1 FROM consumed WHERE consumed.thread_id = shell.thread_id
+          AND consumed.turn_id IS NOT DISTINCT FROM shell.turn_id) AS dirty,
         CASE WHEN shell.owner_kind = 'turn' THEN owner.status IN ('complete', 'cancelled', 'error')
           ELSE NOT EXISTS (SELECT 1 FROM turns WHERE turns.thread_id = shell.thread_id
             AND turns.status NOT IN ('complete', 'cancelled', 'error')) END AS terminal,
         NOT EXISTS (
-          SELECT 1 FROM branch_write_journal journal WHERE journal.thread_id = shell.thread_id
-            AND (shell.owner_kind = 'shared' OR journal.turn_id = shell.turn_id) AND journal.status = 'rollback_pending'
+          SELECT 1 FROM branch_write_journal journal
+          CROSS JOIN LATERAL change_trail_owners('{}', ARRAY[journal.id]) affected
+          WHERE journal.status = 'rollback_pending' AND affected.thread_id = shell.thread_id
+            AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
         ) AND NOT EXISTS (
-          SELECT 1 FROM branch_push_settlement_outbox pending JOIN push_lineage push ON push.id = pending.push_id
-          WHERE pending.state = 'pending' AND (
-            (push.thread_id = shell.thread_id AND (shell.owner_kind = 'shared' OR push.turn_id = shell.turn_id))
-            OR EXISTS (SELECT 1 FROM branch_write_journal journal WHERE journal.id = ANY(push.journal_ids)
-              AND journal.thread_id = shell.thread_id AND (shell.owner_kind = 'shared' OR journal.turn_id = shell.turn_id))
-          )
+          SELECT 1 FROM branch_push_settlement_outbox pending
+          CROSS JOIN LATERAL change_trail_owners('{}', '{}', ARRAY[pending.push_id]) affected
+          WHERE pending.state = 'pending' AND affected.thread_id = shell.thread_id
+            AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
         ) AS ready
       FROM change_trail_shells shell JOIN threads thread ON thread.id = shell.thread_id
       LEFT JOIN turns owner ON owner.id = shell.turn_id
@@ -504,8 +519,7 @@ async function reconcileTerminalOwners(
       thread_id: ThreadId;
       state: "building" | "settling" | "settled";
       version: number;
-      dirty_revision: string;
-      reconciled_revision: string;
+      dirty: boolean;
       terminal: boolean;
       ready: boolean;
       change_count: number;
@@ -527,7 +541,6 @@ async function reconcileTerminalOwners(
             version,
             settledAt: settled ? new Date() : null,
             updatedAt: new Date(),
-            ...(settled ? { reconciledRevision: BigInt(cut.dirty_revision) } : {}),
           })
           .where(eq(changeTrailShells.id, cut.id));
         const eventKind = settled ? ("settled" as const) : ("updated" as const);
@@ -551,7 +564,7 @@ async function reconcileTerminalOwners(
           })
           .onConflictDoNothing();
       };
-      if (state === "settled" && BigInt(cut.dirty_revision) > BigInt(cut.reconciled_revision)) {
+      if (state === "settled" && cut.dirty) {
         await transition("building");
       }
       if (!cut.terminal) continue;

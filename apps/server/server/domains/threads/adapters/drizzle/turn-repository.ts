@@ -16,7 +16,6 @@ import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-p
 import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
-import { invalidateTrailOwners } from "../../../collab/adapters/drizzle-trail-owners.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
 import { turnCountsAsActivity } from "../../domain/turn-activity-policy.js";
@@ -205,9 +204,6 @@ export function createDrizzleTurnRepository(
           if (!existing) throw new Error("Failed to create turn");
           return existing;
         }
-        await invalidateTrailOwners(activeDb, {
-          owners: [{ threadId: row.threadId, turnId: row.role === "assistant" ? row.id : null }],
-        });
         const now = new Date();
         const countsAsActivity = turnCountsAsActivity(input.origin);
         await activeDb
@@ -349,45 +345,30 @@ export function createDrizzleTurnRepository(
       return (row?.id as TurnId | undefined) ?? null;
     },
     async updateStatus(id, input: UpdateTurnStatusInput) {
-      return runInDrizzleTransaction(db, async () => {
-        const activeDb = currentDrizzleDb(db);
-        const [owner] = await activeDb.select().from(schema.turns).where(eq(schema.turns.id, id));
-        if (!owner) throw new Error(`Turn not found: ${id}`);
-        if (owner.status !== input.status) {
-          await invalidateTrailOwners(activeDb, {
-            owners: [
-              {
-                threadId: owner.threadId,
-                turnId: owner.role === "assistant" || owner.trailDirtyRevision > 0n ? id : null,
-              },
-            ],
-          });
-        }
-        const patch: {
-          status: Turn["status"];
-          finishReason?: Turn["finishReason"];
-          completedAt?: Date | null;
-          error?: string | null;
-          promptBakeId?: Turn["promptBakeId"];
-          compactionModel?: string | null;
-          metadata?: Turn["metadata"];
-        } = { status: input.status };
-        if (input.finishReason !== undefined) patch.finishReason = input.finishReason;
-        if (input.completedAt !== undefined) {
-          patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
-        }
-        if (input.error !== undefined) patch.error = input.error;
-        if (input.compactionModel !== undefined) patch.compactionModel = input.compactionModel;
-        if (input.promptBakeId !== undefined) patch.promptBakeId = input.promptBakeId;
-        if (input.metadata !== undefined) patch.metadata = input.metadata;
-        const [row] = await currentDrizzleDb(db)
-          .update(schema.turns)
-          .set(patch)
-          .where(eq(schema.turns.id, id))
-          .returning();
-        if (!row) throw new Error(`Turn not found: ${id}`);
-        return mapTurn(row);
-      });
+      const patch: {
+        status: Turn["status"];
+        finishReason?: Turn["finishReason"];
+        completedAt?: Date | null;
+        error?: string | null;
+        promptBakeId?: Turn["promptBakeId"];
+        compactionModel?: string | null;
+        metadata?: Turn["metadata"];
+      } = { status: input.status };
+      if (input.finishReason !== undefined) patch.finishReason = input.finishReason;
+      if (input.completedAt !== undefined) {
+        patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
+      }
+      if (input.error !== undefined) patch.error = input.error;
+      if (input.compactionModel !== undefined) patch.compactionModel = input.compactionModel;
+      if (input.promptBakeId !== undefined) patch.promptBakeId = input.promptBakeId;
+      if (input.metadata !== undefined) patch.metadata = input.metadata;
+      const [row] = await currentDrizzleDb(db)
+        .update(schema.turns)
+        .set(patch)
+        .where(eq(schema.turns.id, id))
+        .returning();
+      if (!row) throw new Error(`Turn not found: ${id}`);
+      return mapTurn(row);
     },
     async recomputeRollups(id) {
       return writeTurnRollupRecompute(db, id);

@@ -569,11 +569,13 @@ must not publish themselves. An empty or failed assistant turn must also settle.
 For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
 
 ```bash
-DB_TEST_WORKERS=1 pnpm test:db -- apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts
+DB_TEST_WORKERS=1 pnpm test:db -- apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts apps/server/server/domains/collab/adapters/drizzle-trail-signals.db.test.ts
 ```
 
 Its restart checks commit before constructing a fresh aggregate adapter on a
-separate connection. Receipt and placement rollback must leave the owner revision
-unchanged; committed invalidation must survive destroying warm state. Pending
+separate connection. Receipt and placement rollback must leave the signal log
+unchanged; committed invalidation must survive destroying warm state. A lower
+sequence committed after consumption must remain discoverable, and failed
+consumption must restore the signals with the shell and outbox. Pending
 live publication must delay settlement. These are DB integration checks, not a
 claim that this manual writer workflow passed.

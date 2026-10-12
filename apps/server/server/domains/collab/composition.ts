@@ -1,4 +1,3 @@
-import { invalidateTrailOwners } from "./adapters/drizzle-trail-owners.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
@@ -83,7 +82,7 @@ import {
 import { createWriterIngressBinding } from "./adapters/writer-ingress-binding.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
-import type { CollabDomain, ResponseWriteFinalizer } from "./contracts.js";
+import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
@@ -427,20 +426,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const liveDependencies = createDrizzleLiveTurnDependencyStore(deps.db);
-  const buildResponseFinalizer = (
-    owner?: Parameters<ResponseWriteFinalizer["finalizeResponseCommit"]>[1],
-  ) =>
+  const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
-      agentEdit: owner
-        ? {
-            ...agentEdit,
-            commitResponse: (responseId, options) =>
-              runInDrizzleTransaction(deps.db, async () => {
-                await invalidateTrailOwners(currentDrizzleDb(deps.db), { owners: [owner] });
-                return agentEdit.commitResponse(responseId, options);
-              }),
-          }
-        : agentEdit,
+      agentEdit,
       liveAgentEdit: runtime.liveUtilityCore,
       reversalStore: persistence.journal,
       liveReversal: liveDependencies,
@@ -454,13 +442,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       projections: projectionRefresher,
       notices: postDurabilityNotices,
       deferUntilCommit: deferUntilDrizzleCommit,
-    });
-  const responseFinalizer = scopeResponseFinalizer(
-    {
-      ...buildResponseFinalizer(),
-      finalizeResponseCommit: (responseId, owner, beforeCommit) =>
-        buildResponseFinalizer(owner).finalizeResponseCommit(responseId, owner, beforeCommit),
-    },
+    }),
     deps.links,
   );
   const drafts = createWorkDraftReviewService({

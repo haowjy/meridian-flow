@@ -58,9 +58,6 @@ export const threads = pgTable(
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    trailDirtyRevision: bigint("trail_dirty_revision", { mode: "bigint" })
-      .notNull()
-      .default(sql`0`),
     initialPromptBakeId: uuid("initial_prompt_bake_id")
       .$type<PromptBakeId>()
       .references((): PgColumn => promptBakes.id),
@@ -302,9 +299,6 @@ export const turns = pgTable(
     origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
-    trailDirtyRevision: bigint("trail_dirty_revision", { mode: "bigint" })
-      .notNull()
-      .default(sql`0`),
     finishReason: text("finish_reason"),
     error: text("error"),
     model: text("model"),
