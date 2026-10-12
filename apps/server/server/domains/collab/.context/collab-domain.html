@@ -706,7 +706,7 @@ checkpoint plus every later row of the same generation".
   <tr><th>Table</th><th>Holds</th></tr>
   <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response, reversal actor.</td></tr>
   <tr><td><code>document_yjs_checkpoints</code></td><td>Full encoded state at <code>up_to_seq</code>, its authority generation, and an attribution manifest that freezes first-birth attribution so compaction cannot lose it.</td></tr>
-  <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp and latest checkpoint and state vector.</td></tr>
+  <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp, latest checkpoint and state vector, and <code>retired_through_seq</code>: the highest row compaction has deleted in this generation.</td></tr>
   <tr><td><code>agent_edit_mutations</code>, <code>document_yjs_reversals</code>, <code>document_yjs_reversal_ops</code></td><td>Write handles and reversal state and lineage, keyed to update row IDs.</td></tr>
 </table>
 </div>
@@ -733,8 +733,10 @@ without a row.
     <span class="ref"><code>checkpoints.ts</code></span></li>
   <li><strong>Compaction.</strong> <code>journal.compact(docId, before)</code>
     folds the contiguous prefix of current-generation rows older than
-    <code>before</code> into a <code>compact</code> checkpoint, deletes those rows
-    and their reversal ops, and expires reversals created before the cutoff.
+    <code>before</code> into a <code>compact</code> checkpoint (or folds nothing
+    when an ordinary checkpoint already covers them), deletes those rows and
+    their reversal ops, and expires reversals created before the cutoff. The
+    same transaction raises <code>retired_through_seq</code>.
     It is implemented and tested, but no production scheduler calls it on this
     checkout, so live rows are never deleted.
     <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>compact</code></span></li>
@@ -743,13 +745,18 @@ without a row.
 The rule for every checkpoint writer: it may under-claim but must never
 over-claim. A row at or below <code>up_to_seq</code> is never replayed again, so
 if the state lacked it the row is lost; a row above it replays harmlessly on
-top. Room and explicit writers use an opaque <code>CapturedCheckpointCut</code>:
-under the document mutation lock, <code>journal.captureCheckpoint</code> folds the
-current-generation checkpoint and complete committed suffix. Its bytes contain
-every folded row, including admissions Hocuspocus has not yet applied to the room.
-Unresolved Yjs dependencies refuse capture. Persistence accepts this inseparable
-cut and rechecks its generation, never a free state/watermark pair.
-<span class="ref"><code>domain/checkpoint-cut.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>captureCheckpoint</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
+top. So no writer encodes the room. Seed, room and explicit writers all persist an
+opaque <code>CapturedCheckpointCut</code> that only the journal adapters mint.
+Under the document mutation lock, <code>journal.captureCheckpoint</code> records
+only references: the current-generation base checkpoint and the last committed
+row, including admissions Hocuspocus has not yet applied to the room. The lock is
+released before any bytes are read. Persistence then replays base plus suffix
+outside the lock, and under its own lock rechecks the generation and that
+compaction has not retired the suffix. A stale cut is dropped (an explicit
+checkpoint returns <code>stale_generation</code>). A cut whose suffix compaction
+retired fails the write: the room worker emits <code>checkpoint.failed</code>,
+and the next store captures afresh. Unresolved Yjs dependencies refuse the cut.
+<span class="ref"><code>domain/checkpoint-cut.ts</code>, <code>adapters/drizzle-checkpoint-capture.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>storeCheckpoint</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
 </p>
 
 <figure aria-label="Read and reconstruct path">
