@@ -419,7 +419,12 @@ export function createDrizzleContextCatalog(
       // Replay clears the old subtree before installing this commit. Restore every
       // survivor, including entries already published by a separate repair and
       // descendants that moved out of the root during this refresh.
-      const replacedIds = new Set(invalidatedRootIds);
+      // Only roots this scope has published or publishes now: a hidden node a draft let go
+      // (Discard) was never in a live scope, and naming it would leak it.
+      const invalidatedRoots = [...new Set(invalidatedRootIds)].filter(
+        (id) => oldById.has(id) || nextById.has(id),
+      );
+      const replacedIds = new Set(invalidatedRoots);
       const children = new Map<string, Set<string>>();
       for (const entry of [...oldById.values(), ...nextById.values()]) {
         if (entry.kind !== "folder" && entry.kind !== "file") continue;
@@ -431,7 +436,7 @@ export function createDrizzleContextCatalog(
         for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
       }
       const changes: CatalogChange[] = [];
-      for (const rootEntryId of new Set(invalidatedRootIds)) {
+      for (const rootEntryId of invalidatedRoots) {
         changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
       }
       for (const [entryId, entry] of nextById) {
