@@ -24,9 +24,9 @@ it.each(
   function Harness() {
     const [branch, setBranch] = useState<string | null>("unknown");
     const drafts = { status: "empty", groups: [] };
-    const binding = bindDocumentAddressReview(branch ?? undefined, "work", drafts);
+    const binding = bindDocumentAddressReview(branch ?? undefined, "work");
     const remote = branch
-      ? undefined
+      ? { kind: "unavailable" }
       : ({ kind: "current", document: { documentId: "live-occupant" } } as const);
     const reconciled = reconcileDocumentAddress(
       undefined,

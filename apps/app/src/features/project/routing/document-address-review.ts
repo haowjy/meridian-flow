@@ -4,31 +4,25 @@ import type {
   DocumentAddressResult,
 } from "@meridian/contracts/protocol";
 
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
 
 export type DocumentAddressBinding =
   | { kind: "plain" }
-  | { kind: "pending" | "failed" | "unavailable" }
+  | { kind: "pending" }
   | {
       kind: "review";
-      review: NonNullable<DocumentAddressRequestOptions["review"]> & { documentId: string };
+      review: NonNullable<DocumentAddressRequestOptions["review"]>;
     };
 
 /** The branch owns review identity even while its Work's draft list is loading. */
 export function bindDocumentAddressReview(
   draftId: string | undefined,
   workId: string | null,
-  drafts: { status: string; groups: ThreadDraftGroup[] | null },
 ): DocumentAddressBinding {
   if (!draftId) return { kind: "plain" };
-  if (!workId || drafts.status === "loading") return { kind: "pending" };
-  if (drafts.status === "error") return { kind: "failed" };
-  const group = drafts.groups?.find((candidate) => candidate.draft.draftId === draftId);
-  return group
-    ? { kind: "review", review: { workId, draftBranchId: draftId, documentId: group.documentId } }
-    : { kind: "unavailable" };
+  if (!workId) return { kind: "pending" };
+  return { kind: "review", review: { workId, draftBranchId: draftId } };
 }
 
 /** A failed review selector never falls back to the live occupant. */
@@ -36,8 +30,7 @@ export function reviewBoundAddressResult(
   binding: DocumentAddressBinding,
   remote: DocumentAddressResult | undefined,
 ): DocumentAddressResult | undefined {
-  if (binding.kind === "unavailable") return { kind: "unavailable" };
-  if (binding.kind === "pending" || binding.kind === "failed") return undefined;
+  if (binding.kind === "pending") return undefined;
   return remote;
 }
 
@@ -53,7 +46,6 @@ export function reviewAddressRouteBinding(
     binding.kind !== "review" ||
     !result ||
     result.kind === "unavailable" ||
-    result.document.documentId !== binding.review.documentId ||
     !destination ||
     selection.status === "none" ||
     workId !== binding.review.workId ||
@@ -62,8 +54,8 @@ export function reviewAddressRouteBinding(
     selection.locator.path.replace(/^\/+/, "") !== destination.path.replace(/^\/+/, "") ||
     (selection.status === "bound" &&
       selection.identity.kind === "server" &&
-      selection.identity.documentId === binding.review.documentId)
+      selection.identity.documentId === result.document.documentId)
   )
     return null;
-  return { revision: selection.revision, documentId: binding.review.documentId };
+  return { revision: selection.revision, documentId: result.document.documentId };
 }

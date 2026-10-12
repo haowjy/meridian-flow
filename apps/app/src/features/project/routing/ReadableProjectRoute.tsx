@@ -339,7 +339,7 @@ function ReadableProjectDestination({
     enabled: !!documentDestination && editorWork.status === "present",
   });
   const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
-  const addressBinding = bindDocumentAddressReview(address.draftId, addressWorkId, editorDrafts);
+  const addressBinding = bindDocumentAddressReview(address.draftId, addressWorkId);
   const addressReview = addressBinding.kind === "review" ? addressBinding.review : undefined;
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
@@ -350,7 +350,6 @@ function ReadableProjectDestination({
       addressOwner.rootThreadId ?? addressOwner.workId,
       address.draftId ? addressWorkId : null,
       address.draftId,
-      addressReview?.documentId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -446,7 +445,7 @@ function ReadableProjectDestination({
     : (routeWorkIssue(routeWork) ??
       (!documentResult
         ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
-          documentLookup.isError || gated.outcome === "failed" || addressBinding.kind === "failed"
+          documentLookup.isError || gated.outcome === "failed"
           ? "error"
           : "loading"
         : documentResult.kind === "unavailable"

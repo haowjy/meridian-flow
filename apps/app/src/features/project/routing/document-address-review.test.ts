@@ -2,32 +2,23 @@
 import { expect, it } from "vitest";
 import { bindDocumentAddressReview, reviewAddressRouteBinding } from "./document-address-review";
 
-// A review must bind before any catalog path occupant can participate.
-it("waits for branch identity and then sends it, independent of the live path", () => {
-  expect(
-    bindDocumentAddressReview("branch-a", "work-a", { status: "loading", groups: null }),
-  ).toEqual({ kind: "pending" });
-  expect(
-    bindDocumentAddressReview("branch-a", "work-a", {
-      status: "ready",
-      groups: [{ documentId: "hidden", draft: { draftId: "branch-a" } }] as never,
-    }),
-  ).toEqual({
+it("starts review admission with the selected Work and branch, without draft-list identity", () => {
+  expect(bindDocumentAddressReview("branch-a", "work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", draftBranchId: "branch-a", documentId: "hidden" },
+    review: { workId: "work-a", draftBranchId: "branch-a" },
   });
-  expect(
-    bindDocumentAddressReview(undefined, "work-a", { status: "loading", groups: null }),
-  ).toEqual({ kind: "plain" });
-  expect(bindDocumentAddressReview("missing", "work-a", { status: "empty", groups: [] })).toEqual({
-    kind: "unavailable",
+  expect(bindDocumentAddressReview("missing", "work-a")).toEqual({
+    kind: "review",
+    review: { workId: "work-a", draftBranchId: "missing" },
   });
+  expect(bindDocumentAddressReview("branch-a", null)).toEqual({ kind: "pending" });
+  expect(bindDocumentAddressReview(undefined, "work-a")).toEqual({ kind: "plain" });
 });
 
 it("replaces a cold live path binding only after the selected review identity is admitted", () => {
   const binding = {
     kind: "review" as const,
-    review: { workId: "work", draftBranchId: "branch", documentId: "hidden" },
+    review: { workId: "work", draftBranchId: "branch" },
   };
   const selection = {
     status: "bound" as const,
