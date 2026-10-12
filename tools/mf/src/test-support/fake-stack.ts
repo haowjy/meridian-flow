@@ -474,6 +474,17 @@ function createFake() {
         nextSeq: String(journal.length + 1),
       });
     }
+    const cancel = url.pathname.match(/^\/api\/threads\/[^/]+\/turns\/([^/]+)\/cancel$/);
+    if (req.method === "POST" && cancel) {
+      const turn = turns.find((candidate) => candidate.id === cancel[1]);
+      const status = !turn
+        ? "not_found"
+        : ["complete", "error", "cancelled"].includes(turn.status)
+          ? "already_finished"
+          : "cancelled";
+      if (turn && status === "cancelled") turn.status = "cancelled";
+      return send(200, { threadId: THREAD_ID, turnId: cancel[1], status });
+    }
     if (route === "POST /api/debug/mock-model/script") {
       mockScripts.push(await readBody(req));
       return send(200, { id: `script-${mockScripts.length}`, scripts: [] });

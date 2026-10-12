@@ -8,7 +8,7 @@ import {
   stringOption,
 } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { finishResult, timeoutReport } from "./result";
+import { finishResult, terminalResult, timeoutReport } from "./result";
 import { followThread } from "./stream";
 
 export const threadTailCommand: CommandSpec = {
@@ -64,30 +64,32 @@ export const threadTailCommand: CommandSpec = {
         apiThreadSnapshotPath(threadId),
       );
       const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
-      return finishResult(ctx.out, {
-        type: "result",
-        command: "thread.tail",
-        threadId,
-        turnId,
-        outcome:
-          result.stoppedBy?.type === "turn.failed"
-            ? "failed"
-            : turn?.status === "cancelled"
-              ? "cancelled"
-              : "complete",
-        reason: null,
-      });
+      return finishResult(
+        ctx.out,
+        terminalResult(
+          "thread.tail",
+          {
+            outcome:
+              result.stoppedBy?.type === "turn.failed"
+                ? "failed"
+                : turn?.status === "cancelled"
+                  ? "cancelled"
+                  : "complete",
+            reason: null,
+          },
+          { threadId, turnId },
+        ),
+      );
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
-      if (error instanceof CliError && error.code === "timeout")
-        return finishResult(ctx.out, {
-          type: "result",
-          command: "thread.tail",
-          threadId,
-          outcome: "timeout",
-          ...(await timeoutReport(session, threadId)),
-        });
+      if (error instanceof CliError && error.code === "timeout") {
+        const { reason, ...report } = await timeoutReport(session, threadId);
+        return finishResult(
+          ctx.out,
+          terminalResult("thread.tail", { outcome: "timeout", reason }, { threadId, ...report }),
+        );
+      }
       throw error;
     }
   },

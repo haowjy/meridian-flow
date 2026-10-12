@@ -7,6 +7,7 @@ import {
 import { CliError, EXIT } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import { terminalResult } from "./result";
 
 export const threadCancelCommand: CommandSpec = {
   path: ["thread", "cancel"],
@@ -38,7 +39,15 @@ export const threadCancelCommand: CommandSpec = {
       "POST",
       apiThreadCancelPath(threadId, turnId),
     );
-    ctx.out.result(response, (value) => `${value.turnId} ${value.status}`);
-    return response.status === "not_found" ? EXIT.notFound : undefined;
+    const terminal = terminalResult(
+      "thread.cancel",
+      {
+        outcome: response.status === "not_found" ? "failed" : "complete",
+        reason: null,
+      },
+      response,
+    );
+    ctx.out.result(terminal.result, (value) => `${value.turnId} ${value.status}`);
+    return response.status === "not_found" ? EXIT.notFound : terminal.exitCode;
   },
 };

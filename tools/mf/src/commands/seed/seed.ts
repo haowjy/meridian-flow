@@ -6,8 +6,8 @@ import { type CommandSpec, flag, parseDuration, requirePositional } from "../../
 import { putDocument } from "../doc/put";
 import { resolveProjectId } from "../project/resolve";
 import { createThread } from "../thread/create";
-import { finishResult } from "../thread/result";
-import { exitForOutcome, type SendOutcome, sendMessage } from "../thread/send";
+import { finishResult, type Result, terminalResult } from "../thread/result";
+import { type SendFields, sendMessage } from "../thread/send";
 
 export type SeedFixture = {
   project?: string;
@@ -110,7 +110,8 @@ export const seedCommand: CommandSpec = {
     }
 
     let threadId: string | null = null;
-    const messages: SendOutcome[] = [];
+    const messages: (Result & SendFields)[] = [];
+    let worst: Result | undefined;
     let exitCode: ExitCode = EXIT.ok;
     if (fixture.thread) {
       threadId = (await createThread(session, { project: projectId, ...fixture.thread })).id;
@@ -126,35 +127,32 @@ export const seedCommand: CommandSpec = {
           timeoutMs: message.timeout ? parseDuration(message.timeout, "timeout") : 5 * 60_000,
           full: false,
         });
-        messages.push(outcome);
+        messages.push(outcome.result);
         finishResult(progress, outcome);
-        exitCode = Math.max(exitCode, exitForOutcome(outcome)) as ExitCode;
+        if (!worst || outcome.exitCode > exitCode) {
+          exitCode = outcome.exitCode;
+          worst = outcome.result;
+        }
       }
     }
 
-    const worst = messages.find((message) => exitForOutcome(message) === exitCode);
-    ctx.out.result(
-      {
-        type: "result",
-        command: "seed",
-        outcome: worst?.outcome ?? "complete",
-        reason: worst?.reason ?? null,
-        projectId,
-        docs,
-        threadId,
-        messages,
-      },
-      (value) =>
-        [
-          `project ${value.projectId}`,
-          ...value.docs.map((doc) => `doc ${doc.uri} ${doc.documentId}`),
-          ...(value.threadId ? [`thread ${value.threadId}`] : []),
-          ...value.messages.map(
-            (message) =>
-              `message turn ${message.turnId ?? "?"} ${message.status}${message.error ? `: ${message.error}` : ""}`,
-          ),
-        ].join("\n"),
+    const terminal = terminalResult("seed", worst ?? { outcome: "complete", reason: null }, {
+      projectId,
+      docs,
+      threadId,
+      messages,
+    });
+    ctx.out.result(terminal.result, (value) =>
+      [
+        `project ${value.projectId}`,
+        ...value.docs.map((doc) => `doc ${doc.uri} ${doc.documentId}`),
+        ...(value.threadId ? [`thread ${value.threadId}`] : []),
+        ...value.messages.map(
+          (message) =>
+            `message turn ${message.turnId ?? "?"} ${message.status}${message.error ? `: ${message.error}` : ""}`,
+        ),
+      ].join("\n"),
     );
-    return exitCode;
+    return terminal.exitCode;
   },
 };

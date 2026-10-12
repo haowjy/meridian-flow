@@ -30,12 +30,17 @@ import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { exitForResult, finishResult, type Result, timeoutReport } from "./result";
+import {
+  type Claim,
+  finishResult,
+  type TerminalResult,
+  terminalResult,
+  timeoutReport,
+} from "./result";
 import { followThread } from "./stream";
 import { createThreadClient } from "./transport";
 
-export type SendOutcome = Result & {
-  type: "result";
+export type SendFields = {
   submissionId?: string;
   threadId: string;
   turnId: string | null;
@@ -55,7 +60,7 @@ function assistantText(turn: Turn | undefined): string | null {
   return text || null;
 }
 
-export const exitForOutcome = exitForResult;
+export type SendOutcome = TerminalResult<SendFields>;
 
 export type SendInput = {
   threadId: string;
@@ -167,18 +172,20 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
 /** Admission uncertainty is a claim result, not a successful send or an app failure. */
 function admissionFailure(error: unknown, threadId: string): SendOutcome {
   if (!(error instanceof CliError) || !["unproven", "http_error"].includes(error.code)) throw error;
-  return {
-    type: "result",
-    command: "thread.send",
-    threadId,
-    turnId: null,
-    outcome: error.code === "unproven" ? "unproven" : "failed",
-    reason: error.code === "unproven" ? "admission_unknown" : null,
-    status: "unknown",
-    finalText: null,
-    error: error.message,
-    submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
-  };
+  return terminalResult(
+    "thread.send",
+    error.code === "unproven"
+      ? { outcome: "unproven", reason: "admission_unknown" }
+      : { outcome: "failed", reason: null },
+    {
+      threadId,
+      turnId: null,
+      status: "unknown",
+      finalText: null,
+      error: error.message,
+      submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
+    },
+  );
 }
 
 /**
@@ -214,7 +221,7 @@ async function followToOutcome(
   const { threadId } = input;
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
-  let interrupt: SendOutcome["interrupt"];
+  let interrupt: SendFields["interrupt"];
   const transport = createThreadClient(session);
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {
@@ -263,17 +270,19 @@ async function followToOutcome(
     }
   } catch (error) {
     if (error instanceof CliError && error.code === "timeout") {
-      return {
-        type: "result",
-        command: "thread.send",
-        outcome: "timeout",
-        ...(await timeoutReport(session, threadId)),
-        threadId,
-        turnId: ourTurn,
-        status: "timeout",
-        finalText: null,
-        error: `Run did not finish within ${input.timeoutMs}ms`,
-      };
+      const { reason, ...report } = await timeoutReport(session, threadId);
+      return terminalResult(
+        "thread.send",
+        { outcome: "timeout", reason },
+        {
+          ...report,
+          threadId,
+          turnId: ourTurn,
+          status: "timeout",
+          finalText: null,
+          error: `Run did not finish within ${input.timeoutMs}ms`,
+        },
+      );
     }
     throw error;
   } finally {
@@ -284,23 +293,19 @@ async function followToOutcome(
     apiThreadSnapshotPath(threadId),
   );
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
-  const status: SendOutcome["status"] = interrupt
+  const status: SendFields["status"] = interrupt
     ? "waiting_interrupt"
     : (turn?.status ?? "unknown");
-  return {
-    type: "result",
-    command: "thread.send",
-    outcome: interrupt
-      ? "interrupt"
-      : status === "complete"
-        ? "complete"
-        : status === "cancelled"
-          ? "cancelled"
-          : status === "error"
-            ? "failed"
-            : "unproven",
-    reason:
-      !interrupt && !["complete", "cancelled", "error"].includes(status) ? "unconfirmed" : null,
+  const claim: Claim = interrupt
+    ? { outcome: "interrupt", reason: null }
+    : status === "complete"
+      ? { outcome: "complete", reason: null }
+      : status === "cancelled"
+        ? { outcome: "cancelled", reason: null }
+        : status === "error"
+          ? { outcome: "failed", reason: null }
+          : { outcome: "unproven", reason: "unconfirmed" };
+  return terminalResult("thread.send", claim, {
     threadId,
     turnId: ourTurn,
     status,
@@ -314,7 +319,7 @@ async function followToOutcome(
           ],
         }
       : {}),
-  };
+  });
 }
 
 function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | undefined {
@@ -380,12 +385,10 @@ export const threadSendCommand: CommandSpec = {
         return finishResult(ctx.out, admissionFailure(error, threadId));
       }
       const { submissionId, admitted, mockScriptId } = admission;
-      ctx.out.result(
+      const terminal = terminalResult(
+        "thread.send",
+        { outcome: "complete", reason: null },
         {
-          type: "result",
-          command: "thread.send",
-          outcome: "complete",
-          reason: null,
           threadId,
           submissionId,
           userTurnId: admitted.userTurnId,
@@ -394,17 +397,18 @@ export const threadSendCommand: CommandSpec = {
           // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
           mockScriptId,
         },
-        (value) =>
-          [
-            `accepted ${value.userTurnId} (./mf thread tail ${threadId} --since ${value.resumeAfterSeq})`,
-            value.mockScriptId
-              ? `mock script ${value.mockScriptId} stays queued (./mf mock clear --id ${value.mockScriptId})`
-              : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
       );
-      return undefined;
+      ctx.out.result(terminal.result, (value) =>
+        [
+          `accepted ${value.userTurnId} (./mf thread tail ${threadId} --since ${value.resumeAfterSeq})`,
+          value.mockScriptId
+            ? `mock script ${value.mockScriptId} stays queued (./mf mock clear --id ${value.mockScriptId})`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      return terminal.exitCode;
     }
     const outcome = await sendMessage(session, ctx.out, { threadId, ...input });
     return finishResult(ctx.out, outcome);

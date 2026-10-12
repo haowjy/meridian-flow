@@ -9,7 +9,7 @@ import {
 } from "../../core/command";
 import { RunEventMapper } from "./events-map";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { finishResult, type Outcome } from "./result";
+import { finishResult, type Outcome, terminalResult } from "./result";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export const threadRespondCommand: CommandSpec = {
@@ -104,16 +104,19 @@ export const threadRespondCommand: CommandSpec = {
       subscription.unsubscribe();
       transport.disconnect();
     }
-    return finishResult(ctx.out, {
-      type: "result",
-      command: "thread.respond",
-      threadId,
-      turnId,
-      interruptId,
-      outcome,
-      reason: outcome === "unproven" ? "unconfirmed" : null,
-      error: rejection?.message ?? null,
-      next: [`./mf thread tail ${threadId} --until-idle`],
-    });
+    return finishResult(
+      ctx.out,
+      terminalResult(
+        "thread.respond",
+        outcome === "unproven" ? { outcome, reason: "unconfirmed" } : { outcome, reason: null },
+        {
+          threadId,
+          turnId,
+          interruptId,
+          error: rejection?.message ?? null,
+          next: [`./mf thread tail ${threadId} --until-idle`],
+        },
+      ),
+    );
   },
 };
