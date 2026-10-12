@@ -37,6 +37,23 @@
   box-shadow: inset 0 -2px 0 0 var(--review-ring);
 }
 
+/* A Discard in flight shows the original from the click: the discarded insertion
+   hides, and the removed text it replaced is drawn as ordinary prose (no tint,
+   strike or air), so the next generation's paint changes nothing the writer sees. */
+.meridian-editor .ProseMirror .meridian-review-restoring {
+  display: none;
+}
+
+.meridian-editor .ProseMirror .meridian-review-restored {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.meridian-editor .ProseMirror .meridian-review-restored > p + p {
+  margin-top: 0.9em;
+}
+
 /* Removed live text — a read-only widget (never document text) struck through
    where it used to be. Crimson when the AI removed it, gold when the writer
    did, so everything the writer did reads gold. Unselectable by design: the

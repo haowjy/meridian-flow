@@ -26,6 +26,7 @@ import {
   hunkTone,
   type InlineReviewModel,
   indexOperations,
+  isRestoringHunk,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
@@ -35,6 +36,8 @@ import {
   createBarSlotElement,
   createRemovalElement,
   planRemovals,
+  REMOVAL_CLASS,
+  RESTORED_CLASS,
   type RemovalHandlers,
   type RemovalInput,
   type RemovalPlan,
@@ -50,6 +53,8 @@ const EMPHASIS_CLASS = "meridian-review-emphasized";
 const ARRIVED_CLASS = "meridian-review-arrived";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
+/** A change being discarded: its insertion is hidden until the next generation paints without it. */
+const RESTORING_CLASS = "meridian-review-restoring";
 const HUNK_ATTR = "data-review-hunk";
 const OPERATION_ATTR = "data-review-operations";
 
@@ -76,11 +81,14 @@ interface MarkGeometry {
   operationAttr: string;
   /** The operation a span belongs to, when it is painted for one author inside a larger hunk. */
   spanOperationId: string | null;
+  /** Hidden rather than tinted: the insertion of a change being discarded. */
+  hide?: true;
 }
 
 interface HunkGeometry {
   hunkId: string;
   operationIds: readonly string[];
+  restoring: boolean;
   /** Where the hunk ends, for placing the focused change's bar after it. */
   end: number;
   marks: MarkGeometry[];
@@ -121,6 +129,7 @@ export function resolveGeometry(
     const endPos = resolveRelativePosition(resolver, hunk.relEnd);
 
     const removed = removedSegments(hunk, operationsById);
+    const restoring = isRestoringHunk(model, hunk);
     if (removed.length > 0) {
       removals.push({
         position: startPos,
@@ -129,16 +138,20 @@ export function resolveGeometry(
         tight: endsBeforePunctuation(resolver.doc, startPos),
         hunkId: hunk.hunkId,
         operationIds: hunk.operationIds,
+        restored: restoring,
       });
     }
 
+    const hasRange = endPos != null && endPos > startPos;
     hunks.push({
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
+      restoring,
       end: Math.max(startPos, endPos ?? startPos),
-      marks:
-        endPos == null || endPos <= startPos
-          ? []
+      marks: !hasRange
+        ? []
+        : restoring
+          ? hiddenMarks(hunk, startPos, endPos, removed.length > 0, operationsById, resolver)
           : hunk.kind === "block"
             ? blockMarks(hunk, startPos, endPos, operationsById, resolver)
             : textMarks(hunk, startPos, endPos, operationsById, resolver),
@@ -168,10 +181,18 @@ export function paintDecorations(
   let focusedEnd: number | null = null;
 
   for (const hunk of geometry.hunks) {
-    const hunkFocused = isFocused(hunk.operationIds);
+    const hunkFocused = !hunk.restoring && isFocused(hunk.operationIds);
     const pulsed = isPulsed(hunk.operationIds);
     if (hunkFocused) focusedEnd = Math.max(focusedEnd ?? hunk.end, hunk.end);
     for (const mark of hunk.marks) {
+      if (mark.hide) {
+        decorations.push(
+          mark.node
+            ? Decoration.node(mark.from, mark.to, { class: RESTORING_CLASS })
+            : Decoration.inline(mark.from, mark.to, { class: RESTORING_CLASS }),
+        );
+        continue;
+      }
       const focused =
         hunkFocused || (mark.spanOperationId !== null && focusedIds.has(mark.spanOperationId));
       const attrs = {
@@ -189,8 +210,8 @@ export function paintDecorations(
   }
 
   for (const plan of geometry.removals) {
-    const focused = isFocused(plan.operationIds);
-    const pulsed = isPulsed(plan.operationIds);
+    const focused = !plan.restored && isFocused(plan.operationIds);
+    const pulsed = !plan.restored && isPulsed(plan.operationIds);
     const expanded = paint.expandedRemovals.has(plan.identity);
     decorations.push(
       Decoration.widget(
@@ -207,7 +228,7 @@ export function paintDecorations(
           }),
         {
           // The locale is part of the key: the fold's label is copy, redrawn when it changes.
-          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.hunkIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
+          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.restored, plan.hunkIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -311,6 +332,45 @@ function blockMarks(
 }
 
 /**
+ * What a change being discarded leaves of its insertion: nothing. The range is
+ * hidden, and a paragraph the insertion fills entirely is hidden whole, so no
+ * empty block or gap stands where the next generation has none. The paragraph
+ * holding the removal's widget stays: the widget is the original text there.
+ */
+function hiddenMarks(
+  hunk: ResolvedReviewHunk,
+  startPos: number,
+  endPos: number,
+  hasRemoval: boolean,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+  resolver: RelativePositionRuntime,
+): MarkGeometry[] {
+  const hide = (from: number, to: number, node: boolean): MarkGeometry => ({
+    from,
+    to,
+    tone: "agent",
+    node,
+    operationAttr: "",
+    spanOperationId: null,
+    hide: true,
+  });
+  if (hunk.kind === "block") {
+    return blockMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) =>
+      hide(mark.from, mark.to, mark.node),
+    );
+  }
+  const marks = [hide(startPos, endPos, false)];
+  resolver.doc.nodesBetween(startPos, endPos, (node, pos) => {
+    if (!node.isTextblock) return true;
+    const filled = pos + 1 >= startPos && pos + node.nodeSize - 1 <= endPos;
+    const holdsRemoval = hasRemoval && pos < startPos && startPos < pos + node.nodeSize;
+    if (filled && !holdsRemoval) marks.push(hide(pos, pos + node.nodeSize, true));
+    return false;
+  });
+  return marks;
+}
+
+/**
  * The insertion marks of a text hunk. A neutral hunk is one seam over its whole
  * range; otherwise one mark per span, so nested authorship (a writer edit
  * inside an AI insertion) paints in each owner's colour, falling back to the
@@ -398,6 +458,28 @@ function markClassName(mark: MarkGeometry, focused: boolean, pulsed: boolean): s
 
 function classNames(...values: Array<string | false | undefined>): string {
   return values.filter(Boolean).join(" ");
+}
+
+/**
+ * Make the DOM of an already-rendered review (a clone the paint cover holds,
+ * which no editor is drawing any more) show the change that `operationIds`
+ * name as a Discard in flight does: its insertion hidden, its removal plain
+ * prose. A removal folded to a label has no text to show and stays.
+ */
+export function restoreRenderedChanges(root: ParentNode, operationIds: ReadonlySet<string>): void {
+  for (const element of root.querySelectorAll<HTMLElement>(`[${OPERATION_ATTR}]`)) {
+    const ids = (element.getAttribute(OPERATION_ATTR) ?? "").split(" ");
+    if (!ids.some((id) => operationIds.has(id))) continue;
+    if (!element.classList.contains(REMOVAL_CLASS)) {
+      element.classList.add(RESTORING_CLASS);
+      continue;
+    }
+    const struck = element.querySelectorAll("del");
+    if (struck.length === 0) continue;
+    for (const del of struck) del.replaceWith(del.textContent ?? "");
+    element.className = RESTORED_CLASS;
+    element.removeAttribute(OPERATION_ATTR);
+  }
 }
 
 /** Class name constants exported for tests + optional consumer selectors. */

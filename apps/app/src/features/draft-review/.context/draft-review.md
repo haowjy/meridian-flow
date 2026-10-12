@@ -75,6 +75,29 @@ Settlement order is explicit:
    releases the claim in `finally`. No command answer survives as a claim after
    release; the open review can retain a closed completion independently.
 
+**Per-change clicks queue.** `runDraftSelection` accepts every distinct Apply or
+Discard click at once: it hides the change (the queue entry in the record store),
+and `drainIntents` sends the draft's clicks one at a time. The first click is
+sent as made; each later one is found again in a fresh preview read (new tokens)
+by class, operation id or operation key, and is `gone` when nothing there holds
+it. Rows disable only for a whole-draft command, a batch or an archived Work
+(`changesLocked`), never for another change's command.
+
+**Identity across re-forks.** A selective Discard re-forks the draft, so every
+survivor gets new operation and class ids. Anything that must outlive a
+generation (queued clicks, held failures, hidden sets, the focus, "arrived"
+pulses) also carries `operationKey` (turn, tool call, changed text; the id when
+nothing else tells a write apart). `resolveFocusedChange` falls back to keys, so
+the stepper ordinal re-derives from the surviving operations.
+
+**Claims are capabilities.** `beginDraftCommand` returns a `DraftClaim` bound to
+the account epoch (`resetDraftCommandRecords` advances it). Answers, failures,
+confirmations, cache edits and release after an await go through the claim and
+land only while it is the draft's live pending claim. A batch holds its
+whole-draft claims up front, passes each to its send, and stops sending after
+an account change. Confirmations keep the generation they confirmed
+(`readDraftsAfterCommands` keeps a newer proposal).
+
 `runDraftBatch` pins its starting Work, holds that Work's shared busy lease
 through request gaps, and attempts independent drafts serially after refusals.
 Whole batches preclaim targets; selection batches queue visibility until each
@@ -91,7 +114,10 @@ it through `bindDraftCommandAccount`. No local lock or optimistic hide supplemen
 
 Queued, pending and confirmed selections are hidden by the shared preview
 projection; failures restore them with their reason. Matching uses shared class
-or operation IDs, newest overlap wins. `readPreviewAfterChangeCommands` fences
+or operation IDs or operation keys, newest overlap wins. Discards among them are
+`restoringOperationIds`: `useDraftPreview` hands the editor those changes still
+in its model (`inline`), so the manuscript draws their original text from the
+click. `readPreviewAfterChangeCommands` fences
 reads begun before selection confirmation; `readDraftsAfterCommands` fences list
 reads begun before whole Apply confirmation. A later read is authoritative,
 since a new proposal can reuse the draft ID. Confirmation records retire once

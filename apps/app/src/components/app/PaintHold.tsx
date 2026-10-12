@@ -1,6 +1,13 @@
 /** Pane continuity: retain the last finished paint while visible content loads. */
 import type { ReactNode } from "react";
-import { Component, createContext, createRef, useContext, useLayoutEffect } from "react";
+import {
+  Component,
+  createContext,
+  createRef,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+} from "react";
 
 type Hold = { paint: Paint | null };
 type Surface = { surface: string; state?: "painted" | "pending" | "failed" };
@@ -15,11 +22,48 @@ export class PaintHold extends Component<FrameProps, Hold> {
   private page = createRef<HTMLDivElement>();
   private frame = createRef<HTMLDivElement>();
   private status = createRef<HTMLParagraphElement>();
-  private cover = createRef<HTMLDivElement>();
+  private cover: { current: HTMLDivElement | null } = { current: null };
   private pending = new Set<object>();
   private lastPainted: Paint | null = null;
   private raf = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private released: (() => void)[] = [];
+
+  private patches: ((cover: HTMLElement) => void)[] = [];
+
+  /**
+   * The cover's markup is set once, here, not by React on each render: React
+   * resets `innerHTML` whenever the element re-renders, which would erase the
+   * patches a cover is given.
+   */
+  private mountCover = (node: HTMLDivElement | null) => {
+    this.cover.current = node;
+    const paint = this.state.paint;
+    if (!node || !paint) return;
+    node.innerHTML = paint.html;
+    for (const patch of this.patches) patch(node);
+  };
+
+  /**
+   * Change the cover's own DOM: the last paint cannot be redrawn by its (gone)
+   * content. Applied at once when a cover is up, and to the next cover (a
+   * capture can precede the change it should show); `patch` must be safe to run
+   * twice. Patches are forgotten when a cover lifts.
+   */
+  patchCover = (patch: (cover: HTMLElement) => void) => {
+    this.patches = [...this.patches.slice(-19), patch];
+    if (this.cover.current) patch(this.cover.current);
+  };
+
+  /**
+   * Run `work` once the cover is gone and the page is live again, in the same
+   * task as that release (before the browser paints). At once when nothing is
+   * covering. For restoring a place the new content could not hold while covered.
+   */
+  afterRelease = (work: () => void) => {
+    if (this.state.paint) this.released.push(work);
+    else work();
+  };
 
   capture = (refresh = false) => {
     const page = this.page.current;
@@ -74,11 +118,22 @@ export class PaintHold extends Component<FrameProps, Hold> {
         node.scrollTop = paint.scrolls[index] ?? 0;
       }
       if (paint.focused && !previous.paint) this.status.current?.focus({ preventScroll: true });
-    } else if (!paint && document.activeElement === this.status.current) {
-      this.frame.current?.focus({ preventScroll: true });
+    } else if (!paint) {
+      // First, whatever was waiting for the cover to lift (the content's place
+      // and focus); only focus still on the status line is then returned to the frame.
+      if (previous.paint) {
+        this.patches = [];
+        const work = this.released;
+        this.released = [];
+        for (const run of work) run();
+      }
+      if (document.activeElement === this.status.current)
+        this.frame.current?.focus({ preventScroll: true });
     }
   }
   componentWillUnmount() {
+    this.released = [];
+    this.patches = [];
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
   }
@@ -99,17 +154,22 @@ export class PaintHold extends Component<FrameProps, Hold> {
           >
             {this.props.children}
           </div>
-          <p ref={this.status} role="status" tabIndex={-1} className="sr-only outline-none">
+          <p
+            ref={this.status}
+            role="status"
+            data-paint-status
+            tabIndex={-1}
+            className="sr-only outline-none"
+          >
             {paint ? this.props.status : ""}
           </p>
           {paint ? (
             <div
-              ref={this.cover}
+              ref={this.mountCover}
               data-paint-hold
               inert
               aria-hidden
               className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-background"
-              dangerouslySetInnerHTML={{ __html: paint.html }}
             />
           ) : null}
         </div>
@@ -156,6 +216,17 @@ export function PaintScope({ active, children }: { active: boolean; children: Re
       </div>
     </ScopeContext.Provider>
   );
+}
+/** Patch the DOM of the page's cover, if one holds it (see `PaintHold.patchCover`). */
+export function usePaintCoverPatch(): (patch: (cover: HTMLElement) => void) => void {
+  const frame = useContext(FrameContext);
+  return useCallback((patch) => frame?.patchCover(patch), [frame]);
+}
+
+/** The page's cover, if one holds it: run `work` the moment it lifts (see `PaintHold.afterRelease`). */
+export function useAfterPaintRelease(): (work: () => void) => void {
+  const frame = useContext(FrameContext);
+  return useCallback((work) => (frame ? frame.afterRelease(work) : work()), [frame]);
 }
 export function usePaintPending(pending = true) {
   const frame = useContext(FrameContext);

@@ -25,6 +25,8 @@ export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
 export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
 export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-unattributed";
+/** A Discard in flight: the original text, drawn as the plain prose it is about to become. */
+export const RESTORED_CLASS = "meridian-review-restored";
 
 /** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
 export interface RemovalSegment {
@@ -50,6 +52,8 @@ export interface RemovalPlan {
   paragraphs: RemovalSegment[][];
   hunkIds: string[];
   operationIds: string[];
+  /** Its change is being discarded: drawn as plain prose, with no strike, tint, fold or click. */
+  restored: boolean;
 }
 
 /** One removal before grouping: a single hunk's deleted text at its resolved position. */
@@ -60,6 +64,7 @@ export interface RemovalInput {
   tight: boolean;
   hunkId: string;
   operationIds: string[];
+  restored: boolean;
 }
 
 /**
@@ -79,7 +84,12 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
     )
       continue;
     const last = plans[plans.length - 1];
-    if (input.block && last?.block && last.position === input.position) {
+    if (
+      input.block &&
+      last?.block &&
+      last.position === input.position &&
+      last.restored === input.restored
+    ) {
       last.paragraphs.push(segments);
       last.hunkIds.push(input.hunkId);
       for (const id of input.operationIds) {
@@ -98,6 +108,7 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       paragraphs: [segments],
       hunkIds: [input.hunkId],
       operationIds: [...input.operationIds],
+      restored: input.restored,
     });
   }
   return plans;
@@ -172,12 +183,30 @@ export interface RemovalRenderOptions {
   operationAttr: string;
 }
 
+/** The original text of a change being discarded, in the manuscript's own typography. */
+function createRestoredElement(doc: Document, plan: RemovalPlan): HTMLElement {
+  const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
+  root.className = RESTORED_CLASS;
+  root.setAttribute("contenteditable", "false");
+  for (const segments of plan.paragraphs) {
+    const text = segments.map((segment) => segment.text).join("");
+    if (plan.block) {
+      const paragraph = doc.createElement("p");
+      paragraph.textContent = text;
+      root.append(paragraph);
+    } else root.append(text);
+  }
+  root.addEventListener("mousedown", (event) => event.preventDefault());
+  return root;
+}
+
 /** Build the widget DOM. Non-editable and unselectable; clicking focuses the change or toggles a fold. */
 export function createRemovalElement(
   doc: Document,
   plan: RemovalPlan,
   options: RemovalRenderOptions,
 ): HTMLElement {
+  if (plan.restored) return createRestoredElement(doc, plan);
   const collapsible = isCollapsible(plan);
   const folded = collapsible && !options.expanded;
   const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");

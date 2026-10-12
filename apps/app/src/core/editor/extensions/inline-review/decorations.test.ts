@@ -246,6 +246,29 @@ describe("removals", () => {
     expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
   });
 
+  it("shows the original of a change being discarded as plain prose, with its insertion hidden", () => {
+    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
+    const withered = posOf(editor, "one withered");
+    const hunk = textHunk(
+      editor,
+      "h1",
+      ["a1"],
+      { from: withered, to: withered + 12 },
+      { spans: [span(editor, "a1", withered, withered + 12)], deletedText: "his" },
+    );
+    setModel(editor, {
+      ...model([operation("a1", "agent")], [hunk]),
+      restoring: new Set(["a1"]),
+    });
+    expect(removals(editor)).toEqual([]);
+    expect(marked(editor, "meridian-review-added")).toEqual([]);
+    expect(marked(editor, "meridian-review-restoring")).toEqual(["one withered"]);
+    const [restored] = editor.view.dom.querySelectorAll(".meridian-review-restored");
+    expect(restored?.textContent).toBe("his");
+    expect(restored?.querySelector("del")).toBeNull();
+    expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
+  });
+
   it("paints unclassified insertion and removal in no author's colour", () => {
     const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
     const at = posOf(editor, "breath");

@@ -41,7 +41,7 @@ export function useDraftChanges(
     /** The caller's own scope: runs the commands of a draft the Editor does not have open. */
     controller: Pick<
       WorkDraftCommands,
-      "applyChanges" | "discardChanges" | "apply" | "discard" | "dispositionLocked"
+      "applyChanges" | "discardChanges" | "apply" | "discard" | "changesLocked"
     >;
     enabled?: boolean;
   },
@@ -103,26 +103,16 @@ export function useDraftChanges(
       items: status === "ready" ? items : NO_ITEMS,
       focused: null,
 
-      locked: controller.dispositionLocked,
+      locked: controller.changesLocked,
       unlisted: status === "ready" && items.length === 0 && !hiding,
       ...(entry?.status === "error" ? { retry: entry.retry } : {}),
       apply,
       discard,
     }),
-    [
-      documentId,
-      draftId,
-      status,
-      items,
-      controller.dispositionLocked,
-      hiding,
-      entry,
-      apply,
-      discard,
-    ],
+    [documentId, draftId, status, items, controller.changesLocked, hiding, entry, apply, discard],
   );
   // Reuse the open review's presentation, never its command authority.
   return inPresentedReview
-    ? { ...presentedView, apply, discard, locked: controller.dispositionLocked }
+    ? { ...presentedView, apply, discard, locked: controller.changesLocked }
     : own;
 }
