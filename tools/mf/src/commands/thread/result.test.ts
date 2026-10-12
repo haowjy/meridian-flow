@@ -2,8 +2,9 @@
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
+import { Output } from "../../core/output";
 import { PROJECT_ID, THREAD_ID } from "../../test-support/fake-stack";
-import { classifyDeadline, terminalResult } from "./result";
+import { classifyDeadline, finishResult, terminalResult } from "./result";
 
 const snapshot = (): ThreadSnapshotResponse => ({
   threadId: THREAD_ID,
@@ -109,10 +110,13 @@ describe("classifyDeadline", () => {
     const report = classifyDeadline(evidence === "idle" ? snapshot() : null, THREAD_ID);
     expect(report).toEqual({
       reason: "unconfirmed",
-      stillRunning: null,
-      owed: [],
+      ...(evidence === "idle" ? { stillRunning: null, owed: [] } : {}),
       next: [`./mf thread tail ${THREAD_ID} --until-idle`],
     });
+    if (evidence === "unavailable") {
+      expect(report).not.toHaveProperty("stillRunning");
+      expect(report).not.toHaveProperty("owed");
+    }
     expect(
       terminalResult(
         "thread.tail",
@@ -124,4 +128,32 @@ describe("classifyDeadline", () => {
       ).exitCode,
     ).toBe(EXIT.timeout);
   });
+});
+
+it.each([
+  "thread.send",
+  "thread.tail",
+])("renders %s timeout without activity evidence as unconfirmed", (command) => {
+  let stderr = "";
+  const out = new Output(
+    {
+      stdout: { write: () => true },
+      stderr: {
+        write: (chunk) => {
+          stderr += chunk;
+        },
+      },
+    },
+    { json: false },
+  );
+  const { reason, ...report } = classifyDeadline(null, THREAD_ID);
+  const terminal = terminalResult(
+    command,
+    { outcome: "timeout", reason },
+    { threadId: THREAD_ID, ...report },
+  );
+  expect(terminal.result).not.toHaveProperty("stillRunning");
+  expect(terminal.result).not.toHaveProperty("owed");
+  expect(finishResult(out, terminal)).toBe(EXIT.timeout);
+  expect(stderr).toBe(`timeout ? unconfirmed\n./mf thread tail ${THREAD_ID} --until-idle\n`);
 });

@@ -146,10 +146,15 @@ it("caps a slow initial snapshot at the remaining command deadline", async () =>
     ]);
     expect(result.code).toBe(124);
     expect(Date.now() - started).toBeLessThan(300);
-    expect(JSON.parse(result.stdout)).toMatchObject({
+    const report = JSON.parse(result.stdout);
+    expect(report).toMatchObject({
       outcome: "timeout",
+      reason: "unconfirmed",
       snapshotUnavailable: true,
+      next: [`./mf thread tail ${THREAD_ID} --until-idle`],
     });
+    expect(report).not.toHaveProperty("stillRunning");
+    expect(report).not.toHaveProperty("owed");
   } finally {
     await stack.close();
   }
