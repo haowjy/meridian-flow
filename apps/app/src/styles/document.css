@@ -370,6 +370,17 @@
 .document-prose--chat > * + * {
   margin-top: var(--prose-space-block);
 }
+/* Headings keep chat's owned rhythm (kb decisions/writer-ux/chat-thread-rhythm):
+   h1 and h2 open 24px above, smaller headings 16px; the next block closes them at 8px. */
+.document-prose--chat > * + :is(h1, h2) {
+  margin-top: var(--prose-space-heading-large-top);
+}
+.document-prose--chat > * + h3 {
+  margin-top: var(--prose-space-heading-h3-top);
+}
+.document-prose--chat > * + :is(h4, h5, h6) {
+  margin-top: var(--prose-space-heading-small-top);
+}
 .document-prose--chat > .document-code-block > pre {
   margin-block: 0;
 }
