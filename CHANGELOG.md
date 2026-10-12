@@ -10,6 +10,8 @@
 - Keep scoped AI reads current after Discard and preserve buffered edits when a rollback transaction aborts.
 
 - Keep buffered AI reads and independent writes on the current draft across Discard races, without reviving discarded text.
+- Preserve attribution for formatting removals when an edit restores earlier prose.
+
 - Preserve both paragraph identities in replacement history and keep new formatting selectable when prose repeats an earlier edit.
 
 - Keep replaced paragraphs together in review, omit unchanged recreated runs, and preserve writer ownership of uncertified formatting copies.
