@@ -75,7 +75,8 @@ sessionStorage. A received record is moving, never retryable or editable; mount
 and external wakes finish its journal retirement without another prepend/admission.
 Receipts survive draft Send/clear and reload in the same tab. They are not shared
 with other tabs: the receipt guarantee is tab-local, not a cross-tab transaction.
-Lookup/retirement request refusal is ambiguity, never rejection proof.
+Lookup/retirement request refusal is ambiguity, never rejection proof, except
+owner-attested deletion, which is the separate cleanup signal below.
 
 Known limit (tech-lead scope ruling, 2026-10-11): Edit receipts are per tab; if removing
 the journal record fails after Edit moves the words into that tab's message box,

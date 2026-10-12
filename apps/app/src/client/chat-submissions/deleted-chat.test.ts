@@ -138,11 +138,18 @@ it("not-found keeps main's classification and has no deletion disposition", () =
   expect(threadAvailability(proof("thread_not_found"), "owner")).toBe("not-found");
   expect(threadAvailability(proof("other_error"), "owner")).toBeNull();
 });
-it("foreign attestation cannot authorize deletion", () => {
+it("foreign attestation cannot authorize deletion", async () => {
   expect(threadAvailability(proof("thread_deleted", "someone-else"), "owner")).toBeNull();
   expect(threadAvailability(proof("thread_deleted", "owner", true), "owner")).toBe(
     "project-deleted",
   );
+  const f = fixture();
+  f.ports.current = () => false;
+  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).not.toBeNull();
+  expect(f.target.notices).toEqual([]);
+  expect(f.left()).toBeUndefined();
 });
 it("bind sweep bounds concurrency and leaves non-deletion results alone", async () => {
   let active = 0;
