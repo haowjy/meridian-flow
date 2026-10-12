@@ -177,6 +177,7 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewDraftId?: string;
+  reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -187,7 +188,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewDraftId: (draftId: string | null) => void;
+  onSetEditorReviewDraftId: (draftId: string | null, changeId?: string) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -523,6 +524,7 @@ function HydratedReviewControllers({
       path: props.activeContextPath,
       documentId: props.reviewAddressDocumentId,
       draftId: props.reviewDraftId,
+      changeId: props.reviewChangeId,
       draftOnly: workspace.tabs.some(
         (tab) =>
           tab.kind === "tracked" &&
@@ -557,7 +559,8 @@ function HydratedReviewControllers({
               presentedReview.controller.enterInlineReview(target.documentId, target.draftId),
           }
         : {
-            write: (review) => props.onSetEditorReviewDraftId(review?.draftId ?? null),
+            write: (review) =>
+              props.onSetEditorReviewDraftId(review?.draftId ?? null, review?.changeId),
             admit: openEditorReview,
           },
     [

@@ -20,7 +20,7 @@ import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
 } from "./DesktopProjectController";
-import { DockOpenInEditor } from "./dock/DockDocumentButtons";
+import { DockDocumentActions } from "./dock/DockDocumentActions";
 import { dockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./routing/chat-navigation";
@@ -163,9 +163,7 @@ async function setup(source: ScreenKey = "context") {
         </button>
         {railSwitchFailed && <p role="alert">Rail failure</p>}
         {headerFailure(failures.failures, revision) && <p>Header failure</p>}
-        {switcher.dockDocument && (
-          <DockOpenInEditor projectId={projectId} document={switcher.dockDocument} />
-        )}
+        {switcher.dockDocument && <DockDocumentActions document={switcher.dockDocument} />}
         <ProjectRouteBoundary
           issue={acceptedFailure ? "error" : issue}
           retainWhileLoading={switcher.editorPresentation.retainWhileLoading}
@@ -244,18 +242,28 @@ async function setup(source: ScreenKey = "context") {
     navigation.dispose();
     client.clear();
   };
-  const click = async (label: string) =>
-    act(async () =>
+  const click = async (label: string) => {
+    if (label === "Header") {
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Document actions"]')
+          ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })),
+      );
+      await act(async () =>
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+          .find((item) => item.textContent === "Open in Editor")
+          ?.click(),
+      );
+      return;
+    }
+    await act(async () =>
       container
         .querySelector<HTMLButtonElement>(
-          label === "Header"
-            ? 'button[aria-label="Open in Editor"]'
-            : label === "Chat"
-              ? "button:nth-of-type(1)"
-              : "button:nth-of-type(2)",
+          label === "Chat" ? "button:nth-of-type(1)" : "button:nth-of-type(2)",
         )
         ?.click(),
     );
+  };
   return {
     history,
     navigation,

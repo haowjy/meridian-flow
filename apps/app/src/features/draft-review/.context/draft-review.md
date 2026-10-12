@@ -282,7 +282,11 @@ requested review. Hosts retain their own acquisition/route/LRU responsibilities.
 idle header models disable preview reading.
 
 Focus belongs to the reducer. `useReconcileReviewFocus` reconciles once per
-scope; `resolveFocusedChange` is a pure reader. Addressed `focusReviewChange`
+scope and restores the stable selected class from the presenting review address
+once its current preview is ready. Missing classes silently select the first
+remaining change. `ReviewAddressOwner` replaces (never pushes) that address as
+focus changes; the Editor serializes `change` beside `draft`, and the dock stores
+it on its existing review address. `resolveFocusedChange` is a pure reader. Addressed `focusReviewChange`
 cannot focus another review. `useInlineReviewFocus` connects model focus, marks
 visibility, mark clicks and arrival pulse to the review editor.
 

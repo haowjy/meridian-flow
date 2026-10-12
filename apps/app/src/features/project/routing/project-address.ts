@@ -45,6 +45,8 @@ export type ProjectAddress = {
   worksView?: "archived" | "deleted";
   /** Pending draft projected by the current manuscript Editor address. */
   draftId?: string;
+  /** Stable selected closure class within the addressed review. */
+  changeId?: string;
   settings?: SettingsSection;
 };
 export type WorkView = "chats" | "files";
@@ -53,7 +55,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "settings", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "change", "settings", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -188,6 +190,7 @@ export function parseProjectAddress(
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
   const draftId = destination.kind === "document" ? query.get("draft") || undefined : undefined;
+  const changeId = draftId ? query.get("change") || undefined : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
@@ -196,6 +199,7 @@ export function parseProjectAddress(
     ...(workView ? { workView } : {}),
     ...(worksView ? { worksView } : {}),
     ...(draftId ? { draftId } : {}),
+    ...(changeId ? { changeId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
   };
   const href = projectAddressHref(address);
@@ -272,7 +276,10 @@ export function projectAddressHref(address: ProjectAddress): string {
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
-  if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
+  if (d.kind === "document" && address.draftId) {
+    query.set("draft", address.draftId);
+    if (address.changeId) query.set("change", address.changeId);
+  }
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);

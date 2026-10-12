@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep review commands reachable in narrow panes, enlarge phone hit targets without taller chrome, and restore the selected change after reload.
+
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.
