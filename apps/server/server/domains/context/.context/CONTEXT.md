@@ -126,15 +126,21 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   it. Source refreshes (`refreshSources`) publish in the mutating transaction;
   Apply's draft tree step and the Discard kernel reconcile their sources that
   way too, so there is no post-commit catalog refresh for drafts.
-  `reserve` and `publishReserved` are required availability port methods with no
-  non-atomic fallback. Other project and Work sources retain their source-specific visibility.
+  Other project and Work sources retain their source-specific visibility.
   `ContextFS` owns result-aware single-source transactions;
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after
   commit and cannot fail a mutation.
-  Catalog publication deduplicates complete observations, including namespace
-  versions: a return to an earlier payload still publishes newer provenance,
-  even when deferred repair never saw the intermediate location.
+  Catalog publication compares entries without their stamps. A to B to A still
+  republishes: a move or delete names its node as an invalidation root, so the
+  return re-upserts the entry with the newer stamp.
+  Availability and namespace versions are separate. `advance` moves only the
+  availability generation (an authority-only change such as a Work's state is not
+  a namespace change); `publishNamespace` allocates a namespace observation
+  version, and only a change to a live file, folder or source calls it. One
+  `reconcileScopes` call stamps every scope it changed with one version. Stamps
+  are lower bounds: an entry is at least as new as its stamp, and one stamp can
+  cover several changes, so order by stamps but never read one as naming a change.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
@@ -583,7 +589,10 @@ currently available to the request owner in the requested project.
 This slice uses generic context vocabulary. Do not reintroduce alternate auth
 adapter seams, sandbox filesystem assumptions, or upstream product naming.
 External connectors (google_drive/dropbox/notion) are schema-only — no
-implementation. The `results://` scheme does not exist.
+implementation. The `results://` scheme does not exist. Neither Recent list
+lives here: chat Recent (documents this chat touched) reads
+`turn_document_touches` in `threads`; the project's recently opened list is
+`domains/recent-documents`.
 
 ## Downlinks
 
