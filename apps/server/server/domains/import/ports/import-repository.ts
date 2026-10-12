@@ -57,6 +57,8 @@ export interface ImportRepository {
   dismiss(id: string): Promise<void>;
   fileEntry(importId: string, entryId: number): Promise<ImportEntry | null>;
   hasUnfinished(importId: string): Promise<boolean>;
+  /** Whether any planned entry still awaits its planning chunk. */
+  hasUnprepared(importId: string): Promise<boolean>;
   lockEntry(id: string): Promise<ImportEntry>;
   updateEntry(id: string, patch: Partial<ImportEntry>): Promise<void>;
   setState(id: string, state: ImportState): Promise<void>;

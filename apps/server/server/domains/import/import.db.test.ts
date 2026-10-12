@@ -598,6 +598,48 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     );
     expect((await ok(context().read("kb://Sects"))).content.trim()).toBe("Writer");
   });
+  it("two resumes racing to the ready transition both succeed without deadlock", async () => {
+    const selection = loose({ "Race.md": "Race" }),
+      deps = ports();
+    const withheld = createImportService({
+      ...deps,
+      repository: {
+        ...deps.repository,
+        setState: async () => {
+          throw new Error("Simulated process loss before ready");
+        },
+      },
+    });
+    await expect(withheld.plan(projectId, userId, selection.manifest)).rejects.toThrow(
+      "Simulated process loss",
+    );
+    // Both resumes observe the fully prepared plan before either admits ready.
+    const gate = barrier();
+    let readers = 0;
+    const racing = createImportService({
+      ...deps,
+      repository: {
+        ...deps.repository,
+        async entries(id) {
+          const rows = await deps.repository.entries(id);
+          if (rows.every((row) => row.prepared || row.state !== "planned")) {
+            if (++readers === 1) await gate.pause();
+            else gate.release();
+          }
+          return rows;
+        },
+      },
+    });
+    try {
+      const results = await Promise.all([
+        racing.plan(projectId, userId, selection.manifest),
+        racing.plan(projectId, userId, selection.manifest),
+      ]);
+      expect(results.map((result) => result.state)).toEqual(["ready", "ready"]);
+    } finally {
+      gate.release();
+    }
+  }, 30_000);
   it("a crash after a committed chunk resumes only remaining identities", async () => {
     const selection = loose({});
     selection.manifest.roots = [{ rootId: 0, kind: "folder", name: "Resume" }];

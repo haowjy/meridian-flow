@@ -142,18 +142,25 @@ export function createImportService(deps: {
     if (!entry) throw new ImportError(404, "entry_not_found");
     return entryReport(entry);
   }
+  /** Ready admission is its own exclusive transition: a shared fence never upgrades. */
+  async function admitReady(record: ImportRecord) {
+    return repo.transaction(async () => {
+      const locked = await repo.fence(record.id, record.projectId, true);
+      if (locked?.state !== "planning") return true;
+      if (await repo.hasUnprepared(record.id)) return false;
+      await repo.setState(record.id, "ready");
+      return true;
+    });
+  }
   async function resume(record: ImportRecord) {
     while (true) {
       const changed = await retryMoved(async () => {
         const locked = await repo.fence(record.id, record.projectId);
-        if (locked?.state !== "planning") return false;
+        if (locked?.state !== "planning") return "done";
         const entries = await repo.entries(record.id);
         const pending = entries.filter((entry) => !entry.prepared && entry.state === "planned");
         const first = pending[0];
-        if (!first) {
-          await repo.setState(record.id, "ready");
-          return false;
-        }
+        if (!first) return "admit";
         const parent = await tree.parent(locked, first.parentId);
         // One parent per chunk makes lock ordering stable even after cross-area moves.
         const chunk = pending
@@ -206,9 +213,9 @@ export function createImportService(deps: {
               created: ["folder", "note", "docx"].includes(entry.kind),
             });
         }
-        return true;
+        return "chunk";
       });
-      if (!changed) return;
+      if (changed === "done" || (changed === "admit" && (await admitReady(record)))) return;
     }
   }
   async function finish(id: string, projectId: string, automatic = false) {

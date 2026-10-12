@@ -245,6 +245,20 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .limit(1);
       return !!row;
     },
+    async hasUnprepared(importId) {
+      const [row] = await tx()
+        .select({ id: importEntries.id })
+        .from(importEntries)
+        .where(
+          and(
+            eq(importEntries.importId, importId),
+            eq(importEntries.state, "planned"),
+            sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`,
+          ),
+        )
+        .limit(1);
+      return !!row;
+    },
     async lockEntry(id) {
       const [row] = await tx()
         .select()
