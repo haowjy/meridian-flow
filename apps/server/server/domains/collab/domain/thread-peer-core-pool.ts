@@ -159,11 +159,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
         ...input.observability,
       });
     },
-    discardThreadPeerBranches: (documentId, threadId) =>
-      input.branches.discardActiveThreadPeerBranches({
-        documentId,
-        threadId: threadId ? (threadId as ThreadId) : null,
-      }),
     pullThreadPeer: (command) => input.branchPulls.pullThreadPeer(command),
   });
 }
@@ -206,7 +201,6 @@ export function createThreadPeerCorePool(input: {
     threadId: ThreadId,
     viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
   ): AgentEditCore;
-  discardThreadPeerBranches(documentId: DocumentId, threadId: string): Promise<void>;
   pullThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -272,7 +266,7 @@ export function createThreadPeerCorePool(input: {
       );
       if (!oldest) break;
       const evicted = cores.get(oldest);
-      await evicted?.invalidateThread("", oldest);
+      await evicted?.evictThread(oldest);
       cores.delete(oldest);
     }
   }
@@ -339,7 +333,7 @@ export function createThreadPeerCorePool(input: {
       !context.responseIdentity?.editScopeId ||
       !core.hasResponseDocument(context.responseIdentity?.editScopeId, documentId)
     )
-      await core.invalidateThread(documentId, context.threadId);
+      await core.invalidateThreadDocument(documentId, context.threadId);
     return {
       ...context,
       interactionContext: {
@@ -366,7 +360,8 @@ export function createThreadPeerCorePool(input: {
   ): Promise<WriteOutcome> {
     const result = await runWithEditGrants(input.fileAccess, [grant], write);
     if (result.ok) return result.value;
-    if (documentId && context.threadId) await core.invalidateThread(documentId, context.threadId);
+    if (documentId && context.threadId)
+      await core.invalidateThreadDocument(documentId, context.threadId);
     throw result.refusal;
   }
 
@@ -466,7 +461,7 @@ export function createThreadPeerCorePool(input: {
       const entry = record.documents.get(documentId);
       if (!entry) continue;
       record.documents.delete(documentId);
-      if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
+      if (record.threadId) await entry.core.invalidateThreadDocument(documentId, record.threadId);
     }
     for (const core of [...record.participants]) {
       const holds = (entry: PinnedDocument) => entry.core === core;
@@ -494,6 +489,24 @@ export function createThreadPeerCorePool(input: {
         }
       },
     };
+  }
+
+  async function retireThreadPeers(docId: string, threadIds: readonly string[]): Promise<void> {
+    const errors: unknown[] = [];
+    for (const threadId of new Set(threadIds)) {
+      const id = threadId as ThreadId;
+      lastSeen.delete(seenKey(id, docId as DocumentId));
+      // Response-pinned owners survive cache eviction and must lose these buffers too.
+      for (const core of new Set([...ownersForThread(id), input.liveUtilityCore])) {
+        try {
+          await core.invalidateThreadDocument(docId, threadId);
+        } catch (cause) {
+          errors.push(cause);
+        }
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
   return asThreadPeerAgentEditCore({
@@ -601,54 +614,20 @@ export function createThreadPeerCorePool(input: {
         input.responseTransactionSettlement,
       );
     },
-    async invalidateThread(docId, threadId) {
-      const errors: unknown[] = [];
-      if (docId) {
-        try {
-          await input.discardThreadPeerBranches(docId as DocumentId, threadId);
-        } catch (cause) {
-          errors.push(cause);
-        }
+    retireThreadPeers,
+    async invalidateThreadDocument(docId, threadId) {
+      if (!docId || !threadId)
+        throw new Error("invalidateThreadDocument names one document and one thread");
+      await retireThreadPeers(docId, [threadId]);
+    },
+    async evictThread(threadId) {
+      if (!threadId) throw new Error("evictThread names one thread");
+      const id = threadId as ThreadId;
+      for (const key of [...lastSeen.keys()]) {
+        if (key.startsWith(`${id}\0`)) lastSeen.delete(key);
       }
-      if (threadId) {
-        const id = threadId as ThreadId;
-        for (const key of [...lastSeen.keys()]) {
-          if (key.startsWith(`${id}\0`) && (!docId || key === seenKey(id, docId as DocumentId))) {
-            lastSeen.delete(key);
-          }
-        }
-        for (const core of ownersForThread(id)) {
-          try {
-            await core.invalidateThread(docId, threadId);
-          } catch (cause) {
-            errors.push(cause);
-          }
-        }
-        cores.delete(id);
-      } else {
-        const threads = new Set(cores.keys());
-        for (const record of responses.values()) if (record.threadId) threads.add(record.threadId);
-        for (const id of threads) {
-          for (const core of ownersForThread(id)) {
-            if (core === input.liveUtilityCore) continue; // Invalidated globally below.
-            try {
-              await core.invalidateThread(docId, id);
-            } catch (cause) {
-              errors.push(cause);
-            }
-          }
-          cores.delete(id);
-        }
-        try {
-          await input.liveUtilityCore.invalidateThread(docId, threadId);
-        } catch (cause) {
-          errors.push(cause);
-        }
-      }
-      if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) {
-        throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
-      }
+      await cores.get(id)?.evictThread(threadId);
+      cores.delete(id);
     },
   });
 }

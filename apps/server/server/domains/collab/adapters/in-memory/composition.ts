@@ -93,7 +93,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     commitThreadResponseAtomically: (operation) => operation(),
     responseTransactionSettlement: {

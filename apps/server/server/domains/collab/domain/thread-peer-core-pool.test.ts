@@ -21,7 +21,6 @@ function createPool() {
   const pool = createThreadPeerCorePool({
     liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
     createThreadCore: () => threadCore.asCore(),
-    discardThreadPeerBranches: async () => {},
     pullThreadPeer: pullThreadPeer,
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
@@ -104,9 +103,9 @@ describe("thread-peer pool", () => {
           const owner = harness({ "alpha.md": "red" });
           acquired.push(owner);
           if (pausedEviction && acquired.length === 1) {
-            const invalidate = owner.core.invalidateThread.bind(owner.core);
+            const invalidate = owner.core.evictThread.bind(owner.core);
             let first = true;
-            owner.core.invalidateThread = async (...args) => {
+            owner.core.evictThread = async (...args) => {
               if (first) {
                 first = false;
                 entered();
@@ -117,7 +116,6 @@ describe("thread-peer pool", () => {
           }
           return owner.core;
         },
-        discardThreadPeerBranches: async () => {},
         pullThreadPeer: async () =>
           pausedEviction
             ? undefined

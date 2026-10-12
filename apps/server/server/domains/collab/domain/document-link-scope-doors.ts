@@ -73,7 +73,9 @@ export function scopeAgentEdit(
     prepare: core.prepare,
     responseDocuments: core.responseDocuments,
     responseDestination: core.responseDestination,
-    invalidateThread: core.invalidateThread,
+    invalidateThreadDocument: core.invalidateThreadDocument,
+    evictThread: core.evictThread,
+    retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),

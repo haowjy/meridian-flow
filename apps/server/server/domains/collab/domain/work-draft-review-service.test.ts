@@ -18,7 +18,8 @@ function fixture() {
       }),
     },
     discardWorkDraft: discard,
-    agentEdit: { invalidateThread: async () => {} },
+    retirePeers: async () => {},
+    deferUntilCommit: () => false,
     branchPush: { pushSelectedToLive: async () => ({ status: "pushed" }) },
     branchReview: { discardSelected: async () => ({ status: "discarded" }) },
     settleEmptyDraft: async () => {

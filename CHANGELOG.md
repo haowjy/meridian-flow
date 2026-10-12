@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
+
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.
 - Preserve server draft-list observations through whole Apply, projecting immediate disappearance from generation-addressed intents so newer proposals reappear.
 - Delete superseded undo-repair, rollback and preview-notice contracts; align architecture references with immutable edits and transactional trail signals.

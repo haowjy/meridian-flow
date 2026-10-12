@@ -14,7 +14,8 @@ export interface AgentEditCore {
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
   prepare: ReturnType<typeof createWriteTool>["prepare"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
-  invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
+  evictThread: ReturnType<typeof createWriteTool>["evictThread"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -28,7 +29,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     hasResponseDocument: tool.hasResponseDocument,
     prepare: tool.prepare,
     responseDocuments: tool.responseDocuments,
-    invalidateThread: tool.invalidateThread,
+    invalidateThreadDocument: tool.invalidateThreadDocument,
+    evictThread: tool.evictThread,
   };
 }
 

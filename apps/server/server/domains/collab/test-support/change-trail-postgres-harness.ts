@@ -1,5 +1,6 @@
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
+import { createPeerRetirement } from "../domain/peer-retirement.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -668,7 +669,17 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
     model: runtime.model,
-    agentEdit,
+    deferUntilCommit: deferUntilDrizzleCommit,
+    retirePeers: createPeerRetirement({
+      closeBranchRoom: (branchId) => {
+        for (const roomId of [...hocuspocus.documents.keys()]) {
+          if (!roomId.startsWith(`branch:${branchId}:gen:`)) continue;
+          hocuspocus.documents.get(roomId)?.destroy();
+          hocuspocus.documents.delete(roomId);
+        }
+      },
+      agentEdit,
+    }),
     resolveDocumentUris: createDocumentUrisResolver(db),
     resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
     readReviewCut: (options.reviewCut ?? ((read) => read))(
