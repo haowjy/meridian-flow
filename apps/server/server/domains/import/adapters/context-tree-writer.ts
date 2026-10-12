@@ -1,6 +1,5 @@
 /** Context/collab import adapter using bulk creation, identity fill and the isolated binder. */
 import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { walkLinkOccurrences } from "@meridian/markup/links";
@@ -30,22 +29,6 @@ export function createContextImportTreeWriter(deps: {
   refreshFiles(ids: readonly string[]): Promise<unknown>;
 }): ImportTreeWriter {
   return {
-    async preview(uri) {
-      const listing = await deps.context.list(uri);
-      if (!listing.ok) throw new Error(listing.error.code);
-      return listing.value.entries.map((entry) => {
-        const filename = entry.uri.split("/").filter(Boolean).at(-1) ?? "";
-        if (entry.kind === "directory")
-          return { kind: "folder" as const, name: filename, extension: "" };
-        const parsed = parseDocumentFilename(filename);
-        if (!parsed.ok) throw new Error("Invalid live filename");
-        return {
-          kind: "file" as const,
-          name: parsed.value.name,
-          extension: parsed.value.extension,
-        };
-      });
-    },
     async destination(uri) {
       try {
         return await deps.locations.destination(uri);

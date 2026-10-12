@@ -696,15 +696,19 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
       `imports/${binaryPlan.importId}/0`,
     ]);
   });
-  it("a sibling created after preview counts up at the chunk, without overwrite", async () => {
+  it("a sibling created after the plan persists counts up at the chunk, without overwrite", async () => {
     const selection = loose({ "Sects.md": "Imported" }),
       deps = ports(),
       gate = barrier(),
-      preview = deps.tree.preview;
-    deps.tree.preview = async (...args) => {
-      const listing = await preview(...args);
-      await gate.pause();
-      return listing;
+      parent = deps.tree.parent;
+    let paused = false;
+    // Pause before the first chunk locks its parent, after the plan is durable.
+    deps.tree.parent = async (...args) => {
+      if (!paused) {
+        paused = true;
+        await gate.pause();
+      }
+      return parent(...args);
     };
     const service = createImportService(deps),
       planning = service.plan(projectId, userId, selection.manifest);

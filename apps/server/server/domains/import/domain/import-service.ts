@@ -407,12 +407,7 @@ export function createImportService(deps: {
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
-        const nodes = planSelection(
-          manifest,
-          randomUUID,
-          destination.folderId,
-          await tree.preview(manifest.destination.folderUri),
-        );
+        const nodes = planSelection(manifest, randomUUID, destination.folderId);
         await repo.transaction(() =>
           repo.insert(
             {

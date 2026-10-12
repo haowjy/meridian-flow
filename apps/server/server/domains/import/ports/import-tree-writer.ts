@@ -9,7 +9,6 @@ export interface ImportParent {
 }
 export class ParentMovedError extends Error {}
 export interface ImportTreeWriter {
-  preview(uri: string): Promise<ImportParent["children"]>;
   destination(uri: string): Promise<{ sourceId: string; folderId: string | null }>;
   /** Resolve, lock the current source, reread. Throw ParentMovedError to retry a fresh transaction. */
   parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
