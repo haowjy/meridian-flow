@@ -171,7 +171,7 @@ export class SocketLifecycleController {
     this.clearPingTimer();
     this.pingTimer = setTimeout(() => {
       this.pingTimer = null;
-      this.socket?.close(4000, "ping_timeout");
+      this.closeCurrentSocket("ping_timeout");
     }, DEFAULT_WS_PING_TIMEOUT_MS);
   }
 
