@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
 import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
@@ -518,6 +519,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )}
       aria-busy={busy || pending > 0 || undefined}
     >
+      {submitFailure ? (
+        // Inside the frame, above the words: the Composer owns it, so every host draws it the same
+        // and it never stacks against the strips above the box. Send is the retry; X dismisses.
+        <div className="mb-[var(--chat-space-inline)] flex px-[var(--chat-space-inline)]">
+          <ErrorCard
+            inline
+            onDismiss={() => {
+              setSubmitFailure(false);
+              editor?.commands.focus(undefined, { scrollIntoView: false });
+            }}
+          >
+            <p className="whitespace-normal">{t`Couldn't send.`}</p>
+          </ErrorCard>
+        </div>
+      ) : null}
       <EditorContent
         editor={editor}
         data-placeholder={placeholder ?? rotatingPlaceholder}
@@ -578,14 +594,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </span>
         ) : null}
       </div>
-      {submitFailure ? (
-        <p
-          role="alert"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
-        >
-          {t`Couldn't send. Your message was not lost.`}
-        </p>
-      ) : null}
     </div>
   );
 });

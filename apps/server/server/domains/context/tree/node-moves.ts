@@ -37,7 +37,13 @@ import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js
 import { ensureLiveFolderPath } from "./placement.js";
 import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
-import { createTreeReader, LIVE_TREE, type NodeRef } from "./tree-view.js";
+import {
+  createTreeReader,
+  LIVE_TREE,
+  type NameClaim,
+  type NodeRef,
+  namespaceName,
+} from "./tree-view.js";
 import {
   loadDocumentIdentityRows,
   loadFolderIdentityRows,
@@ -228,19 +234,40 @@ export async function prepareMoves(
  * namespace: the plan's own visible nodes against each other, then each selected root's
  * final path and its ancestors against live nodes outside the plan. A live node under a
  * planned root's final path is itself planned (its ancestor there moves), so carried
- * nodes meet live nodes only through their roots.
+ * nodes meet live nodes only through their roots. A document and a folder meet through
+ * the shared namespace (`namespaceName`) both within the plan and against the live tree.
  */
 async function checkFinalNamespace(
   db: Database,
   moves: readonly PreparedMove[],
   nodes: ReadonlyMap<string, PlannedNode>,
 ): Promise<Result<void, MoveFault>> {
-  const planned = new Map<string, PlannedNode>();
+  const literal = new Set<string>();
+  // Planned visible nodes by the document filename each holds, per kind.
+  const holding = {
+    document: new Map<string, PlannedNode>(),
+    folder: new Map<string, PlannedNode>(),
+  };
   for (const node of nodes.values()) {
     if (node.hidden || node.to === null) continue;
     const key = slot(node.to.contextSourceId, node.to.path);
-    if (planned.has(key)) return Err({ code: "conflict", node: refOf(node) });
-    planned.set(key, node);
+    const shared = sharedSlot(node.kind, node.to.contextSourceId, node.to.path);
+    const opposite = node.kind === "document" ? holding.folder : holding.document;
+    if (literal.has(key) || opposite.has(shared))
+      return Err({ code: "conflict", node: refOf(node) });
+    literal.add(key);
+    holding[node.kind].set(shared, node);
+  }
+  // Every required ancestor folder against the planned documents, exhaustively: the live
+  // walk below stops at the first missing or vacated prefix.
+  for (const move of moves) {
+    const segments = move.path.split("/");
+    for (let length = 1; length < segments.length; length += 1) {
+      const path = segments.slice(0, length).join("/");
+      if (holding.document.has(sharedSlot("folder", move.to.contextSourceId, path))) {
+        return Err({ code: "conflict", node: move.node });
+      }
+    }
   }
   const tree = createTreeReader(db);
   for (const move of moves) {
@@ -248,8 +275,6 @@ async function checkFinalNamespace(
     for (let length = 1; length <= segments.length; length += 1) {
       const path = segments.slice(0, length).join("/");
       const isFinal = length === segments.length;
-      const mine = planned.get(slot(move.to.contextSourceId, path));
-      if (!isFinal && mine?.kind === "document") return Err({ code: "conflict", node: move.node });
       const found = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: move.to.contextSourceId,
         path,
@@ -267,6 +292,12 @@ async function checkFinalNamespace(
     }
   }
   return Ok(undefined);
+}
+
+/** A path's slot under the document filename its last segment holds as `kind`. */
+function sharedSlot(kind: NameClaim, contextSourceId: string, path: string): string {
+  const at = path.lastIndexOf("/");
+  return slot(contextSourceId, path.slice(0, at + 1) + namespaceName(kind, path.slice(at + 1)));
 }
 
 function refOf(node: PlannedNode): NodeRef {

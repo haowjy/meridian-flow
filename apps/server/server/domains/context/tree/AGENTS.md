@@ -28,10 +28,14 @@ the outside; review enforces the inside.
 - **Normalization is writes-only.** Absorb never refuses a hidden/live clash;
   `treeState` owns the observable clash in each draft's view.
 - **Names arrive canonical; claims ask as a kind.** Callers pass the contracts name
-  codec's canonical document name, so path matching stays literal. A create, placement
-  or move asks `as: "document" | "folder"` (`NameClaim`), which also meets the shared
-  namespace: a folder whose document alias is the name (`Lore.md` holds `Lore`), or the
-  document at a folder name's alias. Reads never ask as a kind.
+  codec's canonical document name, so path matching stays literal. Anything deciding
+  whether a node may stand at a path asks `as: "document" | "folder"` (`NameClaim`): a
+  create, placement or move, Apply's holds, and `treeState`'s clash diagnostics (a
+  leaf as a document, its ancestors as folders), so review and Apply can't disagree.
+  The claim also meets the shared namespace through the one rule, `namespaceName`: a
+  folder holds its document alias (`Lore.md` holds `Lore`). Folders never meet folders
+  through it. The batch move's planned namespace uses the same rule. Browsing (ls,
+  stat, read, link resolution) never asks as a kind.
 - **Tree writes don't refresh the catalog.** They return what they placed or
   tombstoned; the caller reconciles in its own transaction (the store, the mover, the
   Apply step's completion transaction, the Discard kernel).
