@@ -9,6 +9,8 @@
  * - `reservedForUserTurnIds` names the messages a reply was reserved to handle.
  *   It is a hint for binding and Stop, never proof that they were answered.
  * - `meridian.messages.delivered` is the only "my message is done" fact.
+ * - `position` (`Turn.position`) is the thread's write-once insertion order. A
+ *   client picks an execution's latest turn by it, never by arrival order.
  * - `meridian.execution.ended` is journaled once, after every turn the execution
  *   reserved is terminal. The snapshot's `liveState.openExecutionId` carries the
  *   same fact: a snapshot execution that is not open has ended.
@@ -27,12 +29,16 @@ export type RunStartedMeta = {
   executionId: string | null;
   /** Message ids (= user turn ids) the reply was reserved for; a Retry carries its failed reply's. */
   reservedForUserTurnIds: string[];
+  /** The reply's `Turn.position`; null on journal payloads written before it was recorded. */
+  position: number | null;
 };
 
 /** `meridian.messages.delivered`: the acknowledging turn and the messages it delivered. */
 export type MessagesDeliveredValue = {
   /** Null when no turn was reserved (a child run aborted before its reservation). */
   byTurnId: string | null;
+  /** The deliverer's `Turn.position`; null when the deliverer is unknown. */
+  byTurnPosition: number | null;
   executionId: string | null;
   userTurnIds: string[];
 };
@@ -44,10 +50,12 @@ const runStartedMetaSchema = z.object({
   writeMode: aiWriteModeSchema.nullable().optional(),
   executionId: z.string().nullable().optional(),
   reservedForUserTurnIds: z.array(z.string()).optional(),
+  position: z.number().int().nullable().optional(),
 });
 
 const messagesDeliveredSchema = z.object({
   byTurnId: z.string().nullable(),
+  byTurnPosition: z.number().int().nullable().optional(),
   executionId: z.string().nullable(),
   userTurnIds: z.array(z.string()),
 });
@@ -59,21 +67,25 @@ export function readRunStartedMeta(rawEvent: unknown): {
   writeMode: AiWriteMode | null | undefined;
   executionId: string | null;
   reservedForUserTurnIds: readonly string[];
+  position: number | null;
 } {
   const parsed = runStartedMetaSchema.safeParse(rawEvent);
   if (!parsed.success)
-    return { writeMode: undefined, executionId: null, reservedForUserTurnIds: [] };
+    return { writeMode: undefined, executionId: null, reservedForUserTurnIds: [], position: null };
   return {
     writeMode: parsed.data.writeMode,
     executionId: parsed.data.executionId ?? null,
     reservedForUserTurnIds: parsed.data.reservedForUserTurnIds ?? [],
+    position: parsed.data.position ?? null,
   };
 }
 
 /** Reads a `meridian.messages.delivered` CUSTOM value; null when malformed. */
 export function readMessagesDelivered(value: unknown): MessagesDeliveredValue | null {
   const parsed = messagesDeliveredSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  return parsed.success
+    ? { ...parsed.data, byTurnPosition: parsed.data.byTurnPosition ?? null }
+    : null;
 }
 
 /** Reads a `meridian.execution.ended` CUSTOM value; null when malformed. */
