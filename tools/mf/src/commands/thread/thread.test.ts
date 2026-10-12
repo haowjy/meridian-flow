@@ -122,6 +122,50 @@ describe("thread", () => {
     });
   });
 
+  it("prints gaps and finishes events only after replay and live state", async () => {
+    const isolated = await startFakeStack();
+    try {
+      await isolated.mf(["thread", "send", THREAD_ID, "hello"]);
+      isolated.socketPolicy.replayFloor = "1";
+      const result = await isolated.mf(["thread", "events", THREAD_ID, "--json"]);
+      expect(result.code).toBe(EXIT.ok);
+      const records = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(records[0]).toEqual({
+        type: "gap",
+        threadId: THREAD_ID,
+        cause: "replay_limit_exceeded",
+        fromSeq: "0",
+        toSeq: "1",
+      });
+      expect(records.map((record) => record.type)).not.toContain("turn.started");
+      expect(records.at(-1)).toMatchObject({ type: "turn.finished" });
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it.each([4401, 4403])("keeps terminal socket close %s at exit 4", async (code) => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.socketPolicy.closeCode = code;
+      const result = await isolated.mf([
+        "thread",
+        "events",
+        THREAD_ID,
+        "--timeout",
+        "1s",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.unavailable);
+      expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it("send exits 1 on a failed run and 8 on a pending interrupt", async () => {
     const failed = await mf(["thread", "send", THREAD_ID, "please fail", "--json"]);
     expect(failed.code).toBe(EXIT.failed);
