@@ -18,7 +18,8 @@ function catalogPlacing(documentId: string, path: string) {
   return {
     normalized: { generation: "g", appliedRevision: "1", entries: new Map() },
     findPath: () => null,
-    findDocument: (id: string) => (id === documentId ? { path } : null),
+    findDocument: (id: string) =>
+      id === documentId ? { path, uri: `manuscript://${path.replace(/^\/+/, "")}` } : null,
   };
 }
 
@@ -65,6 +66,8 @@ vi.mock("@/client/query/useProjectThreads", () => ({
 vi.mock("@/client/query/useContextCatalog", async (original) => ({
   ...(await original<typeof import("@/client/query/useContextCatalog")>()),
   useContextCatalogView: () => ({ catalog: state.catalog }),
+  useContextCatalogViews: (_project: string, schemes: string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: state.catalog }])),
 }));
 vi.mock("@/client/api/projects-api", async (original) => ({
   ...(await original<typeof import("@/client/api/projects-api")>()),

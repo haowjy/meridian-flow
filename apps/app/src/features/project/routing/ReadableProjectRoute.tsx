@@ -1,3 +1,4 @@
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
@@ -12,7 +13,7 @@ import {
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
@@ -249,17 +250,26 @@ function ReadableProjectDestination({
   }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
 
   // Cached live locations, read only to place a review launch's document (never fetched for it).
-  const { catalog: manuscriptCatalog } = useContextCatalogView(projectId, "manuscript", {
-    workId: null,
+  const launchCatalogs = useContextCatalogViews(projectId, CONTEXT_URI_SCHEMES, {
+    workId,
     enabled: false,
   });
+  const documentCatalog = useMemo(
+    () => ({
+      findDocument: (id: string) =>
+        CONTEXT_URI_SCHEMES.map((scheme) => launchCatalogs[scheme].catalog?.findDocument(id)).find(
+          (file) => file != null,
+        ) ?? null,
+    }),
+    [launchCatalogs],
+  );
   const latest = useRef({
     address,
     location,
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   });
   latest.current = {
     address,
@@ -267,7 +277,7 @@ function ReadableProjectDestination({
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
   // through a rename, whatever path the launcher read.

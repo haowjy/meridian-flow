@@ -27,6 +27,8 @@ vi.mock("@/client/api/drafts-api", () => ({
 vi.mock("@/client/query/useContextCatalog", () => ({
   contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
   useContextCatalogView: () => ({ catalog: null }),
+  useContextCatalogViews: (_project: string, schemes: string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),
   projectCatalogView: (_project: string, _scheme: string, view: { documents: string[] }) => ({
     findDocument: (documentId: string) => (view.documents.includes(documentId) ? {} : null),
   }),
