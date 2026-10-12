@@ -61,3 +61,29 @@ Two harness races have produced false defects. Rule them out first.
 ## Device reading memory
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
+
+## Project export
+
+1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
+   `pnpm portless:list`. Seed links across Manuscript and Knowledge Base, a
+   binary image, case-only siblings, two Works with Scratch and Uploads, and a
+   No Work chat with Scratch. Seed `documents.metadata.properties` directly
+   as `{ "format": "yaml", "text": "..." }`.
+2. Download a chapter with
+   `./mf api GET /api/documents/<id>/download --output /tmp/chapter.md`.
+   Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
+   escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
+3. Download `/api/projects/<id>/export.zip` with the same `--output` option,
+   then repeat with `?scratch=1&uploads=1`. Use `unzip -l` and unzip into a
+   temporary folder. Default exports omit Works; opt-in exports group files
+   by Work and No Work Scratch by lineage chat. Compare image SHA-256.
+4. The scripted relative-link check is in
+   `apps/server/server/domains/export/domain/project-export.test.ts`. It
+   verifies default and opt-in vaults and an in-flight move. The default
+   marker counts excluded Scratch/Uploads links; opt-in links resolve to
+   actual entries. Open the exported project folder in Obsidian for visual
+   review (not part of the automated check).
+5. In the project title menu, choose Export project. Both options begin off.
+   Export hands the download to the browser without buffering the ZIP in app
+   memory; the dialog does not claim that a download succeeded. Stop only
+   this stack with `pnpm dev --stop`.

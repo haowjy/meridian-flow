@@ -33,6 +33,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("document landing (postgr
     const coordinator = createInMemoryCoordinator(persistence.journal);
     const links = createStaticDocumentLinkScopes();
     const engine = createMarkdownDocumentEngine({
+      exportCodec: mdxCodec({ schema, export: true }),
       codec,
       model,
       coordinator,

@@ -5,6 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
+import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { TitleEditSlot } from "./TitleEditSlot";
 
 export type ProjectTitleEdit = { projectId: string; onSave: (title: string) => Promise<unknown> };
@@ -50,6 +51,7 @@ export function InlineProjectTitle({
           </button>
         )}
       </TitleEditSlot>
+      <ProjectActionsMenu projectId={projectId} />
     </div>
   );
 }

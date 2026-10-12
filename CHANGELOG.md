@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Export projects as streamed Obsidian-ready ZIPs, with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
+- Save binary API downloads with `./mf api GET <path> --output <file>`.
+
+
 ### Fixed
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.

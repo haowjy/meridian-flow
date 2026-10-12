@@ -233,6 +233,7 @@ export type MarkdownDocumentStore = LinkBinder & {
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   ensureDocument(documentId: string): Promise<void>;
+  readForExport: import("./domain/markdown-document.js").MarkdownDocumentEngine["readForExport"];
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(

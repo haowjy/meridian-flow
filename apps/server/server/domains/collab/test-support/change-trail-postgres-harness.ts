@@ -353,6 +353,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
+    exportCodec: mdxCodec({ schema: documentSchema, export: true }),
     links,
     model,
     codec: markupCodec,

@@ -1694,6 +1694,10 @@ msgstr ""
 msgid "Download {name}"
 msgstr ""
 
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Download a folder of Markdown files as a ZIP."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Download image"
@@ -1874,6 +1878,18 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Exploring folders…"
 msgstr "正在浏览文件夹…"
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Export"
+msgstr ""
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Export project"
+msgstr ""
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Export project…"
+msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -2105,6 +2121,14 @@ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
+msgstr ""
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Include Scratch"
+msgstr ""
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Include Uploads"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -2930,6 +2954,10 @@ msgstr ""
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Profile"
+msgstr ""
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+msgid "Project actions"
 msgstr ""
 
 #: src/features/project/ProjectCreationNotice.tsx

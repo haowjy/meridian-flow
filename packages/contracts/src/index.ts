@@ -6,6 +6,10 @@ export * from "./context-uri.js";
 export * from "./document-href.js";
 export * from "./document-link.js";
 export * from "./document-link-api.js";
+export {
+  readStoredDocumentProperties,
+  type StoredDocumentProperties,
+} from "./document-properties.js";
 export * from "./document-ref.js";
 export * from "./drafts/index.js";
 export * from "./enums";

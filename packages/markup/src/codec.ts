@@ -10,6 +10,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
+import { exportText } from "./markdown/export-text.js";
 import { markdownParser } from "./markdown-parse.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
@@ -80,7 +81,10 @@ function buildMarkupCodec(
 
   const parseProcessor = markdownParser(remarkPlugins);
   const stringifyProcessor = unified()
-    .use(remarkStringify, { ...MARKDOWN_STRINGIFY_OPTIONS, handlers: attentionHandlers })
+    .use(remarkStringify, {
+      ...MARKDOWN_STRINGIFY_OPTIONS,
+      handlers: { ...attentionHandlers, ...(options.export ? { text: exportText } : {}) },
+    })
     .use(remarkGfm)
     .use(remarkPlugins);
 

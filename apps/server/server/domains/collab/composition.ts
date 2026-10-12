@@ -546,6 +546,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reversal: turnReversal,
     documents: {
       ensureDocument: persistence.lifecycle.ensureDocument,
+      readForExport: runtime.markdownDocuments.readForExport,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
