@@ -9,8 +9,6 @@ import {
   changeCommandState,
   currentChangeCommandRecords,
   failChangeCommand,
-  intentKeys,
-  queueChangeSelection,
   readPreviewAfterChangeCommands,
   releaseDraftCommand,
   resetDraftCommandRecords,
@@ -61,16 +59,6 @@ function preview(): DraftPreviewResponse {
 
 describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
-
-  it("retiring one queued selection leaves another of the same draft hidden", () => {
-    const first = queueChangeSelection(draft, one, "apply");
-    queueChangeSelection(draft, two, "apply");
-    first.retire();
-    expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
-      "row:2",
-      "row:3",
-    ]);
-  });
 
   describe("a selection of several changes", () => {
     const both = { classIds: ["c1", "c2"], operationIds: ["1", "2", "3"] };

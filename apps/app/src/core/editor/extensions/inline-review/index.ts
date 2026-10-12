@@ -13,7 +13,6 @@ export {
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,
-  isUnattributedHunkKey,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,

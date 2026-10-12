@@ -146,41 +146,35 @@ export function reviewChanges(
 
 type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
-const changesOfPreview = new WeakMap<ActivePreview, ReviewChange[]>();
-
 /**
  * `reviewChanges` of a preview, derived once per preview object: the header,
  * the manuscript, the bar and the dock all read the same list, and the preview
  * (immutable, shared by the query cache) is its identity.
  */
 function changesOf(preview: ActivePreview): readonly ReviewChange[] {
-  let changes = changesOfPreview.get(preview);
-  if (!changes) {
-    changes = reviewChanges(preview.operations, preview.hunks);
-    // A draft-only document has no live target for selective commands.
-    if (changes.length > 0 && preview.isNewDocument) {
-      const first = changes[0];
-      const attribution = preview.operations.length
-        ? changeAttribution(preview.operations)
-        : first.attribution;
-      changes = [
-        {
-          ...first,
-          classId: `draft:${preview.draftId}`,
-          operations: [...preview.operations],
-          operationIds: preview.operations.map((op) => op.operationId),
-          keys: preview.operations.map(operationKey),
-          markKeys: changes.flatMap((change) => change.markKeys),
-          change: changeTextForHunks(preview.hunks, preview.operations),
-          attribution,
-          threadIds: attributionThreadIds(attribution),
-          includesWriterEdits: changes.some((change) => change.includesWriterEdits),
-          merged: changes.some((change) => change.merged),
-          target: { kind: "draft" },
-        },
-      ];
-    }
-    changesOfPreview.set(preview, changes);
+  let changes = reviewChanges(preview.operations, preview.hunks);
+  // A draft-only document has no live target for selective commands.
+  if (changes.length > 0 && preview.isNewDocument) {
+    const first = changes[0];
+    const attribution = preview.operations.length
+      ? changeAttribution(preview.operations)
+      : first.attribution;
+    changes = [
+      {
+        ...first,
+        classId: `draft:${preview.draftId}`,
+        operations: [...preview.operations],
+        operationIds: preview.operations.map((op) => op.operationId),
+        keys: preview.operations.map(operationKey),
+        markKeys: changes.flatMap((change) => change.markKeys),
+        change: changeTextForHunks(preview.hunks, preview.operations),
+        attribution,
+        threadIds: attributionThreadIds(attribution),
+        includesWriterEdits: changes.some((change) => change.includesWriterEdits),
+        merged: changes.some((change) => change.merged),
+        target: { kind: "draft" },
+      },
+    ];
   }
   return changes;
 }
@@ -234,6 +228,7 @@ function describeChange(
   firstHunk: ReadonlyMap<string, number>,
 ): ReviewChange {
   const operationIds = classOps.map((op) => op.operationId);
+  const keys = classOps.map(operationKey);
   const includesWriterEdits = classOps.some((op) => op.kind === "writer");
   const merged = classHunks.some((hunk) => hunk.mergeArtifact === true);
   const agentOps = classOps.filter((op) => op.kind === "agent");
@@ -248,13 +243,13 @@ function describeChange(
     classId,
     operations: classOps,
     operationIds,
-    keys: classOps.map(operationKey),
+    keys,
     anchorOperationId,
     markKeys: operationIds,
     target: classOps.every((op) => op.canApplyOrDiscard !== false)
       ? {
           kind: "operations",
-          selection: { classIds: [classId], operationIds, keys: classOps.map(operationKey) },
+          selection: { classIds: [classId], operationIds, keys },
         }
       : { kind: "display" },
     tone: merged

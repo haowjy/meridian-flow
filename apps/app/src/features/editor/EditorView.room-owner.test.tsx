@@ -5,6 +5,7 @@ import { branchRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
@@ -293,7 +294,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     if (!branch) throw new Error("Missing branch session");
     vi.spyOn(branch, "whenLocalPersistenceSynced").mockReturnValue(refusalSync.promise);
     await act(async () => {
-      discard.resolve(discarded(false));
+      discard.reject(new HttpResponseError("refused", 500, null));
       await done;
     });
     expect(document.querySelector("[data-paint-hold]")?.textContent).toContain("Warm live edit.");

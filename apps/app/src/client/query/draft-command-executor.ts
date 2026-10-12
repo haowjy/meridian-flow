@@ -17,7 +17,6 @@ import {
   answerDraftCommandClosed,
   answerDraftSelection,
   beginChangeCommand,
-  beginDraftBatch,
   beginDraftCommand,
   beginIntentDrain,
   type ChangeFailureCode,
@@ -26,6 +25,7 @@ import {
   confirmChangeCommand,
   confirmDraftCommand,
   currentAccountEpoch,
+  currentChangeCommandRecords,
   currentDraftCommandRecords,
   type DraftClaim,
   type DraftCommandFailure,
@@ -34,15 +34,18 @@ import {
   failChangeCommand,
   failDraftCommand,
   intentDrainCurrent,
+  intentKeys,
   nextQueuedClick,
-  type PendingDraftCommand,
   pendingDraftCommand,
   queueChangeSelection,
   queuedChangeIsLive,
+  queueWholeDraft,
   releaseDraftCommand,
   selectionKeys,
+  wholeDraftPending,
 } from "./draft-command-record";
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
+import { projectDraft } from "./draft-projection";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { draftPreviewQueryOptions } from "./useDraftPreview";
@@ -156,14 +159,12 @@ function canSendDraftCommand(): boolean {
 
 /**
  * Claim and connectivity are decided together, before the caller takes
- * optimistic UI effects. `reserved` is a claim a batch admitted earlier; it is
- * honoured only while that claim is still live.
+ * optimistic UI effects. Every claim belongs to just this draft.
  */
 export function startDraftCommand(
   queryClient: QueryClient,
   command: DraftCommand,
   threadId: string | null = null,
-  reserved: DraftClaim | null = null,
   onSent?: () => void,
 ): CommandStart {
   const { draft, mode } = command;
@@ -171,10 +172,9 @@ export function startDraftCommand(
     sent: false,
     outcome: Promise.resolve<DraftCommandOutcome>({ kind: "blocked" }),
   };
-  if (reserved ? !claimIsLive(reserved) : pendingDraftCommand(currentDraftCommandRecords(), draft))
-    return blocked;
+  if (pendingDraftCommand(currentDraftCommandRecords(), draft)) return blocked;
   if (!canSendDraftCommand()) {
-    const by = reserved ?? draft;
+    const by = draft;
     const outcome: DraftCommandOutcome =
       command.target === "all"
         ? { kind: "failed", failure: { code: `${mode}-offline` } }
@@ -187,8 +187,7 @@ export function startDraftCommand(
     return { sent: false, outcome: Promise.resolve(outcome) };
   }
   const claim =
-    reserved ??
-    (command.target === "all"
+    command.target === "all"
       ? beginDraftCommand(draft, {
           target: "all",
           mode,
@@ -201,7 +200,7 @@ export function startDraftCommand(
           mode,
           command.basis.draftGeneration,
           command.completesDraft,
-        ));
+        );
   if (!claim) return blocked;
   try {
     onSent?.();
@@ -236,6 +235,7 @@ async function execute(
       >(queryClient, {
         networkMode: "always",
         mutationFn: () => {
+          if (!claimIsLive(claim)) throw new Error("Draft command capability revoked");
           if (command.target === "all") {
             const request = { draftId: draft.draftId };
             return mode === "apply"
@@ -254,6 +254,7 @@ async function execute(
         },
       })
       .execute(undefined);
+    if (!claimIsLive(claim)) return { kind: "blocked" };
     if (response.status === "applied" || response.status === "discarded") {
       if (command.target === "all" || ("draftClosed" in response && response.draftClosed))
         answerDraftCommandClosed(claim, {
@@ -287,6 +288,7 @@ async function execute(
           refreshDraft(),
         ]).catch(() => undefined);
       } else await refreshDraft();
+      if (!accountEpochIs(claim.epoch)) return { kind: "blocked" };
       return { kind: mode === "apply" ? "applied" : "discarded" };
     }
     const confirmed = response.status === (mode === "apply" ? "applied" : "discarded");
@@ -297,18 +299,22 @@ async function execute(
       );
       // Keep the claim while reads settle; then prune their result and fence older reads.
       await refreshDraft();
+      if (!claimIsLive(claim)) return { kind: "blocked" };
       confirmChangeCommand(claim, command.selection, mode);
       return confirmed
         ? { kind: "change-settled", mode }
         : { kind: "change-refused", mode, code: "gone" };
     }
     await refreshDraft();
+    if (!claimIsLive(claim)) return { kind: "blocked" };
     const code = "stale";
     failChangeCommand(claim, command.selection, mode, code);
     return { kind: "change-refused", mode, code };
   } catch (error) {
+    if (!claimIsLive(claim)) return { kind: "blocked" };
     if (command.target === "all" && mode === "apply") void refreshDraft().catch(() => undefined);
     else await refreshDraft().catch(() => undefined);
+    if (!claimIsLive(claim)) return { kind: "blocked" };
     const unknown =
       httpErrorStatus(error) === undefined && (command.target === "selection" || mode === "apply");
     const rejection = classifyDraftCommandRejection(error);
@@ -361,8 +367,8 @@ export function runDraftSelection(
   threadId: string | null,
 ): Promise<DraftCommandOutcome> {
   if (!selection.operationIds.length) return Promise.resolve({ kind: "blocked" });
-  const target = { ...scope, ...draft };
-  if (pendingDraftCommand(currentDraftCommandRecords(), target)?.target === "all")
+  const target = { ...scope, documentId: draft.documentId, draftId: draft.draftId };
+  if (wholeDraftPending(currentChangeCommandRecords(), target))
     return Promise.resolve({ kind: "blocked" });
   if (cachedActivePreview(queryClient, target) === null)
     return Promise.resolve({ kind: "change-refused", mode, code: "stale" });
@@ -396,17 +402,25 @@ async function drainClicks(
     for (let sent = 0; ; sent += 1) {
       const click = nextQueuedClick(draft);
       if (!click) return;
-      let outcome: DraftCommandOutcome;
+      let outcome: DraftCommandOutcome | null;
       try {
-        outcome = await sendClick(queryClient, draft, click, threadId, sent > 0);
-      } catch {
+        outcome =
+          click.target === "all"
+            ? queuedChangeIsLive(click.change)
+              ? await click.send()
+              : { kind: "blocked" }
+            : await sendClick(queryClient, draft, click, threadId, sent > 0);
+      } catch (error) {
         // A failed read is the click's to report only while the click is still this account's.
-        if (queuedChangeIsLive(click.change))
-          failChangeCommand(draft, click.selection, click.mode, "stale");
-        outcome = { kind: "change-refused", mode: click.mode, code: "stale" };
+        if (queuedChangeIsLive(click.change) && click.target === "selection")
+          failChangeCommand(draft, click, click.mode, "stale");
+        if (click.target === "all") {
+          click.reject(error);
+          outcome = null;
+        } else outcome = { kind: "change-refused", mode: click.mode, code: "stale" };
       }
       click.change.retire();
-      click.settle(outcome);
+      if (outcome) click.settle(outcome);
       // An account change emptied the queue under this loop: it ends with it.
       if (!intentDrainCurrent(draft, token)) return;
     }
@@ -418,7 +432,7 @@ async function drainClicks(
 async function sendClick(
   queryClient: QueryClient,
   draft: DraftRef,
-  click: NonNullable<ReturnType<typeof nextQueuedClick>>,
+  click: Extract<NonNullable<ReturnType<typeof nextQueuedClick>>, { target: "selection" }>,
   threadId: string | null,
   afterAnother: boolean,
 ): Promise<DraftCommandOutcome> {
@@ -437,11 +451,20 @@ async function sendClick(
     preview = fresh.status === "active" ? fresh : null;
   }
   if (!preview) return { kind: "change-refused", mode, code: "gone" };
-  const changes = reviewChangesOfPreview(preview);
+  // Raw evidence also contains already-settled operations in an older cache.
+  // Only confirmed intents are projected here: queued clicks still contribute
+  // to whether this command completes the draft.
+  const remaining = projectDraft(
+    preview,
+    intentKeys(currentChangeCommandRecords(), draft, true),
+    false,
+  ).preview;
+  if (remaining.status !== "active") return { kind: "change-refused", mode, code: "gone" };
+  const changes = reviewChangesOfPreview(remaining);
   // The change is found again in this draft by what it is (its keys) and sent as
   // the rows this generation names. A draft that holds nothing of it is gone:
   // no row of another generation is ever sent in its place.
-  const wanted = new Set(selectionKeys(click.selection));
+  const wanted = new Set(selectionKeys(click));
   const current = changes.filter((change) => change.keys.some((key) => wanted.has(key)));
   if (current.length === 0) return { kind: "change-refused", mode, code: "gone" };
   const selection = selectionOf(current);
@@ -466,67 +489,57 @@ async function sendClick(
   return start.outcome;
 }
 
-export type DraftBatchItem = { draft: DraftReviewSelection } & (
-  | { selection: ChangeSelection; command?: never }
-  | { command: PendingDraftCommand; selection?: never }
-);
+export type DraftBatchItem = { draft: DraftReviewSelection };
 export type DraftBatchOutcome = { draft: DraftReviewSelection; outcome: DraftCommandOutcome };
 
 /**
- * Both whole and selective batches pin their starting Work and expose one busy
- * lifetime. Each whole-draft target is claimed up front and sent with that
- * claim; an account change ends the batch (nothing further is sent).
+ * A batch is aggregate progress, not another scheduler. Each send submits to
+ * its own draft's admission/queue; unrelated drafts remain actionable. The
+ * account capability is checked before every next submission.
  */
 export async function runDraftBatch<T extends DraftBatchItem>(
-  scope: Scope,
-  mode: Mode,
   items: readonly T[],
-  send: (item: T, claim: DraftClaim | null) => Promise<DraftCommandOutcome>,
+  send: (item: T) => Promise<DraftCommandOutcome>,
 ): Promise<DraftBatchOutcome[]> {
-  if (!items.length) return [];
-  const release = beginDraftBatch(scope);
-  if (!release) return items.map(({ draft }) => ({ draft, outcome: { kind: "blocked" } }));
   const epoch = currentAccountEpoch();
-  const retires: (() => void)[] = [];
-  const claims: (DraftClaim | null)[] = [];
   const outcomes: DraftBatchOutcome[] = [];
-  const blocked = new Set<number>();
-  try {
-    // An offline batch refuses every click in this admission turn. Reconnect
-    // cannot admit a later file from a batch that was never sent.
-    if (!canSendDraftCommand())
-      return await Promise.all(
-        items.map(async (item) => ({ draft: item.draft, outcome: await send(item, null) })),
-      );
-    for (const [index, { draft, selection, command }] of items.entries()) {
-      if (command) {
-        const claim = beginDraftCommand({ ...scope, ...draft }, command);
-        claims.push(claim);
-        if (claim) retires.push(() => releaseDraftCommand(claim));
-        else {
-          blocked.add(index);
-          retires.push(() => {});
-        }
-      } else {
-        claims.push(null);
-        retires.push(
-          selection
-            ? queueChangeSelection({ ...scope, ...draft }, selection, mode).retire
-            : () => {},
-        );
-      }
-    }
-    for (const [index, item] of items.entries()) {
-      const outcome =
-        blocked.has(index) || !accountEpochIs(epoch)
-          ? Promise.resolve<DraftCommandOutcome>({ kind: "blocked" })
-          : send(item, claims[index] ?? null);
-      if (item.selection) retires[index]?.();
-      outcomes.push({ draft: item.draft, outcome: await outcome });
-    }
-    return outcomes;
-  } finally {
-    for (const retire of retires) retire();
-    release();
+  // Offline clicks refuse now, never become delayed work on reconnect.
+  const offline = !canSendDraftCommand();
+  for (const item of items) {
+    const outcome = !accountEpochIs(epoch)
+      ? { kind: "blocked" as const }
+      : offline && canSendDraftCommand()
+        ? { kind: "blocked" as const }
+        : await send(item);
+    outcomes.push({ draft: item.draft, outcome });
   }
+  return outcomes;
+}
+
+/** Whole and selective batch targets share the draft's one epoch-bound drain. */
+export function runWholeDraftIntent(
+  queryClient: QueryClient,
+  draft: DraftRef,
+  mode: Mode,
+  send: () => CommandStart,
+  threadId: string | null,
+): CommandStart {
+  let admitted: CommandStart | null = null;
+  const outcome = new Promise<DraftCommandOutcome>((resolve, reject) => {
+    queueWholeDraft(
+      draft,
+      mode,
+      () => {
+        const start = send();
+        admitted = start;
+        return start.outcome;
+      },
+      resolve,
+      reject,
+    );
+    void drainClicks(queryClient, draft, threadId);
+  });
+  // The drain admits an idle draft synchronously. Queued whole commands do not
+  // grant immediate navigation; their onSent effect belongs to their own turn.
+  return { sent: (admitted as CommandStart | null)?.sent ?? false, outcome };
 }

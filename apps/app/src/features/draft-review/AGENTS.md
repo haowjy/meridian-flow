@@ -16,7 +16,7 @@ It is the single local contract reference; this file maps ownership.
 | Presented document and per-container review address | `features/project/presented-document.ts`, `features/project/ReviewAddressOwner.tsx` |
 | Selected review, shown generation, retained completion, focus | `draft-review-session.ts` reducer |
 | View transitions and explicit navigation effects | `useDraftReviewController.ts` |
-| Claims, queues, failures, batch leases and read fences | `client/query/draft-command-record.ts` |
+| Per-draft claims, intent queue, failures and read fences | `client/query/draft-command-record.ts` |
 | Admission, typed requests, answer publication and refresh ordering | `client/query/draft-command-executor.ts` |
 | Creation-bound Work command capability | `useWorkDraftCommands.tsx` |
 | Generation observations, room acquisition and eligibility | `useReviewRoomOwner.ts` |
@@ -38,6 +38,8 @@ Paths outside this directory are relative to `apps/app/src`.
 
 ## Load-bearing rules
 
+- A slow or refused chapter never locks another chapter. Archived Works remain
+  globally read-only; chat generation explicitly gates chat batch controls.
 - Never add a surface-local command lock, optimistic hide or completion store.
   Records own command lifetime; the reducer retains completion for the open review.
 - Never infer closure from empty changes or list omission. Use generation-addressed

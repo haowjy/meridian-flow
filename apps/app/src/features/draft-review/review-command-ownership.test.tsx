@@ -46,34 +46,6 @@ afterEach(() => {
   fixture.dispose();
 });
 
-it("Presented review selective Apply excludes Chat whole commands and both surfaces display busy", async () => {
-  const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
-  fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
-  await fixture.render(async (p) => {
-    await open(p);
-    let done!: Promise<unknown>;
-    await act(async () => {
-      done = p().presented.controller.applyChanges(draftA, change("2"));
-    });
-    expect(p().presented.controller.isDisposing).toBe(true);
-    expect(p().chat.commands.dispositionLocked).toBe(true);
-    await act(async () => {
-      expect(await p().chat.commands.apply("document-a", "draft-a")).toEqual({ kind: "blocked" });
-      expect(await p().chat.commands.discard("document-a", "draft-a")).toEqual({
-        kind: "blocked",
-      });
-    });
-    expect(fixture.network.applyDraft).not.toHaveBeenCalled();
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
-    await act(async () => {
-      answer.resolve(applied(false));
-      await done;
-    });
-    expect(p().chat.commands.isDisposing).toBe(false);
-    expect(fixture.network.applyDraftChanges).toHaveBeenCalledTimes(1);
-  });
-});
-
 it("Chat whole Apply hides the draft and excludes presented review selection", async () => {
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
   fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
@@ -171,11 +143,15 @@ it.each([
     const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));
     await settleReact(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
+    const displayedAddress = { ...draftB, projectId: "display-project", workId: "display-work" };
     let done!: Promise<unknown>;
     await act(async () => {
       done = (mode === "apply" ? p().chatRunner.applyBatch : p().chatRunner.discardBatch)([
         { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
-        { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
+        {
+          draft: displayedAddress,
+          target: { kind: "operations" as const, selection: change("3") },
+        },
       ]);
     });
     expect(endpoint).toHaveBeenCalledTimes(1);
@@ -200,32 +176,31 @@ it.each([
   });
 });
 
-it("a rejected cache dependency restores every queued selection and a subsequent real batch runs", async () => {
+it("a slow refused whole command on chapter A leaves chapter B actionable", async () => {
+  const answer = deferredReviewAnswer<{ status: "applied"; draftId: string }>();
+  fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
-    const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));
-    await settleReact(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
-    const read = vi.spyOn(p().queryClient, "getQueryData").mockImplementationOnce(() => {
-      throw new Error("cache unavailable");
-    });
-    const batch = [
-      { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
-      { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
-    ];
+    await settleReact(() => expect(viewB().status).toBe("ready"));
+    let done!: Promise<unknown>;
     await act(async () => {
-      await expect(p().chatRunner.applyBatch(batch)).rejects.toThrow("cache unavailable");
+      done = p().chat.commands.apply(draftA.documentId, draftA.draftId);
     });
-    read.mockRestore();
-    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-    expect(viewA().items.map(({ change }) => change.classId)).toEqual(["class-1", "class-2"]);
-    expect(viewB().items.map(({ change }) => change.classId)).toEqual(["class-3"]);
-    fixture.network.applyDraftChanges.mockResolvedValue(applied(false));
+    expect(viewB().locked).toBe(false);
+    fixture.network.applyDraftChanges.mockResolvedValueOnce({
+      ...applied(false, "3"),
+      draftId: "draft-b",
+    });
     await act(async () => {
-      await p().chatRunner.applyBatch(batch);
+      await viewB().apply(viewB().items[0].change);
     });
     expect(fixture.network.applyDraftChanges.mock.calls.map((call) => call[2])).toEqual([
-      "document-a",
       "document-b",
     ]);
+    await act(async () => {
+      answer.reject(new HttpResponseError("refused", 500, null));
+      await done;
+    });
+    expect(viewB().locked).toBe(false);
   });
 });

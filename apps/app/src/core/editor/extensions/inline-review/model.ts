@@ -19,10 +19,7 @@ export type InlineReviewOperationKind = "agent" | "writer";
 
 import { unattributedHunkKey } from "@/features/draft-review/review-mark-key";
 
-export {
-  isUnattributedHunkKey,
-  unattributedHunkKey,
-} from "@/features/draft-review/review-mark-key";
+export { unattributedHunkKey } from "@/features/draft-review/review-mark-key";
 
 /**
  * A per-operation piece of an inserted hunk. Every inserted character is
