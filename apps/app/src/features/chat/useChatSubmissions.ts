@@ -10,10 +10,16 @@ import {
 import { ChatSubmissionOwner } from "@/client/chat-submissions/owner";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
+import { removeChatRow } from "@/client/query/chat-projections";
+import {
+  invalidateProjectThreadData,
+  invalidateWorkThreads,
+} from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, clearAnnouncement, type ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { chatDerivationWitness, whenDerived } from "./derivation/derive-conversation";
 export function useChatSubmissions(
   threadId: string,
   projectId: string,
@@ -54,7 +60,13 @@ export function useChatSubmissions(
       signal,
       current,
       controller,
-      queryClient,
+      whenDerived,
+      derivation: chatDerivationWitness(accountId),
+      projectCreated: (thread) => {
+        void invalidateProjectThreadData(queryClient, projectId);
+        if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
+      },
+      projectRemoved: () => removeChatRow(queryClient, projectId, threadId),
       actions: latest.current.actions,
       changed: render,
       failed: (recordId) => {
@@ -84,8 +96,10 @@ export function useChatSubmissions(
         event.type === "updated" &&
         event.action.type === "success" &&
         JSON.stringify(event.query.queryKey) === JSON.stringify(threadQueryKeys.snapshot(threadId))
-      )
+      ) {
+        owner.confirmCreation();
         wake();
+      }
     });
     const unsubscribeConnection = transport?.onConnectionState((state) => {
       if (state.kind === "connected") wake();

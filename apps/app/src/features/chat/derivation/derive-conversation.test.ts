@@ -155,3 +155,34 @@ describe("startDerivation", () => {
     expect(await whenDerived(threadId)).toBe(true);
   });
 });
+
+it("keeps the derivation intent lock through failure and releases it only after success", async () => {
+  const held = new Set<string>();
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: async (name: string, callback: () => Promise<void>) => {
+        held.add(name);
+        await callback();
+        held.delete(name);
+      },
+    },
+  });
+  const { deps, open } = harness();
+  api.forkThread.mockRejectedValueOnce(new Error("failed"));
+  try {
+    const threadId = startDerivation(forkInput, { ...deps, source, inherited: null, open });
+    const lock = `meridian:chat-deriving:account:${threadId}`;
+    expect(held.has(lock)).toBe(true);
+    expect(await whenDerived(threadId)).toBe(false);
+    expect(held.has(lock)).toBe(true);
+    expect(readDerivationIntent("account", threadId)).not.toBeNull();
+    api.forkThread.mockResolvedValueOnce({ ...source, id: threadId });
+    retryDerivation(threadId, deps);
+    expect(await whenDerived(threadId)).toBe(true);
+    await vi.waitFor(() => expect(held.has(lock)).toBe(false));
+    expect(readDerivationIntent("account", threadId)).toBeNull();
+  } finally {
+    resetDerivationsForTest();
+    vi.unstubAllGlobals();
+  }
+});

@@ -12,6 +12,7 @@ import type {
   ThreadListItem,
 } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
+import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   getProject,
   getProjectWorkingSet,
@@ -39,7 +40,11 @@ function errorMessage(error: unknown): string {
 
 function logUnexpectedSsrLoadError(error: unknown): void {
   // Expected during optimistic create: the client navigates before POST /api/projects.
-  if (errorMessage(error) === "Project not found") return;
+  if (
+    errorMessage(error) === "Project not found" ||
+    (isMeridianApiError(error) && error.code === "project_deleted")
+  )
+    return;
 
   console.error("Failed to load project data during SSR:", error);
 }

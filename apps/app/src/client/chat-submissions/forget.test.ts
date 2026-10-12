@@ -63,7 +63,7 @@ it("reconciles unique unmounted created ids with bounded concurrency, keeping ev
   if (!creating) throw new Error("missing fixture");
   creating.creation = {} as ChatSubmission["creation"];
   const probe = vi.fn(async (id: string) =>
-    id === "gone" ? ("missing" as const) : ("unknown" as const),
+    id === "gone" ? ("deleted" as const) : ("unknown" as const),
   );
   await reconcileChatCopies(options, (id) => id === "mounted", probe);
   expect(probe.mock.calls.map((c) => c[0]).sort()).toEqual([
@@ -134,7 +134,7 @@ it("runs at most four probes at once and abandons a changed account", async () =
       max = Math.max(max, active);
       await new Promise<void>((resolve) => releases.push(resolve));
       active--;
-      return "missing";
+      return "deleted";
     },
   );
   while (releases.length < 4) await Promise.resolve();

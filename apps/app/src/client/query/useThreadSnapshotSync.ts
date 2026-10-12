@@ -13,6 +13,8 @@ import {
   getThreadSnapshot,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
+import { getChatSubmissionEpoch } from "@/client/chat-submissions";
+import { confirmChatCreation } from "@/client/chat-submissions/model";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
@@ -27,6 +29,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { threadQueryKeys } from "./thread-query-keys";
+import { withThreadSnapshotEpoch } from "./thread-snapshot-epoch";
 
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
@@ -73,22 +76,24 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     // Always revalidate on activation: the thread may have advanced while the
     // writer was elsewhere (for example a background child's report waking the
     // parent). Cached turns still render first, so this stays navigate-first.
-    queryFn: async ({ signal }) => {
-      const requestSignal = AbortSignal.any([accountSignal, signal]);
-      // The source check runs before TanStack Query can publish this response.
-      // An obsolete HTTP success cannot become history or handoff authority.
-      const snapshot = deserializeThreadSnapshot(
-        await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
-      );
-      requestSignal.throwIfAborted();
-      if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
-        throw new Error("Thread snapshot identity mismatch");
-      }
-      if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
-        throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
-      }
-      return snapshot;
-    },
+    queryFn: async ({ signal }) =>
+      withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        const requestSignal = AbortSignal.any([accountSignal, signal]);
+        // The source check runs before TanStack Query can publish this response.
+        // An obsolete HTTP success cannot become history or handoff authority.
+        const snapshot = deserializeThreadSnapshot(
+          await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
+        );
+        requestSignal.throwIfAborted();
+        if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
+          throw new Error("Thread snapshot identity mismatch");
+        }
+        if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
+          throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
+        }
+        confirmChatCreation(accountId, threadId, getChatSubmissionEpoch());
+        return snapshot;
+      }),
     staleTime: 0,
     refetchOnMount: "always",
     enabled: !isPendingCreation && !accountSignal.aborted,

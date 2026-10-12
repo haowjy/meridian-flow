@@ -56,6 +56,8 @@ export async function readResponsePayload(response: Response): Promise<unknown> 
 }
 
 export function errorMessageFromPayload(payload: unknown, status: number): string {
+  const structured = meridianApiErrorFromPayload(payload, status);
+  if (structured) return structured.message;
   if (payload && typeof payload === "object" && "message" in payload) {
     const { message } = payload as { message?: unknown };
     if (typeof message === "string" && message) return message;

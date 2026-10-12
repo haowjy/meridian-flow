@@ -38,7 +38,10 @@ export async function forgetCreatedChatCopies(
 export async function reconcileChatCopies(
   owner: ChatCopyOwner,
   mounted: (threadId: string) => boolean,
-  probe: (threadId: string, submissionId: string) => Promise<"missing" | "unknown">,
+  probe: (
+    threadId: string,
+    submissionId: string,
+  ) => Promise<import("./thread-availability").ThreadAvailability | "present" | "unknown">,
 ): Promise<void> {
   const entries = owner.entries() ?? [];
   const ids = [...new Set(entries.map((entry) => entry.threadId))].filter(
@@ -53,8 +56,11 @@ export async function reconcileChatCopies(
         if (mounted(id)) continue;
         try {
           const record = entries.find((entry) => entry.threadId === id);
-          if (record && (await probe(id, record.submissionId)) === "missing" && owner.current())
-            await forgetCreatedChatCopies(owner, id);
+          if (record) {
+            const availability = await probe(id, record.submissionId);
+            if (["deleted", "project-deleted"].includes(availability) && owner.current())
+              await forgetCreatedChatCopies(owner, id);
+          }
         } catch {
           // Transport, timeout and non-definitive responses preserve the copies.
         }

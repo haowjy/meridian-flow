@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 /** Journal row ownership and Edit's safe transfer boundary. */
-import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { MeridianApiError } from "@/client/api/meridian-error";
@@ -28,7 +27,11 @@ import {
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
+import { derivationWitness } from "./derivation-witness";
 import { ChatSubmissionOwner } from "./owner";
+
+const whenDerived = async () => true;
+const chatDerivationWitness = (accountId: string) => derivationWitness(accountId, () => null);
 
 vi.mock("@/client/api/threads-api", async (actual) => ({
   ...(await actual<typeof import("@/client/api/threads-api")>()),
@@ -54,7 +57,6 @@ function entry(id = "one", text = "First rejected"): ChatSubmission {
   };
 }
 async function mount(scenario: ThreadRunScenario, paused = false) {
-  const client = new QueryClient();
   const dissolved = vi.fn();
   const focused = vi.fn();
   const life = new AbortController();
@@ -66,7 +68,10 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     current: () => !life.signal.aborted,
     controller: scenario.controller,
     actions: scenario.store.getState(),
-    queryClient: client,
+    whenDerived,
+    derivation: chatDerivationWitness(account),
+    projectCreated: () => {},
+    projectRemoved: () => {},
     changed: () => {},
     failed: () => {},
     clear: () => {},
@@ -82,7 +87,6 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     unsubscribe();
     owner.dispose();
     scenario.controller.dispose();
-    client.clear();
   };
   return {
     read: () => owner,
@@ -621,7 +625,6 @@ it("keeps a new Send on a never-created destination after another tab edits away
     },
   });
   const life = new AbortController();
-  const client = new QueryClient();
   const dissolved = vi.fn();
   const owner = new ChatSubmissionOwner({
     accountId: account,
@@ -631,7 +634,10 @@ it("keeps a new Send on a never-created destination after another tab edits away
     current: () => !life.signal.aborted,
     controller: scenario.controller,
     actions: scenario.store.getState(),
-    queryClient: client,
+    whenDerived,
+    derivation: chatDerivationWitness(account),
+    projectCreated: () => {},
+    projectRemoved: () => {},
     changed: () => {},
     failed: () => {},
     clear: () => {},
@@ -643,7 +649,7 @@ it("keeps a new Send on a never-created destination after another tab edits away
   try {
     // Tab B Edit has durably transferred original words to B's session draft and retired its journal.
     retireChatSubmission(account, "original");
-    expect(owner.isCreating).toBe(true);
+    expect(owner.creationState.kind === "root-unconfirmed").toBe(true);
     expect(getThreadSnapshot).toHaveBeenCalledOnce();
     const projection = serializeComposerDraft(plainComposerDoc("New words from tab A"));
     const source = composerSessionDraft(account, { kind: "chat", id: "thread_1" });
@@ -656,7 +662,7 @@ it("keeps a new Send on a never-created destination after another tab edits away
       }),
     ).toBe(true);
     expect(readChatSubmissions(account)[0]?.creation).toEqual(creation);
-    expect(owner.isCreating).toBe(true);
+    expect(owner.creationState.kind === "root-unconfirmed").toBe(true);
     source.prependSnapshots([
       serializeComposerDraft(plainComposerDoc("More unsent words in tab A")).draft,
     ]);
@@ -690,7 +696,6 @@ it("keeps a new Send on a never-created destination after another tab edits away
     unsubscribe();
     owner.dispose();
     scenario.controller.dispose();
-    client.clear();
   }
 });
 
@@ -727,7 +732,7 @@ it("ignores an older O4 missing snapshot after create-or-get confirms the destin
     );
     await mounted.read().driver.drive("thread_1");
     expect(create).toHaveBeenCalledOnce();
-    expect(mounted.read().isCreating).toBe(false);
+    expect(mounted.read().creationState.kind === "root-unconfirmed").toBe(false);
     confirmation.reject(
       new MeridianApiError(
         {
@@ -741,7 +746,7 @@ it("ignores an older O4 missing snapshot after create-or-get confirms the destin
       ),
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(mounted.read().isCreating).toBe(false);
+    expect(mounted.read().creationState.kind === "root-unconfirmed").toBe(false);
     expect(mounted.dissolved).not.toHaveBeenCalled();
   } finally {
     create.mockRestore();

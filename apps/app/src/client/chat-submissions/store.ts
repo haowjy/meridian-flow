@@ -36,9 +36,9 @@ export type ChatSubmission = {
   projectId: string | null;
   createdAt: string;
   text: string;
-  blocks: UserMessageBlock[];
-  references: SubmittedReference[];
-  activatedSkillSlugs: string[];
+  blocks: readonly UserMessageBlock[];
+  references: readonly SubmittedReference[];
+  activatedSkillSlugs: readonly string[];
   state?: "rejected";
   draft?: ComposerDraftSnapshot;
   creation?: {

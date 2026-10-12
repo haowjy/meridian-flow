@@ -30,7 +30,9 @@ It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
 on pagehide/unmount. Transfer to the submission journal clears it synchronously
 at Send. `client/chat-submissions/owner.ts` owns writer rows, command orchestration and the
 shared account/thread presentation snapshot. Every mounted pane subscribes to the
-same row model; pending belongs only to a live session/submission attempt. `useChatSubmissions` only binds cancellation,
+same row model and creation state. The feature adapter injects derivation and
+query projection callbacks; the submission domain does not import features or
+touch the query cache. Pending belongs only to a live session/submission attempt. `useChatSubmissions` only binds cancellation,
 external wakes and keyed announcements to that owner; first sends and later sends share
 that lifecycle. A refusal stays on its row across reload until resolved or its created chat is
 confirmed gone; `client/chat-submissions` forgets that chat's journal and tab draft

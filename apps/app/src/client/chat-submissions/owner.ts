@@ -1,31 +1,27 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
-import type { QueryClient } from "@tanstack/react-query";
+
+import type { Thread } from "@meridian/contracts/protocol";
 import { createProjectThread } from "@/client/api/projects-api";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
-import { removeChatRow } from "@/client/query/chat-projections";
-import {
-  invalidateProjectThreadData,
-  invalidateWorkThreads,
-} from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
-import { whenDerived } from "@/features/chat/derivation/derive-conversation";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
+import type { DerivationWitness } from "./derivation-witness";
 import { ChatSubmissionDriver } from "./driver";
 import {
-  forgetCreatedChat,
   getChatSubmissionEpoch,
-  isThreadMissingForAccount,
   readChatSubmissionSnapshot,
   readChatSubmissions,
   recordChatSubmission,
+  reportChatAvailability,
   retireChatSubmission,
+  threadAvailability,
 } from "./index";
 import { abortable } from "./lock";
-import { type Row, type ThreadModel, threadModel } from "./model";
+import { confirmChatCreation, type Row, type ThreadModel, threadModel } from "./model";
 import type { UserTurnRecovery } from "./presentation";
 import type { ChatSubmission } from "./store";
 
@@ -86,7 +82,10 @@ type OwnerOptions = {
   current(): boolean;
   controller: ThreadRunController;
   actions: ThreadStoreActions;
-  queryClient: QueryClient;
+  whenDerived(threadId: string, signal: AbortSignal): Promise<boolean>;
+  derivation: DerivationWitness;
+  projectCreated(thread: Thread): void;
+  projectRemoved(): void;
   changed(): void;
   failed(recordId: string): void;
   clear(recordId: string): void;
@@ -131,16 +130,19 @@ export class ChatSubmissionOwner {
     });
   }
   private readonly session = {};
-  private destination: "unknown" | "creating" | "created" | "editing" = "unknown";
-  get isCreating(): boolean {
-    return this.destination === "creating";
+  get creationState() {
+    return this.model.creation;
   }
-  private creation: ChatSubmission["creation"];
-  private reconciling = false;
+  confirmCreation() {
+    confirmChatCreation(this.options.accountId, this.options.threadId, this.epoch);
+    this.rebuild();
+  }
+  private rootUnconfirmed() {
+    return this.model.creation.kind === "root-unconfirmed";
+  }
   private readonly epoch = getChatSubmissionEpoch();
   constructor(private readonly options: OwnerOptions) {
-    const { accountId, threadId, projectId, signal, current, controller, actions, queryClient } =
-      options;
+    const { accountId, threadId, signal, current, controller, actions } = options;
     this.model = threadModel(accountId, threadId, this.epoch);
     this.model.bindings.add(this);
     const rows = this.model.rows;
@@ -157,10 +159,24 @@ export class ChatSubmissionOwner {
         record: (entry) => current() && recordChatSubmission(accountId, entry),
         retire: (id) => current() && retireChatSubmission(accountId, id, this.epoch),
       },
-      threadMissing: (id) => {
-        void forgetCreatedChat(accountId, id).catch((error) => reportError(error));
+      reportAvailability: (id, availability) => {
+        // Phase 4 replaces this adapter with the model's disappearance decision.
+        void reportChatAvailability(
+          accountId,
+          id,
+          this.epoch,
+          availability,
+          options.derivation,
+        ).catch(reportError);
       },
-      whenDerived,
+      whenDerived: options.whenDerived,
+      confirmed: () => this.confirmCreation(),
+      editPolicy: (entry) => ({
+        rootUnconfirmed: this.rootUnconfirmed(),
+        cohort: this.entries()
+          .filter((record) => record.threadId === entry.threadId)
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      }),
       row: (entry) => projectRow(accountId, entry, actions).turnId,
       takeFresh: (id) => {
         const row = rows.get(key(accountId, id));
@@ -182,21 +198,20 @@ export class ChatSubmissionOwner {
         );
       },
       created: (thread) => {
-        this.destination = "created";
-        this.creation = undefined;
+        this.confirmCreation();
         actions.ensureThread(thread);
-        void invalidateProjectThreadData(queryClient, projectId);
-        if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
+        options.projectCreated(thread);
       },
-      status: (entry, status, localFailure) => {
+      status: (entry, status, localFailure, ambiguous) => {
         const row = projectRow(accountId, entry, actions);
         row.status = status === "error" ? status : undefined;
+        row.ambiguous = status === "error" && !!ambiguous;
         row.attempt =
           status === "pending"
             ? { session: this.session, submissionId: entry.submissionId, signal }
             : undefined;
         if (status === "error") {
-          if (this.transferDestination(entry).hasReceived(entry.recordId)) {
+          if (this.transferReceived(entry)) {
             options.clear(entry.recordId);
             row.failed = false;
           } else {
@@ -216,14 +231,14 @@ export class ChatSubmissionOwner {
         if (row?.attempt?.session === this.session) row.attempt = undefined;
         this.rebuild();
       },
-      transferReceived: (entry) => this.transferDestination(entry).hasReceived(entry.recordId),
+      transferReceived: (entry) => this.transferReceived(entry),
       transferForEdit: (entry, cohort) => {
         const snapshots = cohort.flatMap((record) => (record.draft ? [record.draft] : []));
         if (snapshots.length !== cohort.length) return false;
         const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
         const target = this.transferDestination(entry);
         if (
-          entry.creation &&
+          this.rootUnconfirmed() &&
           source.initialDraft &&
           !cohort.some((record) => target.hasReceived(record.recordId))
         )
@@ -235,15 +250,15 @@ export class ChatSubmissionOwner {
           )
         )
           return false;
-        if (entry.creation) {
-          this.destination = "editing";
+        if (this.rootUnconfirmed()) {
+          this.model.creation = { kind: "dissolved" };
           source.handoff();
         }
         return true;
       },
-      edited: (entry) => {
-        if (entry.creation) {
-          removeChatRow(queryClient, projectId, threadId);
+      edited: () => {
+        if (this.model.creation.kind === "dissolved") {
+          options.projectRemoved();
           options.dissolveChat();
         } else
           requestAnimationFrame(() => {
@@ -255,9 +270,22 @@ export class ChatSubmissionOwner {
 
   private transferDestination(entry: ChatSubmission) {
     return composerSessionDraft(this.options.accountId, {
-      kind: entry.creation ? "new-chat" : "chat",
-      id: entry.creation ? this.options.projectId : entry.threadId,
+      kind: this.rootUnconfirmed() ? "new-chat" : "chat",
+      id: this.rootUnconfirmed() ? this.options.projectId : entry.threadId,
     });
+  }
+
+  private transferReceived(entry: ChatSubmission) {
+    return (
+      composerSessionDraft(this.options.accountId, {
+        kind: "chat",
+        id: entry.threadId,
+      }).hasReceived(entry.recordId) ||
+      composerSessionDraft(this.options.accountId, {
+        kind: "new-chat",
+        id: this.options.projectId,
+      }).hasReceived(entry.recordId)
+    );
   }
 
   private entries() {
@@ -274,14 +302,16 @@ export class ChatSubmissionOwner {
     const snapshot = readChatSubmissionSnapshot(accountId);
     if (!snapshot) return;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
-    if (this.destination !== "editing" && this.destination !== "created") {
-      const creation = records.find((entry) => entry.creation)?.creation;
-      if (creation) {
-        this.creation = creation;
-        this.destination = "creating";
-      }
+    if (this.model.creation.kind === "unknown") {
+      const root = records.find((entry) => entry.creation && entry.projectId);
+      if (root?.creation && root.projectId)
+        this.model.creation = {
+          kind: "root-unconfirmed",
+          creation: root.creation,
+          projectId: root.projectId,
+        };
     }
-    if (!records.length && this.destination === "creating") {
+    if (!records.length && this.rootUnconfirmed()) {
       void this.reconcileDestination();
       return;
     }
@@ -303,7 +333,7 @@ export class ChatSubmissionOwner {
         !row.attempt.signal.aborted &&
         row.attempt.submissionId === entry.submissionId;
       if (!pending) row.attempt = undefined;
-      const moving = this.transferDestination(entry).hasReceived(entry.recordId);
+      const moving = this.transferReceived(entry);
       const failure = moving || (!pending && (row.status === "error" || row.failed || entry.state));
       actions.patchTurnStatus(threadId, row.turnId, failure ? "error" : "pending");
       if (!failure) continue;
@@ -312,7 +342,12 @@ export class ChatSubmissionOwner {
         submissionId: entry.submissionId,
         moving,
         busy: moving || row.busy,
-        editable: !moving && entry.state === "rejected" && !!entry.draft && !row.localFailure,
+        editable:
+          !moving &&
+          entry.state === "rejected" &&
+          !!entry.draft &&
+          !row.localFailure &&
+          !row.ambiguous,
       });
     }
     if (retired) actions.invalidateThreadSnapshot(threadId);
@@ -322,12 +357,12 @@ export class ChatSubmissionOwner {
 
   /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
   private async reconcileDestination() {
-    if (this.reconciling) return;
-    this.reconciling = true;
-    const { accountId, threadId, projectId, signal, current, actions, queryClient } = this.options;
+    if (this.model.reconciling) return;
+    this.model.reconciling = true;
+    const { accountId, threadId, projectId, signal, current, actions } = this.options;
     const timeout = AbortSignal.timeout(15_000);
     const requestSignal = AbortSignal.any([signal, timeout]);
-    const destination = this.destination;
+    const creation = this.model.creation;
     try {
       let snapshot: Awaited<ReturnType<typeof getThreadSnapshot>> | undefined;
       let missing = false;
@@ -337,16 +372,26 @@ export class ChatSubmissionOwner {
           requestSignal,
         );
       } catch (error) {
-        if (!current() || !isThreadMissingForAccount(error, accountId)) return;
+        const availability = threadAvailability(error, accountId);
+        if (!current() || !availability) return;
+        if (availability !== "not-found") {
+          void reportChatAvailability(
+            accountId,
+            threadId,
+            this.epoch,
+            availability,
+            this.options.derivation,
+          ).catch(reportError);
+          return;
+        }
         missing = true;
       }
-      if (!current() || this.destination !== destination) return;
+      if (!current() || this.model.creation !== creation) return;
       if (!missing) {
         if (!snapshot) throw new Error("Thread snapshot response is empty");
         const thread = deserializeThreadSnapshot(snapshot).thread;
         actions.ensureThread(thread);
-        this.destination = "created";
-        this.creation = undefined;
+        this.model.creation = { kind: "confirmed" };
         this.rebuild();
         return;
       }
@@ -362,14 +407,16 @@ export class ChatSubmissionOwner {
       )
         return;
       source.handoff();
-      this.destination = "editing";
+      this.model.creation = { kind: "dissolved" };
       this.rebuild();
-      removeChatRow(queryClient, projectId, threadId);
+      this.options.projectRemoved();
       this.options.dissolveChat();
     } catch (error) {
       reportError(error);
     } finally {
-      this.reconciling = false;
+      this.model.reconciling = false;
+      if (!current())
+        [...this.model.bindings].find((binding) => binding.options.current())?.rebuild();
     }
   }
 
@@ -377,9 +424,7 @@ export class ChatSubmissionOwner {
     const { accountId, threadId, projectId, actions, current } = this.options;
     if (!current()) return false;
     const creation =
-      this.destination === "created"
-        ? undefined
-        : (this.creation ?? this.entries().find((entry) => entry.creation)?.creation);
+      this.model.creation.kind === "root-unconfirmed" ? this.model.creation.creation : undefined;
     const entry: ChatSubmission = {
       recordId: envelope.submissionId,
       submissionId: envelope.submissionId,

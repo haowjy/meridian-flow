@@ -7,13 +7,14 @@
  */
 import { composerSessionDraft } from "@/client/composer-drafts";
 import { browserSubmissionLock } from "./adapters/browser-lock";
+import type { DerivationWitness } from "./derivation-witness";
 import {
   type ChatCopyOwner,
   type ForgetChatResult,
   forgetCreatedChatCopies,
   reconcileChatCopies,
 } from "./forget";
-import { chatSubmissionMountState } from "./model";
+import { chatSubmissionMountState, confirmChatCreation } from "./model";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -27,7 +28,7 @@ export {
   type ChatSubmission,
   chatSubmissionStorageKey,
 } from "./store";
-export { isThreadMissingForAccount } from "./thread-availability";
+export { threadAvailability } from "./thread-availability";
 
 let journal: DeviceChatSubmissionJournal | null = null;
 let boundAccountId: string | null = null;
@@ -145,6 +146,42 @@ function copyOwner(accountId: string): ChatCopyOwner {
   };
 }
 
-export function forgetCreatedChat(accountId: string, threadId: string): Promise<ForgetChatResult> {
+export function forgetCreatedChat(
+  accountId: string,
+  threadId: string,
+  epoch: number = getChatSubmissionEpoch(),
+): Promise<ForgetChatResult> {
+  if (epoch !== getChatSubmissionEpoch()) return Promise.resolve("stale");
   return forgetCreatedChatCopies(copyOwner(accountId), threadId);
+}
+
+/** Phase-3 proof seam. The disposition still delegates to the legacy forget policy. */
+export async function reportChatAvailability(
+  accountId: string,
+  threadId: string,
+  epoch: number,
+  availability: import("./thread-availability").ThreadAvailability,
+  derivation: DerivationWitness,
+): Promise<ForgetChatResult> {
+  if (epoch !== getChatSubmissionEpoch() || accountId !== getChatSubmissionAccountId())
+    return "stale";
+  if (availability !== "not-found") return forgetCreatedChat(accountId, threadId, epoch);
+  return derivation.probe(threadId, async (pending, exclusive) => {
+    if (epoch !== getChatSubmissionEpoch() || accountId !== getChatSubmissionAccountId())
+      return "stale";
+    if (pending) return "creation";
+    if (exclusive) {
+      // A report may predate a fork's success. Only proof read under the intent
+      // claim can authorize the legacy cleanup; phase 4 replaces that cleanup.
+      const fresh = await probeChatDestination(accountId, threadId);
+      if (epoch !== getChatSubmissionEpoch() || accountId !== getChatSubmissionAccountId())
+        return "stale";
+      if (fresh === "present") {
+        confirmChatCreation(accountId, threadId, epoch);
+        return "creation";
+      }
+      if (fresh === "unknown") return "creation";
+    }
+    return forgetCreatedChat(accountId, threadId, epoch);
+  });
 }

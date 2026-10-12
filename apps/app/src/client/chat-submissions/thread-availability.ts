@@ -3,38 +3,42 @@ import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import { lookupUserMessageAdmission } from "@/client/api/threads-api";
 import { abortable } from "./lock";
 
-export function isThreadMissingForAccount(error: unknown, accountId: string): boolean {
+export type ThreadAvailability = "deleted" | "project-deleted" | "not-found";
+export function threadAvailability(error: unknown, accountId: string): ThreadAvailability | null {
   if (
     httpErrorStatus(error) !== 404 ||
     !isMeridianApiError(error) ||
-    error.code !== "thread_not_found"
+    !["thread_not_found", "thread_deleted", "project_deleted"].includes(error.code)
   )
-    return false;
+    return null;
   const details = error.details;
   if (
     !details ||
     typeof details !== "object" ||
     Array.isArray(details) ||
     details.authenticatedUserId !== accountId
-  ) {
-    reportError(new Error("Thread disappearance principal does not match the journal account"));
-    return false;
-  }
-  return true;
+  )
+    return null;
+  if (
+    error.code === "project_deleted" ||
+    (error.code === "thread_deleted" && details.projectDeleted === true)
+  )
+    return "project-deleted";
+  return error.code === "thread_deleted" ? "deleted" : "not-found";
 }
 
 /** Read-only admission lookup checks the owner gate without loading history or minting a record. */
 export async function probeChatDestination(
   accountId: string,
   threadId: string,
-  submissionId: string,
+  submissionId: string = crypto.randomUUID(),
   lookup: typeof lookupUserMessageAdmission = lookupUserMessageAdmission,
   signal = AbortSignal.timeout(15_000),
-): Promise<"missing" | "unknown"> {
+): Promise<ThreadAvailability | "present" | "unknown"> {
   try {
     await abortable(lookup({ threadId, submissionId, signal }), signal);
   } catch (error) {
-    if (isThreadMissingForAccount(error, accountId)) return "missing";
+    return threadAvailability(error, accountId) ?? "unknown";
   }
-  return "unknown";
+  return "present";
 }

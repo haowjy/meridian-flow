@@ -66,6 +66,10 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         },
         retire: (id) => records.delete(id),
       },
+      editPolicy: (entry) => ({
+        rootUnconfirmed: !!entry.creation,
+        cohort: [...records.values()].filter((record) => record.threadId === entry.threadId),
+      }),
       whenDerived: async () => true,
       create: async () => {
         creates++;
@@ -429,11 +433,11 @@ it.each([
   const forget = vi.fn();
   const { owner } = test.mount({
     takeFresh: () => operation === "admission",
-    threadMissing: forget,
+    reportAvailability: forget,
   });
   if (operation === "retire") await owner.edit("sub-1");
   else await owner.drive("thread_1");
-  expect(forget).toHaveBeenCalledWith("thread_1");
+  expect(forget).toHaveBeenCalledWith("thread_1", "not-found");
   test.dispose();
 });
 
@@ -495,11 +499,68 @@ it.each([
   const forget = vi.fn();
   const { owner } = test.mount({
     takeFresh: () => operation === "admission",
-    threadMissing: forget,
+    reportAvailability: forget,
   });
   if (operation === "retire") await owner.edit(entry.submissionId);
   else await owner.drive(entry.threadId);
   expect(forget).not.toHaveBeenCalled();
   expect(test.records.size).toBe(1);
   test.dispose();
+});
+
+it.each([
+  "create",
+  "admission",
+  "lookup",
+  "retire",
+] as const)("reports attested project deletion and stops at %s", async (operation) => {
+  const refuse = async () => {
+    throw new MeridianApiError(
+      {
+        code: operation === "create" ? "project_deleted" : "thread_deleted",
+        details: { authenticatedUserId: "account-1", projectDeleted: true },
+        message: "gone",
+        source: "system",
+        retryable: false,
+      },
+      404,
+    );
+  };
+  const test = rig({ append: refuse, lookup: refuse, retire: refuse });
+  const entry = test.records.get("record-1");
+  if (!entry) throw new Error("missing fixture");
+  test.records.set(entry.recordId, {
+    ...entry,
+    creation: operation === "create" ? entry.creation : undefined,
+    state: operation === "retire" ? "rejected" : undefined,
+    draft: {
+      revision: 1,
+      doc: plainComposerDoc("words"),
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: [],
+    },
+  });
+  if (operation === "create")
+    test.records.set("later", {
+      ...entry,
+      recordId: "later",
+      submissionId: "later",
+      createdAt: "2026-10-12T00:00:00Z",
+    });
+  const report = vi.fn();
+  const { owner } = test.mount({
+    create: refuse,
+    takeFresh: () => operation === "admission",
+    reportAvailability: report,
+  });
+  try {
+    if (operation === "retire") await owner.edit(entry.submissionId);
+    else await owner.drive(entry.threadId);
+    expect(report).toHaveBeenCalledWith("thread_1", "project-deleted");
+    expect(report).toHaveBeenCalledOnce();
+    expect(test.records.size).toBe(operation === "create" ? 2 : 1); // Reporting owns disposal; the driver never deletes words.
+    expect(test.scenario.appendRequests).toHaveLength(operation === "admission" ? 1 : 0);
+  } finally {
+    test.dispose();
+  }
 });

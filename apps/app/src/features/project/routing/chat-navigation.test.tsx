@@ -9,7 +9,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
+import { getChatSubmissionEpoch } from "@/client/chat-submissions";
 import { readCurrentChat } from "@/client/current-chat";
+import { withThreadSnapshotEpoch } from "@/client/query/thread-snapshot-epoch";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
@@ -25,13 +27,13 @@ import type { ProjectDestination } from "./project-address";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 const copies = vi.hoisted(() => ({
-  forget: vi.fn<typeof import("@/client/chat-submissions")["forgetCreatedChat"]>(
+  forget: vi.fn<typeof import("@/client/chat-submissions")["reportChatAvailability"]>(
     async () => "forgotten",
   ),
 }));
 vi.mock("@/client/chat-submissions", async (actual) => ({
   ...(await actual<typeof import("@/client/chat-submissions")>()),
-  forgetCreatedChat: copies.forget,
+  reportChatAvailability: copies.forget,
 }));
 
 vi.mock("@/client/chat-submissions/adapters/browser-lock", async () => {
@@ -110,25 +112,27 @@ it("shows a sent chat on the Chat screen and only remembers it elsewhere", () =>
   expect(chatSurfaceThreadId(navigation.display)).toBe("docked");
 });
 
-it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {
+it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", async () => {
   render("chat", "sent");
   const snapshot = client
     .getQueryCache()
     .build(client, { queryKey: threadSnapshotQueryOptions("sent").queryKey });
   act(() => threadActions.markPendingCreation({ threadId: "sent" }));
-  act(() =>
+  await act(async () =>
     snapshot.setState({
       status: "error",
-      error: new MeridianApiError(
-        {
-          code: "thread_not_found",
-          details: { authenticatedUserId: ACCOUNT },
-          message: "missing",
-          source: "system",
-          retryable: false,
-        },
-        404,
-      ),
+      error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        throw new MeridianApiError(
+          {
+            code: "thread_not_found",
+            details: { authenticatedUserId: ACCOUNT },
+            message: "missing",
+            source: "system",
+            retryable: false,
+          },
+          404,
+        );
+      }).catch((error) => error),
       errorUpdatedAt: Date.now() - 1000,
     }),
   );
@@ -177,22 +181,30 @@ it("forgets browser copies before repairing a definitive missing-chat route", as
     .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey });
   await act(async () => {
     query.setState({
-      error: new MeridianApiError(
-        {
-          code: "thread_not_found",
-          details: { authenticatedUserId: ACCOUNT },
-          message: "missing",
-          source: "system",
-          retryable: false,
-        },
-        404,
-      ),
+      error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        throw new MeridianApiError(
+          {
+            code: "thread_not_found",
+            details: { authenticatedUserId: ACCOUNT },
+            message: "missing",
+            source: "system",
+            retryable: false,
+          },
+          404,
+        );
+      }).catch((error) => error),
       errorUpdatedAt: Date.now(),
       status: "error",
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
-  expect(copies.forget).toHaveBeenCalledWith(ACCOUNT, "gone");
+  expect(copies.forget).toHaveBeenCalledWith(
+    ACCOUNT,
+    "gone",
+    getChatSubmissionEpoch(),
+    "not-found",
+    expect.any(Object),
+  );
   expect(go).not.toHaveBeenCalled();
   await act(async () => {
     finish("forgotten");
@@ -240,16 +252,18 @@ it("repairs a missing-chat route even when the journal is unreadable", async () 
       query.setState({
         status: "error",
         errorUpdatedAt: Date.now(),
-        error: new MeridianApiError(
-          {
-            code: "thread_not_found",
-            details: { authenticatedUserId: ACCOUNT },
-            message: "missing",
-            source: "system",
-            retryable: false,
-          },
-          404,
-        ),
+        error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+          throw new MeridianApiError(
+            {
+              code: "thread_not_found",
+              details: { authenticatedUserId: ACCOUNT },
+              message: "missing",
+              source: "system",
+              retryable: false,
+            },
+            404,
+          );
+        }).catch((error) => error),
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
@@ -272,16 +286,18 @@ it.each([
     query.setState({
       status: "error",
       errorUpdatedAt: Date.now(),
-      error: new MeridianApiError(
-        {
-          code: "thread_not_found",
-          details: { authenticatedUserId: ACCOUNT },
-          message: "missing",
-          source: "system",
-          retryable: false,
-        },
-        404,
-      ),
+      error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        throw new MeridianApiError(
+          {
+            code: "thread_not_found",
+            details: { authenticatedUserId: ACCOUNT },
+            message: "missing",
+            source: "system",
+            retryable: false,
+          },
+          404,
+        );
+      }).catch((error) => error),
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
@@ -321,16 +337,18 @@ it("leaves a creation-bearing cohort on its O4 destination", async () => {
     query.setState({
       status: "error",
       errorUpdatedAt: Date.now(),
-      error: new MeridianApiError(
-        {
-          code: "thread_not_found",
-          details: { authenticatedUserId: ACCOUNT },
-          message: "missing",
-          source: "system",
-          retryable: false,
-        },
-        404,
-      ),
+      error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        throw new MeridianApiError(
+          {
+            code: "thread_not_found",
+            details: { authenticatedUserId: ACCOUNT },
+            message: "missing",
+            source: "system",
+            retryable: false,
+          },
+          404,
+        );
+      }).catch((error) => error),
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
@@ -350,18 +368,53 @@ it("repairs a missing-chat route even if forgetting throws", async () => {
     query.setState({
       status: "error",
       errorUpdatedAt: Date.now(),
-      error: new MeridianApiError(
-        {
-          code: "thread_not_found",
-          message: "missing",
-          retryable: false,
-          source: "system",
-          details: { authenticatedUserId: ACCOUNT },
-        },
-        404,
-      ),
+      error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+        throw new MeridianApiError(
+          {
+            code: "thread_not_found",
+            message: "missing",
+            retryable: false,
+            source: "system",
+            details: { authenticatedUserId: ACCOUNT },
+          },
+          404,
+        );
+      }).catch((error) => error),
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
   expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+});
+
+it("reports the snapshot error's request-start epoch, not the route's current epoch", async () => {
+  copies.forget.mockResolvedValueOnce("stale");
+  render("chat", "gone");
+  const startEpoch = getChatSubmissionEpoch() - 1;
+  const error = await withThreadSnapshotEpoch(startEpoch, async () => {
+    throw new MeridianApiError(
+      {
+        code: "thread_not_found",
+        details: { authenticatedUserId: ACCOUNT },
+        message: "missing",
+        source: "system",
+        retryable: false,
+      },
+      404,
+    );
+  }).catch((error) => error);
+  const query = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey });
+  await act(async () => {
+    query.setState({ error, errorUpdatedAt: Date.now(), status: "error" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(copies.forget).toHaveBeenCalledWith(
+    ACCOUNT,
+    "gone",
+    startEpoch,
+    "not-found",
+    expect.any(Object),
+  );
+  expect(go).not.toHaveBeenCalled();
 });

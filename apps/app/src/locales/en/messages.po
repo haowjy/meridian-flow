@@ -3926,6 +3926,10 @@ msgstr "This chat now uses {0}."
 msgid "This chat uses {0}."
 msgstr "This chat uses {0}."
 
+#: src/client/api/meridian-error.ts
+msgid "This chat was deleted."
+msgstr "This chat was deleted."
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's current Work could not be found. Refresh the page and try again."
@@ -4062,6 +4066,10 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
+
+#: src/client/api/meridian-error.ts
+msgid "This project was deleted."
+msgstr "This project was deleted."
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."

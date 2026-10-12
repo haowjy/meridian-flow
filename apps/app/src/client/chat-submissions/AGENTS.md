@@ -92,7 +92,7 @@ all that chat's journal states, and forgets this tab's chat-scoped composer draf
 and receipts (cancelling any pending flush). Journal notifications retire the row
 model. It never transfers writing or navigates; routing stays in the route adapter.
 A cohort carrying `creation` is exempt: its 404 still belongs to O4's New chat transfer.
-Mounted owners also retain that provenance after another tab retires the cohort;
+The shared model retains that provenance after another tab retires the cohort;
 a creation or stale-bind result prevents route repair ahead of O4's transfer.
 An unreadable journal leaves copies for the next reconciliation but never blocks
 missing-chat route repair. The browser account bind and lifetime epoch exist
@@ -101,10 +101,10 @@ stale account. Mounted status comes from the account/thread row model's
 bindings, not a separate owner registry. Confirmed Delete starts cleanup without
 waiting for its lock before reporting the outcome.
 
-Only HTTP 404 with `thread_not_found` from either server thread owner gate is
-definitive when its `details.authenticatedUserId` matches the journal account
+HTTP 404 `thread_not_found`, `thread_deleted` (with optional `projectDeleted`)
+and `project_deleted` classify only when `details.authenticatedUserId` matches the journal account
 (the internal user id, not the WorkOS external id). Missing or mismatched
-attestation is reported and preserves every copy. Generic `not_found`, submission not-seen, auth, transport, timeout,
+attestation preserves every copy. Generic `not_found`, submission not-seen, auth, transport, timeout,
 and server failure cannot discard browser copies.
 Once per account bind, after its locked v1 rewrite completes, a four-worker pass probes unique unmounted created chat
 ids in that account's readable journal. Read-only admission lookup with one of that chat's recorded
@@ -113,3 +113,26 @@ no admission write or history load. Each request has a 15-second deadline. The
 pass is account/epoch fenced and only confirmed disappearance calls the same
 forget operation. Draft-only sessionStorage scopes are not enumerated: they end
 with their tab; a journal destination's draft is removed by the pass too.
+
+Creation belongs to the account/thread model, not to a pane or a record's stale
+shape: unknown, root-unconfirmed (retained creation inputs and project),
+confirmed, or dissolved. Server confirmation applies to all siblings; Send
+stamps retained inputs during an empty-cohort check. Only root-unconfirmed Edit
+skips retirement and transfers the whole cohort. Receipts in either draft
+location prevent re-admission.
+
+Derivation waits, synchronous derivation status, intent-lock probes and query
+projections are injected by the feature adapter. This directory imports no
+features and never touches the query cache. The derivation intent lock is
+separate from the driver lock and remains held through failure until journal
+success or tab close. A probe exposes both pending intent and whether it owns
+an exclusive claim; without locks only this tab's status counts.
+
+`reportChatAvailability(account, thread, requestStartEpoch, availability, derivationWitness)` is
+the reporting seam. Not-found first checks pending derivation; an exclusive
+intent claim re-asks availability before cleanup. The bind pass ignores
+not-found. Its disposition adapter still calls the existing forget policy;
+creation still has that policy's exemption. It is not yet the redesign's
+visible-words decision. Empty-cohort reconciliation remains in the owner,
+with its concurrency guard and creation-state identity shared in the model.
+Snapshot errors retain their request-start epoch, never the route's later bind.

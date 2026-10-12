@@ -18,14 +18,16 @@ import {
   useState,
 } from "react";
 import {
-  forgetCreatedChat,
   isThreadAwaitingCreation,
-  isThreadMissingForAccount,
+  reportChatAvailability,
+  threadAvailability,
 } from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
+import { threadSnapshotErrorEpoch } from "@/client/query/thread-snapshot-epoch";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
+import { chatDerivationWitness } from "@/features/chat/derivation/derive-conversation";
 import type { ScreenKey } from "../shell/screens";
 import type { ProjectDestination } from "./project-address";
 import type { NavigationSettlement } from "./project-navigation";
@@ -231,7 +233,8 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,
   });
-  const notFound = isThreadMissingForAccount(error, accountId);
+  const availability = threadAvailability(error, accountId);
+  const epoch = threadSnapshotErrorEpoch(error);
   const pendingAt = useRef(0);
   const latest = useRef(onMissing);
   latest.current = onMissing;
@@ -242,8 +245,14 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
       return;
     }
     let disposed = false;
-    if (notFound && errorUpdatedAt > pendingAt.current) {
-      void forgetCreatedChat(accountId, threadId)
+    if (availability && epoch !== undefined && errorUpdatedAt > pendingAt.current) {
+      void reportChatAvailability(
+        accountId,
+        threadId,
+        epoch,
+        availability,
+        chatDerivationWitness(accountId),
+      )
         .then((result) => {
           if (!disposed && result !== "creation" && result !== "stale") latest.current();
         })
@@ -255,7 +264,7 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
     return () => {
       disposed = true;
     };
-  }, [accountId, threadId, pending, notFound, errorUpdatedAt]);
+  }, [accountId, threadId, pending, availability, epoch, errorUpdatedAt]);
 }
 
 /**

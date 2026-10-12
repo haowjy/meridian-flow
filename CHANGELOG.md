@@ -4,6 +4,9 @@
 
 ### Changed
 
+- A failed fork keeps unsent messages when Edit cannot confirm retirement. Chats share creation confirmation across panes, so a later Send keeps the inputs it needs to create the chat.
+- Deleted-chat and deleted-project errors use plain language in chat feedback, Work edits and uploads.
+
 - Deleted-project responses now identify the project to its owner, separately from a deleted chat. Missing and other writers’ projects stay concealed.
 
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.

@@ -16,7 +16,7 @@ import {
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import { abortable } from "@/client/chat-submissions/lock";
-import { isThreadMissingForAccount } from "@/client/chat-submissions/thread-availability";
+import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
@@ -53,8 +53,16 @@ export type SubmissionPayload = {
 };
 
 export type SubmissionOutcome = {
-  kind: "accepted" | "rejected" | "ambiguous" | "not-seen" | "abandoned" | "thread-missing";
+  kind:
+    | "accepted"
+    | "rejected"
+    | "ambiguous"
+    | "not-seen"
+    | "abandoned"
+    | "thread-not-found"
+    | "thread-deleted";
   submissionId: string;
+  projectDeleted?: boolean;
 };
 
 type SessionFence = () => boolean;
@@ -106,7 +114,7 @@ function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
 /** Format an error for the a11y announcer / generic error sink. */
 function errorMessage(error: unknown, fallback: string): string {
   if (isMeridianApiError(error)) {
-    return error.code ? `${error.message} (${error.code})` : error.message;
+    return error.message;
   }
   return error instanceof Error ? error.message : fallback;
 }
@@ -253,7 +261,12 @@ export class ThreadRunController {
         );
       } catch (error) {
         if (!current()) return outcome("abandoned");
-        if (isThreadMissingForAccount(error, this.accountId)) return outcome("thread-missing");
+        const availability = threadAvailability(error, this.accountId);
+        if (availability)
+          return {
+            ...outcome(availability === "not-found" ? "thread-not-found" : "thread-deleted"),
+            projectDeleted: availability === "project-deleted",
+          };
         if (classifyWriteFailure(error) === "rejected") {
           return outcome("rejected");
         }
@@ -317,8 +330,12 @@ export class ThreadRunController {
         signal,
       );
     } catch (error) {
-      if (current() && isThreadMissingForAccount(error, this.accountId))
-        return outcome("thread-missing");
+      const availability = current() ? threadAvailability(error, this.accountId) : null;
+      if (availability)
+        return {
+          ...outcome(availability === "not-found" ? "thread-not-found" : "thread-deleted"),
+          projectDeleted: availability === "project-deleted",
+        };
       return outcome(current() ? "ambiguous" : "abandoned");
     }
     if (!current()) return outcome("abandoned");

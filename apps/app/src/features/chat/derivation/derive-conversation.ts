@@ -11,6 +11,13 @@ import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
+import { getChatSubmissionEpoch } from "@/client/chat-submissions";
+import {
+  derivationWitness,
+  holdDerivationIntent,
+  releaseDerivationIntent,
+} from "@/client/chat-submissions/derivation-witness";
+import { confirmChatCreation } from "@/client/chat-submissions/model";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
@@ -73,6 +80,7 @@ export function runExclusiveThreadCreation(
 }
 
 const JOURNAL_PREFIX = "meridian.derivations.v1:";
+const statusAccounts = new Map<string, string>();
 const statuses = new Map<string, DerivationStatus>();
 const waiters = new Map<string, Array<(created: boolean) => void>>();
 const listeners = new Set<() => void>();
@@ -114,8 +122,10 @@ function writeJournal(accountId: string, journal: Record<string, DerivationInten
     const key = journalKey(accountId);
     if (Object.keys(journal).length === 0) window.sessionStorage.removeItem(key);
     else window.sessionStorage.setItem(key, JSON.stringify(journal));
+    return true;
   } catch {
     // Storage refused: the in-tab job still creates the thread; only reload recovery is lost.
+    return false;
   }
 }
 
@@ -165,14 +175,24 @@ function request(intent: DerivationIntent): Promise<Thread> {
 
 function create(intent: DerivationIntent, deps: DerivationDeps) {
   const { threadId } = intent;
+  statusAccounts.set(threadId, deps.accountId);
   const current = statuses.get(threadId);
   setStatus(threadId, { intent, state: "creating", inherited: current?.inherited ?? null });
-  void runExclusiveThreadCreation(deps.accountSignal, threadId, () => request(intent)).then(
+  const claim = holdDerivationIntent(deps.accountId, threadId);
+  void runExclusiveThreadCreation(deps.accountSignal, threadId, () => {
+    const dispatch = () => {
+      deps.accountSignal.throwIfAborted();
+      return request(intent);
+    };
+    return claim ? claim.then(dispatch) : dispatch();
+  }).then(
     (thread) => {
       if (deps.accountSignal.aborted) return;
       const journal = readJournal(deps.accountId);
       delete journal[threadId];
-      writeJournal(deps.accountId, journal);
+      const retired = writeJournal(deps.accountId, journal);
+      if (retired) releaseDerivationIntent(deps.accountId, threadId);
+      confirmChatCreation(deps.accountId, threadId, getChatSubmissionEpoch());
       deps.threadActions.ensureThread(thread);
       deps.threadActions.clearPendingCreation({ threadId });
       const latest = statuses.get(threadId);
@@ -210,6 +230,7 @@ export function startDerivation(
     threadId: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   };
+  holdDerivationIntent(deps.accountId, intent.threadId);
   writeJournal(deps.accountId, { ...readJournal(deps.accountId), [intent.threadId]: intent });
   statuses.set(intent.threadId, { intent, state: "creating", inherited: deps.inherited });
   deps.threadActions.ensureThread(optimisticThread(intent, deps.source));
@@ -221,6 +242,7 @@ export function startDerivation(
 
 /** Re-issue a journaled creation after a reload; the id makes it the same thread. */
 export function resumeDerivation(intent: DerivationIntent, deps: DerivationDeps) {
+  holdDerivationIntent(deps.accountId, intent.threadId);
   if (statuses.get(intent.threadId)?.state === "creating") return;
   deps.threadActions.ensureThread(optimisticThread(intent, null));
   deps.threadActions.markPendingCreation({ threadId: intent.threadId });
@@ -275,6 +297,8 @@ export function useDerivationStatus(threadId: string | null): DerivationStatus |
 
 /** Test seam: forget every in-memory derivation. */
 export function resetDerivationsForTest() {
+  for (const [threadId, accountId] of statusAccounts) releaseDerivationIntent(accountId, threadId);
+  statusAccounts.clear();
   statuses.clear();
   waiters.clear();
   publish();
@@ -299,4 +323,16 @@ export function useDerivationResume(threadId: string | null, deps: DerivationDep
     if (owed && intentRef.current) resumeDerivation(intentRef.current, latest.current);
   }, [owed]);
   return owed;
+}
+
+/** Synchronous, account-bound witness for the shared submission owner. */
+export function readDerivationStatus(accountId: string, threadId: string): DerivationStatus | null {
+  const status = statuses.get(threadId);
+  return status && statusAccounts.get(threadId) === accountId ? status : null;
+}
+export function chatDerivationWitness(accountId: string) {
+  return derivationWitness(
+    accountId,
+    (threadId) => readDerivationStatus(accountId, threadId)?.state ?? null,
+  );
 }

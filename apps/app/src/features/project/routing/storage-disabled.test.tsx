@@ -9,7 +9,9 @@ import {
   bindChatSubmissions,
   forgetCreatedChat,
   getChatSubmissionAccountId,
+  getChatSubmissionEpoch,
 } from "@/client/chat-submissions";
+import { withThreadSnapshotEpoch } from "@/client/query/thread-snapshot-epoch";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { ThreadStoreProvider } from "@/client/stores";
 import { useProjectChatNavigation } from "@/features/project/routing/chat-navigation";
@@ -58,16 +60,18 @@ it("repairs confirmed missing-chat route when localStorage getter is denied", as
       query.setState({
         status: "error",
         errorUpdatedAt: Date.now(),
-        error: new MeridianApiError(
-          {
-            code: "thread_not_found",
-            details: { authenticatedUserId: "writer" },
-            message: "Thread not found",
-            source: "system",
-            retryable: false,
-          },
-          404,
-        ),
+        error: await withThreadSnapshotEpoch(getChatSubmissionEpoch(), async () => {
+          throw new MeridianApiError(
+            {
+              code: "thread_not_found",
+              details: { authenticatedUserId: "writer" },
+              message: "Thread not found",
+              source: "system",
+              retryable: false,
+            },
+            404,
+          );
+        }).catch((error) => error),
       });
       await new Promise((resolve) => setTimeout(resolve, 50));
     });

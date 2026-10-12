@@ -1,6 +1,6 @@
 /** Build a navigate-first destination before the server creates it. */
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
-import type { CreationAgent } from "@/features/agents/creation-agent";
 
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 export function makeOptimisticThread(input: {
@@ -9,7 +9,7 @@ export function makeOptimisticThread(input: {
   title: string;
   timestamp: string;
   workId?: string | null;
-  agent?: CreationAgent;
+  agent?: Pick<AgentCatalogItem, "selection" | "slug" | "name">;
 }): Thread {
   return {
     id: input.id,

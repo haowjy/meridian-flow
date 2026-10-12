@@ -94,3 +94,30 @@ not the later client move/navigation policy.
 The DB gate contract also covers deleted parent projects, Work-cascade markers,
 purges, and disagreeing creator/project-owner rows. Run it with
 `pnpm test:db -- thread-deletion-proof`.
+
+## Client proof and shared creation (phase 3)
+
+1. In a real failed fork, Send a message. It stays on a refused writer row.
+   Edit asks retirement, but a not-found leaves the words on the row with
+   Retry; the fork's own Retry is the way forward. Nothing moves or disappears.
+2. Hold a never-created chat's snapshot check after another tab retires its
+   last creation record. Send again before releasing the check. Inspect the
+   submission journal: the new send retains the complete creation inputs.
+   Its create-or-get must precede admission; a late check cannot dissolve a
+   sibling-confirmed chat.
+3. With two browser tabs on the same HTTPS origin, hold a derivation intent
+   in A. An exclusive `ifAvailable` intent probe in B reports pending. A failed
+   creation retains the lock, Retry succeeds and releases it only after the
+   intent leaves the journal. Closing A also releases it. This lock must not
+   block ordinary submission-lock acquisition or route mounting.
+4. Confirm creation in one mounted sibling, then introduce a stale record
+   still carrying creation. Edit must retire that submission before returning
+   its words to the existing chat's box, not to New chat.
+5. Delete a disposable project while a metadata edit or upload is pending.
+   Work metadata, figure uploads and material attachments read "This project
+   was deleted." No raw code is spoken or printed. A deleted chat reads
+   "This chat was deleted." in generic command feedback.
+
+The reporting seam still uses legacy forget cleanup in this phase. The shown
+lock, visible-word moves, notices, route verdicts and the fresh cross-tab
+not-found decision are later-phase checks; do not claim them from this recipe.
