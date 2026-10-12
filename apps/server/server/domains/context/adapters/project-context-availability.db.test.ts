@@ -292,6 +292,71 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(next)).toBeGreaterThan(BigInt(first));
     });
 
+    it("publishes namespace evidence before deferred availability, without letting old repair regress it", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      const before = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      const reserved = await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+      const readHead = async () =>
+        (
+          await currentDrizzleDb(db)
+            .select()
+            .from(contextAvailabilityHeads)
+            .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
+        )[0];
+      expect(await readHead()).toMatchObject({
+        generation: BigInt(before),
+        namespaceGeneration: expect.any(BigInt),
+      });
+      const reservedHead = await readHead();
+      expect(reservedHead?.namespaceGeneration).toBeGreaterThan(0n);
+      const newer = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      const newerHead = await readHead();
+      expect(newerHead?.namespaceGeneration).toBeGreaterThan(
+        reservedHead?.namespaceGeneration ?? 0n,
+      );
+      expect(BigInt(newer)).toBeGreaterThanOrEqual(BigInt(reserved));
+      await availability.publishReserved({
+        projectIds: [PROJECT],
+        userIds: [],
+        generation: reserved,
+      });
+      expect(await readHead()).toMatchObject({
+        generation: BigInt(newer),
+        namespaceGeneration: expect.any(BigInt),
+      });
+      expect((await readHead())?.namespaceGeneration).toBe(newerHead?.namespaceGeneration);
+      const captured = await readHead();
+      await expect(
+        runInDrizzleSavepoint(db, async () => {
+          await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+          throw new Error("namespace rollback");
+        }),
+      ).rejects.toThrow("namespace rollback");
+      expect(await readHead()).toEqual(captured);
+    });
+
+    it("orders namespace observations within one transaction even though availability groups them", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      await runInDrizzleTransaction(db, async () => {
+        const first = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        const readHead = async () =>
+          (
+            await currentDrizzleDb(db)
+              .select()
+              .from(contextAvailabilityHeads)
+              .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
+          )[0];
+        const firstHead = await readHead();
+        const second = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        expect(second).toBe(first);
+        expect((await readHead())?.namespaceGeneration).toBeGreaterThan(
+          firstHead?.namespaceGeneration ?? 0n,
+        );
+      });
+    });
+
     it("merges successful savepoint keys and discards failed savepoint keys", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
@@ -315,7 +380,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const heads = new Map(
         (
-          await db
+          await currentDrizzleDb(db)
             .select()
             .from(contextAvailabilityHeads)
             .where(
@@ -362,6 +427,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           return generation;
         });
         const firstGeneration = await firstAllocated;
+        const [allocatedBeforeSecond] = await controlDb.execute<{ lastValue: string }>(
+          sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
+        );
         const second = createDrizzleProjectContextAvailability(secondDb).advance({
           projectIds: [PROJECT],
           userIds: [],
@@ -382,7 +450,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const whileBlocked = await controlDb.execute<{ lastValue: string }>(
           sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
         );
-        expect(whileBlocked[0]?.lastValue).toBe(firstGeneration);
+        expect(whileBlocked[0]?.lastValue).toBe(allocatedBeforeSecond?.lastValue);
+        expect(BigInt(whileBlocked[0]?.lastValue ?? "0")).toBeGreaterThanOrEqual(
+          BigInt(firstGeneration),
+        );
         releaseFirst?.();
         const [settledFirst, settledSecond] = await Promise.all([first, second]);
         expect(BigInt(settledSecond)).toBeGreaterThan(BigInt(settledFirst));
@@ -495,6 +566,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           authority: { kind: "work", projectId: PROJECT, workId: WORK },
         },
       ]);
+      await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
+      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[2]));
+      await expect(
+        availability.lookup(
+          { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
+          { userId: USER },
+        ),
+      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
+      await db.update(documents).set({ deletedByWorkId: WORK }).where(eq(documents.id, DOCS[2]));
+      await expect(
+        availability.lookup(
+          { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
+          { userId: USER },
+        ),
+      ).resolves.toMatchObject({
+        resolutions: [{ kind: "authority-unavailable", reason: "work_deleted" }],
+      });
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PROJECT));
       result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[1]] as never },
@@ -616,6 +704,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           payload: { documentId: DOCS[0], projectId: PROJECT },
         }),
       ]);
+    });
+
+    it("resolves folder identity across scope changes without confusing authority hiding with deletion", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      const id = "00000000-0000-4000-8000-000000000942";
+      const foreign = "00000000-0000-4000-8000-000000000943";
+      await db.insert(folders).values([
+        { id, contextSourceId: PROJECT_SOURCE, name: "A" },
+        { id: foreign, contextSourceId: FOREIGN_SOURCE, name: "Foreign" },
+      ]);
+      const lookup = async () =>
+        (
+          await availability.lookup(
+            {
+              projectId: PROJECT as never,
+              documentIds: [],
+              folderIds: [id, foreign, "00000000-0000-4000-8000-000000000944"],
+            },
+            { userId: USER },
+          )
+        ).folderResolutions!;
+      expect(await lookup()).toMatchObject([
+        { folderId: id, kind: "available", entry: { path: ["A"], uri: "manuscript://A" } },
+        { folderId: foreign, kind: "not-visible" },
+        { kind: "not-visible" },
+      ]);
+      await db
+        .update(folders)
+        .set({ contextSourceId: WORK_SOURCE, name: "Moved" })
+        .where(eq(folders.id, id));
+      expect((await lookup())[0]).toMatchObject({
+        kind: "available",
+        entry: {
+          scope: { kind: "work", workId: WORK },
+          path: ["Moved"],
+          uri: "scratch://@draft/Moved",
+        },
+      });
+      await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
+      await db
+        .update(folders)
+        .set({ deletedAt: new Date(), deletedByWorkId: WORK })
+        .where(eq(folders.id, id));
+      expect((await lookup())[0].kind).toBe("authority-unavailable");
+      await db.update(folders).set({ deletedByWorkId: null }).where(eq(folders.id, id));
+      expect((await lookup())[0].kind).toBe("deleted");
     });
 
     it("rejects invalid schemes, Work authority, scope pairing, and cross-source ancestry", async () => {

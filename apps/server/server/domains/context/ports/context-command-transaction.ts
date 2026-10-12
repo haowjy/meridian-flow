@@ -33,15 +33,23 @@ export type ContextCommandContext = {
   draft: ContextCommandActiveDraft | null;
 };
 
+/** Scopes known up front, or resolved when the transaction starts (an identity destination's current home). */
+export type ContextCommandScopes =
+  | readonly ContextCommandScope[]
+  | (() => Promise<readonly ContextCommandScope[]>);
+
 /** Transaction boundary for one result-returning Context command. */
 export interface ContextCommandTransaction {
   run<T>(
     operation: (command: ContextCommandContext) => Promise<T>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<T>;
 }
 
 export const directContextCommandTransaction: ContextCommandTransaction = {
-  run: (operation) => operation({ draft: null }),
+  async run(operation, scopes) {
+    if (typeof scopes === "function") await scopes();
+    return operation({ draft: null });
+  },
 };

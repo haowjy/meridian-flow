@@ -61,6 +61,7 @@ export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {
 export type AdapterFault =
   | { code: "invalid_name"; message: string }
   | { code: "not_found" }
+  | { code: "destination_missing" }
   | { code: "permission_denied" }
   | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }

@@ -18,6 +18,7 @@ import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
@@ -199,6 +200,16 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!visibleWork) return [];
     }
   }
+  const [namespaceHead] = await db
+    .select({ version: contextAvailabilityHeads.namespaceGeneration })
+    .from(contextAvailabilityHeads)
+    .where(
+      eq(
+        contextAvailabilityHeads.authorityKey,
+        scope.kind === "user" ? `user:${scope.userId}` : `project:${scope.projectId}`,
+      ),
+    );
+  const observationVersion = String(namespaceHead?.version ?? 0n);
   const sourceRows = await sourcesForScope(db, scope);
   const sourceIds = sourceRows.map((row) => row.id as ContextSourceId);
   const vf = visibleFolders(LIVE_TREE);
@@ -283,6 +294,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!path) continue;
       entries.push({
         kind: "folder",
+        observationVersion,
         entryId: folder.id,
         scope,
         sourceId: source.id,
@@ -300,6 +312,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         mapAuthoritativeFile({
           document,
           scope,
+          observationVersion,
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
@@ -400,6 +413,8 @@ export function createDrizzleContextCatalog(
         .from(contextCatalogEntries)
         .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
+      // Deduplicate complete observations below: equal payloads with newer namespace
+      // versions still publish, including moves back before deferred repair catches up.
       const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
       // Replay clears the old subtree before installing this commit. Restore every
       // survivor, including entries already published by a separate repair and

@@ -30,6 +30,7 @@ function catalog(localContent: boolean): CatalogContextView {
       },
       {
         kind: "file",
+        observationVersion: "1",
         entryId: "document-id",
         scope,
         sourceId: "kb-source",

@@ -403,8 +403,7 @@ describe("canonical document naming laws", () => {
     if (!prose.ok) throw new Error("fixture failed");
     expect(
       await mover.commitWriterLocation(dispatch("ch12"), dispatch("ch12.md"), {
-        kind: "file",
-        nodeId: prose.value.documentId,
+        expected: { kind: "file", nodeId: prose.value.documentId },
       }),
     ).toMatchObject({
       ok: true,
