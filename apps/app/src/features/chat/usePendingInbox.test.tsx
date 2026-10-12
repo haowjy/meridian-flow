@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import type { Turn } from "@meridian/contracts/protocol";
+import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
 import { queuedWriterTurnIds } from "./pending-inbox";
 import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";

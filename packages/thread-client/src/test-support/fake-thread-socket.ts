@@ -1,7 +1,17 @@
-/** In-memory thread WebSocket boundary for real WsThreadTransport tests. */
+/** In-memory thread WebSocket boundary for real ThreadSocketClient tests. */
 import { encodeWsServerMessage, parseWsClientMessage } from "@meridian/contracts/protocol";
 
-export class FakeThreadSocket extends EventTarget {
+import type { SocketEvents, SocketLike } from "../socket/socket-ports";
+
+export class FakeThreadSocket implements SocketLike {
+  private readonly target = new EventTarget();
+
+  addEventListener<K extends keyof SocketEvents>(
+    type: K,
+    listener: (event: SocketEvents[K]) => void,
+  ): void {
+    this.target.addEventListener(type, listener as EventListener);
+  }
   static OPEN = 1;
   static CONNECTING = 0;
   readyState = 0;
@@ -10,9 +20,7 @@ export class FakeThreadSocket extends EventTarget {
 
   constructor(
     private readonly onSend: (socket: FakeThreadSocket, frame: unknown) => void = () => {},
-  ) {
-    super();
-  }
+  ) {}
 
   send(data: string): void {
     this.sent.push(data);
@@ -22,18 +30,18 @@ export class FakeThreadSocket extends EventTarget {
 
   open(): void {
     this.readyState = 1;
-    this.dispatchEvent(new Event("open"));
+    this.target.dispatchEvent(new Event("open"));
   }
 
   close(code = 1000, reason = ""): void {
     this.readyState = this.stallClose ? 2 : 3;
     if (this.stallClose) return;
-    this.dispatchEvent(Object.assign(new Event("close"), { code, reason, wasClean: true }));
+    this.target.dispatchEvent(Object.assign(new Event("close"), { code, reason, wasClean: true }));
   }
 
   deliver(message: unknown): void {
     const event = new Event("message");
     Object.defineProperty(event, "data", { value: encodeWsServerMessage(message as never) });
-    this.dispatchEvent(event);
+    this.target.dispatchEvent(event);
   }
 }

@@ -2,7 +2,6 @@
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   dispatchWsServerMessage,
   type WsServerMessageDispatchDeps,
@@ -29,6 +28,7 @@ function makeDeps() {
   const subscriptions = { get: vi.fn(() => undefined) } as unknown as WsThreadSubscriptionRegistry;
   const deps: WsServerMessageDispatchDeps = {
     subscriptions,
+    toError: vi.fn((error) => Object.assign(new Error(error.message), { code: error.code })),
     dispatchSequencedEvent: vi.fn(),
     handleGap: vi.fn(),
     send: vi.fn(),
@@ -66,7 +66,7 @@ describe("dispatchWsServerMessage", () => {
     expect(onInterruptResponseError).toHaveBeenCalledTimes(1);
     const [threadId, error] = onInterruptResponseError.mock.calls[0] as [string, Error];
     expect(threadId).toBe("thread-1");
-    expect(isMeridianApiError(error)).toBe(true);
+    expect(error).toBe(vi.mocked(deps.toError).mock.results[0].value);
     expect((error as unknown as { code: string }).code).toBe(code);
     expect(onThreadError).not.toHaveBeenCalled();
     expect(onGlobalError).not.toHaveBeenCalled();
@@ -88,6 +88,7 @@ describe("dispatchWsServerMessage", () => {
     });
     dispatchWsServerMessage(subscribedMessage(), {
       subscriptions,
+      toError: (error) => Object.assign(new Error(error.message), { code: error.code }),
       dispatchSequencedEvent: () => order.push("event"),
       handleGap: vi.fn(),
       send: vi.fn(),

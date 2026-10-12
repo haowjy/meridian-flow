@@ -70,8 +70,9 @@ per-message subscriptions. Live `DocumentSession`s subscribe to
 The two client socket types use their canonical transport seams.
 `TappedWebSocket` observes each room-scoped Hocuspocus socket's final binary
 frames.
-`SocketLifecycleController` observes the thread/agent socket's lifecycle and
-final string frames. Both are active only behind the build-time debug gate;
+`@meridian/thread-client` owns `SocketLifecycleController` and the thread socket
+client. The app's `TransportProvider` injects its wire-tap adapter to observe
+lifecycle and final string frames. Both are active only behind the build-time debug gate;
 default production builds retain native WebSockets without capture, while the
 explicit `VITE_DEBUG_OVERLAY=1` build override includes the debug observers.
 Neither seam parses or retains frames, and observer failures never escape into
@@ -105,8 +106,8 @@ tool, catchup, or error content may enter an `EventRecord`.
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
 `resume`, `pong`, and `interrupt.respond`; its server vocabulary is `connected`,
 `subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
-operation through `cancelTurn`, not a WebSocket message. Keep these names aligned
-with `@meridian/contracts/protocol` rather than inferring them from UI actions.
+operation through the injected `cancelTurn` port, not a WebSocket message. Keep
+these names aligned with `@meridian/contracts/protocol` rather than inferring them from UI actions.
 
 A `gap` means the server could not replay from the client's cursor. Its frame
 carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point

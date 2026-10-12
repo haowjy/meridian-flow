@@ -77,6 +77,7 @@ composition root (`apps/server/server/lib/app.ts`).
 | Package | Role | Constraints |
 |---|---|---|
 | `@meridian/contracts` | Shared JSON-natural types, IDs, protocol DTOs | Types only; no server logic |
+| `@meridian/thread-client` | Shared thread client behavior (socket; message and reply-follow modules join here) | Platform-neutral behavior through injected ports; no app/server imports |
 | `@meridian/database` | Drizzle schema, migrations, Postgres functions | Persistence shape only; repos live in `apps/server` |
 | `@meridian/design-tokens` | Ink & Jade design tokens (`ink-jade.css`) | CSS/token primitives only; semantic `@theme`, no raw hex outside package |
 | `@meridian/prosemirror-schema` | Shared ProseMirror node/mark specs | Server and frontend schemas stay structurally identical |
