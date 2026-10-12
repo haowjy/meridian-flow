@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve a fresh same-reply peer's writes when an older peer's post-Discard retirement runs late.
+
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.

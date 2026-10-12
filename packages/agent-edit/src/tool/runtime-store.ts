@@ -19,6 +19,7 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
+  peerBranchId?: string;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -65,6 +66,7 @@ export interface RuntimeStore {
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
+  peerBranchId?: string;
 }
 
 export function createRuntimeStore(deps: {
@@ -145,14 +147,18 @@ export function createRuntimeStore(deps: {
     threadId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
+    let evicted = false;
     for (const [key, runtime] of [...runtimeDocs]) {
       if (runtime.threadId !== threadId) continue;
       const runtimeDocId = docIdFromRuntimeKey(key);
       if (docId !== null && runtimeDocId !== docId) continue;
+      if (options.peerBranchId && runtime.peerBranchId !== options.peerBranchId) continue;
+      evicted = true;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale && docId) staleLiveDocs.add(docId);
+    if (options.markLiveDocStale && docId && (!options.peerBranchId || evicted))
+      staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(
