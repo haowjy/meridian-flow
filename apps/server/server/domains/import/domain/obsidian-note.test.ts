@@ -203,4 +203,38 @@ describe("Obsidian conversion", () => {
     const manual = convert("[manual](kb://vault/Lore/Sects) [[Sects]]");
     expect([...manual.targets]).toEqual([[1, "Lore/Sects.md"]]);
   });
+  it("reports only path-segment matches as ambiguity candidates", () => {
+    const source = { ...candidate("Ch.md"), rootId: null, uri: "manuscript://Ch" };
+    const existing = [
+      candidate("Sects.md", [], "kb://Sects"),
+      candidate("FootSects.md", [], "kb://FootSects"),
+    ];
+    const result = convert("[[Sects]]", source, [source], existing);
+    expect(result.targets.get(0)).toBe("Sects.md");
+    expect(result.findings.map((finding) => finding.code)).not.toContain("link_ambiguous");
+  });
+  it("resolves 2,000 links against 10,000 selected and 10,000 existing candidates promptly", () => {
+    const pool = Array.from({ length: 10_000 }, (_, index) =>
+      candidate(`Folder ${index % 97}/Note ${index}.md`, index % 13 ? [] : [`Alias ${index}`]),
+    );
+    const existing = Array.from({ length: 10_000 }, (_, index) =>
+      candidate(`Old ${index}.md`, [], `kb://Archive ${index % 89}/Old ${index}`),
+    );
+    const source = pool[0];
+    const text = Array.from({ length: 2_000 }, (_, index) =>
+      index % 4 === 0
+        ? `[[Note ${index * 5}]]`
+        : index % 4 === 1
+          ? `[[Alias ${index * 13}]]`
+          : index % 4 === 2
+            ? `[[Old ${index * 5}]]`
+            : `[[Missing ${index}]]`,
+    ).join(" ");
+    const started = performance.now();
+    const result = convert(text, source, pool, existing);
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(result.targets.get(0)).toBe(pool[0].id);
+    expect(result.targets.get(2)).toBe("Old 10.md");
+    expect(result.targets.has(3)).toBe(false);
+  }, 60_000);
 });
