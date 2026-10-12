@@ -40,7 +40,7 @@ type PublicationState = {
 
 export function createWorkProjectionMutation(input: {
   db: Database;
-  availability: ProjectContextAvailabilityMutationPort;
+  availability: Pick<ProjectContextAvailabilityMutationPort, "advance">;
   catalog: ContextCatalogLifecyclePort;
 }): WorkProjectionMutation {
   const publicationParticipant: DrizzleTransactionParticipant<PublicationState> = {

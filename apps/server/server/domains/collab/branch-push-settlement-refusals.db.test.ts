@@ -69,12 +69,6 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
           deferred.push("availability");
           return "0";
         },
-        async reserve() {
-          throw new Error("unused");
-        },
-        async publishReserved() {
-          throw new Error("unused");
-        },
       },
       catalog: {
         async upsertWorkAuthorities() {
