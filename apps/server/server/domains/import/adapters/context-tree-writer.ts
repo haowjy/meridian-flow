@@ -9,11 +9,13 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabDomain, ImportLinkBinder } from "../../collab/index.js";
 import {
   type ContextBulkCreation,
+  ContextImportDestinationError,
   type ContextImportLocations,
   ContextImportParentMovedError,
   type ContextPort,
   type LinkAheadRegistry,
 } from "../../context/index.js";
+import { ImportError } from "../domain/manifest.js";
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
 export function createContextImportTreeWriter(deps: {
   db: Database;
@@ -44,7 +46,15 @@ export function createContextImportTreeWriter(deps: {
         };
       });
     },
-    destination: (uri) => deps.locations.destination(uri),
+    async destination(uri) {
+      try {
+        return await deps.locations.destination(uri);
+      } catch (error) {
+        if (error instanceof ContextImportDestinationError)
+          throw new ImportError(error.code === "destination_invalid" ? 400 : 404, error.code);
+        throw error;
+      }
+    },
     async parent(record, folderId) {
       try {
         return await deps.locations.lockParent(record.sourceId, folderId);

@@ -16,7 +16,11 @@ export async function resolveImportRoute(event: H3Event) {
       return await run();
     } catch (error) {
       if (error instanceof ImportError)
-        throw createError({ statusCode: error.statusCode, message: error.message });
+        throw createError({
+          statusCode: error.statusCode,
+          message: error.code,
+          data: { code: error.code, ...(error.params ? { params: error.params } : {}) },
+        });
       throw error;
     }
   }

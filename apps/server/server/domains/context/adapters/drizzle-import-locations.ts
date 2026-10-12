@@ -6,6 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import {
+  ContextImportDestinationError,
   type ContextImportLocations,
   ContextImportParentMovedError,
 } from "../ports/context-import-locations.js";
@@ -56,10 +57,10 @@ export function createDrizzleContextImportLocations(
   const locations: ContextImportLocations = {
     async destination(uri) {
       const result = parseContextUri(uri);
-      if (!result.ok) throw new Error("Invalid import destination");
+      if (!result.ok) throw new ContextImportDestinationError("destination_invalid");
       const parsed = result.value;
       if (!parsed || !["kb", "manuscript", "unfiled"].includes(parsed.scheme))
-        throw new Error("Invalid import destination");
+        throw new ContextImportDestinationError("destination_invalid");
       let [owner] = await tx()
         .select()
         .from(contextSources)
@@ -103,7 +104,7 @@ export function createDrizzleContextImportLocations(
             ),
           );
       }
-      if (!owner) throw new Error("Destination source does not exist");
+      if (!owner) throw new ContextImportDestinationError("destination_not_found");
       let folderId: string | null = null;
       for (const segment of parsed.path.split("/").filter(Boolean)) {
         const [child] = await tx()
@@ -117,7 +118,7 @@ export function createDrizzleContextImportLocations(
               isNull(folders.deletedAt),
             ),
           );
-        if (!child) throw new Error("Destination folder does not exist");
+        if (!child) throw new ContextImportDestinationError("destination_not_found");
         folderId = child.id;
       }
       return { sourceId: owner.id, folderId };

@@ -129,12 +129,12 @@ describe("import planning", () => {
   it("rejects duplicate ids, file-root descendants and size overflow", () => {
     const value = manifest();
     value.entries[1].entryId = value.entries[0].entryId;
-    expect(() => validateManifest(value)).toThrow("Duplicate entryId");
+    expect(() => validateManifest(value)).toThrow("duplicate_entry_id");
     const tooLarge = manifest();
     tooLarge.entries[0].size = 50 * 1024 * 1024 + 1;
     expect(() => validateManifest(tooLarge)).toThrow();
     const loose = manifest();
     loose.roots[0].kind = "file";
-    expect(() => validateManifest(loose)).toThrow("Invalid root path");
+    expect(() => validateManifest(loose)).toThrow("invalid_root_path");
   });
 });

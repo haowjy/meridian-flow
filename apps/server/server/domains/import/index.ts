@@ -29,8 +29,12 @@ import { createMammothDocumentConverter } from "./adapters/mammoth-document-conv
 import { createImportService } from "./domain/import-service.js";
 
 import { sweepImportObjects } from "./domain/object-sweep.js";
+import { createImportAdmission } from "./domain/receive-admission.js";
 
-export { ImportError } from "./domain/manifest.js";
+export { IMPORT_LIMITS, ImportError } from "./domain/manifest.js";
+
+/** Receives are bounded per import across every request this process serves. */
+const processAdmission = createImportAdmission();
 export type ImportService = ReturnType<typeof createImportService>;
 export function createProductionImportPorts(
   deps: {
@@ -72,6 +76,7 @@ export function createProductionImportPorts(
   return {
     repository: createDrizzleImportRepository(deps.db),
     converter: createMammothDocumentConverter(),
+    admission: processAdmission,
     objects: deps.objects,
     diagnostics: {
       failed: ({ importId, entryId, code, cause }) =>

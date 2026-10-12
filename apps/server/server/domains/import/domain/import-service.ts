@@ -15,6 +15,7 @@ import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-wr
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
+import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
 export function createImportService(deps: {
   repository: ImportRepository;
@@ -22,6 +23,7 @@ export function createImportService(deps: {
   converter: DocumentConverterPort;
   objects: ObjectStorePort;
   diagnostics: ImportDiagnostics;
+  admission: ImportAdmission;
   now?: () => Date;
 }) {
   const { repository: repo, tree } = deps;
@@ -336,16 +338,53 @@ export function createImportService(deps: {
       return true;
     });
   }
-  return {
+  function checkParts(parts: readonly { entryId: number; bytes: Uint8Array }[]) {
+    if (!parts.length) throw new ImportError(400, "invalid_import_file_parts");
+    if (parts.length > IMPORT_LIMITS.partsPerRequest)
+      throw new ImportError(413, "too_many_parts", { limit: IMPORT_LIMITS.partsPerRequest });
+    if (new Set(parts.map((part) => part.entryId)).size !== parts.length)
+      throw new ImportError(400, "duplicate_import_entry_id");
+    const total = parts.reduce((sum, part) => sum + part.bytes.length, 0);
+    // A file larger than a batch travels alone, up to the per-file limit.
+    const limit = parts.length > 1 ? IMPORT_LIMITS.requestBytes : IMPORT_LIMITS.fileBytes;
+    if (total > limit) throw new ImportError(413, "import_request_too_large", { limit });
+  }
+  const api = {
     report,
     renewLease,
-    async receiving<T>(id: string, projectId: string, read: () => Promise<T>) {
-      await touchUpload(id, projectId);
-      const stop = heartbeat(id, -1, () => touchUpload(id, projectId));
+    /**
+     * One multipart request: admitted per import, read under a heartbeat, validated
+     * whole before any landing, then landed with bounded concurrency.
+     */
+    async receive(
+      id: string,
+      projectId: string,
+      read: () => Promise<{ entryId: number; bytes: Uint8Array }[]>,
+    ) {
+      const leave = deps.admission.enter(id);
+      if (!leave)
+        throw new ImportError(429, "import_busy", { limit: IMPORT_LIMITS.receivesPerImport });
       try {
-        return await read();
+        await touchUpload(id, projectId);
+        const stop = heartbeat(id, -1, () => touchUpload(id, projectId));
+        let parts: { entryId: number; bytes: Uint8Array }[];
+        try {
+          parts = await read();
+        } finally {
+          await stop();
+        }
+        checkParts(parts);
+        const record = await requireImport(id, projectId);
+        const known = new Set(record.manifest.entries.map((entry) => entry.entryId));
+        if (parts.some((part) => !known.has(part.entryId)))
+          throw new ImportError(404, "entry_not_found");
+        return {
+          entries: await mapBounded(parts, IMPORT_LIMITS.landingConcurrency, (part) =>
+            api.land(projectId, id, part.entryId, part.bytes),
+          ),
+        };
       } finally {
-        await stop();
+        leave();
       }
     },
     async listOpen(projectId: string) {
@@ -585,6 +624,7 @@ export function createImportService(deps: {
       return await entryOutcome(id, projectId, entryId);
     },
   };
+  return api;
 }
 
 class DeletedBeforeArrivalError extends Error {

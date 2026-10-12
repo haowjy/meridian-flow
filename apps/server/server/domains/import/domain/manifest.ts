@@ -1,12 +1,22 @@
 /** Strict selection validation and content-based resume identity. */
 import { createHash } from "node:crypto";
-import type { ImportManifest } from "@meridian/contracts";
+import type { ImportManifest, ImportRefusalCode } from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
   entries: 10_000,
+  /** Entries plus every folder the plan synthesizes for their ancestors. */
+  plannedNodes: 20_000,
+  pathDepth: 64,
+  pathBytes: 4096,
+  manifestBytes: 32 * 1024 * 1024,
+  /** Multipart framing allowance on top of the file bytes a request may carry. */
+  multipartOverheadBytes: 1024 * 1024,
+  partsPerRequest: 200,
+  landingConcurrency: 4,
+  receivesPerImport: 4,
   fileBytes: 50 * 1024 * 1024,
   totalBytes: 2 * 1024 ** 3,
   requestBytes: 8 * 1024 * 1024,
@@ -16,13 +26,18 @@ export const IMPORT_LIMITS = {
   latePutGraceMs: 60 * 60 * 1000,
   sweepBatch: 500,
 } as const;
+/** A coded refusal; diagnostics stay server-side, the writer-facing app maps the code. */
 export class ImportError extends Error {
   constructor(
     public readonly statusCode: number,
-    message: string,
+    public readonly code: ImportRefusalCode,
+    public readonly params?: Record<string, number>,
   ) {
-    super(message);
+    super(code);
   }
+}
+function refuse(code: ImportRefusalCode, params?: Record<string, number>): never {
+  throw new ImportError(400, code, params);
 }
 const name = z
   .string()
@@ -31,12 +46,15 @@ const name = z
     (value) => value === value.normalize("NFC") && validateContextEntryName(value).ok,
     "Invalid name",
   );
-const path = z
-  .string()
-  .refine(
-    (value) => value === "" || value.split("/").every((segment) => name.safeParse(segment).success),
-    "Invalid relative path",
-  );
+// Bounds run before segment validation so a deep path is never split and walked.
+const path = z.string().superRefine((value, context) => {
+  if (Buffer.byteLength(value) > IMPORT_LIMITS.pathBytes)
+    context.addIssue({ code: "custom", params: { refusal: "path_too_long" }, fatal: true });
+  else if (value.split("/", IMPORT_LIMITS.pathDepth + 1).length > IMPORT_LIMITS.pathDepth)
+    context.addIssue({ code: "custom", params: { refusal: "path_too_deep" }, fatal: true });
+  else if (value !== "" && !value.split("/").every((segment) => name.safeParse(segment).success))
+    context.addIssue({ code: "custom", message: "Invalid relative path" });
+});
 const root = z
   .object({
     rootId: z.number().int().nonnegative(),
@@ -106,55 +124,60 @@ const schema = z
   .strict();
 export function validateManifest(raw: unknown): ImportManifest {
   const parsed = schema.safeParse(raw);
-  if (!parsed.success) throw new ImportError(400, parsed.error.message);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const refusal = issue.code === "custom" ? issue.params?.refusal : undefined;
+      if (refusal === "path_too_long") refuse("path_too_long", { limit: IMPORT_LIMITS.pathBytes });
+      if (refusal === "path_too_deep") refuse("path_too_deep", { limit: IMPORT_LIMITS.pathDepth });
+    }
+    refuse("manifest_invalid");
+  }
   const value = parsed.data;
   if (value.entries.length + (value.unreadable?.length ?? 0) > IMPORT_LIMITS.entries)
-    throw new ImportError(400, "Too many files");
+    refuse("too_many_files", { limit: IMPORT_LIMITS.entries });
   const roots = new Map(value.roots.map((root) => [root.rootId, root]));
-  if (roots.size !== value.roots.length) throw new ImportError(400, "Duplicate rootId");
+  if (roots.size !== value.roots.length) refuse("duplicate_root_id");
   if (new Set(value.entries.map((entry) => entry.entryId)).size !== value.entries.length)
-    throw new ImportError(400, "Duplicate entryId");
+    refuse("duplicate_entry_id");
+  if (plannedNodeCount(value) > IMPORT_LIMITS.plannedNodes)
+    refuse("too_many_nodes", { limit: IMPORT_LIMITS.plannedNodes });
   const locations = new Set<string>();
   for (const entry of [...value.entries, ...value.folders]) {
     const root = roots.get(entry.rootId);
     if (!root || (root.kind === "file" ? entry.path !== "" : entry.path === ""))
-      throw new ImportError(400, "Invalid root path");
+      refuse("invalid_root_path");
     const key = JSON.stringify([entry.rootId, entry.path]);
-    if (locations.has(key)) throw new ImportError(400, "Duplicate selection path");
+    if (locations.has(key)) refuse("duplicate_selection_path");
     locations.add(key);
   }
   for (const unreadable of value.unreadable ?? []) {
     const selectedRoot = roots.get(unreadable.rootId);
     if (!selectedRoot || (selectedRoot.kind === "file" && unreadable.path !== ""))
-      throw new ImportError(400, "Invalid unreadable root path");
+      refuse("invalid_root_path");
     const key = JSON.stringify([unreadable.rootId, unreadable.path]);
-    if (locations.has(key)) throw new ImportError(400, "Duplicate selection path");
+    if (locations.has(key)) refuse("duplicate_selection_path");
     locations.add(key);
     if (
       selectedRoot.kind === "folder" &&
       unreadable.path === "" &&
       [...value.entries, ...value.folders].some((entry) => entry.rootId === unreadable.rootId)
     )
-      throw new ImportError(400, "Unreadable roots cannot contain readable entries");
+      refuse("unreadable_root_has_entries");
   }
   for (const entry of value.entries) {
     const selectedRoot = roots.get(entry.rootId);
     const filename = selectedRoot?.kind === "file" ? selectedRoot.name : entry.path;
     const type = filetypeForKnownPath(filename);
     if (entry.size > 0 && (type === null || type === "markdown") && entry.sniff === undefined)
-      throw new ImportError(400, "Text-like entries require sniff bytes");
+      refuse("sniff_required");
     if (
       entry.sniff !== undefined &&
       Buffer.from(entry.sniff, "base64").length !== Math.min(512, entry.size)
     )
-      throw new ImportError(
-        400,
-        "Sniff must contain the first 512 bytes (or the complete smaller file)",
-      );
+      refuse("sniff_length");
   }
   for (const folder of value.folders)
-    if (roots.get(folder.rootId)?.kind !== "folder")
-      throw new ImportError(400, "File roots cannot contain folders");
+    if (roots.get(folder.rootId)?.kind !== "folder") refuse("invalid_file_root");
   for (const root of value.roots) {
     if (
       root.kind === "file" &&
@@ -164,11 +187,23 @@ export function validateManifest(raw: unknown): ImportManifest {
           (value.unreadable ?? []).filter((entry) => entry.rootId === root.rootId).length !==
           1)
     )
-      throw new ImportError(400, "Invalid file root");
+      refuse("invalid_file_root");
   }
   if (value.entries.reduce((sum, entry) => sum + entry.size, 0) > IMPORT_LIMITS.totalBytes)
-    throw new ImportError(400, "Import exceeds total size limit");
+    refuse("import_too_large", { limit: IMPORT_LIMITS.totalBytes });
   return value;
+}
+/** Roots, entries, unreadable paths and every distinct folder their paths imply. */
+function plannedNodeCount(manifest: ImportManifest) {
+  const folders = new Set<string>();
+  for (const root of manifest.roots) if (root.kind === "folder") folders.add(`${root.rootId}:`);
+  for (const item of [...manifest.folders, ...manifest.entries]) {
+    const segments = item.path.split("/");
+    const depth = "entryId" in item ? segments.length - 1 : segments.length;
+    for (let index = 1; index <= depth; index++)
+      folders.add(`${item.rootId}:${segments.slice(0, index).join("/")}`);
+  }
+  return folders.size + manifest.entries.length + (manifest.unreadable?.length ?? 0);
 }
 export function manifestFingerprint(manifest: ImportManifest): string {
   const roots = manifest.roots

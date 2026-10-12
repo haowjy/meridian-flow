@@ -25,6 +25,8 @@ import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
 import type { ObjectStorePort } from "../storage/index.js";
 import { createImportService } from "./domain/import-service.js";
+import { IMPORT_LIMITS } from "./domain/manifest.js";
+import { createImportAdmission } from "./domain/receive-admission.js";
 import { createProductionImportPorts } from "./index.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1";
@@ -439,6 +441,52 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     expect(after.entries).toContainEqual(expect.objectContaining({ entryId: 0, state: "landed" }));
     secondGate.release();
     await second;
+  });
+  it("a receive is admitted per import, validated whole, and lands with bounded concurrency", async () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 10 }, (_, index) => [`N${index}.md`, `Note ${index}`]),
+    );
+    const selection = loose(files),
+      deps = { ...ports(), admission: createImportAdmission(1) },
+      bind = deps.tree.bind;
+    let active = 0,
+      peak = 0;
+    deps.tree.bind = async (...args) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active--;
+      return bind(...args);
+    };
+    const service = createImportService(deps),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    const parts = selection.bytes.map((bytes, entryId) => ({ entryId, bytes }));
+    await expect(
+      service.receive(plan.importId, projectId, async () => [
+        ...parts.slice(0, 1),
+        { entryId: 99, bytes: new Uint8Array() },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 404, code: "entry_not_found" });
+    expect((await service.report(plan.importId, projectId)).counts.landed).toBe(0);
+    await expect(
+      service.receive(plan.importId, projectId, async () =>
+        Array.from({ length: IMPORT_LIMITS.partsPerRequest + 1 }, (_, entryId) => ({
+          entryId,
+          bytes: new Uint8Array(),
+        })),
+      ),
+    ).rejects.toMatchObject({ statusCode: 413, code: "too_many_parts" });
+    const reading = barrier();
+    const first = service.receive(plan.importId, projectId, async () => {
+      await reading.pause();
+      return parts;
+    });
+    await reading.arrived;
+    await expect(
+      service.receive(plan.importId, projectId, async () => parts),
+    ).rejects.toMatchObject({ statusCode: 429, code: "import_busy" });
+    reading.release();
+    expect((await first).entries.map((entry) => entry.state)).toEqual(parts.map(() => "landed"));
+    expect(peak).toBeLessThanOrEqual(IMPORT_LIMITS.landingConcurrency);
   });
   it("two parallel sends claim once; empty Markdown receives a receipt", async () => {
     const selection = loose({ "Empty.md": "" }),
