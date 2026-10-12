@@ -3,7 +3,7 @@
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import * as projectsApi from "@/client/api/projects-api";
@@ -15,11 +15,13 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
+import { WorkChanges } from "@/features/project/work/WorkChanges";
 import {
   createReviewScopeFixture,
   listed,
   operation,
   preview,
+  work,
 } from "@/test-support/draft-review-scope";
 import { settleReact } from "@/test-support/react-dom-harness";
 import { DraftDock } from "./DraftDock";
@@ -57,13 +59,16 @@ const op = (id: string, actor: typeof pacing | null, classId = `class-${id}`) =>
     ? { actorThreadId: actor.threadId, actorThreadTitle: actor.title }
     : { kind: "writer" as const }),
 });
-function Strip() {
+function DesktopEnvironment({ children }: { children: ReactNode }) {
   window.matchMedia = () =>
     ({
       matches: false,
       addEventListener: () => {},
       removeEventListener: () => {},
     }) as unknown as MediaQueryList;
+  return children;
+}
+function Strip() {
   return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: false })} />;
 }
 const strip = () => document.querySelector<HTMLElement>("[data-draft-dock]");
@@ -121,20 +126,14 @@ it.each([
           document.querySelector<HTMLButtonElement>('[aria-label="Expand changes"]')?.click(),
         );
         await settleReact(() =>
-          expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
+          expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0),
         );
         expect(
           [...document.querySelectorAll("[data-draft-dock-file] button")].some(
             (button) => button.textContent === "new-scene",
           ),
         ).toBe(true);
-        await act(async () =>
-          document
-            .querySelector<HTMLButtonElement>(
-              `[data-review-change-row] button[aria-label="${label}"]`,
-            )
-            ?.click(),
-        );
+        await click(label);
       } else await click(label);
       expect(request).toHaveBeenCalledWith("project-a", "work-a", "new-scene", {
         draftId: file.draftId,
@@ -144,11 +143,13 @@ it.each([
     {
       chatSurface: <Strip />,
       host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </ProjectNavigationProvider>
-        </I18nProvider>
+        <DesktopEnvironment>
+          <I18nProvider i18n={i18n}>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              <TooltipProvider>{children}</TooltipProvider>
+            </ProjectNavigationProvider>
+          </I18nProvider>
+        </DesktopEnvironment>
       ),
     },
   );
@@ -204,7 +205,9 @@ it.each([
           (node) => node.textContent === message,
         ),
       ).toHaveLength(1);
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1);
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(
+        isNewDocument ? 0 : 1,
+      );
       if (code === "review-failed") {
         await click("chapter-12");
         expect(navigate).toHaveBeenCalledWith(
@@ -223,11 +226,13 @@ it.each([
     {
       chatSurface: <Strip />,
       host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </ProjectNavigationProvider>
-        </I18nProvider>
+        <DesktopEnvironment>
+          <I18nProvider i18n={i18n}>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              <TooltipProvider>{children}</TooltipProvider>
+            </ProjectNavigationProvider>
+          </I18nProvider>
+        </DesktopEnvironment>
       ),
     },
   );
@@ -270,11 +275,87 @@ it("all accepted batch targets disappear at the click and a refused target resto
     {
       chatSurface: <Strip />,
       host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </ProjectNavigationProvider>
-        </I18nProvider>
+        <DesktopEnvironment>
+          <I18nProvider i18n={i18n}>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              <TooltipProvider>{children}</TooltipProvider>
+            </ProjectNavigationProvider>
+          </I18nProvider>
+        </DesktopEnvironment>
+      ),
+    },
+  );
+});
+
+it("new documents have one review door and whole-draft commands in chat and Work rows", async () => {
+  const files = ["chapter-a", "chapter-b"].map((id) => ({
+    ...draft(id, [pacing]),
+    isNewDocument: true,
+  }));
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
+  fixture.network.getDraftPreview.mockImplementation(async (_p, _w, documentId) => ({
+    ...preview,
+    draftId: `draft-${documentId}`,
+    documentName: documentId,
+    isNewDocument: true,
+    operations: [op(documentId, pacing)],
+  }));
+  fixture.network.applyDraft.mockReturnValue(new Promise(() => {}));
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(text()).toContain("2 changes"));
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[aria-label="Expand changes"]')?.click(),
+      );
+      await settleReact(() =>
+        expect(strip()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
+      );
+      const workRows = document.querySelector("[data-work-whole-test]");
+      for (const name of ["chapter-a", "chapter-b"]) {
+        await act(async () =>
+          workRows?.querySelector<HTMLButtonElement>(`[aria-label="Changes in ${name}"]`)?.click(),
+        );
+      }
+      await settleReact(() =>
+        expect(workRows?.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
+      );
+      expect(strip()?.querySelectorAll("[data-draft-dock-file] button")).toHaveLength(6);
+      expect(workRows?.querySelectorAll("button")).toHaveLength(9);
+      for (const surface of [strip(), workRows]) {
+        for (const name of ["chapter-a", "chapter-b"]) {
+          expect(
+            [...(surface?.querySelectorAll("button") ?? [])].filter(
+              (button) => button.textContent === name,
+            ),
+          ).toHaveLength(1);
+        }
+        expect(surface?.querySelector("[data-review-change-row] [data-tone]")).toBeNull();
+      }
+      await act(async () =>
+        workRows
+          ?.querySelector<HTMLButtonElement>('[data-review-change-row] [aria-label="Apply"]')
+          ?.click(),
+      );
+      expect(fixture.network.applyDraft).toHaveBeenCalledWith("project-a", "work-a", "chapter-a", {
+        draftId: "draft-chapter-a",
+      });
+      expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
+    },
+    {
+      chatSurface: <Strip />,
+      surface: (
+        <section data-work-whole-test>
+          <WorkChanges projectId="project-a" work={work} matchesSearch={() => true} />
+        </section>
+      ),
+      host: (children) => (
+        <DesktopEnvironment>
+          <I18nProvider i18n={i18n}>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              <TooltipProvider>{children}</TooltipProvider>
+            </ProjectNavigationProvider>
+          </I18nProvider>
+        </DesktopEnvironment>
       ),
     },
   );

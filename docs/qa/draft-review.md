@@ -258,7 +258,12 @@ and inspect the surfaces.
    `sword`, and Lore pass's separate changes remain. No command navigates.
 4. Open Lore pass before disposition. PASS: the strip shows Chapter A and B;
    expanding groups this chat’s changes under one-line file headers. Each file
-   name opens its own review, never an arbitrary first document. Each
+   name opens its own review, never an arbitrary first document. A new document
+   (one whole-draft change) has one named review row with Discard and Apply,
+   not a header followed by the same name. The Work page’s expanded file uses
+   the same rule; its chevron still collapses it. A real single per-change
+   edit keeps its file header and excerpt. The document popover and phone
+   sheet already have no file header and show the same whole-document row. Each
    change uses the shared Work row with its own Apply/Discard. Single-file
    strips also expand. Discard asks "Discard this
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
