@@ -81,7 +81,6 @@ export async function stagePendingSettlementWithinTx(
     documentTitle: prepared.pendingLiveSettlement.documentTitle,
     lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.lockCutUpdate),
     pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
-    transportJournalIds: (prepared.transportRows ?? []).map((row) => row.id),
     trailSeed,
     claimToken: prepared.pendingLiveSettlement.claim.token,
     claimEpoch: 1,
@@ -472,41 +471,7 @@ async function completeStagedPush(
             .orderBy(branchWriteJournal.id)
         ).map(mapJournalRow)
       : [];
-  const transportRows = staged.outbox.transportJournalIds.length
-    ? (
-        await db
-          .select()
-          .from(branchWriteJournal)
-          .where(inArray(branchWriteJournal.id, staged.outbox.transportJournalIds))
-          .orderBy(branchWriteJournal.id)
-      ).map(mapJournalRow)
-    : [];
   const authority = await allocateDocumentAdmission(db, documentId);
-  const transported = transportRows.length
-    ? await db
-        .insert(documentYjsUpdates)
-        .values(
-          transportRows.map((row, batchOrdinal) => ({
-            documentId,
-            authorityId: authority.authorityId,
-            authorityGeneration: authority.generation,
-            admissionSequence: authority.admissionSequence,
-            batchOrdinal,
-            updateData: Buffer.from(row.updateData),
-            originType: "reconcile" as const,
-            actorUserId: null,
-            actorTurnId: null,
-          })),
-        )
-        .returning({ id: documentYjsUpdates.id })
-    : [];
-  for (const [i, row] of transportRows.entries()) {
-    if ((row.updateMeta as { kind?: string } | null)?.kind === "discard")
-      await placeDraftRows(db, row.branchId, row.generation, [row.id], {
-        kind: "live",
-        seq: transported[i].id,
-      });
-  }
   const authoredRows =
     journalRows.length > 0
       ? await db
@@ -517,7 +482,7 @@ async function completeStagedPush(
               authorityId: authority.authorityId,
               authorityGeneration: authority.generation,
               admissionSequence: authority.admissionSequence,
-              batchOrdinal: transportRows.length + batchOrdinal,
+              batchOrdinal,
               updateData: Buffer.from(row.updateData),
               originType:
                 row.source === "writer"
@@ -543,7 +508,7 @@ async function completeStagedPush(
       authorityId: authority.authorityId,
       authorityGeneration: authority.generation,
       admissionSequence: authority.admissionSequence,
-      batchOrdinal: transportRows.length + journalRows.length,
+      batchOrdinal: journalRows.length,
       updateData: staged.outbox.pushUpdate,
       // Exact authored rows preserve attribution and reversal targets. This
       // aggregate system row resolves any omitted causal dependencies on replay.

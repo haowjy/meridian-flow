@@ -16,7 +16,7 @@ import {
   type PhysicalSourceUpdateIds,
 } from "./draft-review-types.js";
 
-type DependencyUpdate = { id: number; updateData: Uint8Array | Buffer; updateMeta?: unknown };
+type DependencyUpdate = { id: number; updateData: Uint8Array | Buffer };
 
 /**
  * One review class joins operations that share a visible hunk or a physical
@@ -29,12 +29,6 @@ export function assignReviewClasses(input: {
   updates?: readonly DependencyUpdate[];
   baseDeletedRanges?: readonly ClockRange[];
 }): DraftReviewOperationInternal[] {
-  // Suppliers participate in replay, never in selectable membership or class merging.
-  const suppliers = new Set(
-    (input.updates ?? [])
-      .filter((row) => (row.updateMeta as { kind?: string } | null)?.kind === "discard")
-      .map((row) => row.id),
-  );
   const graph = new UnionFind();
   const suppliedRowIds = new Set((input.updates ?? []).map((row) => row.id));
   for (const operation of input.operations) {
@@ -44,7 +38,6 @@ export function assignReviewClasses(input: {
       ...operation.closureUpdateIds,
       ...operation.sourceUpdateIds.filter((id) => suppliedRowIds.has(id)),
     ])) {
-      if (suppliers.has(id)) continue;
       const row: Node = `row:${id}`;
       graph.add(row);
       graph.unionAll([node, row]);
@@ -52,11 +45,7 @@ export function assignReviewClasses(input: {
   }
   for (const hunk of input.hunks)
     graph.unionAll(hunk.operationIds.map((id): Node => `operation:${id}`));
-  unionYjsDependencies(
-    graph,
-    (input.updates ?? []).filter((row) => !suppliers.has(row.id)),
-    input.baseDeletedRanges ?? [],
-  );
+  unionYjsDependencies(graph, input.updates ?? [], input.baseDeletedRanges ?? []);
 
   const components = graph.components();
   const classByOperationId = new Map<

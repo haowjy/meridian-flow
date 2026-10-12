@@ -22,7 +22,6 @@ import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.
 import type { RawTrailChange } from "./trail-read-kernel.js";
 
 export type PushPreparationPhase = {
-  transportRows?: BranchJournalRow[];
   branch: BranchSnapshot;
   rows: BranchJournalRow[];
   pushUpdate: Uint8Array;
@@ -109,7 +108,6 @@ export async function preparePushUnderLiveLock(
       prepared: {
         branch: phase.branch,
         journalRows: phase.rows,
-        transportRows: phase.transportRows,
         pushUpdate: phase.pushUpdate,
         idempotencyKey: phase.idempotencyKey,
         receiptId,

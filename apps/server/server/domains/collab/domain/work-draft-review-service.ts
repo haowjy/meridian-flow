@@ -64,15 +64,7 @@ export function createWorkDraftReviewService(input: {
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   resolveDocumentUris(documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
   readLiveReviewCut(documentId: string): Promise<{ doc: Y.Doc; revision: string }>;
-}): CollabDrafts & {
-  settleAfterResponse(document: { documentId: DocumentId; workId: WorkId }): Promise<void>;
-} {
-  // Only a writer's disposition can request retirement; response completion retries that request.
-  const deferredSettlements = new Map<
-    string,
-    { workId: WorkId; documentId: DocumentId; draftId: string }
-  >();
-
+}): CollabDrafts {
   async function resolveDraftOnlyDocumentIds(command: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -156,7 +148,6 @@ export function createWorkDraftReviewService(input: {
           const corrupt = await input.branches.getBranch(cause.branchId);
           if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
           await input.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
-          deferredSettlements.delete(corrupt.branchId);
           await input.agentEdit.invalidateThread(command.documentId, "");
           notice = {
             code: "branch_corrupt_reset",
@@ -346,18 +337,7 @@ export function createWorkDraftReviewService(input: {
         workId: command.workId,
         documentId: command.documentId,
         branchId: command.draftId,
-        isEmpty: (live, draft) => {
-          if (!documentEffectsEqual(live, draft)) {
-            deferredSettlements.delete(command.draftId);
-            return false;
-          }
-          if (input.agentEdit.hasStagedDraftWrites(command.documentId, command.workId)) {
-            deferredSettlements.set(command.draftId, command);
-            return false;
-          }
-          deferredSettlements.delete(command.draftId);
-          return true;
-        },
+        isEmpty: documentEffectsEqual,
         disposition: (rows) =>
           rows.some((row) => row.status === "pushed") ? "applied" : "discarded",
       });
@@ -531,19 +511,12 @@ export function createWorkDraftReviewService(input: {
         documentId: command.documentId,
         contentBranchId: branch.branchId,
       });
-      deferredSettlements.delete(branch.branchId);
       await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
     }
     return { status: "discarded" as const, draftId: command.draftId };
   }
 
   return {
-    async settleAfterResponse(document) {
-      for (const command of [...deferredSettlements.values()]) {
-        if (command.workId === document.workId && command.documentId === document.documentId)
-          await completeDisposition(command);
-      }
-    },
     draftReview: {
       async list(command) {
         return listReviewableWorkDraftBranches(command.workId, command.projectId);
