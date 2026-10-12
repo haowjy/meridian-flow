@@ -17,7 +17,8 @@
     "test:e2e:effective-styles": "playwright test -c e2e/playwright.effective-styles.config.ts",
     "verify:process-disclosure": "tsx e2e/verify-process-disclosure.mts",
     "lingui:extract": "lingui extract",
-    "lingui:compile": "lingui compile"
+    "lingui:compile": "lingui compile",
+    "bench:markdown": "tsc --noEmit -p bench/tsconfig.json && tsx bench/markdown.mts"
   },
   "dependencies": {
     "@hocuspocus/provider": "4.3.0",
