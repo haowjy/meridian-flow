@@ -7,7 +7,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FolderInput, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button";
 import { useImports, useImportsSnapshot, useOptionalImports } from "./ImportProvider";
 import { useImportRoute } from "./import-route";
 import { effectiveEntry } from "./import-state";
-import { displayOf } from "./import-store";
 import { failureSentence } from "./reason-copy";
+import { useImport } from "./use-import";
 
 function useImportPending(projectId: string, tab: ContextTab): boolean {
   const owner = tab.kind === "new" ? {} : tabContextOwner(tab);
@@ -50,45 +50,67 @@ function Notice({
   className?: string;
 }) {
   const pending = useImportPending(projectId, tab);
-  const { coordinator, openContinue } = useImports();
-  const route = useImportRoute();
+  const { coordinator } = useImports();
   const snapshot = useImportsSnapshot(coordinator);
 
-  // The document's own entry, from whichever loaded import holds it.
-  const found = useMemo(() => {
+  // The project's imports only say which one holds this document; that import's own
+  // store then drives the notice, so it keeps up even with the tree's rows throttled.
+  const importId = useMemo(() => {
     for (const state of snapshot.states) {
-      for (const entry of state.report?.entries.values() ?? []) {
-        if (entry.documentId === tab.documentId)
-          return { state, entry: effectiveEntry(state, entry) };
-      }
+      for (const entry of state.report?.entries.values() ?? [])
+        if (entry.documentId === tab.documentId) return state.importId;
     }
     return null;
   }, [snapshot, tab.documentId]);
 
   // Until an import has it, keep the open imports loading so the notice can say more.
   useEffect(() => {
-    if (found || !pending) return;
+    if (importId || !pending) return;
     const stops = snapshot.states
       .filter((state) => state.report?.summary.state !== "finished")
       .map((state) => coordinator.store(state.importId).watch("notice"));
     return () => {
       for (const stop of stops) stop();
     };
-  }, [found, pending, snapshot, coordinator]);
+  }, [importId, pending, snapshot, coordinator]);
 
-  if (!found) {
-    return pending ? (
-      <DocumentNotice
-        className={className}
-        icon={<Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
-      >
-        <Trans>This file is still importing. Its text will appear here.</Trans>
-      </DocumentNotice>
-    ) : null;
-  }
+  if (importId && tab.kind !== "new")
+    return <EntryNotice importId={importId} documentId={tab.documentId} className={className} />;
+  return pending ? <ArrivingNotice className={className} /> : null;
+}
 
-  const { state, entry } = found;
-  const importId = state.importId;
+function ArrivingNotice({ className, action }: { className?: string; action?: ReactNode }) {
+  return (
+    <DocumentNotice
+      className={className}
+      icon={<Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
+      action={action}
+    >
+      <Trans>This file is still importing. Its text will appear here.</Trans>
+    </DocumentNotice>
+  );
+}
+
+/** The notice for a document whose import is known: watched for as long as the pane shows it. */
+function EntryNotice({
+  importId,
+  documentId,
+  className,
+}: {
+  importId: string;
+  documentId: string;
+  className?: string;
+}) {
+  const { coordinator, openContinue } = useImports();
+  const route = useImportRoute();
+  const { state, display } = useImport(importId, "notice");
+  const raw = useMemo(() => {
+    for (const entry of state.report?.entries.values() ?? [])
+      if (entry.documentId === documentId) return entry;
+    return null;
+  }, [state.report?.entries, documentId]);
+  if (!raw) return null;
+  const entry = effectiveEntry(state, raw);
   const holds = state.local?.held != null;
   const view = (
     <Button
@@ -133,25 +155,15 @@ function Notice({
     );
   }
 
-  if (entry.state === "planned" || entry.state === "landing") {
-    const paused = displayOf(state) === "paused";
-    return (
-      <DocumentNotice
-        className={className}
-        icon={
-          paused ? (
-            <FolderInput aria-hidden className="size-4 text-status-warning" />
-          ) : (
-            <Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
-          )
-        }
-        action={view}
-      >
-        {paused
-          ? t`This file's import is paused.`
-          : t`This file is still importing. Its text will appear here.`}
-      </DocumentNotice>
-    );
-  }
-  return null;
+  if (entry.state !== "planned" && entry.state !== "landing") return null;
+  if (display !== "paused") return <ArrivingNotice className={className} action={view} />;
+  return (
+    <DocumentNotice
+      className={className}
+      icon={<FolderInput aria-hidden className="size-4 text-status-warning" />}
+      action={view}
+    >
+      {t`This file's import is paused.`}
+    </DocumentNotice>
+  );
 }

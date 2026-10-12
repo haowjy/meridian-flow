@@ -134,3 +134,48 @@ describe("ImportStatusRow", () => {
     expect(element.textContent).toBe("");
   });
 });
+
+describe("ImportDocumentNotice", () => {
+  const tab = { kind: "editable", documentId: "doc-0", scheme: "kb" } as never;
+
+  it("keeps watching the import it found, and clears once the file lands elsewhere", async () => {
+    const server = fakeImportServer();
+    const arriving = report();
+    server.api.listOpen = async () => [arriving];
+    let reads = 0;
+    server.api.changes = async () => {
+      reads += 1;
+      return {
+        ...report({ entries: [entry(0, "landed")], version: "2", state: "finished" }),
+      };
+    };
+    const coordinator = new ImportCoordinator("p", server.api);
+    context.coordinator = coordinator;
+    await coordinator.refreshOpen();
+    coordinator.store("import-1").installReport(arriving);
+    const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
+    expect(element.textContent).toContain("This file is still importing.");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(reads).toBeGreaterThan(0);
+    expect(element.textContent).toBe("");
+  });
+
+  it("says the import is paused when nothing has been heard from it for a while", async () => {
+    const server = fakeImportServer();
+    const quiet = report({ lastActivityAt: "2000-01-01T00:00:00.000Z" });
+    server.api.listOpen = async () => [quiet];
+    server.api.changes = async () => ({ ...quiet, entries: [] });
+    const coordinator = new ImportCoordinator("p", server.api);
+    context.coordinator = coordinator;
+    await coordinator.refreshOpen();
+    coordinator.store("import-1").installReport(quiet);
+
+    const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
+
+    expect(element.textContent).toContain("This file's import is paused.");
+  });
+});
