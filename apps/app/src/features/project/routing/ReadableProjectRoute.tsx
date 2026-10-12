@@ -1,5 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
@@ -12,7 +13,7 @@ import {
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
@@ -254,17 +255,26 @@ function ReadableProjectDestination({
   }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
 
   // Cached live locations, read only to place a review launch's document (never fetched for it).
-  const { catalog: manuscriptCatalog } = useContextCatalogView(projectId, "manuscript", {
-    workId: null,
+  const launchCatalogs = useContextCatalogViews(projectId, CONTEXT_URI_SCHEMES, {
+    workId,
     enabled: false,
   });
+  const documentCatalog = useMemo(
+    () => ({
+      findDocument: (id: string) =>
+        CONTEXT_URI_SCHEMES.map((scheme) => launchCatalogs[scheme].catalog?.findDocument(id)).find(
+          (file) => file != null,
+        ) ?? null,
+    }),
+    [launchCatalogs],
+  );
   const latest = useRef({
     address,
     location,
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   });
   latest.current = {
     address,
@@ -272,7 +282,7 @@ function ReadableProjectDestination({
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
   // through a rename, whatever path the launcher read.
@@ -316,16 +326,29 @@ function ReadableProjectDestination({
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
       : contextOwner(addressWorkId, address.lineage);
+  const addressSchemes = useMemo(
+    () => (documentDestination ? [documentDestination.scheme] : []),
+    [documentDestination?.scheme],
+  );
+  const addressCatalogs = useContextCatalogViews(projectId, addressSchemes, {
+    ...addressOwner,
+    enabled: !!documentDestination && editorWork.status === "present",
+  });
   const {
     catalog: addressCatalog,
     isComplete: addressCatalogComplete,
     isFetching: addressCatalogFetching,
     isError: addressCatalogError,
     refetch: refetchAddressCatalog,
-  } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
-    ...addressOwner,
-    enabled: !!documentDestination && editorWork.status === "present",
-  });
+  } = documentDestination
+    ? addressCatalogs[documentDestination.scheme]
+    : {
+        catalog: null,
+        isComplete: false,
+        isFetching: false,
+        isError: false,
+        refetch: () => undefined,
+      };
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -378,17 +401,13 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkDrafts(
-    projectId,
-    documentDestination?.scheme === "manuscript" ? workId : null,
-  );
+  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     documentLookup.data,
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
-    documentDestination?.scheme ?? "",
     {
       catalog: addressCatalog,
       isComplete: addressCatalogComplete,

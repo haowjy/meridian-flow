@@ -246,7 +246,6 @@ export type GatedLiveView =
 
 export function gateLiveView(
   result: DocumentAddressResult | undefined,
-  scheme: string,
   manifest: {
     catalog: CatalogContextView | null;
     isComplete: boolean;
@@ -256,8 +255,7 @@ export function gateLiveView(
   drafts: { status: string; files: ReviewFileTarget[] | null },
   hasLiveTab: (documentId: string) => boolean,
 ): GatedLiveView {
-  if (scheme !== "manuscript" || !result || result.kind === "unavailable")
-    return { outcome: "ready", result };
+  if (!result || result.kind === "unavailable") return { outcome: "ready", result };
   const documentId = result.document.documentId;
   if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
     return { outcome: "ready", result };

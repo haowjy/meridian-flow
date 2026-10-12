@@ -185,7 +185,7 @@ async function setup(source: ScreenKey = "context") {
         address: address(history.location.pathname.split(projectId)[1]),
         editorWorkId: workId,
         noWorkId: null,
-        manuscriptCatalog: null,
+        documentCatalog: null,
       }),
       lookup: async () => ({ kind: "failed" }),
       admitDraftReview: (tab) => removal.admitDraftReview(projectId, tab),

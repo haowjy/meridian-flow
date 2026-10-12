@@ -49,7 +49,7 @@ const draft = (id: string, actors: (typeof pacing)[]) => ({
   documentId: id,
   draftId: `draft-${id}`,
   documentName: id,
-  contextPath: `/${id}.md`,
+  contextLocation: { scheme: "manuscript" as const, path: `/${id}.md` },
   actorThreads: actors,
 });
 const op = (id: string, actor: typeof pacing | null, classId = `class-${id}`) => ({

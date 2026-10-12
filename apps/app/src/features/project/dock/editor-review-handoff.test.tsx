@@ -23,13 +23,13 @@ const draftA: AiDraftLaunchTarget = {
   workId: "work-a",
   documentId: "document-shared",
   draftId: "draft-a",
-  contextPath: "chapters/shared.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/shared.md" },
 };
 const draftB: AiDraftLaunchTarget = {
   workId: "work-b",
   documentId: "document-shared",
   draftId: "draft-b",
-  contextPath: "chapters/shared.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/shared.md" },
 };
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
@@ -232,7 +232,7 @@ it("a warm destination requests review before passive admission, and an admitted
           container,
           documentId: draftA.documentId,
           scheme: "manuscript",
-          path: draftA.contextPath,
+          path: draftA.contextLocation.path,
           review: null,
           draftOnly: false,
         }}
@@ -292,7 +292,7 @@ it("clears a draft-only request when routing fails before admission", async () =
           container: "editor",
           documentId: draftA.documentId,
           scheme: "manuscript",
-          path: draftA.contextPath,
+          path: draftA.contextLocation.path,
           review: null,
           draftOnly: false,
         }}

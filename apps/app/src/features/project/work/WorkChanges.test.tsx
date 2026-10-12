@@ -55,14 +55,14 @@ const draftB = {
   documentId: "document-b",
   draftId: "draft-b",
   documentName: "Chapter 13",
-  contextPath: "/chapter-13.md",
+  contextLocation: { scheme: "manuscript" as const, path: "/chapter-13.md" },
 };
 const draftC = {
   ...listed,
   documentId: "document-c",
   draftId: "draft-c",
   documentName: "Filtered chapter",
-  contextPath: "/filtered.md",
+  contextLocation: { scheme: "manuscript" as const, path: "/filtered.md" },
 };
 function DesktopEnvironment({ children }: { children: ReactNode }) {
   window.matchMedia ??= () =>

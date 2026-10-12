@@ -13,7 +13,11 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
-import { type DraftOnlyContainer, useDraftOnlyLifecycle } from "./draft-only-lifecycle";
+import {
+  type DraftOnlyContainer,
+  type DraftOnlyPresentation,
+  useDraftOnlyLifecycle,
+} from "./draft-only-lifecycle";
 
 export function DraftOnlySettlement({ projectId }: { projectId: string }) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
@@ -64,31 +68,40 @@ function WorkSettlement({
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
-    const scope = contextCatalogScope(projectId, "manuscript", { workId: null }) ?? {
-      kind: "project" as const,
-      projectId,
-    };
+    const scopeFor = (draft: DraftOnlyPresentation) =>
+      contextCatalogScope(projectId, draft.contextLocation.scheme, { workId: draft.workId });
+    const scopes = new Map(
+      lifecycle
+        .presentations(projectId)
+        .filter((draft) => isOrphan(draft, activeDrafts))
+        .flatMap((draft) => {
+          const scope = scopeFor(draft);
+          return scope ? [[JSON.stringify(scope), scope] as const] : [];
+        }),
+    );
     const attempt = new AbortController();
     // A catalog observation that starts now: joining an older in-flight one
     // could report the pre-Apply tree and misread a remote Apply as a Discard.
-    void resources
-      .acquireCatalogAfter(projectId, scope)
-      .then((view) => {
-        if (attempt.signal.aborted) return;
-        queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-        const currentDrafts =
-          queryClient.getQueryData<ThreadDraftListItem[]>(
-            projectQueryKeys.workDrafts(projectId, workId),
-          ) ?? [];
-        for (const draft of lifecycle.presentations(projectId)) {
-          if (!isOrphan(draft, currentDrafts)) continue;
-          if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
-          else lifecycle.remove(draft);
-        }
-      })
-      // A failed membership check must leave the tab intact rather than guess
-      // that a remotely applied document was discarded.
-      .catch(() => undefined);
+    for (const [key, scope] of scopes) {
+      void resources
+        .acquireCatalogAfter(projectId, scope)
+        .then((view) => {
+          if (attempt.signal.aborted) return;
+          queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
+          const currentDrafts =
+            queryClient.getQueryData<ThreadDraftListItem[]>(
+              projectQueryKeys.workDrafts(projectId, workId),
+            ) ?? [];
+          for (const draft of lifecycle.presentations(projectId)) {
+            if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
+              continue;
+            if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
+            else lifecycle.remove(draft);
+          }
+        })
+        // A failed membership check leaves this scope's tabs intact, never guesses Discard.
+        .catch(() => undefined);
+    }
     return () => attempt.abort();
   }, [
     lifecycle,

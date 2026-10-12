@@ -50,7 +50,7 @@ export const listed = {
   draftId: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
-  contextPath: null,
+  contextLocation: null,
   status: "active" as const,
   draftGeneration: 1,
   actorThreads: [],
