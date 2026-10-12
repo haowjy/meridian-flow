@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-/** Read-only outcome probes of actual route binding and address-owner components. */
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+/** Unavailable draft review selectors stay selected without falling back to live documents. */
+import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { act, useState } from "react";
 import { expect, it } from "vitest";
 import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
@@ -15,10 +15,9 @@ import {
   reconcileDocumentAddress,
 } from "@/features/project/routing/local-document-address";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
 
 it.each(
-  CONTEXT_URI_SCHEMES.filter(isDrafted),
+  CONTEXT_URI_SCHEMES.filter(isDraftedScheme),
 )("an unavailable %s review selector stays selected and never admits the live occupant", async (scheme) => {
   const transitions: string[] = [];
   function Harness() {
