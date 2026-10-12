@@ -81,6 +81,36 @@
   & li > p:first-child:has(+ ol) {
     @apply inline;
   }
+  /* Task items (`- [ ]`, `- [x]`): a read-only box in the marker's place. Chat
+     and the Editor both emit `data-checked`; this is the one place it is drawn. */
+  & li[data-checked] {
+    @apply relative list-none;
+  }
+  & li[data-checked]::before {
+    content: "";
+    position: absolute;
+    left: -1.2em;
+    top: calc((1lh - 0.9em) / 2);
+    width: 0.9em;
+    height: 0.9em;
+    border: 1.5px solid var(--color-muted-foreground);
+    border-radius: 0.2em;
+  }
+  & li[data-checked="true"]::before {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+  }
+  & li[data-checked="true"]::after {
+    content: "";
+    position: absolute;
+    left: calc(-1.2em + 0.3em);
+    top: calc((1lh - 0.9em) / 2 + 0.14em);
+    width: 0.28em;
+    height: 0.5em;
+    border: solid var(--color-primary-foreground);
+    border-width: 0 0.12em 0.12em 0;
+    transform: rotate(45deg);
+  }
   & strong {
     @apply font-semibold text-foreground;
   }
