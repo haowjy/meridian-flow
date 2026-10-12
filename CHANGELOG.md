@@ -14,7 +14,12 @@
 
 - Documents and folders an AI draft creates stay out of your Manuscript, and out of other Works, until you apply them. If you create a document the draft already made, you get that same document, with the draft's text waiting for review. Discarding a draft leaves nothing behind: its new documents and folders are gone and their names are free again. A link to a document that exists only in a draft reads "in a draft" instead of missing. Apply all applies every item in one step, so an interruption never leaves the draft half applied.
 
+- Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
+- A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
+
 ### Fixed
+
+- Inline review keeps the sidebar collapsed during warm address loading; unavailable destinations and Work recovery restore navigation.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 

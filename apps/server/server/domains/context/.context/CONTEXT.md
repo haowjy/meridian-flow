@@ -641,3 +641,16 @@ durable Work-switch Notice names the previous canonical Scratch root.
 
 Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
 and HTTP error data; it is absent when the failure cannot prove an occupant.
+
+
+## Browser review address admission
+
+Ordinary browser addresses resolve only in the live tree. The address request
+may carry a review selector (`reviewWorkId`, `draftBranchId`, optional
+`documentId`). The server matches that branch and canonical path against the
+Work's active review items before selecting the whole draft's `TreeView`.
+The URL's `draft=` and selector branch are per-document branch IDs, never
+tree draft IDs. Candidate and identity availability reads use that same view,
+and the final read grant names the draft destination. Stale, foreign, or
+mismatched selectors answer unavailable without falling back to live. Mutation
+inspection still defaults to `LIVE_TREE`.

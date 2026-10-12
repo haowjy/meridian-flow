@@ -6,7 +6,10 @@
  * non-interrupt errors fall through to Nitro's built-in handler.
  */
 import { HTTPError } from "nitro/h3";
-import { HTTP_INTERRUPT_ENVELOPE_KEY, isHttpInterruptEnvelope } from "./interrupt-boundary.js";
+import {
+  HTTP_INTERRUPT_ENVELOPE_KEY,
+  isHttpInterruptEnvelope,
+} from "../shared/interrupt-boundary.js";
 
 export default function interruptErrorHandler(
   error: unknown,

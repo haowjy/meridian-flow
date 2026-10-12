@@ -1159,6 +1159,43 @@ else
       const threadMode = async (rig: Rig) =>
         (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode;
 
+      it("does not apply a queued switch after the chat is deleted", async () => {
+        const rig = await manualFixture();
+        const lease = await rig.runClaim.startExecution(
+          rig.threadId as never,
+          crypto.randomUUID() as never,
+          async () => {},
+        );
+        if (!lease) throw new Error("Expected a run claim");
+        const queued = await switchMode(rig, "draft");
+        expect(queued.response.pending).not.toBeNull();
+        await rig.repos.threads.setTrashState(rig.threadId, "deleted");
+        await rig.runClaim.release(lease);
+        await processDetachedWork.drain();
+        expect(await rig.delivery.applyDueSwitches(rig.threadId)).toBe(true);
+        expect(await switchTurns(rig)).toEqual([]);
+        expect((await rig.repos.threads.lockByIdIncludingDeleted(rig.threadId))?.aiWriteMode).toBe(
+          "direct",
+        );
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      });
+
+      it("ends a reserved execution cleanly when its chat is deleted before execution", async () => {
+        const rig = await manualFixture();
+        const run = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "reserved",
+        });
+        const reserved = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+        expect(reserved?.executionId).toBeTruthy();
+        await rig.repos.threads.setTrashState(rig.threadId, "deleted");
+        await run.execute();
+        await processDetachedWork.drain();
+        expect((await rig.repos.turns.findById(reserved?.id as never))?.status).toBe("error");
+        expect(await endsOf(reserved?.executionId ?? null)).toBe(1);
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      });
+
       it("applies at once in an idle chat as one complete switch turn", async () => {
         const rig = await manualFixture();
         const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId;

@@ -117,7 +117,15 @@ still pending. Only that fallback is keyed by the destination; the editor is
 never keyed or remounted for loading. Settlement removes feedback immediately,
 with no minimum display duration. Busy state is exposed without loading copy.
 Different-project entry, Work recovery, unavailable destinations, and errors do
-not expose retained content as if it were the requested destination. A cold
+not expose retained content as if it were the requested destination.
+A masked destination leaves the workspace rails, dock and address navigation
+usable. Desktop supplies route-derived chrome outside the content mask when no
+admitted document chrome can be shown; the path is a locator, not an admitted
+identity or an editable placement. Review's prose-width hold does not collapse
+the sidebar while a route issue is shown. Phone keeps its top bar and drawer
+outside the boundary and mounts a document host only after admission (or for a
+retained warm transition), so a masked missing address cannot repair itself to
+Files. A cold
 content host may also need its own startup UI after address resolution.
 
 ## Session and synchronization boundary
@@ -144,3 +152,10 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 - [Loading boundary](../routing/ProjectRouteBoundary.tsx) and its sibling tests.
 - [Shell and phone retention](../ProjectView.tsx).
 - [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
+
+
+Review-only document admission uses the existing address request. Only a route
+with `draftId` and a resolved Work sends its Work and per-document branch
+selector, both included in the address query key. The server alone maps that
+branch to the whole draft tree after validating the review item. A plain
+manuscript address remains live-only; `gateLiveView` is unchanged.

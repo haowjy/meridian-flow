@@ -13,7 +13,6 @@ import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
-  projects: AppServices["projectRepo"];
   fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
   documentSync: AppServices["documentSync"];
   blocks: AppServices["threadRepos"]["blocks"];
@@ -24,7 +23,6 @@ type TurnLiveLineageRouteServices = {
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
   return {
     threads: app.threadRepos.threads,
-    projects: app.projectRepo,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
     blocks: app.threadRepos.blocks,
@@ -39,11 +37,7 @@ export async function handleTurnLiveLineageRequest(
 ): Promise<ListTurnLiveLineageResponse> {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
-  await requireThreadOwner(
-    { threads: deps.threads, projects: deps.projects },
-    threadId,
-    input.userId,
-  );
+  await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
   const documents = await deps.documentSync.listEditedDocumentsForTurn(threadId, turnId);
   const visibleDocuments = await filterAccessibleLiveLineageDocuments(deps, {
     documents,

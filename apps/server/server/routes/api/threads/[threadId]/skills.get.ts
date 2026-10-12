@@ -8,7 +8,6 @@ export default defineEventHandler(async (event): Promise<ThreadAvailableSkillsRe
   return handleGetThreadAvailableSkills(
     {
       repos: app.repos,
-      projectRepo: app.projectRepo,
       agentRevisions: app.agentRevisions,
       accountSkillInstalls: app.accountSkillInstalls,
     },

@@ -8,6 +8,7 @@
  * callbacks keep working unchanged — consumers downcast via `isMeridianApiError`
  * to read structured fields.
  */
+import { t } from "@lingui/core/macro";
 import { isMeridianError, type MeridianError } from "@meridian/contracts/interrupt";
 
 export class MeridianApiError extends Error {
@@ -21,7 +22,7 @@ export class MeridianApiError extends Error {
   readonly headers: Headers | undefined;
 
   constructor(envelope: MeridianError, status?: number, headers?: Headers) {
-    super(envelope.message);
+    super(deletedDestinationCopy(envelope.code, envelope.details) ?? envelope.message);
     this.name = "MeridianApiError";
     this.code = envelope.code;
     this.retryable = envelope.retryable;
@@ -68,5 +69,23 @@ export function meridianApiErrorFromPayload(
     return new MeridianApiError(h3.data, status, headers);
   }
 
+  return null;
+}
+
+/** Shared across fetch, upload, and command feedback; raw codes never become writer copy. */
+export function deletedDestinationCopy(
+  code: string,
+  details?: MeridianError["details"],
+): string | null {
+  if (
+    code === "project_deleted" ||
+    (code === "thread_deleted" &&
+      details &&
+      typeof details === "object" &&
+      !Array.isArray(details) &&
+      details.projectDeleted === true)
+  )
+    return t`This project was deleted.`;
+  if (code === "thread_deleted") return t`This chat was deleted.`;
   return null;
 }

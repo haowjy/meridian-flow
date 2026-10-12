@@ -57,6 +57,7 @@ export {
   readThreadActivity,
   type ThreadActivityReadDeps,
 } from "./domain/thread-activity.js";
+export { threadAvailabilityCode } from "./domain/thread-availability.js";
 export {
   loadThreadConversationContext,
   type ThreadConversationContext,
@@ -161,6 +162,7 @@ export {
   restoreOwnedThreadFromTrash,
   type SetOwnedThreadTrashStateDeps,
   setOwnedThreadTrashState,
+  throwThreadDeleted,
 } from "./thread-access.js";
 export {
   createThreadEventHub,

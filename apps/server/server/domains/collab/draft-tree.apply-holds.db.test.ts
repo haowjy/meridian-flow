@@ -11,7 +11,7 @@ import {
   handleApplyWorkDraftRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
-import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../../lib/interrupt-boundary.js";
+import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../../shared/interrupt-boundary.js";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { makePendingSettlementsDue } from "../../test-support/settlement-claims.js";

@@ -9,7 +9,10 @@ import {
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { invocationCardProps } from "../spawn/spawn-output.js";
+import { localBlockFromEvent } from "./block-helpers.js";
 import { buildContext } from "./context-builder.js";
+import { planMessageTurns } from "./inbox-context.js";
+import { writeModeSwitchNotice, writeModeSwitchTurn } from "./write-mode-switch.js";
 
 const THREAD_ID = "thread-1";
 const TURN_ID = "turn-1";
@@ -127,4 +130,42 @@ describe("buildContext system-turn history projection", () => {
 
     expect(userMessageTexts(messages)).toEqual([]);
   });
+});
+
+it("keeps a durable mode switch in model context when later undo and redo cancel", () => {
+  const switched = writeModeSwitchTurn({
+    threadId: THREAD_ID as never,
+    prevTurnId: null,
+    position: 1,
+    mode: "draft",
+    controlMessageId: "switch-1",
+    notice: writeModeSwitchNotice({ archivedAt: null }, "draft", false),
+  });
+  const reversals = planMessageTurns({
+    threadId: THREAD_ID as never,
+    batch: [],
+    notices: (["undo", "redo"] as const).map((direction, id) => ({
+      id,
+      kind: "undo",
+      scope: { kind: "thread", threadId: THREAD_ID },
+      message: "",
+      data: { uri: "manuscript://Scene", writeHandles: ["w1"], direction },
+      createdAt: new Date(id),
+    })),
+    prevTurnId: switched.turn.id as never,
+    prevTurnPosition: 1,
+    knownTurnIds: new Set(),
+  });
+  expect(reversals.turns).toEqual([]);
+  expect(reversals.leafTurnId).toBe(switched.turn.id);
+  const context = buildContext({
+    thread: thread(),
+    systemPrompt: "Write stories.",
+    turns: [switched.turn, ...reversals.turns],
+    blocks: [localBlockFromEvent(switched.block), ...reversals.blocks.map(localBlockFromEvent)],
+  });
+  const request = JSON.stringify(context.messages);
+  expect(request.match(/The writer switched this chat to draft mode\./g)).toHaveLength(1);
+  expect(request).not.toContain("reversed");
+  expect(request).not.toContain("restored");
 });

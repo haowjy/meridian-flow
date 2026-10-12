@@ -11,7 +11,7 @@ import {
   DraftLinkRegistrationFailedError,
   DuplicateApplyItemError,
 } from "../domains/collab/domain/draft-publication.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 
 /** Returns the accepted handoff, throws known failures, or leaves an unknown cause to its caller. */
 export function draftPublicationHttpAnswer(cause: unknown): DraftApplyPendingResponse | undefined {

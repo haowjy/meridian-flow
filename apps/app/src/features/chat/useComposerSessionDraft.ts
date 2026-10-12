@@ -18,6 +18,8 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
   }, [owner]);
   return {
     key: `${owner.key}:${version}`,
+    notices: owner.notices,
+    dismissNotice: owner.dismissNotice,
     initialDraft: owner.initialDraft,
     updateDraft: owner.updateDraft,
     handoff: owner.handoff,

@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
-import { ErrorCard } from "@/components/app/ErrorCard";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -87,13 +87,13 @@ function ActiveError({
   children: ReactNode;
 }) {
   return (
-    <ErrorCard note={children}>
+    <NoticeCard tone="error" note={children}>
       <p>{copy(kind, true)}</p>
       {onRetry ? (
         <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-    </ErrorCard>
+    </NoticeCard>
   );
 }

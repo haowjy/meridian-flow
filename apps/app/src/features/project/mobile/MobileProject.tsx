@@ -244,6 +244,9 @@ function renderActiveView(
         return <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />;
       }
       if (!props.contextLive) return null;
+      // A masked cold address must not mount a host that repairs it to Files.
+      // A warm pending address still owns its retained document presentation.
+      if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
       return (
         <DraftReviewBoundary value={props.editorReview}>
           <EditorReviewIntentClaimant

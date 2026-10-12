@@ -34,6 +34,18 @@ afterEach(() => {
 });
 
 describe("ThreadRunController write outcomes", () => {
+  it("stops following an owed message when deletion leaves its chat pane", async () => {
+    const scenario = makeScenario();
+    await scenario.submit("owed behind a switch");
+    expect(scenario.controller.runFollowStatus("thread_1").following).toBe(true);
+    scenario.controller.teardown("thread_1");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual({
+      following: false,
+      waiting: false,
+    });
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
   it("does not revive old recovery or submission after reactivating the same session object", async () => {
     const lookup = scenarioGate<AdmissionLookup>();
     const append = scenarioGate<SendMessageResponse>();

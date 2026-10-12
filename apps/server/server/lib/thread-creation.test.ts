@@ -115,9 +115,17 @@ describe("exact thread creation", () => {
     const { deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);
     await deps.threads.setTrashState(created.id, "deleted");
-    await expect(createThreadForProject(deps, args)).rejects.toBeInstanceOf(
-      ThreadCreationConflictError,
-    );
+    await expect(createThreadForProject(deps, args)).rejects.toMatchObject({
+      statusCode: 404,
+      data: {
+        __meridianInterruptEnvelope: {
+          error: {
+            code: "thread_deleted",
+            details: { authenticatedUserId: args.userId },
+          },
+        },
+      },
+    });
     expect(await deps.threads.findById(created.id)).toBeNull();
     expect((await deps.threads.lockByIdIncludingDeleted(created.id))?.deletedAt).not.toBeNull();
   });

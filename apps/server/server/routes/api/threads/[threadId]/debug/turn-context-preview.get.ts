@@ -10,7 +10,6 @@ export default defineEventHandler(async (event) => {
   return handleGetTurnContextPreview(
     {
       repos: app.repos,
-      projectRepo: app.projectRepo,
       modelRequestDebug: app.modelRequestDebug,
       agentRevisions: app.agentRevisions,
       toolRegistry: app.toolRegistry,
