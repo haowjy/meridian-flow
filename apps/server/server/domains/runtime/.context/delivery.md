@@ -260,7 +260,10 @@ The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn 
 claim cannot pass `canStartTurn`. Delivery alone sets and clears the thread's
 `inbox_blocked_reason`: under the thread lock with a held, unbound claim, and
 in the same transaction as `inbox.changed`. A successful initial adoption
-clears it with binding the first turn. A failed publication rolls back both.
+clears it with binding the first turn. Every inbox retirement goes through the
+shared acknowledgement helper, which clears the marker when no message/control
+remains (notices alone cannot sustain a block). Empty-inbox refused wakes never
+install one. A failed publication rolls back the acknowledgement and clear.
 Repeated refused wakes do not republish an unchanged block.
 
 `readPendingInbox` includes `blocked: { reason: "credits_exhausted" }` only

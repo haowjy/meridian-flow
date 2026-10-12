@@ -68,3 +68,23 @@ Within the ordinary server wake interval, replies start automatically. The
 note and waiting statuses clear at start, before reply completion. Confirm the
 saved words are answered and `liveState.pending.blocked` is absent. Leave a
 positive balance and stop only this stack with `pnpm dev --stop`.
+
+## Withdrawal and delayed CLI replay regressions
+
+On an existing chat with a completed reply and exhausted usage:
+
+1. Enqueue a compact control through
+   `./mf api POST /api/threads/<id>/controls --data '{"id":"<uuid>","control":{"kind":"compact"}}' --json`.
+   Wait for `liveState.pending.blocked`.
+2. Withdraw it with `./mf api POST /api/threads/<id>/controls/<uuid>/withdraw --json`.
+   With no other pending message/control, the note and waiting labels disappear.
+   Read `threads.inbox_blocked_reason` through the owned database: it must be null,
+   even if notices remain. An empty refused wake must leave it null.
+3. Restore usage, enqueue a mock reply and send again. Expect exit 0 and a
+   completed reply, never a stale `credits_exhausted`.
+4. Separately delay delivery of the send POST response to the CLI until the
+   message blocks, restore usage and wait for its completed reply, then release
+   the response. The CLI must return that completed reply with its turn ID and
+   exit 0, even when catch-up contains the old blocked event.
+5. Existing blocked sends still exit 1 promptly. Recovery removes the note and
+   waiting labels at start. No rendering change is expected from this rework.

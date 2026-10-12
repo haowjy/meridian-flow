@@ -71,6 +71,51 @@ describe("runtime credits", () => {
     );
     await run.execute();
   });
+  it("clears a withdrawn usage block and refuses to block an empty inbox in memory", async () => {
+    const rig = await runtimeScenario({
+      gateway: scriptedGateway(),
+      billingUsage: {
+        async canStartTurn() {
+          return false;
+        },
+        async canContinueModelCall() {
+          return true;
+        },
+        async debit() {
+          return { transactionId: "debit" };
+        },
+      },
+    });
+    await rig.repos.turns.create({
+      threadId: rig.thread.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const row = await rig.delivery.enqueue({
+      threadId: rig.thread.id,
+      intent: "control",
+      provenance: { kind: "writer", actorId: "user-1" },
+      body: { kind: "compact" },
+      idempotencyKey: "withdraw",
+    });
+    await expect(
+      rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true }),
+    ).rejects.toMatchObject({ code: "credits_exhausted" });
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toBeDefined();
+    await rig.delivery.withdrawControl(rig.thread.id, row.id);
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toBeUndefined();
+    await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true }).catch(() => undefined);
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toBeUndefined();
+    await rig.delivery.enqueue({
+      threadId: rig.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: "user-1" },
+      body: { kind: "text", text: "new work" },
+      idempotencyKey: "new",
+    });
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toBeUndefined();
+  });
   it("allows one turn at exact zero balance before blocking negative balances", async () => {
     const gateway: Gateway = {
       ...gatewayStubDefaults,
