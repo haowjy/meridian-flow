@@ -367,6 +367,7 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
       submit: async () => ({
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "delete-folder",
           command: {
             kind: "delete",
@@ -458,6 +459,7 @@ it.each([
     {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "parent-delete",
         command: {
           kind: "delete",
@@ -518,4 +520,24 @@ it.each([
     state: "unexecutable-after-terminal",
     attempts: [{ outcome: { kind: "refusal", operationId: "file-operation" } }],
   });
+});
+
+it("invalidates unversioned replay checkpoints without losing resource content or namespace work", async () => {
+  const account = crypto.randomUUID();
+  accounts.add(account);
+  const legacy = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`);
+  legacy.version(1).stores({
+    resources: "handle",
+    intents: "intentId,handle,projectId",
+    catalogs: "key,projectId",
+    folders: "handle,projectId",
+  });
+  const next = resource();
+  await legacy.table("resources").put(next.resource);
+  await legacy.table("intents").bulkPut([...next.intents]);
+  await legacy.table("catalogs").put({ key: "old-checkpoint", projectId: "project", entries: [] });
+  legacy.close();
+  const upgraded = open(account);
+  expect(await upgraded.readResource({ handle: next.resource.handle })).toEqual(next);
+  expect((await upgraded.readProjection("project")).catalogs).toEqual([]);
 });
