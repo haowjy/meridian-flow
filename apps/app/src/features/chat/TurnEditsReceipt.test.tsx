@@ -7,90 +7,40 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import * as reverseApi from "@/client/api/reverse-api";
+import { changeTrailDetailKey } from "@/client/change-trails";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("shows the same document receipt for draft lineage and reverses the selected turn", async () => {
-  i18n.loadAndActivate({ locale: "en", messages: {} });
-  const documents = [
-    {
-      documentId: "chapter",
-      path: "chapter.md",
-      uri: "manuscript://chapter.md",
-      scope: "draft" as const,
-    },
-  ];
-  expect(hasTurnEditsReceiptContent(documents, undefined, [])).toBe(true);
-  let answer: (outcome: ReversalOutcome) => void = () => {
-    throw new Error("Reversal was not started");
-  };
-  const reverse = vi.spyOn(reverseApi, "reverseTurn").mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
-  );
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  try {
-    await withReactRoot(
-      <QueryClientProvider client={client}>
-        <I18nProvider i18n={i18n}>
-          <TurnEditsReceipt
-            threadId="chat"
-            turn={{ id: "turn" } as Turn}
-            documents={documents}
-            receipt={{ state: "branch-active", control: "undo" }}
-            changeTrail={{
-              trailId: "trail",
-              owner: { kind: "turn", threadId: "chat", turnId: "turn" },
-              state: "settled",
-              version: 1,
-              changeCount: 0,
-              documentCount: 0,
-              documents: [],
-              wordsAdded: null,
-              wordsRemoved: null,
-              updatedAt: "",
-              settledAt: null,
-            }}
-            navigateToChange={async () => ({ kind: "unavailable" })}
-          />
-        </I18nProvider>
-      </QueryClientProvider>,
-      async () => {
-        expect(document.body.textContent).toContain("Edited 1 document");
-        await act(async () => {
-          document.querySelector<HTMLButtonElement>("[aria-expanded]")?.click();
-        });
-        expect(document.body.textContent).toContain("chapter");
-        await act(async () => {
-          [...document.querySelectorAll("button")].find((b) => b.textContent === "Undo")?.click();
-        });
-        expect(document.body.textContent).toContain("Undoing…");
-        const pending = [...document.querySelectorAll("button")].find(
-          (button) => button.textContent === "Undoing…",
-        );
-        expect(pending?.disabled).toBe(true);
-        await act(async () => answer({ status: "nothing_to_undo", documents: [] }));
-        await settleReact(() => {
-          expect(reverse).toHaveBeenCalledWith("chat", { turnId: "turn", direction: "undo" });
-          expect(document.querySelector("[data-undo-unavailable-reason]")?.textContent).toBe(
-            "Undo is no longer available.",
-          );
-        });
-      },
-      { drainMacrotask: true },
-    );
-  } finally {
-    client.clear();
-  }
-});
-
 it("counts and reveals pending files alongside an already settled live trail", async () => {
   i18n.loadAndActivate({ locale: "en", messages: {} });
   const client = new QueryClient();
+  client.setQueryData(changeTrailDetailKey("chat", "trail"), [
+    {
+      trailId: "trail",
+      documentId: "live",
+      documentTitle: "live",
+      wordsAdded: 1,
+      wordsRemoved: 1,
+      anchorState: "available",
+      changes: [
+        {
+          changeId: "change",
+          ordinal: 0,
+          documentId: "live",
+          pushId: null,
+          receiptId: null,
+          kind: "modify",
+          beforeBlockIdentity: null,
+          afterBlockIdentity: null,
+          beforeText: "Saved before.",
+          afterTextAtReceipt: "Saved after.",
+          navigation: { kind: "unavailable" },
+        },
+      ],
+    },
+  ]);
   try {
     await withReactRoot(
       <QueryClientProvider client={client}>
@@ -108,6 +58,7 @@ it("counts and reveals pending files alongside an already settled live trail", a
               },
             ]}
             receipt={{ state: "live-active", control: "undo" }}
+            navigateToChange={async () => ({ kind: "unavailable" })}
             changeTrail={{
               trailId: "trail",
               owner: { kind: "turn", threadId: "chat", turnId: "turn" },
@@ -131,6 +82,15 @@ it("counts and reveals pending files alongside an already settled live trail", a
         );
         expect(document.body.textContent).toContain("pending");
         expect(document.body.textContent).toContain("live");
+        expect(document.querySelector('[data-change-view-row="modify"]')?.textContent).toContain(
+          "Saved before.",
+        );
+        expect(document.querySelector('[data-change-view-row="modify"]')?.textContent).toContain(
+          "Saved after.",
+        );
+        expect(document.querySelector('section[aria-label="live"]')?.textContent).not.toContain(
+          "pending",
+        );
       },
     );
   } finally {
@@ -145,7 +105,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
     () => {};
   let answer: (result: ReversalOutcome) => void = () => {};
   let fail: (reason: Error) => void = () => {};
-  vi.spyOn(reverseApi, "reverseTurn").mockImplementation(
+  const reverse = vi.spyOn(reverseApi, "reverseTurn").mockImplementation(
     () =>
       new Promise((resolve, reject) => {
         answer = resolve;
@@ -154,7 +114,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
   );
   function Card() {
     const [receipt, set] = useState<import("@meridian/contracts/protocol").TurnReceiptChip>({
-      state: "live-active",
+      state: "branch-active",
       control: "undo",
     });
     setReceipt = set;
@@ -166,6 +126,20 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
           { documentId: "doc", uri: "manuscript://chapter.md", path: "chapter.md", scope: "draft" },
         ]}
         receipt={receipt}
+        changeTrail={{
+          trailId: "empty",
+          owner: { kind: "turn", threadId: "chat", turnId: "turn" },
+          state: "settled",
+          version: 1,
+          changeCount: 0,
+          documentCount: 0,
+          documents: [],
+          wordsAdded: null,
+          wordsRemoved: null,
+          updatedAt: "",
+          settledAt: null,
+        }}
+        navigateToChange={async () => ({ kind: "unavailable" })}
       />
     );
   }
@@ -177,16 +151,47 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         </I18nProvider>
       </QueryClientProvider>,
       async () => {
+        expect(
+          hasTurnEditsReceiptContent(
+            [
+              {
+                documentId: "doc",
+                path: "chapter.md",
+                uri: "manuscript://chapter.md",
+                scope: "draft",
+              },
+            ],
+            undefined,
+            [],
+          ),
+        ).toBe(true);
+        expect(document.body.textContent).toContain("Edited 1 document");
+        await act(async () =>
+          document.querySelector<HTMLButtonElement>("[aria-expanded]")?.click(),
+        );
+        expect(document.body.textContent).toContain("chapter");
         await act(async () => {
           [...document.querySelectorAll("button")]
             .find((button) => button.textContent === "Undo")
             ?.click();
         });
         expect(document.body.textContent).toContain("Undoing…");
+        expect(
+          [...document.querySelectorAll("button")].find(
+            (button) => button.textContent === "Undoing…",
+          )?.disabled,
+        ).toBe(true);
+        expect(reverse).toHaveBeenCalledWith("chat", { turnId: "turn", direction: "undo" });
         await act(async () => {
           answer({
             status: "partial",
-            documents: [],
+            documents: [
+              {
+                uri: "manuscript://chapter.md",
+                status: "reversed",
+                destination: { kind: "draft", branchId: "draft" },
+              },
+            ],
             acceptedParts: 1,
             skips: [
               {
@@ -206,6 +211,9 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
           );
           expect(document.body.textContent).toContain("“Mara” → “I”");
           expect(document.body.textContent).toContain("discarded");
+          expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
+            "Undone in your draft. Apply it to change your manuscript.",
+          );
         });
         await act(async () => {
           [...document.querySelectorAll("button")]

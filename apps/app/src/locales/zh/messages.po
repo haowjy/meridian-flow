@@ -4420,6 +4420,10 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undone in your draft. Apply it to change your manuscript."
+msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
+
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr ""
