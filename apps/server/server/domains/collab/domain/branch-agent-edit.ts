@@ -144,14 +144,14 @@ export function createBranchAgentEditCoordinator(input: {
   const concurrentJournalWatermarks =
     input.concurrentJournalWatermarks ?? createBranchConcurrentJournalWatermarks();
   function branchRows(branchId: string, entries: readonly JournalBatchAppendEntry[]) {
-    return entries.map((entry) => {
+    return entries.flatMap((entry) => {
       const mutation = entry.mutation;
       if (mutation?.mode !== "threadPeer")
         throw new Error("thread_peer_commit_missing_branch_generation");
-      return {
+      return (mutation.editParts ?? [entry.update]).map((updateData) => ({
         branchId,
         source: "agent" as const,
-        updateData: entry.update,
+        updateData,
         documentEditKey: mutation.writeId,
         threadId: (mutation.threadId as ThreadId | undefined) ?? input.threadId,
         turnId: mutation.turnId ?? null,
@@ -165,7 +165,7 @@ export function createBranchAgentEditCoordinator(input: {
         ...(mutation.branchJournalRevision !== undefined
           ? { expectedJournalRevision: mutation.branchJournalRevision }
           : {}),
-      };
+      }));
     });
   }
   return {

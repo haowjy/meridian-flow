@@ -6,7 +6,7 @@ import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { modelResult } from "./model-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
-import { formatApplySuccess } from "./response-format.js";
+import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
 
 interface ReceiptIdentity {
@@ -51,7 +51,7 @@ export function renderReceipt(
   edit: AcceptedEdit,
   before: readonly BlockSnapshot[],
   after: readonly BlockSnapshot[],
-  lateSweep?: DestructiveSweepReport,
+  outcome: Omit<ApplySuccessResponseInput, "echo" | "deletedBlocks" | "copied">,
 ): InternalWriteResult {
   const echo = computeEcho({
     before,
@@ -60,8 +60,7 @@ export function renderReceipt(
     agentDeletedHashes: edit.deletedHashes,
   });
   return formatApplySuccess({
-    phase: "committed",
-    writeId: edit.writeId,
+    ...outcome,
     echo:
       echo.length || edit.commandName !== "create"
         ? echo
@@ -72,7 +71,6 @@ export function renderReceipt(
             },
           ],
     deletedBlocks: [...edit.deletedHashes],
-    lateSweep,
     ...(after.length <= 1 && after.every((block) => !block.body.trim())
       ? { documentEmpty: true }
       : {}),
@@ -93,12 +91,11 @@ export function renderSettledReceipts(
     const cut = capture();
     receipts = cut
       ? accepted.map((edit, index) => {
-          const result = renderReceipt(
-            edit,
-            cut.before[index],
-            cut.after,
-            index === accepted.length - 1 ? cut.lateSweep : undefined,
-          );
+          const result = renderReceipt(edit, cut.before[index], cut.after, {
+            phase: "committed",
+            writeId: edit.writeId,
+            lateSweep: index === accepted.length - 1 ? cut.lateSweep : undefined,
+          });
           return {
             ...settledReceipt(edit, revision, result),
             ...shownEvidence(renderedItems(result.model), cut.links),

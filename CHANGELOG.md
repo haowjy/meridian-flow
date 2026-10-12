@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use one atomic edit path for create, copy and replacement, retaining independent paragraph metadata and bounded copy receipts.
+
 - Keep accepted AI edits and their settlement receipts when reporting fails, without replaying the mutation to produce a report.
 
 - Keep manifest-only drafts pending while settling semantically unchanged rich prose through one complete-effect comparison.

@@ -142,7 +142,6 @@ export interface ResponseStageUpdateInput {
   documentLabel: string;
   description: string;
   update: Uint8Array;
-  segments?: readonly Uint8Array[];
   editParts?: readonly Uint8Array[];
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
@@ -167,7 +166,6 @@ export interface ResponseStageUpdateInput {
 interface StagedResponseUpdate extends JournaledUpdate {
   documentLabel: string;
   description: string;
-  segments: readonly Uint8Array[];
   commandName: DocumentCommandName;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
@@ -836,9 +834,12 @@ export function createResponseCommitter(deps: {
         }
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
         const hashes = responseHashes(docBuffer);
+        const reportingReplica = replayBase ? readLease(documentDoc(docBuffer)) : undefined;
         const input = {
           docId: docBuffer.docId,
-          runtime: { doc: documentDoc(docBuffer) },
+          runtime: {
+            doc: reportingReplica ? unwrapDoc(reportingReplica.doc) : documentDoc(docBuffer),
+          },
           links: linksOf(docBuffer),
           ...hashes,
           preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -856,13 +857,14 @@ export function createResponseCommitter(deps: {
           try {
             applied = await mutationCommit.reportAcceptedMutation(
               replayBase,
-              documentDoc(docBuffer),
+              input.runtime.doc,
               input,
             );
           } catch {
             return degradedDocumentReceipt(docBuffer);
           } finally {
             replayBase.destroy();
+            reportingReplica?.dispose();
           }
         } else {
           applied = await withLiveDocument(
@@ -885,28 +887,32 @@ export function createResponseCommitter(deps: {
         if (isInternalWriteResult(applied)) throw internalResultError(applied);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
         if (isLive(docBuffer)) projectLive(docBuffer, applied.concurrent.updates);
-        const lateSweep = applied.lateSweep;
-        return {
-          documentId: docBuffer.docId,
-          updateCount: docBuffer.updates.length,
-          receipts: applied.awarenessDegraded
-            ? renderSettledReceipts(
-                docBuffer.updates,
-                docBuffer.discardedUpdates ?? [],
-                applied.revision,
-                () => null,
-              )
-            : settledWriteReceipts(docBuffer, applied.revision, lateSweep),
-          ...(applied.concurrent.detection.info
-            ? {
-                concurrentEdits: withRunShownLinks(
-                  applied.concurrent.detection.info,
-                  shownSource(docBuffer),
-                ),
-              }
-            : {}),
-          ...(lateSweep ? { lateSweep } : {}),
-        };
+        try {
+          const lateSweep = applied.lateSweep;
+          return {
+            documentId: docBuffer.docId,
+            updateCount: docBuffer.updates.length,
+            receipts: applied.awarenessDegraded
+              ? renderSettledReceipts(
+                  docBuffer.updates,
+                  docBuffer.discardedUpdates ?? [],
+                  applied.revision,
+                  () => null,
+                )
+              : settledWriteReceipts(docBuffer, applied.revision, lateSweep),
+            ...(applied.concurrent.detection.info
+              ? {
+                  concurrentEdits: withRunShownLinks(
+                    applied.concurrent.detection.info,
+                    shownSource(docBuffer),
+                  ),
+                }
+              : {}),
+            ...(lateSweep ? { lateSweep } : {}),
+          };
+        } catch {
+          return degradedDocumentReceipt(docBuffer, applied.revision);
+        }
       };
       retryApplyDocument = (docBuffer) => applyDocument(docBuffer);
 
@@ -1112,6 +1118,7 @@ export function createResponseCommitter(deps: {
 
   function degradedDocumentReceipt(
     docBuffer: ResponseDocumentBuffer,
+    revision: string | null = null,
   ): ResponseCommitDocumentResult {
     return {
       documentId: docBuffer.docId,
@@ -1119,7 +1126,7 @@ export function createResponseCommitter(deps: {
       receipts: renderSettledReceipts(
         docBuffer.updates,
         docBuffer.discardedUpdates ?? [],
-        null,
+        revision,
         () => null,
       ),
     };
@@ -1363,7 +1370,7 @@ export function createResponseCommitter(deps: {
     let rejected = false;
     if (isPrepared(docBuffer)) {
       const next = cloneYDoc(docBuffer.view.doc);
-      const segments = input.segments ?? [input.update];
+      const segments = input.editParts ?? [input.update];
       for (const update of segments) Y.applyUpdate(next, update);
       // Public clock metadata detects pending structs/delete ranges without touching private stores.
       // Only this write's deltas move into the owned view, never a stale lease's old edits.
@@ -1398,7 +1405,6 @@ export function createResponseCommitter(deps: {
       documentLabel: input.documentLabel,
       description: input.description,
       update: input.update,
-      segments: input.segments ?? [input.update],
       meta: input.meta,
       mutation: {
         ...(input.editParts ? { editParts: input.editParts } : {}),
@@ -1446,21 +1452,14 @@ export function createResponseCommitter(deps: {
     docBuffers: readonly ResponseDocumentBuffer[],
   ): JournalBatchAppendEntry[] {
     return docBuffers
-      .flatMap((docBuffer) =>
-        docBuffer.updates.flatMap((entry) =>
-          entry.segments.map((update) => ({
-            stageSeq: entry.stageSeq,
-            journalEntry: {
-              docId: docBuffer.docId,
-              update,
-              meta: entry.meta,
-              ...(entry.mutation ? { mutation: entry.mutation } : {}),
-            },
-          })),
-        ),
-      )
-      .sort((left, right) => left.stageSeq - right.stageSeq)
-      .map((entry) => entry.journalEntry);
+      .flatMap((doc) => doc.updates.map((entry) => ({ docId: doc.docId, entry })))
+      .sort((left, right) => left.entry.stageSeq - right.entry.stageSeq)
+      .map(({ docId, entry }) => ({
+        docId,
+        update: entry.update,
+        meta: entry.meta,
+        mutation: entry.mutation,
+      }));
   }
 
   function dropForThread(docId: string, threadId: string): void {
