@@ -10,6 +10,7 @@ export function ProjectRouteBoundary({
   issue,
   children,
   recovery,
+  chrome,
   retainWhileLoading = false,
   destinationKey,
   onRetry,
@@ -17,6 +18,8 @@ export function ProjectRouteBoundary({
   issue?: ProjectRouteIssue;
   children: ReactNode;
   recovery?: ReactNode;
+  /** Address navigation stays outside the masked content, even before admission. */
+  chrome?: ReactNode;
   retainWhileLoading?: boolean;
   destinationKey?: string;
   /** Offered with a failed destination: the address stays, only its reads run again. */
@@ -25,50 +28,53 @@ export function ProjectRouteBoundary({
   const retainedPending = issue === "loading" && retainWhileLoading && !recovery;
   const blocked = (!!issue && !retainedPending) || !!recovery;
   return (
-    <div
-      className="relative flex min-h-0 flex-1 flex-col"
-      aria-busy={issue === "loading" && !recovery}
-    >
+    <div className="flex min-h-0 flex-1 flex-col">
+      {blocked ? chrome : null}
       <div
-        className="flex min-h-0 flex-1 flex-col"
-        inert={blocked}
-        aria-hidden={blocked}
-        style={blocked ? { visibility: "hidden" } : undefined}
+        className="relative flex min-h-0 flex-1 flex-col"
+        aria-busy={issue === "loading" && !recovery}
       >
-        {children}
-      </div>
-      {recovery ? (
-        <div className="absolute inset-0 bg-background">{recovery}</div>
-      ) : issue === "loading" ? (
-        !retainedPending && (
-          <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
-        )
-      ) : issue ? (
         <div
-          className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
-          role="status"
+          className="flex min-h-0 flex-1 flex-col"
+          inert={blocked}
+          aria-hidden={blocked}
+          style={blocked ? { visibility: "hidden" } : undefined}
         >
-          {issue === "error" && onRetry ? (
-            <div className="flex flex-col items-center gap-3">
-              <p>
-                <Trans>This destination couldn’t load.</Trans>
-              </p>
-              <Button size="sm" variant="outline" onClick={onRetry}>
-                <Trans>Retry</Trans>
-              </Button>
-            </div>
-          ) : issue === "resource-viewing" ? (
-            <Trans>
-              Viewing chat resources is not available yet. These files remain available to your
-              chats and AI tools.
-            </Trans>
-          ) : issue === "error" ? (
-            <Trans>This destination couldn’t load.</Trans>
-          ) : (
-            <Trans>This destination is unavailable.</Trans>
-          )}
+          {children}
         </div>
-      ) : null}
+        {recovery ? (
+          <div className="absolute inset-0 bg-background">{recovery}</div>
+        ) : issue === "loading" ? (
+          !retainedPending && (
+            <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
+          )
+        ) : issue ? (
+          <div
+            className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
+            role="status"
+          >
+            {issue === "error" && onRetry ? (
+              <div className="flex flex-col items-center gap-3">
+                <p>
+                  <Trans>This destination couldn’t load.</Trans>
+                </p>
+                <Button size="sm" variant="outline" onClick={onRetry}>
+                  <Trans>Retry</Trans>
+                </Button>
+              </div>
+            ) : issue === "resource-viewing" ? (
+              <Trans>
+                Viewing chat resources is not available yet. These files remain available to your
+                chats and AI tools.
+              </Trans>
+            ) : issue === "error" ? (
+              <Trans>This destination couldn’t load.</Trans>
+            ) : (
+              <Trans>This destination is unavailable.</Trans>
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
