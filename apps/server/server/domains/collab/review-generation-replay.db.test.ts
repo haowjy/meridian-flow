@@ -101,6 +101,7 @@ it.each([
       ...request,
       operationIds: preview.operations.map((operation) => operation.operationId),
       admissionTokens: [...new Set(preview.operations.map((op) => op.admissionToken))],
+      memberPartKeys: preview.operations.flatMap((op) => (op.partKey ? [op.partKey] : [])),
       closureClassIds: [
         ...new Set(preview.operations.map((operation) => operation.closureClassId)),
       ],

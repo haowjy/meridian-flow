@@ -182,6 +182,7 @@ export async function handleDiscardWorkDraftRequest(
     userId: UserId;
     closureClassIds?: string[];
     admissionTokens?: string[];
+    memberPartKeys?: string[];
     liveRevisionToken?: string;
     draftRevisionToken?: string;
   },
@@ -272,6 +273,7 @@ function throwReadFailure(code: string): never {
 export function parseDraftDiscardSelection(input: {
   closureClassIds?: unknown;
   admissionTokens?: unknown;
+  memberPartKeys?: unknown;
   liveRevisionToken?: unknown;
   draftRevisionToken?: unknown;
 }): { status: "ready"; command: DraftDiscardCommand } | { status: "stale" } {
@@ -292,7 +294,9 @@ export function parseDraftDiscardSelection(input: {
       !input.draftRevisionToken ||
       !Array.isArray(input.admissionTokens) ||
       !input.admissionTokens.length ||
-      input.admissionTokens.some((token) => typeof token !== "string" || !token.trim())
+      input.admissionTokens.some((token) => typeof token !== "string" || !token.trim()) ||
+      !Array.isArray(input.memberPartKeys) ||
+      input.memberPartKeys.some((key) => typeof key !== "string" || !key.trim())
     )
       return { status: "stale" };
     return {
@@ -300,6 +304,7 @@ export function parseDraftDiscardSelection(input: {
       command: {
         closureClassIds: input.closureClassIds,
         admissionTokens: input.admissionTokens,
+        memberPartKeys: input.memberPartKeys,
         liveRevisionToken: input.liveRevisionToken,
         draftRevisionToken: input.draftRevisionToken,
       },
@@ -308,7 +313,8 @@ export function parseDraftDiscardSelection(input: {
   if (
     Object.hasOwn(input, "liveRevisionToken") ||
     Object.hasOwn(input, "draftRevisionToken") ||
-    Object.hasOwn(input, "admissionTokens")
+    Object.hasOwn(input, "admissionTokens") ||
+    Object.hasOwn(input, "memberPartKeys")
   )
     throw createError({ statusCode: 400, message: "admission evidence requires closureClassIds" });
   return { status: "ready", command: {} };

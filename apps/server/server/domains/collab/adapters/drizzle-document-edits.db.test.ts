@@ -17,6 +17,7 @@ import {
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
+  responseContext,
   reviewChange,
   setupResponseDraft,
   stageDraft,
@@ -215,6 +216,7 @@ describe("document edit receipts (Postgres)", () => {
           userId: USER_ID as never,
           closureClassIds: [change.closureClassId],
           admissionTokens: [change.admissionToken],
+          memberPartKeys: change.partKey ? [change.partKey] : [],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         };
@@ -314,6 +316,7 @@ describe("document edit receipts (Postgres)", () => {
             userId: USER_ID as never,
             closureClassIds: [preview.operations[0].closureClassId],
             admissionTokens: [preview.operations[0].admissionToken],
+            memberPartKeys: preview.operations[0].partKey ? [preview.operations[0].partKey] : [],
             liveRevisionToken: preview.liveRevisionToken,
             draftRevisionToken: preview.draftRevisionToken,
           }),
@@ -379,6 +382,7 @@ describe("document edit receipts (Postgres)", () => {
         ...target,
         closureClassIds: [b.closureClassId],
         admissionTokens: [b.admissionToken],
+        memberPartKeys: b.partKey ? [b.partKey] : [],
         liveRevisionToken: before.liveRevisionToken,
         draftRevisionToken: before.draftRevisionToken,
       };
@@ -393,6 +397,7 @@ describe("document edit receipts (Postgres)", () => {
           ...target,
           closureClassIds: [a.closureClassId],
           admissionTokens: [a.admissionToken],
+          memberPartKeys: a.partKey ? [a.partKey] : [],
           liveRevisionToken: before.liveRevisionToken,
           draftRevisionToken: before.draftRevisionToken,
         }),
@@ -452,6 +457,68 @@ describe("document edit receipts (Postgres)", () => {
       harness.destroyWarmState();
     }
   });
+  it.each([false, true])("a grown clicked AI class is stale (refork first: %s)", async (refork) => {
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+        ["red", "gold"],
+        ["blue", "silver"],
+      ]);
+      const target = { workId: WORK_ID, documentId: ALPHA_ID, draftId: branchId, userId: USER_ID };
+      const before = await fixture.collab.draftReview.preview(target);
+      if (before.status !== "active") throw new Error("Missing preview");
+      const a = before.operations.find((op) => op.afterExcerpt === "gold");
+      const b = before.operations.find((op) => op.afterExcerpt === "silver");
+      if (!a || !b?.partKey) throw new Error("Missing captured classes");
+      const held = {
+        ...target,
+        closureClassIds: [b.closureClassId],
+        admissionTokens: [b.admissionToken],
+        memberPartKeys: [b.partKey],
+        liveRevisionToken: before.liveRevisionToken,
+        draftRevisionToken: before.draftRevisionToken,
+      };
+      if (refork)
+        expect(
+          await fixture.collab.draftReview.discardWorkDraft({
+            ...held,
+            closureClassIds: [a.closureClassId],
+            admissionTokens: [a.admissionToken],
+            memberPartKeys: a.partKey ? [a.partKey] : [],
+          }),
+        ).toMatchObject({ status: "discarded" });
+      const responseId = await createResponse(db, 2);
+      expect(
+        await fixture.collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "silver",
+            content: " bright",
+            tool_use_id: "grow-silver",
+          },
+          responseContext(responseId),
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
+      const grown = await fixture.collab.draftReview.preview(target);
+      if (grown.status !== "active") throw new Error("Missing grown class");
+      expect(grown.operations.map((op) => op.closureClassId)).not.toContain(b.closureClassId);
+      expect(grown.operations.map((op) => op.partKey)).toContain(b.partKey);
+      const expectedDraft = refork ? "red\n\nsilver bright\n" : "gold\n\nsilver bright\n";
+      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
+      expect(await fixture.collab.draftReview.discardWorkDraft(held)).toMatchObject({
+        status: "stale",
+      });
+      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
   it.each([
     "captured",
     "without-part",
@@ -506,6 +573,7 @@ describe("document edit receipts (Postgres)", () => {
         ...target,
         closureClassIds: [writer.closureClassId],
         admissionTokens: [writer.admissionToken],
+        memberPartKeys: writer.partKey ? [writer.partKey] : [],
         liveRevisionToken: before.liveRevisionToken,
         draftRevisionToken: before.draftRevisionToken,
       };
@@ -514,6 +582,7 @@ describe("document edit receipts (Postgres)", () => {
           ...held,
           closureClassIds: [agent.closureClassId],
           admissionTokens: [agent.admissionToken],
+          memberPartKeys: agent.partKey ? [agent.partKey] : [],
         }),
       ).toMatchObject({ status: "discarded" });
       const after = await fixture.collab.draftReview.preview(target);
@@ -603,6 +672,7 @@ describe("document edit receipts (Postgres)", () => {
           userId: USER_ID as never,
           closureClassIds: [next.operations[0].closureClassId],
           admissionTokens: [next.operations[0].admissionToken],
+          memberPartKeys: next.operations[0].partKey ? [next.operations[0].partKey] : [],
           liveRevisionToken: next.liveRevisionToken,
           draftRevisionToken: next.draftRevisionToken,
         }),

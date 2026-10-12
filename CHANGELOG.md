@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep a grown draft change focused after a refused Discard by distinguishing surviving immutable members from a disappeared change.
+
 - Admit selective Discard by the clicked class and unchanged evidence, even when another Discard re-journals its surviving operations.
 
 - Preserve a fresh same-reply peer's writes when an older peer's post-Discard retirement runs late.

@@ -263,6 +263,10 @@ async function execute(
                 ...basis,
                 closureClassIds: [...command.selection.classIds],
                 admissionTokens: [...command.selection.admissionTokens],
+                // Retained clicked operationKey values are part keys, except row-only fallbacks.
+                memberPartKeys: selectionKeys(command.selection).filter(
+                  (key) => !key.startsWith("row:"),
+                ),
               });
         },
       })
@@ -549,7 +553,7 @@ function resolveClick(
     return null;
   const found = new Set(selectionKeys(selection));
   if (found.size !== wanted.size || [...found].some((key) => !wanted.has(key))) return null;
-  return { changes, selection };
+  return { changes, selection: { ...selection, keys: [...selectionKeys(click)] } };
 }
 
 export type DraftBatchItem = { draft: DraftReviewSelection };

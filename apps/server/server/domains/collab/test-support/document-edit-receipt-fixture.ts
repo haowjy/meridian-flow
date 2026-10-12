@@ -153,6 +153,7 @@ export async function reviewChange(
     userId: USER_ID as never,
     closureClassIds: [op.closureClassId],
     admissionTokens: [op.admissionToken],
+    memberPartKeys: op.partKey ? [op.partKey] : [],
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };

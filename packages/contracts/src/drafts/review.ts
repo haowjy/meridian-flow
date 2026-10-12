@@ -188,6 +188,8 @@ export type DraftDiscardRequest = {
   closureClassIds?: string[];
   /** Required for per-change Discard: unchanged closed-row/rich-effect evidence at click. */
   admissionTokens?: string[];
+  /** Clicked immutable members classify a missing class, never authorize a replacement. */
+  memberPartKeys?: string[];
 };
 
 /** Select complete server-vended classes. Physical journal IDs never cross the wire. */

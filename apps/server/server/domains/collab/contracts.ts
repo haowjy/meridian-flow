@@ -293,12 +293,14 @@ export type DraftDiscardCommand =
       draftRevisionToken?: never;
       closureClassIds?: never;
       admissionTokens?: never;
+      memberPartKeys?: never;
     }
   | {
       liveRevisionToken: string;
       draftRevisionToken: string;
       closureClassIds: string[];
       admissionTokens: string[];
+      memberPartKeys: string[];
     };
 
 export type DraftReviewApi = {
