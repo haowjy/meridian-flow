@@ -350,8 +350,16 @@ msgid "A file named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +367,16 @@ msgid "A folder named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -518,6 +534,10 @@ msgstr "所有设备"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -791,8 +811,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr ""
+#~ msgid "Check submission status"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1346,7 +1366,10 @@ msgstr ""
 msgid "Couldn't send your answer."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "未能发送你的消息。"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
@@ -2407,6 +2430,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
+msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -3485,8 +3516,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr ""
+#~ msgid "Start over"
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"

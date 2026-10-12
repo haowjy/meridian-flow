@@ -4,12 +4,7 @@ import { type CatalogCacheView, emptyCatalogView } from "@meridian/resource-repl
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  Composer,
-  type ComposerHandle,
-  type ComposerSubmitEnvelope,
-  type ComposerSubmitOutcome,
-} from "./Composer";
+import { Composer, type ComposerHandle, type ComposerSubmitEnvelope } from "./Composer";
 import type { ComposerChatCommand } from "./command";
 import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 
@@ -38,13 +33,7 @@ async function render(
     commands?: readonly ComposerChatCommand[];
   } = {},
 ) {
-  const onSubmit = vi.fn(
-    (envelope: ComposerSubmitEnvelope): ComposerSubmitOutcome => ({
-      kind: "accepted",
-      submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
-    }),
-  );
+  const onSubmit = vi.fn(async () => true);
   await act(() => {
     root.render(
       <Composer
@@ -141,11 +130,7 @@ it("clears accepted presentation without publishing an empty draft over another 
         onDraftChange={(change) => {
           persistedWords = change.text;
         }}
-        onSubmit={(envelope) => ({
-          kind: "accepted",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => true}
       />,
     ),
   );
@@ -161,11 +146,7 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
       <Composer
         initialDraft={draft("Keep these words")}
         onDraftChange={onDraftChange}
-        onSubmit={(envelope) => ({
-          kind: "rejected",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => false}
       />,
     ),
   );
@@ -176,7 +157,7 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
 
 it("does not prepend a rejected submission to the live draft edited during admission", async () => {
   const ref = createRef<ComposerHandle>();
-  let reject: ((outcome: ComposerSubmitOutcome) => void) | undefined;
+  let reject: ((recorded: boolean) => void) | undefined;
   let sent: ComposerSubmitEnvelope | undefined;
   await act(() =>
     root.render(
@@ -198,11 +179,7 @@ it("does not prepend a rejected submission to the live draft edited during admis
   });
   await act(async () => {
     if (!sent || !reject) throw new Error("Send was not dispatched");
-    reject({
-      kind: "rejected",
-      submissionId: sent.submissionId,
-      acceptedRevision: sent.acceptedRevision,
-    });
+    reject(false);
   });
   expect(editorElement()?.textContent).toBe("Original continued");
 });
@@ -230,11 +207,7 @@ it("drops a restored missing reference only after successful catalog acquisition
     root.render(
       <Composer
         initialDraft={serializeComposerDraft(doc).draft}
-        onSubmit={(envelope) => ({
-          kind: "accepted",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => true}
         onDraftChange={onDraftChange}
         referenceCatalog={{
           label: "References",

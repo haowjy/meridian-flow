@@ -7,6 +7,7 @@ is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
@@ -34,6 +35,11 @@ Script automation and catalog repairs are tracked in [#726](https://github.com/h
 Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
+
+## Document intake
+
+[Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
+DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
 ## Before you call it a defect
 

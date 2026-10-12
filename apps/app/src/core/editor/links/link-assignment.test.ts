@@ -26,7 +26,7 @@ const MOVED = "00000000-0000-4000-8000-0000000000ed";
 const DOCUMENTS = [
   { documentId: CH2, uri: HOLDER },
   { documentId: CH1, uri: "manuscript://volume-1/chapter-1.md" },
-  { documentId: LIN, uri: "kb://characters/Lin Feng.md" },
+  { documentId: LIN, uri: "kb://characters/Lin Feng" },
 ];
 
 const live: Editor[] = [];
@@ -112,15 +112,15 @@ it("assigns what each producer writes", () => {
           {
             label: "Lin",
             documentId: LIN,
-            uri: "kb://characters/Lin Feng.md",
+            uri: "kb://characters/Lin Feng",
           },
         );
         return links(target);
       },
-      [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng" }],
     ],
     [
-      "@ link-ahead row: ahead ref, extension added",
+      "@ link-ahead row: ahead ref at the codec name",
       () => {
         const target = editor();
         insertLinkAhead(
@@ -133,7 +133,7 @@ it("assigns what each producer writes", () => {
         );
         return links(target);
       },
-      [{ text: "Nine", ref: "ahead:*", href: "manuscript://volume-1/chapter-9.md" }],
+      [{ text: "Nine", ref: "ahead:*", href: "manuscript://volume-1/chapter-9" }],
     ],
     [
       "Ctrl+K new link to an indexed relative path: doc ref, absolute, suffix kept",
@@ -171,17 +171,17 @@ it("assigns what each producer writes", () => {
         });
         return ctrlK(target, 2, 2, "chapter-7");
       },
-      [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/chapter-7.md" }],
+      [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/chapter-7" }],
     ],
     [
       "[[…]] paste hit: doc ref by catalog id",
       () => wikilinks("[[Lin Feng]]"),
-      [{ text: "Lin Feng", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin Feng", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng" }],
     ],
     [
       "[[…]] paste miss: ahead ref at the link-ahead address",
       () => wikilinks("[[chapter-9#Gate]]"),
-      [{ text: "chapter-9", ref: "ahead:*", href: "manuscript://volume-1/chapter-9.md#Gate" }],
+      [{ text: "chapter-9", ref: "ahead:*", href: "manuscript://volume-1/chapter-9#Gate" }],
     ],
     [
       "Markdown paste: indexed, unwritten and external links each assigned by pass 3",
@@ -192,7 +192,7 @@ it("assigns what each producer writes", () => {
         ),
       [
         { text: "One", ref: `doc:${CH1}`, href: "manuscript://volume-1/chapter-1.md" },
-        { text: "Nine", ref: "ahead:*", href: "manuscript://volume-1/chapter-9.md" },
+        { text: "Nine", ref: "ahead:*", href: "manuscript://volume-1/chapter-9" },
         { text: "Web", ref: null, href: "https://example.com" },
       ],
     ],
@@ -221,7 +221,7 @@ it("assigns what each producer writes", () => {
     [
       "rich paste into another project assigns fresh from the address",
       () => richPaste("project-2"),
-      [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/old-name.md" }],
+      [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/old-name" }],
     ],
   );
   for (const [label, produce, expected] of rows) {

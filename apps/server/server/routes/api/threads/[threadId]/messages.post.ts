@@ -1,3 +1,4 @@
+/** Admit a writer message and serialize its durable admission outcome. */
 import {
   meridianErrorFromSystem,
   type SendMessageRequest,
@@ -36,6 +37,9 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
     });
     if (result.kind === "pending") {
       throw createError({ statusCode: 409, message: "admission_pending" });
+    }
+    if (result.kind === "retired") {
+      throw createError({ statusCode: 409, message: "retired" });
     }
     if (result.kind === "rejected") {
       if (result.code === "work_unavailable") {

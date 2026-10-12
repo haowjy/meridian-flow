@@ -111,7 +111,7 @@ describe("change trail (postgres)", () => {
         id: id as never,
         contextSourceId: SOURCE_ID,
         name: `new-${index + 1}`,
-        extension: "md",
+        extension: "",
         fileType: "markdown" as const,
         hidden: true,
       })),

@@ -30,7 +30,7 @@ export const docRmCommand: CommandSpec = {
   args: "<uri>",
   route: "POST /api/projects/:projectId/context/:scheme/delete",
   options: PROJECT_OPTION,
-  examples: ["./mf doc rm manuscript://chapter-1.md"],
+  examples: ['./mf doc rm "manuscript://Chapter 1"'],
   async run(ctx) {
     const session = await ctx.session();
     const projectId = await resolveProjectId(session, stringOption(ctx, "project"));

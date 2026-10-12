@@ -11,9 +11,8 @@
  * refreshed in place, never duplicated.
  *
  * Filetype/schema derive purely from the path (same contracts registry the
- * tree uses). The server guarantees manuscript draft paths carry a real
- * extension; a persisted filetype override or extensionless path would
- * momentarily mis-type the tab until the tree entry merges over it.
+ * tree uses): a prose document's stored name has no extension and is markdown,
+ * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
 
@@ -39,8 +38,8 @@ export function contextTabFromDraftGroup(group: {
   // Draft review only exists for Yjs-tracked editable documents; a path that
   // doesn't resolve to a schema has no editor surface to synthesize.
   if (classification.kind !== "tracked") return null;
-  // Tab names are the path basename WITH extension (tree `nameFromPath`
-  // convention); the group's `documentName` is the extension-less title.
+  // Tab names are the path basename, the stored name (tree `nameFromPath`
+  // convention); the group's `documentName` is that same name.
   const basename = path.slice(path.lastIndexOf("/") + 1);
   return {
     kind: "tracked",

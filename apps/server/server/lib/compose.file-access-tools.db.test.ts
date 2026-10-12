@@ -75,14 +75,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: CHAPTER_ID,
           contextSourceId: MANUSCRIPT_ID,
           name: "chapter",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
         {
           id: NOTES_ID,
           contextSourceId: SCRATCH_ID,
           name: "notes",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
       ]);
@@ -137,16 +137,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratchCall = await call("ls", { path: "scratch://" });
       const scratch = listed(scratchCall);
       expect(scratch).toEqual([
-        expect.objectContaining({ uri: "scratch://@rewrite/notes.md", readonly: true }),
+        expect.objectContaining({ uri: "scratch://@rewrite/notes", readonly: true }),
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
-      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes.md (read-only)");
+      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes (read-only)");
+      const search = await call("search", { pattern: "Writer" });
+      expect(search.output).toContain("manuscript://chapter");
+      expect(search.output).not.toContain(".md");
+      const data = crypto.randomUUID();
+      await db.insert(schema.folders).values({ contextSourceId: MANUSCRIPT_ID, name: "scenes" });
+      await db.insert(schema.documents).values({
+        id: data,
+        contextSourceId: MANUSCRIPT_ID,
+        name: "outline",
+        extension: "json",
+        fileType: "json",
+      });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
-      expect(listed(manuscriptCall)).toEqual([
-        expect.objectContaining({ uri: "manuscript://chapter.md", readonly: false }),
-      ]);
-      expect(manuscriptCall.output).toBe("manuscript://\n  chapter.md");
+      expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
+      expect(manuscriptCall.output).not.toContain(".md");
+      const missing = await call("read", { path: "manuscript://missing.md" });
+      expect(missing.output).toContain("path: manuscript://missing");
+      expect(missing.output).not.toContain(".md");
     });
 
     // D37, D51: a switch that couldn't happen says why instead of asking for approval.
@@ -221,10 +234,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]),
       );
 
-      await call("read", { path: "manuscript://chapter.md" });
+      await call("read", { path: "manuscript://chapter" });
       const refused = await call("write", {
         command: "replace",
-        path: "manuscript://chapter.md",
+        path: "manuscript://chapter",
         find: "Writer chapter.",
         content: "Agent chapter.",
       });
@@ -239,7 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const notes = await call("write", {
         command: "create",
-        path: "scratch://ideas.md",
+        path: "scratch://ideas",
         content: "Agent ideas.",
       });
       expect(notes.isError).toBeFalsy();
@@ -247,10 +260,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const chapter = await script.runtime.ports.documentSync.readAsMarkdown(CHAPTER_ID);
       expect(chapter.ok && chapter.value).toContain("Writer chapter.");
-      expect(await script.text("scratch://ideas.md")).toContain("Agent ideas.");
+      expect(await script.text("scratch://ideas")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
       expect(listed(await next("ls", { path: "scratch://", verbose: true }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@rewrite/ideas.md", wordCount: 2 }),
+        expect.objectContaining({ uri: "scratch://@rewrite/ideas", wordCount: 2 }),
       );
     });
   });

@@ -9,16 +9,15 @@ import type { ThreadId, UserId, WorkId } from "@meridian/contracts";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Drafts } from "../../../collab/domain/drafts.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
-import type { AdapterFault } from "../../ports/context-adapter.js";
+import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
-import type { ContextWriteBinaryOptions, ContextWriteOptions } from "../../ports/context-port.js";
+import type { ContextWriteBinaryOptions } from "../../ports/context-port.js";
 import type { DraftCreatePort, EnsuredDraft } from "../../ports/draft-create.js";
 import type { CreateFault } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { binaryTrackedWriteFault } from "./bound-writes.js";
-import { resolveCreateTarget } from "./create-target.js";
+import { resolveBinaryTarget, resolveCreateTarget } from "./create-target.js";
 import type { LiveCreate } from "./live-create.js";
 
 /**
@@ -53,7 +52,7 @@ export interface CreatePlacement {
   /** An empty tracked document at `path`: the existing one, or a create. */
   ensureTracked(
     path: string,
-    options?: ContextWriteOptions,
+    options?: ContextEnsureTrackedOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>>;
   writeBinary(
     path: string,
@@ -87,7 +86,7 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
     refuse: () => null,
     ensureTracked(path, options) {
       return executor.run(async () => {
-        const target = resolveCreateTarget(path);
+        const target = resolveCreateTarget(path, options);
         if (!target.ok) return target;
         const folderId = await store.ensureFolderPath(target.value.dir);
         const existing = await store.findDocument(
@@ -112,13 +111,15 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
     },
     writeBinary(path, options) {
       return executor.run(async () => {
-        const { dir, filename } = splitPath(path);
-        if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
+        const target = resolveBinaryTarget(path, options);
+        if (!target.ok) return target;
+        const { dir, name, extension } = target.value;
         const folderId = await store.ensureFolderPath(dir);
         const doc = await store.createBinaryDocument({
           id: options.documentId,
           folderId,
-          ...parseFilename(filename),
+          name,
+          extension,
           fileType: options.fileType,
           storageUrl: options.storageUrl,
           mimeType: options.mimeType,
@@ -155,7 +156,7 @@ function draftPlacement(
     }),
     ensureTracked(path, options) {
       return inDraft(async (draft) => {
-        const target = resolveCreateTarget(path);
+        const target = resolveCreateTarget(path, options);
         if (!target.ok) return target;
         const { dir, name, extension, filetype } = target.value;
         const created = await placement.creates.createInDraft({
@@ -181,12 +182,14 @@ function draftPlacement(
     writeBinary(path, options) {
       // A draft's binary is its own hidden row holding the draft's object (12b-Q2).
       return inDraft(async (draft) => {
-        const { dir, filename } = splitPath(path);
-        if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
+        const target = resolveBinaryTarget(path, options);
+        if (!target.ok) return target;
+        const { dir, name, extension } = target.value;
         const created = await placement.creates.createInDraft({
           draft,
           dir,
-          ...parseFilename(filename),
+          name,
+          extension,
           node: {
             kind: "binary",
             ...(options.documentId ? { documentId: options.documentId } : {}),
@@ -227,5 +230,5 @@ function createFault(fault: CreateFault): AdapterFault {
         message:
           "More than one file has this path in the draft; review the draft to resolve the clash",
       }
-    : { code: "conflict" };
+    : { code: "conflict", ...(fault.occupantKind ? { occupantKind: fault.occupantKind } : {}) };
 }

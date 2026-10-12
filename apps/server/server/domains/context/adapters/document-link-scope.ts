@@ -15,12 +15,18 @@ import type { DraftId } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
+  documentPathCandidateNames,
+  documentPathKey,
   type LinkView,
   matchDocumentPath,
   parseContextUri,
   parseLinkRef,
 } from "@meridian/contracts";
-import { contextOwner, type ResolvedContextOwner } from "@meridian/contracts/protocol";
+import {
+  contextOwner,
+  parseDocumentFilename,
+  type ResolvedContextOwner,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -322,10 +328,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const uri of uris) {
       const parsed = parseContextUri(uri);
       if (!parsed.ok || !parsed.value.path) continue;
-      const filename = parsed.value.path.slice(parsed.value.path.lastIndexOf("/") + 1);
-      names.add(filename);
-      const dot = filename.lastIndexOf(".");
-      if (dot > 0) names.add(filename.slice(0, dot));
+      for (const name of documentPathCandidateNames(parsed.value.path)) names.add(name);
     }
     const projects = [snapshot.projectId, snapshot.personalProjectId].filter(
       (id): id is string => id !== null,
@@ -561,10 +564,12 @@ function push(map: Map<string, Row[]>, key: string, row: Row) {
   else if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
 }
 
+/** The address with its registered extension omitted; prose names have none to omit. */
 function stemOf(uri: string): string | null {
-  const filename = uri.slice(uri.lastIndexOf("/") + 1);
-  const dot = filename.lastIndexOf(".");
-  return dot > 0 ? uri.slice(0, uri.length - (filename.length - dot)) : null;
+  const name = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  return name.ok && name.value.extension
+    ? uri.slice(0, uri.lastIndexOf("/") + 1) + name.value.name
+    : null;
 }
 
 function uuidList(ids: readonly string[]): SQL {
@@ -710,7 +715,7 @@ function snapshotCatalog(
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const documents = atAddress(uri, true);
+      const documents = atAddress(documentPathKey(uri), true);
       if (documents === undefined) return undefined;
       return matchDocumentPath(documents.filter(reachable), uri, (document) => document.uri);
     },

@@ -167,7 +167,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         contextSourceId: this.sourceId,
         dir,
       });
-      if (!ensured.ok) throw new ContextEntryConflictError();
+      if (!ensured.ok) throw new ContextEntryConflictError("file");
       const { folderId, placed } = ensured.value;
       if (placed.length > 0) {
         await this.deps.catalogMutations?.refreshSources([this.sourceId], placed);
@@ -187,7 +187,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     const created = await this.claimLive(input, { kind: "any" });
-    if (!created) throw new ContextEntryConflictError();
+    if (!created) throw new ContextEntryConflictError("file");
     return created.document;
   }
 
@@ -205,7 +205,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (await liveFileOccupied(this, this.deps.db, this.sourceId, input)) return null;
+      const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
+      if (occupant === "folder") throw new ContextEntryConflictError("folder");
+      if (occupant) return null;
       const created = await createLive(this.deps.db, {
         slot: this.slotOf(input),
         claim,
@@ -258,6 +260,16 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          this.sourceId,
+          input.folderId,
+          renderFilename(input.name, input.extension),
+          "file",
+        )
+      )
+        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(
         LIVE_TREE,
         input.folderId,
@@ -294,9 +306,8 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (await liveFileOccupied(this, this.deps.db, this.sourceId, input)) {
-        throw new ContextEntryConflictError();
-      }
+      const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
+      if (occupant) throw new ContextEntryConflictError(occupant);
       // A live upload at a hidden image's path is a different document (12b-Q2).
       const documentId = await insertDocumentRow(
         this.deps.db,
@@ -365,21 +376,25 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 }
 
-/** A live entry already holds this file's rendered path: a document, or a folder of that name. */
-async function liveFileOccupied(
+/**
+ * What live entry already holds this file's canonical name: a document, or a folder whose
+ * name or document alias it is. Null when free.
+ */
+async function liveFileOccupant(
   store: DrizzleContextDocumentStore,
   db: Database,
   sourceId: string,
   input: { folderId: string | null; name: string; extension: string },
-): Promise<boolean> {
-  return (
-    (await store.findDocument(LIVE_TREE, input.folderId, input.name, input.extension)) !== null ||
-    (await hasOppositeContextEntry(
-      db,
-      sourceId,
-      input.folderId,
-      renderFilename(input.name, input.extension),
-      "file",
-    ))
+): Promise<"file" | "folder" | null> {
+  if (await store.findDocument(LIVE_TREE, input.folderId, input.name, input.extension)) {
+    return "file";
+  }
+  const folder = await hasOppositeContextEntry(
+    db,
+    sourceId,
+    input.folderId,
+    renderFilename(input.name, input.extension),
+    "file",
   );
+  return folder ? "folder" : null;
 }

@@ -125,6 +125,8 @@ else
       expect(workSources).toHaveLength(1);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
+      expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });
+      expect(first.uri).toBe("manuscript://Chapter 1");
     });
 
     it("rolls project source provisioning back with its ambient transaction", async () => {

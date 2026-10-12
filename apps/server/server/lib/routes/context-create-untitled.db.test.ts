@@ -134,8 +134,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(create()).resolves.toMatchObject({
         status: "created",
         documentId: REPAIR_DOCUMENT_ID,
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
+        path: "Untitled 1",
+        name: "Untitled 1",
       });
 
       await expect(

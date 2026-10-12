@@ -97,3 +97,14 @@ describe("Enter after an `@` sentence", () => {
     expect(editor.state.doc.firstChild?.textContent).toBe("@Kael meet me at the gate");
   });
 });
+
+it("generates a codec label for a prose link-ahead", () => {
+  const editor = mount();
+  type(editor, "@Chapter 13.md");
+  const menu = getAtReferenceMenu(editor);
+  if (!menu) throw new Error("Expected reference menu");
+  expect(menu.snapshot().items[0]).toMatchObject({ kind: "link-ahead", label: "Chapter 13" });
+  press(editor, "ArrowDown");
+  press(editor, "Enter");
+  expect(editor.state.doc.textContent).toBe("Chapter 13");
+});

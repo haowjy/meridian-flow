@@ -106,7 +106,7 @@ CREATE TABLE "branch_push_settlement_payloads" (
 );
 --> statement-breakpoint
 -- Drop the constraints on columns that leave or change meaning below. The two that return are
--- added NOT VALID at the end and validated in 0038_work_branch_foundation_online.
+-- added NOT VALID at the end and validated in 0039_work_branch_foundation_online.
 ALTER TABLE "documents" DROP CONSTRAINT "documents_kind_valid";
 --> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" DROP CONSTRAINT "branch_push_settlement_outbox_state_valid";
@@ -139,7 +139,7 @@ ALTER TABLE "folders" ADD COLUMN "location_version" bigint DEFAULT 0 NOT NULL;
 ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "batch_id" uuid;
 --> statement-breakpoint
 -- Each existing push becomes a settlement batch of one with a deterministic id, carrying its claim
--- and terminal state, before the outbox columns that held that state drop in 0038.
+-- and terminal state, before the outbox columns that held that state drop in 0039.
 -- settled_join_version is not copied: the completion transaction now owns the join fence.
 INSERT INTO "branch_push_settlement_batches" ("id", "state", "claim_token", "claim_epoch", "claim_kind", "claimed_at", "lease_expires_at", "available_at", "attempt_count", "last_error_code", "last_error", "blocked_at", "completed_at", "created_at", "updated_at")
 SELECT md5('branch-push-settlement:' || "push_id")::uuid, "state", "claim_token", "claim_epoch", "claim_kind", "claimed_at", "lease_expires_at", "available_at", "attempt_count", "last_error_code", "last_error", "blocked_at", "completed_at", "created_at", "updated_at"
@@ -209,6 +209,7 @@ WHERE d."kind" = 'content' AND EXISTS (
 -- Each draft still using a hidden document records its create at the document's location: one
 -- whose latest active membership row keeps the document, or one with pending text on it (two
 -- Works drafting one path share the identity). A draft whose membership `main` discarded does not.
+-- The location is already the canonical name 0037_old_adam_destine gave the row.
 INSERT INTO "draft_tree_changes" ("draft_id", "node_kind", "node_id", "created", "context_source_id", "parent_folder_id", "name", "extension")
 SELECT u."draft_id", 'document', d."id", true, d."context_source_id", d."folder_id", d."name", d."extension"
 FROM "documents" d
@@ -253,7 +254,7 @@ WHERE d."id" IN (SELECT "id" FROM "unused");
 --> statement-breakpoint
 -- The live manifest companion retires with its branches and their membership journal: its
 -- rows are derived from the tree, not writer data. Every remaining row is content, so
--- documents.kind can drop in 0038.
+-- documents.kind can drop in 0039.
 DELETE FROM "documents" WHERE "kind" = 'manifest';
 --> statement-breakpoint
 -- A Work whose only branch was on the manifest drafted nothing writer-visible: its draft goes.
@@ -261,7 +262,7 @@ DELETE FROM "drafts" r
 WHERE NOT EXISTS (SELECT 1 FROM "document_branches" b WHERE b."draft_id" = r."id")
   AND NOT EXISTS (SELECT 1 FROM "draft_tree_changes" c WHERE c."draft_id" = r."id");
 --> statement-breakpoint
--- Foreign keys and checks are validated in 0038, outside this transaction.
+-- Foreign keys and checks are validated in 0039, outside this transaction.
 --> statement-breakpoint
 ALTER TABLE "document_markdown_projections" ADD CONSTRAINT "document_markdown_projections_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
 --> statement-breakpoint

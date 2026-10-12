@@ -11,7 +11,9 @@
  * `skillLevel`; a skill the agent may not see reads as missing.
  */
 import { posix } from "node:path";
+import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
+import { type Filetype, parseDocumentFilename } from "@meridian/contracts/protocol";
 import { skillLevel } from "../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import { readThreadSkills } from "./available-skills.js";
@@ -26,7 +28,7 @@ export interface SkillFilesDeps {
 type SkillUri = { skill: null } | { skill: string; path: string };
 
 type SkillFileRead =
-  | { kind: "text"; skill: string; path: string; text: string }
+  | { kind: "text"; skill: string; path: string; text: string; filetype: Filetype }
   | { kind: "binary" }
   | { kind: "not_found" };
 
@@ -51,7 +53,8 @@ export interface SkillListing {
  */
 export function skillFileHeader(skill: string, path: string): string {
   const folder = `${SKILLS_URI_ROOT}${skill}/`;
-  return `${folder}${path}\nPaths in this skill are relative to ${folder}.`;
+  const { path: filename, suffix } = splitDocumentHrefSuffix(path);
+  return `${folder}${documentPathKey(filename)}${suffix}\nPaths in this skill are relative to ${folder}.`;
 }
 
 /** A skill file's text as `read` and `skill` return it, under its header. */
@@ -108,10 +111,25 @@ async function readVisibleFile(
   path: string,
 ): Promise<SkillFileRead> {
   const folder = await visibleSkillFolder(deps, threadId, skill);
-  const entry = folder?.files[`${folder.directory}/${path}`];
-  if (entry === undefined) return { kind: "not_found" };
+  if (!folder) return { kind: "not_found" };
+  const exact = folder.files[`${folder.directory}/${path}`];
+  if (exact !== undefined && typeof exact !== "string") return { kind: "binary" };
+  const wanted = `${folder.directory}/${documentPathKey(path)}`;
+  const matches = Object.entries(folder.files).filter(
+    ([sourcePath, file]) =>
+      (typeof file === "string" ? documentPathKey(sourcePath) : sourcePath) === wanted,
+  );
+  if (matches.length !== 1 || !matches[0]) return { kind: "not_found" };
+  const [sourcePath, entry] = matches[0];
   if (typeof entry !== "string") return { kind: "binary" };
-  return { kind: "text", skill, path, text: entry };
+  const filename = parseDocumentFilename(posix.basename(sourcePath));
+  return {
+    kind: "text",
+    skill,
+    path: documentPathKey(path),
+    text: entry,
+    filetype: filename.ok ? filename.value.filetype : "text",
+  };
 }
 
 /**
@@ -146,7 +164,7 @@ export async function listSkillDir(
     const [name, ...below] = path.slice(prefix.length).split("/");
     if (!name) continue;
     entries.set(
-      name,
+      below.length === 0 && typeof file === "string" ? documentPathKey(name) : name,
       below.length > 0
         ? { kind: "directory", readonly: true }
         : typeof file === "string"

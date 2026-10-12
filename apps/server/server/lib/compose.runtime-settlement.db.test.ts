@@ -74,7 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "runtime-settlement",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(schema.threads).values({
@@ -177,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: "00000000-0000-4000-8000-000000000910",
           name: "read",
-          arguments: { path: "manuscript://runtime-settlement.md" },
+          arguments: { path: "manuscript://runtime-settlement" },
         },
         toolContext,
       );
@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "write",
           arguments: {
             command: "replace",
-            path: "manuscript://runtime-settlement.md",
+            path: "manuscript://runtime-settlement",
             find: "Writer live content.",
             content: "Model draft content.",
             all: true,
@@ -243,7 +243,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const responseId = await runtimes.insertModelResponse(THREAD);
       await ports.documentSync.agentEdit().read(
-        { file: "runtime-settlement.md", documentId: DOC_ID },
+        { file: "runtime-settlement", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
           grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
@@ -288,7 +288,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insert = await ports.documentSync.agentEdit().write(
         {
           command: "insert",
-          file: "runtime-settlement.md",
+          file: "runtime-settlement",
           documentId: DOC_ID,
           content: "Agent prelude.",
         },
@@ -304,7 +304,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const write = await ports.documentSync.agentEdit().write(
         {
           command: "replace",
-          file: "runtime-settlement.md",
+          file: "runtime-settlement",
           documentId: DOC_ID,
           content: "Agent final.",
           find: writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
