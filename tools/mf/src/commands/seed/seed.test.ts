@@ -24,6 +24,14 @@ it("does not let a later complete send hide an earlier failed send", async () =>
       outcome: "failed",
       reason: null,
     });
+    const projected = await stack.mf(["seed", fixture, "--json", "--fields", "finalText"]);
+    expect(projected.code).toBe(EXIT.failed);
+    expect(JSON.parse(projected.stdout)).toEqual({
+      type: "result",
+      command: "seed",
+      outcome: "failed",
+      reason: null,
+    });
     expect(record.messages).toMatchObject([
       { type: "result", command: "thread.send", outcome: "failed", reason: null },
       { type: "result", command: "thread.send", outcome: "complete", reason: null },

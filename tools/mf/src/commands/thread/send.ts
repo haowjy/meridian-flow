@@ -313,7 +313,14 @@ async function followToOutcome(
     status,
     finalText: assistantText(turn),
     error: turn?.error ?? null,
-    ...(interrupt ? { interrupt } : {}),
+    ...(interrupt
+      ? {
+          interrupt,
+          next: [
+            `./mf thread respond ${threadId} --turn ${interrupt.turnId} --interrupt ${interrupt.interruptId} --value '<json>'`,
+          ],
+        }
+      : {}),
   };
 }
 
@@ -407,10 +414,6 @@ export const threadSendCommand: CommandSpec = {
       return undefined;
     }
     const outcome = await sendMessage(session, ctx.out, { threadId, ...input });
-    if (outcome.interrupt)
-      outcome.next = [
-        `./mf thread respond ${threadId} --turn ${outcome.interrupt.turnId} --interrupt ${outcome.interrupt.interruptId} --value '<json>'`,
-      ];
     return finishResult(ctx.out, outcome);
   },
 };
