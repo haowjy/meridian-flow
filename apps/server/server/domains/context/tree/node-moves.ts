@@ -258,16 +258,23 @@ async function checkFinalNamespace(
     literal.add(key);
     holding[node.kind].set(shared, node);
   }
+  // Every required ancestor folder against the planned documents, exhaustively: the live
+  // walk below stops at the first missing or vacated prefix.
+  for (const move of moves) {
+    const segments = move.path.split("/");
+    for (let length = 1; length < segments.length; length += 1) {
+      const path = segments.slice(0, length).join("/");
+      if (holding.document.has(sharedSlot("folder", move.to.contextSourceId, path))) {
+        return Err({ code: "conflict", node: move.node });
+      }
+    }
+  }
   const tree = createTreeReader(db);
   for (const move of moves) {
     const segments = move.path.split("/");
     for (let length = 1; length <= segments.length; length += 1) {
       const path = segments.slice(0, length).join("/");
       const isFinal = length === segments.length;
-      // A required ancestor folder may not be a planned document's name.
-      if (!isFinal && holding.document.has(sharedSlot("folder", move.to.contextSourceId, path))) {
-        return Err({ code: "conflict", node: move.node });
-      }
       const found = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: move.to.contextSourceId,
         path,

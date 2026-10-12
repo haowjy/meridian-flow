@@ -504,7 +504,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           "a required ancestor at a planned document's alias",
         )
         .toEqual(conflict);
+      expect
+        .soft(
+          await batchMove(
+            [source],
+            [
+              toDocument(moveDoc, source, "Batch", ["Fresh"]),
+              toFolder(moveFolder, source, "Inside", ["Fresh", "Batch.md"]),
+            ],
+          ),
+          "a required ancestor under a missing prefix at a planned document's alias",
+        )
+        .toEqual(conflict);
+      expect
+        .soft(
+          await batchMove(
+            [source],
+            [
+              toFolder(otherFolder, source, "Gone"),
+              toDocument(moveDoc, source, "Batch", ["OtherFolder"]),
+              toFolder(moveFolder, source, "Inside", ["OtherFolder", "Batch.md"]),
+            ],
+          ),
+          "a required ancestor under a prefix a moving node leaves",
+        )
+        .toEqual(conflict);
       expect.soft(await idAt(scenario, "live", "Batch"), "nothing installed").toBeNull();
+      expect.soft(await idAt(scenario, "live", "Fresh/Batch"), "nothing installed").toBeNull();
       expect.soft(await idAt(scenario, "live", "MoveDoc")).toBe(moveDoc);
       expect
         .soft(
