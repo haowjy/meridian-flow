@@ -236,36 +236,50 @@ export function createBranchAgentEditCoordinator(input: {
           if (request.helperCut.generation > snapshot.generation)
             throw new Error("Response helper belongs to a future draft generation");
           const retired: Uint8Array[] = [];
-          if (request.helperCut.generation < snapshot.generation) {
-            if (!input.journalRows?.listJournalRowsForBranch)
-              throw new Error("Response generation history is unavailable");
-            const rows = await input.journalRows.listJournalRowsForBranch({
-              branchId,
-              generation: request.helperCut.generation,
-            });
-            const base = new Y.Doc({ gc: false });
-            try {
-              Y.applyUpdate(base, request.helperCut.state);
-              const cut = Y.snapshot(base);
-              retired.push(
-                ...rows
-                  .filter((row) => Y.snapshotContainsUpdate(cut, row.updateData))
-                  .map((row) => row.updateData),
-              );
-            } finally {
-              base.destroy();
+          const inverses: Uint8Array[] = [];
+          const history = input.journalRows;
+          if (!history?.listJournalRowsForBranch)
+            throw new Error("Response generation history is unavailable");
+          const planning = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(planning, request.helperCut.state);
+            const cut = Y.snapshot(planning);
+            // Every intervening generation can contain an inverse; the old cut
+            // excludes already observed removals without a second sequence fence.
+            for (
+              let generation = request.helperCut.generation;
+              generation <= snapshot.generation;
+              generation++
+            ) {
+              const rows = await history.listJournalRowsForBranch({ branchId, generation });
+              for (const row of rows) {
+                const observed = Y.snapshotContainsUpdate(cut, row.updateData);
+                if (
+                  generation === request.helperCut.generation &&
+                  generation < snapshot.generation &&
+                  observed
+                )
+                  retired.push(row.updateData);
+                if (!observed && row.editKind && row.editKind !== "write")
+                  inverses.push(row.updateData);
+              }
             }
+          } finally {
+            planning.destroy();
           }
-          const kept = reconcileStagedBranchWrites(
+          const replay = reconcileStagedBranchWrites(
             doc,
             request.sourceDoc,
             request.entries,
             retired,
             request.helperCut.state,
+            inverses,
           );
+          const kept = replay.keptEntries;
           return {
             result: {
               keptEntries: kept,
+              rejectedWrites: replay.rejectedWrites,
               helperState: Y.encodeStateAsUpdate(doc),
               helperCut: { generation: snapshot.generation, state: snapshot.state },
               beforeState: snapshot.state,

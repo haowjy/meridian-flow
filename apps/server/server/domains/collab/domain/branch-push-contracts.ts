@@ -55,6 +55,8 @@ export type BranchJournalRow = {
   draftBaseUpdateSeq: number;
   status: "active" | "pushed" | "discarded" | "rollback_pending";
   updateMeta?: unknown;
+  /** Immutable edit evidence, never inferred from actor or missing text. */
+  editKind?: "write" | "undo" | "redo" | "revert" | "rollback" | null;
 };
 
 export function branchJournalRevision(
