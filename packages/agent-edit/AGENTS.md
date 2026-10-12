@@ -23,7 +23,12 @@ be host-staged rather than durable. Finalization follows the host transaction;
 recovery follows the explicit acceptance state, never an inferred catch path.
 Draft response helpers are private committer-owned Y.Docs, never runtime-store
 entries. Core `prepare` returns a disposable read lease; only tool results drain
-the dropped-write notice outbox. Rollback changes ownership only on settlement.
+the dropped-write notice outbox. Whole Discard advances a document epoch, revoking
+its outstanding leases without closing independent documents in the same reply.
+Replay acceptance and staging both validate that lifetime. Equivalent prepares
+retain their view identity; real content/cut changes invalidate concurrent replay.
+Save-time link preparation receives only disposable replicas.
+Rollback changes ownership only on settlement.
 The committer owns one immutable snapshot and one promise while committing;
 immediate writes use the journal kind returned by submission to restore or recover atomically.
 

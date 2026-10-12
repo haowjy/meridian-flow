@@ -72,9 +72,23 @@ export interface ResponseCommitter {
 }
 
 /** A call-scoped replica. Disposing it cannot change the committer's helper. */
-export interface ResponseReadLease {
+interface DocumentReplica {
   readonly doc: DocHandle;
   dispose(): void;
+}
+
+export interface ResponseReadLease extends DocumentReplica {
+  readonly lifetime: DocumentLifetime;
+}
+
+interface DocumentLifetime {
+  readonly responseId: string;
+  readonly docId: string;
+  readonly epoch: number;
+}
+interface DocumentEpoch {
+  threadId: string;
+  epoch: number;
 }
 
 interface CommandLeaseInput {
@@ -85,6 +99,7 @@ interface CommandLeaseInput {
   context: WriteContext;
 }
 interface CommandLeaseMethods {
+  readonly lifetime: DocumentLifetime | null;
   doc: Y.Doc;
   hasStagedWrites: boolean;
   reportingOnly: boolean;
@@ -315,6 +330,25 @@ export function createResponseCommitter(deps: {
     Map<string, { docId: string; writes: StagedResponseUpdate[] }>
   >();
   const responses = new Map<string, ResponseState>();
+  // Includes leases issued before the first staged write creates a document buffer.
+  const documentEpochs = new Map<string, Map<string, DocumentEpoch>>();
+  let nextDocumentEpoch = 0;
+  function lifetime(responseId: string, docId: string, threadId: string): DocumentLifetime {
+    let docs = documentEpochs.get(responseId);
+    if (!docs) {
+      docs = new Map();
+      documentEpochs.set(responseId, docs);
+    }
+    let entry = docs.get(docId);
+    if (!entry) {
+      entry = { threadId, epoch: nextDocumentEpoch++ };
+      docs.set(docId, entry);
+    }
+    return { responseId, docId, epoch: entry.epoch };
+  }
+  function ownsLifetime(token: DocumentLifetime): boolean {
+    return documentEpochs.get(token.responseId)?.get(token.docId)?.epoch === token.epoch;
+  }
   /** Each document's command links for the commit attempt that renders its receipts. */
   const commitLinks = new WeakMap<ResponseDocumentBuffer, CommandLinks>();
   const linksOf = (docBuffer: ResponseDocumentBuffer): CommandLinks => {
@@ -409,6 +443,26 @@ export function createResponseCommitter(deps: {
     },
   };
 
+  async function prepareCommitLinks(
+    responseId: string,
+    doc: ResponseDocumentBuffer,
+    before: readonly Y.Doc[] = [],
+  ): Promise<void> {
+    const current = readLease(documentDoc(doc));
+    try {
+      commitLinks.set(
+        doc,
+        await openCommandLinks(deps, {
+          documentId: doc.docId,
+          docs: [unwrapDoc(current.doc), ...before],
+          context: { responseId, threadId: doc.session.threadId },
+        }),
+      );
+    } finally {
+      current.dispose();
+    }
+  }
+
   async function replayDocument(
     docBuffer: PreparedResponseDocumentBuffer,
     commit: boolean,
@@ -435,6 +489,14 @@ export function createResponseCommitter(deps: {
       const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
       const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
       const rejected = docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId));
+      // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
+      if (
+        !rejected.length &&
+        view.cut.generation === accepted.helperCut.generation &&
+        sameBytes(view.cut.state, accepted.helperCut.state) &&
+        sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState)
+      )
+        return { rejected, beforeState: accepted.beforeState };
       const helper = new Y.Doc({ gc: false });
       Y.applyUpdate(helper, accepted.helperState.slice());
       const previous = documentDoc(docBuffer);
@@ -486,11 +548,19 @@ export function createResponseCommitter(deps: {
     const buffer = activeBuffer(responseId);
     const doc = buffer?.docs.get(docId);
     if (!doc || !hasStagedReceipts(doc)) return null;
+    const token = lifetime(responseId, docId, doc.session.threadId);
+    const owner = responses.get(responseId);
     if (isPrepared(doc)) {
-      const owner = responses.get(responseId);
-      const replayed = await replayDocument(doc, false, () => responses.get(responseId) === owner);
+      const replayed = await replayDocument(
+        doc,
+        false,
+        () =>
+          responses.get(responseId) === owner &&
+          buffer?.docs.get(docId) === doc &&
+          ownsLifetime(token),
+      );
       enqueueNotices(responseId, docId, replayed.rejected);
-      return readLease(documentDoc(doc));
+      return { ...readLease(documentDoc(doc)), lifetime: token };
     }
     const restored = await runtimeStore.restoreRuntimeFromLive(
       doc.session,
@@ -505,10 +575,18 @@ export function createResponseCommitter(deps: {
       throw internalResultError(restored);
     const lease = readLease(doc.view.runtime.doc);
     for (const entry of doc.updates) Y.applyUpdate(unwrapDoc(lease.doc), entry.update);
-    return lease;
+    if (
+      responses.get(responseId) !== owner ||
+      !ownsLifetime(token) ||
+      buffer?.docs.get(docId) !== doc
+    ) {
+      lease.dispose();
+      throw new Error("Response preparation lost lifecycle ownership");
+    }
+    return { ...lease, lifetime: token };
   }
 
-  function readLease(doc: Y.Doc): ResponseReadLease {
+  function readLease(doc: Y.Doc): DocumentReplica {
     const replica = new Y.Doc({ gc: false });
     Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc));
     return { doc: toDocHandle(replica), dispose: () => replica.destroy() };
@@ -518,7 +596,16 @@ export function createResponseCommitter(deps: {
     input: CommandLeaseInput,
     run: (lease: CommandDocumentLease) => Promise<T>,
   ) {
-    const read = input.responseId ? await prepare(input.responseId, input.docId) : null;
+    const token = input.responseId
+      ? lifetime(input.responseId, input.docId, input.session.threadId)
+      : null;
+    let read: ResponseReadLease | null;
+    try {
+      read = input.responseId ? await prepare(input.responseId, input.docId) : null;
+    } catch (cause) {
+      if (token && !ownsLifetime(token)) return discardedWrite();
+      throw cause;
+    }
     const prepared = Boolean(
       input.responseId &&
         input.context.interactionContext?.mode === "threadPeer" &&
@@ -561,6 +648,7 @@ export function createResponseCommitter(deps: {
       return null;
     };
     const lease: CommandDocumentLease = {
+      lifetime: token,
       ...(prepared ? { kind: "prepared" as const } : { kind: "live" as const, runtime: live }),
       get doc() {
         return prepared ? replica : live.doc;
@@ -686,14 +774,7 @@ export function createResponseCommitter(deps: {
           return doc;
         });
         try {
-          commitLinks.set(
-            docBuffer,
-            await openCommandLinks(deps, {
-              documentId: docBuffer.docId,
-              docs: [documentDoc(docBuffer), ...before],
-              context: { responseId, threadId: docBuffer.session.threadId },
-            }),
-          );
+          await prepareCommitLinks(responseId, docBuffer, before);
         } finally {
           for (const doc of before) doc.destroy();
         }
@@ -776,14 +857,7 @@ export function createResponseCommitter(deps: {
         let replayBase: Y.Doc | undefined;
         if (isPrepared(docBuffer)) {
           const replayed = await replayDocument(docBuffer, true);
-          commitLinks.set(
-            docBuffer,
-            await openCommandLinks(deps, {
-              documentId: docBuffer.docId,
-              docs: [documentDoc(docBuffer)],
-              context: { responseId, threadId: docBuffer.session.threadId },
-            }),
-          );
+          await prepareCommitLinks(responseId, docBuffer);
           if (!docBuffer.updates.length)
             return {
               documentId: docBuffer.docId,
@@ -1339,6 +1413,14 @@ export function createResponseCommitter(deps: {
       turnId: input.turnId,
       writeId: input.durableWriteId,
     });
+    const token = input.runtime.lifetime;
+    if (
+      !token ||
+      token.responseId !== input.responseId ||
+      token.docId !== input.docId ||
+      !ownsLifetime(token)
+    )
+      return discardedWrite();
     let buffer = activeBuffer(input.responseId);
     if (!buffer) {
       buffer = emptyResponseBuffer();
@@ -1478,6 +1560,10 @@ export function createResponseCommitter(deps: {
   }
 
   function dropForThread(docId: string, threadId: string): void {
+    for (const docs of documentEpochs.values()) {
+      const entry = docs.get(docId);
+      if (entry?.threadId === threadId) entry.epoch = nextDocumentEpoch++;
+    }
     for (const [responseId, state] of [...responses]) {
       if (state.kind !== "buffered") continue;
       const buffer = state.buffer;
@@ -1551,6 +1637,7 @@ export function createResponseCommitter(deps: {
     assertOwner(responseId, owner);
     for (const doc of owner.buffer.docs.values()) if (isPrepared(doc)) doc.view.doc.destroy();
     noticeOutbox.delete(responseId);
+    documentEpochs.delete(responseId);
     responses.set(responseId, { kind: "closed", outcome: closed });
     emit("closed", responseId, "closed", {
       closedOutcome: closed,
@@ -1805,4 +1892,17 @@ function deferredPromise<T>(): {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function discardedWrite(): InternalWriteResult {
+  return {
+    status: "invalid_write",
+    model: {
+      message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
+    },
+  };
 }

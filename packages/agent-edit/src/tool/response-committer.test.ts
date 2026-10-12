@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { unwrapDoc } from "../handles.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -59,7 +60,21 @@ describe("response committer", () => {
       closedOutcome: "committed",
     });
 
-    const prepared = harness({ "chapter.md": "Alpha." });
+    const links = createStaticDocumentLinks();
+    let mutateSaveLinks = false;
+    let failSaveLinks = false;
+    const saveReplicas: Y.Doc[] = [];
+    const openLinks = links.prepare.bind(links);
+    links.prepare = async (request) => {
+      if (mutateSaveLinks) {
+        saveReplicas.push(...request.docs);
+        for (const doc of request.docs)
+          doc.getMap("save-link-adapter").set("must-stay-on-replica", true);
+        if (failSaveLinks) throw new Error("link preparation refused");
+      }
+      return openLinks(request);
+    };
+    const prepared = harness({ "chapter.md": "Alpha." }, { links });
     const snapshots: {
       bytes: Uint8Array;
       cut: import("../ports/document-coordinator.js").StagedHelperCut;
@@ -148,6 +163,45 @@ describe("response committer", () => {
       current.dispose();
     }
     expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
+    const replayCount = snapshots.length;
+    const readers = await Promise.all(
+      Array.from({ length: 12 }, () => prepared.core.prepare(peer.responseId, "chapter.md")),
+    );
+    for (const reader of readers) {
+      if (!reader) throw new Error("Missing concurrent read lease");
+      expect(blockTexts(unwrapDoc(reader.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+      reader.dispose();
+    }
+    expect(snapshots.length - replayCount).toBe(12);
+    mutateSaveLinks = true;
+    failSaveLinks = true;
+    await expect(prepared.core.commitResponse(peer.responseId)).rejects.toThrow(
+      "link preparation refused",
+    );
+    expect(saveReplicas.length).toBeGreaterThan(0);
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    failSaveLinks = false;
+    await prepared.core.commitResponse(peer.responseId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    const checkSaveReplica = () => {
+      const snapshot = snapshots.at(-1);
+      if (!snapshot) throw new Error("Missing replay source");
+      const source = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(source, snapshot.bytes);
+        expect(source.getMap("save-link-adapter").size).toBe(0);
+      } finally {
+        source.destroy();
+      }
+    };
+    checkSaveReplica();
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    checkSaveReplica();
     await prepared.core.rollbackResponse(peer.responseId);
     expect(prepared.core.hasResponseDocument(peer.responseId, "chapter.md")).toBe(false);
   });

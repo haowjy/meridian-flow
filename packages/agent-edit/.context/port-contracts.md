@@ -76,7 +76,11 @@ It is never a RuntimeDocumentState and is never registered in the runtime store.
 Every content exposure goes through prepare: scoped reads borrow disposable
 replicas; commands stage through committer-owned call leases. Effective reads
 prepare before taking a branch-read lock. No raw helper or staged-byte reader is
-public. Ordinary live replicas are dispatched at the same gate.
+public. Ordinary live replicas are dispatched at the same gate. Each response lease
+captures response/document/epoch; Whole Discard revokes the document epoch, including
+leases issued before its first staged write. Replay acceptance and stage publication
+validate it. Equivalent replay results retain view identity, so concurrent unchanged
+reads do not cause triangular retries; real content/cut changes still retry.
 Concurrent staging and terminal reports use separate disposable snapshots;
 historical pre-own snapshots remain receipt evidence, not the current base cut.
 Staging requires the document label and edit description used by failed notices.
@@ -135,7 +139,8 @@ routes between versions names the view on every command it routes
 (`WriteContext.linkView`, and the `linkView` argument of `undo`/`redo` and
 `ReverseInput`): reversals open their links in the view of the history they
 reverse. A reply's save prepares each document's before sides (`preOwnSnapshot`) with its
-runtime, since receipts spell links the reply removed.
+disposable current-view replica, since receipts spell links the reply removed.
+Save-time replicas are disposed in finally, including failed link preparation.
 Markup's `createHolderLinkScope(holder, catalog)` applies the contracts'
 resolution and spelling rules over any `HolderCatalog` (the client resolves
 through the same rules over its own catalog), so hosts cannot disagree;

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Revoke in-flight AI edits when their document is wholly discarded, while independent edits in the same reply still save.
+
 - Keep scoped AI reads current after Discard and preserve buffered edits when a rollback transaction aborts.
 
 - Keep buffered AI reads and independent writes on the current draft across Discard races, without reviving discarded text.
