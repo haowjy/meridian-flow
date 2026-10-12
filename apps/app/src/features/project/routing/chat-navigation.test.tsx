@@ -338,3 +338,30 @@ it("leaves a creation-bearing cohort on its O4 destination", async () => {
   expect(go).not.toHaveBeenCalled();
   expect(actual.readChatSubmissions(ACCOUNT)).toHaveLength(1);
 });
+
+it("repairs a missing-chat route even if forgetting throws", async () => {
+  vi.stubGlobal("reportError", vi.fn());
+  copies.forget.mockRejectedValueOnce(new Error("lock unavailable"));
+  render("chat", "gone");
+  const query = client.getQueryCache().build(client, {
+    queryKey: threadSnapshotQueryOptions("gone").queryKey,
+  });
+  await act(async () => {
+    query.setState({
+      status: "error",
+      errorUpdatedAt: Date.now(),
+      error: new MeridianApiError(
+        {
+          code: "thread_not_found",
+          message: "missing",
+          retryable: false,
+          source: "system",
+          details: { authenticatedUserId: ACCOUNT },
+        },
+        404,
+      ),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+});

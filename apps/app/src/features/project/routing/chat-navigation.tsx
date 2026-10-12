@@ -247,7 +247,10 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
         .then((result) => {
           if (!disposed && result !== "creation" && result !== "stale") latest.current();
         })
-        .catch((error) => reportError(error));
+        .catch((error) => {
+          reportError(error);
+          if (!disposed) latest.current();
+        });
     }
     return () => {
       disposed = true;
