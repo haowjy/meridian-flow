@@ -269,7 +269,7 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
     const bulk = createDrizzleContextBulkCreation({
       db,
       documents: ports.documentSync,
-      recordMembership: (id) => ports.documentSync.recordManifestDocumentCreated(id),
+      recordMembership: () => ports.documentSync.reconcileProjectManifest(projectId as never),
       arrivals: createDrizzleDocumentArrivals(db, ports.linkAheadRegistry),
       catalog: {
         refreshSources: async (ids) => {
@@ -329,6 +329,8 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
       (entry) => entry.kind === "file" && content.some((row) => row.id === entry.entryId),
     );
     expect(files).toHaveLength(content.length);
+    // Manuscript refreshes publish through a post-commit catalog repair.
+    expect(await ports.backgroundTasks.drain(10_000)).toBe(true);
     const changes = await ports.contextCatalog.changes(scope, beforeCatalog.cursor);
     expect(changes.kind).toBe("delta");
     if (changes.kind !== "delta") throw new Error("unexpected catalog reset");
