@@ -11,6 +11,7 @@ import type {
   ResourceProjectionSnapshot,
   ResourceRecord,
 } from "./resource-records";
+import { sameOwner } from "./resource-records";
 import {
   catalogEntryOwner,
   ownerListedInScope,
@@ -65,9 +66,17 @@ export function createResourcePlacement(
   const graph = folderPlacementGraph(projectId, nodes, folders, (location) =>
     Boolean(sourceFor(location)),
   );
+  const resourceLocations = new WeakMap<
+    ResourceRecord,
+    ReturnType<typeof projectResourceLocation>
+  >();
   function resourceLocation(record: ResourceRecord) {
+    if (resourceLocations.has(record)) return resourceLocations.get(record) ?? null;
     const own = projectResourceLocation(projectId, record, (id) => graph.locations.get(id) ?? null);
-    if (!own) return null;
+    if (!own) {
+      resourceLocations.set(record, null);
+      return null;
+    }
     const desired = owningLocationIntent(
       projectId,
       record.intents,
@@ -77,7 +86,9 @@ export function createResourcePlacement(
       record.resource.canonical ?? own,
       desired?.kind === "set-location" ? desired.destination : undefined,
     );
-    return placed.hidden ? null : { ...placed.location, provisional: own.provisional };
+    const result = placed.hidden ? null : { ...placed.location, provisional: own.provisional };
+    resourceLocations.set(record, result);
+    return result;
   }
   function projectCatalog(
     input: readonly CatalogEntry[],
@@ -229,8 +240,15 @@ export function createResourcePlacement(
     resourceLocation,
     resourcePlacementPending: (record: ResourceRecord) => {
       const own = projectResourceLocation(projectId, record);
+      const effective = resourceLocation(record);
       return (
-        Boolean(own && resourceLocation(record)?.path !== own.path) ||
+        Boolean(
+          own &&
+            effective &&
+            (effective.path !== own.path ||
+              effective.scheme !== own.scheme ||
+              !sameOwner(effective, own)),
+        ) ||
         record.intents.some(
           (intent) =>
             intent.projectId === projectId &&
