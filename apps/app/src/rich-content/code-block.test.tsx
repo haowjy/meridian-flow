@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
- * A fenced block with no language draws no label row, and the actions the block
- * already offers (download, copy) stay in the document for pointer, touch and
- * keyboard. A block with a language is drawn as Streamdown draws it.
+ * A fenced code block has at most one slim header row. With a language the
+ * actions ride that row beside the label; with none there is no row, and the
+ * actions the block already offers (download, copy) stay in the document for
+ * pointer, touch and keyboard.
  *
- * jsdom has no layout, so the geometry (the actions sit in the card's top
- * padding and never over code) is checked in the browser. What is pinned here is
+ * jsdom has no layout, so the geometry (clear space above the first line, the
+ * row's height at each width) is checked in the browser. What is pinned here is
  * the part that breaks silently: `code-block.css` keys off Streamdown's rendered
  * attributes, which a Streamdown upgrade can change.
  */
@@ -65,12 +66,12 @@ describe("code block with no language", () => {
 });
 
 describe("code block with a language", () => {
-  it("keeps the label row and the actions beside it", async () => {
+  it("keeps the label and puts the actions on its row, not a second one", async () => {
     const { header, actions, actionsWrapper } = await renderFence("```python\nprint(1)\n```");
 
     expect(header && getComputedStyle(header).display).not.toBe("none");
     expect(header?.textContent).toBe("python");
-    expect(actions).not.toBeNull();
-    expect(actionsWrapper && getComputedStyle(actionsWrapper).position).not.toBe("absolute");
+    expect(actions?.querySelector('[data-streamdown="code-block-copy-button"]')).not.toBeNull();
+    expect(actionsWrapper && getComputedStyle(actionsWrapper).position).toBe("absolute");
   });
 });
