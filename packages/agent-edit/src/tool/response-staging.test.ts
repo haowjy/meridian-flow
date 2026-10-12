@@ -11,31 +11,35 @@ import {
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
-  it("does not retain a staged write when echo summarization fails", async () => {
+  it("retains an accepted staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-echo-summary-failure";
     await ctx.core.read({ file: "chapter.md" }, context);
     const originalSerialize = model.serializeBlockLines.bind(model);
     const serialize = vi.spyOn(model, "serializeBlockLines").mockImplementation((doc, ...args) => {
-      if (model.getBlocks(doc).some((block) => model.getText(block) === "Must not persist.")) {
+      if (model.getBlocks(doc).some((block) => model.getText(block) === "Must persist.")) {
         throw new Error("echo summary failed");
       }
       return originalSerialize(doc, ...args);
     });
 
     const result = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Must not persist." },
+      { command: "insert", file: "chapter.md", content: "Must persist." },
       { ...context, turnId: "turn-echo-summary-failure", responseId },
     );
     serialize.mockRestore();
 
-    expect(result).toMatchObject({ status: "internal_error", isError: true });
-    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
-      documentCount: 0,
-      updateCount: 0,
+    expect(result).toMatchObject({
+      status: "success",
+      isError: false,
+      result: { awarenessDegraded: true },
     });
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      documentCount: 1,
+      updateCount: 1,
+    });
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Must persist."]);
   });
 
   it("rolls back staged create without leaving an empty live document", async () => {

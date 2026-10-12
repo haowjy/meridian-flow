@@ -31,6 +31,9 @@ Save-time link preparation receives only disposable replicas.
 Rollback changes ownership only on settlement.
 The committer owns one immutable snapshot and one promise while committing;
 immediate writes use the journal kind returned by submission to restore or recover atomically.
+Receipts render accepted cuts independently of projection. Reporting failures produce
+degraded receipts, never mutation recovery; prepared reporting uses the owner’s accepted
+before and after cuts without acquiring or applying to a live document.
 
 ## Rules
 
