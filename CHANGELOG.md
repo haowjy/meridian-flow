@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Settings fits a narrow desktop window. Its sections become tabs along the top and each setting sits under its label, as on a phone, with a margin from the window edge.
+
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
