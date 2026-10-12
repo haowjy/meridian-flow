@@ -57,6 +57,7 @@ export const threadTailCommand: CommandSpec = {
       return lastSnapshot;
     };
     const turnIds = new Set<string>();
+    let observedFailure = false;
     try {
       const initial = since === undefined || untilIdle ? await readSnapshot() : null;
       since ??= initial?.liveState.resumeAfterSeq ?? "0";
@@ -73,6 +74,7 @@ export const threadTailCommand: CommandSpec = {
         textStream: "out",
         shouldStop: (event) => {
           if ("turnId" in event) turnIds.add(event.turnId);
+          if (event.type === "turn.failed") observedFailure = true;
           return (
             untilIdle &&
             (event.type === "turn.finished" ||
@@ -97,7 +99,13 @@ export const threadTailCommand: CommandSpec = {
       if (!untilIdle) return undefined;
       for (const id of result.turnIds) turnIds.add(id);
       if (!lastSnapshot) throw new Error("Tail finished without a confirming snapshot");
-      return finishResult(ctx.out, tailResult(threadId, lastSnapshot, turnIds));
+      return finishResult(
+        ctx.out,
+        tailResult(threadId, lastSnapshot, turnIds, {
+          failed: observedFailure,
+          truncated: result.truncated,
+        }),
+      );
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
@@ -140,19 +148,30 @@ function isIdle(state: ThreadLiveState): boolean {
   );
 }
 
-/** Snapshot statuses, not the absence of an error frame, prove the covered outcome. */
-function tailResult(threadId: string, snapshot: ThreadSnapshotResponse, ids: ReadonlySet<string>) {
+/** Known terminal outcomes survive gaps; missing replay cannot prove completion. */
+function tailResult(
+  threadId: string,
+  snapshot: ThreadSnapshotResponse,
+  ids: ReadonlySet<string>,
+  observed = { failed: false, truncated: false },
+) {
   const turns = [...ids].map((turnId) => ({
     turnId,
     status: snapshot.turns.find((turn) => turn.id === turnId)?.status ?? "missing",
   }));
   let claim: Claim;
-  if (turns.some((turn) => !["complete", "error", "cancelled"].includes(turn.status)))
-    claim = { outcome: "unproven", reason: "unconfirmed" };
-  else if (turns.some((turn) => turn.status === "error"))
+  if (observed.failed || turns.some((turn) => turn.status === "error"))
     claim = { outcome: "failed", reason: null };
   else if (turns.some((turn) => turn.status === "cancelled"))
     claim = { outcome: "cancelled", reason: null };
+  else if (observed.truncated) claim = { outcome: "unproven", reason: "replay_truncated" };
+  else if (turns.some((turn) => !["complete", "error", "cancelled"].includes(turn.status)))
+    claim = { outcome: "unproven", reason: "unconfirmed" };
   else claim = { outcome: "complete", reason: null };
-  return terminalResult("thread.tail", claim, { threadId, turnId: [...ids].at(-1) ?? null, turns });
+  return terminalResult("thread.tail", claim, {
+    threadId,
+    turnId: [...ids].at(-1) ?? null,
+    turns,
+    idle: true,
+  });
 }

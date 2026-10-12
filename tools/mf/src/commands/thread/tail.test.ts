@@ -233,3 +233,93 @@ it.each([
     await stack.close();
   }
 });
+
+it.each([
+  {
+    name: "lost start with retained error",
+    gap: true,
+    failure: true,
+    code: 1,
+    outcome: "failed",
+    reason: null,
+  },
+  {
+    name: "gap without a failure",
+    gap: true,
+    failure: false,
+    code: 6,
+    outcome: "unproven",
+    reason: "replay_truncated",
+  },
+  {
+    name: "unattributed error without a mapped start",
+    gap: false,
+    failure: true,
+    code: 1,
+    outcome: "failed",
+    reason: null,
+  },
+])("counts $name without inventing covered membership", async ({
+  gap,
+  failure,
+  code,
+  outcome,
+  reason,
+}) => {
+  const stack = await startFakeStack();
+  try {
+    const first = {
+      id: "A",
+      role: "assistant" as const,
+      status: "streaming",
+      error: null,
+      text: "",
+    };
+    stack.turns.push(first, {
+      id: "B",
+      role: "assistant",
+      status: failure ? "error" : "complete",
+      error: failure ? "B failed" : null,
+      text: "",
+    });
+    if (gap) {
+      stack.publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: "B" } as AGUIEvent);
+      stack.socketPolicy.replayFloor = "1";
+    }
+    if (failure) stack.publish({ type: "RUN_ERROR", message: "B failed" } as AGUIEvent);
+    // The initial HTTP snapshot sees A running; subscription replay sees idle.
+    // B's start is either absent or below the retention floor.
+    stack.server.once("upgrade", () => {
+      first.status = "complete";
+    });
+    const result = await stack.mf([
+      "thread",
+      "tail",
+      THREAD_ID,
+      "--since",
+      "0",
+      "--until-idle",
+      "--timeout",
+      "1s",
+      "--json",
+    ]);
+    expect(result.code).toBe(code);
+    const records = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(records.some((record) => record.type === "gap")).toBe(gap);
+    expect(records.some((record) => record.type === "turn.failed")).toBe(failure);
+    expect(records.some((record) => record.type === "turn.started")).toBe(false);
+    expect(records.at(-1)).toMatchObject({
+      type: "result",
+      command: "thread.tail",
+      outcome,
+      reason,
+      idle: true,
+      turns: [{ turnId: "A", status: "complete" }],
+    });
+  } finally {
+    await stack.close();
+  }
+});
