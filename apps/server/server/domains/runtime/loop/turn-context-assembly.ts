@@ -191,7 +191,7 @@ export async function assembleNextTurnContext(
   if (isThreadPromptFrozen(thread)) {
     const bake = await bakeInEffect(
       {
-        threads: { findByIdIncludingDeleted: async () => thread },
+        threads: { findByIdIncludingDeleted: async () => ({ ...thread, project: null }) },
         turns: { listByThread: async () => input.turns },
         promptBakes: input.promptBakes,
       },
