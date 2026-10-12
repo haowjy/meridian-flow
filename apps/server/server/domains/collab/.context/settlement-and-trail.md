@@ -91,13 +91,30 @@
   suppresses elevation and never blocks Apply.
 - **Durable trail invalidation**: each turn and shared thread owner carries
   `trail_dirty_revision`; each shell acknowledges `reconciled_revision`. Receipt,
-  placement, journal disposition, publication and turn-lifecycle triggers advance
-  the owner in the same command transaction. Aggregate recording durably returns
+  placement, journal disposition, publication, settlement and turn-lifecycle commands
+  call `invalidateTrailOwners(tx, affected)` in the same transaction as their writes.
+  No trail invalidation trigger takes owner locks. Aggregate recording durably returns
   its shell to building in that transaction. Reconciliation captures one owner cut
   after the aggregate locks and acknowledges only that cut, without locking owner rows;
   a concurrent commit or process restart cannot lose invalidation. Unapplied draft
   rows are not pending trail work. Rollback-pending rows and pending live
   settlements delay readiness; empty, cancelled and error turns still settle.
+- **Owner locking is a command prelude**: `adapters/drizzle-trail-owners.ts` resolves
+  physical owners and recursively follows immutable receipt-part target edit IDs.
+  Writer inverses stay ownerless; their original turns carry invalidation. Lock
+  all affected thread rows (`NO KEY UPDATE`, ID order), then all affected turn
+  rows, before any Work row, document/advisory lock, journal row or settlement
+  outbox row. This extends the shared thread-before-Work order, rather than
+  acquiring thread locks from inside Work-locked receipt/placement helpers.
+  Reply finalization passes its typed thread/turn owner into the core save
+  transaction before the core locks grant Works or live documents. Draft append locks only its explicit
+  incoming owners, not every chat sharing the draft. Apply/Discard and
+  multi-branch reversal resolve their complete existing row-owner set upfront.
+  Since discovery precedes the Work lock, draft commands re-read the owner cut
+  under that lock and refuse an expanded set as an existing branch CAS conflict;
+  they never add owner locks after Work. No new retry mechanism is introduced.
+  Full/empty Discard enters this prelude before its Work lock; settlement
+  completion enters it before Work, namespace and document locks.
 - **Apply settles ahead refs per completion because drafts cannot move documents**
   (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
   live and settles in the tree store's move transaction. So the only documents an

@@ -162,8 +162,8 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
   }): Promise<BranchTurnReversal[]> {
     const branchIds = [...new Set(turnInput.branchIds)];
     if (branchIds.length === 0) return [];
-    // Branch critical sections, then every branch's Work once, then each
-    // branch's change-trail and document locks (file-access §5). A concurrent
+    // Branch critical sections, then all thread/turn owners before Works, then
+    // each branch's trail and document locks (file-access §5). A concurrent
     // push holds its branch section while it waits for the Work row.
     return criticalSections.withBranches(branchIds, async () => {
       const frozen = await deps.commitStore.lockDraftWorks(branchIds);
