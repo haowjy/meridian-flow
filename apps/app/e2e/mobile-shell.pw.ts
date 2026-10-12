@@ -136,6 +136,15 @@ test("unavailable document masks only its body and navigation opens another docu
       VALUES (${fixture.projectId}, ${await findTestUserId(db)}, 'No Work', NULL, true)`;
     await page.goto(`/p/${fixture.projectId}/editor/kb/alpha`);
     await expect(page.getByText("Seed context.", { exact: true })).toBeVisible({ timeout: 30_000 });
+    // Preserve the resize-produced collapsed preferences across a hard entry.
+    await page.evaluate(() => {
+      const key = "meridian:project-surface-layout";
+      const saved = JSON.parse(localStorage.getItem(key) ?? "{}");
+      saved.state.prefs["context-viewer"] = { collapsed: true, width: 0 };
+      saved.state.prefs.threads.collapsed = true;
+      saved.state.slotPrefs.dock.collapsed = true;
+      localStorage.setItem(key, JSON.stringify(saved));
+    });
     await page.goto(`/p/${fixture.projectId}/editor/kb/missing.md`);
     const message = page.getByText("This destination is unavailable.");
     await expect(message).toBeVisible({ timeout: 30_000 });
