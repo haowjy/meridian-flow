@@ -50,7 +50,11 @@ function stubOrchestrator(
   let counter = 0;
   return {
     async prepare(input) {
-      const lease = await authority.startExecution(input.threadId, crypto.randomUUID());
+      const lease = await authority.startExecution(
+        input.threadId,
+        crypto.randomUUID(),
+        async () => {},
+      );
       if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
@@ -95,7 +99,7 @@ function stubOrchestrator(
       return {
         userTurnId: userTurn.id,
         executionTurnId: assistantTurnId,
-        runId: assistantTurnId,
+        executionId: assistantTurnId,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "1",
         execute: async () => {

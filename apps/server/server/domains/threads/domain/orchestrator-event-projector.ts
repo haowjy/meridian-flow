@@ -13,7 +13,10 @@ import {
   type AGUIEvent,
   EventSchemas,
   EventType,
-  type RunFinishedMeta,
+  EXECUTION_ENDED_EVENT,
+  type ExecutionEndedValue,
+  MESSAGES_DELIVERED_EVENT,
+  type MessagesDeliveredValue,
   type RunStartedMeta,
 } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
@@ -95,7 +98,7 @@ export function createOrchestratorEventProjector() {
     state.nextBlockSequence = Math.max(state.nextBlockSequence, block.sequence + 1);
   }
 
-  function finalizeRun(errorMessage?: string, continued = false): AGUIEvent[] {
+  function finalizeRun(errorMessage?: string): AGUIEvent[] {
     const events = [...closeOpenTextMessage(), ...closeOpenReasoningMessage()];
     if (errorMessage) {
       events.push(
@@ -110,7 +113,6 @@ export function createOrchestratorEventProjector() {
           type: EventType.RUN_FINISHED,
           threadId: state.activeThreadId,
           runId: state.activeRunId,
-          rawEvent: { continued } satisfies RunFinishedMeta,
         }),
       );
     }
@@ -135,8 +137,9 @@ export function createOrchestratorEventProjector() {
             runId: event.turn.id,
             rawEvent: {
               writeMode: event.turn.writeMode,
-              answersUserTurnIds: event.answersUserTurnIds ?? [],
-              continuesRunId: event.continuesRunId ?? null,
+              // Old journal payloads lack these; they read as unknown.
+              executionId: event.turn.executionId ?? null,
+              reservedForUserTurnIds: event.turn.reservedForUserTurnIds ?? [],
             } satisfies RunStartedMeta,
           }),
         ];
@@ -489,8 +492,31 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      // Identity facts ride beside the run lifecycle and never touch its state.
+      case "messages.delivered":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: MESSAGES_DELIVERED_EVENT,
+            value: {
+              byTurnId: event.byTurnId,
+              executionId: event.executionId,
+              userTurnIds: event.userTurnIds,
+            } satisfies MessagesDeliveredValue,
+          }),
+        ];
+
+      case "execution.ended":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: EXECUTION_ENDED_EVENT,
+            value: { executionId: event.executionId } satisfies ExecutionEndedValue,
+          }),
+        ];
+
       case "turn.completed":
-        return finalizeRun(undefined, event.continued === true);
+        return finalizeRun();
 
       case "turn.cancelled":
         return finalizeRun();

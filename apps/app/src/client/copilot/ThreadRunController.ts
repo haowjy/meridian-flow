@@ -1,8 +1,9 @@
 /** Owns a thread run from submission through transport recovery. */
 import {
   EventType,
+  EXECUTION_ENDED_EVENT,
   isTerminalTurnStatus,
-  readRunFinishedMeta,
+  readExecutionEnded,
   readRunStartedMeta,
   type SubmittedReference,
   type UserMessageBlock,
@@ -85,7 +86,7 @@ export type ThreadRunControllerOptions = {
 /**
  * One followed thread. The state model (what binds, what Stop targets, when it
  * settles) is the D62 controller model; the invariant is that a start binds
- * only as the observed run, the successor that names it in `continuesRunId`,
+ * only as the observed run, a successor in the observed run's execution,
  * or the reply that answers an admitted user turn, never because it came next
  * in the stream or soon after a finish.
  */
@@ -427,9 +428,9 @@ export class ThreadRunController {
 
   private attachAcceptedRun(
     threadId: string,
-    result: { userTurnId: string; assistantTurnId: string | null; resumeAfterSeq: string },
+    result: { userTurnId: string; steersTurnId: string | null; resumeAfterSeq: string },
   ): void {
-    const named = result.assistantTurnId;
+    const named = result.steersTurnId;
     const run =
       this.activeRun?.threadId === threadId && this.activeRun.unsubscribe ? this.activeRun : null;
     // Null names no reply: the message waits for a new one (idle, or queued
@@ -506,6 +507,12 @@ export class ThreadRunController {
       if (!this.accountSignal.aborted) coalescer.flush();
       disposed = true;
     };
+    // Interim mapping onto run identity until the follow rule replaces this
+    // state: a finish keeps following until its execution ends, and a start in
+    // that execution before its end is the successor. One claim per thread: no
+    // other execution starts before that end, so an execution the controller
+    // never saw start (a resume) still matches.
+    const executionOf = new Map<string, string>();
     const bind = (turnId: string) => {
       // Flush the previous run before the next enters the durable snapshot owner.
       if (run.turnId !== turnId) coalescer.flush();
@@ -544,13 +551,18 @@ export class ThreadRunController {
 
           if (effectiveEvent.type === EventType.RUN_STARTED) {
             const runId = effectiveEvent.runId;
-            const { answersUserTurnIds: answers, continuesRunId } = readRunStartedMeta(
+            const { reservedForUserTurnIds: answers, executionId } = readRunStartedMeta(
               effectiveEvent.rawEvent,
             );
+            const followedExecution = run.turnId ? executionOf.get(run.turnId) : undefined;
+            if (executionId) executionOf.set(runId, executionId);
             for (const userTurnId of answers) run.seenAnswers.set(userTurnId, runId);
             const answersAwaited = answers.filter((userTurnId) => run.awaiting.has(userTurnId));
             const unscoped = run.turnId === undefined && !run.ended && run.awaiting.size === 0;
-            const successor = continuesRunId !== null && continuesRunId === run.turnId;
+            const successor =
+              !!run.continuing &&
+              runId !== run.turnId &&
+              (followedExecution === undefined || followedExecution === executionId);
             // Any other start is another reply's: a replay from the early
             // admission cursor, another client's send, or a later queued reply.
             if (runId !== run.turnId && !successor && answersAwaited.length === 0 && !unscoped) {
@@ -563,6 +575,19 @@ export class ThreadRunController {
             bind(runId);
             coalescer.push(effectiveEvent);
             return;
+          }
+
+          if (effectiveEvent.type === EventType.CUSTOM) {
+            const ended =
+              effectiveEvent.name === EXECUTION_ENDED_EVENT
+                ? readExecutionEnded(effectiveEvent.value)
+                : null;
+            if (ended) {
+              const followed = run.turnId ? executionOf.get(run.turnId) : undefined;
+              if (run.continuing && (followed === undefined || followed === ended.executionId))
+                end(false);
+              return;
+            }
           }
 
           const live = run.turnId !== undefined && !run.ended;
@@ -584,7 +609,7 @@ export class ThreadRunController {
           coalescer.push(effectiveEvent);
 
           if (effectiveEvent.type === EventType.RUN_FINISHED && live) {
-            end(readRunFinishedMeta(effectiveEvent.rawEvent).continued);
+            end(true);
           } else if (effectiveEvent.type === EventType.RUN_ERROR) {
             end(false);
           }

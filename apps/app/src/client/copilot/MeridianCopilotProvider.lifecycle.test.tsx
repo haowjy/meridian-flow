@@ -114,7 +114,7 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
   harness.append.mockResolvedValueOnce({
     threadId: "thread-1",
     userTurnId: "user-1",
-    assistantTurnId: "run-2",
+    steersTurnId: "run-2",
     resumeAfterSeq: "42",
     snapshotFloorNextSeq: "43",
     status: "accepted",

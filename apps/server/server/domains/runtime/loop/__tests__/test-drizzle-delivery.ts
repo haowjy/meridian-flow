@@ -8,6 +8,7 @@ import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-delivery.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
+import { createOrphanReportRepair } from "../../spawn/orphan-report-repair.js";
 import { writeModeSwitchNotice } from "../write-mode-switch.js";
 import { createTestNoticePort } from "./runtime-fixtures.js";
 export function createTestDrizzleDelivery(
@@ -39,5 +40,29 @@ export function createTestDrizzleDelivery(
       },
     },
     ...overrides,
+  });
+}
+
+/** The repair lane over a production delivery that shares its deps, as composition wires them. */
+export function createTestOrphanRepair(
+  db: Database,
+  deps: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution">,
+) {
+  const delivery = createTestDrizzleDelivery(db, {
+    repos: deps.repos,
+    eventWriter: deps.eventWriter,
+    runClaim: deps.authority,
+    ...(deps.toolRegistry ? { toolRegistry: deps.toolRegistry } : {}),
+    ...(deps.publishStatus ? { publishStatus: deps.publishStatus } : {}),
+    async publishFinalizedReports(reports) {
+      for (const report of reports)
+        await deps.publisher.publish(report.childThreadId, report.executionTurnId);
+    },
+  });
+  return createOrphanReportRepair({
+    ...deps,
+    retireOrphanedReply: deps.retireOrphanedReply ?? delivery.retireOrphanedReply,
+    clearOrphanedTurn: deps.clearOrphanedTurn ?? delivery.clearOrphanedTurn,
+    settleStaleExecution: delivery.settleStaleExecution,
   });
 }

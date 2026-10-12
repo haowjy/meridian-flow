@@ -60,8 +60,11 @@ function isRetryRefusal(error: unknown): boolean {
 export function useRetryStandIns(input: {
   threadId: string;
   storedTurns: readonly Turn[];
-  /** Ask the server for turn `id`, retrying `from` (the turn first pressed). */
-  post: (id: string, from: string) => Promise<Turn>;
+  /**
+   * Ask the server for turn `id`, retrying `from` (the turn first pressed).
+   * Null: accepted, but the server has no turn to show yet.
+   */
+  post: (id: string, from: string) => Promise<Turn | null>;
   /** On the failed stand-in and announced, when the request never answered. */
   lostCopy: string;
 }): RetryStandIns {
@@ -122,7 +125,7 @@ export function useRetryStandIns(input: {
     (id: string, from: string) => {
       optionsRef.current.post(id, from).then(
         (serverTurn) => {
-          patch(id, (entry) => ({ ...entry, turn: serverTurn, request: "sent" }));
+          patch(id, (entry) => ({ ...entry, turn: serverTurn ?? entry.turn, request: "sent" }));
           refresh();
         },
         (error: unknown) => {

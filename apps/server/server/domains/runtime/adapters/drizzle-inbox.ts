@@ -172,18 +172,31 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       };
     },
 
-    async ack(threadId, ids) {
-      if (ids.length === 0) return;
-      await db_()
+    async ack(threadId, ids, byTurnId = null) {
+      if (ids.length === 0) return [];
+      // Only a message row records its deliverer; controls and notices keep null.
+      const rows = await db_()
         .update(schema.threadInboxMessages)
-        .set({ deliveredAt: new Date() })
+        .set({
+          deliveredAt: new Date(),
+          deliveredByTurnId: sql`CASE WHEN ${schema.threadInboxMessages.intent} = 'message' THEN ${byTurnId}::uuid ELSE NULL END`,
+        })
         .where(
           and(
             eq(schema.threadInboxMessages.threadId, threadId),
             inArray(schema.threadInboxMessages.id, ids),
             isNull(schema.threadInboxMessages.deliveredAt),
           ),
-        );
+        )
+        .returning({
+          id: schema.threadInboxMessages.id,
+          intent: schema.threadInboxMessages.intent,
+          seq: schema.threadInboxMessages.seq,
+        });
+      return rows
+        .filter((row) => row.intent === "message")
+        .sort((left, right) => left.seq - right.seq)
+        .map((row) => row.id);
     },
 
     async pendingMessageThreads(limit, afterThreadId) {

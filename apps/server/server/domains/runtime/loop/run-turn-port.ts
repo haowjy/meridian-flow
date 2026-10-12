@@ -45,6 +45,8 @@ export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
   /** Client-minted id for an explicit no-input reply Retry. */
   replyTurnId?: TurnId;
+  /** The failed reply a Retry re-answers; its first reservation records it as `metadata.retryOf`. */
+  retryOf?: TurnId;
   /** Leaf that must still be current after the run claim is acquired. */
   expectedLeafTurnId?: TurnId;
 }
@@ -91,6 +93,20 @@ export class ReplyRetryUnavailableError extends Error {
   }
 }
 
+/**
+ * A Retry replay found nothing it could match while the claim was held by an
+ * execution that has reserved nothing yet, which may be its own first request.
+ * Not a refusal: the client repeats the same request id.
+ */
+export class ReplyRetryPendingError extends Error {
+  readonly code = "retry_pending";
+
+  constructor(readonly threadId: ThreadId) {
+    super("retry_pending");
+    this.name = "ReplyRetryPendingError";
+  }
+}
+
 /** A live placeholder's failure transaction did not commit. Orphan repair owns
  * its terminal state; paid response rows still in memory are lost like a crash,
  * not separately debited outside the transaction that ends the placeholder.
@@ -114,7 +130,7 @@ export type RunOutcome =
 
 /** The recipient must execute every prepared run, even when already cancelled. */
 export interface PreparedRun {
-  runId: string;
+  executionId: string;
   userTurnId: TurnId;
   executionTurnId: TurnId;
   resumeAfterSeq: string;

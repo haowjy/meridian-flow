@@ -26,10 +26,11 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   /** Use this client-minted id for the next assistant after a start-time compaction. */
   preferredSuccessorTurnId?: TurnId;
   /**
-   * The reply a successor continues when the current turn is a compaction
-   * placeholder; an assistant current turn is its own successor's link.
+   * Messages the execution still carries for its first assistant: a Retry's
+   * failed-reply list through a start-time compaction. Those inbox rows are
+   * already acknowledged, so the inbox selection can't supply them.
    */
-  continuesRunId?: TurnId;
+  carriedReservedForUserTurnIds?: readonly string[];
   signal?: AbortSignal;
   continueTask?: boolean;
   /**
@@ -121,8 +122,19 @@ export interface RuntimeDelivery
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
-  /** Settle any previous primary assistant before a new run selects context. */
-  repairOrphanedTurns(lease: Lease): Promise<void>;
+  /**
+   * Under a newly acquired claim, before anything else the holder does: repair
+   * every orphaned turn (primary and child-report paths), then end the stale
+   * lease row's execution (journal `execution.ended` when a turn carries it) and
+   * delete the row in one transaction. A no-op on a settled thread.
+   */
+  settleStaleExecution(threadId: ThreadId): Promise<void>;
+  /**
+   * The run owner's cleanup: unlock only when the row is gone, end the
+   * execution when every turn it reserved is terminal, else abandon it for
+   * `settleStaleExecution`.
+   */
+  releaseExecution(lease: Lease): Promise<"released" | "ended" | "abandoned">;
   /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */
   retireOrphanedReply(threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Clear a crash-finalized non-reply selector without acknowledging its messages. */
@@ -152,7 +164,13 @@ export interface RuntimeDelivery
       signal?: AbortSignal;
     },
   ): Promise<T>;
-  ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
+  /** Persists a response and delivers `ids` by `byTurnId`, the assistant it answers them with. */
+  ackWithResponse<T>(
+    lease: Lease,
+    ids: string[],
+    byTurnId: TurnId,
+    persist: () => Promise<T>,
+  ): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
     input: DeliveryBoundary<TCurrent>,
   ): Promise<AdoptedBatch<TCurrent>>;

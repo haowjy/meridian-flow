@@ -3,7 +3,10 @@
  * (codex-exec style) and renders each as one text line.
  */
 import {
-  readRunFinishedMeta,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+  readExecutionEnded,
+  readMessagesDelivered,
   readRunStartedMeta,
   type SequencedEvent,
 } from "@meridian/contracts/protocol";
@@ -14,10 +17,10 @@ export type CliEvent =
       type: "turn.started";
       seq: string;
       turnId: string;
-      /** User turns this reply answers; how a send recognizes its own reply. */
-      answersUserTurnIds: readonly string[];
-      /** The reply this one continues under the same lease (a split successor). */
-      continuesRunId: string | null;
+      /** The execution that reserved this reply; a split successor shares it. */
+      executionId: string | null;
+      /** User turns this reply was reserved for; how a send recognizes its own reply. */
+      reservedForUserTurnIds: readonly string[];
     }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
   | {
@@ -47,13 +50,16 @@ export type CliEvent =
       turnId: string;
       interruptId: string;
     }
+  | { type: "turn.finished"; seq: string; turnId: string }
   | {
-      type: "turn.finished";
+      type: "messages.delivered";
       seq: string;
-      turnId: string;
-      /** A same-lease successor continues this reply; the run is not over. */
-      continued: boolean;
+      byTurnId: string | null;
+      executionId: string | null;
+      userTurnIds: readonly string[];
     }
+  /** Every turn the execution reserved is terminal; it does no further work. */
+  | { type: "execution.ended"; seq: string; executionId: string }
   | {
       type: "turn.failed";
       seq: string;
@@ -78,26 +84,19 @@ export class RunEventMapper {
     const e = event as unknown as Record<string, unknown> & { type: string };
     switch (e.type) {
       case "RUN_STARTED": {
-        const { answersUserTurnIds, continuesRunId } = readRunStartedMeta(e.rawEvent);
+        const { executionId, reservedForUserTurnIds } = readRunStartedMeta(e.rawEvent);
         return [
           {
             type: "turn.started",
             seq,
             turnId: String(e.runId),
-            answersUserTurnIds,
-            continuesRunId,
+            executionId,
+            reservedForUserTurnIds,
           },
         ];
       }
       case "RUN_FINISHED":
-        return [
-          {
-            type: "turn.finished",
-            seq,
-            turnId: String(e.runId),
-            continued: readRunFinishedMeta(e.rawEvent).continued,
-          },
-        ];
+        return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
       case "RUN_ERROR": {
         const details =
           sequenced.error?.details &&
@@ -193,6 +192,14 @@ export class RunEventMapper {
 
   private mapCustom(seq: string, name: string, value: unknown): CliEvent[] {
     const record = (value ?? {}) as Record<string, unknown>;
+    if (name === EXECUTION_ENDED_EVENT) {
+      const ended = readExecutionEnded(value);
+      return ended ? [{ type: "execution.ended", seq, executionId: ended.executionId }] : [];
+    }
+    if (name === MESSAGES_DELIVERED_EVENT) {
+      const delivered = readMessagesDelivered(value);
+      return delivered ? [{ type: "messages.delivered", seq, ...delivered }] : [];
+    }
     if (name === "meridian.interrupt") {
       const state = String(record.state);
       const type =
@@ -245,6 +252,10 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
       return `${event.type} ${event.interruptId}`;
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
+    case "messages.delivered":
+      return null;
+    case "execution.ended":
+      return `execution.ended ${event.executionId}`;
     case "turn.failed":
       return `turn.failed ${event.message}${event.failureReason ? ` (failure reason: ${event.failureReason})` : ""}`;
   }

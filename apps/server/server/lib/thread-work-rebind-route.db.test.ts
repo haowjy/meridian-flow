@@ -193,7 +193,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const projects = createDrizzleProjectRepository({ db });
       const modelInstance = createDrizzleRunClaim(db);
       const writerInstance = createDrizzleRunClaim(db);
-      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run");
+      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run", async () => {});
       expect(modelClaim).not.toBeNull();
 
       try {

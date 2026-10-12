@@ -50,8 +50,7 @@ export const threadTailCommand: CommandSpec = {
         full: flag(ctx, "full"),
         textStream: "out",
         shouldStop: (event) =>
-          untilIdle &&
-          ((event.type === "turn.finished" && !event.continued) || event.type === "turn.failed"),
+          untilIdle && (event.type === "execution.ended" || event.type === "turn.failed"),
       });
       return result.stoppedBy?.type === "turn.failed" ? EXIT.failed : undefined;
     } catch (error) {

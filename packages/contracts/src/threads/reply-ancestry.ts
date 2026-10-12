@@ -1,12 +1,8 @@
 /**
- * The durable form of "which reply answers which turn". A reply's request
- * carries the turns between it and the previous reply, so the relation is the
- * turn graph walked through non-assistant turns only (switch, compaction,
- * skill-body and notice turns sit between a message and its reply).
- *
- * The same walk reads a user turn's answering reply and a split reply's
- * same-lease successor; its inverse names the user turns a failed reply
- * answered, which its Retry re-answers.
+ * Transcript-ancestry guess at "which reply answers which turn": the turn graph
+ * walked through non-assistant turns only. Superseded by run identity
+ * (`Turn.executionId`, `Turn.delivery`); kept only for the app controller until
+ * its follow rule replaces it. The server never reads it.
  */
 import { isTerminalTurnStatus, type TurnStatus } from "./status.js";
 
@@ -35,20 +31,4 @@ export function replyReaching<T extends AncestryTurn>(
   };
   const replies = turns.filter((turn) => turn.role === "assistant" && reaches(turn));
   return replies.find((turn) => !isTerminalTurnStatus(turn.status)) ?? replies.at(-1);
-}
-
-/** The user turns a reply answers: those reached from it through only non-assistant turns, oldest first. */
-export function userTurnsAnsweredBy<T extends AncestryTurn>(
-  reply: T,
-  byId: ReadonlyMap<string, T>,
-): string[] {
-  const answered: string[] = [];
-  let prev = reply.prevTurnId;
-  while (prev) {
-    const turn = byId.get(prev);
-    if (!turn || turn.role === "assistant") break;
-    if (turn.role === "user") answered.unshift(turn.id);
-    prev = turn.prevTurnId;
-  }
-  return answered;
 }

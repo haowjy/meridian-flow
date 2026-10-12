@@ -188,6 +188,10 @@ export function createDrizzleTurnRepository(
             origin: input.origin,
             aiWriteMode: input.writeMode ?? null,
             status: input.status ?? "pending",
+            executionId: input.executionId ?? null,
+            reservedForUserTurnIds: input.reservedForUserTurnIds
+              ? [...input.reservedForUserTurnIds]
+              : null,
             totalInputTokens: 0,
             totalOutputTokens: 0,
             totalCostUsd: "0",
@@ -245,6 +249,51 @@ export function createDrizzleTurnRepository(
         }
         return mapTurn(row);
       });
+    },
+    async listByExecution(threadId: ThreadId, executionId: string) {
+      // Lease ids are text; compare as text so a non-UUID id simply matches nothing.
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            sql`${schema.turns.executionId} IS NOT NULL`,
+            sql`${schema.turns.executionId}::text = ${executionId}`,
+          ),
+        )
+        .orderBy(asc(schema.turns.position));
+      return rows.map(mapTurn);
+    },
+    async findRetryReservation(threadId: ThreadId, replyTurnId: TurnId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            sql`${schema.turns.metadata}->>'retryReplyId' = ${replyTurnId}`,
+          ),
+        )
+        .orderBy(asc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
+    async listMessageDeliveries(threadId: ThreadId) {
+      const rows = await currentDrizzleDb(db)
+        .select({
+          id: schema.threadInboxMessages.id,
+          byTurnId: schema.threadInboxMessages.deliveredByTurnId,
+        })
+        .from(schema.threadInboxMessages)
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, threadId),
+            eq(schema.threadInboxMessages.intent, "message"),
+            sql`${schema.threadInboxMessages.deliveredAt} IS NOT NULL`,
+          ),
+        );
+      return new Map(rows.map((row) => [row.id, { byTurnId: row.byTurnId ?? null }]));
     },
     async findById(id: TurnId) {
       const [row] = await currentDrizzleDb(db)

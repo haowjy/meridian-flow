@@ -1,6 +1,7 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -1284,29 +1285,35 @@ else
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
-      // B, created after C, names only the writer's message it answers (not
-      // the one A already answered) and continues A through the placeholder.
-      const journal = await db
-        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
-        .from(schema.eventJournal);
-      const event = (type: string, turnId: string | undefined) =>
-        journal
-          .filter(({ eventType }) => eventType === type)
-          .map(
-            ({ payload }) =>
-              payload as {
-                turn: { id: string };
-                answersUserTurnIds?: string[];
-                continuesRunId?: string | null;
-                continued?: boolean;
-              },
-          )
-          .find(({ turn }) => turn.id === turnId);
-      expect(event("turn.created", tail[3]?.id)).toMatchObject({
-        answersUserTurnIds: [tail[1]?.id],
-        continuesRunId: tail[0]?.id,
-      });
-      expect(event("turn.completed", tail[0]?.id)?.continued).toBe(true);
+      // A, C and B are one execution. B, reserved after C, is for the writer's
+      // message A left (not the one A delivered), and delivers it; one end.
+      const rows = await db
+        .select({
+          id: schema.turns.id,
+          executionId: schema.turns.executionId,
+          reservedFor: schema.turns.reservedForUserTurnIds,
+        })
+        .from(schema.turns)
+        .where(inArray(schema.turns.id, [tail[0]?.id, tail[2]?.id, tail[3]?.id] as never[]));
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(
+        [tail[0], tail[2], tail[3]].map((turn) => byId.get(turn?.id as never)?.executionId),
+      ).toEqual([run.executionId, run.executionId, run.executionId]);
+      expect(byId.get(tail[3]?.id as never)?.reservedFor).toEqual([tail[1]?.id]);
+      const [delivered] = await db
+        .select({ byTurnId: schema.threadInboxMessages.deliveredByTurnId })
+        .from(schema.threadInboxMessages)
+        .where(eq(schema.threadInboxMessages.id, tail[1]?.id as never));
+      expect(delivered?.byTurnId).toBe(tail[3]?.id);
+      const ends = await db
+        .select({ payload: schema.eventJournal.payload })
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.eventType, "execution.ended"));
+      expect(
+        ends.filter(
+          ({ payload }) => (payload as { executionId: string }).executionId === run.executionId,
+        ),
+      ).toHaveLength(1);
     });
 
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {
@@ -1353,7 +1360,7 @@ else
           kind: "compaction",
         });
         const admission = await rig.send(rig.threadId, "Run after cancellation.");
-        expect(admission.assistantTurnId).toBeNull();
+        expect(admission.steersTurnId).toBeNull();
         lateId = admission.userTurnId;
         rig.setThreshold(undefined);
         await rig.orchestrator.cancel(rig.threadId, turnId);

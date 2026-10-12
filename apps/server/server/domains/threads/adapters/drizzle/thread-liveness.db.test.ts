@@ -95,6 +95,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const readers = {
         read: async () => ({ kind: "asleep" as const }),
         readRunningTurnId: async () => null,
+        readOpenExecutionId: async () => null,
         readMany: async () => new Map(),
         readPending: async () => ({ items: [] }),
       };
@@ -149,7 +150,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readPending: async () => ({ items: [] }),
       });
 
-      const lease = await authority.startExecution(THREAD_ID, "run-1");
+      const lease = await authority.startExecution(THREAD_ID, "run-1", async () => {});
       if (!lease) throw new Error("expected the lease to be acquired");
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
         value: undefined,

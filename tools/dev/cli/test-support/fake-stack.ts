@@ -134,17 +134,32 @@ function createFake() {
     for (const socket of sockets) socket.send(JSON.stringify(frame));
   };
 
-  /** A reply start, naming the user turns it answers and the reply it continues, as the server does. */
+  /**
+   * A reply start, as the server projects it: its execution (a split successor
+   * shares its predecessor's; a new one is named after the reply) and the user
+   * turns it was reserved for.
+   */
+  const executionOf = new Map<string, string>();
   const publishStart = (
     runId: string,
-    answersUserTurnIds: string[],
-    continuesRunId: string | null = null,
-  ) =>
+    reservedForUserTurnIds: string[],
+    successorOf: string | null = null,
+  ) => {
+    const executionId = (successorOf && executionOf.get(successorOf)) || `execution-${runId}`;
+    executionOf.set(runId, executionId);
     publish({
       type: "RUN_STARTED",
       threadId: THREAD_ID,
       runId,
-      rawEvent: { writeMode: null, answersUserTurnIds, continuesRunId },
+      rawEvent: { writeMode: null, executionId, reservedForUserTurnIds },
+    } as AGUIEvent);
+  };
+  /** The followed reply's execution ended: its terminal finish or error carried no successor. */
+  const publishEnded = (runId: string) =>
+    publish({
+      type: "CUSTOM",
+      name: "meridian.execution.ended",
+      value: { executionId: executionOf.get(runId) ?? `execution-${runId}` },
     } as AGUIEvent);
 
   const runScenario = (text: string) => {
@@ -167,6 +182,7 @@ function createFake() {
         assistant.status = "error";
         assistant.error = "boom";
         publish({ type: "RUN_ERROR", message: "boom" } as AGUIEvent);
+        publishEnded(runId);
         return;
       }
       if (text.includes("ask")) {
@@ -231,6 +247,7 @@ function createFake() {
       assistant.status = "complete";
       assistant.text = "Hello there";
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
+      publishEnded(runId);
     }, 10);
     return runId;
   };
@@ -334,6 +351,7 @@ function createFake() {
           };
           turns.push(reply);
           publish({ type: "RUN_ERROR", message: "cancelled" } as AGUIEvent);
+          publishEnded(runningTurnId);
           setTimeout(() => {
             publishStart(replyId, [userTurnId]);
             const messageId = `${replyId}::0`;
@@ -347,12 +365,13 @@ function createFake() {
             reply.status = "complete";
             reply.text = "Answered the queued message";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
           }, 20);
         }, 5);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          assistantTurnId: runningTurnId,
+          steersTurnId: runningTurnId,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -397,7 +416,6 @@ function createFake() {
             type: "RUN_FINISHED",
             threadId: THREAD_ID,
             runId: runningTurnId,
-            rawEvent: { continued: true },
           } as AGUIEvent);
           publishStart(replyId, [userTurnId], runningTurnId);
           setTimeout(() => {
@@ -412,12 +430,13 @@ function createFake() {
             reply.status = "complete";
             reply.text = "The steered answer";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
           }, 50);
         }, 20);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          assistantTurnId: runningTurnId,
+          steersTurnId: runningTurnId,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -469,6 +488,7 @@ function createFake() {
           running.status = "complete";
           running.text = "The old reply";
           publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: runningTurnId } as AGUIEvent);
+          publishEnded(runningTurnId);
           pendingItems.splice(0, pendingItems.length);
           setTimeout(() => {
             const replyId = `turn-reply-${runCounter}`;
@@ -485,12 +505,13 @@ function createFake() {
             reply.status = "complete";
             reply.text = "Answered in the new mode";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
           }, 20);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          assistantTurnId: null,
+          steersTurnId: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -536,6 +557,7 @@ function createFake() {
           unrelated.status = "complete";
           unrelated.text = "The answer to M1";
           publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: unrelatedId } as AGUIEvent);
+          publishEnded(unrelatedId);
           setTimeout(() => {
             pendingItems.splice(0, pendingItems.length);
             const replyId = `turn-reply-${runCounter}`;
@@ -552,12 +574,13 @@ function createFake() {
             reply.status = "complete";
             reply.text = "The answer to this message";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
           }, 20);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          assistantTurnId: null,
+          steersTurnId: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -567,7 +590,7 @@ function createFake() {
       return send(202, {
         threadId: THREAD_ID,
         userTurnId: `turn-u${runCounter}`,
-        assistantTurnId: null,
+        steersTurnId: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,
         status: "accepted",

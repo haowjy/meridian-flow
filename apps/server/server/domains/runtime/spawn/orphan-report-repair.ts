@@ -16,6 +16,8 @@ export function createOrphanReportRepair(deps: {
   inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
   retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  /** Repairs a claimed thread's orphans and ends its stale execution (`RuntimeDelivery`). */
+  settleStaleExecution(threadId: ThreadId): Promise<void>;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
   threadLock: ThreadLock;
@@ -26,6 +28,7 @@ export function createOrphanReportRepair(deps: {
   let reportCursor: TurnId | undefined;
   let unsettledCursor: { threadId: ThreadId; position: number } | undefined;
   let placeholderCursor: TurnId | undefined;
+  let leaseCursor: ThreadId | undefined;
 
   async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
     const reportsToPublish = new Map<TurnId, SavedExecutionReport>();
@@ -82,17 +85,11 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
+  /** Settlement publishes the reports it finalizes. */
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
-    const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
-      deps.threadLock.withThreadLock(candidate.threadId, () =>
-        finalizeOrphanedTurns(
-          { ...deps, publishStatus: deps.publishStatus },
-          { threadId: candidate.threadId },
-        ),
-      ),
+    await deps.authority.withExclusiveThread(candidate.threadId, () =>
+      deps.settleStaleExecution(candidate.threadId),
     );
-    for (const report of reports ?? [])
-      await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
   async function sweep(limit: number): Promise<number> {
@@ -138,6 +135,29 @@ export function createOrphanReportRepair(deps: {
       }
     }
 
+    // An expired lease is a stale execution even when no turn is unsettled: an
+    // empty execution that crashed, a row left by older code, or an abandoned
+    // one whose repairs already committed.
+    let expired = await deps.authority.listExpiredExecutions(limit, leaseCursor);
+    if (expired.length === 0 && leaseCursor) {
+      leaseCursor = undefined;
+      expired = await deps.authority.listExpiredExecutions(limit);
+    }
+    for (const threadId of expired) {
+      leaseCursor = threadId;
+      try {
+        await repairTurns({ threadId });
+      } catch (error) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.report-repair",
+          name: "lease.failed",
+          correlation: { threadId },
+          payload: unknownToEventPayload(error),
+        });
+      }
+    }
+
     let reports = await deps.repos.executionReports.listUnfinalized(limit, reportCursor);
     if (reports.length === 0 && reportCursor) {
       reportCursor = undefined;
@@ -157,7 +177,7 @@ export function createOrphanReportRepair(deps: {
         });
       }
     }
-    return unsettled.length + placeholders.length + reports.length;
+    return unsettled.length + placeholders.length + expired.length + reports.length;
   }
 
   return { sweep };

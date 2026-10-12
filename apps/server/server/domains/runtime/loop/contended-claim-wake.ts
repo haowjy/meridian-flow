@@ -58,8 +58,8 @@ export function wakeOnContendedRelease(
         if (entry) released(threadId, entry);
       }
     },
-    async startExecution(threadId, runId) {
-      const lease = await claim.startExecution(threadId, runId);
+    async startExecution(threadId, executionId, settle) {
+      const lease = await claim.startExecution(threadId, executionId, settle);
       if (!lease) turnedAway(threadId);
       return lease;
     },

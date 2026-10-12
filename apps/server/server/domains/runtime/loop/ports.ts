@@ -16,7 +16,7 @@ import type {
   ThreadStatus,
 } from "@meridian/contracts/threads";
 
-export type RunId = string;
+export type ExecutionId = string;
 export type CurrentTurn = { id: TurnId; kind: "assistant" | "compaction" };
 
 /** Lease lifetime; a held lease is renewed at a third of this interval. */
@@ -74,7 +74,7 @@ export type InboxProjection = {
 /** Handle to a held lease; the row's expiry, phase, and cancel flag are server-owned. */
 export interface Lease {
   threadId: ThreadId;
-  runId: RunId;
+  executionId: ExecutionId;
   holderId: string;
 }
 
@@ -89,10 +89,19 @@ export interface RunClaim {
   hold(threadId: ThreadId): Promise<HeldRunClaim | null>;
   /** Short exclusive work uses the same claim without minting an observable lease. */
   withExclusiveThread<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T | null>;
-  startExecution(threadId: ThreadId, runId: RunId): Promise<Lease | null>;
+  /**
+   * Takes the claim, runs `settle` while holding it (stale-execution settlement
+   * must finish before a new execution is published), then inserts the lease
+   * row. A settle failure releases the claim and rethrows.
+   */
+  startExecution(
+    threadId: ThreadId,
+    executionId: ExecutionId,
+    settle: () => Promise<void>,
+  ): Promise<Lease | null>;
   /** Returns `false` when the lease row is gone or owned by another run; the holder has lost it. */
   renew(lease: Lease): Promise<boolean>;
-  holder(threadId: ThreadId): Promise<RunId | null>;
+  holder(threadId: ThreadId): Promise<ExecutionId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
   /** Updates the live run's current tool; returns false when it did not change. */
   setCurrentTool(lease: Lease, currentTool: CurrentToolCall): Promise<boolean>;
@@ -111,14 +120,24 @@ export interface RunClaim {
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
   /** Stop the live run that has bound this turn, matching membership under the lease row lock. */
   cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  /** See `ThreadStatusReader.readOpenExecutionId`. */
+  readOpenExecutionId(threadId: ThreadId): Promise<ExecutionId | null>;
+  /** Threads whose lease row expired: stale executions for the repair lane to settle. */
+  listExpiredExecutions(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
   /**
-   * Releases the held lease. Guarded: an already-released or superseded lease is
-   * a no-op and must never free a newer run's lock. Delivery close releases under
-   * the thread lock after the terminal write commits; the run owner's `finally`
-   * releases again as the cancel/error backstop when execution fails
-   * before delivery close. The guard is what makes that double release safe.
+   * The physical half of an execution's end: deletes the owned lease row and
+   * unlocks after the surrounding transaction commits. Returns whether a row was
+   * deleted. Guarded: an already-released or superseded lease deletes nothing
+   * and never frees a newer run's lock, but a still-held claim is unlocked.
+   * Only `RuntimeDelivery`'s end protocol calls it.
    */
-  release(lease: Lease): Promise<void>;
+  release(lease: Lease): Promise<boolean>;
+  /**
+   * Gives up the claim without ending the execution: its turns are not all
+   * terminal. Expires the row now so status reads asleep, then unlocks, even if
+   * the expiry write fails; the next claim holder settles the row.
+   */
+  abandon(lease: Lease): Promise<void>;
 }
 
 export interface RunStarter {

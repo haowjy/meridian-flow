@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 /** Mounted snapshot owner and run controller share one durable transcript store. */
-import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  type SequencedEvent,
+} from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -194,6 +199,13 @@ afterEach(async () => {
   }
 });
 
+/** The followed reply's commit also ends its execution. */
+const executionEnded = {
+  type: EventType.CUSTOM,
+  name: EXECUTION_ENDED_EVENT,
+  value: { executionId: "execution-1" },
+} as AGUIEvent;
+
 for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
   describe(`durable owner after ${terminal}`, () => {
     it("replaces the original historical card with snapshots withheld and no new run", async () => {
@@ -214,6 +226,7 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
         );
         bus.emit(card("running"), "2000");
         bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
+        bus.emit(executionEnded, "3000");
       });
       await vi.advanceTimersByTimeAsync(260);
       expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
@@ -284,6 +297,7 @@ describe("current stream ordering", () => {
           { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
           "1500",
         );
+        bus.emit(executionEnded, "1500");
       });
       await vi.advanceTimersByTimeAsync(260);
       expect(
