@@ -18,9 +18,8 @@ Check desktop and 390px in light and dark:
   success. External links open a new tab and retain the outbound arrow. Internal links use
   the same document-family chips as the Editor.
 - Every top-level block pair has an 8px gap, including table/code wrappers,
-  rules, headings, lists and quotes. Outer margins are zero. (The heading gap
-  diverges from the KB chat rhythm's 24px/16px heading tops, pending an owner
-  ruling.)
+  rules, lists and quotes, except above a heading: 24px above h1 and h2, 16px
+  above h3 to h6. Outer margins are zero.
 - Task items draw a read-only checkbox (checked and unchecked) in both
   surfaces. Table headers without an alignment sit at the start of their
   column, not centered; aligned columns keep their alignment.

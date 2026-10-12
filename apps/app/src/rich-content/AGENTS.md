@@ -7,10 +7,9 @@ lowlight colors for both chat and the manuscript. Chat retains its smaller readi
 tier (`--text-scale-chat`) and 4px between list rows; the manuscript retains its
 existing block rhythm.
 
-Chat currently puts 8px between every top-level block, headings included. That
-diverges from the owner-approved [chat rhythm][chat-rhythm], where h1 and h2 open
-24px above and smaller headings 16px. Do not treat the 8px heading gap as settled
-or copy it elsewhere until the owner rules.
+Chat puts 8px between top-level blocks and keeps the owner-approved
+[chat rhythm][chat-rhythm] for headings: h1 and h2 open 24px above, smaller
+headings 16px, and the next block closes them at 8px.
 
 Static and streaming use the same source-keyed memoized block components. Only the
 live tail is repaired with remend and reparsed as tokens arrive. Blank lines outside
