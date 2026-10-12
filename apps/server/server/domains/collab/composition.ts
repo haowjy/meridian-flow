@@ -343,7 +343,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     journal: persistence.journal,
     criticalSections,
-    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const agentEdit = scopeAgentEdit(

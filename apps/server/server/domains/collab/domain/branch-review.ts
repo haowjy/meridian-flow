@@ -26,7 +26,6 @@ export type DraftReviewPreview = {
   draftRevisionToken: string;
   operations: DraftReviewOperationInternal[];
   hunks: ReviewHunk[];
-  notice?: { code: "branch_corrupt_reset"; message: string };
 };
 
 export type DraftApplyResult =

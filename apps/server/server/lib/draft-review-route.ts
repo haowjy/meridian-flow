@@ -126,7 +126,6 @@ export async function handleWorkDraftPreviewRequest(
     reviewRoomName: preview.reviewRoomName,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
-    ...(preview.notice ? { notice: preview.notice } : {}),
     ...(preview.isNewDocument ? { isNewDocument: true } : {}),
   };
   return {

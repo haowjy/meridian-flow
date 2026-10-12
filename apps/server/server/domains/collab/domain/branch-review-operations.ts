@@ -22,8 +22,7 @@ type Dependencies = {
   branchStore: BranchStore;
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
-  branchCoordinator?: Partial<Pick<BranchCoordinator, "broadcastUpdate" | "notifyReset">>;
-  deferUntilCommit?(operation: () => void | Promise<void>): boolean;
+  branchCoordinator?: Partial<Pick<BranchCoordinator, "notifyReset">>;
   journal: UpdateJournal;
   criticalSections?: BranchCriticalSections;
 };
