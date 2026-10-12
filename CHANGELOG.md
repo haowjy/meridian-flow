@@ -45,6 +45,8 @@
 
 ### Changed
 
+- Thread socket deadline and recovery contracts now live with the shared client package.
+
 - The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
 - Consolidate namespace observation migrations into one schema migration and one data backfill.
 
