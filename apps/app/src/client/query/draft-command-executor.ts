@@ -276,19 +276,7 @@ async function execute(
     }
     if (command.target === "all") {
       if (mode === "apply") {
-        const live = claimIsLive(claim);
         confirmDraftCommand(claim);
-        if (live)
-          queryClient.setQueryData<ThreadDraftListItem[]>(
-            projectQueryKeys.workDrafts(draft.projectId, draft.workId),
-            (drafts) =>
-              drafts?.filter(
-                (item) =>
-                  item.draftId !== draft.draftId ||
-                  command.generation === undefined ||
-                  item.draftGeneration > command.generation,
-              ),
-          );
         void Promise.all([
           queryClient.invalidateQueries({
             predicate: (query) => isProjectContextCatalogKey(query.queryKey, draft.projectId),
@@ -425,12 +413,13 @@ async function drainClicks(draft: DraftRef): Promise<void> {
       if (!click) return;
       let outcome: DraftCommandOutcome | null;
       try {
-        outcome =
-          click.target === "all"
-            ? queuedChangeIsLive(click.change)
-              ? await click.send()
-              : { kind: "blocked" }
-            : await click.send(click, sent > 0);
+        if (click.target === "all") {
+          if (queuedChangeIsLive(click.change)) {
+            // Admission transfers the intent to its addressed claim, as for selections.
+            click.change.retire();
+            outcome = await click.send();
+          } else outcome = { kind: "blocked" };
+        } else outcome = await click.send(click, sent > 0);
       } catch (error) {
         // A failed read is the click's to report only while the click is still this account's.
         if (queuedChangeIsLive(click.change) && click.target === "selection")
