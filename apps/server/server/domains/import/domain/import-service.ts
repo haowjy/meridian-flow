@@ -12,7 +12,6 @@ import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
-import { readExportMarker } from "./export-marker.js";
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
@@ -410,7 +409,6 @@ export function createImportService(deps: {
     sweep,
     async plan(projectId: string, userId: string, raw: unknown) {
       const manifest = validateManifest(raw);
-      if (readExportMarker(manifest)) manifest.sort = false;
       const fingerprint = manifestFingerprint(manifest);
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {

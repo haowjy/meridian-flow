@@ -401,7 +401,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "kb://vault/attachments/map (2).png",
     );
   });
-  it("routes a marked export to area roots, ignores invocation folder, skips Works and records sort off", async () => {
+  it("routes a marked export to area roots, ignores invocation folder, skips Works and keeps the chosen sort", async () => {
     const selection = loose({
       "Manuscript/Chapter.md":
         "---\naliases: [Opening]\n---\n[Sects](../Knowledge%20Base/Lore/Sects.md)",
@@ -435,7 +435,8 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     }));
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
-    expect(plan.sort).toBe(false);
+    // The sort only defaults off for an export; an explicit choice is the writer's.
+    expect(plan.sort).toBe(true);
     expect(plan.entries.find((entry) => entry.entryId === 3)).toMatchObject({
       state: "skipped",
       reason: "export_works",
