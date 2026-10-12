@@ -337,7 +337,7 @@ const rows: Array<[name: string, steps: Step[]]> = [
     ],
   ],
   [
-    "TL-D62-n: a message sent after the press retires the waiting Stop (the later action wins)",
+    "a Stop intent ignores an execution that takes on only messages sent after the press",
     [
       owe("m2"),
       stop,
@@ -345,7 +345,61 @@ const rows: Array<[name: string, steps: Step[]]> = [
       started("b", "e2", ["m3"], 3),
       check({ bound: ["b"], cancels: [] }),
       started("c", "e3", ["m2"], 4),
-      check({ settled: false, target: "c", cancels: [] }),
+      check({ cancels: ["c"] }),
+    ],
+  ],
+  [
+    "TL-D62-n: a mixed batch of a press-time and a later message is never cancelled",
+    [
+      owe("m2"),
+      stop,
+      owe("m2", "m3"),
+      started("b", "e2", ["m2", "m3"], 3),
+      check({ settled: false, target: "b", bound: ["b"], cancels: [] }),
+    ],
+  ],
+  [
+    "TL-D62-n: a later message that waits for separate work does not revoke the Stop",
+    [
+      owe("m2"),
+      stop,
+      owe("m2", "m3"),
+      // B serves only M2; M3 waits behind it for another execution.
+      started("b", "e2", ["m2"], 3),
+      check({ bound: ["b"], cancels: ["b"] }),
+    ],
+  ],
+  [
+    "TL-D62-n: a passive tab that learns the later send before B's reservation still stops B",
+    [
+      owe("m2"),
+      stop,
+      // The pending projection names M3 before this tab learns anything of B.
+      owe("m2", "m3"),
+      snap([message("m2"), reply("b", "e2", ["m2"]), message("m3")], "e2"),
+      check({ settled: false, target: "b", cancels: ["b"] }),
+    ],
+  ],
+  [
+    "TL-D62-n: a passive tab that learns a mixed batch from a snapshot keeps it running",
+    [
+      owe("m2"),
+      stop,
+      owe("m2", "m3"),
+      snap([message("m2"), message("m3"), reply("b", "e2", ["m2", "m3"])], "e2"),
+      check({ settled: false, target: "b", cancels: [] }),
+    ],
+  ],
+  [
+    "TL-D62-n: a later message delivered before the press-time one still protects its execution",
+    [
+      owe("m2"),
+      stop,
+      owe("m2", "m3"),
+      delivered("x", "e2", ["m3"], 3),
+      owe("m2"),
+      started("b", "e2", ["m2"], 4),
+      check({ settled: false, target: "b", cancels: [] }),
     ],
   ],
   [
@@ -381,7 +435,7 @@ const rows: Array<[name: string, steps: Step[]]> = [
     ],
   ],
   [
-    "TL-D62-n: a refused press is retired by a later send, not replayed on its successor",
+    "TL-D62-n: a refused press does not land on a successor that batches a later send",
     [
       owe("m1"),
       started("a", "e1", ["m1"], 2),
