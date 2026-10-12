@@ -71,12 +71,10 @@
   as a `system:reconcile` row so cold replay includes causal dependencies omitted
   from active rows. The row is same-admission causal coverage, not a new author:
   first-birth attribution stays with earlier authored rows, dependency evaluation
-  ignores `system:reconcile`, and the row is not a reversal target. Active agent
-  handles materialize against their corresponding authored rows; reconciliation
-  coverage is not a later semantic dependency.
-  Handles eliminated by Work-draft write reversal remain absent. A later writer row can
-  therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
+  ignores `system:reconcile`, and the row is not an inverse target. Immutable
+  edit parts retain their authored update identity across settlement; no mutable
+  reversal handles are materialized or transferred. Live inverse eligibility
+  follows the forward-turn classifier and certified correspondence.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`

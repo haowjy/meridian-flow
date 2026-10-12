@@ -10,13 +10,12 @@ import {
   context,
   harness,
   model,
-  REVERSAL_CLIENT_ID,
   THREAD_ID,
 } from "./test-support/write-tool-harness.js";
 
 describe("runtime store", () => {
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    const ctx = harness({ "chapter.md": "Alpha sword." }, {});
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },

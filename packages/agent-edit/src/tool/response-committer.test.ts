@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import { unwrapDoc } from "../handles.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
-import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
@@ -436,7 +436,7 @@ describe("response committer", () => {
               appendBatchInFlight -= 1;
             }
           };
-          return gated as UpdateJournal & ReversalStore;
+          return gated as UpdateJournal;
         },
       },
     );

@@ -1,7 +1,7 @@
 # @meridian/agent-edit
 
 Reusable Yjs agent-edit core: model-facing document `read` and `write`,
-response-scoped commit buffering, write handles, and cold undo/redo over
+response-scoped commit buffering, write handles, and forward inverse edits over
 host-provided ports. `read()` and `write()` are separate entry points; every
 `write` command changes a document.
 
@@ -37,7 +37,7 @@ before and after cuts without acquiring or applying to a live document.
 
 ## Rules
 
-- Public reads go through `read()`; mutations go through `write()` / `reverse()` /
+- Public reads go through `read()`; mutations go through `write()` /
   response lifecycle APIs. The narrow browser-safe `./yjs-mutation` subpath is
   the pinned private-Yjs adapter for host-owned reconstruction transactions; it
   does not own retirement policy, persistence, attribution or undo orchestration.
@@ -51,7 +51,7 @@ before and after cuts without acquiring or applying to a live document.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 
-## Forward inverse primitive (parallel, not policy)
+## Forward inverse primitive (host-owned policy)
 
 `undo/forward-inverse.ts` owns receipt normalization, per-part classification,
 restoration lineage, and admission. The browser-safe `yjs-mutation.ts` owns
@@ -63,8 +63,8 @@ This primitive does not route commands or choose destinations. The server uses
 it for receipt actions, failed-response rollback and the model's per-document
 undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable
 parts through the host `DocumentEdits` port, behind the prepared-lease gate,
-never the branch journal facade or staged-write queue. The old hosted engine
-remains only until its endpoint migration.
+never the branch journal facade or staged-write queue. There is no hosted
+reconstruction-based reversal endpoint or reserved undo client.
 
 Provider authorship and helper lifetime are distinct: `WriteContext.responseIdentity`
 carries immutable `providerResponseId` plus rotated `editScopeId`. Journal

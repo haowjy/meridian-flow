@@ -212,14 +212,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     return new Set();
   }
 
-  async commitTurnRedo(_input: PreparedDiscardCommit): Promise<void> {
-    throw new Error("review regression store does not support redo");
-  }
-
-  async markRollbackPending(): Promise<number> {
-    throw new Error("review regression store does not support rollback marking");
-  }
-
   private async insertPush(input: PreparedPushCommit): Promise<PushLineageRow> {
     const upstreamUpdateSeq = await this.journal.append(input.branch.documentId, input.pushUpdate, {
       origin: `push:${input.branch.branchId}`,

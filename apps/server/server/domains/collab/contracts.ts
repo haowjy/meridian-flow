@@ -179,21 +179,9 @@ export type AgentEditAccess = {
 export type ReverseThreadContextInput = {
   threadId: ThreadId;
   userId: UserId;
-  uri?: string;
   direction: "undo" | "redo";
-  scope: "write" | "turn" | "thread";
-  selection?: string;
   turnId: TurnId;
 };
-
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export type TurnReversalAccess = {
   reverseTurn(input: {
@@ -355,11 +343,6 @@ export type BranchPushAccess = {
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
   setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
-  markFailedResponseRollbackPending(input: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<unknown>;
 };
 
 /**

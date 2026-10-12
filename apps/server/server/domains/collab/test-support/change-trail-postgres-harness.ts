@@ -643,8 +643,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     fileAccess: createAllowAllFileAccess(),
-    atomic: (operation) => runInDrizzleTransaction(db, operation),
-    live: { refreshDocumentProjection: projections.refresh },
     turnInverse,
     resolveDocumentUri,
   });

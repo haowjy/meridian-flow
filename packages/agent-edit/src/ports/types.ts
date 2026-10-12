@@ -14,12 +14,10 @@ export interface UpdateMeta {
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
-  /** Successful model response that authored an agent mutation or reversal. */
+  /** Successful model response that authored this update. */
   authoringResponseId?: string;
   /** Prepared scope used for save and rollback selection, never a provider FK. */
   editScopeId?: string;
-  /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
-  reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
   seq: number;
 }
@@ -40,54 +38,13 @@ export interface JournalSnapshot {
   /** Updates in ascending sequence order, filtered by read opts when provided. */
   updates: PersistedUpdate[];
   /**
-   * Durable log head represented by this snapshot when reconstruction appends
-   * synthetic state-reconciliation updates after the source log.
+   * Durable source log head represented by this snapshot, including its checkpoint.
    */
   persistenceWatermark?: number;
 }
 
-/** Outcome of folding old updates into a checkpoint and expiring reversals. */
+/** Outcome of folding old updates into a checkpoint. */
 export interface CompactionResult {
   /** Number of update rows folded into the new checkpoint. */
   updatesFolded: number;
-  /** Number of reversal records marked expired. */
-  reversalsExpired: number;
-}
-
-export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
-
-export type ReversalActor =
-  | { type: "agent"; responseId?: string }
-  | { type: "user"; userId: string };
-
-/**
- * Durable metadata linking an agent turn to its persisted undo update.
- * Written atomically with the undo update via ReversalStore.persistUndo and
- * consumed atomically with the redo update via ReversalStore.persistRedo.
- */
-export interface ReversalRecord {
-  documentId: string;
-  /** Original turn is retained as context; reversal identity is the write handle. */
-  turnId: string | null;
-  threadId: string;
-  /** Successful model response that authored an agent reversal, when applicable. */
-  authoringResponseId?: string;
-  /** Prepared scope used for save and rollback selection, never a provider FK. */
-  editScopeId?: string;
-  /** Stable model-facing write handles reversed by the same undo update. */
-  writeIds: string[];
-  status: ReversalStatus;
-  /** Journal sequence of the persisted undo update (for durable redo). */
-  undoUpdateSeq: number;
-  /** Journal sequence of the redo update currently re-applying this row, when redone. */
-  redoUpdateSeq?: number;
-  expiresAt?: Date;
-  reversedAt?: Date;
-  reversedByUserId?: string;
-  /**
-   * Ephemeral journal high-watermark captured when the undo plan was built. Used
-   * only inside `persistUndo` to reject rows that land after planning; never
-   * written to durable reversal storage.
-   */
-  persistGuardWatermark?: number;
 }

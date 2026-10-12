@@ -6,7 +6,7 @@ import type {
 import { InMemoryAgentEditJournal } from "../../test-support/in-memory-agent-edit.js";
 
 export class MemoryJournal extends InMemoryAgentEditJournal {
-  constructor(private readonly expandEditParts = false) {
+  constructor(readonly _expandEditParts = false) {
     super();
   }
 
@@ -17,10 +17,9 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
-    if (this.expandEditParts)
-      entries = entries.flatMap((entry) =>
-        (entry.mutation?.editParts ?? [entry.update]).map((update) => ({ ...entry, update })),
-      );
+    entries = entries.flatMap((entry) =>
+      (entry.mutation?.editParts ?? [entry.update]).map((update) => ({ ...entry, update })),
+    );
     this.batches.push(entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`));
     this.batchEntries.push(entries.map((entry) => ({ ...entry })));
     if (this.nextAppendBatchFailure) {

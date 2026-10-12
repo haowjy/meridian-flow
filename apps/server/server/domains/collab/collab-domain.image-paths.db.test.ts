@@ -283,7 +283,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(trail).not.toContain("asset:");
     });
 
-    it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
+    it("spells a reply's own create alike at every door, and in its draft after a cold read", async () => {
       // The real manifest authority: the created chapter exists only in this
       // reply's draft until it saves, and only for this thread.
       const manifest = lateBoundManifestMembership();
@@ -412,9 +412,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft([markdown.value.revision, hashlines.value.revision, hit?.revision], "one view")
         .toEqual([read.revision, read.revision, read.revision]);
 
-      // Saved, then written again; a fresh process undoes that write in the
-      // draft it landed in, so its echo spells there and its token is the
-      // draft read's.
+      // A fresh process reads the saved draft in its own link scope.
       await collab.finalizeResponseCommit(
         { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
         {
@@ -445,13 +443,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       collab.dispose();
       collab = start();
-      const undone = await collab.agentEdit().undo(DOC_ID, THREAD_ID);
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("reversed");
-      expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
-      expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live: a reply that creates a chapter live sees it
       // in its own live view, never in baseline live or its draft view.

@@ -14,10 +14,6 @@ export interface AgentEditCore {
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
   prepare: ReturnType<typeof createWriteTool>["prepare"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
-  getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
-  undo: ReturnType<typeof createWriteTool>["undo"];
-  redo: ReturnType<typeof createWriteTool>["redo"];
-  reverse: ReturnType<typeof createWriteTool>["reverse"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
 }
 
@@ -32,10 +28,6 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     hasResponseDocument: tool.hasResponseDocument,
     prepare: tool.prepare,
     responseDocuments: tool.responseDocuments,
-    getAvailability: tool.getAvailability,
-    undo: tool.undo,
-    redo: tool.redo,
-    reverse: tool.reverse,
     invalidateThread: tool.invalidateThread,
   };
 }
@@ -99,7 +91,6 @@ export {
 export type {
   MutationActor,
   ReadFunction,
-  RedoResult,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitSuccessResult,
@@ -110,7 +101,6 @@ export type {
   ResponseLifecycleEvent,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
-  UndoResult,
   UnexpectedWriteErrorDetail,
   WriteContext,
   WriteErrorStatus,
@@ -120,8 +110,3 @@ export type {
   WriteStatus,
   WriteSuccessPhase,
 } from "./tool/types.js";
-export type {
-  ReverseInput,
-  VerifiedReverseEffect,
-  VerifiedReverseResult,
-} from "./tool/write-reversal-endpoints.js";

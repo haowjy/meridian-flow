@@ -236,14 +236,13 @@ export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 /**
  * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored
- * Yjs writer streams (e.g. agent-edit reversal). Human/agent docs must never draw a
+ * Yjs writer streams. Human/agent docs must never draw a
  * clientID in this band, and inbound updates carrying structs from it are rejected at
  * ingest. This is a Meridian convention — Yjs has no native reserved-range concept; the
  * Yjs invariant we rely on is that one clientID is owned by exactly one live writer.
  */
 export const RESERVED_CLIENT_ID_MAX = 999;
-/** The agent-edit reversal/mutation writer slot within the reserved band. */
-export const AGENT_EDIT_UNDO_CLIENT_ID = 999;
+/** Whether a client belongs to the server-reserved ingest band. */
 export const isReservedClientId = (clientId: number): boolean => clientId <= RESERVED_CLIENT_ID_MAX;
 
 /** Construct a collab Y.Doc whose clientID is guaranteed outside the reserved band. */

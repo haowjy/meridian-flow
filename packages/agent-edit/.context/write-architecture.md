@@ -106,61 +106,19 @@ structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
 internally). Structural replacement inserts its new blocks before deleting old
 parents, so a non-empty requested document never leaves a cleared trailing block.
 
-### Undo/redo (`src/undo/`)
+### Forward inverses (`src/undo/`)
 
-Reversal is a single cold reconstruction path from `UpdateJournal`. It replays
-the retained durable update log (plus only a seq-0 baseline checkpoint when the
-host initialized a document that way), assigns per-reconstruction `Symbol` tokens,
-creates a fresh local `Y.UndoManager`, tags only the requested target forward
-update seqs with the tracked token, runs undo/redo, and extracts update bytes.
-The target seqs come from mutation rows: undo targets the selected `active`
-rows (write handles, a `since`/`to` range, the last N, or all; a turn only for
-the writer's turn undo); redo targets `reversed` rows whose `undoUpdateSeq`
-matches the redo target. This journal-backed model is authoritative.
+`forward-inverse.ts` computes a new edit from immutable target parts, durable
+restoration aliases and the current view. The host persists its parts under an
+action ID and chooses its policy and destination. Model stack commands, writer
+card actions and failed-response rollback all use this primitive. Journal history
+is never marked reversed, and no historical UndoManager is rebuilt.
 
-Forward agent writes still use a stable transaction origin `Symbol` per
-`(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
-transaction attribution and same-actor filtering only; write selection for
-reversal comes from durable journal metadata (`w<N>` / mutation row
-`createdSeq`; `turnId` remains context), not live undo stack items.
-
-Redo targets are selected from durable `ReversalRecord` rows with
-`status: "reversed"`; there is no runtime redo stack or rehydration cache. Redo
-consumption is authoritative at persist time: `persistRedo()` rechecks the
-doc+thread+turn reversal is still `status: "reversed"` inside the append
-transaction, marks it `status: "redone"`, and returns `consumed: false` without
-appending when another session already used it.
-
-Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
-system reversal/bookkeeping rows and later agent rows do not. The planner and
-persist-time watermark guard use that same classification. `planUndo()` and
-`planRedo()` are the shared authority for read-model availability and command
-execution, so those paths cannot disagree except across a race.
-
-Lineage has two distinct persisted authorities.
-`document_yjs_reversals.redo_update_seq` records the current active redo closure
-(state): handles that are active because of the same redo update must undo
-together. `document_yjs_reversal_ops` records durable reversal op identity
-(history): old undo/redo update seqs are exempt from dependency blocking even
-when the current state has moved on. Both authorities compact with the retained
-Yjs update log so closure and dependency checks only target retained update seqs.
-Hosts may append a `system:reconcile` update after separately attributed rows in
-the same admission to make cold replay causally complete. That row is coverage
-for those authored rows, not a later semantic edit, so lineage dependency
-evaluation ignores it; the authored rows remain the reversal targets.
-The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
-journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
-handles, candidate handles, and reversal-op seqs, then receive the undo closure or
-unavailable verdict. The helper steps behind that API (compatible groups, boundary
-expansion, seq ownership, dependency evaluation) are private implementation
-details.
-
-**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
-
-Multiple handles backed by the same durable journal update are one reversal
-boundary. Selecting any member expands to every handle sharing that update, so
-content and mutation status cannot diverge after a folded branch Apply.
-
+`ThreadOriginRegistry` supplies stable transaction origins for forward-write
+attribution and same-actor filtering. Model handles are reserved through
+`UpdateJournal.reserveWriteOrdinal` before staging; immutable receipts retain
+those ordinals independently of transport compaction. Certified aliases are the
+only persisted restoration correspondence, never text or length guesses.
 
 ### CRDT-neutral seam, ProseMirror content currency
 
@@ -190,8 +148,7 @@ Draft writes rotate to a fresh client per segment and do not inherit that coupli
 ## Draft write granularity
 
 Flat same-type block rewrites lower to exact whole-word text splices when their
-replay reproduces the target, including marks. The host enables `segmentDraftWrites`
-only for review destinations. The shipped policy is one paragraph per logical
+replay reproduces the target, including marks. The shipped policy is one paragraph per logical
 write, not one paragraph across writes. A segment executes in one transaction with a fresh
 shared-protocol client ID. One staged logical write holds its ordered updates;
 receipts, rollback and before-snapshots stay per tool call. Journal submission

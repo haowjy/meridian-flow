@@ -25,7 +25,7 @@ editor UI or transport-shell policy.
   segment. Independent writes never join merely for sharing a paragraph.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
-- `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This
+- `@meridian/agent-edit` owns schema-safe mutation and forward inverse computation. This
   domain owns authorization, persistence, coordination, settlement, and trail
   projection around that core.
 
@@ -39,7 +39,7 @@ editor UI or transport-shell policy.
   provenance namespace before durable append or Yjs apply.
 - Yjs merge is trusted. Destructive effects inform marks and receipts but never
   veto an otherwise valid merge; receipt Undo/Redo remains reversal authority.
-- Branch Y.Docs use `gc: false`; reversal dependency checks require their full
+- Branch Y.Docs use `gc: false`; inverse classification requires their full
   struct history.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
@@ -70,7 +70,7 @@ For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`
 Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).
 
-## Immutable edit capture (parallel migration)
+## Immutable edit capture and forward inverses
 
 `adapters/drizzle-document-edits.ts` captures model and journaled writer writes
 inside their existing mutation transactions and locks. Each logical model edit

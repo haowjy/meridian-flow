@@ -1326,7 +1326,7 @@ async function captureBranchEdits(
       journal.updateMeta && typeof journal.updateMeta === "object"
         ? (journal.updateMeta as Record<string, unknown>)
         : {};
-    if (meta.kind === "manifest_membership" || meta.branchReversal) continue;
+    if (meta.kind === "manifest_membership") continue;
     const key = journal.documentEditKey ?? `${journal.threadId}:${journal.wId ?? rows[i].id}`;
     const group = groups.get(key) ?? { journal, receipts: [] };
     group.receipts.push(captured[i]);

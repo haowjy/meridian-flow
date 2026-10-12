@@ -137,9 +137,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workProjectionMutation: createTestWorkProjectionMutation(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
-          resolveContextDocument: async () => {
-            throw new Error("Turn reversals here name no document");
-          },
         },
         ...rest,
       });
@@ -678,8 +675,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           turnId: TURN_ID as never,
           direction,
-          scope: "turn",
-          selection: TURN_ID,
         });
       const refused = {
         status: "permission_denied",

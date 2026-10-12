@@ -863,11 +863,7 @@ function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
 
 /** Draft agent rows own fresh structs; deletes may refer to older clients. */
 function assertFreshAgentClient(doc: Y.Doc, row: AppendBranchJournalInput): void {
-  if (
-    row.source !== "agent" ||
-    (row.updateMeta && typeof row.updateMeta === "object" && "branchReversal" in row.updateMeta)
-  )
-    return;
+  if (row.source !== "agent") return;
   const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
   for (const struct of Y.decodeUpdate(row.updateData).structs) {
     if (clients.has(struct.id.client))

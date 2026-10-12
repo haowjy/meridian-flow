@@ -2,19 +2,11 @@
 
 ## Undo guard and push safety
 
-`reverseThreadContext` is the route-facing reversal command. It owns the choice
-between context-document and turn-lineage reversal, write-handle parsing,
-projection refresh, and aggregate result status; the HTTP route only authenticates,
-validates its transport body, invokes the command, and serializes the result.
-For compatibility, a top-level array, primitive, or `null` body is normalized
-to `{}` before validation and returns `400 direction must be undo or redo`.
-`TurnReversalServiceDeps` is total: each composition supplies its dependencies
-or the declared unsupported stubs; do not restore optional dependencies that
-fail only when a command reaches them.
-
-Context-document reversal adopts the context resolver's successful canonical
-URI together with its document ID. The request URI is syntax to resolve, never
-stable reversal-result identity.
+`reverseThreadContext` is the card's whole-turn command. The authenticated
+POST accepts only `{scope: "turn", target: turnId, direction}` and rejects URI,
+write-scope and thread-scope fields. Authorization precedes immutable inverse
+planning; its per-document skips and accepted parts survive partial permission
+refusals. The GET availability route serves Work receipts by turn target only.
 
 - **Receipt actions and rollback use forward inverses**: `turn-inverse-service.ts`
   chooses one view per document and calls the same primitive for the command and
@@ -65,58 +57,12 @@ stable reversal-result identity.
   or `partial` with HTTP 200 when state races the projection. The app invalidates
   the turn query after the command and retains the raced reason while the receipt
   changes to its unavailable state; callers must not discard these outcomes.
-- **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
-  core, never the thread-peer branch committer. The host captures a live Yjs
-  snapshot and live-journal sequence together before entering agent-edit.
-- **Model undo and redo reverse each write where it landed**:
-  `thread-peer-reversals.ts` loads both histories once, `splitReversal`
-  (`reversal-routing.ts`) reads which selected
-  handles sit in the thread's Work-draft rows and which in the live journal,
-  and runs the selection once per journal with that journal's share (`last: N`
-  counts per journal). Each part carries a grant at its own destination, so a
-  drafted write in an archived Work is refused with `work_archived` while live
-  parts of the same call still reverse; `mergeReversals` makes a mixed result
-  `partial` and names the kept handles.
-- **Work-draft write-command reversal is branch-scoped**: for the drafted part of
-  a selection, `write(command="undo"|"redo")`
-  reconstructs and stages reversals exclusively from those rows. The staged
-  system row carries the Work-draft generation and becomes durable in the same
-  branch commit that projects its Yjs update; it never writes the live journal.
-  The command pins one branch scope from planning through persistence, and cold
-  replay is reconciled to the authoritative branch snapshot.
-  The commit also checks the planned branch-journal watermark and status revision
-  under the branch snapshot CAS, so appended rows and status-only Apply/review
-  transitions both reject the stale reversal for replanning.
-  After Apply advances to an empty generation, reversal lookup falls back to the
-  live store so pushed writes retain their normal undo path.
-- **Model-engine aggregate reversal is durable-atomic and runtime-staged**: production persists
-  branch and live changes in one ambient Drizzle transaction. Across distinct
-  documents, a no-op or unavailable result mixed with success makes the aggregate partial
-  and aborts the whole transaction. Duplicate branch/live results for the same
-  document are folded first, so one successful scope plus its no-op peer remains
-  successful. Branch broadcasts, live Y.Doc application, runtime synchronization,
-  and projection refresh run only after commit, with per-document journal
-  recovery; rollback publishes none of them. Cross-room publication is
-  serialized, not a simultaneous transport primitive. Branch candidates are
-  restricted to the command's authorized document set.
-- **Work-draft handles name durable response groups**: response buffering and branch
-  projection fold all same-document mutations in one response into one
-  `branch_write_journal` row. Every write in that group therefore receives the
-  same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
-  boundaries; redo may further group handles that share one atomic reversal
-  update. This matches the folded, turn-scoped diff contract rather than
-  advertising per-write identity the journal does not retain.
-  Apply materializes only handles whose final branch state is active; handles
-  eliminated by Work-draft write reversal are squashed rather than recreated as active live
-  mutations for content that is absent. Each surviving branch journal row keeps
-  its own live update identity and attribution. Writer rows therefore remain
-  visible to the dependency predicate instead of being folded into an AI
-  mutation or representative push author.
-- **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
-  the dependency check (`@meridian/agent-edit`'s `hasDependentLaterRows`, the
-  same rule the model command’s `planUndo` uses) inside the same transaction, under
-  `lockDocumentMutation` advisory lock; nothing else guards a live
-  reversal commit. Work-draft reversal uses the generation and
-  journal-watermark fence above.
-- **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
-history is preserved for attribution, echo, and undo dependency checking.
+- **Model policy**: `model-inverse-policy.ts` owns one strict stack per
+  thread/document. `write undo/redo` take a count; `revert` targets one immutable
+  edit at the current destination. `read(format: "edits")` pages that history.
+  No path uses a reconstruction planner, reversal table or reserved client 999.
+- **Attribution**: restoration correspondence comes from certified aliases on
+  immutable parts, not equal text or equal-length guesses. Apply moves placement
+  to ordinary live journal rows; it does not fold or transfer reversal handles.
+- **Notices**: card actions identify their turn and document, not model handles.
+  Runtime context retains the latest action per turn/document and reports undos.

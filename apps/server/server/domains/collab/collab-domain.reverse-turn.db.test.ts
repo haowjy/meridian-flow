@@ -29,14 +29,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const {
-      branchWriteJournal,
-      documentBranches,
-      documentYjsReversals,
-      documentYjsUpdates,
-      documents,
-      modelResponses,
-    } = await import("@meridian/database/schema");
+    const { branchWriteJournal, documentBranches, documentYjsUpdates, documents, modelResponses } =
+      await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
@@ -225,16 +219,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await readMarkdown(collab, DOC_ID)).toBe("First base.\n");
       await expectMarkdown(collab, CREATED_DOC_ID, "Writer invalidated only the second document.");
-      const reversals = await db
-        .select()
-        .from(documentYjsReversals)
-        .where(
-          and(
-            eq(documentYjsReversals.threadId, THREAD_ID as never),
-            eq(documentYjsReversals.turnId, TURN_ID as never),
-          ),
-        );
-      expect(reversals).toHaveLength(0);
     });
 
     it("keeps redo after a writer edit to an unrelated paragraph", async () => {

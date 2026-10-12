@@ -1,5 +1,5 @@
 /** Notice construction for reversal and post-durability writer-awareness events. */
-import type { DestructiveSweepReport, ReversalNoticePort } from "@meridian/agent-edit/integration";
+import type { DestructiveSweepReport } from "@meridian/agent-edit/integration";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -140,11 +140,22 @@ export function createPostDurabilityNoticeService(deps: {
   };
 }
 
+export interface TurnInverseNoticePort {
+  record(input: {
+    threadId: string;
+    turnId: string;
+    docId: string;
+    direction: "undo" | "redo";
+    sweptContent: boolean;
+    beforeContentRef: number | null;
+  }): Promise<void>;
+}
+
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
   diagnostics: ReversalNoticeDiagnostics;
-}): ReversalNoticePort {
+}): TurnInverseNoticePort {
   return {
     async record(input) {
       const uri = await deps.documentUriResolver(input.docId);
@@ -152,22 +163,17 @@ export function createReversalNoticePort(deps: {
         deps.diagnostics.documentUriMissing({
           docId: input.docId,
           threadId: input.threadId,
-          representativeTurnId: input.writeHandleTurns[0]?.turnId,
+          representativeTurnId: input.turnId,
         });
         return;
       }
-      const writeHandleTurns = input.writeHandleTurns.filter(
-        (entry): entry is { writeHandle: string; turnId: string } => entry.turnId !== null,
-      );
-      if (writeHandleTurns.length === 0) return;
       await deps.notices.record({
         kind: "undo",
         scope: { kind: "thread", threadId: input.threadId },
         message: "",
         data: {
           threadId: input.threadId,
-          writeHandles: input.writeHandles,
-          writeHandleTurns,
+          turnId: input.turnId,
           documentId: input.docId,
           uri,
           direction: input.direction,
@@ -175,10 +181,6 @@ export function createReversalNoticePort(deps: {
           beforeContentRef: input.beforeContentRef,
         },
       });
-    },
-    recordLateSweep() {
-      // The mutation echo and durable trail already report this effect.
-      return Promise.resolve();
     },
   };
 }

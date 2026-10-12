@@ -5,7 +5,6 @@ import {
   type DocumentLockOptions,
   DocumentNotFoundError,
   type PersistedUpdate,
-  type ReversalStore,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
@@ -23,27 +22,26 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = UpdateJournal &
-  ReversalStore & {
-    createCheckpoint(
-      docId: string,
-      state: Uint8Array,
-      reason: string,
-      upToSeq: number,
-    ): Promise<string>;
-    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-    latestUpdateSeq(docId: string): Promise<number>;
-    updateRecords(docId: string): PersistedUpdate[];
-    mutationRecords(docId: string): Array<{
-      threadId: string;
-      turnId: string | null;
-      writeId: string;
-      status: "active" | "reversed";
-      createdSeq: number;
-    }>;
-  };
+export type InMemoryJournal = UpdateJournal & {
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
+  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+  latestUpdateSeq(docId: string): Promise<number>;
+  updateRecords(docId: string): PersistedUpdate[];
+  documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
+  mutationRecords(docId: string): Array<{
+    threadId: string;
+    turnId: string | null;
+    writeId: string;
+    createdSeq: number;
+  }>;
+};
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {

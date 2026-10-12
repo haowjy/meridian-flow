@@ -31,10 +31,6 @@ import { documents, works } from "./content";
 import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
-type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
-type MutationStatus = "active" | "reversed";
-type MutationReversedBy = "user" | "agent";
-type ReversalOpDirection = "undo" | "redo";
 type DocumentBranchKind = "work_draft" | "thread_peer";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
@@ -465,10 +461,6 @@ export const documentYjsUpdates = pgTable(
     authoringResponseId: uuid("authoring_response_id")
       .$type<ModelResponseId>()
       .references(() => modelResponses.id, { onDelete: "restrict" }),
-    reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
-    reversalActorUserId: uuid("reversal_actor_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -479,83 +471,6 @@ export const documentYjsUpdates = pgTable(
       table.admissionSequence,
       table.batchOrdinal,
     ),
-  ],
-);
-
-export const documentYjsReversals = pgTable(
-  "document_yjs_reversals",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
-    // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
-    writeId: text("write_id").notNull(),
-    status: text("status").$type<ReversalStatus>().notNull(),
-    // No FK: compaction can delete the undo update row after expiring reversal metadata.
-    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
-    // Current redo re-apply update for redone rows; cleared on the next undo cycle.
-    redoUpdateSeq: bigint("redo_update_seq", { mode: "number" }),
-    expiresAt: timestamp("expires_at", { withTimezone: true }),
-    reversedAt: timestamp("reversed_at", { withTimezone: true }),
-    reversedByUserId: uuid("reversed_by_user_id")
-      .$type<UserId>()
-      .references(() => users.id, {
-        onDelete: "set null",
-      }),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("document_yjs_reversals_document_thread_write").on(
-      table.documentId,
-      table.threadId,
-      table.writeId,
-    ),
-    index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
-    check(
-      "document_yjs_reversals_status_valid",
-      sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
-    ),
-  ],
-);
-
-export const documentYjsReversalOps = pgTable(
-  "document_yjs_reversal_ops",
-  {
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    // No FK: compaction prunes update rows while retaining reversal history until matching pruning.
-    updateSeq: bigint("update_seq", { mode: "number" }).notNull(),
-    handle: text("handle").notNull(),
-    direction: text("direction").$type<ReversalOpDirection>().notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.documentId, table.threadId, table.updateSeq, table.handle],
-    }),
-    index("document_yjs_reversal_ops_document_thread_handle").on(
-      table.documentId,
-      table.threadId,
-      table.handle,
-    ),
-    check("document_yjs_reversal_ops_direction_valid", sql`${table.direction} IN ('undo', 'redo')`),
   ],
 );
 
@@ -580,29 +495,19 @@ export const agentEditMutations = pgTable(
       .references(() => modelResponses.id, { onDelete: "restrict" }),
     actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
     userId: text("user_id"),
-    // Durable idempotency key for the edit mutation, distinct from reversal handles.
+    // Durable idempotency key for the edit mutation, distinct from its ordinal.
     writeId: text("write_id").notNull(),
-    status: text("status").$type<MutationStatus>().notNull().default("active"),
     createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
-    // No FK: compaction can delete the update row while durable mutation metadata remains.
-    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }),
     createdAt: createdAt(),
-    reversedAt: timestamp("reversed_at", { withTimezone: true }),
-    reversedBy: text("reversed_by").$type<MutationReversedBy>(),
   },
   (table) => [
-    uniqueIndex("agent_edit_mutations_document_thread_write_id")
-      .on(table.documentId, table.threadId, table.writeId)
-      .where(sql`${table.status} = 'active'`),
     uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
       table.documentId,
       table.threadId,
       table.wId,
     ),
-    index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
     index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
     index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
-    check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
 );
 

@@ -238,19 +238,12 @@ export type PushCommitStore = {
   commitPushBatch(input: { pushes: PreparedPushCommit[] }): Promise<{
     pushes: PushLineageRow[];
   }>;
-  commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
   /**
    * Seam B for a review that changes several drafts in one transaction: locks
    * their Works (file-access §5) and names the branches whose Work is no longer
    * active, so their drafts stay frozen (D30).
    */
   lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
-  markRollbackPending(input: {
-    branchId: string;
-    generation: number;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<number>;
 };
 
 export type WorkPushPolicyStore = {
@@ -301,14 +294,6 @@ export type SetWorkPushPolicyResult =
   | { status: "updated"; policy: "manual" | "auto" }
   | { status: "confirmation_required"; unpushedCount: number; reason: string };
 
-export type BranchTurnReversal =
-  | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-  | {
-      status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo" | "permission_denied";
-      branchId: string;
-      journalIds: number[];
-    };
-
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
@@ -323,28 +308,6 @@ export type BranchReviewService = {
         draftDisposition?: "applied" | "discarded";
       }
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  >;
-  /** Reverses one turn on each branch; a branch whose Work is archived is refused. */
-  reverseBranchTurns(input: {
-    branchIds: readonly string[];
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    reviewedByUserId?: UserId;
-  }): Promise<BranchTurnReversal[]>;
-  markFailedResponseRollbackPending(input: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<
-    | {
-        status: "discarded";
-        branchId: string;
-        journalIds: number[];
-        draftClosed?: boolean;
-        draftDisposition?: "applied" | "discarded";
-      }
-    | { status: "rollback_pending"; rowsMarked: number }
   >;
 };
 

@@ -7,9 +7,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
-  type ReverseDocumentInput,
   type ReverseTurnInput,
-  reverseDocument,
   reverseTurn,
   successfulWorkReversals,
 } from "@/client/api/reverse-api";
@@ -17,12 +15,6 @@ import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
-
-export function useReverseDocumentMutation(threadId: string) {
-  return useMutation({
-    mutationFn: (input: ReverseDocumentInput) => reverseDocument(threadId, input),
-  });
-}
 
 export function useReverseTurnMutation(threadId: string) {
   const queryClient = useQueryClient();

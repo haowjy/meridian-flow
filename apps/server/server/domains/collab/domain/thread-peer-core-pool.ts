@@ -11,7 +11,6 @@ import {
   type ReadCommand,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  type ReversalStore,
   type SemanticProvenanceWriter,
   splitDocumentFile,
   type UpdateJournal,
@@ -23,7 +22,7 @@ import {
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import {
   type FileAccess,
   type FileAccessDenied,
@@ -56,7 +55,6 @@ import {
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { BranchJournalReadStore } from "./branch-push-contracts.js";
-import type { BranchReversalHistoryReader } from "./branch-reversal-history.js";
 import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -64,7 +62,6 @@ import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
 } from "./response-transaction.js";
-import { createThreadPeerReversals } from "./thread-peer-reversals.js";
 
 export type ResponseTransactionHooks = {
   enlist(participant: ResponseCommitParticipant): boolean;
@@ -77,20 +74,17 @@ export type ResponseTransactionHooks = {
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 >;
 
 export function createBranchThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
-  journal: UpdateJournal & ReversalStore;
+  journal: UpdateJournal;
   documentEdits?: DocumentEdits;
   liveCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
@@ -117,7 +111,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     liveUtilityCore: input.liveUtilityCore,
-    liveHistory: input.journal,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
@@ -140,11 +133,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
           threadId,
           liveJournal: input.journal,
           pendingJournalEntries,
-          branches: input.branches,
-          branchRows: {
-            listJournalRowsForBranch: (command) =>
-              input.branchJournal.listJournalRowsForBranch(command),
-          },
         }),
         coordinator: createBranchAgentEditCoordinator({
           threadId,
@@ -168,13 +156,10 @@ export function createBranchThreadPeerAgentEditCore(input: {
         model: input.model,
         semanticProvenance: input.semanticProvenance,
         defaultThreadId: threadId,
-        undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
-        segmentDraftWrites: true,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),
         ...input.observability,
       });
     },
-    reversalHistory: { branches: input.branches, branchRows: input.branchJournal },
     discardThreadPeerBranches: (documentId, threadId) =>
       input.branches.discardActiveThreadPeerBranches({
         documentId,
@@ -222,10 +207,6 @@ export function createThreadPeerCorePool(input: {
     threadId: ThreadId,
     viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
   ): AgentEditCore;
-  /** The thread's Work-draft history: its undo and redo reverse drafted writes there. */
-  reversalHistory: BranchReversalHistoryReader;
-  /** The live journal's history: its undo and redo reverse live writes live. */
-  liveHistory: Pick<ReversalStore, "activeWriteSummary" | "readReversals">;
   discardThreadPeerBranches(documentId: DocumentId, threadId: string): Promise<void>;
   pullThreadPeer(input: {
     documentId: DocumentId;
@@ -282,12 +263,6 @@ export function createThreadPeerCorePool(input: {
     }
     const core = input.createThreadCore(id, threadViewFor(id));
     cores.set(id, core);
-    return core;
-  }
-
-  async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
-    const core = lookupCore(threadId);
-    await evictIdleCores();
     return core;
   }
 
@@ -474,13 +449,6 @@ export function createThreadPeerCorePool(input: {
     return outcome;
   }
 
-  const reversals = createThreadPeerReversals({
-    liveUtilityCore: input.liveUtilityCore,
-    coreFor,
-    reversalHistory: input.reversalHistory,
-    liveHistory: input.liveHistory,
-  });
-
   /**
    * Lock once per reply (file-access §5.2): every grant the reply wrote under,
    * confirmed together (its Works locked in id order), then its live
@@ -633,12 +601,6 @@ export function createThreadPeerCorePool(input: {
         },
         input.responseTransactionSettlement,
       );
-    },
-    getAvailability: reversals.getAvailability,
-    undo: reversals.undo,
-    redo: reversals.redo,
-    reverse(inputReverse) {
-      return input.liveUtilityCore.reverse(inputReverse);
     },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];

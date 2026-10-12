@@ -13,11 +13,6 @@ function threadContextReversalUnsupported(): never {
 }
 
 export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
-  agentEdit: {
-    async reverse() {
-      return threadContextReversalUnsupported();
-    },
-  },
   async listEditedDocumentsForTurn() {
     return threadContextReversalUnsupported();
   },
@@ -25,14 +20,8 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
     async requireThreadOwner() {
       return threadContextReversalUnsupported();
     },
-    async resolveContextDocument() {
-      return threadContextReversalUnsupported();
-    },
   },
-} satisfies Pick<
-  TurnReversalServiceDeps,
-  "agentEdit" | "listEditedDocumentsForTurn" | "threadContext"
->;
+} satisfies Pick<TurnReversalServiceDeps, "listEditedDocumentsForTurn" | "threadContext">;
 
 export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
   async () => threadContextReversalUnsupported();

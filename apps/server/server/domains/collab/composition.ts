@@ -258,7 +258,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     : undefined;
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
-    reversalNoticePort,
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const modelDocumentEdits = createModelDocumentEdits({
@@ -526,9 +525,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
   });
   const turnReversal = createTurnReversalService({
-    atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
-    live: { refreshDocumentProjection: projectionRefresher.refresh },
-    agentEdit,
     turnInverse,
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
@@ -588,7 +584,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       pushToLive: branchPush.pushToLive,
       countPendingByWorkIds: workDraftPending.countPendingByWorkIds,
       setWorkPushPolicy: branchPush.setWorkPushPolicy,
-      markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },
     branchPeers,
     drafts,

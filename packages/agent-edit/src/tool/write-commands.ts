@@ -40,7 +40,7 @@ import {
 } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
 
-/** Name the rejected logical write, not its possibly shared reversal handle. */
+/** Name the rejected logical write, not its model-facing ordinal. */
 function stagedWriteDescription(command: WriteCommand): string {
   const before = "find" in command ? JSON.stringify(command.find) : command.command;
   const after =
@@ -68,7 +68,7 @@ export function createWriteCommands(deps: {
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
   renderer: DocumentRenderer;
-  reversalStore: CreateWriteToolOptions["journal"];
+  journal: CreateWriteToolOptions["journal"];
   mutationCommit: MutationCommit;
   runtimeStore: RuntimeStore;
   responseCommitter: ResponseCommitter;
@@ -79,7 +79,7 @@ export function createWriteCommands(deps: {
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
-    reversalStore,
+    journal,
     mutationCommit,
     runtimeStore,
     responseCommitter,
@@ -700,7 +700,7 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
+    const ordinal = await journal.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??

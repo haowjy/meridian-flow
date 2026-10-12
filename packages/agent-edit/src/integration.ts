@@ -95,23 +95,15 @@ export type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
-  ReversalActor,
-  ReversalRecord,
-  ReversalStatus,
   UpdateMeta,
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
-  ActiveWriteSummary,
   JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
-  PersistRedoEntry,
-  PersistUndoResult,
-  ReversalStore,
   UpdateJournal,
-  WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
 export type {
@@ -135,8 +127,6 @@ export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export { isResponseLifecycleError } from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
-export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
-export type { UndoAvailability } from "./undo/availability.js";
 export type {
   CapturedPart,
   ComputedInverse,
@@ -166,26 +156,12 @@ export {
   decodeUpdateForDependencies,
   deleteRanges,
   dependsOnRows,
-  hasDependentLaterRows,
   laterDependencyClosure,
   rangeCovers,
   rangesOverlap,
   structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
-export type {
-  PersistUndoWatermarkRecord,
-  PersistUndoWatermarkUpdate,
-} from "./undo/persist-undo-watermark.js";
-export {
-  hasLaterWriterUpdateAfterWatermark,
-  isLaterWriterUpdateAfterWatermark,
-  persistUndoPlanWatermark,
-} from "./undo/persist-undo-watermark.js";
-export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
-export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
-export type { ReversalPlan, ReversalSelection } from "./undo/reversal-plan.js";
-export { planRedo, planUndo } from "./undo/reversal-plan.js";
 export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,

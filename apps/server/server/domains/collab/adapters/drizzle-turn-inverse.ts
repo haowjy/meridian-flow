@@ -1,10 +1,5 @@
 /** Durable multi-document inverse admission; publishes only after the transaction commits. */
-import type {
-  DocumentCoordinator,
-  ReversalNoticePort,
-  ReversalStore,
-  UpdateJournal,
-} from "@meridian/agent-edit/integration";
+import type { DocumentCoordinator, UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId } from "@meridian/contracts";
 import {
@@ -43,7 +38,7 @@ import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 
 type Dependencies = {
   db: Database;
-  journal: UpdateJournal & Pick<ReversalStore, "reserveWriteOrdinal">;
+  journal: UpdateJournal;
   branches: BranchStore;
   coordinator: DocumentCoordinator;
   branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
@@ -51,7 +46,7 @@ type Dependencies = {
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  notices?: ReversalNoticePort;
+  notices?: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   workProjection?: WorkProjectionMutation;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
@@ -292,6 +287,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 };
               } else {
                 const seq = await input.journal.append(document.documentId, part.update, {
+                  // Inverse receipts are captured below; a human journal origin
+                  // would also capture a second, ordinary writer receipt.
                   origin: query.model && query.turnId ? `agent:${query.turnId}` : "system",
                   ...(query.model && query.turnId ? { actorTurnId: query.turnId } : {}),
                   ...(query.model && query.responseIdentity
@@ -301,7 +298,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                       }
                     : {}),
                   seq: 0,
-                  ...(userId ? { reversalActor: { type: "user" as const, userId } } : {}),
                 });
                 origin = { kind: "live", seq };
               }
@@ -416,8 +412,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 docId: document.documentId,
                 threadId: query.threadId,
                 direction: kind,
-                writeHandles: [],
-                writeHandleTurns: [{ writeHandle: "", turnId: query.turnId }],
+                turnId: query.turnId,
                 sweptContent: false,
                 beforeContentRef: null,
               });

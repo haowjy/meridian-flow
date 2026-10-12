@@ -65,9 +65,6 @@ type RangeAssignment = { start: number; end: number; operationId: string };
 export type OperationClockRange = ClockRange & { operationId: string };
 type RangeLookup = Map<number, RangeAssignment[]>;
 type RangeAlias = { source: ClockRange; target: ClockRange };
-type TextSegment = { text: string; operationId: string };
-type DeletedContent = { segments: TextSegment[]; text: string };
-type RestorativeContentMatch = { operationId: string; deletedContent: DeletedContent };
 
 export function indexDraftUpdates(input: {
   baseDoc: Y.Doc;
@@ -81,7 +78,6 @@ export function indexDraftUpdates(input: {
   const aliases: RangeAlias[] = [];
   const insertedItems: Y.Item[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
-  const deletedContentByOperationId = new Map<string, DeletedContent>();
   const physicalUpdateIdsByOperationId = new Map<string, Set<PhysicalSourceUpdateId>>();
   const replayDoc = cloneDoc(input.baseDoc);
 
@@ -113,7 +109,6 @@ export function indexDraftUpdates(input: {
         visible: isRangeEffectivelyVisible(replayDoc, range),
         operationIds: operationIdsForVisibleRange(introduced, deleted, range),
       }));
-      const deletedContent = deletedContentForRanges(replayDoc, beforeVisibility);
       const certifiedAliases = restorationAliasesFromMetadata(update.updateMeta);
       const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
       const introducedRanges = decoded.structs
@@ -137,17 +132,6 @@ export function indexDraftUpdates(input: {
         clearDeletedRange(deleted, replayDoc, aliases, alias.source);
       }
 
-      for (const { range, visible: wasVisible } of beforeVisibility) {
-        const isVisible = isRangeEffectivelyVisible(replayDoc, range);
-        if (!update.actorUserId && !wasVisible && !isVisible) {
-          const target = findAliasTarget(introducedRanges, range.length);
-          if (target) {
-            aliases.push({ source: range, target });
-            clearAssignedRange(deleted, range.client, range.clock, range.length);
-          }
-        }
-      }
-
       const restoredIntroduced = introducedRanges.map((range) => ({
         range,
         operationId: restoredIntroducedOperationId(introduced, replayDoc, aliases, range),
@@ -165,17 +149,7 @@ export function indexDraftUpdates(input: {
         restoredOperationIds,
         reversedOperationIdsByOperationId,
       });
-      const contentRestorativeRow =
-        identityRestorativeRow || update.actorUserId
-          ? null
-          : contentRestorativeUndoMatch({
-              beforeVisibility,
-              introducedStructs: decoded.structs,
-              deletedOperationIds,
-              reversedOperationIdsByOperationId,
-              deletedContentByOperationId,
-            });
-      const isPureRestorativeRow = identityRestorativeRow || contentRestorativeRow !== null;
+      const isPureRestorativeRow = identityRestorativeRow;
 
       for (const deletedOperationId of deletedOperationIds) {
         addPhysicalUpdateId(physicalUpdateIdsByOperationId, deletedOperationId, update.id);
@@ -183,29 +157,15 @@ export function indexDraftUpdates(input: {
       for (const restoredOperationId of restoredOperationIds) {
         addPhysicalUpdateId(physicalUpdateIdsByOperationId, restoredOperationId, update.id);
       }
-      if (contentRestorativeRow) {
-        for (const segment of contentRestorativeRow.deletedContent.segments) {
-          addPhysicalUpdateId(physicalUpdateIdsByOperationId, segment.operationId, update.id);
-        }
-      }
-
       let hasOwnEffect = false;
-      let hasOwnRichDeletion = false;
-      const richDeletionParents = new Set<Y.Item["parent"]>();
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);
         if (wasVisible && !isVisible) {
-          const ownRichDeletion =
-            contentRestorativeRow !== null &&
-            isNonTextEffect(findItem(replayDoc, range.client, range.clock));
-          if (!isPureRestorativeRow || ownRichDeletion) {
+          if (!isPureRestorativeRow) {
             assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
             assignDeletedRange(deletedHistory, replayDoc, aliases, range, operationId);
             hasOwnEffect = true;
-            hasOwnRichDeletion ||= ownRichDeletion;
-            const item = ownRichDeletion ? findItem(replayDoc, range.client, range.clock) : null;
-            if (item instanceof Y.Item && item.parent) richDeletionParents.add(item.parent);
           }
         } else if (!wasVisible && isVisible && isPureRestorativeRow) {
           clearDeletedRange(deleted, replayDoc, aliases, range);
@@ -226,44 +186,11 @@ export function indexDraftUpdates(input: {
           hasOwnEffect = true;
         }
       }
-      if (contentRestorativeRow) {
-        assignIntroducedContentSegments(
-          introduced,
-          introducedRanges,
-          decoded.structs,
-          contentRestorativeRow.deletedContent.segments,
-        );
-        // Restored text retains its logical owner; co-located rich removals retain
-        // their own supplier without turning those removals into text ownership.
-        for (const range of introducedRanges) {
-          const item = findItem(replayDoc, range.client, range.clock);
-          if (item instanceof Y.Item && richDeletionParents.has(item.parent))
-            setAssignedRange(
-              nonTextDeletionEffects,
-              range.client,
-              range.clock,
-              range.length,
-              operationId,
-            );
-        }
-        // Text restoration cannot transfer non-text introductions or deletions.
-        hasOwnEffect =
-          hasOwnRichDeletion ||
-          restoredIntroduced.some(
-            ({ range, operationId: restoredOperationId }) =>
-              !restoredOperationId &&
-              isNonTextEffect(findItem(replayDoc, range.client, range.clock)),
-          );
-      }
-
       if (isPureRestorativeRow) {
         for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
       }
       if (deletedOperationIds.size > 0) {
         reversedOperationIdsByOperationId.set(operationId, deletedOperationIds);
-      }
-      if (deletedContent.text.length > 0) {
-        deletedContentByOperationId.set(operationId, deletedContent);
       }
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
@@ -389,7 +316,7 @@ export function indexDraftUpdates(input: {
   };
 }
 
-function isNonTextEffect(item: Y.Item | Y.GC | null): boolean {
+function _isNonTextEffect(item: Y.Item | Y.GC | null): boolean {
   return (
     item instanceof Y.Item &&
     (item.content instanceof Y.ContentFormat ||
@@ -412,78 +339,7 @@ function sortedUpdateIds<UpdateId extends number>(updateIds: ReadonlySet<UpdateI
   return [...updateIds].sort((left, right) => left - right);
 }
 
-// Uncertified model-undo text restorations need this guess until its deletion with that engine in undo step 4.
-function contentRestorativeUndoMatch(input: {
-  beforeVisibility: readonly {
-    range: ClockRange;
-    visible: boolean;
-    operationIds: readonly string[];
-  }[];
-  introducedStructs: readonly (Y.Item | Y.GC | Y.Skip)[];
-  deletedOperationIds: ReadonlySet<string>;
-  reversedOperationIdsByOperationId: ReadonlyMap<string, ReadonlySet<string>>;
-  deletedContentByOperationId: ReadonlyMap<string, DeletedContent>;
-}): RestorativeContentMatch | null {
-  const introducedText = structsText(input.introducedStructs);
-  if (introducedText.length === 0) return null;
-
-  const candidates = [...input.deletedOperationIds].sort((left, right) => {
-    const numeric = Number(right) - Number(left);
-    return numeric === 0 ? right.localeCompare(left) : numeric;
-  });
-
-  for (const operationId of candidates) {
-    if (!input.reversedOperationIdsByOperationId.has(operationId)) continue;
-    if (!deleteSetCoversOnlyOperation(input.beforeVisibility, operationId)) continue;
-    const deletedContent = input.deletedContentByOperationId.get(operationId);
-    if (!deletedContent) continue;
-    if (deletedContent.text === introducedText) {
-      // The latest overlapping inverse is the undo target.
-      return { operationId, deletedContent };
-    }
-  }
-
-  return null;
-}
-
-function deleteSetCoversOnlyOperation(
-  beforeVisibility: readonly {
-    range: ClockRange;
-    visible: boolean;
-    operationIds: readonly string[];
-  }[],
-  operationId: string,
-): boolean {
-  const visible = beforeVisibility.filter(({ visible: wasVisible }) => wasVisible);
-  return (
-    visible.length > 0 &&
-    visible.every(
-      ({ operationIds }) => operationIds.length === 1 && operationIds[0] === operationId,
-    )
-  );
-}
-
-function deletedContentForRanges(
-  doc: Y.Doc,
-  beforeVisibility: readonly {
-    range: ClockRange;
-    visible: boolean;
-    operationIds: readonly string[];
-  }[],
-): DeletedContent {
-  const segments: TextSegment[] = [];
-  for (const { range, visible, operationIds } of beforeVisibility) {
-    if (!visible) continue;
-    for (const segment of textSegmentsForRange(doc, range)) {
-      const segmentOperationId = operationIds[0];
-      if (!segmentOperationId || segment.text.length === 0) continue;
-      appendTextSegment(segments, { text: segment.text, operationId: segmentOperationId });
-    }
-  }
-  return { segments, text: segments.map((segment) => segment.text).join("") };
-}
-
-function textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[] {
+function _textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[] {
   const segments: { text: string }[] = [];
   let clock = range.clock;
   const end = range.clock + range.length;
@@ -497,53 +353,6 @@ function textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[]
     clock += length;
   }
   return segments;
-}
-
-function assignIntroducedContentSegments(
-  lookup: RangeLookup,
-  introducedRanges: readonly ClockRange[],
-  introducedStructs: readonly (Y.Item | Y.GC | Y.Skip)[],
-  sourceSegments: readonly TextSegment[],
-): void {
-  let sourceIndex = 0;
-  let sourceOffset = 0;
-
-  for (const [index, range] of introducedRanges.entries()) {
-    let targetOffset = 0;
-    const targetText = structText(introducedStructs[index]);
-    while (targetOffset < targetText.length && sourceIndex < sourceSegments.length) {
-      const source = sourceSegments[sourceIndex];
-      const length = Math.min(targetText.length - targetOffset, source.text.length - sourceOffset);
-      if (length > 0) {
-        setAssignedRange(
-          lookup,
-          range.client,
-          range.clock + targetOffset,
-          length,
-          source.operationId,
-        );
-      }
-      targetOffset += length;
-      sourceOffset += length;
-      if (sourceOffset >= source.text.length) {
-        sourceIndex += 1;
-        sourceOffset = 0;
-      }
-    }
-  }
-}
-
-function appendTextSegment(segments: TextSegment[], segment: TextSegment): void {
-  const previous = segments.at(-1);
-  if (previous?.operationId === segment.operationId) {
-    previous.text += segment.text;
-  } else {
-    segments.push({ ...segment });
-  }
-}
-
-function structsText(structs: readonly (Y.Item | Y.GC | Y.Skip)[]): string {
-  return structs.map(structText).join("");
 }
 
 function structText(struct: Y.Item | Y.GC | Y.Skip | undefined): string {
@@ -714,13 +523,6 @@ function clearDeletedRange(
   for (const source of sourceRangesForTarget(doc, aliases, range)) {
     clearAssignedRange(lookup, source.client, source.clock, source.length);
   }
-}
-
-// Uncertified model-undo tombstone restorations need this guess until its deletion with that engine in undo step 4.
-function findAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
-  const index = ranges.findIndex((range) => range.length === length);
-  if (index < 0) return null;
-  return ranges[index] ?? null;
 }
 
 function sourceRangesForTarget(
