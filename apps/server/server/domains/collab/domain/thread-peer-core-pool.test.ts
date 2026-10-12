@@ -17,14 +17,12 @@ const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
 const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 function createPool() {
-  const { history, liveCore, threadCore } = createFakeThreadPeerCores();
+  const { pullThreadPeer, liveCore, threadCore } = createFakeThreadPeerCores();
   const pool = createThreadPeerCorePool({
     liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
     createThreadCore: () => threadCore.asCore(),
-    reversalHistory: history.reader,
-    liveHistory: history.liveHistory,
     discardThreadPeerBranches: async () => {},
-    pullThreadPeer: history.pullThreadPeer,
+    pullThreadPeer: pullThreadPeer,
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
@@ -32,7 +30,7 @@ function createPool() {
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  return { pool, liveCore, threadCore, pullThreadPeer: history.pullThreadPeer };
+  return { pool, liveCore, threadCore, pullThreadPeer };
 }
 
 const context = (destination: FileDestination, responseId?: string) => ({
@@ -100,7 +98,6 @@ describe("thread-peer pool", () => {
       const reached = new Promise<void>((resolve) => {
         entered = resolve;
       });
-      const history = createFakeThreadPeerCores().history;
       const closingPool = createThreadPeerCorePool({
         liveUtilityCore: asLiveAgentEditCore(liveHarness.core),
         createThreadCore: () => {
@@ -120,8 +117,6 @@ describe("thread-peer pool", () => {
           }
           return owner.core;
         },
-        reversalHistory: history.reader,
-        liveHistory: history.liveHistory,
         discardThreadPeerBranches: async () => {},
         pullThreadPeer: async () =>
           pausedEviction

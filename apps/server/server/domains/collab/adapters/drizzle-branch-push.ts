@@ -244,18 +244,6 @@ export function createDrizzlePushCommitStore(
       );
     },
 
-    async commitTurnRedo(input) {
-      return runWithActiveWorkDrafts(
-        db,
-        { branchIds: input.journalRows.map((row) => row.branchId) },
-        () =>
-          mutatePending([input.branch.branchId], async () => {
-            await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
-            await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
-          }),
-      );
-    },
-
     async lockDraftWorks(branchIds) {
       return lockDraftBranchWorks(db, branchIds);
     },
@@ -298,23 +286,6 @@ export function createDrizzlePushCommitStore(
         }
         throw error;
       });
-    },
-
-    async markRollbackPending(input) {
-      const rows = await db
-        .update(branchWriteJournal)
-        .set({ status: "rollback_pending" })
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, input.branchId),
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
-            eq(branchWriteJournal.generation, input.generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        )
-        .returning({ id: branchWriteJournal.id });
-      return rows.length;
     },
   };
 }
@@ -518,7 +489,7 @@ async function commitPreparedDiscard(
     .where(eq(documentBranches.id, input.branch.branchId));
 }
 
-async function commitPreparedRedo(
+async function _commitPreparedRedo(
   db: DrizzleDb,
   input: PreparedDiscardCommit,
   now: Date,
@@ -572,7 +543,7 @@ async function commitPreparedRedo(
   }
 }
 
-function trailOwnersForRows(
+function _trailOwnersForRows(
   rows: PreparedDiscardCommit["journalRows"],
 ): Array<
   | { kind: "shared"; threadId: string; turnId: null }

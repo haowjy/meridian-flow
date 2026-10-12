@@ -3,8 +3,6 @@ import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
   ResponseLifecycleClaimDiscardedDetail,
-  ReversalNoticeFailedDetail,
-  ReversalNoticePort,
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
@@ -244,28 +242,21 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
 
 export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
-  reversalNoticePort?: ReversalNoticePort;
 }): Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 > {
   return {
-    ...(input.reversalNoticePort ? { reversalNoticePort: input.reversalNoticePort } : {}),
-    onInvariantViolation: invariantPolicy(input.eventSink),
     onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
     onResponseClaimDiscarded: responseClaimDiscardedObserver(input.eventSink),
     onResponseCommitterTransition: responseCommitterTransitionObserver(input.eventSink),
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
-    onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
   };
 }
@@ -313,25 +304,6 @@ function unexpectedWriteErrorObserver(
         ...unknownToEventPayload(event.cause),
       },
     });
-  };
-}
-
-function invariantPolicy(eventSink?: EventSink): (message: string) => void {
-  return (message) => {
-    if (process.env.NODE_ENV !== "production") throw new Error(message);
-
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.agent_edit",
-          name: "invariant_violation",
-          payload: { errorCode: "invariant_violation" },
-        });
-      } catch {
-        // Invariant reporting is best-effort after production policy has handled it.
-      }
-    }
   };
 }
 
@@ -396,26 +368,6 @@ function idempotencyHitObserver(
       name: "write.idempotency_hit",
       payload: { ...event },
     });
-  };
-}
-
-function reversalNoticeFailedObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"]> {
-  return (event: ReversalNoticeFailedDetail) => {
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.undo_notifications",
-          name: "record.failed",
-          payload: { ...event },
-        });
-        return;
-      } catch {
-        // Notice diagnostics cannot change the already-durable reversal outcome.
-      }
-    }
   };
 }
 

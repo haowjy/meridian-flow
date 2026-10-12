@@ -127,10 +127,10 @@ function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
   expect(displayed).toEqual(target);
 }
 
-async function revision(before: string, after: string, draft: boolean) {
+async function revision(before: string, after: string) {
   const h = createWriteToolHarness(
     { "chapter.md": before },
-    { segmentDraftWrites: draft, semanticProvenance: createSemanticProvenanceWriter() },
+    { semanticProvenance: createSemanticProvenanceWriter() },
   );
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
@@ -150,7 +150,7 @@ async function revision(before: string, after: string, draft: boolean) {
   expect(projected.map((node) => node.toJSON())).toEqual(expected.map((node) => node.toJSON()));
   expect(projected.every((node, index) => node.eq(expected[index]))).toBe(true);
   for (const node of projected) node.check();
-  const rows = (await h.journal.readForReconstruction("chapter.md")).updates.map((row) => ({
+  const rows = (await h.journal.read("chapter.md")).updates.map((row) => ({
     id: row.seq,
     actorTurnId: row.meta.actorTurnId ?? null,
     updateData: row.update,
@@ -187,27 +187,20 @@ async function revision(before: string, after: string, draft: boolean) {
   return { isolated, classes, expected };
 }
 
-it.each([
-  false,
-  true,
-])("preserves split and new-paragraph order on both sides (draft=%s)", async (draft) => {
+it("preserves split and new-paragraph order on both sides", async () => {
   const before = "Alpha road. Beta valley.";
   for (const after of [
     "Alpha road.\n\nBeta dark valley.\n\nEntirely new story.\n\nAnother new story.",
     "Entirely new story.\n\nAlpha road.\n\nBeta dark valley.\n\nAnother new story.",
     "Alpha road.\n\nEntirely new story.\n\nBeta dark valley.\n\nAnother new story.",
   ])
-    await revision(before, after, draft);
+    await revision(before, after);
 });
 
-it.each([
-  false,
-  true,
-])("unions overlapping split/merge boundaries and replays the connected change alone (draft=%s)", async (draft) => {
+it("unions overlapping split/merge boundaries and replays the connected change alone", async () => {
   const result = await revision(
     "Alpha road. Beta valley.\n\nGamma sea. Delta hill.",
     "Alpha road.\n\nBeta valley. Gamma sea.\n\nDelta hill.",
-    draft,
   );
   expect(result.classes.size).toBe(1);
   expect(result.isolated).toHaveLength(1);
@@ -216,10 +209,7 @@ it.each([
   );
 });
 
-it.each([
-  false,
-  true,
-])("preserves randomized split/merge/insertion order and each isolated class (draft=%s)", async (draft) => {
+it("preserves randomized split/merge/insertion order and each isolated class", async () => {
   // Reproducible bounded property sample: regroup ordered sentences and insert new blocks.
   let state = 0x713;
   const random = () => {
@@ -245,19 +235,16 @@ it.each([
       index += count;
     }
     if (random() < 0.5) blocks.push(`Entirely new Ending${sample} waits here.`);
-    await revision(before, blocks.join("\n\n"), draft);
+    await revision(before, blocks.join("\n\n"));
   }
 });
 
-it.each([
-  false,
-  true,
-])("keeps independent split components separate across adjacent or kept blocks (draft=%s)", async (draft) => {
+it("keeps independent split components separate across adjacent or kept blocks", async () => {
   for (const sentinel of ["", "\n\nUntouched mountain."]) {
     const before = `Alpha road. Beta valley.${sentinel}\n\nGamma sea. Delta hill.`;
     const after = `Alpha road.\n\nBeta dark valley.${sentinel}\n\nGamma sea.\n\nDelta green hill.`;
-    const result = await revision(before, after, draft);
-    expect(result.classes.size).toBe(draft ? 2 : 1);
+    const result = await revision(before, after);
+    expect(result.classes.size).toBe(2);
   }
 });
 
@@ -265,7 +252,7 @@ it("keeps generated cross-paragraph common-word substitutions independently repl
   for (let sample = 0; sample < 12; sample++) {
     const before = [`Alpha${sample} takes the sword.`, `Beta${sample} drops a shield.`];
     const after = [`Alpha${sample} takes a sword.`, `Beta${sample} drops the shield.`];
-    const result = await revision(before.join("\n\n"), after.join("\n\n"), true);
+    const result = await revision(before.join("\n\n"), after.join("\n\n"));
     expect(result.classes.size, `sample ${sample}`).toBe(2);
     expect(
       result.isolated.map((nodes) => nodes.map((node) => node.textContent).join("\n\n")).sort(),
@@ -273,10 +260,7 @@ it("keeps generated cross-paragraph common-word substitutions independently repl
   }
 });
 
-it.each([
-  false,
-  true,
-])("retains count-changing sentence splits as one exact change (draft=%s)", async (draft) => {
+it("retains count-changing sentence splits as one exact change", async () => {
   for (const [oldCount, newCount] of [
     [1, 2],
     [1, 3],
@@ -286,7 +270,6 @@ it.each([
     const result = await revision(
       `Alpha road. ${Array(oldCount).fill("Beta valley.").join(" ")}`,
       `Alpha road.\n\n${Array(newCount).fill("Beta valley.").join(" ")}`,
-      draft,
     );
     expect(result.classes.size).toBe(1);
     expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
@@ -295,15 +278,12 @@ it.each([
   }
 });
 
-it.each([
-  false,
-  true,
-])("retains no-space word and single-token grapheme splits (draft=%s)", async (draft) => {
+it("retains no-space word and single-token grapheme splits", async () => {
   for (const [before, after] of [
     ["青山绿水", "青山\n\n绿水"],
     ["abcdef", "abc\n\ndef"],
   ]) {
-    const result = await revision(before, after, draft);
+    const result = await revision(before, after);
     expect(result.classes.size).toBe(1);
     expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
       result.expected.map((node) => node.toJSON()),
@@ -311,16 +291,13 @@ it.each([
   }
 });
 
-it.each([
-  false,
-  true,
-])("recognizes compatible word, punctuation and emoji boundary tokenization (draft=%s)", async (draft) => {
+it("recognizes compatible word, punctuation and emoji boundary tokenization", async () => {
   for (const [before, after] of [
     ["Alpha Beta", "Alpha\n\nBeta"],
     ["Alpha Beta.", "Alpha\n\nBeta."],
     ["👩‍🚀 Hello", "👩‍🚀\n\nHello"],
   ]) {
-    const result = await revision(before, after, draft);
+    const result = await revision(before, after);
     expect(result.classes.size).toBe(1);
     expect(result.isolated[0].map((node) => node.toJSON())).toEqual(
       result.expected.map((node) => node.toJSON()),
@@ -334,7 +311,6 @@ it("keeps generated repeated-phrase substitutions in paired paragraphs independe
     const result = await revision(
       `Alpha takes ${phrase} sword.\n\nBeta drops a shield. Again ${phrase}.`,
       `Alpha takes a sword.\n\nBeta drops ${phrase} shield. Again ${phrase}.`,
-      true,
     );
     expect(result.classes.size).toBe(2);
   }
@@ -350,7 +326,7 @@ it("recognizes generated pure multi-way splits and merges as one change", async 
       [paragraphs.join(" "), paragraphs.join("\n\n")],
       [paragraphs.join("\n\n"), paragraphs.join(" ")],
     ]) {
-      const result = await revision(before, after, true);
+      const result = await revision(before, after);
       expect(result.classes.size).toBe(1);
     }
   }
@@ -361,16 +337,12 @@ it("conservatively joins structural windows beyond the character budget", async 
     const result = await revision(
       `${text}ending.`,
       `${text}changed.\n\nEntirely unrelated addition.`,
-      true,
     );
     expect(result.classes.size).toBe(1);
   }
 });
 
-it.each([
-  false,
-  true,
-])("joins three-way subword and repeated-word splits and reverse merges (draft=%s)", async (draft) => {
+it("joins three-way subword and repeated-word splits and reverse merges", async () => {
   for (const [whole, parts] of [
     ["abcdefghijkl", ["abc", "de", "fghijkl"]],
     ["abcdefghijkl", ["abcdefg", "hi", "jkl"]],
@@ -382,7 +354,7 @@ it.each([
       [whole, parts.join("\n\n")],
       [parts.join("\n\n"), whole],
     ]) {
-      const result = await revision(before, after, draft);
+      const result = await revision(before, after);
       expect(result.classes.size).toBe(1);
     }
   }

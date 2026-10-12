@@ -9,7 +9,7 @@ import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
-import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import type {
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
@@ -17,7 +17,6 @@ import type {
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "./types.js";
-import type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./write-reversal.js";
 
 export interface LinkSpliceFallbackDetail {
   documentId: string;
@@ -25,7 +24,7 @@ export interface LinkSpliceFallbackDetail {
 }
 
 export interface CreateWriteToolOptions {
-  journal: UpdateJournal & ReversalStore;
+  journal: UpdateJournal;
   documentEdits?: import("../ports/document-edits.js").DocumentEdits;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
@@ -42,12 +41,7 @@ export interface CreateWriteToolOptions {
   };
   defaultSessionId?: string;
   defaultThreadId?: string;
-  undoClientId?: number;
-  /** Legacy reversal client rotation for review destinations; write parts are always independent. */
-  segmentDraftWrites?: boolean;
   createRuntimeDoc?: () => Y.Doc;
-  reversalNoticePort?: ReversalNoticePort;
-  onInvariantViolation?: (message: string) => void;
   /**
    * A formatted find could not tell the links outside its splice apart and
    * assigned the whole block group instead: identity still follows
@@ -59,9 +53,6 @@ export interface CreateWriteToolOptions {
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
-  onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
-  /** Stage live reversal projection until the host transaction commits. */
-  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   closedResponseTombstoneCap?: number;
   /** Commit-phase seam for deterministic race injection and host observability. */
   afterResponsePreflight?: (responseId: string) => Promise<void> | void;

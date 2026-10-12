@@ -131,8 +131,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.changeTrailDocumentOccurrences,
         schema.changeTrailShells,
         schema.pendingNotices,
-        schema.documentYjsReversalOps,
-        schema.documentYjsReversals,
         schema.agentEditWidCounters,
         schema.agentEditMutations,
         schema.branchWriteJournal,

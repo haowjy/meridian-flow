@@ -510,15 +510,15 @@ cold load would silently lose it.</p>
 
 <h3>Reserved client IDs and the provenance namespace</h3>
 <p>
-Yjs client IDs 0 through 999 belong to server-authored streams; the
-agent-edit reversal writer uses 999. Every server Y.Doc is built with
+Yjs client IDs 0 through 999 remain reserved for the provenance ingest guard;
+no undo writer owns client 999. Every server Y.Doc is built with
 <code>createCollabYDoc</code>, which redraws until its ID is outside that band.
 A writer frame carrying a struct from the band is rejected, the document is
 marked so the next room checkpoint is skipped (the rejected struct may still
 sit in memory), and an invariant event is emitted. If a client could author
 under a reserved ID, two writers would share one client ID, which breaks the
 Yjs assumption that one ID has one writer and would let a client forge
-reversal history.
+server provenance.
 <span class="ref"><code>packages/prosemirror-schema/src/index.ts</code> <code>RESERVED_CLIENT_ID_MAX</code>, <code>hocuspocus-persistence.ts</code> <code>rejectReservedClientIdUpdate</code></span>
 </p>
 <p>
@@ -692,7 +692,7 @@ completes with the same code path. Depth lives in
   <li><strong>Receipts.</strong> A turn's receipt chip is server-derived:
     for live writes from <code>agent_edit_mutations</code> plus agent-edit's
     <code>planUndo</code>/<code>planRedo</code>; for draft writes from the
-    branch journal and the branch reversal planner. Receipt Undo/Redo is the
+    branch journal and the forward-turn inverse service. Receipt Undo/Redo is the
     only reversal authority for AI changes; trail evidence is read-only.
     <span class="ref"><code>adapters/drizzle-turn-receipt.ts</code>, <code>domain/turn-receipt.ts</code></span></li>
 </ul>
@@ -707,10 +707,10 @@ checkpoint plus every later row of the same generation".
 <div class="scroll">
 <table>
   <tr><th>Table</th><th>Holds</th></tr>
-  <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response, reversal actor.</td></tr>
+  <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response.</td></tr>
   <tr><td><code>document_yjs_checkpoints</code></td><td>Full encoded state at <code>up_to_seq</code>, its authority generation, and an attribution manifest that freezes first-birth attribution so compaction cannot lose it.</td></tr>
   <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp and latest checkpoint and state vector.</td></tr>
-  <tr><td><code>agent_edit_mutations</code>, <code>document_yjs_reversals</code>, <code>document_yjs_reversal_ops</code></td><td>Write handles and reversal state and lineage, keyed to update row IDs.</td></tr>
+  <tr><td><code>agent_edit_mutations</code></td><td>Write provenance keyed to update row IDs; immutable edit parts own inverse state.</td></tr>
 </table>
 </div>
 <p class="ref"><code>packages/database/src/schema/yjs.ts</code></p>
@@ -737,7 +737,7 @@ without a row.
   <li><strong>Compaction.</strong> <code>journal.compact(docId, before)</code>
     folds the contiguous prefix of current-generation rows older than
     <code>before</code> into a <code>compact</code> checkpoint, deletes those rows
-    and their reversal ops, and expires reversals created before the cutoff.
+    only; immutable forward edit parts retain inverse authority.
     It is implemented and tested, but no production scheduler calls it on this
     checkout, so live rows are never deleted.
     <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>compact</code></span></li>
@@ -805,7 +805,7 @@ state. <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocus
     <rect x="228" y="282" width="204" height="92" rx="8" fill="none" stroke="var(--rule)" stroke-dasharray="4 3"/>
     <text x="240" y="304" fill="var(--muted)" font-size="10.5">branch_write_journal rows are</text>
     <text x="240" y="319" fill="var(--muted)" font-size="10.5">review, attribution and</text>
-    <text x="240" y="334" fill="var(--muted)" font-size="10.5">reversal history; the</text>
+    <text x="240" y="334" fill="var(--muted)" font-size="10.5">forward evidence; the</text>
     <text x="240" y="349" fill="var(--muted)" font-size="10.5">snapshot is the content</text>
     <text x="240" y="364" fill="var(--muted)" font-size="10.5">authority</text>
   </g>
@@ -832,7 +832,7 @@ that row so a historical read never sees later edits. No production caller
 passes <code>until</code> on this checkout. <code>readForReconstruction</code>
 (used by cold undo/redo and echo attribution) instead picks the newest
 checkpoint strictly below the earliest retained row, so it replays every
-retained row that reversal might target. Settlement rebuilds its historical
+retained row needed for immutable forward-part capture. Settlement rebuilds its historical
 "final pre-push" document from the outbox's own lock cut plus joined updates,
 never from the current room.
 </p>
@@ -895,47 +895,15 @@ The watermark advances only when the surrounding branch write commits.
 <p class="ref"><code>domain/branch-agent-edit.ts</code> <code>concurrentUpdatesSince</code> and <code>partitionConcurrentUpdates</code>, <code>domain/branch-update-attribution.ts</code></p>
 
 <!-- ============================================================ -->
-<h2 id="reversal">8. Reversal</h2>
-<p>
-Undo and Redo of AI writes are planned by agent-edit and authorized by
-collab's durable state. There is no hot undo stack: every reversal is a
-<strong>cold reconstruction</strong> from the journal. agent-edit replays the
-retained rows into a fresh Y.Doc, tags only the target write's rows for a
-local <code>Y.UndoManager</code>, runs undo or redo, and extracts the
-resulting update, which is then admitted like any other write under the
-reserved client ID 999.
-<span class="ref"><code>packages/agent-edit/.context/write-architecture.md</code>, <code>domain/thread-peer-core-pool.ts</code> (<code>undoClientId: AGENT_EDIT_UNDO_CLIENT_ID</code>)</span>
-</p>
-<ul class="rule-list">
-  <li><strong>Which journal.</strong> While the current Work-draft generation
-    holds agent rows for the thread, reversal is branch-scoped and writes a
-    system row into the branch journal. Otherwise, including after Apply
-    empties the branch, it routes to the live utility core.
-    <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>reversalCoreFor</code>, <code>domain/branch-reversal-history.ts</code></span></li>
-  <li><strong>The live guard is intrinsic.</strong> <code>persistUndo</code>
-    re-runs the dependency check and the writer watermark inside the append
-    transaction under the document mutation lock, so a writer edit admitted
-    between planning and persisting turns the result into
-    <code>cant_undo_dependent</code> instead of undoing over it. Branch reversal
-    uses the branch generation, journal watermark and status revision under the
-    snapshot compare-and-set instead.
-    <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>persistUndo</code>, <code>adapters/drizzle-branches.ts</code> <code>commitBranchMutation</code></span></li>
-  <li><strong>Writer rows withdraw redo; agent and system rows do not.</strong>
-    One planner (<code>planUndo</code>, <code>planRedo</code>) drives both the
-    receipt's availability and the command, so they disagree only across a race,
-    and the endpoint returns those races as HTTP 200 outcomes
-    (<code>nothing_to_undo</code>, <code>cant_undo_dependent</code>,
-    <code>partial</code>, and so on).</li>
-  <li><strong>Turn reversal is atomic.</strong> Branch and live changes persist
-    in one transaction; a mixed success and no-op across documents aborts all
-    of it. Room application, broadcasts and projection refresh run only after
-    commit. <span class="ref"><code>domain/turn-reversal-service.ts</code></span></li>
-</ul>
-<p>
-Full contracts: <a href="reversal.md">reversal</a>.
-</p>
+<h2 id="reversal">8. Forward-turn inverses</h2>
+<p>Collab owns durable Undo and Redo through <code>turn-inverse-service.ts</code>.
+Immutable edit parts capture each forward operation and its inverse. Pending
+parts are settled in the Work draft; accepted parts are inverted in live prose.
+Certified aliases connect displaced identities. The model can target edits,
+while card actions invert a whole turn. There is no reconstruction reversal
+engine, mutable reversal history, or reserved undo client.</p>
+<p>Full policy and persistence contracts: <a href="reversal.md">turn inverses</a>.</p>
 
-<!-- ============================================================ -->
 <h2 id="schema">9. Schema fence and repair</h2>
 <p>
 A Y.Doc's bytes only make sense under the ProseMirror schema that wrote them.

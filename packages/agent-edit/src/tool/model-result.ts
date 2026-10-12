@@ -93,11 +93,6 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
-  reversal?: {
-    direction: "undo" | "redo";
-    /** Write handles actually reversed, oldest first; group atomicity can add to the selection. */
-    writes: string[];
-  };
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */

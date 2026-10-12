@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove the old reconstruction-based reversal engine. Card Undo/Redo, model inverses and failed-response rollback use immutable forward edits; retire the unused document-scoped reversal API.
+
 - Queue review actions per chapter so slow chapters do not block others, preserving exact change membership through reforks and one confirmed stale retry.
 
 - Keep the manuscript's place and restored original text through per-change Discard, with stable review identities and account-bound queued actions.

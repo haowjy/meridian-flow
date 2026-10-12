@@ -1,6 +1,5 @@
-/** Standalone selective discard and turn-level undo/redo service for work-draft review. */
+/** Selective Discard re-forks a Work draft from live and its surviving journal rows. */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
-import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
@@ -14,11 +13,9 @@ import {
   BranchPushCommitConflictError,
   BranchPushRetryExhaustedError,
   type BranchReviewService,
-  type BranchTurnReversal,
   type PushCommitStore,
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
-import { createBranchTurnReversalPlanner } from "./branch-turn-reversal-plan.js";
 import { documentEffectsEqual } from "./document-content.js";
 
 type Dependencies = {
@@ -33,12 +30,6 @@ type Dependencies = {
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
   const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
-  const prepareBranchTurnReversal = createBranchTurnReversalPlanner(deps);
-
-  function broadcastAfterCommit(input: { branchId: string; update: Uint8Array }): void {
-    const broadcast = () => deps.branchCoordinator?.broadcastUpdate?.(input);
-    if (!deps.deferUntilCommit?.(broadcast)) broadcast();
-  }
 
   async function listReviewableRows(
     branchId: string,
@@ -153,97 +144,8 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     });
   }
 
-  async function reverseBranchTurns(turnInput: {
-    branchIds: readonly string[];
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    reviewedByUserId?: UserId;
-  }): Promise<BranchTurnReversal[]> {
-    const branchIds = [...new Set(turnInput.branchIds)];
-    if (branchIds.length === 0) return [];
-    // Branch critical sections, then every branch's Work once, then each
-    // branch's change-trail and document locks (file-access §5). A concurrent
-    // push holds its branch section while it waits for the Work row.
-    return criticalSections.withBranches(branchIds, async () => {
-      const frozen = await deps.commitStore.lockDraftWorks(branchIds);
-      const results: BranchTurnReversal[] = [];
-      for (const branchId of branchIds) {
-        results.push(
-          frozen.has(branchId)
-            ? { status: "permission_denied", branchId, journalIds: [] }
-            : await retryingCas([branchId], ([branch]) => reverseOneBranchTurn(branch, turnInput)),
-        );
-      }
-      return results;
-    });
-  }
-
-  async function reverseOneBranchTurn(
-    branch: BranchSnapshot,
-    turnInput: {
-      threadId: ThreadId;
-      turnId: TurnId;
-      direction: "undo" | "redo";
-      reviewedByUserId?: UserId;
-    },
-  ): Promise<BranchTurnReversal> {
-    const prepared = await prepareBranchTurnReversal({
-      branch,
-      threadId: turnInput.threadId,
-      turnId: turnInput.turnId,
-      direction: turnInput.direction,
-    });
-    if (!prepared.ok) {
-      return {
-        status: prepared.status,
-        branchId: branch.branchId,
-        journalIds: prepared.journalIds,
-      };
-    }
-    const commit = {
-      branch,
-      journalRows: prepared.journalRows,
-      state: prepared.state,
-      stateVector: prepared.stateVector,
-      reviewedByUserId: turnInput.reviewedByUserId,
-    };
-    if (turnInput.direction === "undo") await deps.commitStore.commitDiscard(commit);
-    else await deps.commitStore.commitTurnRedo(commit);
-    broadcastAfterCommit({ branchId: branch.branchId, update: prepared.publishUpdate });
-    return {
-      status: prepared.status,
-      branchId: branch.branchId,
-      journalIds: prepared.journalIds,
-    };
-  }
-
   return {
     discardSelected,
-    reverseBranchTurns,
-    async markFailedResponseRollbackPending(rollbackInput) {
-      const [reversed] = await reverseBranchTurns({
-        branchIds: [rollbackInput.branchId],
-        threadId: rollbackInput.threadId,
-        turnId: rollbackInput.turnId,
-        direction: "undo",
-      });
-      if (!reversed) throw new Error(`Branch ${rollbackInput.branchId} was not reversed`);
-      if (reversed.status === "reversed") {
-        return {
-          status: "discarded",
-          branchId: reversed.branchId,
-          journalIds: reversed.journalIds,
-        };
-      }
-      const branch = await deps.branchStore.getBranch(rollbackInput.branchId);
-      if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
-      const rowsMarked = await deps.commitStore.markRollbackPending({
-        ...rollbackInput,
-        generation: branch.generation,
-      });
-      return { status: "rollback_pending", rowsMarked };
-    },
   };
 }
 

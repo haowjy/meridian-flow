@@ -1,27 +1,14 @@
 /** Drizzle-backed collab persistence for Yjs updates, checkpoints, and lifecycle. */
 
 import type {
-  ActiveWriteSummary,
   DocumentLifecycle,
   JournalReadOptions,
   JournalSnapshot,
   PersistedUpdate,
-  PersistRedoEntry,
-  ReversalActor,
-  ReversalRecord,
-  ReversalStatus,
-  ReversalStore,
   UpdateJournal,
   UpdateMeta,
-  WriteMutationRow,
 } from "@meridian/agent-edit/integration";
-import {
-  captureEditParts,
-  parseWriteHandle,
-  persistUndoPlanWatermark,
-  unwrapDoc,
-  writeHandle,
-} from "@meridian/agent-edit/integration";
+import { captureEditParts, unwrapDoc } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -30,8 +17,6 @@ import {
   agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
-  documentYjsReversalOps,
-  documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
 import {
@@ -41,7 +26,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -68,7 +53,6 @@ import {
   findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
-import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
 
@@ -103,10 +87,9 @@ export type CollabFacadeStore = {
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
-export type CollabJournal = CheckpointJournal &
-  ReversalStore & {
-    headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
-  };
+export type CollabJournal = CheckpointJournal & {
+  headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
+};
 
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
@@ -152,21 +135,9 @@ function uniqueSortedDocIds(docIds: readonly string[]): string[] {
   return [...new Set(docIds)].sort();
 }
 
-const CANT_UNDO_DEPENDENT_MESSAGE =
-  "This turn has later live edits depending on it. View the change instead of undoing it.";
-
-function collectDependentCheckTurnIds(records: readonly ReversalRecord[]): TurnId[] {
-  const turnIds = new Set<string>();
-  for (const record of records) {
-    if (record.turnId) turnIds.add(record.turnId);
-  }
-  return [...turnIds] as TurnId[];
-}
-
-/** Written by an agent: its own write, or a reversal an agent asked for. */
+/** Agent-authored updates require the model’s write grant. */
 function agentAuthored(meta: UpdateMeta | undefined): boolean {
   if (!meta) return false;
-  if (meta.reversalActor) return meta.reversalActor.type === "agent";
   return meta.origin.startsWith("agent:");
 }
 
@@ -174,19 +145,9 @@ function parseOrigin(meta: UpdateMeta): {
   originType: OriginType;
   actorTurnId?: TurnId;
   actorUserId?: UserId;
-  reversalActorType?: "agent" | "user";
-  reversalActorUserId?: UserId;
 } {
-  const reversal = meta.reversalActor
-    ? {
-        reversalActorType: meta.reversalActor.type,
-        ...(meta.reversalActor.type === "user"
-          ? { reversalActorUserId: asUserId(meta.reversalActor.userId) }
-          : {}),
-      }
-    : {};
   if (meta.origin === "system") {
-    return { originType: "system", actorTurnId: asOptionalTurnId(meta.actorTurnId), ...reversal };
+    return { originType: "system", actorTurnId: asOptionalTurnId(meta.actorTurnId) };
   }
 
   const separator = meta.origin.indexOf(":");
@@ -197,14 +158,13 @@ function parseOrigin(meta: UpdateMeta): {
   if (!id) throw new Error(`Invalid update origin: ${meta.origin}`);
 
   if (kind === "agent") {
-    return { originType: "agent", actorTurnId: asTurnId(meta.actorTurnId ?? id), ...reversal };
+    return { originType: "agent", actorTurnId: asTurnId(meta.actorTurnId ?? id) };
   }
   if (kind === "human") {
     return {
       originType: "human",
       actorTurnId: asOptionalTurnId(meta.actorTurnId),
       actorUserId: asUserId(id),
-      ...reversal,
     };
   }
   throw new Error(`Invalid update origin: ${meta.origin}`);
@@ -218,8 +178,6 @@ const journalTransportColumns = {
   actorUserId: documentYjsUpdates.actorUserId,
   actorTurnId: documentYjsUpdates.actorTurnId,
   authoringResponseId: documentYjsUpdates.authoringResponseId,
-  reversalActorType: documentYjsUpdates.reversalActorType,
-  reversalActorUserId: documentYjsUpdates.reversalActorUserId,
 };
 type JournalTransportRow = Pick<
   typeof documentYjsUpdates.$inferSelect,
@@ -227,12 +185,6 @@ type JournalTransportRow = Pick<
 >;
 
 function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): UpdateMeta {
-  const reversalActor =
-    row.reversalActorType === "user" && row.reversalActorUserId
-      ? ({ type: "user", userId: row.reversalActorUserId } as const)
-      : row.reversalActorType === "agent"
-        ? ({ type: "agent" } as const)
-        : undefined;
   if (row.originType === "reconcile") {
     return {
       origin: "system:reconcile",
@@ -246,7 +198,6 @@ function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): Upda
         origin: `agent:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
         ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
-        ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
     }
@@ -257,7 +208,6 @@ function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): Upda
       return {
         origin: `human:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
-        ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
     }
@@ -266,7 +216,6 @@ function metaFromUpdateRow(row: JournalTransportRow, mode: UpdateMetaMode): Upda
     origin: "system",
     ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
     ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
-    ...(reversalActor ? { reversalActor } : {}),
     seq: row.id,
   };
 }
@@ -276,21 +225,6 @@ function mapUpdate(row: JournalTransportRow, mode: UpdateMetaMode = "journal"): 
     seq: row.id,
     update: toBytes(row.updateData),
     meta: metaFromUpdateRow(row, mode),
-  };
-}
-
-function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRecord {
-  return {
-    documentId: row.documentId,
-    threadId: row.threadId,
-    turnId: row.turnId,
-    writeIds: [row.writeId],
-    status: row.status,
-    undoUpdateSeq: row.undoUpdateSeq,
-    ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
-    ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
-    ...(row.reversedAt ? { reversedAt: row.reversedAt } : {}),
-    ...(row.reversedByUserId ? { reversedByUserId: row.reversedByUserId } : {}),
   };
 }
 
@@ -313,32 +247,6 @@ async function latestCheckpoint(
     .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
   return row ?? null;
-}
-
-async function reconstructionCheckpoint(
-  db: JournalDb,
-  documentId: string,
-  authority: CheckpointAuthority,
-  untilSeq?: number,
-) {
-  // Undo needs retained rows, not merely the latest materialized state. Only
-  // consider rows in this read's captured generation, including the compacted base.
-  const retainedConditions = [
-    eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
-    eq(documentYjsUpdates.authorityId, authority.authorityId),
-    eq(documentYjsUpdates.authorityGeneration, authority.generation),
-  ];
-  if (untilSeq !== undefined) retainedConditions.push(lte(documentYjsUpdates.id, untilSeq));
-  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
-    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
-    .from(documentYjsUpdates)
-    .where(and(...retainedConditions));
-  return latestCheckpoint(
-    db,
-    documentId,
-    authority,
-    minRetainedSeq === null ? untilSeq : minRetainedSeq - 1,
-  );
 }
 
 async function readHeadSchemaVersion(
@@ -507,8 +415,6 @@ async function appendUpdate(
       actorUserId: origin.actorUserId ?? null,
       actorTurnId: origin.actorTurnId ?? null,
       authoringResponseId: asModelResponseId(meta.authoringResponseId) ?? null,
-      reversalActorType: origin.reversalActorType ?? null,
-      reversalActorUserId: origin.reversalActorUserId ?? null,
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
@@ -644,26 +550,6 @@ function replayKeyValueJson(row: {
   };
 }
 
-async function hasLaterWriterJournalUpdateAfter(
-  db: JournalDb,
-  documentId: string,
-  afterSeq: number,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: documentYjsUpdates.id })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
-        gt(documentYjsUpdates.id, afterSeq),
-        inArray(documentYjsUpdates.originType, ["human", "user"]),
-      ),
-    )
-    .orderBy(asc(documentYjsUpdates.id))
-    .limit(1);
-  return row !== undefined;
-}
-
 async function reserveWriteOrdinal(
   db: JournalDb,
   input: { documentId: string; threadId: string },
@@ -684,71 +570,6 @@ async function reserveWriteOrdinal(
   return counter.wId;
 }
 
-async function reverseMutationsForWrite(
-  db: JournalDb,
-  input: {
-    documentId: string;
-    threadId: string;
-    writeId: string;
-    undoUpdateSeq: number;
-    at: Date;
-    actor: ReversalActor;
-  },
-): Promise<void> {
-  // Reversal records carry write handles ("w3"); the writeId text column stores
-  // the durable id (tool_use_id/UUID), so match on the wId ordinal like every
-  // other lookup in this adapter.
-  const ordinal = parseWriteHandle(input.writeId);
-  if (ordinal === undefined) return;
-  await db
-    .update(agentEditMutations)
-    .set({
-      status: "reversed",
-      undoUpdateSeq: input.undoUpdateSeq,
-      reversedAt: input.at,
-      reversedBy: input.actor.type,
-    })
-    .where(
-      and(
-        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
-        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
-        eq(agentEditMutations.wId, ordinal),
-        eq(agentEditMutations.status, "active"),
-      ),
-    );
-}
-
-async function reactivateMutationsForWrite(
-  db: JournalDb,
-  input: {
-    documentId: string;
-    threadId: string;
-    writeId: string;
-    undoUpdateSeq: number;
-  },
-): Promise<void> {
-  // writeId here is a handle ("w3"); match on the wId ordinal (see reverseMutationsForWrite).
-  const ordinal = parseWriteHandle(input.writeId);
-  if (ordinal === undefined) return;
-  await db
-    .update(agentEditMutations)
-    .set({
-      status: "active",
-      undoUpdateSeq: null,
-      reversedAt: null,
-      reversedBy: null,
-    })
-    .where(
-      and(
-        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
-        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
-        eq(agentEditMutations.wId, ordinal),
-        eq(agentEditMutations.status, "reversed"),
-        eq(agentEditMutations.undoUpdateSeq, input.undoUpdateSeq),
-      ),
-    );
-}
-
 function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeCheckpointRecord {
   return {
     id: String(row.id),
@@ -758,112 +579,6 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
     reason: row.reason ?? "checkpoint",
     createdAt: row.createdAt.toISOString(),
   };
-}
-
-function mapActiveWrite(row: {
-  writeId: string;
-  wId: number;
-  turnId: string | null;
-  createdSeq: number;
-}): ActiveWriteSummary {
-  return {
-    writeId: row.writeId,
-    handle: writeHandle(row.wId),
-    wId: row.wId,
-    turnId: row.turnId,
-    createdSeq: Number(row.createdSeq),
-  };
-}
-
-function mapWriteMutationRow(row: {
-  writeId: string;
-  wId: number;
-  turnId: string | null;
-  createdSeq: number;
-  status: "active" | "reversed";
-  undoUpdateSeq: number | null;
-}): WriteMutationRow {
-  return {
-    writeId: row.writeId,
-    handle: writeHandle(row.wId),
-    wId: row.wId,
-    turnId: row.turnId,
-    createdSeq: Number(row.createdSeq),
-    status: row.status,
-    ...(row.undoUpdateSeq === null ? {} : { undoUpdateSeq: Number(row.undoUpdateSeq) }),
-  };
-}
-
-async function persistRedoEntries(
-  db: JournalDb,
-  docId: string,
-  entries: readonly PersistRedoEntry[],
-): Promise<{ consumed: boolean; seqs?: number[] }> {
-  const groups: Array<{
-    entry: PersistRedoEntry;
-    reversals: Array<{ writeId: string; status: ReversalStatus }>;
-  }> = [];
-  for (const entry of entries) {
-    if (
-      entry.persistGuardWatermark !== undefined &&
-      (await hasLaterWriterJournalUpdateAfter(db, docId, entry.persistGuardWatermark))
-    ) {
-      return { consumed: false };
-    }
-    const reversals = await db
-      .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
-      .from(documentYjsReversals)
-      .where(
-        and(
-          eq(documentYjsReversals.documentId, asDocumentId(docId)),
-          eq(documentYjsReversals.threadId, asThreadId(entry.ref.threadId)),
-          eq(documentYjsReversals.undoUpdateSeq, entry.ref.undoUpdateSeq),
-        ),
-      )
-      .for("update");
-    if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
-      return { consumed: false };
-    }
-    groups.push({ entry, reversals });
-  }
-
-  const seqs: number[] = [];
-  for (const { entry, reversals } of groups) {
-    const { seq } = await appendUpdate(db, docId, entry.update, entry.meta);
-    seqs.push(seq);
-    await db.insert(documentYjsReversalOps).values(
-      reversals.map((reversal) => ({
-        documentId: asDocumentId(docId),
-        threadId: asThreadId(entry.ref.threadId),
-        updateSeq: seq,
-        handle: reversal.writeId,
-        direction: "redo" as const,
-      })),
-    );
-    await db
-      .update(documentYjsReversals)
-      .set({
-        status: "redone",
-        authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
-        redoUpdateSeq: seq,
-      })
-      .where(
-        and(
-          eq(documentYjsReversals.documentId, asDocumentId(docId)),
-          eq(documentYjsReversals.threadId, asThreadId(entry.ref.threadId)),
-          eq(documentYjsReversals.undoUpdateSeq, entry.ref.undoUpdateSeq),
-        ),
-      );
-    for (const reversal of reversals) {
-      await reactivateMutationsForWrite(db, {
-        documentId: docId,
-        threadId: entry.ref.threadId,
-        writeId: reversal.writeId,
-        undoUpdateSeq: entry.ref.undoUpdateSeq,
-      });
-    }
-  }
-  return { consumed: true, seqs };
 }
 
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
@@ -1011,7 +726,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
               actorKind: mv.actorKind,
               userId: mv.userId ?? null,
               writeId: mv.writeId,
-              status: "active" as const,
               createdSeq: mv.seq,
             })),
           );
@@ -1120,145 +834,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       return reserveWriteOrdinal(db, { documentId, threadId });
     },
 
-    async documentsForTurn(threadId, turnId) {
-      const rows = await db
-        .selectDistinct({ documentId: agentEditMutations.documentId })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.turnId, asTurnId(turnId)),
-          ),
-        )
-        .orderBy(asc(agentEditMutations.documentId));
-      return rows.map((row) => row.documentId);
-    },
-
-    async latestActiveWrite(documentId, threadId) {
-      const [row] = await db
-        .select({
-          writeId: agentEditMutations.writeId,
-          wId: agentEditMutations.wId,
-          turnId: agentEditMutations.turnId,
-          createdSeq: agentEditMutations.createdSeq,
-        })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.status, "active"),
-          ),
-        )
-        .orderBy(desc(agentEditMutations.wId))
-        .limit(1);
-      return row ? mapActiveWrite(row) : undefined;
-    },
-
-    async activeWriteSummary(documentId, threadId) {
-      const rows = await db
-        .select({
-          writeId: agentEditMutations.writeId,
-          wId: agentEditMutations.wId,
-          turnId: agentEditMutations.turnId,
-          createdSeq: agentEditMutations.createdSeq,
-        })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.status, "active"),
-          ),
-        )
-        .orderBy(asc(agentEditMutations.wId));
-      return rows.map(mapActiveWrite);
-    },
-
-    async writeMinCreatedSeq(documentId, threadId, handle) {
-      const ordinal = parseWriteHandle(handle);
-      if (ordinal === undefined) return undefined;
-      const [row] = await db
-        .select({ minSeq: sql<number>`min(${agentEditMutations.createdSeq})` })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.wId, ordinal),
-          ),
-        );
-      return row?.minSeq === null || row?.minSeq === undefined ? undefined : Number(row.minSeq);
-    },
-
-    async mutationsForWrite(documentId, threadId, handle): Promise<WriteMutationRow[]> {
-      const ordinal = parseWriteHandle(handle);
-      if (ordinal === undefined) return [];
-      const rows = await db
-        .select({
-          writeId: agentEditMutations.writeId,
-          wId: agentEditMutations.wId,
-          turnId: agentEditMutations.turnId,
-          createdSeq: agentEditMutations.createdSeq,
-          status: agentEditMutations.status,
-          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
-        })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.wId, ordinal),
-          ),
-        )
-        .orderBy(asc(agentEditMutations.createdSeq), asc(agentEditMutations.wId));
-
-      return rows.map(mapWriteMutationRow);
-    },
-
-    async mutationsForWrites(
-      documentId,
-      threadId,
-      handles,
-    ): Promise<Map<string, WriteMutationRow[]>> {
-      const ordinals = handles
-        .map((h) => parseWriteHandle(h))
-        .filter((o): o is number => o !== undefined);
-      const result = new Map<string, WriteMutationRow[]>();
-      if (ordinals.length === 0) return result;
-      const rows = await db
-        .select({
-          writeId: agentEditMutations.writeId,
-          wId: agentEditMutations.wId,
-          turnId: agentEditMutations.turnId,
-          createdSeq: agentEditMutations.createdSeq,
-          status: agentEditMutations.status,
-          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
-        })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            inArray(agentEditMutations.wId, ordinals),
-          ),
-        )
-        .orderBy(asc(agentEditMutations.createdSeq), asc(agentEditMutations.wId));
-
-      for (const row of rows) {
-        const handle = writeHandle(row.wId);
-        const mapped = mapWriteMutationRow(row);
-        const existing = result.get(handle);
-        if (existing) existing.push(mapped);
-        else result.set(handle, [mapped]);
-      }
-      return result;
-    },
-
-    async read(
-      docId,
-      opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
-    ): Promise<JournalSnapshot> {
+    async read(docId, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
       await assertReadableHead(readDb, docId);
 
@@ -1266,10 +842,11 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       // authority for this read. Sequence bounds stay within this generation.
       const authorityHead = await findDocumentAuthorityHead(readDb, docId);
       if (!authorityHead) return { checkpoint: null, updates: [] };
-      const checkpoint =
-        (opts.fromCheckpoint ?? true)
-          ? await latestCheckpoint(readDb, docId, authorityHead, opts.until)
-          : await reconstructionCheckpoint(readDb, docId, authorityHead, opts.until);
+      const checkpointBound =
+        opts.since === undefined
+          ? opts.until
+          : Math.min(opts.until ?? Number.MAX_SAFE_INTEGER, opts.since - 1);
+      const checkpoint = await latestCheckpoint(readDb, docId, authorityHead, checkpointBound);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
@@ -1289,16 +866,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         authority: { authorityId: authorityHead.authorityId, generation: authorityHead.generation },
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),
+        persistenceWatermark: Math.max(checkpoint?.upToSeq ?? 0, rows.at(-1)?.id ?? 0),
       };
-    },
-
-    async readForReconstruction(docId: string): Promise<JournalSnapshot> {
-      return (
-        this.read as (
-          docId: string,
-          opts: JournalReadOptions & { fromCheckpoint?: boolean },
-        ) => Promise<JournalSnapshot>
-      )(docId, { fromCheckpoint: false });
     },
 
     async checkpoint(docId, state, upToSeq, authority) {
@@ -1401,190 +970,10 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
                 lte(documentYjsUpdates.id, compactedThroughSeq),
               ),
             );
-          await txDb
-            .delete(documentYjsReversalOps)
-            .where(
-              and(
-                eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
-                lte(documentYjsReversalOps.updateSeq, compactedThroughSeq),
-              ),
-            );
         }
 
-        const expired = await txDb
-          .update(documentYjsReversals)
-          .set({ status: "expired" })
-          .where(
-            and(
-              eq(documentYjsReversals.documentId, asDocumentId(docId)),
-              ne(documentYjsReversals.status, "expired"),
-              or(
-                lt(documentYjsReversals.createdAt, before),
-                lt(documentYjsReversals.expiresAt, before),
-              ),
-            ),
-          )
-          .returning({ id: documentYjsReversals.id });
-
-        return { updatesFolded: foldRows.length, reversalsExpired: expired.length };
+        return { updatesFolded: foldRows.length };
       });
-    },
-
-    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
-      let undoUpdateSeq: number | undefined;
-      const result = await runInDrizzleTransaction(db as Database, async () => {
-        const txDb = await enterJournalSeam(db, [docId], actor.type === "agent" ? [docId] : []);
-        // The dependency check (any later live journal row that depends on the
-        // writes being undone) is performed inside the document-mutation
-        // transaction so its verdict is authoritative — no caller-derived
-        // watermark can race against a concurrent push landing in this window.
-        const dependentTurnIds = collectDependentCheckTurnIds(records);
-        if (dependentTurnIds.length > 0) {
-          for (const turnId of dependentTurnIds) {
-            const dependencyCheck = await checkDependentLaterLiveRows(txDb, {
-              documentId: docId,
-              threadId: records[0].threadId,
-              turnId,
-            });
-            if (dependencyCheck.hasDependents) {
-              return {
-                persisted: false as const,
-                status: "cant_undo_dependent" as const,
-                message: CANT_UNDO_DEPENDENT_MESSAGE,
-              };
-            }
-          }
-        }
-        const planWatermark = persistUndoPlanWatermark(records);
-        if (
-          planWatermark > 0 &&
-          (await hasLaterWriterJournalUpdateAfter(txDb, docId, planWatermark))
-        ) {
-          return {
-            persisted: false as const,
-            status: "cant_undo_dependent" as const,
-            message: CANT_UNDO_DEPENDENT_MESSAGE,
-          };
-        }
-
-        undoUpdateSeq = (
-          await appendUpdate(txDb, docId, undoUpdate, {
-            origin: "system",
-            reversalActor: actor,
-            authoringResponseId: records[0]?.authoringResponseId,
-            seq: 0,
-          })
-        ).seq;
-        for (const record of records) {
-          for (const writeId of record.writeIds) {
-            await txDb
-              .insert(documentYjsReversals)
-              .values({
-                documentId: asDocumentId(docId),
-                threadId: asThreadId(record.threadId),
-                turnId: record.turnId === null ? null : asTurnId(record.turnId),
-                authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
-                writeId,
-                status: record.status,
-                undoUpdateSeq,
-                redoUpdateSeq: null,
-                expiresAt: record.expiresAt ?? null,
-                reversedAt: record.reversedAt ?? null,
-                reversedByUserId: asUserId(record.reversedByUserId) ?? null,
-              })
-              .onConflictDoUpdate({
-                target: [
-                  documentYjsReversals.documentId,
-                  documentYjsReversals.threadId,
-                  documentYjsReversals.writeId,
-                ],
-                set: {
-                  status: record.status,
-                  authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
-                  undoUpdateSeq,
-                  redoUpdateSeq: null,
-                  expiresAt: record.expiresAt ?? null,
-                  reversedAt: record.reversedAt ?? null,
-                  reversedByUserId: asUserId(record.reversedByUserId) ?? null,
-                },
-              });
-            await txDb.insert(documentYjsReversalOps).values({
-              documentId: asDocumentId(docId),
-              threadId: asThreadId(record.threadId),
-              updateSeq: undoUpdateSeq,
-              handle: writeId,
-              direction: "undo",
-            });
-          }
-          for (const writeId of record.writeIds) {
-            await reverseMutationsForWrite(txDb, {
-              documentId: docId,
-              threadId: record.threadId,
-              writeId,
-              undoUpdateSeq,
-              at: record.reversedAt ?? new Date(),
-              actor,
-            });
-          }
-        }
-        return { persisted: true as const };
-      });
-      if (!result.persisted) return result;
-      if (undoUpdateSeq === undefined) throw new Error("Failed to persist reversal update");
-      for (const record of records) record.undoUpdateSeq = undoUpdateSeq;
-      return result;
-    },
-
-    async persistRedo(docId, redoUpdate, ref, meta) {
-      const result = await runInDrizzleTransaction(db as Database, async () => {
-        const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
-        return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
-      });
-      return result.consumed ? { consumed: true, seq: result.seqs?.[0] } : { consumed: false };
-    },
-
-    async persistRedoBatch(docId, entries) {
-      return runInDrizzleTransaction(db as Database, async () => {
-        const txDb = await enterJournalSeam(
-          db,
-          [docId],
-          entries.some((entry) => agentAuthored(entry.meta)) ? [docId] : [],
-        );
-        return persistRedoEntries(txDb, docId, entries);
-      });
-    },
-
-    async reversalOpSeqsForHandles(docId, threadId, handles) {
-      if (handles.length === 0) return new Set<number>();
-      const rows = await db
-        .select({ updateSeq: documentYjsReversalOps.updateSeq })
-        .from(documentYjsReversalOps)
-        .where(
-          and(
-            eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
-            eq(documentYjsReversalOps.threadId, asThreadId(threadId)),
-            inArray(documentYjsReversalOps.handle, [...handles]),
-          ),
-        );
-      return new Set(rows.map((row) => Number(row.updateSeq)));
-    },
-
-    async readReversals(docId, opts = {}) {
-      const conditions = [eq(documentYjsReversals.documentId, asDocumentId(docId))];
-      if (opts.threadId !== undefined) {
-        conditions.push(eq(documentYjsReversals.threadId, asThreadId(opts.threadId)));
-      }
-      if (opts.status !== undefined && opts.status.length === 0) return [];
-      if (opts.status !== undefined) {
-        conditions.push(inArray(documentYjsReversals.status, opts.status as ReversalStatus[]));
-      }
-
-      const rows = await db
-        .select()
-        .from(documentYjsReversals)
-        .where(and(...conditions))
-        .orderBy(asc(documentYjsReversals.reversedAt), asc(documentYjsReversals.undoUpdateSeq));
-      return rows.map(mapReversal);
     },
   };
 }

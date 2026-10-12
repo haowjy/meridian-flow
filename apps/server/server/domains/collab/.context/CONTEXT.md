@@ -68,8 +68,8 @@ Thread cores are invalidated after Discard, never as a preview side effect.
 The thread-peer pool is the only model read/write entry point. Each call
 carries the `FileGrant` the caller got from `domains/file-policy`; its
 destination routes the call. A write that commits now runs under
-`runWithEditGrants`; a reversal whose writes landed in the other journal gets
-a fresh grant at that destination (`authorizeAt`). A reply pins each document to its
+`runWithEditGrants`. Model inverse commands use the current destination grant
+and immutable edit policy, never split a selection across legacy journals. A reply pins each document to its
 first grant (reads follow the pin, except a `liveVersion` read, which is
 `version: "live"` and always reads live; results report the version read in
 `read.version`), may

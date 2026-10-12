@@ -5,18 +5,13 @@ import {
   type DocumentCoordinator,
   type DocumentEdits,
   type DocumentLifecycle,
-  type ReversalStore,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  AGENT_EDIT_UNDO_CLIENT_ID,
-  buildDocumentSchema,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
@@ -33,19 +28,16 @@ import { createSemanticProvenanceWriter } from "./provenance.js";
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 >;
 
 export function createAgentEditRuntime(input: {
-  journal: UpdateJournal & ReversalStore;
+  journal: UpdateJournal;
   documentEdits?: DocumentEdits;
   coordinator: DocumentCoordinator;
   /**
@@ -86,9 +78,7 @@ export function createAgentEditRuntime(input: {
       codec,
       model,
       semanticProvenance,
-      undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      deferUntilCommit: input.deferUntilCommit,
       ...input.observability,
     }),
   );

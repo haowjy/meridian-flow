@@ -1,4 +1,4 @@
-// Formats shared write and reversal responses for the tool surface.
+// Formats document-write responses for the model tool surface.
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -9,9 +9,8 @@ import {
   modelConcurrentResult,
   modelResult,
 } from "./model-result.js";
-import type { DestructiveSweepReport, SyncedMutationSummary } from "./mutation-commit.js";
+import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
-  UndoRedoOutcome,
   WriteErrorDetail,
   WriteErrorStatus,
   WriteOutcome,
@@ -38,14 +37,6 @@ export interface ApplySuccessResponseInput {
 /** A write whose content the document already held: nothing is reserved, applied or journaled. */
 export function formatUnchangedSuccess(): InternalWriteResult {
   return { status: "success", phase: "committed", revision: null, model: { unchanged: true } };
-}
-
-export interface ReversalSuccessResponseInput {
-  direction: "undo" | "redo";
-  status: UndoRedoOutcome;
-  /** Write handles actually reversed, oldest first. */
-  writeIds: readonly string[];
-  sync: SyncedMutationSummary;
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -85,24 +76,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
-  };
-}
-
-export function formatReversalSuccess(input: ReversalSuccessResponseInput): InternalWriteResult {
-  const blocks = echoGroups(input.sync.echo);
-  return {
-    status: input.status,
-    revision: input.sync.revision ?? null,
-    model: {
-      reversal: {
-        direction: input.direction,
-        writes: [...input.writeIds],
-      },
-      ...(blocks.length > 0 ? { blocks } : {}),
-      ...(input.sync.concurrentEdits
-        ? { concurrent: modelConcurrentResult(input.sync.concurrentEdits) }
-        : {}),
-    },
   };
 }
 

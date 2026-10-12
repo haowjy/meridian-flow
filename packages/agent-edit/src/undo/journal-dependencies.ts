@@ -1,7 +1,6 @@
 /**
  * Yjs update dependency predicates: the one rule for whether a later update
- * depends on earlier ones, shared by undo planning, live undo persistence and
- * branch review closure.
+ * depends on earlier ones, used by branch replay and review closure.
  */
 import * as Y from "yjs";
 
@@ -55,13 +54,6 @@ export function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
   return refs;
 }
 
-export function hasDependentLaterRows(
-  selectedRows: readonly JournalDependencyRow[],
-  laterRows: readonly JournalDependencyRow[],
-): boolean {
-  return laterRows.some(dependsOnRows(selectedRows));
-}
-
 /**
  * Decodes the selected rows once and returns whether a later row depends on
  * them: it anchors on, parents into, or deletes what they inserted, or anchors
@@ -79,7 +71,7 @@ export function dependsOnRows(
       // Yjs update delete sets can be cumulative for a state-vector diff, so a
       // later delete-only row may name ranges deleted by earlier rows too. We
       // accept that as a conservative false-positive dependency: it can withhold
-      // an otherwise-safe selective undo, but never allows a lossy undo.
+      // an otherwise-safe replay selection, but never admits a broken dependency.
       deleted: deleteRanges(decoded),
     };
   });

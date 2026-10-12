@@ -364,36 +364,34 @@ function formatNotice(notice: Notice): string {
 function formatUndoNotices(notices: readonly Notice[]): string {
   const notifications = notices.flatMap((notice) => {
     const data = notice.data;
-    const handles = Array.isArray(data.writeHandles)
-      ? data.writeHandles.filter((handle): handle is string => typeof handle === "string")
+    return typeof data.turnId === "string"
+      ? [
+          {
+            uri: typeof data.uri === "string" ? data.uri : "",
+            turnId: data.turnId,
+            direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
+          },
+        ]
       : [];
-    return handles.map((writeHandle) => ({
-      uri: typeof data.uri === "string" ? data.uri : "",
-      writeHandle,
-      direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
-    }));
   });
   const latest = new Map<string, (typeof notifications)[number]>();
   for (const notification of notifications) {
-    latest.set(`${notification.uri}::${notification.writeHandle}`, notification);
+    latest.set(`${notification.uri}::${notification.turnId}`, notification);
   }
   const reversals = [...latest.values()].filter(
     (notification) => notification.direction === "undo",
   );
   // URI, not basename, identifies a document; distinct documents can share a name.
-  const grouped = new Map<string, { label: string; handles: string[] }>();
+  const grouped = new Map<string, { label: string; turnIds: string[] }>();
   for (const notification of reversals) {
-    const key = notification.uri || notification.writeHandle;
-    const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
-    const entry = grouped.get(key) ?? { label, handles: [] };
-    entry.handles.push(notification.writeHandle);
+    const key = notification.uri || notification.turnId;
+    const label = filenameFromUri(notification.uri) || notification.uri || notification.turnId;
+    const entry = grouped.get(key) ?? { label, turnIds: [] };
+    entry.turnIds.push(notification.turnId);
     grouped.set(key, entry);
   }
 
-  const lines = Array.from(
-    grouped.values(),
-    ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
-  );
+  const lines = Array.from(grouped.values(), ({ label }) => `- ${label}`);
   return lines.length > 0
     ? [
         "The user reversed the following edits before this message:",

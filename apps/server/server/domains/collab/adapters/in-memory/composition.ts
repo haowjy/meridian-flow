@@ -23,7 +23,6 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
-import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
@@ -94,16 +93,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    liveHistory: journal,
-    reversalHistory: {
-      branches: {
-        resolveThreadBranch: async (documentId, threadId) => {
-          throw new BranchNotFoundError(documentId, threadId);
-        },
-        getBranch: async () => null,
-      },
-      branchRows: { listJournalRowsForBranch: async () => [] },
-    },
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     commitThreadResponseAtomically: (operation) => operation(),
@@ -239,9 +228,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   },
   async setWorkPushPolicy() {
     throw new Error("Branch push service is not configured");
-  },
-  async markFailedResponseRollbackPending() {
-    throw new Error("Branch review service is not configured");
   },
 };
 

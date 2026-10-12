@@ -18,7 +18,6 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
 const expectedSuites = [
   "apps/server/server/domains/collab/branch-pulls-locks.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-document-edits.db.test.ts",
-  "apps/server/server/domains/collab/undo-attribution.db.test.ts",
   "apps/server/server/domains/collab/partial-apply.db.test.ts",
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
   "apps/server/server/domains/collab/review-generation-replay.db.test.ts",

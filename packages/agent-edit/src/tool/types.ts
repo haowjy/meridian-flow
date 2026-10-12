@@ -239,13 +239,6 @@ export type WriteFunction = (
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
 
-export type UndoResult = WriteOutcome & { command: "undo" };
-export type RedoResult = WriteOutcome & { command: "redo" };
-export type WriteUndoResult = UndoResult;
-export type WriteRedoResult = RedoResult;
-export type TurnUndoResult = UndoResult;
-export type TurnRedoResult = RedoResult;
-
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;

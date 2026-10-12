@@ -46,7 +46,7 @@ authority.
 Review operations keep two internal journal-row identities separate.
 `SourceUpdateIds` name the logical source rows used for operation attribution
 and presentation; `PhysicalSourceUpdateIds` name every physical row needed to
-replay or reverse a review class, including invisible suppliers and reversal rows.
+replay a review class, including invisible suppliers and certified inverse rows.
 `closureUpdateIds` is the shared physical set for per-change Apply and Discard.
 Classes union visible hunks, shared physical rows, Yjs origin/rightOrigin/parent
 references, delete-set overlaps, and same-client clock-prefix edges. Even unrelated
@@ -176,13 +176,11 @@ persist their branch state inside that transaction; they never push live (D59).
 
 - `document_yjs_updates` is the live update journal.
   Writer rows persist as `origin_type = human`; reads also normalize legacy
-  `user` rows to the package's `human:<actor>` origin. Reversal and bookkeeping
-  rows keep `origin_type = system`, and reversal rows store independent
-  `reversal_actor_type` attribution. Agent rows persist as `agent`. A branch
-  settlement appends its exact authored rows followed by one `reconcile` row
-  carrying the canonical pushed update; the latter supplies replay coverage,
-  not a later semantic edit. Only the writer class invalidates a live reversal
-  plan.
+  `user` rows to the package's `human:<actor>` origin. Card inverse journal rows use
+  `system`; their immutable inverse receipt carries the writer actor. Model
+  inverses use agent attribution. Bookkeeping rows also use `system`. Settlement appends exact authored rows followed by one
+  `reconcile` row carrying canonical replay coverage, not a new semantic edit.
+  Immutable edit parts and certified aliases own reversal correspondence.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` stores publication identity, typed branch generation, and

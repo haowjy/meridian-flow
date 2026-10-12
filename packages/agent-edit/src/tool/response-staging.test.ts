@@ -323,10 +323,7 @@ describe("response staging", () => {
 });
 
 it("keeps segmented writes logical across rollback, retry and live destinations", async () => {
-  const ctx = harness(
-    { "chapter.md": "She did what she wanted.\n\nShe climbed the road." },
-    { segmentDraftWrites: true },
-  );
+  const ctx = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." }, {});
   const command = {
     command: "replace" as const,
     file: "chapter.md",
@@ -361,5 +358,5 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
   expect(new Set(entries.map((entry) => entry.mutation?.wId)).size).toBe(1);
   const live = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." });
   expect((await live.core.write(command, context)).result.status).toBe("success");
-  expect((await live.journal.read("chapter.md")).updates).toHaveLength(1);
+  expect((await live.journal.read("chapter.md")).updates).toHaveLength(2);
 });

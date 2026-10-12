@@ -186,7 +186,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toBe(false);
     });
 
-    it("drives real discard, redo, push, and forced rollback owners", async () => {
+    it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
       const branches = createFixtureBranchStore(
         db,
@@ -257,15 +257,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      await pushStore.commitTurnRedo({
-        branch,
-        journalRows: rows,
-        state: branch.state,
-        stateVector: branch.stateVector,
-      });
-      const redone = await projectionState();
-      expect(redone.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
-
+      await appendJournal({ kind: "edit" });
+      const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
+      const beforePush = await projectionState();
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
         documentId: DOCUMENT_ID,
@@ -277,7 +271,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       await pushStore.commitPush({
         branch,
-        journalRows: rows,
+        journalRows: pushRows,
         pushUpdate: validUpdate,
         idempotencyKey: "work-projection-pending-owner-push",
         trail,
@@ -301,7 +295,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       const pushed = await projectionState();
-      expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);
+      expect(pushed.entityRevision).toBe((beforePush.entityRevision ?? 0n) + 1n);
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
     });
   });

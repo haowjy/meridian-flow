@@ -13,7 +13,6 @@ it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word h
   const h = createWriteToolHarness(
     { "chapter.md": evidence.before.join("\n\n") },
     {
-      segmentDraftWrites: true,
       semanticProvenance: createSemanticProvenanceWriter(),
     },
   );
@@ -43,7 +42,7 @@ it("replays each of the 4 paragraph evidence classes alone, with 21 whole-word h
   expect(replaced.result.status).toBe("success");
   const draft = h.liveDoc("chapter.md");
   expect(model.getBlocks(toDocHandle(draft)).map((b) => model.getText(b))).toEqual(evidence.target);
-  const journal = await h.journal.readForReconstruction("chapter.md");
+  const journal = await h.journal.read("chapter.md");
   const rows = journal.updates.map((row) => ({
     id: row.seq,
     actorTurnId: row.meta.actorTurnId ?? null,
@@ -90,7 +89,7 @@ it("keeps paragraph splits, merges and contiguous insertions as one change", asy
     ["Alpha road.\n\nBeta valley.", "Alpha road. Beta valley."],
     ["Anchor.", "Anchor.\n\nOne.\n\nTwo.\n\nThree."],
   ]) {
-    const h = createWriteToolHarness({ "chapter.md": before }, { segmentDraftWrites: true });
+    const h = createWriteToolHarness({ "chapter.md": before }, {});
     const live = new Y.Doc({ gc: false });
     Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
     const result = await h.core.write(
@@ -103,7 +102,7 @@ it("keeps paragraph splits, merges and contiguous insertions as one change", asy
       { sessionId: "chat", threadId: "chat", turnId: "structural" },
     );
     expect(result.isError).toBe(false);
-    const journal = await h.journal.readForReconstruction("chapter.md");
+    const journal = await h.journal.read("chapter.md");
     const review = computeDraftReviewHunks({
       liveDoc: live,
       draftDoc: h.liveDoc("chapter.md"),
@@ -136,10 +135,7 @@ it("keeps a six-paragraph new run independent of adjacent paragraph swaps, in th
     (_, i) => `New scene ${i + 1} opens beyond the village walls.`,
   );
   for (const position of [1, 3]) {
-    const h = createWriteToolHarness(
-      { "chapter.md": before.join("\n\n") },
-      { segmentDraftWrites: true },
-    );
+    const h = createWriteToolHarness({ "chapter.md": before.join("\n\n") }, {});
     const live = new Y.Doc({ gc: false });
     Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
     const after = [...rewritten.slice(0, position), ...inserted, ...rewritten.slice(position)];
@@ -151,7 +147,7 @@ it("keeps a six-paragraph new run independent of adjacent paragraph swaps, in th
         )
       ).isError,
     ).toBe(false);
-    const journal = await h.journal.readForReconstruction("chapter.md");
+    const journal = await h.journal.read("chapter.md");
     const rows = journal.updates.map((row) => ({
       id: row.seq,
       actorTurnId: row.meta.actorTurnId ?? null,
@@ -176,12 +172,12 @@ it("groups repeated matches by paragraph, but independent writes never group jus
   const model = yProsemirrorModel(buildDocumentSchema());
   const h = createWriteToolHarness(
     { "chapter.md": "She climbs. She watches the stars.\n\nShe waits by the river." },
-    { segmentDraftWrites: true },
+    {},
   );
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
   const review = async () => {
-    const journal = await h.journal.readForReconstruction("chapter.md");
+    const journal = await h.journal.read("chapter.md");
     return computeDraftReviewHunks({
       liveDoc: live,
       draftDoc: h.liveDoc("chapter.md"),
@@ -231,10 +227,7 @@ it("absorbs overlapping edits before and after a large rewrite, transitively, wh
     "The priest walks down the quiet road.",
     "Snow falls over the distant mountain.",
   ];
-  const h = createWriteToolHarness(
-    { "chapter.md": before.join("\n\n") },
-    { segmentDraftWrites: true },
-  );
+  const h = createWriteToolHarness({ "chapter.md": before.join("\n\n") }, {});
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
   const write = async (find: string, content: string, threadId: string) => {
@@ -248,7 +241,7 @@ it("absorbs overlapping edits before and after a large rewrite, transitively, wh
     ).toBe(false);
   };
   const count = async () => {
-    const journal = await h.journal.readForReconstruction("chapter.md");
+    const journal = await h.journal.read("chapter.md");
     const review = computeDraftReviewHunks({
       liveDoc: live,
       draftDoc: h.liveDoc("chapter.md"),
@@ -288,10 +281,7 @@ it("absorbs overlapping edits before and after a large rewrite, transitively, wh
 
 it("retains unchanged word identities, replaces whole words, and joins writer typing inside a pending segment", async () => {
   const model = yProsemirrorModel(buildDocumentSchema());
-  const h = createWriteToolHarness(
-    { "chapter.md": "She had been told the pass did close." },
-    { segmentDraftWrites: true },
-  );
+  const h = createWriteToolHarness({ "chapter.md": "She had been told the pass did close." }, {});
   const draft = h.liveDoc("chapter.md");
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, Y.encodeStateAsUpdate(draft));
@@ -320,7 +310,7 @@ it("retains unchanged word identities, replaces whole words, and joins writer ty
   expect(newDoes.item).not.toEqual(oldDid.item);
   if (!newDoes.item) throw new Error("Replacement must have a fresh item identity");
   expect(baselineClients.has(newDoes.item.client)).toBe(false);
-  const rows = (await h.journal.readForReconstruction("chapter.md")).updates.map((row) => ({
+  const rows = (await h.journal.read("chapter.md")).updates.map((row) => ({
     id: row.seq,
     actorTurnId: row.meta.actorTurnId ?? null,
     updateData: row.update,
@@ -343,14 +333,11 @@ it("retains unchanged word identities, replaces whole words, and joins writer ty
   live.destroy();
 });
 
-it.each([
-  false,
-  true,
-])("certifies replacement of a canonical empty paragraph (draft=%s)", async (segmentDraftWrites) => {
+it("certifies replacement of a canonical empty paragraph", async () => {
   const model = yProsemirrorModel(buildDocumentSchema());
   const h = createWriteToolHarness(
     { "chapter.md": "" },
-    { segmentDraftWrites, semanticProvenance: createSemanticProvenanceWriter() },
+    { semanticProvenance: createSemanticProvenanceWriter() },
   );
   expect(
     (
@@ -363,7 +350,7 @@ it.each([
   expect(
     model.getBlocks(toDocHandle(h.liveDoc("chapter.md"))).map((block) => model.getText(block)),
   ).toEqual(["Hello world."]);
-  expect((await h.journal.readForReconstruction("chapter.md")).updates).toHaveLength(1);
+  expect((await h.journal.read("chapter.md")).updates).toHaveLength(1);
 });
 
 it.each([
@@ -383,7 +370,7 @@ it.each([
   const model = yProsemirrorModel(buildDocumentSchema());
   const h = createWriteToolHarness(
     { "chapter.md": before },
-    { segmentDraftWrites: true, semanticProvenance: createSemanticProvenanceWriter() },
+    { semanticProvenance: createSemanticProvenanceWriter() },
   );
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, Y.encodeStateAsUpdate(h.liveDoc("chapter.md")));
@@ -400,7 +387,7 @@ it.each([
       )
     ).result.status,
   ).toBe("success");
-  const rows = (await h.journal.readForReconstruction("chapter.md")).updates.map((row) => ({
+  const rows = (await h.journal.read("chapter.md")).updates.map((row) => ({
     id: row.seq,
     actorTurnId: row.meta.actorTurnId ?? null,
     updateData: row.update,

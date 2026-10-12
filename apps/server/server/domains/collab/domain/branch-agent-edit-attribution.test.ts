@@ -82,7 +82,7 @@ function fixture(existingUpstream?: Y.Doc) {
       listConcurrentJournalRows: async () => rows,
     },
     liveJournal: {
-      readForReconstruction: async () => ({ checkpoint: null, updates: liveUpdates }),
+      read: async () => ({ checkpoint: null, updates: liveUpdates }),
     },
     afterCommit: () => {},
     enlistResponseParticipant: () => false,

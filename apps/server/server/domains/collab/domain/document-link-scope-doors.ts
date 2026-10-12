@@ -7,7 +7,7 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
  * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation, and a live turn's reversal. Draft preview scopes both sides
+ * reconciliation. Draft preview scopes both sides
  * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
  * chapters together. A push scopes itself before branch locks in
  * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
@@ -15,11 +15,7 @@
  */
 
 import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
-import {
-  asThreadPeerAgentEditCore,
-  type LiveAgentEditCore,
-  type ThreadPeerAgentEditCore,
-} from "./agent-edit-cores.js";
+import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -77,30 +73,11 @@ export function scopeAgentEdit(
     prepare: core.prepare,
     responseDocuments: core.responseDocuments,
     responseDestination: core.responseDestination,
-    getAvailability: core.getAvailability,
     invalidateThread: core.invalidateThread,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),
-    undo: (docId, threadId) =>
-      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.undo(docId, threadId)),
-    redo: (docId, threadId) =>
-      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.redo(docId, threadId)),
-    reverse: (input) =>
-      scopes.within({ documentId: input.docId, viewer: { threadId: input.threadId } }, () =>
-        core.reverse(input),
-      ),
   });
-}
-
-/** A live turn's undo and redo snapshot every block of the document they reverse. */
-export function scopeLiveReversal(
-  core: LiveAgentEditCore,
-  scopes: DocumentLinkScopes,
-): Pick<LiveAgentEditCore, "reverse"> {
-  return {
-    reverse: (input) => scopes.within({ documentId: input.docId }, () => core.reverse(input)),
-  };
 }
 
 /** A reply's save renders the receipts the model reads next, in its thread's project. */

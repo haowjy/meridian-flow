@@ -1,5 +1,4 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
@@ -12,7 +11,6 @@ import {
   type JournalReadOptions,
   type JournalSnapshot,
   type PersistedUpdate,
-  type ReversalStore,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
@@ -25,16 +23,7 @@ import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import { reconcileStagedBranchWrites } from "./branch-response-replay.js";
-import {
-  type BranchReversalScope,
-  type BranchReversalState,
-  branchRowAsPersistedUpdate,
-  buildBranchReversalState,
-  materializeSnapshot,
-  resolveBranchReversalScope,
-  serializeBranchReversalRecord,
-  stageBranchReversal,
-} from "./branch-reversal-history.js";
+
 import {
   type AttributionRow,
   docFromState,
@@ -42,8 +31,6 @@ import {
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
 import type { ResponseCommitParticipant } from "./response-transaction.js";
-
-export { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 
 export type BranchConcurrentJournalWatermarks = {
   current(threadId: ThreadId, documentId: DocumentId): number | undefined;
@@ -132,7 +119,7 @@ export function createBranchAgentEditCoordinator(input: {
   pendingJournalEntries?: BranchPendingJournalEntries;
   journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
     Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
-  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
+  liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
   enlistResponseParticipant: EnlistResponseParticipant;
@@ -335,9 +322,11 @@ export function createBranchAgentEditCoordinator(input: {
       // because they came from this thread; the journal watermark is the fence.
       const liveRows = input.liveJournal
         ? liveAttributionRows(
-            (await input.liveJournal.readForReconstruction(docId)).updates.filter(
-              (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
-            ),
+            (
+              await input.liveJournal.read(docId, {
+                since: (liveJournalSeq ?? Number.MAX_SAFE_INTEGER) + 1,
+              })
+            ).updates.filter((update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER)),
           )
         : [];
       const partitioned = partitionConcurrentUpdates({
@@ -408,55 +397,15 @@ export function createBranchAgentEditCoordinator(input: {
 
 export function createBranchAgentEditJournal(input: {
   threadId: ThreadId;
-  liveJournal: UpdateJournal & ReversalStore;
+  liveJournal: UpdateJournal;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  branches?: BranchLookupWithSnapshots;
-  branchRows?: {
-    listJournalRowsForBranch(input: {
-      branchId: string;
-      generation: number;
-    }): Promise<BranchJournalRow[]>;
-  };
-}): UpdateJournal & ReversalStore {
+}): UpdateJournal {
   let syntheticSeq = 0;
-  const pinnedReversalScope = new AsyncLocalStorage<{
-    docId: string;
-    scope: BranchReversalScope;
-  }>();
   const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
     input.liveJournal,
   );
 
-  const resolveBranchScope = async (docId: string): Promise<BranchReversalScope | null> => {
-    if (!input.branches) return null;
-    if (!input.branchRows) throw new Error("Branch reversal history is unavailable");
-    return resolveBranchReversalScope({
-      documentId: docId as DocumentId,
-      threadId: input.threadId,
-      branches: input.branches,
-      branchRows: input.branchRows,
-    });
-  };
-
-  const branchScope = async (docId: string): Promise<BranchReversalScope | null> => {
-    const pinned = pinnedReversalScope.getStore();
-    return pinned?.docId === docId ? pinned.scope : resolveBranchScope(docId);
-  };
-
-  const branchState = async (docId: string): Promise<BranchReversalState | null> => {
-    const scope = await branchScope(docId);
-    return scope ? buildBranchReversalState(input.threadId, scope.rows) : null;
-  };
-
   return {
-    async withReversalScope(docId, operation) {
-      const scope = await resolveBranchScope(docId);
-      if (!scope) {
-        throw new Error("Branch reversal authority changed before the command began");
-      }
-      return pinnedReversalScope.run({ docId, scope }, operation);
-    },
-
     async append(_docId, _update, _meta) {
       syntheticSeq += 1;
       return syntheticSeq;
@@ -502,143 +451,11 @@ export function createBranchAgentEditJournal(input: {
     },
 
     compact(_docId, _before) {
-      return Promise.resolve({ updatesFolded: 0, reversalsExpired: 0 });
+      return Promise.resolve({ updatesFolded: 0 });
     },
 
     reserveWriteOrdinal(documentId, threadId) {
       return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-    },
-    async readForReconstruction(docId) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.readForReconstruction(docId);
-      const live = await input.liveJournal.readForReconstruction(docId);
-      const persistenceWatermark = scope.rows.at(-1)?.id ?? 0;
-      const checkpoint = materializeSnapshot(live);
-      const updates = scope.rows.map(branchRowAsPersistedUpdate);
-      const replayedState = materializeSnapshot({ checkpoint, updates });
-      const reconciled = new Y.Doc({ gc: false });
-      Y.applyUpdate(reconciled, replayedState);
-      Y.applyUpdate(reconciled, scope.state);
-      const authoritativeState = Y.encodeStateAsUpdate(reconciled);
-      reconciled.destroy();
-      const reconciliationUpdate = bytesEqual(replayedState, authoritativeState)
-        ? []
-        : [
-            {
-              seq: persistenceWatermark + 1,
-              update: scope.state,
-              meta: { origin: "system:branch-state", seq: persistenceWatermark + 1 },
-            },
-          ];
-      return {
-        checkpoint,
-        updates: [...updates, ...reconciliationUpdate],
-        persistenceWatermark,
-      };
-    },
-    documentsForTurn(threadId, turnId) {
-      return input.liveJournal.documentsForTurn(threadId, turnId);
-    },
-    async latestActiveWrite(documentId, threadId) {
-      const state = await branchState(documentId);
-      return state
-        ? state.activeWrites.at(-1)
-        : input.liveJournal.latestActiveWrite(documentId, threadId);
-    },
-    async activeWriteSummary(documentId, threadId) {
-      const state = await branchState(documentId);
-      return state
-        ? state.activeWrites
-        : input.liveJournal.activeWriteSummary(documentId, threadId);
-    },
-    async writeMinCreatedSeq(documentId, threadId, handle) {
-      const state = await branchState(documentId);
-      return state
-        ? state.mutationsByHandle.get(handle)?.[0]?.createdSeq
-        : input.liveJournal.writeMinCreatedSeq(documentId, threadId, handle);
-    },
-    async mutationsForWrite(documentId, threadId, handle) {
-      const state = await branchState(documentId);
-      return state
-        ? (state.mutationsByHandle.get(handle) ?? [])
-        : input.liveJournal.mutationsForWrite(documentId, threadId, handle);
-    },
-    async mutationsForWrites(documentId, threadId, handles) {
-      const state = await branchState(documentId);
-      if (!state) return input.liveJournal.mutationsForWrites(documentId, threadId, handles);
-      return new Map(handles.map((handle) => [handle, state.mutationsByHandle.get(handle) ?? []]));
-    },
-    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
-      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
-      stageBranchReversal({
-        pending: input.pendingJournalEntries,
-        docId,
-        threadId: input.threadId,
-        scope,
-        expectedJournalWatermark: records.reduce(
-          (watermark, record) => Math.min(watermark, record.persistGuardWatermark ?? 0),
-          Number.POSITIVE_INFINITY,
-        ),
-        update: undoUpdate,
-        actor,
-        operation: {
-          direction: "undo",
-          records: records.map(serializeBranchReversalRecord),
-        },
-      });
-      return { persisted: true, journalCommitKind: "staged" };
-    },
-    async persistRedo(docId, redoUpdate, ref, meta) {
-      const result = await this.persistRedoBatch(docId, [{ update: redoUpdate, ref, meta }]);
-      return {
-        consumed: result.consumed,
-        seq: result.seqs?.[0],
-        journalCommitKind: result.journalCommitKind,
-      };
-    },
-    async persistRedoBatch(docId, entries) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.persistRedoBatch(docId, entries);
-      if (entries.length === 0) return { consumed: false };
-      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
-      stageBranchReversal({
-        pending: input.pendingJournalEntries,
-        docId,
-        threadId: input.threadId,
-        scope,
-        expectedJournalWatermark: entries.reduce(
-          (watermark, entry) => Math.min(watermark, entry.persistGuardWatermark ?? 0),
-          Number.POSITIVE_INFINITY,
-        ),
-        update: Y.mergeUpdates(entries.map((entry) => entry.update)),
-        actor: entries[0]?.meta.reversalActor ?? { type: "agent" },
-        operation: {
-          direction: "redo",
-          refs: entries.map((entry) => entry.ref),
-        },
-      });
-      return { consumed: true, journalCommitKind: "staged" };
-    },
-    async readReversals(docId, opts) {
-      const state = await branchState(docId);
-      if (!state) return input.liveJournal.readReversals(docId, opts);
-      return state.reversals.filter(
-        (record) =>
-          (!opts?.threadId || record.threadId === opts.threadId) &&
-          (!opts?.status || opts.status.includes(record.status)),
-      );
-    },
-    async reversalOpSeqsForHandles(docId, threadId, handles) {
-      const state = await branchState(docId);
-      if (!state) return input.liveJournal.reversalOpSeqsForHandles(docId, threadId, handles);
-      const selected = new Set(handles);
-      return new Set(
-        state.operationHandles.flatMap(({ seq, handles: operationHandles }) =>
-          operationHandles.some((handle) => selected.has(handle)) ? [seq] : [],
-        ),
-      );
     },
   };
 }
@@ -794,17 +611,12 @@ function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRo
     let origin: ConcurrentUpdateOrigin;
     if (meta.origin === "system:reconcile") {
       origin = { type: "system" };
-    } else if (meta.reversalActor?.type === "agent" || meta.origin.startsWith("agent:")) {
+    } else if (meta.origin.startsWith("agent:")) {
       origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
     } else {
       origin = {
         type: "human",
-        userId:
-          meta.reversalActor?.type === "user"
-            ? meta.reversalActor.userId
-            : meta.origin.startsWith("human:")
-              ? meta.origin.slice("human:".length)
-              : "unknown",
+        userId: meta.origin.startsWith("human:") ? meta.origin.slice("human:".length) : "unknown",
       };
     }
     return { id: -seq, origin, update };

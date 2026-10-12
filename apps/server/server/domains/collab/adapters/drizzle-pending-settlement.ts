@@ -2,7 +2,6 @@
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  agentEditMutations,
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   branchWriteJournal,
@@ -35,7 +34,6 @@ import type {
   PushLineageRow,
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
-import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { deriveDocument } from "../domain/document-derivations.js";
 import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
@@ -533,7 +531,7 @@ async function completeStagedPush(
         .limit(1)
     : [];
   if (branchRow) {
-    const branch: BranchSnapshot = {
+    const _branch: BranchSnapshot = {
       branchId: branchRow.id,
       documentId: branchRow.documentId,
       kind: branchRow.kind,
@@ -549,7 +547,6 @@ async function completeStagedPush(
         : null,
       schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
     };
-    await writeMutationRows(db, branch, journalRows, authoredRows);
   }
   const derivation = await deriveDocument(
     {
@@ -603,38 +600,6 @@ async function upsertHead(
         updatedAt: sql`now()`,
       },
     });
-}
-
-async function writeMutationRows(
-  db: DrizzleDb,
-  branch: BranchSnapshot,
-  rows: BranchJournalRow[],
-  authoredRows: Array<{ id: number }>,
-): Promise<void> {
-  // Apply materializes only handles whose folded branch-reversal state remains
-  // active; inactive handles must not reappear as live mutations.
-  const mutationRows = activeBranchAgentWriteRows(rows);
-  if (mutationRows.length === 0) return;
-  await db
-    .insert(agentEditMutations)
-    .values(
-      mutationRows.map((row) => {
-        const rowIndex = rows.findIndex((candidate) => candidate.id === row.id);
-        const updateSeq = rowIndex < 0 ? undefined : authoredRows[rowIndex]?.id;
-        if (!updateSeq)
-          throw new Error(`Missing live attribution for branch journal row ${row.id}`);
-        return {
-          wId: row.wId,
-          documentId: branch.documentId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          writeId: `push:${branch.branchId}:${row.id}`,
-          status: "active" as const,
-          createdSeq: updateSeq,
-        };
-      }),
-    )
-    .onConflictDoNothing();
 }
 
 function _representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
