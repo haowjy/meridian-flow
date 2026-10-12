@@ -125,21 +125,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(documents).values({
         id: SECOND_DOCUMENT_ID,
         contextSourceId: SECOND_SOURCE_ID,
         name: "chapter-two",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(documents).values({
         id: OTHER_DOCUMENT_ID,
         contextSourceId: OTHER_SOURCE_ID,
         name: "other-chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(documentBranches).values({

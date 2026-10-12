@@ -97,8 +97,9 @@ function OpenMovePicker({
       return;
     const collision = validateContextEntryName(
       name,
-      destination.catalog.children(destination.entryId).map((node) => node.name),
+      destination.catalog.children(destination.entryId),
       entry.kind,
+      entry.name,
     );
     if (collision?.level === "error") {
       setError(collision.message);

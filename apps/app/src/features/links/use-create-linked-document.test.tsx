@@ -76,7 +76,7 @@ it("captures an existing nested home without contacting the server before openin
     expect(resources.setLocation).toHaveBeenCalledWith(
       "project",
       { handle: "resource" },
-      { parent: { kind: "folder", folderId: "picked-folder" }, name: "scene.md" },
+      { parent: { kind: "folder", folderId: "picked-folder" }, name: "scene" },
     );
   });
 });
@@ -112,7 +112,7 @@ it("opens a missing-folder link from local persistence before any network comple
       {
         parent: { kind: "folder", folderId: "anchor" },
         createFolders: ["New Arc", "Part 1"],
-        name: "Chapter 1.md",
+        name: "Chapter 1",
       },
     );
   });

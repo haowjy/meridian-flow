@@ -17,7 +17,11 @@ export function contextErrorToHttp(error: ContextError): never {
     case "permission_denied":
       throw createError({ statusCode: 403, message: "Context access denied" });
     case "conflict":
-      throw createError({ statusCode: 409, message: "Context path conflict" });
+      throw createError({
+        statusCode: 409,
+        message: "Context path conflict",
+        data: { occupantKind: error.occupantKind },
+      });
     case "stale_source":
       throw createError({
         statusCode: 409,
@@ -40,6 +44,7 @@ export function contextErrorToHttp(error: ContextError): never {
         ),
         409,
       );
+    case "invalid_name":
     case "invalid_operation":
       throw createError({ statusCode: 400, message: error.message ?? "Invalid context operation" });
     case "not_found":

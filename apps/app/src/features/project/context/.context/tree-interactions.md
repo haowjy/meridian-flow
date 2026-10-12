@@ -24,8 +24,21 @@ swallowing a same-tick `focus()`.
 |---|---|---|
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
-| validate siblings | all siblings | siblings excluding current |
-| select | — | extension-aware selection |
+| validate siblings | all sibling identities and kinds | siblings excluding current identity |
+| select | — | the part before a visible extension; all of a prose name |
+
+Names are compared and submitted as the contracts codec stores them
+(`storedFilename`, `entryNameKey` in `context-entry-name.ts`): a prose name
+has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
+beside `Chapter 13` collides; a bare name keeps the renamed file's visible
+extension (`settings` on `config.toml`). Folder-to-folder comparison is literal;
+the codec comparison applies when either entry is a document. Conflict copy names
+the occupant's kind, not the requested kind. The codec's `invalid_name` message
+shows on the field. Rename and identity commits transport the writer's typed name.
+`planResourceLocation` stores it as `typedName` beside the canonical optimistic
+destination; the request sends `typedName`, and the server mover computes the stored
+name once. A canonical name is never fed back into extension inheritance.
+
 
 ## Dual-trigger caveat
 

@@ -7,6 +7,7 @@
  * no document is yet and settles on the first one to arrive there.
  */
 import { parseContextUri } from "./context-uri.js";
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import { parseRequestId } from "./request-id.js";
 
 export type DocumentRef = `doc:${string}`;
@@ -55,31 +56,31 @@ export function mintAheadRef(): AheadRef {
   return `ahead:${crypto.randomUUID()}`;
 }
 
-/**
- * Whether a filename has a real extension: a nonempty one after a stem with
- * something besides dots (`.hidden` and `chapter.` have none). The one rule
- * for what an ahead ref may be registered at, minted and registry alike.
- */
-export function hasFileExtension(filename: string): boolean {
-  return /^[^/]*[^/.][^/]*\.[^/.]+$/.test(filename);
+/** A canonical codec name with a non-dot stem, admissible in the ahead registry. */
+export function isAheadFilename(filename: string): boolean {
+  const parsed = parseDocumentFilename(filename);
+  return (
+    !filename.includes("/") &&
+    /[^.\s]/u.test(filename) &&
+    parsed.ok &&
+    renderFilename(parsed.value.name, parsed.value.extension) === filename
+  );
 }
 
 /**
- * The address an ahead ref is minted for: canonical, absolute, suffix-free,
- * decoded (a catalog/registry key, not a stored href; store it with
- * `storedHref`), always with a real extension (`hasFileExtension`). A link
- * without one gets `.md` appended (the default the app creates, so `chapter.`
- * becomes `chapter..md`) when that yields one; a dots-only name (`....`)
- * never does and returns null. Image and figure sources without one return
- * null: an upload always has one, so such a ref could never settle. On null
- * the caller declines assignment and treats the href as a literal (no ref).
+ * Mint at the codec's canonical name. Dots-only names stay literal. Sources
+ * still need a written extension: extensionless uploads cannot settle them.
  */
 export function aheadAddress(uri: string, kind: "link" | "source"): string | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok || !parsed.value.path || !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) return null;
-  const filename = parsed.value.path.slice(parsed.value.path.lastIndexOf("/") + 1);
-  if (hasFileExtension(filename)) return parsed.value.normalized;
-  return kind === "link" && hasFileExtension(`${filename}.md`)
-    ? `${parsed.value.normalized}.md`
+  const slash = parsed.value.normalized.lastIndexOf("/");
+  const filename = parsed.value.normalized.slice(slash + 1);
+  if (kind === "source" && !/^[^/]*[^/.][^/]*\.[^/.]+$/.test(filename)) return null;
+  const name = parseDocumentFilename(filename);
+  if (!name.ok) return null;
+  const canonical = renderFilename(name.value.name, name.value.extension);
+  return isAheadFilename(canonical)
+    ? parsed.value.normalized.slice(0, slash + 1) + canonical
     : null;
 }

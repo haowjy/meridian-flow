@@ -36,7 +36,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsUpdates,
       documents,
       modelResponses,
-      works,
     } = await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -171,7 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: CREATED_DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter-two",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       const collab = createTestCollab();

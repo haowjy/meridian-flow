@@ -9,7 +9,13 @@ import {
   type CanonicalContextAuthority,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
-import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
+import {
+  type DeleteContextEntryResult,
+  filenameForBinary,
+  type ParsedDocumentFilename,
+  renderFilename,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
@@ -207,7 +213,8 @@ async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
-    if (error instanceof ContextEntryConflictError) return Err({ code: "conflict", uri });
+    if (error instanceof ContextEntryConflictError)
+      return Err({ code: "conflict", uri, occupantKind: error.occupantKind });
     return Err({
       code: "io_error",
       uri,
@@ -354,6 +361,27 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     });
   }
 
+  function fileDispatch<T extends Dispatch>(
+    dispatch: T,
+    binary?: ContextWriteBinaryOptions,
+    sourceExtension?: string,
+  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
+    const segments = dispatch.path.split("/");
+    const filename = segments.pop() ?? "";
+    const parsed = storedFilename(filename, { extension: sourceExtension ?? "" });
+    if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
+    const parts = binary
+      ? filenameForBinary(parsed.filename, binary.fileType, binary.mimeType)
+      : parsed.filename;
+    const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
+    return Ok({
+      ...dispatch,
+      filename: parts,
+      path,
+      canonical: uriFor(dispatch.scheme, path, dispatch.authority),
+    });
+  }
+
   /** Claim a new tracked URI through its adapter: the checks both create entries share. */
   async function createDocument(
     uri: string,
@@ -361,21 +389,26 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     create: (
       adapter: ContextSchemeAdapter,
       path: string,
-    ) => Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>,
+    ) => Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
-    const r = await resolveMutation(uri, options?.origin);
+    const resolved = await resolveMutation(uri, options?.origin);
+    if (!resolved.ok) return resolved;
+    const r = fileDispatch(resolved.value);
     if (!r.ok) return r;
     const permission = r.value.requireCreation(options?.documentId ? "intake" : "entry");
     if (!permission.ok) return permission;
     const { adapter, path, canonical } = r.value;
-    return callAdapter(canonical, () => create(adapter, path));
+    const created = await callAdapter(canonical, () => create(adapter, path));
+    return created.ok ? Ok({ ...created.value, uri: canonical }) : created;
   }
 
   return {
     lookupOperation: (operationId) =>
       deps.operationReceipts?.lookup(operationId) ?? Promise.resolve(null),
     async stat(uri: string): Promise<Result<FileRef, ContextError>> {
-      const r = await resolve(uri);
+      const resolved = await resolve(uri);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
       const { adapter, scheme, authority, path, canonical } = r.value;
 
@@ -386,7 +419,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async read(uri: string): Promise<Result<ContextReadResult, ContextError>> {
-      const r = await resolve(uri);
+      const resolved = await resolve(uri);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
 
@@ -401,7 +436,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
+      const resolved = await resolveMutation(uri, options?.origin);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -421,13 +458,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
+      const resolved = await resolveMutation(uri, options?.origin);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value, undefined, options?.sourceExtension);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
       const ensured = await callAdapter(canonical, () =>
-        adapter.ensureTrackedDocument(path, options),
+        adapter.ensureTrackedDocument(path, { ...options, parsedFilename: r.value.filename }),
       );
       return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
     },
@@ -436,7 +475,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       content: string,
     ): Promise<Result<BoundWrite, ContextError>> {
-      const r = await resolveMutation(uri);
+      const resolved = await resolveMutation(uri);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       // Binding only prepares syntax and refs. The shared creation door checks
@@ -554,7 +595,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options: ContextWriteBinaryOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
+      const resolved = await resolveMutation(uri, options?.origin);
+      if (!resolved.ok) return resolved;
+      const r = fileDispatch(resolved.value, options);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("intake");

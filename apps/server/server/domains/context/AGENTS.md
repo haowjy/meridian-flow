@@ -77,6 +77,10 @@ the selected parent identity, creation suffix and original URI command. Proven o
 returns the current collision locator; path-only commands must match the
 requested locator. Stale source/target plans return a retry result instead.
 
+`create.post.ts` returns the shared `CreateContextEntryResult` for both files
+and folders. A namespace conflict is HTTP 409 with top-level `status`, `uri`
+and the proven `occupantKind` (when known), not a generic HTTP error envelope.
+
 `create-untitled.post.ts` accepts a client-minted document ID. Idempotent retries
 recover that ID across all project and authorized Work schemes, returning its
 canonical scheme/path/Work authority. Returned `name` values are full filenames.

@@ -82,15 +82,15 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         .insert(folders)
         .values({ id: folder, contextSourceId: source, name: "hidden", deletedAt: new Date() });
       await db.insert(documents).values([
-        { id: note, contextSourceId: source, name: "note", extension: "md" },
+        { id: note, contextSourceId: source, name: "note", extension: "toml" },
         {
           id: deleted,
           contextSourceId: source,
           name: "deleted",
-          extension: "md",
+          extension: "toml",
           deletedAt: new Date(),
         },
-        { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "md" },
+        { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },
       ]);
       if (door === "chat") {
         await db
@@ -115,9 +115,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
       await registry.register([
-        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.md" },
-        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.md" },
-        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.md" },
+        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.toml" },
+        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.toml" },
+        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.toml" },
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
@@ -140,7 +140,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const replacement = crypto.randomUUID();
       await db
         .insert(documents)
-        .values({ id: replacement, contextSourceId: source, name: "note", extension: "md" });
+        .values({ id: replacement, contextSourceId: source, name: "note", extension: "toml" });
       await arrivals.settle([replacement as never]);
       expect((await settlements()).get(ahead)).toBe(note);
     });

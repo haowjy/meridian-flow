@@ -38,6 +38,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
+export { splitDocumentFile } from "./document-address.js";
 export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export type { Hashline } from "./model/hashline.js";
@@ -65,6 +66,7 @@ export type {
   WriteToolInput,
 } from "./tool/command-schema.js";
 export {
+  DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   ReadCommandSchema,
   ReadToolInputSchema,

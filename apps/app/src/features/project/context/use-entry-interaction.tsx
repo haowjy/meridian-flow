@@ -6,6 +6,7 @@ import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { TabOwner } from "@/client/stores";
 import { ContextEntryMenu, type DeleteTarget, type EntryAction } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
+import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { EntryMovePicker } from "./EntryMovePicker";
 import { useRenameOperation } from "./LinkUpdateNote";
@@ -30,7 +31,7 @@ export function useEntryInteraction({
   capabilities,
   onRequestDelete,
   create,
-  siblingNames,
+  siblings,
   requestRename,
   onRenameDone,
 }: {
@@ -41,7 +42,7 @@ export function useEntryInteraction({
   capabilities: EntryCapabilities;
   onRequestDelete: (target: DeleteTarget) => void;
   create?: EntryCreation;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   /** Creation may ask an arriving row to open its naming field. */
   requestRename?: boolean;
   onRenameDone?: () => void;
@@ -86,10 +87,9 @@ export function useEntryInteraction({
     owner: resolvedOwner,
     scheme,
     entryId: id,
-    path: node.path,
     currentName: node.name,
     repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
-    siblingNames,
+    siblings,
     kind,
     onRenamed: remember,
     onDone: () => {

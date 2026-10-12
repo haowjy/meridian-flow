@@ -17,7 +17,7 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
@@ -30,19 +30,16 @@ import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
 import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
+import { treeFolderIds } from "../context/tree-expansion-state";
 import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
+import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
+import { useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { RailEmptyHint, RailFileRow, RailFolderRow } from "../shell/RailSection";
-import {
-  readScratchExpanded,
-  readScratchHeight,
-  writeScratchExpanded,
-  writeScratchHeight,
-} from "./scratch-section-pref";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useChatScratch(projectId: string, threadId: string | null) {
@@ -57,6 +54,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
   if (!scratch) return null;
   return {
     source,
+    scope: JSON.stringify([scratch.owner, scratch.earlierRootThreadId]),
     pick: (node: DrillNode) => {
       const tab = source.tabFor(node.id);
       if (!tab) return false;
@@ -98,11 +96,11 @@ export function RailScratchSection({
 }) {
   const scratch = useChatScratch(projectId, threadId);
   const openId = useOpenDocumentId(projectId, editorWorkId);
-  const [expanded, setExpanded] = useState(readScratchExpanded);
-  const [height, setHeight] = useState(readScratchHeight);
+  const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
+  const height = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchHeight);
+  const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
+  const setHeight = useProjectSurfacePrefsStore((state) => state.setScratchHeight);
   const sectionRef = useRef<HTMLElement | null>(null);
-  // Folders the writer has toggled; a top-level folder starts open, like the tree's.
-  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const deletion = useDeleteConfirmation({ projectId });
   const { works, noWork } = useWorks(projectId);
   const capabilitiesByOwner = new Map<string, EntryCapabilities>();
@@ -117,11 +115,27 @@ export function RailScratchSection({
     capabilitiesByOwner.set(key, actions);
     return actions;
   };
+  const folderIds = useMemo(
+    () =>
+      scratch?.source.ready
+        ? treeFolderIds((parent) =>
+            scratch.source.tree
+              .children(parent)
+              .filter((node) => node.folder)
+              .map((node) => node.id),
+          )
+        : null,
+    [scratch?.source.ready, scratch?.source.tree],
+  );
+  const { isExpanded, toggleEntry } = useTreeExpansion(
+    projectId,
+    `chat-scratch:${scratch?.scope ?? "none"}`,
+    folderIds,
+  );
   if (!scratch) return null;
   const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
-    setExpanded(next);
-    writeScratchExpanded(next);
+    setExpanded("scratch", next);
   };
   return (
     <section
@@ -159,11 +173,9 @@ export function RailScratchSection({
           }}
           onCommit={(next) => {
             setHeight(next);
-            writeScratchHeight(next);
           }}
           onReset={() => {
             setHeight(null);
-            writeScratchHeight(null);
           }}
         />
       ) : null}
@@ -186,8 +198,8 @@ export function RailScratchSection({
             folderId={null}
             depth={1}
             openId={openId}
-            toggled={toggled}
-            onToggle={(id, open) => setToggled((current) => ({ ...current, [id]: !open }))}
+            isExpanded={isExpanded}
+            onToggle={toggleEntry}
             onPick={(node) => {
               if (scratch.pick(node)) onPicked?.();
             }}
@@ -212,7 +224,7 @@ function ScratchRows({
   folderId,
   depth,
   openId,
-  toggled,
+  isExpanded,
   onToggle,
   onPick,
   onRequestDelete,
@@ -226,8 +238,8 @@ function ScratchRows({
   folderId: string | null;
   depth: number;
   openId: string | undefined;
-  toggled: Record<string, boolean>;
-  onToggle: (id: string, open: boolean) => void;
+  isExpanded: (id: string) => boolean;
+  onToggle: (id: string) => void;
   onPick: (node: DrillNode) => void;
 }) {
   const entries = tree.children(folderId);
@@ -245,7 +257,7 @@ function ScratchRows({
           entry={entry}
           depth={depth}
           openId={openId}
-          toggled={toggled}
+          isExpanded={isExpanded}
           onToggle={onToggle}
           onPick={onPick}
         />
@@ -261,7 +273,7 @@ function ScratchRows({
           onOpen={() => onPick(node)}
         />
       );
-    const open = toggled[node.id] ?? depth === 1;
+    const open = isExpanded(node.id);
     return (
       <div key={node.id}>
         <RailFolderRow
@@ -269,7 +281,7 @@ function ScratchRows({
           name={node.name}
           depth={depth}
           expanded={open}
-          onToggle={() => onToggle(node.id, open)}
+          onToggle={() => onToggle(node.id)}
         />
         {open ? (
           <ScratchRows
@@ -281,7 +293,7 @@ function ScratchRows({
             folderId={node.id}
             depth={depth + 1}
             openId={openId}
-            toggled={toggled}
+            isExpanded={isExpanded}
             onToggle={onToggle}
             onPick={onPick}
           />
@@ -297,7 +309,7 @@ function ScratchEntry({
   entry,
   depth,
   openId,
-  toggled,
+  isExpanded,
   onToggle,
   onPick,
   capabilities,
@@ -309,8 +321,8 @@ function ScratchEntry({
   entry: NonNullable<ReturnType<CatalogMenuSource["entryFor"]>>;
   depth: number;
   openId: string | undefined;
-  toggled: Record<string, boolean>;
-  onToggle: (id: string, open: boolean) => void;
+  isExpanded: (id: string) => boolean;
+  onToggle: (id: string) => void;
   onPick: (node: DrillNode) => void;
 }) {
   return (
@@ -334,16 +346,14 @@ function ScratchEntry({
           });
         },
         onRequestDelete,
-        isExpanded: (id, rowDepth) => toggled[id] ?? rowDepth < 2,
-        toggleEntry: (id, defaultOpen) => onToggle(id, toggled[id] ?? defaultOpen),
+        isExpanded,
+        toggleEntry: onToggle,
       }}
     >
       <ContextTreeEntry
         node={entry.node}
         depth={depth}
-        siblingNames={entry.catalog
-          .children(entry.node.parentId ?? entry.catalog.root.entryId)
-          .map((node) => node.name)}
+        siblings={entry.catalog.children(entry.node.parentId ?? entry.catalog.root.entryId)}
       />
     </TreeEnvProvider>
   );

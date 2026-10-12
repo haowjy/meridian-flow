@@ -8,11 +8,11 @@ export function previewKind(
   tab: Extract<ContextTab, { kind: "viewer" }>,
   read: ContextReadResponse,
 ): PreviewKind {
-  if (read.kind === "tracked") {
-    return tab.name.toLowerCase().endsWith(".md") ? "markdown" : "text";
-  }
+  // A name never says what a file is (`Chapter 13` has no suffix): the stored
+  // classification and the read do.
+  if (read.kind === "tracked") return read.filetype === "markdown" ? "markdown" : "text";
   if (tab.fileType === "image") return "image";
-  if (tab.name.toLowerCase().endsWith(".md")) return "markdown";
+  if (read.mimeType === "text/markdown") return "markdown";
   if (tab.fileType === "pdf") return "pdf";
   if (read.mimeType.startsWith("text/") || /(?:json|xml|yaml)/i.test(read.mimeType)) {
     return "text";

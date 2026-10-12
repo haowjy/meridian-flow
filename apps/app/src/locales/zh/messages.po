@@ -350,8 +350,16 @@ msgid "A file named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +367,16 @@ msgid "A folder named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -512,6 +528,10 @@ msgstr ""
 msgid "All Work"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "All your devices"
+msgstr "所有设备"
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Already in {0}"
@@ -519,6 +539,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -788,8 +812,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr ""
+#~ msgid "Check submission status"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1107,6 +1131,7 @@ msgstr ""
 msgid "Couldn't compact"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr ""
@@ -1161,7 +1186,7 @@ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't delete this folder. Try again."
-msgstr "无法删除此文件夹，请重试。"
+msgstr ""
 
 #: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
@@ -1345,6 +1370,7 @@ msgstr ""
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr ""
@@ -1361,7 +1387,10 @@ msgstr ""
 msgid "Couldn't send your answer."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "未能发送你的消息。"
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
@@ -2404,11 +2433,6 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
-#. placeholder {0}: entry.name
-#: src/features/project/context/EntryMovePicker.tsx
-#~ msgid "Move {0}"
-#~ msgstr ""
-
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Move {name}"
 msgstr ""
@@ -2453,6 +2477,14 @@ msgstr ""
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
+msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -2981,6 +3013,7 @@ msgid "Reason: {0}"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr ""
 
@@ -3122,8 +3155,12 @@ msgid "Rendering diagram…"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopens your last document and chat when you switch devices"
-msgstr ""
+msgid "Reopens the documents you had open when you switch devices."
+msgstr "切换设备时，会重新打开你之前打开的文档。"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Reopens your last document and chat when you switch devices"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3175,8 +3212,12 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume where I left off on any device"
-msgstr ""
+msgid "Resume my documents on any device"
+msgstr "在任何设备上继续处理我的文档"
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#~ msgid "Resume where I left off on any device"
+#~ msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -3526,8 +3567,8 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr ""
+#~ msgid "Start over"
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"
@@ -3841,6 +3882,14 @@ msgstr ""
 msgid "There is nowhere left to put that picture."
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences follow your account wherever you sign in."
+msgstr "这些偏好设置会随账号同步到你登录的所有设备。"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "These preferences stay on this device to suit your screen."
+msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -3968,7 +4017,7 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
-msgstr ""
+msgstr "此设备"
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "This diagram has a syntax problem"

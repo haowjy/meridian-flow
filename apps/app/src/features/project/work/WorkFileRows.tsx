@@ -1,7 +1,9 @@
+import type { ContextEntrySibling } from "../context/context-entry-name";
 /**
  * The Work Files tab's Scratch rows: folder disclosure and file navigation
  * around the shared entry interaction model, plus a new note still on its way.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
@@ -31,7 +33,7 @@ export const workFileRowClass =
 type ScratchRowManagement = {
   projectId: string;
   workId: string;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   capabilities: EntryCapabilities;
   onRequestDelete: (target: DeleteTarget) => void;
 };
@@ -103,7 +105,7 @@ export function ScratchFileRow({
   projectId,
   workId,
   file,
-  siblingNames,
+  siblings,
   capabilities,
   onRequestDelete,
   requestRename,
@@ -122,7 +124,7 @@ export function ScratchFileRow({
     node: file,
     owner: { workId },
     scheme: "scratch",
-    siblingNames,
+    siblings,
     capabilities,
     onRequestDelete,
     requestRename,

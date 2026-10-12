@@ -55,11 +55,17 @@ it.each(["manuscript://"])("never spells non-document %s", (target) => {
 });
 
 it.each([
-  ["chapter", ["chapter.md"], "chapter.md"],
-  ["chapter", ["chapter", "chapter.md"], "chapter"],
-  ["chapter", ["chapter.md", "chapter.json"], null],
-  ["Chapter.md", ["chapter.md"], null],
+  ["chapter.md", ["chapter"], "chapter"],
+  ["chapter.txt", ["chapter"], "chapter"],
+  ["chapter", ["chapter", "chapter.json"], "chapter"],
+  ["outline", ["outline.json"], "outline.json"],
+  ["outline", ["outline.json", "outline.yaml"], null],
+  ["Vol", ["Vol. 2"], null],
+  ["Chapter.md", ["chapter"], null],
 ])("matches the catalog path %s", (path, candidates, expected) => {
-  expect(documentPathKey(path)).toBe(path);
   expect(matchDocumentPath(candidates, path, (candidate) => candidate)).toBe(expected);
+});
+
+it("canonicalizes only the written path's filename", () => {
+  expect(documentPathKey("book.md/chapter.TXT")).toBe("book.md/chapter");
 });

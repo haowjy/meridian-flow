@@ -26,6 +26,15 @@ change-trail events, not manuscript content.
   extensions subscribe to (`SessionMarkerStore`, `AgentNameStore`). A new
   construction knob belongs in the identity type — never in an effect
   dependency list.
+- Device reading memory is owned by `use-reading-position.ts` at the mounted
+  view boundary, shared by main Editor and side-panel hosts. Persist only Yjs
+  anchors and dimensionless viewport offsets in the account-stamped, versioned
+  localStorage record (300-document LRU), never pixel scroll values. Warm views
+  keep their DOM; only a new mount restores, without taking focus. Explicit
+  navigation claims before async opens through `reading-position-navigation.ts`;
+  direct DOM jumps mark their editor there, and mounted-editor marks every
+  `scrollIntoView` transaction. Review rooms never consume or overwrite live
+  document places. New jump paths must participate in that same precedence.
 - Schema repair is observed and reported, never fenced. `DocumentSession` owns
   one witness for its Y.Doc, armed lazily by `bindEditor()` immediately before
   the first editor construction. Every bound view supplies PM attribution to

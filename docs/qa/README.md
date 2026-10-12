@@ -6,6 +6,9 @@ commit, date, stack/provider, outcome, and evidence path after each run. A recip
 is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
+- [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
+- [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
@@ -33,6 +36,11 @@ Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
 
+## Document intake
+
+[Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
+DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
+
 ## Before you call it a defect
 
 Two harness races have produced false defects. Rule them out first.
@@ -49,3 +57,7 @@ Two harness races have produced false defects. Rule them out first.
   the editor's copy handler sees an empty selection and Chromium does a native
   copy, which carries none of the app's clipboard data. Assert the holder
   document's URI before testing copy and paste between documents.
+
+## Device reading memory
+
+[Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.

@@ -3,7 +3,7 @@
  * there.
  *
  * The document goes at exactly the link's address: its scheme, its folders,
- * and its filename (with `.md` when the link omitted the extension). Only
+ * and its stored name (`Chapter 13`, whether or not the link wrote `.md`). Only
  * manuscript, kb, and user documents are conjured by a link. Scratch notes are
  * made from a Work's Files tab or by the AI, and Uploads are files a writer
  * brings, so neither is creatable here.
@@ -22,8 +22,8 @@ import { useCallback, useRef, useState } from "react";
 
 import {
   type CreatableLinkScheme,
-  documentFileName,
   isCreatableLinkScheme,
+  linkedDocumentName,
 } from "@/core/editor/links";
 import { useAccountResourceReplica } from "@/features/project/context/account-feature-context";
 
@@ -43,7 +43,7 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
   const folders = path.split("/");
   const leaf = folders.pop();
   if (!leaf) return null;
-  const name = documentFileName(leaf);
+  const name = linkedDocumentName(leaf);
   if (!name) return null;
   if (![...folders, name].every((segment) => validateContextEntryName(segment).ok)) return null;
   return { scheme, folderPath: folders.join("/"), name };

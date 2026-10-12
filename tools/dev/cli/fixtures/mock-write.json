@@ -7,12 +7,12 @@
           "name": "write",
           "args": {
             "command": "create",
-            "path": "manuscript://mf-scene.md",
+            "path": "manuscript://Scene",
             "content": "# Scene\n\nRain beat on the jade steps of the Azure Peak sect."
           }
         }
       ]
     },
-    { "text": "Done. The scene is in manuscript://mf-scene.md." }
+    { "text": "Done. The scene is in manuscript://Scene." }
   ]
 }
