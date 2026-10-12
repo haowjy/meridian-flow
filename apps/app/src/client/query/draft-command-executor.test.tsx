@@ -5,16 +5,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
-import { runDraftBatch, startDraftCommand } from "./draft-command-executor";
 import {
+  type DraftCommandOutcome,
+  runDraftBatch,
+  startDraftCommand,
+} from "./draft-command-executor";
+import {
+  bindDraftCommandAccount,
   currentChangeCommandRecords,
+  currentDraftCommandRecords,
   hiddenOperationIds,
+  pendingDraftCommand,
   resetDraftCommandRecords,
 } from "./draft-command-record";
 import { useWorkDrafts } from "./useWorkDrafts";
 
 const api = vi.hoisted(() => ({
   applyDraft: vi.fn(),
+  applyDraftChanges: vi.fn(),
   discardDraft: vi.fn(),
   listWorkDrafts: vi.fn(),
 }));
@@ -127,8 +135,8 @@ it("releases every queued selection when a batch sender throws synchronously", a
   const send = vi.fn(() => {
     throw new Error("injected");
   });
-  await expect(runDraftBatch(scope, items, send)).rejects.toThrow("injected");
-  expect(send).toHaveBeenCalledExactlyOnceWith(items[0]);
+  await expect(runDraftBatch(scope, "apply", items, send)).rejects.toThrow("injected");
+  expect(send).toHaveBeenCalledExactlyOnceWith(items[0], null);
   expect(
     hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...items[0].draft }).size,
   ).toBe(0);
@@ -136,6 +144,71 @@ it("releases every queued selection when a batch sender throws synchronously", a
     hiddenOperationIds(currentChangeCommandRecords(), { ...scope, ...items[1].draft }).size,
   ).toBe(0);
   const retry = vi.fn().mockResolvedValue({ kind: "blocked" });
-  await expect(runDraftBatch(scope, items, retry)).resolves.toHaveLength(2);
+  await expect(runDraftBatch(scope, "apply", items, retry)).resolves.toHaveLength(2);
   expect(retry).toHaveBeenCalledTimes(2);
+});
+
+it("an answer from before an account change cannot settle the new account's claim on the same draft", async () => {
+  resetDraftCommandRecords();
+  bindDraftCommandAccount("account-a");
+  const selection = { classIds: ["c"], operationIds: ["1"] };
+  const basis = { liveRevisionToken: "l", draftRevisionToken: "d", draftGeneration: 1 };
+  const command = {
+    target: "selection" as const,
+    draft: input,
+    mode: "apply" as const,
+    selection,
+    basis,
+    completesDraft: false,
+  };
+  const oldAnswer = deferred<unknown>();
+  const newAnswer = deferred<unknown>();
+  api.applyDraftChanges
+    .mockReturnValueOnce(oldAnswer.promise)
+    .mockReturnValueOnce(newAnswer.promise);
+  const client = new QueryClient();
+  const old = startDraftCommand(client, command).outcome;
+  bindDraftCommandAccount("account-b");
+  bindDraftCommandAccount("account-a");
+  const newer = startDraftCommand(client, command).outcome;
+  oldAnswer.resolve({
+    status: "applied",
+    draftId: input.draftId,
+    operationIds: ["1"],
+    closureClassIds: ["c"],
+  });
+  await old;
+  expect(pendingDraftCommand(currentDraftCommandRecords(), input)).not.toBeNull();
+  newAnswer.resolve({
+    status: "applied",
+    draftId: input.draftId,
+    operationIds: ["1"],
+    closureClassIds: ["c"],
+  });
+  await newer;
+  expect(pendingDraftCommand(currentDraftCommandRecords(), input)).toBeNull();
+});
+
+it("a batch sends nothing more once the account has changed", async () => {
+  resetDraftCommandRecords();
+  bindDraftCommandAccount("account-a");
+  const first = deferred<DraftCommandOutcome>();
+  const sent: string[] = [];
+  const items = ["a", "b"].map((id) => ({
+    draft: { documentId: id, draftId: id },
+    selection: { classIds: [id], operationIds: [id] },
+  }));
+  const batch = runDraftBatch(
+    { projectId: "project-a", workId: "work-a" },
+    "apply",
+    items,
+    (item) => {
+      sent.push(item.draft.documentId);
+      return first.promise;
+    },
+  );
+  bindDraftCommandAccount("account-b");
+  first.resolve({ kind: "blocked" });
+  await batch;
+  expect(sent).toEqual(["a"]);
 });

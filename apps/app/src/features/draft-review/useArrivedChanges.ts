@@ -35,13 +35,16 @@ export function useArrivedChanges(
       return;
     }
     if (known.current?.key !== draftKey) {
-      known.current = { key: draftKey, ids: new Set(changes.map((change) => change.classId)) };
+      known.current = { key: draftKey, ids: new Set(changes.flatMap(identities)) };
       setArrived(EMPTY);
       return;
     }
     const seen = known.current.ids;
-    const fresh = changes.filter((change) => !seen.has(change.classId) && change.tone !== "writer");
-    for (const change of changes) seen.add(change.classId);
+    // A re-forked draft gives its surviving changes new ids; they are not arrivals.
+    const fresh = changes.filter(
+      (change) => !identities(change).some((id) => seen.has(id)) && change.tone !== "writer",
+    );
+    for (const id of changes.flatMap(identities)) seen.add(id);
     if (fresh.length === 0) return;
     setArrived((current) => new Set([...current, ...fresh.map((change) => change.classId)]));
     const timer = window.setTimeout(() => {
@@ -59,3 +62,8 @@ export function useArrivedChanges(
 }
 
 const EMPTY: ReadonlySet<string> = new Set();
+
+/** What a change has been: its class and its operations' keys, which outlive a re-fork. */
+function identities(change: ReviewChange): string[] {
+  return [change.classId, ...change.keys];
+}

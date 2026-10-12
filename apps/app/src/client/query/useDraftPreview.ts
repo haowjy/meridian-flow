@@ -21,16 +21,27 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import {
   type ChangeCommandRecords,
+  hiddenIdsIn,
   hiddenOperationIds,
   pendingDraftCommand,
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
+  restoringOperationIds,
   useChangeCommandRecords,
 } from "./draft-command-record";
 import { projectQueryKeys } from "./project-query-keys";
 import { workDraftsQueryOptions } from "./useWorkDrafts";
 
-export type DraftPreviewState = { preview: DraftPreviewResponse | null };
+/**
+ * `preview` is what the writer has left to review. `inline` is the same read
+ * for the manuscript's marks: it still holds the changes being discarded, named
+ * in `restoring`, so the editor can draw their original text from the click
+ * (nothing else reads it).
+ */
+export type DraftPreviewState = {
+  preview: DraftPreviewResponse | null;
+  inline: { preview: DraftPreviewResponse; restoring: ReadonlySet<string> } | null;
+};
 
 type DraftRef = {
   projectId: string;
@@ -105,6 +116,8 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
   };
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
 const withoutHidden = new WeakMap<
   DraftPreviewResponse,
   { hiddenKey: string; preview: DraftPreviewResponse }
@@ -175,8 +188,20 @@ export function useDraftPreview(
     () => (data ? previewWithoutHidden(data, hidden, hiddenKey, whole) : null),
     [data, hiddenKey],
   );
+  const restoring = restoringOperationIds(records, draft);
+  const restoringKey = [...restoring].sort().join(",");
+  const inline = useMemo(() => {
+    if (!data) return null;
+    if (whole)
+      return { preview: previewWithoutHidden(data, hidden, hiddenKey, whole), restoring: NONE };
+    const kept = new Set([...hidden].filter((name) => !restoring.has(name)));
+    return {
+      preview: previewWithoutOperations(data, kept),
+      restoring: data.status === "active" ? hiddenIdsIn(data, restoring) : NONE,
+    };
+  }, [data, hiddenKey, restoringKey]);
 
-  return { preview };
+  return { preview, inline };
 }
 
 /**
