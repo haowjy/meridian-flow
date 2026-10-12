@@ -86,6 +86,19 @@ it("repairs only the live tail without inventing links or tables", async () => {
   expect(host.querySelector("strong")).toBe(settled);
 });
 
+it("never repairs Markdown inside an open fence of either marker", async () => {
+  const { host, render } = mount();
+  for (const source of [
+    "~~~txt\n*literal",
+    "```txt\n*literal",
+    "- item\n\n  ~~~\n  *literal",
+    "> ~~~\n> *literal",
+  ]) {
+    await render(<Markdown mode="streaming">{source}</Markdown>);
+    expect(host.querySelector("code")?.textContent).toBe("*literal");
+  }
+});
+
 it("shows every code append immediately and preserves blocks when the turn settles", async () => {
   vi.useFakeTimers();
   const { host, render } = mount();

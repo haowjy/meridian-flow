@@ -278,12 +278,17 @@ const MarkdownBlock = memo(function MarkdownBlock({
   throttle: boolean;
   openFence: boolean;
 }) {
+  // An open fence's remaining lines are code: an unclosed fence already parses as
+  // code to its container's end, and remend would "repair" literal text inside a
+  // tilde fence. Lines before the opener are complete, so nothing needs repair.
   const blocks = useMemo(
     () =>
-      repair
+      repair && !openFence
         ? codec.parse(remend(source, { links: false, images: false, katex: false })).blocks
-        : settledBlocks(source, () => codec.parse(source).blocks),
-    [source, repair],
+        : repair
+          ? codec.parse(source).blocks
+          : settledBlocks(source, () => codec.parse(source).blocks),
+    [source, repair, openFence],
   );
   const openCode = openFence ? lastCodeBlock(blocks) : null;
   return blocks.map((node, index) => (
