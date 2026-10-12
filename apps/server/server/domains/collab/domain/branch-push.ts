@@ -29,6 +29,7 @@ import {
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
+import { transportSuppliers } from "./branch-push-suppliers.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
@@ -36,6 +37,7 @@ import { createWorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 type ComputedCandidate = {
+  transportRows?: BranchJournalRow[];
   candidate: PushCandidate;
   branch: BranchSnapshot;
   pushUpdate: Uint8Array;
@@ -86,18 +88,29 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     candidate: PushCandidate,
     branch: BranchSnapshot,
   ): Promise<ComputedCandidate> {
-    const rows = candidate.rows;
+    const rows = candidate.rows.filter(
+      (row) => (row.updateMeta as { kind?: string } | null)?.kind !== "discard",
+    );
+    const supplierRows = candidate.rows.filter((row) => !rows.includes(row));
+    candidate = { ...candidate, rows };
     const liveDoc = await loadLiveDoc(branch.documentId);
     let afterDoc: Y.Doc | null = null;
     let branchDoc: Y.Doc | null = null;
     try {
       let pushUpdate: Uint8Array;
+      let transportRows: BranchJournalRow[] = [];
       if (candidate.materialization === "selected_rows") {
         const operation =
           candidate.kind === "manifest" ? "manifest_membership_push" : "selective_content_push";
         afterDoc = createCollabYDoc({ gc: false });
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-        for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
+        const history = await input.journalReadStore.listJournalRowsForBranch({
+          branchId: branch.branchId,
+          generation: branch.generation,
+        });
+        transportRows = transportSuppliers(liveDoc, history, rows);
+        for (const row of [...transportRows, ...rows].sort((a, b) => a.id - b.id))
+          Y.applyUpdate(afterDoc, row.updateData);
         assertNoPendingIntegration(
           afterDoc,
           operation,
@@ -106,11 +119,24 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         assertRowsIntegrated(afterDoc, rows, operation);
         pushUpdate = Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc));
       } else {
+        const history = await input.journalReadStore.listJournalRowsForBranch({
+          branchId: branch.branchId,
+          generation: branch.generation,
+        });
+        transportRows = [
+          ...new Map(
+            [
+              ...transportSuppliers(liveDoc, history, [...rows, ...supplierRows]),
+              ...supplierRows,
+            ].map((row) => [row.id, row]),
+          ).values(),
+        ].sort((a, b) => a.id - b.id);
         branchDoc = materializeBranch(branch);
         pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
       }
       return {
         candidate,
+        transportRows,
         branch,
         pushUpdate,
         idempotencyKey: stablePushIdempotencyKey({
@@ -137,6 +163,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       {
         branch: phase.branch,
         rows: phase.candidate.rows,
+        transportRows: phase.transportRows,
         pushUpdate: phase.pushUpdate,
         idempotencyKey: phase.idempotencyKey,
         receiptId,

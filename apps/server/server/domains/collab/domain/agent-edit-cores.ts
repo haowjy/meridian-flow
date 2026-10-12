@@ -7,7 +7,7 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -60,6 +60,7 @@ export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "co
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */
+  hasStagedDraftWrites(documentId: DocumentId, workId: WorkId): boolean;
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
