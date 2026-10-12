@@ -10,7 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
-| `./mf` | An agent needs setup, durable reads, or mock-model scripts; verify send/tail outcomes with the transcript or browser | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
+| `./mf` | An agent needs setup, durable reads, server outcomes, or mock-model scripts; check which reply answered with the transcript | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
 | `./mf log` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `./mf thread context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
@@ -36,7 +36,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **An LLM is debugging.** Reproduce with `./mf thread send` (pair
   `MODEL_PROVIDER=mock` with `--mock` for deterministic tool paths), read the
   durable transcript with `./mf thread view` to check which reply answered
-  your message (send/tail outcomes are not proof until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands),
+  your message (a send's exit 0 does not prove that until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands),
   then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
@@ -54,8 +54,11 @@ Repeatable verification recipes live in the [runtime probe catalog](qa/README.md
 maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the
 route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
-Use it for setup and durable reads; check send/tail outcomes against the durable
-transcript or in the browser.
+Its thread socket and message body come from `@meridian/thread-client`, the same
+code the app runs, so a `./mf` run is evidence of the app's socket client and
+composer serialization against the real server. It never covers what the writer
+sees: rendering, the thread store, the TipTap composer, the submission journal,
+optimistic UI, and navigation are the browser's to verify.
 
 ```bash
 ./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
@@ -90,7 +93,7 @@ at its final snapshot; it does not attribute replies to messages.
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
   `reason` is null for a proven outcome; timeout uses `running` or `owed`
   (`unconfirmed` when tail has no successful snapshot).
-  Unproven reasons today are `admission_unknown`, `replay_truncated`, and
+  Unproven reasons today are `admission_unknown`, `replay_truncated`,
   `unconfirmed`, and `owed`. A complete send still does not prove which reply
   answered, as explained above.
 - In text mode, a final answer goes to stdout only for complete or failed.

@@ -1,12 +1,15 @@
 # @meridian/thread-client
 
-The thread client core shared by the app and `./mf`: the thread socket client, the message builder, and (phase 2)
-reply following. Code lives here when the two clients would otherwise disagree about what happened.
+The thread client core shared by the app and `./mf`: the thread socket client and the message builder. Code lives
+here when the two clients would otherwise disagree about what happened. Reply following is not here yet: its shape
+(a shared follow session, or a reader of server-published run state) waits on #768's phase 2. The HTTP client and
+event application stay in each client.
 
 - Framework-free and platform-neutral: no React, no stores, no browser or Node globals touched at module
   evaluation, no `import.meta.env`, no DOM types in the public surface. Platform differences enter through ports
   injected at each client's composition root.
-- Depends on `@meridian/contracts` for wire types and readers. Never on `apps/` or server code.
+- Depends on `@meridian/contracts` for wire types and readers, and on `@meridian/markup` through its light `./links`
+  subpath only (no Yjs or ProseMirror). Never on `apps/` or server code.
 - Each client keeps its own I/O policy (HTTP, auth, persistence, printing, the store).
 
 ## Thread socket

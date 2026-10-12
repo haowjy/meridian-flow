@@ -6,13 +6,14 @@ settle in Postgres.
 
 For non-visual checks (admission, streaming, turn settlement, tool calls), use
 `./mf` for setup and durable reads. Until
-[#768](https://github.com/haowjy/meridian-flow/issues/768) lands,
-`./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours. After sending with
-`./mf thread send <id> "browser smoke $(date +%s)"`, check the run outcome with
-`./mf thread view <id>` (the durable transcript) or in the browser; exit 0 is not
-proof that your message was answered. Use this runbook when the rendered composer
-and stream are what you are verifying.
+[#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
+`./mf thread send` exiting 0 does not prove which reply answered your message
+(exit 6 means `./mf` could not tell; see
+[what each exit means](../../../../docs/debugging.md#drive-the-app-from-the-cli)).
+After sending with `./mf thread send <id> "browser smoke $(date +%s)"`, check
+which reply answered with `./mf thread view <id>` (the durable transcript) or in
+the browser. Use this runbook when the rendered composer and stream are what you
+are verifying.
 
 ## Preconditions
 

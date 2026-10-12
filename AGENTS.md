@@ -109,12 +109,13 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
 Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
-`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
-lands, `./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours: check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser. See
-[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+`./mf` for setup, durable reads and server outcomes. Its exit codes are listed in
+[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli); 6 means `./mf`
+could not tell. Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s
+second phase lands, a 0 from `./mf thread send` does not prove which reply answered
+your message: check it against `./mf thread view` (the durable transcript). `./mf`
+shares the app's socket client and message serializer, not its screen: check what
+the writer sees (rendering, the composer, optimistic UI, client state) in the browser.
 
 ## Build and test
 

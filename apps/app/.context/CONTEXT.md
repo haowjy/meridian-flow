@@ -129,9 +129,11 @@ Two interfaces are the only paths between the visual layer and the substrate:
   account clock and inserts confirmed creations into the project-list cache;
   it does not own a second project list. See "Thread
   snapshot reconciliation" below.
-- **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
-  subscribe/cancel contract for live agent events. Runtime chat uses
-  `WsThreadTransport`, which connects to `/api/threads/ws`.
+- **`ThreadTransport`** (from `@meridian/thread-client`) — the
+  subscribe/cancel contract for live agent events. Runtime chat uses the
+  package's `ThreadSocketClient`, composed in
+  `src/client/providers/TransportProvider.tsx`, which connects to
+  `/api/threads/ws`.
 
 The server's [durable event journal](../../server/server/domains/threads/.context/CONTEXT.md)
 backs replay across restarts; [live-update guidance](../src/features/chat/.context/thread-live-updates.md)
