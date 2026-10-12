@@ -36,7 +36,7 @@ export function ChoiceBlock({
     : null;
   const provenance = props?.answerProvenance ?? null;
   const [submittedValue, setSubmittedValue] = useState<string | null>(null);
-  // A recorded response (pending or failed) locks the options so a
+  // A recorded response (pending or failed/ambiguous) locks the options so a
   // remount cannot re-enable them while the server still waits or while Retry
   // must reuse the same tuple.
   const responseLocked = responseState !== null;

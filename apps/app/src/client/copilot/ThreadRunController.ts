@@ -151,13 +151,13 @@ export class ThreadRunController {
     this.disposed = false;
     const ownerGeneration = ++this.activationGeneration;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
-      ({ threadId }) => {
+      ({ threadId, error }) => {
         if (
           !this.accountSignal.aborted &&
           !this.disposed &&
           this.activationGeneration === ownerGeneration
         )
-          this.settleInterruptResponseError(threadId);
+          this.settleInterruptResponseError(threadId, error);
       },
     );
     try {
@@ -166,7 +166,7 @@ export class ThreadRunController {
           !this.accountSignal.aborted &&
           !this.disposed &&
           this.activationGeneration === ownerGeneration &&
-          this.actions.failInterruptResponsesForGeneration(generation),
+          this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
       );
     } catch (error) {
       this.unsubscribeInterruptResponseError?.();
@@ -345,7 +345,7 @@ export class ThreadRunController {
     // Overlap policy: one in-flight response per tuple. A second click while
     // this tuple is pending returns the existing state and writes nothing, so
     // the server cannot see a duplicate frame and the retained value is not
-    // overwritten. Retry after a failed attempt is allowed.
+    // overwritten. Retry after a failed/ambiguous attempt is allowed.
     const existing = this.actions.interruptResponseFor(input);
     if (existing?.status === "pending") return { status: "pending" };
 
@@ -354,12 +354,14 @@ export class ThreadRunController {
     const value = input.value as JsonValue;
     const receipt = this.transport.respondInterrupt(input);
     if (!receipt.sent) {
-      // The socket was not open, so the frame never left the client.
-      this.actions.failInterruptResponse({ ...input, value });
-      return { status: "failed" };
+      // The socket was not open, so the frame never left the client. This is a
+      // proven send failure (retryable), not an ambiguous outcome.
+      const failure: InterruptResponseState = { status: "failed" };
+      this.actions.failInterruptResponse({ ...input, value }, failure);
+      return failure;
     }
     // Record the socket generation so a close before any resolution can mark
-    // this entry failed (queued, not proven delivered).
+    // this entry ambiguous (queued, not proven delivered).
     this.actions.beginInterruptResponse({
       ...input,
       value,
@@ -368,19 +370,13 @@ export class ThreadRunController {
     return { status: "pending" };
   }
 
-  /**
-   * The server refused an answer: nothing is pending for that interrupt (a
-   * landed answer, one given in another tab, a run that moved on) or the tuple
-   * no longer matches. Retry cannot change that, so the card shows the failure
-   * and the thread snapshot is refetched: a snapshot that shows the question
-   * resolved or gone clears the entry, whatever the live stream did or did not
-   * deliver.
-   */
-  private settleInterruptResponseError(threadId: string): void {
+  private settleInterruptResponseError(threadId: string, error: Error): void {
     const pending = this.actions.pendingInterruptResponseForThread(threadId);
     if (!pending) return;
-    this.actions.failInterruptResponse(pending);
-    this.actions.invalidateThreadSnapshot(threadId);
+    const code = isMeridianApiError(error) ? error.code : undefined;
+    this.actions.failInterruptResponse(pending, {
+      status: code === "interrupt_correlation_mismatch" ? "failed" : "ambiguous",
+    });
   }
 
   cancel(threadId: string): void {

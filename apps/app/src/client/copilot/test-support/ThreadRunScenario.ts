@@ -173,16 +173,9 @@ class ScenarioThreadTransport implements ThreadTransport {
 }
 
 export class ThreadRunScenario {
-  /** Thread ids the store asked the cache to refetch a snapshot for. */
-  readonly snapshotInvalidations: string[] = [];
   readonly store = createThreadStore({
     now: 0,
-    threadCache: {
-      ...createThreadCache(new QueryClient()),
-      invalidateThreadSnapshot: (threadId) => {
-        this.snapshotInvalidations.push(threadId);
-      },
-    },
+    threadCache: createThreadCache(new QueryClient()),
   });
   readonly transport = new ScenarioThreadTransport();
   readonly appendRequests: AppendRequest[] = [];

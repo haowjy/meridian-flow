@@ -169,7 +169,7 @@ function reconcileInterruptResponsesForThread(
 
     if (entry.status === "pending") {
       next ??= { ...responses };
-      next[key] = { ...entry, status: "failed" };
+      next[key] = { ...entry, status: "ambiguous" };
     }
   }
   return next;
@@ -236,7 +236,8 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     failInterruptResponse: state.failInterruptResponse,
     settleInterruptResponse: state.settleInterruptResponse,
     pendingInterruptResponseForThread: state.pendingInterruptResponseForThread,
-    failInterruptResponsesForGeneration: state.failInterruptResponsesForGeneration,
+    markInterruptResponsesForGenerationAmbiguous:
+      state.markInterruptResponsesForGenerationAmbiguous,
   };
 }
 
@@ -652,7 +653,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
         },
 
-        failInterruptResponse(input) {
+        failInterruptResponse(input, failure) {
           const key = interruptResponseKey(input);
           set((state) => {
             const existing = state.interruptResponses[key];
@@ -661,7 +662,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               return {
                 interruptResponses: {
                   ...state.interruptResponses,
-                  [key]: { ...existing, status: "failed" },
+                  [key]: { ...existing, status: failure.status },
                 },
               };
             }
@@ -675,7 +676,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                   threadId: input.threadId,
                   turnId: input.turnId,
                   interruptId: input.interruptId,
-                  status: "failed",
+                  status: failure.status,
                   value: input.value,
                   sequence,
                   generation: null,
@@ -703,13 +704,13 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return newest;
         },
 
-        failInterruptResponsesForGeneration(generation) {
+        markInterruptResponsesForGenerationAmbiguous(generation) {
           set((state) => {
             let changed = false;
             const next = { ...state.interruptResponses };
             for (const [key, entry] of Object.entries(state.interruptResponses)) {
               if (entry.status !== "pending" || entry.generation !== generation) continue;
-              next[key] = { ...entry, status: "failed" };
+              next[key] = { ...entry, status: "ambiguous" };
               changed = true;
             }
             return changed ? { interruptResponses: next } : state;
