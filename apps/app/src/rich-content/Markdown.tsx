@@ -1,4 +1,4 @@
-/** Canonical settled document rendering; Streamdown temporarily owns streaming and source-authoritative tokens. */
+/** Canonical document rendering; Streamdown temporarily owns source-authoritative tokens. */
 
 import { type ComponentType, useMemo } from "react";
 import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
@@ -29,9 +29,9 @@ export type MarkdownProps = {
    */
   variant?: "compact";
   /**
-   *  - `streaming` → live frontier; Streamdown's per-block memo keeps stable
+   *  - `streaming` → live frontier; source-string block memo keeps stable
    *    blocks from re-parsing, so only the growing tail re-renders.
-   *  - `static` → settled content; single markdown tree.
+   *  - `static` → settled content; same document blocks without tail repair.
    */
   mode?: "streaming" | "static";
   className?: string;
@@ -94,11 +94,12 @@ export function Markdown({
     [breaks, references, skills],
   );
 
-  if (!streaming && !exactSource) {
+  if (!exactSource) {
     return (
       <DocumentMarkdown
         source={children}
         breaks={breaks}
+        streaming={streaming}
         className={cn(
           "prose-tokens document-prose document-prose--chat",
           variant === "compact" && "text-tier-compact",

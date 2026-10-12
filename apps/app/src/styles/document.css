@@ -1,4 +1,4 @@
-/** Shared manuscript and settled-chat document typography, blocks and syntax colors. */
+/** Shared manuscript and chat document typography, blocks and syntax colors. */
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
    own whitespace, so this wrapper sets typography without `whitespace-pre-wrap`.
    Use this for any `<Markdown>` so size/color stay consistent with the plain-text

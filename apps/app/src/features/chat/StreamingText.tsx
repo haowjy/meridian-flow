@@ -1,6 +1,6 @@
 /**
- * StreamingText — renders a partial assistant text block as streaming prose
- * with a trailing animated caret via `Markdown`.
+ * StreamingText renders assistant prose through one stable Markdown tree;
+ * only the trailing caret disappears at settlement.
  *
  * In DEV with the playback knob set, wraps the view in a throttled replay
  * (`streaming-text-dev`). Owns only the streaming-text presentation. Reasoning
@@ -11,6 +11,7 @@ import { readDebugStreamPlaybackCps, useDebugStreamPlayback } from "./streaming-
 
 export type StreamingTextProps = {
   text: string;
+  streaming?: boolean;
 };
 
 export function StreamingText(props: StreamingTextProps) {
@@ -20,18 +21,21 @@ export function StreamingText(props: StreamingTextProps) {
   return <StreamingTextView {...props} />;
 }
 
-function StreamingTextWithPlayback({ text }: StreamingTextProps) {
+function StreamingTextWithPlayback({ text, streaming = true }: StreamingTextProps) {
   const cps = readDebugStreamPlaybackCps();
-  return <StreamingTextView text={useDebugStreamPlayback(text, cps)} />;
+  const displayed = useDebugStreamPlayback(text, cps);
+  return <StreamingTextView text={displayed} streaming={streaming || displayed !== text} />;
 }
 
-function StreamingTextView({ text }: StreamingTextProps) {
+function StreamingTextView({ text, streaming = true }: StreamingTextProps) {
   return (
     <div>
-      <Markdown mode="streaming">{text}</Markdown>
-      <span aria-hidden className="mt-[var(--chat-space-inline)] block">
-        <StreamCaret />
-      </span>
+      <Markdown mode={streaming ? "streaming" : "static"}>{text}</Markdown>
+      {streaming && (
+        <span aria-hidden className="mt-[var(--chat-space-inline)] block">
+          <StreamCaret />
+        </span>
+      )}
     </div>
   );
 }
