@@ -74,6 +74,7 @@ type PluginMeta =
   | { kind: "capture-writer"; ranges: PendingWriterRange[] }
   | { kind: "set-model"; model: InlineReviewModel | null }
   | { kind: "set-active-operation"; operationId: string | null }
+  | { kind: "focus-click"; operationId: string }
   | { kind: "set-marks-visible"; visible: boolean }
   | { kind: "set-pulse"; operationIds: readonly string[] }
   | { kind: "set-bar-slot"; open: boolean }
@@ -330,7 +331,8 @@ export function buildInlineReviewPlugin({
         );
         let refocusRemoval: string | null = null;
         if (meta?.kind === "set-model") next.model = meta.model;
-        else if (meta?.kind === "set-active-operation") next.activeOperationId = meta.operationId;
+        else if (meta?.kind === "set-active-operation" || meta?.kind === "focus-click")
+          next.activeOperationId = meta.operationId;
         else if (meta?.kind === "set-pulse") next.pulsedOperationIds = new Set(meta.operationIds);
         else if (meta?.kind === "set-bar-slot") {
           if (meta.open === previous.barSlot) return previous;
@@ -455,7 +457,7 @@ export function buildInlineReviewPlugin({
           if (current === operationId) return false;
           const tr = view.state.tr;
           tr.setMeta(draftInlineReviewPluginKey, {
-            kind: "set-active-operation",
+            kind: "focus-click",
             operationId,
           });
           tr.setMeta("addToHistory", false);
@@ -471,4 +473,12 @@ export function buildInlineReviewPlugin({
 /** Utility to read the current plugin state from any EditorState. */
 export function getInlineReviewPluginState(state: EditorState): InlineReviewPluginState | null {
   return draftInlineReviewPluginKey.getState(state) ?? null;
+}
+
+/** Only writer input produces a focus intent; model and programmatic emphasis are output. */
+export function inlineReviewFocusIntent(transaction: {
+  getMeta: (key: PluginKey) => unknown;
+}): string | null {
+  const meta = transaction.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
+  return meta?.kind === "focus-click" || meta?.kind === "removal-click" ? meta.operationId : null;
 }

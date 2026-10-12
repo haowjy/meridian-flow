@@ -17,7 +17,7 @@ import {
   type ReviewHunk,
   type ReviewOperation,
 } from "@meridian/contracts/drafts";
-import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
+import type { ChangeSelection } from "@/client/query/draft-command-record";
 import {
   attributionThreadIds,
   type ChangeAttribution,
@@ -28,6 +28,7 @@ import {
   formattingChangeText,
   type OperationChangeText,
 } from "./operation-change-text";
+import { unattributedHunkKey } from "./review-mark-key";
 
 /**
  * The dot's colour family: AI, the writer's, an AI removal, a merge nobody can
@@ -75,9 +76,7 @@ export interface ReviewChange {
    * no operation, and for every member of a class the server flags
    * `canApplyOrDiscard: false`; Apply draft and Discard draft handle those.
    */
-  actionable: boolean;
-  /** This item represents the entire draft, not a selective operation set. */
-  wholeDraft?: boolean;
+  target: ChangeTarget;
 }
 
 /**
@@ -154,7 +153,7 @@ const changesOfPreview = new WeakMap<ActivePreview, ReviewChange[]>();
  * the manuscript, the bar and the dock all read the same list, and the preview
  * (immutable, shared by the query cache) is its identity.
  */
-export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewChange[] {
+function changesOf(preview: ActivePreview): readonly ReviewChange[] {
   let changes = changesOfPreview.get(preview);
   if (!changes) {
     changes = reviewChanges(preview.operations, preview.hunks);
@@ -177,8 +176,7 @@ export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewC
           threadIds: attributionThreadIds(attribution),
           includesWriterEdits: changes.some((change) => change.includesWriterEdits),
           merged: changes.some((change) => change.merged),
-          actionable: true,
-          wholeDraft: true,
+          target: { kind: "draft" },
         },
       ];
     }
@@ -225,7 +223,7 @@ function describeUnattributed(hunk: ReviewHunk): ReviewChange {
     change: changeTextForHunks([hunk]),
     attribution: { kind: "unattributed" },
     threadIds: [],
-    actionable: false,
+    target: { kind: "display" },
   };
 }
 
@@ -253,7 +251,12 @@ function describeChange(
     keys: classOps.map(operationKey),
     anchorOperationId,
     markKeys: operationIds,
-    actionable: classOps.every((op) => op.canApplyOrDiscard !== false),
+    target: classOps.every((op) => op.canApplyOrDiscard !== false)
+      ? {
+          kind: "operations",
+          selection: { classIds: [classId], operationIds, keys: classOps.map(operationKey) },
+        }
+      : { kind: "display" },
     tone: merged
       ? "merged"
       : agentOps.length === 0
@@ -281,4 +284,51 @@ export function changeExcerpt(change: ReviewChange): {
   if (change.change.formatting?.length)
     return { added: change.change.formatting.map(formattingChangeText).join(". "), removed: null };
   return { added: squash(change.change.added), removed: squash(change.change.removed) };
+}
+
+/** The command a displayed change authorizes; synthetic display identities never become requests. */
+export type ChangeTarget =
+  | { kind: "operations"; selection: ChangeSelection }
+  | { kind: "draft" }
+  | { kind: "display" };
+
+export type DraftView = {
+  changes: readonly ReviewChange[];
+  target: ChangeTarget;
+};
+
+const views = new WeakMap<ActivePreview, DraftView>();
+
+/** One normalized change and action index, shared by open and unopened drafts. */
+export function draftView(preview: ActivePreview): DraftView {
+  let view = views.get(preview);
+  if (!view) {
+    const changes = changesOf(preview);
+    view = { changes, target: targetOfChanges(changes) };
+    views.set(preview, view);
+  }
+  return view;
+}
+
+/** Combine already-normalized targets, for example the changes owned by a chat. */
+export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
+  if (changes.some((change) => change.target.kind === "draft")) return { kind: "draft" };
+  const selections = changes.flatMap((change) =>
+    change.target.kind === "operations" ? [change.target.selection] : [],
+  );
+  return selections.length
+    ? {
+        kind: "operations",
+        selection: {
+          classIds: selections.flatMap((s) => s.classIds),
+          operationIds: selections.flatMap((s) => s.operationIds),
+          keys: selections.flatMap((s) => s.keys ?? []),
+        },
+      }
+    : { kind: "display" };
+}
+
+/** Lists read the normalized domain view, never reconstruct targets in a surface. */
+export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewChange[] {
+  return draftView(preview).changes;
 }

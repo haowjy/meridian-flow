@@ -3,7 +3,7 @@ import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/dra
 import { useMemo } from "react";
 import { create } from "zustand";
 import type { DraftCommandOutcome } from "./draft-command-executor";
-import { type ActivePreview, type DraftIntentKeys, previewWithoutKeys } from "./draft-projection";
+import type { ActivePreview, DraftIntentKeys } from "./draft-projection";
 
 type DraftScope = { projectId: string; workId: string };
 export type DraftRef = DraftScope & { documentId: string; draftId: string };
@@ -302,7 +302,7 @@ export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
   retireConfirmations();
 }
 
-/** List and preview confirmations have distinct consumers, but one retention clock. */
+/** List confirmations retire after older reads; selection intents outlive retained observations. */
 function retireConfirmations(): void {
   const oldest = (kind: "list" | "preview") =>
     Math.min(
@@ -311,7 +311,6 @@ function retireConfirmations(): void {
         .map((read) => read.fence),
     );
   const listFence = oldest("list");
-  const previewFence = oldest("preview");
   useDraftCommandStore.setState((state) => ({
     records: Object.fromEntries(
       Object.entries(state.records).flatMap(([key, record]) => {
@@ -319,11 +318,7 @@ function retireConfirmations(): void {
           record.claim?.phase === "confirmed" && record.claim.at <= listFence
             ? undefined
             : record.claim;
-        const outcomes = Object.fromEntries(
-          Object.entries(record.outcomes).filter(
-            ([, outcome]) => outcome.phase !== "confirmed" || outcome.at > previewFence,
-          ),
-        );
+        const outcomes = record.outcomes;
         if (
           claim === record.claim &&
           Object.keys(outcomes).length === Object.keys(record.outcomes).length
@@ -763,9 +758,9 @@ export function clearChangeFailure(draft: DraftRef, selection: ChangeSelection):
 }
 
 /**
- * Run one preview read. Changes confirmed after the read started are removed
- * from its result, so a read that was already in flight when the writer applied
- * or discarded a change cannot bring it back.
+ * Read immutable preview evidence and retire failures it no longer describes.
+ * Confirmed keys stay as account-scoped intents: older cached or held observations
+ * still project them, without mutating the evidence or resurrecting settled changes.
  */
 export async function readPreviewAfterChangeCommands(
   draft: DraftRef,
@@ -776,18 +771,9 @@ export async function readPreviewAfterChangeCommands(
   try {
     const preview = await read();
     const prefix = draftCommandKey(draft);
-    const hidden = new Set<string>();
-    for (const record of Object.values(
-      useDraftCommandStore.getState().records[prefix]?.outcomes ?? {},
-    )) {
-      if (record.phase !== "confirmed" || record.at <= inFlight.fence) {
-        continue;
-      }
-      for (const key of selectionKeys(record)) hidden.add(key);
-    }
     // A failure held for a change the preview no longer lists describes nothing.
     if (preview.status === "active") dropFailuresWithoutOperations(prefix, preview, inFlight.fence);
-    return previewWithoutKeys(preview, hidden);
+    return preview;
   } finally {
     readsInFlight.delete(inFlight);
     retireConfirmations();

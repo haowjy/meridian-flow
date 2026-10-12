@@ -4,7 +4,7 @@
  * the draft's preview, its changes in document order with what failed on each,
  * and the commands that act on them. The open review's model
  * (`useReviewChanges`) adds focus, stepping and completion; any other draft's
- * (`useDraftChanges`) adds nothing. Both derive their items the same way here.
+ * (`useDraftView`) adds nothing. Both derive their items the same way here.
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
@@ -14,7 +14,7 @@ import {
   changeCommandState,
   type DraftCommandFailure,
   draftCommandFailure,
-  intentKeys,
+  draftCommandKey,
   pendingDraftCommand,
   useChangeCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -76,7 +76,7 @@ export function useChangeItems(
         return {
           change,
           failure: state?.phase === "failed" ? state : null,
-          ...(change.wholeDraft && draft
+          ...(change.target.kind === "draft" && draft
             ? { draftFailure: draftCommandFailure(records.drafts, draft) }
             : {}),
         };
@@ -84,8 +84,8 @@ export function useChangeItems(
     [changes, records, draft],
   );
   const hiding = draft
-    ? intentKeys(records, draft).hidden.size > 0 ||
-      pendingDraftCommand(records.drafts, draft)?.target === "all"
+    ? Object.values(records.queued).some((entry) => entry.prefix === draftCommandKey(draft)) ||
+      pendingDraftCommand(records.drafts, draft) !== null
     : false;
   return { items, hiding };
 }

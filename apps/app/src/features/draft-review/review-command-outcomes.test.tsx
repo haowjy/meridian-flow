@@ -305,10 +305,11 @@ it("unowned hunks retain selective commands on complete classes and prevent sele
   await fixture.render(async (p) => {
     await open(p);
     expect(p().header.view.items).toHaveLength(2);
-    const complete = p().header.view.items.find(({ change }) => change.actionable);
-    expect(complete?.change.wholeDraft).toBeUndefined();
+    const complete = p().header.view.items.find(({ change }) => change.target.kind !== "display");
+    expect(complete?.change.target.kind).toBe("operations");
     expect(
-      p().header.view.items.find(({ change }) => !change.actionable)?.change.attribution.kind,
+      p().header.view.items.find(({ change }) => change.target.kind === "display")?.change
+        .attribution.kind,
     ).toBe("unattributed");
     if (!complete) throw new Error("missing selective change");
     let done!: Promise<unknown>;
@@ -346,11 +347,9 @@ it("an incomplete class leaves neighboring classes selectively actionable", asyn
   await fixture.render(async (p) => {
     await open(p);
     const items = p().header.view.items;
-    expect(
-      items.map(({ change }) => [change.classId, change.actionable, change.wholeDraft]),
-    ).toEqual([
-      ["class-1", true, undefined],
-      ["class-2", false, undefined],
+    expect(items.map(({ change }) => [change.classId, change.target.kind])).toEqual([
+      ["class-1", "operations"],
+      ["class-2", "display"],
     ]);
     await act(async () => {
       void p().header.view.apply(items[0].change);

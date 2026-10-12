@@ -174,8 +174,8 @@ it.each([
     let done!: Promise<unknown>;
     await act(async () => {
       done = (mode === "apply" ? p().chatRunner.applyBatch : p().chatRunner.discardBatch)([
-        { draft: draftA, selection: change("2") },
-        { draft: draftB, selection: change("3") },
+        { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
+        { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
       ]);
     });
     expect(endpoint).toHaveBeenCalledTimes(1);
@@ -209,8 +209,8 @@ it("a rejected cache dependency restores every queued selection and a subsequent
       throw new Error("cache unavailable");
     });
     const batch = [
-      { draft: draftA, selection: change("2") },
-      { draft: draftB, selection: change("3") },
+      { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
+      { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
     ];
     await act(async () => {
       await expect(p().chatRunner.applyBatch(batch)).rejects.toThrow("cache unavailable");

@@ -29,6 +29,7 @@ import {
 } from "@/features/project/routing/ProjectNavigationContext";
 import { useDraftOnlyLifecycle } from "./draft-only-lifecycle";
 import type { DraftReviewSelection } from "./draft-review-session";
+import type { ChangeTarget } from "./review-changes";
 
 export type WorkDraftCommands = ReturnType<typeof useWorkDraftCommands>;
 
@@ -118,14 +119,14 @@ export function useWorkDraftCommands({
         : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
     const batch = (
       mode: "apply" | "discard",
-      items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
+      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
     ) =>
       runDraftBatch(
         scope,
         mode,
         items.map(
           (item): DraftBatchItem =>
-            "wholeDraft" in item
+            item.target.kind === "draft"
               ? {
                   draft: item.draft,
                   command: {
@@ -135,7 +136,13 @@ export function useWorkDraftCommands({
                     completesDraft: true,
                   },
                 }
-              : item,
+              : {
+                  draft: item.draft,
+                  selection:
+                    item.target.kind === "operations"
+                      ? item.target.selection
+                      : { classIds: [], operationIds: [] },
+                },
         ),
         (item, claim) =>
           item.command
@@ -143,6 +150,16 @@ export function useWorkDraftCommands({
             : selection(mode, item.draft, item.selection),
       );
     return {
+      commandChange: (
+        mode: "apply" | "discard",
+        draft: DraftReviewSelection,
+        target: ChangeTarget,
+      ) =>
+        target.kind === "draft"
+          ? whole(mode, draft).outcome
+          : target.kind === "operations"
+            ? selection(mode, draft, target.selection)
+            : Promise.resolve<DraftCommandOutcome>({ kind: "blocked" }),
       projectId,
       workId,
       threadId,
@@ -155,12 +172,10 @@ export function useWorkDraftCommands({
         selection("apply", draft, changes),
       discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
         selection("discard", draft, changes),
-      applyBatch: (
-        items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
-      ) => batch("apply", items),
-      discardBatch: (
-        items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
-      ) => batch("discard", items),
+      applyBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
+        batch("apply", items),
+      discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
+        batch("discard", items),
       disposeDrafts: async (mode: "apply" | "discard", drafts: readonly DraftReviewSelection[]) =>
         (
           await runDraftBatch(
