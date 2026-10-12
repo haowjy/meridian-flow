@@ -135,6 +135,7 @@ function createFake() {
   const removedMockScripts: string[] = [];
   const messageBodies: unknown[] = [];
   const resumeCursors: string[] = [];
+  const socketPolicy = { replayFloor: "0", closeCode: null as number | null };
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
 
@@ -422,6 +423,10 @@ function createFake() {
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (req.headers.cookie !== COOKIE) {
+        ws.close(4401, "auth_failed");
+        return;
+      }
       sockets.add(ws);
       ws.on("close", () => sockets.delete(ws));
       ws.send(
@@ -447,6 +452,22 @@ function createFake() {
               ? [{ threadId: THREAD_ID, lastSeq: message.lastSeq ?? "0" }]
               : [];
         for (const cursor of cursors) {
+          if (socketPolicy.closeCode !== null) {
+            ws.close(socketPolicy.closeCode, "fake rejection");
+            return;
+          }
+          if (BigInt(cursor.lastSeq) < BigInt(socketPolicy.replayFloor)) {
+            ws.send(
+              JSON.stringify({
+                type: "gap",
+                threadId: cursor.threadId,
+                cause: "replay_limit_exceeded",
+                fromSeq: cursor.lastSeq,
+                toSeq: socketPolicy.replayFloor,
+              } satisfies WsServerMessage),
+            );
+            continue;
+          }
           if (message.type === "resume") resumeCursors.push(cursor.lastSeq);
           const after = BigInt(cursor.lastSeq);
           const frame: WsServerMessage = {
@@ -461,7 +482,7 @@ function createFake() {
     });
   });
 
-  return { server, mockScripts, removedMockScripts, messageBodies, resumeCursors };
+  return { server, mockScripts, removedMockScripts, messageBodies, resumeCursors, socketPolicy };
 }
 
 export type FakeStack = ReturnType<typeof createFake> & {
