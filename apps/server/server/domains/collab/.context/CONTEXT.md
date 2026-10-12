@@ -478,8 +478,13 @@ removal belongs to the row that actually removed it.
 
 ### Preview-scoped selective Discard
 
-Apply and Discard share one class-to-row selector, run inside their
-branch critical section and again on each snapshot-CAS retry. Per-change Discard now
+Apply and Discard use required-field `ReviewSelectionCommand` variants rather
+than an optional bag or mode flag. Route parsers validate their input; the service
+threads the typed selection through the branch critical section and each
+snapshot-CAS retry. The shared selector checks cut consistency and the live
+fence, delegates protocol-specific admission, then projects the selected rows.
+Apply retains stale refusal on an inconsistent cut; Discard throws a commit
+conflict so its CAS owner retries. Per-change Discard now
 requires the displayed live revision, stable `closureClassIds`, clicked
 `memberPartKeys` (empty for fallback-only classes), and server-vended
 `admissionTokens` for each class's complete closed rows and rich replay effect; missing

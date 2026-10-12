@@ -8,7 +8,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
+import type { CollabDrafts, DraftDiscardCommand, ReviewSelectionCommand } from "../contracts.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -256,22 +256,15 @@ export function createWorkDraftReviewService(input: {
   }
 
   function reviewSelection(
-    command: {
-      closureClassIds?: string[];
-      admissionTokens?: string[];
-      memberPartKeys?: string[];
-      operationIds?: string[];
-      liveRevisionToken?: string;
-      draftRevisionToken?: string;
+    command: ReviewSelectionCommand & {
       documentId: DocumentId;
       workId: WorkId;
       projectId?: ProjectId;
     },
-    requireCompleteClass: boolean,
   ) {
     return async (snapshot: BranchSnapshot, rows: BranchJournalRow[]) => {
       const cut = await input.readReviewCut({ ...command, draftId: snapshot.branchId });
-      return selectReviewCut(cut, input.model, snapshot, rows, command, requireCompleteClass);
+      return selectReviewCut(cut, input.model, snapshot, rows, command);
     };
   }
 
@@ -294,7 +287,7 @@ export function createWorkDraftReviewService(input: {
         pushedByUserId: command.userId,
         signal: command.signal,
         selectRows: async (snapshot, rows) => {
-          const selection = await reviewSelection(command, true)(snapshot, rows);
+          const selection = await reviewSelection({ ...command, kind: "apply" })(snapshot, rows);
           appliedOperations = selection.operationIds;
           appliedClasses = selection.closureClassIds;
           return selection;
@@ -333,20 +326,10 @@ export function createWorkDraftReviewService(input: {
       };
 
     if (command.closureClassIds !== undefined) {
-      if (!command.closureClassIds.length)
-        return { status: "gone" as const, draftId: command.draftId };
-      if (
-        !command.liveRevisionToken ||
-        !command.draftRevisionToken ||
-        !command.closureClassIds?.length ||
-        !command.admissionTokens?.length ||
-        !Array.isArray(command.memberPartKeys)
-      )
-        return { status: "stale" as const, draftId: command.draftId };
       try {
         const discarded = await input.branchReview.discardSelected({
           branchId: branch.branchId,
-          selectRows: reviewSelection(command, false),
+          selectRows: reviewSelection({ ...command, kind: "discard" }),
           reviewedByUserId: command.userId,
         });
         return {

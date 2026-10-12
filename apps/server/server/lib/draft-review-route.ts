@@ -2,7 +2,6 @@
 import type { ParsedContextUri } from "@meridian/contracts/context-uri";
 
 import type {
-  DraftApplyChangesRequest,
   DraftApplyChangesResponse,
   DraftApplyResponse,
   DraftDiscardResponse,
@@ -14,7 +13,7 @@ import type {
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { DraftReviewOperationWithEvidence } from "../domains/collab/domain/draft-review-types.js";
-import type { DraftDiscardCommand } from "../domains/collab/index.js";
+import type { DraftDiscardCommand, ReviewSelectionCommand } from "../domains/collab/index.js";
 import type { FileGrant, FileNeed } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
@@ -158,7 +157,8 @@ export async function handleApplyWorkDraftRequest(
 
 export async function handleApplyWorkDraftChangesRequest(
   deps: DraftRouteServices,
-  input: DraftApplyChangesRequest & {
+  input: Extract<ReviewSelectionCommand, { kind: "apply" }> & {
+    draftId: string;
     projectId: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
@@ -269,6 +269,33 @@ function throwReadFailure(code: string): never {
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
 }
 
+/** Parse Apply's operation identity and both revision fences before entering the domain. */
+export function parseDraftApplySelection(input: {
+  operationIds?: unknown;
+  liveRevisionToken?: unknown;
+  draftRevisionToken?: unknown;
+}): Extract<ReviewSelectionCommand, { kind: "apply" }> {
+  if (
+    !Array.isArray(input.operationIds) ||
+    input.operationIds.length === 0 ||
+    input.operationIds.some((id) => typeof id !== "string" || !id) ||
+    typeof input.liveRevisionToken !== "string" ||
+    !input.liveRevisionToken ||
+    typeof input.draftRevisionToken !== "string" ||
+    !input.draftRevisionToken
+  )
+    throw createError({
+      statusCode: 400,
+      message: "operationIds and revision tokens are required",
+    });
+  return {
+    kind: "apply",
+    operationIds: input.operationIds,
+    liveRevisionToken: input.liveRevisionToken,
+    draftRevisionToken: input.draftRevisionToken,
+  };
+}
+
 /** Presence chooses selective Discard; malformed selections can never widen its scope. */
 export function parseDraftDiscardSelection(input: {
   closureClassIds?: unknown;
@@ -276,7 +303,15 @@ export function parseDraftDiscardSelection(input: {
   memberPartKeys?: unknown;
   liveRevisionToken?: unknown;
   draftRevisionToken?: unknown;
-}): { status: "ready"; command: DraftDiscardCommand } | { status: "stale" } {
+}):
+  | {
+      status: "ready";
+      command: Extract<ReviewSelectionCommand, { kind: "discard" }> & {
+        draftRevisionToken: string;
+      };
+    }
+  | { status: "ready"; command: Extract<DraftDiscardCommand, { closureClassIds?: never }> }
+  | { status: "stale" } {
   if (Object.hasOwn(input, "closureClassIds")) {
     if (
       !Array.isArray(input.closureClassIds) ||
@@ -302,6 +337,7 @@ export function parseDraftDiscardSelection(input: {
     return {
       status: "ready",
       command: {
+        kind: "discard",
         closureClassIds: input.closureClassIds,
         admissionTokens: input.admissionTokens,
         memberPartKeys: input.memberPartKeys,

@@ -287,6 +287,22 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+/** Admission identities and fences for the two selective review protocols. */
+export type ReviewSelectionCommand =
+  | {
+      kind: "apply";
+      operationIds: string[];
+      liveRevisionToken: string;
+      draftRevisionToken: string;
+    }
+  | {
+      kind: "discard";
+      closureClassIds: string[];
+      admissionTokens: string[];
+      memberPartKeys: string[];
+      liveRevisionToken: string;
+    };
+
 export type DraftDiscardCommand =
   | {
       liveRevisionToken?: never;

@@ -5,6 +5,7 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleApplyWorkDraftChangesRequest,
+  parseDraftApplySelection,
   scheduleDraftCatalogRefresh,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
@@ -16,29 +17,14 @@ export default defineEventHandler(async (event) => {
   if (!draftId) {
     throw createError({ statusCode: 400, message: "draftId is required" });
   }
-  if (
-    !Array.isArray(body.operationIds) ||
-    body.operationIds.length === 0 ||
-    body.operationIds.some((id) => typeof id !== "string" || !id) ||
-    typeof body.liveRevisionToken !== "string" ||
-    !body.liveRevisionToken ||
-    typeof body.draftRevisionToken !== "string" ||
-    !body.draftRevisionToken
-  ) {
-    throw createError({
-      statusCode: 400,
-      message: "operationIds and revision tokens are required",
-    });
-  }
+  const selection = parseDraftApplySelection(body);
   const projectId = (getRouterParam(event, "projectId") ?? "") as ProjectId;
   const result = await handleApplyWorkDraftChangesRequest(selectDraftRouteServices(app), {
     projectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
-    operationIds: body.operationIds,
-    liveRevisionToken: body.liveRevisionToken,
-    draftRevisionToken: body.draftRevisionToken,
+    ...selection,
     userId: user.userId,
     signal: event.req.signal,
   });
