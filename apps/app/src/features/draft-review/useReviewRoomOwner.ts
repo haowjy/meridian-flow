@@ -300,6 +300,8 @@ export function useReviewRoomOwner({
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
   return {
     session,
+    /** The writer's unsent edits of a retired generation have not all reached the room yet. */
+    carryPending: writerChanges.scope === scope && writerChanges.generation !== null,
     inputEligible:
       session !== null &&
       session.getSnapshot().connectionState?.kind !== "reset" &&

@@ -21,16 +21,27 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import {
   type ChangeCommandRecords,
-  hiddenOperationIds,
+  intentKeys,
   pendingDraftCommand,
-  previewWithoutOperations,
   readPreviewAfterChangeCommands,
   useChangeCommandRecords,
 } from "./draft-command-record";
+import { type DraftProjection, projectDraft } from "./draft-projection";
 import { projectQueryKeys } from "./project-query-keys";
 import { workDraftsQueryOptions } from "./useWorkDrafts";
 
-export type DraftPreviewState = { preview: DraftPreviewResponse | null };
+/**
+ * `preview` is what the writer has left to review. `inline` is the same read
+ * for the manuscript's marks: it still holds the changes being discarded, named
+ * in `restoring`, so the editor can draw their original text from the click
+ * (nothing else reads it).
+ */
+export type DraftPreviewState = {
+  preview: DraftPreviewResponse | null;
+  inline: DraftProjection["inline"] | null;
+  /** The read itself, before any intent: what a held view re-projects as the intents change. */
+  observed: DraftPreviewResponse | null;
+};
 
 type DraftRef = {
   projectId: string;
@@ -105,41 +116,28 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
   };
 }
 
-const withoutHidden = new WeakMap<
-  DraftPreviewResponse,
-  { hiddenKey: string; preview: DraftPreviewResponse }
->();
+/** The projection of a read under the intents on its draft; one object per (read, intents) for every reader of it. */
+type Projected = DraftProjection & { key: string };
+const projections = new WeakMap<DraftPreviewResponse, Projected>();
 
-/**
- * The read minus the hidden operations, one object for every reader of it: a
- * reader's own copy would be a new preview each, and everything derived from a
- * preview (the changes list) would be derived once per reader.
- */
-function previewWithoutHidden(
+function projectionOf(
   data: DraftPreviewResponse,
-  hidden: ReadonlySet<string>,
-  hiddenKey: string,
-  whole: boolean,
-): DraftPreviewResponse {
-  const held = withoutHidden.get(data);
-  if (held?.hiddenKey === hiddenKey) return held.preview;
-  const preview =
-    whole && data.status === "active"
-      ? { ...data, operations: [], hunks: [] }
-      : previewWithoutOperations(data, hidden);
-  withoutHidden.set(data, { hiddenKey, preview });
-  return preview;
-}
-
-/** The operations the command records hide from this draft's preview, and a key that names them. */
-function hiddenOf(records: ChangeCommandRecords, draft: DraftRef, data?: DraftPreviewResponse) {
+  records: ChangeCommandRecords,
+  draft: DraftRef,
+): Projected {
   const claim = pendingDraftCommand(records.drafts, draft);
   const whole =
     claim?.target === "all" &&
-    data?.status === "active" &&
+    data.status === "active" &&
     claim.draftGeneration === data.draftGeneration;
-  const hidden = hiddenOperationIds(records, draft);
-  return { hidden, whole, hiddenKey: whole ? "all" : [...hidden].sort().join(",") };
+  const intents = intentKeys(records, draft);
+  const sorted = (keys: ReadonlySet<string>) => [...keys].sort().join(",");
+  const key = whole ? "all" : `${sorted(intents.hidden)}|${sorted(intents.restoring)}`;
+  const held = projections.get(data);
+  if (held?.key === key) return held;
+  const projected = { ...projectDraft(data, intents, whole), key };
+  projections.set(data, projected);
+  return projected;
 }
 
 export function useDraftPreview(
@@ -167,16 +165,15 @@ export function useDraftPreview(
     enabled,
   });
 
-  // Keyed by the hidden operations themselves, so unrelated command records
-  // never hand consumers a new preview object (the editor re-paints on one).
+  // Reprojected from the read whenever the intents move, but the same object
+  // while they do not, so consumers never see a new preview for unrelated records.
   const records = useChangeCommandRecords();
-  const { hidden, hiddenKey, whole } = hiddenOf(records, draft, data);
-  const preview = useMemo(
-    () => (data ? previewWithoutHidden(data, hidden, hiddenKey, whole) : null),
-    [data, hiddenKey],
-  );
-
-  return { preview };
+  const projection = data ? projectionOf(data, records, draft) : null;
+  return {
+    preview: projection?.preview ?? null,
+    inline: projection?.inline ?? null,
+    observed: data ?? null,
+  };
 }
 
 /**
@@ -287,17 +284,19 @@ export function useDraftPreviews(
     for (const key of seen.current.keys()) if (!held.has(key)) seen.current.delete(key);
   }, [targetsKey, listedKey, open?.documentId, open?.draftId, queryClient]);
 
-  const hiddenKeys = targets
-    .map((target, index) => hiddenOf(records, target, reads[index]?.data).hiddenKey)
+  const projectedKeys = targets
+    .map((target, index) => {
+      const data = reads[index]?.data;
+      return data ? projectionOf(data, records, target).key : "";
+    })
     .join("|");
   return useMemo(() => {
     if (targets.length === 0) return NO_ENTRIES;
     return reads.map(({ data, failed, retry }, index): DraftPreviewEntry => {
       if (data) {
-        const { hidden, hiddenKey, whole } = hiddenOf(records, targets[index], data);
-        return { status: "ready", preview: previewWithoutHidden(data, hidden, hiddenKey, whole) };
+        return { status: "ready", preview: projectionOf(data, records, targets[index]).preview };
       }
       return failed ? { status: "error", retry } : { status: "loading" };
     });
-  }, [reads, hiddenKeys, targetsKey]);
+  }, [reads, projectedKeys, targetsKey]);
 }

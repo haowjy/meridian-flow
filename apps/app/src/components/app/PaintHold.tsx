@@ -1,11 +1,30 @@
 /** Pane continuity: retain the last finished paint while visible content loads. */
 import type { ReactNode } from "react";
-import { Component, createContext, createRef, useContext, useLayoutEffect } from "react";
+import {
+  Component,
+  createContext,
+  createRef,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+} from "react";
 
 type Hold = { paint: Paint | null };
 type Surface = { surface: string; state?: "painted" | "pending" | "failed" };
 type FrameProps = { status: string; className?: string; children: ReactNode };
 type Paint = { kind: "captured" | "painted"; html: string; scrolls: number[]; focused: boolean };
+/**
+ * What the content of a page contributes to its cover, each part optional.
+ * `annotate` runs at capture on the page and its copy, while the content is
+ * still alive (identity the cover could not recover later); `project` draws
+ * the writer's intents onto the cover; `read` says where a reader of the cover
+ * is, in terms the content that replaces it understands.
+ */
+export type CoverAdapter = {
+  annotate?: (live: HTMLElement, copy: HTMLElement) => void;
+  project?: (cover: HTMLElement) => void;
+  read?: (cover: HTMLElement) => unknown;
+};
 const FrameContext = createContext<PaintHold | null>(null);
 const ScopeContext = createContext(true);
 
@@ -15,11 +34,64 @@ export class PaintHold extends Component<FrameProps, Hold> {
   private page = createRef<HTMLDivElement>();
   private frame = createRef<HTMLDivElement>();
   private status = createRef<HTMLParagraphElement>();
-  private cover = createRef<HTMLDivElement>();
+  private cover: { current: HTMLDivElement | null } = { current: null };
   private pending = new Set<object>();
   private lastPainted: Paint | null = null;
   private raf = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private released: ((cover: { read: unknown }) => void)[] = [];
+
+  private adapter: CoverAdapter | null = null;
+  private coverRead: unknown;
+
+  /**
+   * The cover is an immutable capture plus the current projection of the
+   * writer's intents onto it (`projectCover`). Its markup is set here, not by
+   * React, which would reset `innerHTML` on every render.
+   */
+  private mountCover = (node: HTMLDivElement | null) => {
+    this.cover.current = node;
+    if (node && this.state.paint)
+      this.renderCover(node, this.state.paint, this.state.paint.scrolls);
+  };
+
+  private renderCover(cover: HTMLElement, paint: Paint, scrolls: readonly number[]) {
+    cover.innerHTML = paint.html;
+    this.adapter?.project?.(cover);
+    lockCover(cover);
+    for (const [index, node] of cover.querySelectorAll<HTMLElement>(".meridian-editor").entries())
+      node.scrollTop = scrolls[index] ?? 0;
+  }
+
+  /**
+   * Set what the content contributes to the cover (or null for none), replacing
+   * the last. A cover up now is rebuilt from its capture, so an intent withdrawn
+   * (a refused Discard) comes back; where the reader has scrolled it to is kept.
+   * `read` is asked once, as the cover lifts, and only if they scrolled.
+   */
+  projectCover = (adapter: CoverAdapter | null) => {
+    this.adapter = adapter;
+    const { paint } = this.state;
+    if (this.cover.current && paint)
+      this.renderCover(this.cover.current, paint, coverScrolls(this.cover.current));
+  };
+
+  /** Where the reader of the cover is, if they scrolled it (read before the cover goes). */
+  private measureCover(paint: Paint) {
+    const cover = this.cover.current;
+    const scrolled = coverScrolls(cover).some((top, index) => top !== (paint.scrolls[index] ?? 0));
+    this.coverRead = cover && scrolled ? this.adapter?.read?.(cover) : undefined;
+  }
+
+  /**
+   * Run `work` once the cover is gone and the page is live again, in the same
+   * task as that release (before the browser paints), told what `projectCover`'s
+   * reader found if the cover was scrolled. At once when nothing is covering.
+   */
+  afterRelease = (work: (cover: { read: unknown }) => void) => {
+    if (this.state.paint) this.released.push(work);
+    else work({ read: undefined });
+  };
 
   capture = (refresh = false) => {
     const page = this.page.current;
@@ -29,6 +101,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
       return;
     }
     const copy = page.cloneNode(true) as HTMLElement;
+    this.adapter?.annotate?.(page, copy);
     for (const node of copy.querySelectorAll('[data-paint-scope="inactive"]')) node.remove();
     for (const node of copy.querySelectorAll("[id]")) node.removeAttribute("id");
     this.lastPainted = {
@@ -54,10 +127,12 @@ export class PaintHold extends Component<FrameProps, Hold> {
       this.setState({ paint: this.lastPainted });
       this.timer = setTimeout(() => {
         this.lastPainted = null;
+        if (this.state.paint) this.measureCover(this.state.paint);
         this.setState({ paint: null });
       }, 10_000);
     } else if (paint && !this.pending.size) {
       clearTimeout(this.timer);
+      this.measureCover(paint);
       this.setState({ paint: null });
     } else if (!paint && this.lastPainted && !this.raf) {
       // A synchronous layout dispatch must reuse the frame actually painted,
@@ -68,17 +143,23 @@ export class PaintHold extends Component<FrameProps, Hold> {
       });
     }
     if (paint && this.cover.current) {
-      for (const [index, node] of this.cover.current
-        .querySelectorAll<HTMLElement>(".meridian-editor")
-        .entries()) {
-        node.scrollTop = paint.scrolls[index] ?? 0;
-      }
       if (paint.focused && !previous.paint) this.status.current?.focus({ preventScroll: true });
-    } else if (!paint && document.activeElement === this.status.current) {
-      this.frame.current?.focus({ preventScroll: true });
+    } else if (!paint) {
+      // First, whatever was waiting for the cover to lift (the content's place
+      // and focus); only focus still on the status line is then returned to the frame.
+      if (previous.paint) {
+        const work = this.released;
+        this.released = [];
+        const cover = { read: this.coverRead };
+        this.coverRead = undefined;
+        for (const run of work) run(cover);
+      }
+      if (document.activeElement === this.status.current)
+        this.frame.current?.focus({ preventScroll: true });
     }
   }
   componentWillUnmount() {
+    this.released = [];
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
   }
@@ -99,22 +180,46 @@ export class PaintHold extends Component<FrameProps, Hold> {
           >
             {this.props.children}
           </div>
-          <p ref={this.status} role="status" tabIndex={-1} className="sr-only outline-none">
+          <p
+            ref={this.status}
+            role="status"
+            data-paint-status
+            tabIndex={-1}
+            className="sr-only outline-none"
+          >
             {paint ? this.props.status : ""}
           </p>
           {paint ? (
             <div
-              ref={this.cover}
+              ref={this.mountCover}
               data-paint-hold
-              inert
               aria-hidden
               className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-background"
-              dangerouslySetInnerHTML={{ __html: paint.html }}
             />
           ) : null}
         </div>
       </FrameContext.Provider>
     );
+  }
+}
+
+function coverScrolls(cover: HTMLElement | null): number[] {
+  return Array.from(cover?.querySelectorAll<HTMLElement>(".meridian-editor") ?? []).map(
+    (node) => node.scrollTop,
+  );
+}
+
+/**
+ * The cover can be read: its editors scroll. Nothing else in it answers (it is a
+ * copy; its buttons and prose are not the page's), so everything in it but those
+ * scroll panes is inert.
+ */
+function lockCover(node: Element): void {
+  for (const child of Array.from(node.children)) {
+    if (child.classList.contains("meridian-editor"))
+      for (const inner of Array.from(child.children)) inner.setAttribute("inert", "");
+    else if (child.querySelector(".meridian-editor")) lockCover(child);
+    else child.setAttribute("inert", "");
   }
 }
 
@@ -155,6 +260,20 @@ export function PaintScope({ active, children }: { active: boolean; children: Re
         {children}
       </div>
     </ScopeContext.Provider>
+  );
+}
+/** Set how the writer's intents show on the page's cover (see `PaintHold.projectCover`). */
+export function usePaintCoverProjection(): (adapter: CoverAdapter | null) => void {
+  const frame = useContext(FrameContext);
+  return useCallback((adapter) => frame?.projectCover(adapter), [frame]);
+}
+
+/** The page's cover, if one holds it: run `work` the moment it lifts (see `PaintHold.afterRelease`). */
+export function useAfterPaintRelease(): (work: (cover: { read: unknown }) => void) => void {
+  const frame = useContext(FrameContext);
+  return useCallback(
+    (work) => (frame ? frame.afterRelease(work) : work({ read: undefined })),
+    [frame],
   );
 }
 export function usePaintPending(pending = true) {

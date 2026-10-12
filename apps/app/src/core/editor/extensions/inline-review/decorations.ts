@@ -26,15 +26,20 @@ import {
   hunkTone,
   type InlineReviewModel,
   indexOperations,
+  isRestoringHunk,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
   type ReviewTone,
 } from "./model";
 import {
+  BAR_SLOT_CLASS,
   createBarSlotElement,
   createRemovalElement,
   planRemovals,
+  REMOVAL_BLOCK_CLASS,
+  REMOVAL_CLASS,
+  RESTORED_CLASS,
   type RemovalHandlers,
   type RemovalInput,
   type RemovalPlan,
@@ -50,7 +55,11 @@ const EMPHASIS_CLASS = "meridian-review-emphasized";
 const ARRIVED_CLASS = "meridian-review-arrived";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
+/** A change being discarded: its insertion is hidden until the next generation paints without it. */
+const RESTORING_CLASS = "meridian-review-restoring";
 const HUNK_ATTR = "data-review-hunk";
+/** On a paragraph hidden whole for a Discard: the operations whose restoring hides it. */
+const RESTORES_ATTR = "data-review-restores";
 const OPERATION_ATTR = "data-review-operations";
 
 /** What the painter needs besides the model: which change is selected and which folds are open. */
@@ -76,11 +85,16 @@ interface MarkGeometry {
   operationAttr: string;
   /** The operation a span belongs to, when it is painted for one author inside a larger hunk. */
   spanOperationId: string | null;
+  /** Hidden rather than tinted: the insertion of a change being discarded. */
+  hide?: true;
+  /** A whole paragraph the hidden insertion fills: hidden for the same reason, but not itself a mark. */
+  filled?: true;
 }
 
 interface HunkGeometry {
   hunkId: string;
   operationIds: readonly string[];
+  restoring: boolean;
   /** Where the hunk ends, for placing the focused change's bar after it. */
   end: number;
   marks: MarkGeometry[];
@@ -121,24 +135,30 @@ export function resolveGeometry(
     const endPos = resolveRelativePosition(resolver, hunk.relEnd);
 
     const removed = removedSegments(hunk, operationsById);
+    const restoring = isRestoringHunk(model, hunk);
     if (removed.length > 0) {
       removals.push({
         position: startPos,
         block: isBlockPosition(resolver.doc, startPos),
         segments: removed,
+        blockId: hunk.kind === "block" ? hunk.deletedBlock?.blockId : hunk.deletedBlockId,
         tight: endsBeforePunctuation(resolver.doc, startPos),
         hunkId: hunk.hunkId,
         operationIds: hunk.operationIds,
+        restored: restoring,
       });
     }
 
+    const hasRange = endPos != null && endPos > startPos;
     hunks.push({
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
+      restoring,
       end: Math.max(startPos, endPos ?? startPos),
-      marks:
-        endPos == null || endPos <= startPos
-          ? []
+      marks: !hasRange
+        ? []
+        : restoring
+          ? hiddenMarks(hunk, startPos, endPos, removed.length > 0, operationsById, resolver)
           : hunk.kind === "block"
             ? blockMarks(hunk, startPos, endPos, operationsById, resolver)
             : textMarks(hunk, startPos, endPos, operationsById, resolver),
@@ -168,17 +188,21 @@ export function paintDecorations(
   let focusedEnd: number | null = null;
 
   for (const hunk of geometry.hunks) {
-    const hunkFocused = isFocused(hunk.operationIds);
+    const hunkFocused = !hunk.restoring && isFocused(hunk.operationIds);
     const pulsed = isPulsed(hunk.operationIds);
     if (hunkFocused) focusedEnd = Math.max(focusedEnd ?? hunk.end, hunk.end);
     for (const mark of hunk.marks) {
       const focused =
         hunkFocused || (mark.spanOperationId !== null && focusedIds.has(mark.spanOperationId));
-      const attrs = {
-        class: markClassName(mark, focused, pulsed),
-        [HUNK_ATTR]: hunk.hunkId,
-        [OPERATION_ATTR]: mark.operationAttr,
-      };
+      // A mark hidden for a Discard in flight keeps everything else it was, so a
+      // paint of it (the cover's) can show it again if the Discard is withdrawn.
+      const attrs = mark.filled
+        ? { class: RESTORING_CLASS, [RESTORES_ATTR]: mark.operationAttr }
+        : {
+            class: classNames(markClassName(mark, focused, pulsed), mark.hide && RESTORING_CLASS),
+            [HUNK_ATTR]: hunk.hunkId,
+            [OPERATION_ATTR]: mark.operationAttr,
+          };
       const spec = { [HUNK_ATTR]: hunk.hunkId, [OPERATION_ATTR]: mark.operationAttr };
       decorations.push(
         mark.node
@@ -189,8 +213,8 @@ export function paintDecorations(
   }
 
   for (const plan of geometry.removals) {
-    const focused = isFocused(plan.operationIds);
-    const pulsed = isPulsed(plan.operationIds);
+    const focused = !plan.restored && isFocused(plan.operationIds);
+    const pulsed = !plan.restored && isPulsed(plan.operationIds);
     const expanded = paint.expandedRemovals.has(plan.identity);
     decorations.push(
       Decoration.widget(
@@ -207,7 +231,7 @@ export function paintDecorations(
           }),
         {
           // The locale is part of the key: the fold's label is copy, redrawn when it changes.
-          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.hunkIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
+          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.restored, plan.hunkIds, plan.blockIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -313,6 +337,50 @@ function blockMarks(
 }
 
 /**
+ * What a change being discarded leaves of its insertion: nothing shown. Its
+ * marks are hidden (but stay what they were, see the paint loop), and a paragraph
+ * the insertion fills entirely is hidden whole, so no empty block or gap stands
+ * where the next generation has none. The paragraph holding the removal's widget
+ * stays: the widget is the original text there.
+ */
+function hiddenMarks(
+  hunk: ResolvedReviewHunk,
+  startPos: number,
+  endPos: number,
+  hasRemoval: boolean,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+  resolver: RelativePositionRuntime,
+): MarkGeometry[] {
+  if (hunk.kind === "block")
+    return blockMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) => ({
+      ...mark,
+      hide: true as const,
+    }));
+  const marks = textMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) => ({
+    ...mark,
+    hide: true as const,
+  }));
+  resolver.doc.nodesBetween(startPos, endPos, (node, pos) => {
+    if (!node.isTextblock) return true;
+    const filled = pos + 1 >= startPos && pos + node.nodeSize - 1 <= endPos;
+    const holdsRemoval = hasRemoval && pos < startPos && startPos < pos + node.nodeSize;
+    if (filled && !holdsRemoval)
+      marks.push({
+        from: pos,
+        to: pos + node.nodeSize,
+        tone: "agent",
+        node: true,
+        operationAttr: hunk.operationIds.join(" "),
+        spanOperationId: null,
+        hide: true,
+        filled: true,
+      });
+    return false;
+  });
+  return marks;
+}
+
+/**
  * The insertion marks of a text hunk. A neutral hunk is one seam over its whole
  * range; otherwise one mark per span, so nested authorship (a writer edit
  * inside an AI insertion) paints in each owner's colour, falling back to the
@@ -402,6 +470,30 @@ function classNames(...values: Array<string | false | undefined>): string {
   return values.filter(Boolean).join(" ");
 }
 
+/**
+ * Show an already-rendered review (a clone the paint cover holds, which no editor
+ * is drawing any more) as a Discard in flight would: for each change in
+ * `restoring`, its insertion hidden and its removal drawn as plain prose; for
+ * every other, as marked. Both directions work on what the review rendered,
+ * which keeps the evidence for each (hidden marks and plain removals are
+ * the marks and removals under a class), so a withdrawn Discard comes back.
+ */
+export function projectRestoring(root: ParentNode, restoring: ReadonlySet<string>): void {
+  for (const element of root.querySelectorAll<HTMLElement>(
+    `[${OPERATION_ATTR}],[${RESTORES_ATTR}]`,
+  )) {
+    const ids = (
+      element.getAttribute(RESTORES_ATTR) ??
+      element.getAttribute(OPERATION_ATTR) ??
+      ""
+    ).split(" ");
+    element.classList.toggle(
+      element.classList.contains(REMOVAL_CLASS) ? RESTORED_CLASS : RESTORING_CLASS,
+      ids.some((id) => restoring.has(id)),
+    );
+  }
+}
+
 /** Class name constants exported for tests + optional consumer selectors. */
 export const inlineReviewClassNames = {
   added: ADDED_CLASS,
@@ -410,4 +502,9 @@ export const inlineReviewClassNames = {
   emphasized: EMPHASIS_CLASS,
   arrived: ARRIVED_CLASS,
   block: BLOCK_CLASS,
+  restoring: RESTORING_CLASS,
+  restored: RESTORED_CLASS,
+  removal: REMOVAL_CLASS,
+  removalBlock: REMOVAL_BLOCK_CLASS,
+  barSlot: BAR_SLOT_CLASS,
 } as const;

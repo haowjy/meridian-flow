@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the manuscript's place and restored original text through per-change Discard, with stable review identities and account-bound queued actions.
+
 - Use one atomic edit path for create, copy and replacement, retaining independent paragraph metadata and bounded copy receipts.
 
 - Keep accepted AI edits and their settlement receipts when reporting fails, without replaying the mutation to produce a report.

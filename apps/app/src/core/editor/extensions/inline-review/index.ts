@@ -5,7 +5,7 @@ export {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";
-export { inlineReviewClassNames } from "./decorations";
+export { inlineReviewClassNames, projectRestoring } from "./decorations";
 export {
   buildInlineReviewModel,
   changeOperationIds,
@@ -19,4 +19,4 @@ export {
   type ResolvedTextReviewHunk,
   unattributedHunkKey,
 } from "./model";
-export { BAR_SLOT_ATTR } from "./removal-widget";
+export { BAR_SLOT_ATTR, BLOCK_ID_ATTR, REMOVED_BLOCKS_ATTR } from "./removal-widget";

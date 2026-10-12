@@ -1148,6 +1148,9 @@ describe("document edit receipts (Postgres)", () => {
       const preview = await fixture.collab.draftReview.preview(target);
       if (preview.status !== "active") throw new Error("Draft disappeared");
       expect(preview.operations).toHaveLength(2);
+      expect(preview.operations.map((op) => op.partKey).sort()).toEqual(
+        edits.map((edit) => `${edit.id}:0`).sort(),
+      );
       const gold = preview.operations.find((op) => op.afterExcerpt === "gold");
       if (!gold) throw new Error("Missing gold change");
       expect(

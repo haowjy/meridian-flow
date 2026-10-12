@@ -3,11 +3,12 @@ import { isDeepStrictEqual } from "node:util";
 import {
   type AgentEditModel,
   type BlockRef,
+  getBlockItemId,
   toDocHandle,
   unwrapBlock,
   wordHunks,
 } from "@meridian/agent-edit/integration";
-import type { ReviewFormattingChange } from "@meridian/contracts/drafts";
+import { blockItemKey, type ReviewFormattingChange } from "@meridian/contracts/drafts";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
 import {
@@ -73,9 +74,17 @@ type RawTextHunk = RawHunkBase & {
   deletedRanges: ClockRange[];
   insertedText: string;
   deletedText: string;
+  /** The live block this deletes whole (`blockItemKey`). */
+  deletedBlockId?: string;
 };
 
-export type RawBlockDisplay = { type: string; display: string; ranges: ClockRange[] };
+export type RawBlockDisplay = {
+  type: string;
+  display: string;
+  ranges: ClockRange[];
+  /** A live block's Yjs item (`blockItemKey`), when it is one. */
+  blockId?: string;
+};
 
 export type RawBlockHunk = RawHunkBase & {
   kind: "block";
@@ -289,6 +298,7 @@ function textDeleteHunk(
     deletedRanges: rangesForTextRange(live, 0, live.text.length),
     insertedText: "",
     deletedText: live.text,
+    ...liveBlockId(live, "deletedBlockId"),
     blockKey: live.id,
   };
 }
@@ -312,7 +322,7 @@ function blockDeleteHunk(
   return {
     kind: "block",
     anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
-    deletedBlock: { ...deletedBlock, ranges: live.effectRanges },
+    deletedBlock: { ...deletedBlock, ...liveBlockId(live, "blockId"), ranges: live.effectRanges },
     blockKey: live.id,
   };
 }
@@ -364,7 +374,11 @@ function blockChangeHunk(
     ...(effects.formatting ? { formatting: effects.formatting } : {}),
     ...(live.id !== draft.id ? { beforeBlockKey: live.id } : {}),
     insertedBlock: { ...displayBlock(draft), ranges: effects.insertedRanges },
-    deletedBlock: { ...displayBlock(live), ranges: effects.deletedRanges },
+    deletedBlock: {
+      ...displayBlock(live),
+      ...liveBlockId(live, "blockId"),
+      ranges: effects.deletedRanges,
+    },
     blockKey: draft.id,
   };
 }
@@ -421,6 +435,18 @@ function subtractRanges(
     }
     return parts;
   });
+}
+
+/** Identity comes from the canonical difference's live block, never its presentation. */
+function liveBlockId<Key extends string>(live: BlockInfo, key: Key): { [K in Key]?: string } {
+  try {
+    return { [key]: blockItemKey(getBlockItemId(unwrapBlock(live.block))) } as {
+      [K in Key]?: string;
+    };
+  } catch {
+    // A block with no usable item is restored by position, not a guessed identity.
+    return {};
+  }
 }
 
 function displayBlock(block: BlockInfo): { type: string; display: string } {

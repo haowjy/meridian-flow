@@ -32,6 +32,7 @@ function change(overrides: Partial<ReviewChange> = {}): ReviewChange {
     classId: "c1",
     operations: [],
     operationIds: ["1"],
+    keys: ["agent"],
     anchorOperationId: "1",
     markKeys: ["1"],
     actionable: true,

@@ -219,6 +219,11 @@ both authors. This field carries no journal row identifiers. Block-display
 hunks keep their existing contract. Cumulative delete-set visibility is checked
 per Yjs struct, so old tombstones cannot hide a newly deleted neighboring region.
 
+A removal of a whole live block names it: a deleted block hunk's `deletedBlock.blockId`
+and a text hunk's `deletedBlockId` are the live block's Yjs item (`blockItemKey`,
+`client:clock`). A draft re-forked from live keeps that item when the deletion is
+discarded, so a client holding the old review can find the restored block by it.
+
 ### Writer Undo restoration attribution
 
 Browser Undo/Redo still allocates fresh writer clocks. Draft editors capture
