@@ -54,7 +54,12 @@ export type {
   ActorSession,
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
-export type { DocumentCoordinator, DocumentLockOptions } from "./ports/document-coordinator.js";
+export type {
+  DocumentCoordinator,
+  DocumentLockOptions,
+  StagedHelperCut,
+  StagedWriteReplayResult,
+} from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
   isDocumentNotFoundError,

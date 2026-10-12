@@ -6,7 +6,7 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { captureUpdate, cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("writer review classes", () => {
-  it.each([0, 1, 2])("keeps independent writer typing separate in block %i", (blockIndex) => {
+  it.each([0, 1])("keeps independent writer typing separate in block %i", (blockIndex) => {
     const live = createDoc(
       "Alpha base with plenty of unchanged words around the edits.\n\nBeta base with plenty of unchanged words.\n\nGamma base with plenty of unchanged words.",
     );

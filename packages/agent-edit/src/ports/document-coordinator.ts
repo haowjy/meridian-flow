@@ -1,6 +1,19 @@
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
+/** The helper's authority base, independent of the generations its staged writes name. */
+export interface StagedHelperCut {
+  generation: number;
+  state: Uint8Array;
+}
+
+export interface StagedWriteReplayResult {
+  keptEntries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+  helperState: Uint8Array;
+  helperCut: StagedHelperCut;
+  beforeState: Uint8Array;
+}
+
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
 
@@ -21,22 +34,16 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  */
 export interface DocumentCoordinator {
   /** Rebuild/replay staged writes under the host's existing generation lock.
-   * The host admits only whole logical writes and returns dropped settlement IDs.
+   * The host admits only whole logical writes and returns an isolated accepted replay result.
    * commit=true journals survivors in the ambient response transaction.
    */
-  withStagedWrites?<T>(
-    input: {
-      docId: string;
-      sourceDoc: Y.Doc;
-      entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
-      commit: boolean;
-    },
-    run: (
-      doc: Y.Doc,
-      keptSettlementIds: ReadonlySet<string>,
-      beforeState: Uint8Array,
-    ) => Promise<T>,
-  ): Promise<T>;
+  withStagedWrites?(input: {
+    docId: string;
+    sourceDoc: Y.Doc;
+    helperCut: StagedHelperCut;
+    entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+    commit: boolean;
+  }): Promise<StagedWriteReplayResult>;
 
   /** Immutable host generation bound to this canonical document, when supported. */
   documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;

@@ -213,10 +213,7 @@ it.each([
   omitted.destroy();
 });
 
-it.each([
-  false,
-  true,
-])("settles a retired generation's permanently lost typing (rescuable tail: %s)", async (tail) => {
+it("settles a retired generation's permanently lost typing without a rescuable tail", async () => {
   const { source } = start();
   runtime.wire(room(1)).ack();
   const acknowledged = Y.encodeStateAsUpdate(source.document);
@@ -226,26 +223,14 @@ it.each([
   discarded.getText("text").insert(2, "gold");
   Y.applyUpdate(source.document, Y.encodeStateAsUpdate(discarded), runtime.wire(room(1)));
   source.document.getText("text").insert(4, "X");
-  if (tail) source.document.getText("text").insert(source.document.getText("text").length, "!");
-  const sourceClient = source.document.clientID;
   await flush();
   reset(1);
   await flush();
   const wire = runtime.wire(room(2));
   wire.sync(acknowledged);
   await flush();
-  expect(wire.document.getText("text").toString()).toBe(tail ? "hello WORLD!" : "hello WORLD");
+  expect(wire.document.getText("text").toString()).toBe("hello WORLD");
   expect(runtime.writerLoss).toHaveBeenCalledTimes(1);
-  if (tail) {
-    const rescued = wire.sent
-      .flatMap((update) => Y.decodeUpdate(update).structs)
-      .filter((item) => item instanceof Y.Item && item.content instanceof Y.ContentString);
-    expect(rescued).toHaveLength(1);
-    expect(rescued[0]?.id.client).not.toBe(sourceClient);
-    expect(runtime.changed).not.toHaveBeenCalled();
-    wire.ack();
-    await flush();
-  }
   expect(runtime.writerChanges).toHaveBeenLastCalledWith(null);
   runtime.pool.release("editor");
   runtime.pool.release("refresh");
@@ -255,7 +240,7 @@ it.each([
   const server = new Y.Doc({ gc: false });
   Y.applyUpdate(server, acknowledged);
   for (const update of wire.sent) Y.applyUpdate(server, update);
-  expect(server.getText("text").toString()).toBe(tail ? "hello WORLD!" : "hello WORLD");
+  expect(server.getText("text").toString()).toBe("hello WORLD");
   expect(server.store.pendingStructs).toBeNull();
   discarded.destroy();
   server.destroy();
@@ -320,6 +305,7 @@ it("a selective Discard re-fork keeps anchored unsent typing and notices typing 
     Y.applyUpdate(source.document, Y.encodeStateAsUpdate(survivor), runtime.wire(room(1)));
     source.document.getText("text").insert(4, "X");
     source.document.getText("text").insert(source.document.getText("text").length, "!");
+    const sourceClient = source.document.clientID;
     await flush();
     reset(1);
     await flush();
@@ -329,6 +315,11 @@ it("a selective Discard re-fork keeps anchored unsent typing and notices typing 
     expect(wire.document.getText("text").toString()).toBe("hello AZURE!");
     expect(runtime.writerLoss).toHaveBeenCalledTimes(1);
     expect(runtime.changed).not.toHaveBeenCalled();
+    const rescued = wire.sent
+      .flatMap((update) => Y.decodeUpdate(update).structs)
+      .filter((item) => item instanceof Y.Item && item.content instanceof Y.ContentString);
+    expect(rescued).toHaveLength(1);
+    expect(rescued[0]?.id.client).not.toBe(sourceClient);
     wire.ack();
     await flush();
     expect(runtime.writerChanges).toHaveBeenLastCalledWith(null);
@@ -337,9 +328,16 @@ it("a selective Discard re-fork keeps anchored unsent typing and notices typing 
       Y.applyUpdate(admitted, Y.encodeStateAsUpdate(survivor));
       for (const update of wire.sent) Y.applyUpdate(admitted, update);
       expect(admitted.getText("text").toString()).toBe("hello AZURE!");
+      expect(admitted.store.pendingStructs).toBeNull();
+      expect(admitted.store.pendingDs).toBeNull();
     } finally {
       admitted.destroy();
     }
+    runtime.pool.release("editor");
+    runtime.pool.release("refresh");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(runtime.pool.peek(room(2))).toBeUndefined();
+    expect(runtime.writerLoss).toHaveBeenCalledTimes(1);
   } finally {
     gold.destroy();
     survivor.destroy();

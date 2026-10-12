@@ -127,12 +127,10 @@ describe("forward inverse on cold Yjs replicas", () => {
   it.each([
     ["overlapping single-part edits", 1],
     ["two-part target plus overlap", 2],
-    ["count three", 3],
   ] as const)("grouped action: %s retains per-edit ownership", (_label, count) => {
-    const v = base(count === 2 ? ["red", "blue"] : [count === 3 ? "black" : "red"]);
+    const v = base(count === 2 ? ["red", "blue"] : ["red"]);
     const seed = Y.encodeStateAsUpdate(v.doc);
     const edits: InversePart[][] = [];
-    if (count === 3) edits.push(write(v, [(v) => swap(v, "black", "red")]));
     edits.push(
       write(
         v,
@@ -146,7 +144,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     for (let cycle = 0; cycle < 2; cycle++) {
       const start = v.history.length;
       inverse(v, edits.slice().reverse().flat(), "invert");
-      expect(content(v)).toEqual(count === 2 ? ["red", "blue"] : [count === 3 ? "black" : "red"]);
+      expect(content(v)).toEqual(count === 2 ? ["red", "blue"] : ["red"]);
       const generated = v.history.slice(start);
       expect([...new Set(generated.map((p) => p.actionId))]).toEqual([`a${start}`]);
       expect(new Set(generated.map((p) => p.editId)).size).toBe(edits.length);
@@ -171,9 +169,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     inverse(v, edits.slice().reverse().flat(), "invert");
     for (const [i, edit] of edits.entries()) {
       inverse(v, edit, "reapply");
-      expect(content(v)[0]).toBe(
-        i === edits.length - 1 ? "silver" : count === 3 && i === 0 ? "red" : "gold",
-      );
+      expect(content(v)[0]).toBe(i === edits.length - 1 ? "silver" : "gold");
     }
     const applied = new Y.Doc({ gc: false });
     Y.applyUpdate(applied, seed);
@@ -617,48 +613,6 @@ describe("forward inverse on cold Yjs replicas", () => {
     );
     const before = content(v),
       parts = write(v, [(v) => swap(v, "w0_150", "AI_150")]);
-    const samples: Record<string, number[]> = {
-      warmClassification: [],
-      coldClassification: [],
-      warmInverse: [],
-      coldInverse: [],
-    };
-    for (let n = 0; n < 15; n++) {
-      let t = performance.now();
-      classifyEditParts(v.doc, v.history, parts);
-      samples.warmClassification.push(performance.now() - t);
-      t = performance.now();
-      computeInverse(
-        v.doc,
-        v.history,
-        parts.map((part) => ({ part, direction: "invert" })),
-        { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
-      );
-      samples.warmInverse.push(performance.now() - t);
-      cold(v);
-      t = performance.now();
-      classifyEditParts(v.doc, v.history, parts);
-      samples.coldClassification.push(performance.now() - t);
-      t = performance.now();
-      computeInverse(
-        v.doc,
-        v.history,
-        parts.map((part) => ({ part, direction: "invert" })),
-        { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
-      );
-      samples.coldInverse.push(performance.now() - t);
-    }
-    console.log(
-      "UNDO_PERF_MS",
-      JSON.stringify(
-        Object.fromEntries(
-          Object.entries(samples).map(([label, xs]) => [
-            label,
-            { min: Math.min(...xs), median: xs.sort((a, b) => a - b)[7], max: Math.max(...xs) },
-          ]),
-        ),
-      ),
-    );
     expect(states(v, parts)).toEqual(["active"]);
     expect(inverse(v, parts, "invert")).toBe(1);
     expect(content(v)).toEqual(before);

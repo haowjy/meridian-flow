@@ -6,7 +6,7 @@ import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js"
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { DocumentCoordinator, StagedHelperCut } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
@@ -95,6 +95,8 @@ export interface ResponseStageUpdateInput {
   session: ActorSession;
   runtime: RuntimeDocumentState;
   commandName: DocumentCommandName;
+  documentLabel?: string;
+  description?: string;
   update: Uint8Array;
   segments?: readonly Uint8Array[];
   editParts?: readonly Uint8Array[];
@@ -119,6 +121,8 @@ export interface ResponseStageUpdateInput {
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
+  documentLabel: string;
+  description: string;
   segments: readonly Uint8Array[];
   commandName: DocumentCommandName;
   liveOrigin: ConcurrentUpdateOrigin;
@@ -134,6 +138,14 @@ interface StagedResponseUpdate extends JournaledUpdate {
   copied?: CopySummary;
 }
 
+/** One post-admission transition; rejected write owners retain their per-result receipts. */
+interface ResponseReplaySettlement {
+  updates: StagedResponseUpdate[];
+  rejected: StagedResponseUpdate[];
+  helperState: Uint8Array;
+  helperCut: StagedHelperCut;
+}
+
 interface ResponseDocumentBuffer {
   docId: string;
   session: ActorSession;
@@ -144,6 +156,7 @@ interface ResponseDocumentBuffer {
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
   discardedUpdates?: StagedResponseUpdate[];
+  helperCut?: StagedHelperCut;
   interactionContext?: InteractionContext;
 }
 
@@ -332,31 +345,47 @@ export function createResponseCommitter(deps: {
   async function replayDocument(docBuffer: ResponseDocumentBuffer, commit: boolean) {
     const host = coordinator.withStagedWrites;
     if (!host) throw new Error("Staged replay host is unavailable");
-    const original = docBuffer.updates;
-    const replayed = await host(
-      {
-        docId: docBuffer.docId,
-        sourceDoc: docBuffer.runtime.doc,
-        entries: responseJournalBatch([docBuffer]),
-        commit,
-      },
-      async (doc, kept, beforeState) => {
-        const rejected = original.filter((entry) => !kept.has(entry.durableWriteId));
-        docBuffer.updates = original.filter((entry) => kept.has(entry.durableWriteId));
-        // Helpers are replaced, not merged. An old generation's tombstones cannot
-        // be erased by Yjs sync, and must not reach the next resolver.
-        const previous = docBuffer.runtime.doc;
-        docBuffer.runtime.doc = new Y.Doc({ gc: false });
-        Y.applyUpdate(docBuffer.runtime.doc, Y.encodeStateAsUpdate(doc));
-        previous.destroy();
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-        return { rejected, beforeState };
-      },
-    );
-    docBuffer.discardedUpdates = [...(docBuffer.discardedUpdates ?? []), ...replayed.rejected];
+    if (!docBuffer.helperCut) throw new Error("Staged helper has no authority cut");
+    const accepted = await host({
+      docId: docBuffer.docId,
+      sourceDoc: docBuffer.runtime.doc,
+      helperCut: docBuffer.helperCut,
+      entries: responseJournalBatch([docBuffer]),
+      commit,
+    });
+    const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
+    const settlement: ResponseReplaySettlement = {
+      updates: docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId)),
+      rejected: docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId)),
+      helperState: accepted.helperState,
+      helperCut: accepted.helperCut,
+    };
+    const helper = new Y.Doc({ gc: false });
+    Y.applyUpdate(helper, settlement.helperState);
+    const previous = docBuffer.runtime.doc;
+    // No buffer or helper mutation occurs before host admission and CAS accept.
+    Object.assign(docBuffer, {
+      updates: settlement.updates,
+      discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...settlement.rejected],
+      helperCut: settlement.helperCut,
+      runtime: { ...docBuffer.runtime, doc: helper },
+    });
+    runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+    previous.destroy();
+    const notices = new Map<string, StagedResponseUpdate[]>();
+    for (const entry of settlement.rejected) {
+      const group = notices.get(entry.writeId) ?? [];
+      group.push(entry);
+      notices.set(entry.writeId, group);
+    }
     return {
-      dropped: replayed.rejected.map((entry) => entry.writeId),
-      beforeState: replayed.beforeState,
+      dropped: [...notices].map(([handle, writes]) => {
+        const scope = settlement.updates.some((entry) => entry.writeId === handle)
+          ? "part of this handle"
+          : "all staged writes for this handle";
+        return `${writes[0]?.documentLabel} ${handle}: ${scope} was discarded with the text it edited. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
+      }),
+      beforeState: accepted.beforeState,
     };
   }
 
@@ -1133,6 +1162,11 @@ export function createResponseCommitter(deps: {
       buffer.docs.set(input.docId, docBuffer);
     }
 
+    if (!docBuffer.helperCut && input.interactionContext?.mode === "threadPeer")
+      docBuffer.helperCut = {
+        generation: input.interactionContext.branchGeneration,
+        state: input.preOwnSnapshot,
+      };
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
@@ -1145,6 +1179,8 @@ export function createResponseCommitter(deps: {
     }
     docBuffer.updates.push({
       commandName: input.commandName,
+      documentLabel: input.documentLabel ?? input.docId,
+      description: input.description ?? input.commandName,
       update: input.update,
       segments: input.segments ?? [input.update],
       meta: input.meta,

@@ -1,5 +1,6 @@
 // Durable capture, selective placement and compaction through the existing review application API.
 import { randomUUID } from "node:crypto";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -83,22 +84,20 @@ describe("document edit receipts (Postgres)", () => {
   it.each([
     "insert",
     "chain",
-    "trail",
-    "pending",
     "first-write",
     "first-write empty",
     "cold",
-    "reply discard",
     "reply empty discard",
     "reply empty apply",
     "reply whole discard",
     "drop at save",
     "drop before next tool",
     "drop all before next tool",
+    "ambient retired",
+    "CAS retry",
   ] as const)("current generation witness: %s", async (witness) => {
     let harness = createHarness(db);
     const empty = [
-      "pending",
       "first-write empty",
       "reply empty discard",
       "reply empty apply",
@@ -141,6 +140,10 @@ describe("document edit receipts (Postgres)", () => {
             : fixture.collab.draftReview.discardWorkDraft(command)),
         ).toMatchObject({ status: apply ? "applied" : "discarded" });
       };
+      const read = () =>
+        fixture.collab
+          .agentEdit()
+          .read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: `read-${++tool}` }, context);
       const responseId = randomUUID();
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -213,10 +216,14 @@ describe("document edit receipts (Postgres)", () => {
         );
         return;
       }
-      if (witness.startsWith("reply") || witness.startsWith("drop")) {
+      if (witness.startsWith("reply") || witness.startsWith("drop") || witness === "CAS retry") {
+        const plannedBase =
+          witness === "CAS retry"
+            ? (await fixture.branchStore.getBranch(branchId))?.state
+            : undefined;
         const dropped = [];
         const droppedAll = witness === "drop all before next tool";
-        if (witness.startsWith("drop")) {
+        if (witness.startsWith("drop") || witness === "CAS retry") {
           dropped.push(await write("gold", "gild"));
           dropped.push(await write("gild", "bronze"));
         }
@@ -240,22 +247,65 @@ describe("document edit receipts (Postgres)", () => {
         if (witness === "drop before next tool" || droppedAll) {
           const missing = await write("gold", "missing");
           expect(missing.status).toBe("not_found");
-          expect(
-            missing.result.message?.endsWith(
-              dropped
-                .map(
-                  (entry) =>
-                    `${entry.writeId} was discarded with the text it edited; re-read and retry`,
-                )
-                .join("\n"),
-            ),
-          ).toBe(true);
+          {
+            expect(new Set(dropped.map((entry) => entry.writeId)).size).toBe(1);
+            const notice = `alpha.md ${dropped[0]?.writeId}: ${droppedAll ? "all staged writes for this handle" : "part of this handle"} was discarded with the text it edited. Dropped writes: "gold" → "gild"; "gild" → "bronze". Re-read and retry.`;
+            expect(missing.result.message?.endsWith(notice)).toBe(true);
+            expect(missing.result.message?.split("Dropped writes:")).toHaveLength(2);
+          }
           // The resolver sees the re-fork, not the discarded helper contents.
           if (!droppedAll)
             expect(await write("red", "silver")).toMatchObject({
               status: "success",
               phase: "staged",
             });
+        }
+        if (droppedAll) {
+          await review("azure");
+          expect(await read()).toMatchObject({ status: "success" });
+        }
+        if (witness === "reply empty discard") {
+          expect(
+            await fixture.collab.draftReview.list({
+              projectId: PROJECT_ID as never,
+              workId: WORK_ID,
+            }),
+          ).toEqual([]);
+          const { createDrizzleWorkDraftPendingStore } = await import("./drizzle-branch-push.js");
+          expect(
+            await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([WORK_ID]),
+          ).toEqual(new Map());
+        }
+        if (witness === "CAS retry") {
+          const original = fixture.branchStore.commitBranchMutation.bind(fixture.branchStore);
+          let refused = false;
+          fixture.branchStore.commitBranchMutation = async (request) => {
+            if (!refused && request.branchId === branchId) {
+              refused = true;
+              return false;
+            }
+            return original(request);
+          };
+          try {
+            await expect(harness.commit(responseId)).rejects.toThrow();
+          } finally {
+            fixture.branchStore.commitBranchMutation = original;
+          }
+          expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
+          if (!plannedBase) throw new Error("Missing planning cut");
+          const base = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(base, plannedBase);
+            expect(
+              await fixture.collab
+                .agentEdit()
+                .withResponseDocument(responseId, ALPHA_ID, toDocHandle(base), (doc) =>
+                  fixture.model.getBlocks(doc).map((block) => fixture.model.getText(block)),
+                ),
+            ).toEqual(["bronze", "azure", "lime"]);
+          } finally {
+            base.destroy();
+          }
         }
         const saved = await harness.commit(responseId);
         expect(saved).toMatchObject({
@@ -288,32 +338,54 @@ describe("document edit receipts (Postgres)", () => {
               ? "gold"
               : "red") +
             (droppedAll
-              ? "\n\nazure\n\ngreen\n"
+              ? "\n\nblue\n\ngreen\n"
               : empty
                 ? "\n\nblue\n\nlime\n"
                 : "\n\nazure\n\nlime\n"),
         );
-        expect(await harness.branchGeneration(branchId)).toBe(2);
+        expect(await harness.branchGeneration(branchId)).toBe(droppedAll ? 3 : 2);
         return;
       }
-      if (witness === "pending") {
-        expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
+      if (witness === "ambient retired") {
+        expect(await write("green", "lime")).toMatchObject({ status: "success" });
         await review("gold");
-        expect(
-          await fixture.collab.draftReview.list({
-            projectId: PROJECT_ID as never,
-            workId: WORK_ID,
-          }),
-        ).toEqual([]);
-        const { createDrizzleWorkDraftPendingStore } = await import("./drizzle-branch-push.js");
-        expect(
-          await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([WORK_ID]),
-        ).toEqual(new Map());
-        expect(await harness.branchGeneration(branchId)).toBe(2);
+        const snapshot = await fixture.branchStore.getBranch(branchId);
+        if (!snapshot) throw new Error("Missing branch");
+        const room = new Y.Doc({ gc: false });
+        try {
+          Y.applyUpdate(room, snapshot.state);
+          const updates: Uint8Array[] = [];
+          room.on("update", (update) => updates.push(update));
+          const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
+            0,
+          ) as Y.XmlText;
+          room.transact(() => {
+            text.delete(0, text.length);
+            text.insert(0, "pink");
+          });
+          expect(
+            await fixture.branchCoordinator.commitWriterUpdate({
+              branchId,
+              expectedGeneration: snapshot.generation,
+              updateData: Y.mergeUpdates(updates),
+              roomDocument: room,
+              actorUserId: USER_ID as never,
+            }),
+          ).toEqual({ admitted: true });
+        } finally {
+          room.destroy();
+        }
+        expect(await read()).toMatchObject({ status: "success" });
+        await review("pink");
+        expect(await read()).toMatchObject({ status: "success" });
+        expect(await harness.commit(responseId)).toMatchObject({
+          status: "committed",
+          documents: [{ updateCount: 1 }],
+        });
+        expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\nlime\n");
         return;
       }
       await review("gold");
-      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
       if (witness === "cold") {
         harness.cancelScheduledPulls();
         harness.destroyWarmState();
@@ -384,7 +456,7 @@ describe("document edit receipts (Postgres)", () => {
         await harness.commit(responseId);
         await review("silver", true);
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("silver\n\nblue\n\ngreen\n");
-        if (witness === "trail" || witness === "cold") {
+        if (witness === "cold") {
           const shells = await db.select().from(schema.changeTrailShells);
           expect(shells.map((shell) => ({ owner: shell.ownerKind, turnId: shell.turnId }))).toEqual(
             [{ owner: "turn", turnId: TURN_ID }],

@@ -239,7 +239,7 @@ export function createBranchAgentEditCoordinator(input: {
       return result;
     },
 
-    async withStagedWrites(request, run) {
+    async withStagedWrites(request) {
       const peerId = await ensureThreadBranch(input, request.docId as DocumentId);
       const peer = await input.branches.getBranch(peerId);
       const branchId = peer?.upstreamBranchId;
@@ -247,26 +247,28 @@ export function createBranchAgentEditCoordinator(input: {
       const result = await input.branchCoordinator.withStagedRows(
         branchId,
         async (doc, snapshot) => {
-          const plannedGenerations = [
-            ...new Set(
-              request.entries.map((entry) =>
-                entry.mutation?.mode === "threadPeer"
-                  ? entry.mutation.branchGeneration
-                  : snapshot.generation,
-              ),
-            ),
-          ];
-          if (plannedGenerations.some((generation) => generation > snapshot.generation))
-            throw new Error("Response planned in a future draft generation");
+          if (request.helperCut.generation > snapshot.generation)
+            throw new Error("Response helper belongs to a future draft generation");
           const retired: Uint8Array[] = [];
-          for (const generation of plannedGenerations) {
-            if (generation === snapshot.generation) continue;
+          if (request.helperCut.generation < snapshot.generation) {
             if (!input.journalRows?.listJournalRowsForBranch)
               throw new Error("Response generation history is unavailable");
-            const rows = await input.journalRows.listJournalRowsForBranch({ branchId, generation });
-            // Re-journaled survivors remain byte-identical; their bytes are already
-            // in the current cut. Residual subtraction below accounts for that.
-            retired.push(...rows.map((row) => row.updateData));
+            const rows = await input.journalRows.listJournalRowsForBranch({
+              branchId,
+              generation: request.helperCut.generation,
+            });
+            const base = new Y.Doc({ gc: false });
+            try {
+              Y.applyUpdate(base, request.helperCut.state);
+              const cut = Y.snapshot(base);
+              retired.push(
+                ...rows
+                  .filter((row) => Y.snapshotContainsUpdate(cut, row.updateData))
+                  .map((row) => row.updateData),
+              );
+            } finally {
+              base.destroy();
+            }
           }
           const kept = reconcileStagedBranchWrites(
             doc,
@@ -274,16 +276,13 @@ export function createBranchAgentEditCoordinator(input: {
             request.entries,
             retired,
           );
-          const keptIds = new Set(
-            kept.map((entry) => {
-              if (!entry.mutation?.writeId)
-                throw new Error("Staged response has no write identity");
-              return entry.mutation.writeId;
-            }),
-          );
-          const result = await run(doc, keptIds, snapshot.state);
           return {
-            result,
+            result: {
+              keptEntries: kept,
+              helperState: Y.encodeStateAsUpdate(doc),
+              helperCut: { generation: snapshot.generation, state: snapshot.state },
+              beforeState: snapshot.state,
+            },
             rows: branchRows(branchId, kept),
           };
         },
