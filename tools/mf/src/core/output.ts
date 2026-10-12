@@ -1,6 +1,8 @@
 /** Output contract: compact text by default, one JSON object or NDJSON with --json, errors on stderr. */
 import { CliError } from "./cli-error";
 
+export const TERMINAL_KEYS = ["type", "command", "outcome", "reason"] as const;
+
 export interface Io {
   stdout: { write(chunk: string): unknown };
   stderr: { write(chunk: string): unknown };
@@ -53,7 +55,7 @@ export class Output {
             Object.entries(value).filter(
               ([key]) =>
                 key === "type" ||
-                (value.type === "result" && ["command", "outcome", "reason"].includes(key)) ||
+                (value.type === "result" && TERMINAL_KEYS.some((reserved) => reserved === key)) ||
                 fields.includes(key),
             ),
           )
@@ -105,9 +107,7 @@ export function selectFields<T>(value: T, fields: readonly string[] | undefined)
       });
     }
     const selected =
-      record.type === "result"
-        ? [...new Set(["type", "command", "outcome", "reason", ...fields])]
-        : fields;
+      record.type === "result" ? [...new Set([...TERMINAL_KEYS, ...fields])] : fields;
     return Object.fromEntries(
       selected.filter((field) => field in record).map((f) => [f, record[f]]),
     );
