@@ -201,6 +201,9 @@ function createAssistantTurn(
     createdAt: opts?.createdAt ?? new Date(now).toISOString(),
     completedAt: null,
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
     siblingIds: [],
     responses: [],
   };
