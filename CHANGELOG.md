@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `./mf` deadline reports distinguish an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.
+
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.

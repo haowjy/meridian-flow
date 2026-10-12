@@ -147,7 +147,7 @@ function createFake() {
   const interruptPolicy = {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
-  const snapshotPolicy = { running: true, releaseDelayMs: 0, delayMs: 0 };
+  const snapshotPolicy = { running: true, awake: false, releaseDelayMs: 0, delayMs: 0 };
   const replyPolicy = { holdUntilSubscribed: false };
   const heldReplies: (() => void)[] = [];
   const afterSnapshot: (() => void)[] = [];
@@ -174,7 +174,7 @@ function createFake() {
       ...liveState(String(journal.length), pendingItems),
       runningTurnId,
       status:
-        runningTurnId || leaseReleasePending
+        runningTurnId || leaseReleasePending || snapshotPolicy.awake
           ? { kind: "awake", phase: "generating", cancelRequested: false }
           : { kind: "asleep" },
     };

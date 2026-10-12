@@ -8,6 +8,7 @@ export type Outcome = "complete" | "failed" | "cancelled" | "interrupt" | "timeo
 export type Reason =
   | "owed"
   | "running"
+  | "lease_awake"
   | "admission_unknown"
   | "replay_truncated"
   | "unconfirmed"
@@ -71,7 +72,9 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
         ? result.snapshotStale
           ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
           : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
-        : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
+        : result.outcome === "timeout" && result.reason === "lease_awake"
+          ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
+          : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
@@ -82,15 +85,26 @@ export async function timeoutReport(session: Session, threadId: string) {
     "GET",
     apiThreadSnapshotPath(threadId),
   );
-  const activity = snapshotActivity(snapshot);
-  const { stillRunning } = activity;
+  return classifyDeadline(snapshot, threadId);
+}
+
+/** Describe the last deadline evidence, never infer a confirmed outcome from it. */
+export function classifyDeadline(snapshot: ThreadSnapshotResponse | null, threadId: string) {
+  const activity = snapshot ? snapshotActivity(snapshot) : { stillRunning: null, owed: [] };
+  const reason = activity.stillRunning
+    ? ("running" as const)
+    : activity.owed.length > 0
+      ? ("owed" as const)
+      : snapshot?.liveState.status.kind === "awake"
+        ? ("lease_awake" as const)
+        : ("unconfirmed" as const);
   return {
-    reason: stillRunning ? ("running" as const) : ("owed" as const),
+    reason,
     ...activity,
     next: [
-      ...(stillRunning
-        ? [`./mf thread cancel ${threadId} --turn ${stillRunning.turnId}`]
-        : [`./mf log --thread ${threadId} --level error`]),
+      ...(activity.stillRunning
+        ? [`./mf thread cancel ${threadId} --turn ${activity.stillRunning.turnId}`]
+        : []),
       `./mf thread tail ${threadId} --until-idle`,
     ],
   };

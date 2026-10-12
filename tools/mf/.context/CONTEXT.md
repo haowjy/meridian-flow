@@ -31,7 +31,9 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason.
     `terminalResult` is the single constructor: it returns the typed envelope
     and its mapped exit; proven outcomes require null reason, unproven and timeout
-    require a reason. Cancel also uses it for its acknowledgement (retaining
+    require a reason. Reasons are `owed`, `running`, `lease_awake`,
+    `admission_unknown`, `replay_truncated`, `unconfirmed`,
+    `deliverer_unknown`, and `snapshot_disagrees`. Cancel also uses it for its acknowledgement (retaining
     not-found exit 3).
     Run failures are results; CLI errors remain on stderr. `EXIT` in `src/core/cli-error.ts` is the exit-code contract. Set
     `process.exitCode`; never call `process.exit()` (it truncates piped output).
@@ -75,10 +77,18 @@ is 6 `replay_truncated`, preserving the idle evidence and covered turns.
 Already idle with no wait has an empty list. Snapshot requests are capped at the
 remaining deadline. A tail timeout uses the last snapshot with
 `snapshotStale: true`, or `snapshotUnavailable: true` if none succeeded,
-rather than extending the deadline for another HTTP request.
+rather than extending the deadline for another HTTP request. This remains exit
+124, never proof of idle, even if the last snapshot looks idle.
 On a deadline, send reads a final snapshot; until-idle tail reports its last
 bounded snapshot as described above. Results report `stillRunning`, pending writer
-messages (`owed`), and `next`; they never cancel. The pending projection is
+messages (`owed`), and `next`; they never cancel. Both use `classifyDeadline`
+in `result.ts`, in precedence order: `running` for a running turn,
+`owed` for pending writer messages, `lease_awake` for an awake lease with
+neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
+without confirmed completion). `lease_awake` is what a timeout reports when
+the server still holds a run lease after its turn ended, for example after a
+restart orphans a reply. Expiry can clear that stale lease; the next command is
+an until-idle tail to check again, not a writer action that clears the lease. The pending projection is
 mandatory. Before reporting complete, send checks that the admitted user turn id
 is absent from `liveState.pending.items` (writer admission uses that same id for
 the inbox row). If it remains, send returns 6 `unproven` / `owed` with
