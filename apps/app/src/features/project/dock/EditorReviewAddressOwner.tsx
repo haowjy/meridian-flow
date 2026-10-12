@@ -5,7 +5,7 @@ import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
 import type { ScreenKey } from "../shell/screens";
 import { useOpenEditorReview, usePendingEditorReviewDraftId } from "./editor-review-handoff";
-import { exitedReviewOwnsAddress } from "./review-address-ownership";
+import { exitedReviewOwnsAddress, type OwnedReviewAddress } from "./review-address-ownership";
 
 export function EditorReviewAddressOwner({
   review,
@@ -33,7 +33,7 @@ export function EditorReviewAddressOwner({
   const openReview = useOpenEditorReview();
   const pendingDraftId = usePendingEditorReviewDraftId();
   const restoring = useRef<string | null>(null);
-  const ownedReview = useRef<{ workId: string; documentId: string; draftId: string } | null>(null);
+  const ownedReview = useRef<OwnedReviewAddress | null>(null);
   const addressNames = (
     documentId: string,
     contextLocation: ThreadDraftGroup["contextLocation"] | undefined,
@@ -58,7 +58,11 @@ export function EditorReviewAddressOwner({
       if (match === "pending") return;
       // The route command already carries this identity. Let it settle instead
       // of competing with itself through an address-owner replacement.
-      ownedReview.current = { workId: review.controller.workId, ...inline };
+      ownedReview.current = {
+        workId: review.controller.workId,
+        ...inline,
+        locator: activeScheme && activePath ? { scheme: activeScheme, path: activePath } : null,
+      };
       if (pendingDraftId === inline.draftId) return;
       if (requestedDraftId !== inline.draftId) onSetDraftId(inline.draftId);
       return;
@@ -73,6 +77,7 @@ export function EditorReviewAddressOwner({
           workId: review.controller.workId,
           documentId: activeDocumentId,
           draftId: requestedDraftId,
+          locator: activeScheme && activePath ? { scheme: activeScheme, path: activePath } : null,
         })
       ) {
         onSetDraftId(null);
