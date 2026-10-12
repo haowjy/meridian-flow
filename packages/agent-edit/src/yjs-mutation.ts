@@ -121,10 +121,34 @@ export function itemIsVisible(doc: Y.Doc, id: Y.ID): boolean {
 /** Hydrate cold lineage without persisting private redone pointers. */
 export function hydrateRedone(doc: Y.Doc, pairs: readonly { source: Y.ID; target: Y.ID }[]): void {
   doc.transact((transaction) => {
-    for (const { source, target } of pairs) {
-      const item = Y.getItemCleanStart(transaction, source);
-      Y.getItemCleanEnd(transaction, doc.store, source);
-      item.redone = target;
+    for (let n = 0; n < pairs.length; ) {
+      const { source, target } = pairs[n];
+      let length = 1;
+      while (n + length < pairs.length) {
+        const next = pairs[n + length];
+        if (
+          next.source.client !== source.client ||
+          next.target.client !== target.client ||
+          next.source.clock !== source.clock + length ||
+          next.target.clock !== target.clock + length
+        )
+          break;
+        length++;
+      }
+      // A contiguous alias uses Yjs's own item offsets; do not split every character.
+      for (let offset = 0; offset < length; ) {
+        const start = Y.createID(source.client, source.clock + offset);
+        const item = Y.getItemCleanStart(transaction, start);
+        const count = Math.min(item.length, length - offset);
+        Y.getItemCleanEnd(
+          transaction,
+          doc.store,
+          Y.createID(source.client, start.clock + count - 1),
+        );
+        item.redone = Y.createID(target.client, target.clock + offset);
+        offset += count;
+      }
+      n += length;
     }
   });
 }

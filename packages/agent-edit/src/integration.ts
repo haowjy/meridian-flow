@@ -154,6 +154,7 @@ export {
   classifyEditParts,
   computeInverse,
   inspectEditRoots,
+  prepareEditRoots,
 } from "./undo/forward-inverse.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
 export {

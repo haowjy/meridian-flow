@@ -922,7 +922,9 @@ export function createDrizzleBranchStore(
     },
 
     async updateBranchSnapshot(input: PersistBranchInput) {
-      return updateBranchSnapshot(input);
+      return runInDrizzleTransaction(db, () =>
+        mutatePending([input.branchId], () => updateBranchSnapshot(input)),
+      );
     },
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
