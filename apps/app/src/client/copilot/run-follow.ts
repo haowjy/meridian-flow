@@ -208,10 +208,11 @@ export function mergeSnapshot(facts: RunFacts, snapshot: RunFollowSnapshot): Run
   const deliveries = new Map(facts.deliveries);
   const ended = new Set(facts.ended);
   for (const turn of snapshot.turns) {
-    if (turn.executionId === null) continue;
+    // Turns from before run identity carry no execution: unknown, never followed.
+    if (!turn.executionId) continue;
     withTurn(turns, turn.id, {
       executionId: turn.executionId,
-      reservedForUserTurnIds: turn.reservedForUserTurnIds,
+      reservedForUserTurnIds: turn.reservedForUserTurnIds ?? [],
     });
     if (turn.executionId !== snapshot.liveState.openExecutionId) ended.add(turn.executionId);
   }

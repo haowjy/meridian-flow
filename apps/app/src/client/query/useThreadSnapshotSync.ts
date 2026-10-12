@@ -2,10 +2,11 @@
  * useThreadSnapshotSync — authoritative history and mounted-thread block projection.
  *
  * The hook owns one addressed durable-block subscriber for its mounted lifetime;
- * the run controller keeps stream deltas and commands. Explicit activation
+ * the run controller keeps stream deltas and commands. Every accepted snapshot
+ * and live pending inbox frame also feeds the run controller's follow rule. Explicit activation
  * installs that owner synchronously after first-send admission succeeds.
  */
-import { EventType, parseSeq } from "@meridian/contracts/protocol";
+import { EventType, EXECUTION_ENDED_EVENT, parseSeq } from "@meridian/contracts/protocol";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo } from "react";
 import {
@@ -139,10 +140,17 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
                   refresh(expected);
                 // Compaction turns have no stream of their own, and a cancelled
-                // one ends without RUN_FINISHED. The server sends an inbox frame
-                // after every lease release, so every inbox frame revalidates:
-                // that is when a divider reserves, settles, or stops.
-                if (pendingInboxFromEvent(event)) refresh(expected);
+                // one ends without RUN_FINISHED. Its execution's end, and the
+                // inbox frame after every lease release, revalidate: that is
+                // when a divider reserves, settles, or stops.
+                if (event.type === EventType.CUSTOM && event.name === EXECUTION_ENDED_EVENT)
+                  refresh(expected);
+                const pending = pendingInboxFromEvent(event);
+                if (pending) {
+                  // The chat's owed messages: every tab follows them, not just the sender.
+                  controller.observePending(threadId, pending, seq);
+                  refresh(expected);
+                }
                 // A handoff brief holds the chat with no lease or run, so its
                 // start and end reach the chat only as a status frame.
                 if (event.type === EventType.CUSTOM && event.name === "meridian.thread.status")
@@ -209,7 +217,8 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       snapshot.turns,
       toThreadSnapshotApplyOptions(snapshot),
     );
-  }, [accountSignal, actions, snapshot]);
+    controller.observeSnapshot(threadId, snapshot);
+  }, [accountSignal, actions, controller, snapshot, threadId]);
 
   return {
     snapshot,
