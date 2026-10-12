@@ -3721,6 +3721,11 @@ msgstr "That document couldn't be found."
 msgid "That file is binary."
 msgstr "That file is binary."
 
+#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "that folder"
+msgstr "that folder"
+
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That image could not be read."
 msgstr "That image could not be read."
