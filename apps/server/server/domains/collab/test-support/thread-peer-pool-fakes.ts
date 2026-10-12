@@ -29,7 +29,7 @@ type FakeCommitOptions = {
 
 /**
  * A core whose methods are spies. `name` tags its staged document and the value
- * `withResponseDocument` resolves to, so a test can tell which core answered.
+ * metadata identifies, so a test can tell which core answered.
  */
 function createFakeAgentEditCore(
   name: string,
@@ -59,7 +59,7 @@ function createFakeAgentEditCore(
       stagedCreates: { committed: [], discarded: [] },
     })),
     hasResponseDocument: vi.fn((_responseId: string, _documentId: string) => false),
-    withResponseDocument: vi.fn(async (..._args: unknown[]): Promise<unknown> => name),
+    prepare: vi.fn(async () => null),
     responseDocuments: vi.fn((_responseId: string) => ({
       staged: [`${name}-doc`],
       created: [] as string[],

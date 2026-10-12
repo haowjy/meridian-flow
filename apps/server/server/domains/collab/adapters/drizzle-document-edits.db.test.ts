@@ -1,6 +1,5 @@
 // Durable capture, selective placement and compaction through the existing review application API.
 import { randomUUID } from "node:crypto";
-import { toDocHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -12,6 +11,7 @@ import {
   createTestDatabase,
   PROJECT_ID,
   resetDatabase,
+  runInDrizzleTransaction,
   schema,
   THREAD_ID,
   TURN_ID,
@@ -162,6 +162,38 @@ describe("document edit receipts (Postgres)", () => {
         responseId,
         grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
       };
+      const scopedRead = async () => {
+        const { createEffectiveDocumentReader } = await import(
+          "../domain/effective-document-reader.js"
+        );
+        const reader = createEffectiveDocumentReader({
+          branches: fixture.branchStore,
+          branchCoordinator: fixture.branchCoordinator,
+          branchPulls: fixture.branchPulls,
+          liveCoordinator: fixture.liveCoordinator,
+          agentEdit: fixture.collab.agentEdit(),
+          documents: fixture.runtime.markdownDocuments,
+          model: fixture.runtime.model,
+          codec: fixture.runtime.codec,
+          links: fixture.links,
+        });
+        const args = {
+          documentId: ALPHA_ID,
+          threadId: THREAD_ID,
+          responseId,
+          destination: "draft" as const,
+          workId: WORK_ID,
+        };
+        const markdown = await reader.readEffectiveMarkdown(args);
+        expect(markdown).toMatchObject({ ok: true });
+        if (markdown.ok) expect(markdown.value.content).toBe("red\n\nazure\n\nlime\n");
+        const hashlines = await reader.readEffectiveHashlines(args);
+        expect(hashlines).toMatchObject({ ok: true });
+        if (hashlines.ok)
+          expect(
+            hashlines.value.content.map((block) => block.slice(block.indexOf("|") + 1)),
+          ).toEqual(["red", "azure", "lime"]);
+      };
       let tool = 0;
       const write = (find: string, content: string, command: "replace" | "insert" = "replace") =>
         fixture.collab.agentEdit().write(
@@ -217,10 +249,6 @@ describe("document edit receipts (Postgres)", () => {
         return;
       }
       if (witness.startsWith("reply") || witness.startsWith("drop") || witness === "CAS retry") {
-        const plannedBase =
-          witness === "CAS retry"
-            ? (await fixture.branchStore.getBranch(branchId))?.state
-            : undefined;
         const dropped = [];
         const droppedAll = witness === "drop all before next tool";
         if (witness.startsWith("drop") || witness === "CAS retry") {
@@ -278,6 +306,46 @@ describe("document edit receipts (Postgres)", () => {
             fixture.branchCoordinator.withStagedRows = original;
           }
           expect(await read()).toMatchObject({ status: "success" });
+        } else if (witness === "drop at save") {
+          let entered!: () => void, release!: () => void;
+          const waiting = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const original = fixture.links.prepare.bind(fixture.links);
+          let once = true;
+          fixture.links.prepare = async (request) => {
+            if (
+              once &&
+              request.docs?.length &&
+              request.holders.some(
+                (holder) => holder.view.kind === "draft" && holder.view.responseId === responseId,
+              )
+            ) {
+              once = false;
+              entered();
+              await gate;
+            }
+            return original(request);
+          };
+          const writing = write("lime", "olive");
+          await waiting;
+          try {
+            await review("gold");
+            await scopedRead();
+          } finally {
+            release();
+          }
+          try {
+            const result = await writing;
+            expect(result.status).toBe("success");
+            expect(result.result.message?.split("Dropped writes:")).toHaveLength(2);
+          } finally {
+            fixture.links.prepare = original;
+          }
+          expect((await read()).result.message).toBeUndefined();
         } else await review("gold", witness === "reply empty apply");
         if (witness === "drop before next tool" || droppedAll) {
           const missing = await write("gold", "missing");
@@ -327,26 +395,28 @@ describe("document edit receipts (Postgres)", () => {
             fixture.branchStore.commitBranchMutation = original;
           }
           expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
-          if (!plannedBase) throw new Error("Missing planning cut");
-          const base = new Y.Doc({ gc: false });
+          const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
+          if (!lease) throw new Error("Missing prepared lease");
           try {
-            Y.applyUpdate(base, plannedBase);
+            // A post-failure exposure is itself an accepted fresh replay, not a raw buffer peek.
             expect(
-              await fixture.collab
-                .agentEdit()
-                .withResponseDocument(responseId, ALPHA_ID, toDocHandle(base), (doc) =>
-                  fixture.model.getBlocks(doc).map((block) => fixture.model.getText(block)),
-                ),
-            ).toEqual(["bronze", "azure", "lime"]);
+              fixture.model.getBlocks(lease.doc).map((block) => fixture.model.getText(block)),
+            ).toEqual(["red", "azure", "lime"]);
           } finally {
-            base.destroy();
+            lease.dispose();
           }
         }
         const saved = await harness.commit(responseId);
         expect(saved).toMatchObject({
           status: "committed",
           documents: [
-            { updateCount: droppedAll ? 0 : witness === "drop before next tool" ? 2 : 1 },
+            {
+              updateCount: droppedAll
+                ? 0
+                : witness === "drop before next tool" || witness === "drop at save"
+                  ? 2
+                  : 1,
+            },
           ],
         });
         if (dropped.length) {
@@ -376,7 +446,9 @@ describe("document edit receipts (Postgres)", () => {
               ? "\n\nblue\n\ngreen\n"
               : empty
                 ? "\n\nblue\n\nlime\n"
-                : "\n\nazure\n\nlime\n"),
+                : witness === "drop at save"
+                  ? "\n\nazure\n\nolive\n"
+                  : "\n\nazure\n\nlime\n"),
         );
         expect(await harness.branchGeneration(branchId)).toBe(droppedAll ? 3 : 2);
         return;
@@ -441,10 +513,17 @@ describe("document edit receipts (Postgres)", () => {
         }
         await review("pink");
         expect(await read()).toMatchObject({ status: "success" });
-        // Keep the earlier second-generation residual witness in this setup.
+        // An aborted rollback must not replace the helper with this ambient peer.
         await writer();
-        expect(await read()).toMatchObject({ status: "success" });
+        await fixture.branchPulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+        await expect(
+          runInDrizzleTransaction(db, async () => {
+            await fixture.collab.agentEdit().rollbackResponse(responseId);
+            throw new Error("rollback abort probe");
+          }),
+        ).rejects.toThrow("rollback abort probe");
         await review("pink");
+        await scopedRead();
         expect(await read()).toMatchObject({ status: "success" });
         expect(await harness.commit(responseId)).toMatchObject({
           status: "committed",

@@ -426,10 +426,12 @@ query and one shared folder graph, and expose persisted branch update times.
 
 ### Selective Discard and response replay
 
-Buffered draft commands consume agent-edit's prepared response view, which owns
-helper bytes and their base cut together. Peer pulls do not reconstruct that
-helper; concurrent-edit reports operate on separate snapshots without adding
-ambient bytes outside its cut.
+Buffered draft helpers are private to agent-edit's response committer, never
+runtime-store replicas. Every tool and scoped content read obtains a prepare
+lease; effective readers prepare before taking their branch-read lock. Peer
+pulls cannot reconstruct or merge into the owned helper. Reporting uses
+disposable replicas, and only tool results drain dropped-write notices.
+Rollback defers disposal until transaction commit; abort keeps the view intact.
 
 Per-change Discard re-forks the next generation from live plus surviving rows,
 re-journaled with identical bytes and immutable edit/part metadata. It journals
