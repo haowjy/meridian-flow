@@ -1060,6 +1060,7 @@ msgstr ""
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1076,6 +1077,7 @@ msgid "Copied from {source} into"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr ""
@@ -1104,8 +1106,8 @@ msgid "Copy reference"
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
-msgid "Copy removed text"
-msgstr ""
+#~ msgid "Copy removed text"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -1662,7 +1664,6 @@ msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/components/app/NoticeCard.tsx
-#: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 #: src/features/project/work/WorkFileRows.tsx
@@ -3094,6 +3095,7 @@ msgid "Reference a file"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
+#: src/features/editor/SchemaFenceNotice.tsx
 msgid "Refresh"
 msgstr ""
 

@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- The Editor's notes about removed text and an outdated version look like the rest of the app instead of bare text. Removed text sits in its own scrollable box with a Copy button that confirms or says why it couldn't copy, the outdated-version note has a Refresh button, and both line up with the page.
+
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
