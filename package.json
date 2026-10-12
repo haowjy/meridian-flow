@@ -42,6 +42,7 @@
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts",
+    "probe:db": "tsx tools/dev/run-db-probe.ts",
     "test:all": "tsx tools/dev/run-db-tests.ts --all"
   },
   "devDependencies": {

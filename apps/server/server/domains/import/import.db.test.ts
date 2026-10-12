@@ -47,6 +47,34 @@ function barrier() {
     },
   };
 }
+/**
+ * Run `action` on the planner's path right after the first chunk that created notes
+ * commits, independent of how many other transactions planning opens.
+ */
+function afterFirstNoteChunk(
+  deps: ReturnType<typeof createProductionImportPorts>,
+  action: () => Promise<void>,
+) {
+  const create = deps.tree.create,
+    transaction = deps.repository.transaction;
+  let committed = false,
+    fired = false;
+  deps.tree.create = async (parent, nodes) => {
+    await create(parent, nodes);
+    if (nodes.some((node) => node.kind === "note"))
+      runAfterDrizzleCommit(() => {
+        committed = true;
+      });
+  };
+  deps.repository.transaction = async (run) => {
+    const result = await transaction(run);
+    if (committed && !fired) {
+      fired = true;
+      await action();
+    }
+    return result;
+  };
+}
 function loose(files: Record<string, string | Uint8Array>): {
   manifest: ImportManifest;
   bytes: Uint8Array[];
@@ -777,14 +805,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
       size: 0,
       sha256: createHash("sha256").update("").digest("hex"),
     }));
-    const deps = ports(),
-      transaction = deps.repository.transaction;
-    let calls = 0;
-    deps.repository.transaction = async (run) => {
-      const result = await transaction(run);
-      if (++calls === 3) throw new Error("Simulated process loss after committed chunk");
-      return result;
-    };
+    const deps = ports();
+    afterFirstNoteChunk(deps, async () => {
+      throw new Error("Simulated process loss after committed chunk");
+    });
     await expect(
       createImportService(deps).plan(projectId, userId, selection.manifest),
     ).rejects.toThrow("Simulated process loss");
@@ -811,21 +835,20 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
       });
     }
     const deps = ports(),
-      transaction = deps.repository.transaction,
       gate = barrier();
-    let calls = 0;
-    deps.repository.transaction = async (run) => {
-      const result = await transaction(run);
-      if (++calls === 3) await gate.pause();
-      return result;
-    };
+    afterFirstNoteChunk(deps, gate.pause);
     const service = createImportService(deps),
       planning = service.plan(projectId, userId, selection.manifest);
-    await gate.arrived;
-    const created = await projectDocuments();
-    expect(created).toHaveLength(200);
-    expect((await service.finish(selection.manifest.importId, projectId))?.state).toBe("finished");
-    gate.release();
+    try {
+      await gate.arrived;
+      const created = await projectDocuments();
+      expect(created).toHaveLength(200);
+      expect((await service.finish(selection.manifest.importId, projectId))?.state).toBe(
+        "finished",
+      );
+    } finally {
+      gate.release();
+    }
     expect((await planning).state).toBe("finished");
     expect((await service.plan(projectId, userId, selection.manifest)).state).toBe("finished");
     expect(await projectDocuments()).toHaveLength(200);
@@ -923,27 +946,26 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
       });
     }
     const deps = ports(),
-      transaction = deps.repository.transaction,
       gate = barrier();
-    let chunks = 0;
-    deps.repository.transaction = async (run) => {
-      const result = await transaction(run);
-      if (++chunks === 4) await gate.pause();
-      return result;
-    };
+    afterFirstNoteChunk(deps, gate.pause);
     const service = createImportService(deps),
       planning = service.plan(projectId, userId, selection.manifest);
-    await gate.arrived;
-    const rows = await db.select().from(importEntries),
-      createdIds = rows.filter((row) => row.created).map((row) => row.id);
-    await ok(context().move("kb://Vault/Chapters", "manuscript://Book"));
-    const lore = (await db.select().from(folders)).find((folder) => folder.name === "Lore");
-    await ok(
-      context().delete("kb://Vault/Lore/", {
-        expected: { kind: "folder", nodeId: lore?.id ?? "" },
-      } as never),
-    );
-    gate.release();
+    let createdIds: string[];
+    try {
+      await gate.arrived;
+      createdIds = (await db.select().from(importEntries))
+        .filter((row) => row.created)
+        .map((row) => row.id);
+      await ok(context().move("kb://Vault/Chapters", "manuscript://Book"));
+      const lore = (await db.select().from(folders)).find((folder) => folder.name === "Lore");
+      await ok(
+        context().delete("kb://Vault/Lore/", {
+          expected: { kind: "folder", nodeId: lore?.id ?? "" },
+        } as never),
+      );
+    } finally {
+      gate.release();
+    }
     const report = await planning;
     expect(report.state).toBe("ready");
     expect(
@@ -967,79 +989,4 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     expect((await service.plan(projectId, userId, selection.manifest)).state).toBe("finished");
     expect((await db.select().from(imports))[0].state).toBe("finished");
   }, 120_000);
-  it("plans and lands 2,000 generated notes, recording chunk and per-file costs", async () => {
-    const selection = loose({});
-    selection.manifest.roots = [{ rootId: 0, kind: "folder", name: "Benchmark" }];
-    const bytes = Buffer.from("A generated note."),
-      sha256 = createHash("sha256").update(bytes).digest("hex");
-    selection.manifest.entries = Array.from({ length: 2000 }, (_, entryId) => ({
-      entryId,
-      rootId: 0,
-      path: `Note ${entryId}.md`,
-      size: bytes.length,
-      sha256,
-      sniff: bytes.toString("base64"),
-    }));
-    const deps = ports(),
-      create = deps.tree.create,
-      chunkTimes: number[] = [],
-      chunkLockTimes: number[] = [];
-    let measuringPlan = true;
-    const parent = deps.tree.parent;
-    deps.tree.parent = async (...args) => {
-      const result = await parent(...args),
-        lockedAt = performance.now();
-      if (measuringPlan && result)
-        runAfterDrizzleCommit(() => {
-          chunkLockTimes.push(performance.now() - lockedAt);
-        });
-      return result;
-    };
-    deps.tree.create = async (...args) => {
-      const start = performance.now();
-      await create(...args);
-      chunkTimes.push(performance.now() - start);
-    };
-    const service = createImportService(deps),
-      start = performance.now(),
-      plan = await service.plan(projectId, userId, selection.manifest);
-    measuringPlan = false;
-    const planMs = performance.now() - start,
-      landingStart = performance.now();
-    console.info(
-      JSON.stringify({ benchmark: "2000-note-plan", planMs, chunkTimes, chunkLockTimes }),
-    );
-    let index = 0;
-    await Promise.all(
-      Array.from({ length: 4 }, async () => {
-        while (index < 2000) {
-          const entryId = index++;
-          expect((await service.land(projectId, plan.importId, entryId, bytes)).state).toBe(
-            "landed",
-          );
-          if ((entryId + 1) % 500 === 0)
-            console.info(
-              JSON.stringify({
-                benchmark: "2000-note-progress",
-                entries: entryId + 1,
-                ms: performance.now() - landingStart,
-              }),
-            );
-        }
-      }),
-    );
-    const landMs = performance.now() - landingStart;
-    console.info(
-      JSON.stringify({
-        benchmark: "2000-note-import",
-        planMs,
-        chunkTimes,
-        chunkLockTimes,
-        landMs,
-        perFileMs: landMs / 2000,
-      }),
-    );
-    expect(await projectDocuments()).toHaveLength(2000);
-    expect((await service.report(plan.importId, projectId)).state).toBe("finished");
-  }, 900_000);
 });

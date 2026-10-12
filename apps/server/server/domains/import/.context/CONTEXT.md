@@ -37,6 +37,13 @@ The API probe is pnpm exec tsx apps/server/scripts/probe-import.mjs PROJECT URI
 PATH... [--files]. It builds a manifest with the shared Obsidian frontmatter
 splitter and uses ./mf api for every request.
 
+The performance probe is pnpm probe:db
+apps/server/scripts/probe-import-performance.ts --out FILE.ndjson
+[--notes 2000]. It runs the production composition on a throwaway migrated
+database and records plan, chunk and landing timings with the machine. Keep
+its output in the work directory, not the repository. It is not part of the
+correctness gate.
+
 ## Reports and activity
 
 Reasons and findings are the typed codes/params in contracts/imports. Raw
