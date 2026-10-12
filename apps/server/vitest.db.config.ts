@@ -24,6 +24,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
   "apps/server/server/domains/collab/review-generation-replay.db.test.ts",
   "apps/server/server/domains/collab/review-reopen.db.test.ts",
+  "apps/server/server/lib/thread-deletion-proof.db.test.ts",
   "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",

@@ -61,6 +61,7 @@ import {
   type ProjectDestination,
   parseProjectAddress,
   projectAddressHref,
+  workDetailAddress,
 } from "./project-address";
 import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
 import {
@@ -505,10 +506,7 @@ function ReadableProjectDestination({
   // A Work opens on its chats unless the target names Files: one address, so
   // one transition and one history entry, whatever screen it leaves.
   function workAddress(target: WorkDetailTarget): ProjectAddress {
-    return {
-      ...toDestination({ kind: "work", workId: target.workId }),
-      workView: target.view === "files" ? "files" : undefined,
-    };
+    return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
     (target: ContextRouteRequest, preparedTab?: ContextTab, draftId?: string) =>

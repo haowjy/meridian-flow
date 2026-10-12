@@ -7,7 +7,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
-import { ErrorCard } from "@/components/app/ErrorCard";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -129,7 +129,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
           {/* The chat announces the failure once through its own assertive region, and a
               rejection restored on reload must stay silent, so the card is not an alert. */}
-          <ErrorCard inline announce={false}>
+          <NoticeCard tone="error" inline announce={false}>
             <p data-user-turn-status="error" role="status">
               {t`Couldn't send.`}
             </p>
@@ -154,7 +154,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
                 {t`Edit`}
               </Button>
             ) : null}
-          </ErrorCard>
+          </NoticeCard>
         </div>
       ) : null}
       {handoff ? (

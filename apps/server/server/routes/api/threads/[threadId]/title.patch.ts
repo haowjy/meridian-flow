@@ -15,11 +15,7 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: "Invalid thread title" });
   }
-  const thread = await requireThreadOwner(
-    { threads: app.repos.threads, projects: app.projectRepo },
-    threadId,
-    user.userId,
-  );
+  const thread = await requireThreadOwner({ threads: app.repos.threads }, threadId, user.userId);
   const updated = await app.repos.threads.updateTitle(thread.id, parsed.data.title);
   return serializeTransport({
     threadId: updated.id,

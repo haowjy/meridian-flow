@@ -10,11 +10,7 @@ export default defineEventHandler(async (event) => {
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const { target } = getQuery(event);
   if (typeof target === "string" && target.length > 0) {
-    await requireThreadOwner(
-      { threads: app.threadRepos.threads, projects: app.projectRepo },
-      threadId,
-      user.userId,
-    );
+    await requireThreadOwner({ threads: app.threadRepos.threads }, threadId, user.userId);
     return getWorkReceiptReversalAvailability(
       {
         blocks: app.threadRepos.blocks,

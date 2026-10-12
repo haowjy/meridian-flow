@@ -379,11 +379,8 @@ export function createDeliveryAdapter(
     const split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
-      selection.notices.length > 0 ||
       orderedBatch.some(
-        (message) =>
-          (message.intent === "message" && !input.knownTurnIds.has(message.id)) ||
-          (message.intent === "notice" && message.body.kind !== "work_context_refresh"),
+        (message) => message.intent === "message" && !input.knownTurnIds.has(message.id),
       );
     let drain: Awaited<ReturnType<typeof drainInbox>>;
     let prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;

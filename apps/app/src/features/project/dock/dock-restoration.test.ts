@@ -12,6 +12,7 @@ import {
   createDockDocumentStore,
   type DockDocument,
   dockDocumentFitsScope,
+  dockDocumentOnScreen,
 } from "./dock-document-store";
 import { DOCK_STORAGE_KEY, type DockStorage } from "./dock-persistence";
 import { restoreDockDocument } from "./restore-dock-document";
@@ -145,6 +146,9 @@ it("round-trips the account-stamped document in a fresh store", () => {
   expect(restored).toEqual(document);
   expect(second.getState().occupant).toBeNull();
   const revision = second.getState().revision;
+  expect(dockDocumentOnScreen(second.getState().occupant, "chat", "project")).toBeNull();
+  expect(second.getState().restoring).toBe(restored);
+  expect(second.getState().revision).toBe(revision);
   second.getState().restore(restored, restored);
   expect(second.getState().occupant).toEqual(document);
   expect(second.getState().revision).toBe(revision);

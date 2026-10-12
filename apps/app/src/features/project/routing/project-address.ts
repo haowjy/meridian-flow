@@ -306,3 +306,18 @@ export function projectAddressState(
       : undefined,
   };
 }
+
+/** Work navigation names its tab in the same address, never a second transition. */
+export function workDetailAddress(
+  address: ProjectAddress,
+  target: { workId: ParsedRequestId; view?: WorkView },
+): ProjectAddress {
+  return {
+    ...address,
+    destination: { kind: "work", workId: target.workId },
+    draftId: undefined,
+    changeId: undefined,
+    worksView: undefined,
+    workView: target.view === "files" ? "files" : undefined,
+  };
+}

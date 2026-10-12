@@ -15,6 +15,7 @@ import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
 import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
+import { cleanDeletedChat } from "./deleted-chat";
 import { ChatSubmissionDriver } from "./driver";
 import {
   getChatSubmissionEpoch,
@@ -26,6 +27,7 @@ import {
 import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
 import type { ChatSubmission } from "./store";
+import { threadAvailability } from "./thread-availability";
 
 type Row = {
   threadId: string;
@@ -179,6 +181,8 @@ export class ChatSubmissionOwner {
     controller.beginRecoverySession(this.session);
     this.driver = new ChatSubmissionDriver({
       accountId,
+      deleted: (entry, reason) =>
+        cleanDeletedChat(accountId, threadId, projectId, reason, undefined, true),
       signal,
       isCurrent: current,
       session: this.session,
@@ -288,6 +292,9 @@ export class ChatSubmissionOwner {
     });
   }
 
+  shownRecordIds = () =>
+    new Set([...this.model.rows.keys()].map((id) => id.slice(this.options.accountId.length + 1)));
+
   private entries() {
     return this.options.current()
       ? readChatSubmissions(this.options.accountId).filter(
@@ -362,7 +369,13 @@ export class ChatSubmissionOwner {
           requestSignal,
         );
       } catch (error) {
-        if (!current() || !(error instanceof HttpResponseError && error.status === 404)) return;
+        if (!current()) return;
+        const availability = threadAvailability(error, accountId);
+        if (availability === "deleted" || availability === "project-deleted") {
+          await cleanDeletedChat(accountId, threadId, projectId, availability);
+          return;
+        }
+        if (!(error instanceof HttpResponseError && error.status === 404)) return;
         missing = true;
       }
       if (!current()) return;

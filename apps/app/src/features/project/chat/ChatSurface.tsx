@@ -91,14 +91,14 @@ export function ChatSurface({
           return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
         }}
       >
-        {() => (
+        {(showPrimary) => (
           <ChatScreen
             projectId={projectId}
             threadId={threadId}
             activeWork={activeWork}
             availableWorks={availableWorks}
             onOpenContextTarget={onOpenContextTarget}
-            visible={visible}
+            visible={visible && showPrimary}
           />
         )}
       </DockShell>

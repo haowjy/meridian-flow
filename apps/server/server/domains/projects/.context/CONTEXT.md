@@ -22,6 +22,15 @@ the same owner lock. Project, Work and chat handles remain reserved through soft
 deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
 missing, foreign-owner and deleted handles resolve unavailable.
 
+`requireProjectOwner` checks ownership before deletion. Missing and foreign
+projects keep the generic 404 `Project not found`; an owned deleted project
+returns attested HTTP 404 `project_deleted` with `details.authenticatedUserId`.
+The message stays `Project not found` for existing unavailable/SSR paths.
+The Work HTTP mapper preserves this project proof rather than replacing it
+with `work_not_found`.
+Explicit `includeSoftDeleted` access still permits idempotent project Delete
+and independent context availability reads on tombstones.
+
 The repository `Project` uses `name` and `systemPrompt`; project HTTP routes
 translate those to `title` and `description` in `ProjectDto`.
 
