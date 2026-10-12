@@ -60,6 +60,7 @@ describe("change trail aggregate projections (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
+    await db.update(schema.turns).set({ status: "streaming" }).where(eq(schema.turns.id, TURN_ID));
     const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
     await db.insert(schema.turns).values(
       turnIds.map((id, index) => ({
