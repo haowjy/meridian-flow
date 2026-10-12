@@ -19,6 +19,7 @@ import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
+import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState } from "../document-loader.js";
 
@@ -68,21 +69,23 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     const bytes = base?.state.slice() ?? null;
     const suffix = updates.map((row) => row.update.slice());
     let state: Promise<Uint8Array> | undefined;
-    return Object.freeze({
+    return mintCheckpointCut({
       documentId: docId,
       authority: Object.freeze({ ...authority }),
       upToSeq: updates.at(-1)?.seq ?? base?.upToSeq ?? 0,
+      validateInputs: async () => {},
       async materializeState() {
         state ??= materializeCheckpoint(bytes, suffix);
         return (await state).slice();
       },
-    }) as CapturedCheckpointCut;
+    });
   }
 
   async createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string> {
-    const state = await cut.materializeState();
-    const record = this.checkpointRecord(cut.documentId, state, reason);
-    await super.checkpoint(cut.documentId, state, cut.upToSeq);
+    const payload = resolveCheckpointCut(cut);
+    const state = await payload.materializeState();
+    const record = this.checkpointRecord(payload.documentId, state, reason);
+    await super.checkpoint(payload.documentId, state, payload.upToSeq);
     this.checkpoints.push(record);
     return record.id;
   }

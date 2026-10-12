@@ -126,11 +126,18 @@ for what it means and its current (logging-only) scope.
 ### Yjs document heads and checkpoints
 
 `document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an
-FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Checkpoints are
-append-only in the production lifecycle: compaction deletes retained
-`document_yjs_updates` rows, not checkpoint rows, and checkpoints are removed by
-the `documents` cascade. Do not document this relationship as custom SQL or as an
-absent FK.
+FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Compaction deletes
+retained `document_yjs_updates` rows, not checkpoint rows. Routine persistence
+may remove the initial zero-sequence seed checkpoint; other checkpoints remain
+until the `documents` cascade. Do not document this relationship as custom SQL
+or as an absent FK.
+
+The generation-local head `retired_through_seq` monotonically records every
+compacted prefix in the deletion transaction, including zero-fold compaction.
+Generation replacement resets it. Lazy checkpoint cuts validate their captured
+suffix floor against it after fetching inputs and again under the persistence
+lock. The parent-document cascade removes both journal and head, invalidating
+that authority.
 
 `document_yjs_heads.schema_version` and `document_branches.schema_version` store
 the packed integer form of `COLLAB_SCHEMA_VERSION`
