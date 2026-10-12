@@ -321,22 +321,17 @@ export function serializeComposerDraft(
   revision = 0,
   selection: ComposerSelection = { anchor: 1, head: 1 },
 ): ComposerSubmitEnvelope {
-  const message = serializeMessageDoc(doc);
   const ownedUploads: ComposerOwnedUpload[] = [];
-  const collectUploads = (node: JSONContent) => {
-    if (node.type === "composerReference") {
-      const value = node.attrs?.reference as ComposerReferenceAttrs;
-      if (
-        value.upload &&
-        !ownedUploads.some((upload) => upload.intakeId === value.upload?.intakeId)
-      )
-        ownedUploads.push(value.upload);
-      return;
-    }
-    if (["text", "hardBreak", "composerSkill"].includes(node.type ?? "")) return;
-    for (const child of node.content ?? []) collectUploads(child);
-  };
-  collectUploads(doc);
+  const seenIntakes = new Set<string>();
+  const message = serializeMessageDoc(doc, {
+    onReference(reference) {
+      const upload = (reference as ComposerReferenceAttrs).upload;
+      if (upload && !seenIntakes.has(upload.intakeId)) {
+        seenIntakes.add(upload.intakeId);
+        ownedUploads.push(upload);
+      }
+    },
+  });
   const draft = { revision, doc, selection, ownedUploads } as const;
   return {
     submissionId: crypto.randomUUID(),

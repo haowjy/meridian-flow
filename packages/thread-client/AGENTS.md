@@ -29,8 +29,15 @@ remain late-bound globals, preserving existing reconnect timing.
 
 ## Message documents
 
+Non-editor callers use `buildMessageDoc`: skills, prose and references are inline
+children of one paragraph; authored newlines become `hardBreak` nodes, as in the composer.
+Its typed construction shape prevents top-level inline nodes. The serializer still
+accepts editor JSON so browser schema and editor lifecycle remain app-owned.
+
 `serializeMessageDoc` reads plain JSON, preserving authored spacing and occurrence order.
 References spell canonical Markdown links through `@meridian/markup/links`; image-capable
 references also emit an image block. Submitted identities deduplicate by document and URI,
 with draft-upload metadata taking precedence. Skills activate once per slug but every
-occurrence remains in the blocks. Draft snapshots and upload lifecycle ownership stay in the app.
+occurrence remains in the blocks. The canonical walk exposes each source reference
+through `onReference`; the app projects its owned uploads from those visits without
+walking the document again. Draft snapshots and upload lifecycle ownership stay in the app.

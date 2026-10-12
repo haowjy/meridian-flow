@@ -3,7 +3,10 @@ import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/p
 import { referenceOccurrence, skillOccurrence } from "./occurrences";
 import type { MessageDoc, MessageReference, SerializedMessage } from "./types";
 
-export function serializeMessageDoc(doc: MessageDoc): SerializedMessage {
+export function serializeMessageDoc(
+  doc: MessageDoc,
+  options: { onReference?: (reference: MessageReference) => void } = {},
+): SerializedMessage {
   const blocks: UserMessageBlock[] = [];
   const references = new Map<string, SubmittedReference>();
   const activatedSkillSlugs: string[] = [];
@@ -38,6 +41,7 @@ export function serializeMessageDoc(doc: MessageDoc): SerializedMessage {
     }
     if (node.type === "composerReference") {
       const value = node.attrs?.reference as MessageReference;
+      options.onReference?.(value);
       const occurrence = referenceOccurrence(value);
       blocks.push(occurrence);
       text += occurrence.text;
