@@ -65,6 +65,8 @@ request carries that ID, and its accepted receipt carries exact deleted document
 IDs and the availability generation. `commitFolder` settles the folder journal
 and terminalizes matching current descendants atomically in one metadata
 transaction, using the file deletion transition and fencing newer generations.
+A strictly newer catalog observation of a deleted folder or document (Apply's
+restore) supersedes this deletion through the replica's revival rule.
 Pending deletion hides the catalog subtree immediately. Refusal releases the
 optimistic overlay and leaves failure evidence on the restored folder row.
 Namespace retry and account fencing are the only command delivery mechanism.

@@ -1,7 +1,7 @@
 /** Recent history supplies membership; the replica supplies current identity for every Recent surface. */
 import {
   catalogViewFromCheckpoint,
-  intentOwnsDeletion,
+  intentOwnsDeletionAt,
   type ResourceProjectionSnapshot,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
@@ -41,7 +41,11 @@ export function recentDocumentIdentityIndex(
   for (const { resource, intents } of snapshot?.records ?? []) {
     if (
       resource.lifecycle.kind === "terminal" ||
-      intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent)) ||
+      intents.some(
+        (intent) =>
+          intent.projectId === projectId &&
+          intentOwnsDeletionAt(intent, resource.observationVersion),
+      ) ||
       !placement.resourceLocation({ resource, intents })
     )
       identities.set(resource.identity.documentId, null);

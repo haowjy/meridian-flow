@@ -86,7 +86,6 @@ export function planFolderCatalogInstallation(input: {
     });
   }
   for (const record of input.folders) {
-    if (record.terminal) continue;
     if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
@@ -104,12 +103,16 @@ export function planFolderCatalogInstallation(input: {
       if (write) writes.push(write);
       continue;
     }
+    // Equal or older evidence never revives a deletion; held versions include the deletion's.
     if (!newerCanonicalObservation(entry.observationVersion, record.observationVersion)) continue;
     if (!sameResourceLocation(observed.canonical, record.canonical)) continue;
+    // A strictly newer present observation is a later restore: it clears the terminal witness,
+    // and the held version it installs retires an accepted delete's ownership.
+    const { terminal: _superseded, ...present } = record;
     writes.push({
       expectedRevision: record.revision,
       next: {
-        ...record,
+        ...present,
         revision: record.revision + 1,
         canonical: location,
         observationVersion: entry.observationVersion,

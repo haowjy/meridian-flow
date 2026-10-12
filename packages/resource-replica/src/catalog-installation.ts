@@ -191,6 +191,7 @@ function observedResourceWrite(input: {
 }): ResourceWrite | null {
   const { record, location, classification, parent, fence } = input;
   const current = record.resource;
+  if (current.lifecycle.kind === "terminal") return revivedResourceWrite(input);
   if (current.lifecycle.kind !== "acknowledged") return null;
   const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
@@ -224,6 +225,38 @@ function observedResourceWrite(input: {
     canonicalParent: parent,
     observationVersion: input.observationVersion,
     obligations,
+  };
+  return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
+}
+
+/**
+ * A terminal document holds its deletion's server version. A strictly newer catalog observation
+ * of it as present is a later restore: it returns as acknowledged at the server's location,
+ * with content reacquired from the server. The request must have started after the terminal
+ * transition, and any purge of the deleted lineage's local content must have finished.
+ */
+function revivedResourceWrite(
+  input: Parameters<typeof observedResourceWrite>[0],
+): ResourceWrite | null {
+  const { record, location, classification, parent, fence } = input;
+  const current = record.resource;
+  if (current.lifecycle.kind !== "terminal" || current.obligations.cleanup) return null;
+  if (fence.resources?.get(current.handle)?.revision !== current.revision) return null;
+  if (!newerCanonicalObservation(input.observationVersion, current.observationVersion)) return null;
+  const next: ResourceDescriptor = {
+    ...current,
+    revision: current.revision + 1,
+    content: { kind: "unacquired" },
+    classification,
+    canonical: location,
+    canonicalParent: parent,
+    observationVersion: input.observationVersion,
+    lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+    revivedFrom: {
+      generation: current.lifecycle.generation,
+      transitionId: current.lifecycle.transitionId,
+    },
+    obligations: {},
   };
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
 }
