@@ -9,8 +9,6 @@
 
 ### Fixed
 
-- Restored chats keep fresh writing after incomplete own-delete cleanup. Later sends to deleted chats show failure instead of remaining Sending, and Retry/Edit can finish partial cleanup.
-
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
 
 - Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
