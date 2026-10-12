@@ -6,6 +6,7 @@ import * as Y from "yjs";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
@@ -74,6 +75,192 @@ async function stageDraft(
     .orderBy(schema.branchWriteJournal.id);
   expect(rows).toHaveLength(writes.length);
   return { fixture, branchId, rows, baseUpdate };
+}
+
+// Whole Discard revokes Alpha's held commands/read even while Beta keeps the reply open.
+async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDatabase>) {
+  for (const pause of ["before", "after", "read"] as const) {
+    await resetDatabase(db);
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(
+        db,
+        harness,
+        "red\n\nblue\n\ngreen",
+        "replace",
+        [
+          ["red", "gold"],
+          ["blue", "azure"],
+        ],
+      );
+      const responseId = randomUUID();
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 2,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      const context = {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+      };
+      const core = fixture.collab.agentEdit();
+      expect(
+        await core.write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "green",
+            content: "lime",
+            tool_use_id: "independent-alpha",
+          },
+          context,
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      expect(
+        await core.write(
+          {
+            command: "create",
+            file: "beta.md",
+            documentId: BETA_ID,
+            content: "Beta staged.",
+            overwrite: true,
+            tool_use_id: "independent-beta",
+          },
+          { ...context, createdDocument: false },
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      let entered!: () => void, release!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const originalRead = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+      const originalReplay = fixture.branchCoordinator.withStagedRows.bind(
+        fixture.branchCoordinator,
+      );
+      let once = true;
+      fixture.branchCoordinator.readBranch = async (branch, fn) => {
+        const targeted =
+          pause !== "read" &&
+          once &&
+          branch === branchId &&
+          String(fn).includes("listConcurrentJournalRows");
+        if (targeted) once = false;
+        if (targeted && pause === "before") {
+          entered();
+          await gate;
+        }
+        const result = await originalRead(branch, fn);
+        if (targeted && pause === "after") {
+          entered();
+          await gate;
+        }
+        return result;
+      };
+      fixture.branchCoordinator.withStagedRows = async (...args) => {
+        if (pause === "read" && once) {
+          once = false;
+          entered();
+          await gate;
+        }
+        return originalReplay(...args);
+      };
+      const pending =
+        pause === "read"
+          ? core.prepare(responseId, ALPHA_ID)
+          : core.write(
+              {
+                command: "replace",
+                file: "alpha.md",
+                documentId: ALPHA_ID,
+                find: "azure",
+                content: "cobalt",
+                tool_use_id: "held-alpha",
+              },
+              context,
+            );
+      // Observe rejection immediately, before releasing an orphaned read.
+      const settled = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await waiting;
+      try {
+        expect(
+          await fixture.collab.draftReview.discardWorkDraft({
+            projectId: PROJECT_ID as never,
+            workId: WORK_ID,
+            documentId: ALPHA_ID,
+            draftId: branchId,
+            userId: USER_ID as never,
+          }),
+        ).toMatchObject({ status: "discarded" });
+      } finally {
+        release();
+      }
+      const outcome = await settled;
+      fixture.branchCoordinator.readBranch = originalRead;
+      fixture.branchCoordinator.withStagedRows = originalReplay;
+      if (pause === "read") {
+        if ("value" in outcome && outcome.value && "dispose" in outcome.value)
+          outcome.value.dispose();
+        expect(outcome).toHaveProperty("error");
+      } else {
+        expect(outcome).toMatchObject({
+          value: {
+            status: "invalid_write",
+            result: {
+              message:
+                "Write did not land: the user discarded the text it edited. Re-read and retry.",
+            },
+          },
+        });
+      }
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+      // A new command has the new epoch; the revoked command cannot recreate its old base.
+      expect(
+        await core.write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "green",
+            content: "olive",
+            tool_use_id: "fresh-alpha",
+          },
+          context,
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      expect(await harness.commit(responseId)).toMatchObject({
+        status: "committed",
+        documents: expect.arrayContaining([
+          expect.objectContaining({ documentId: ALPHA_ID, updateCount: 1 }),
+          expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
+        ]),
+      });
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
+      const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
+      try {
+        expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
+      } finally {
+        beta.doc.destroy();
+      }
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  }
 }
 
 describe("document edit receipts (Postgres)", () => {
@@ -269,6 +456,9 @@ describe("document edit receipts (Postgres)", () => {
           ).toMatchObject({ status: "discarded" });
           await expect(harness.commit(responseId)).rejects.toThrow("already rolled back");
           expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+          harness.cancelScheduledPulls();
+          harness.destroyWarmState();
+          await wholeDiscardLeaseSchedules(db);
           return;
         }
         if (witness === "reply empty discard") {
