@@ -3,11 +3,11 @@
   "overwrite": true,
   "docs": [
     {
-      "uri": "manuscript://mf-chapter-1.md",
+      "uri": "manuscript://Chapter 1",
       "text": "# Chapter 1\n\nLin Feng opened his eyes to the smell of burnt incense."
     },
     {
-      "uri": "kb://characters/lin-feng.md",
+      "uri": "kb://characters/Lin Feng",
       "text": "# Lin Feng\n\nOuter disciple, Qi Condensation 3. Stubborn; hides a broken meridian."
     }
   ],
@@ -15,7 +15,7 @@
   "messages": [
     {
       "text": "Summarize chapter 1 in one line.",
-      "refs": ["manuscript://mf-chapter-1.md"],
+      "refs": ["manuscript://Chapter 1"],
       "mock": [{ "text": "Lin Feng wakes in an incense-filled room." }]
     }
   ]

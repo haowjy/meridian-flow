@@ -193,9 +193,9 @@ their place to reach a document that was one tab away.
 
 Creating from the offer (`useCreateLinkedDocument`) makes the document at
 exactly the missing address (`linkCreationTarget`): its scheme (manuscript,
-kb, or user), its folders, and its filename, with `.md` added when the link
-omitted the extension (`documentFileName`, the same rule the Editor `@` menu's
-link-ahead row uses). Never Uploads (files a writer brings), Unfiled, or
+kb, or user), its folders, and the codec's stored name. Prose names are extensionless;
+registered data and binary extensions stay visible. The shared `aheadAddress`
+and `linkCreationTarget` rules agree with the Editor `@` menu's link-ahead row. Never Uploads (files a writer brings), Unfiled, or
 Scratch: by owner direction, Scratch notes are made only by the Work's Files tab
 (New note) and the AI, so a link to a missing Scratch note, in a live, archived,
 deleted, or unknown Work, gets the dialog without the button. An address that is

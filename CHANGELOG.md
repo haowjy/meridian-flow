@@ -4,6 +4,14 @@
 
 ### Changed
 
+- Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
+- `.txt` files open as prose. Code, data and images keep their extensions.
+- Dotted names stay whole. Renames keep the file type unless a new extension is typed.
+- No prose twins. Files and folders cannot claim the same document name.
+- Imports and uploads keep writer names. Clashes count up with ` (2)`, ` (3)` and onward.
+- Prose downloads end in `.md`. Other downloads keep their filenames.
+- Existing documents and saved addresses use the same names. Name clashes keep every document.
+
 - Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
 - A chat message that fails to send says "Couldn't send." on the message itself, with Retry, and Edit when the server refused it, the same way in new chats, existing chats, the side panel and on phones. Retry never sends a message twice, and a refused message stays in the chat until you retry or edit it.
 - The message box clears as soon as you press Send.

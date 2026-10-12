@@ -1,6 +1,6 @@
 # features/links — following an internal link
 
-What a click on a link to `manuscript://…` or `./cast.md` does in any surface
+What a click on a link to `manuscript://…` or `./cast` does in any surface
 that shows one: resolve the address in that surface's scope, then open the
 document or say what the follow found. A link is a standard Markdown link to
 an address; `[[name]]` is text and never reaches here. Owned by neither the
@@ -87,7 +87,7 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   link points, worded as the `@` menu words a row's location
   (`documentLocation`); the full address is only a tooltip.
 - **Create makes the document at exactly the link's address**: scheme,
-  folders, filename (`.md` added when omitted). It
+  folders, name (the codec's stored name: no `.md`). It
   commits locally and opens the document through the surface's `open` at once;
   sync failure lands on the document.
 

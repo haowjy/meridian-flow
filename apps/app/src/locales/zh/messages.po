@@ -350,8 +350,16 @@ msgid "A file named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +367,16 @@ msgid "A folder named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -518,6 +534,10 @@ msgstr "所有设备"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -1346,13 +1366,18 @@ msgstr ""
 msgid "Couldn't send your message."
 msgstr "未能发送你的消息。"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
-msgid "Couldn't send. Your message was not lost."
-msgstr ""
+#~ msgid "Couldn't send. Nothing was lost."
+#~ msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+#~ msgid "Couldn't send. Your message was not lost."
+#~ msgstr ""
 
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
@@ -1602,6 +1627,7 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
+#: src/components/app/ErrorCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx

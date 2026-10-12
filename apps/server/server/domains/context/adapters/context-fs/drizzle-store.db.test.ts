@@ -69,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id,
         contextSourceId: SOURCE_ID,
         name,
-        extension: "md",
+        extension: "",
         fileType: "markdown",
         markdownProjection: name,
       });
@@ -138,7 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("enforces cross-schema and tracked/storage rename rejection in Postgres", async () => {
       const { context, move } = createContextHarness();
-      await context.write("chapter.md", "Chapter");
+      await context.write("chapter", "Chapter");
       await context.write("script.py", "print('hello')");
       await context.writeBinary("cover.png", {
         fileType: "image",
@@ -147,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sizeBytes: 42,
       });
 
-      await expect(move("chapter.md", "chapter.py")).resolves.toMatchObject({
+      await expect(move("chapter", "chapter.py")).resolves.toMatchObject({
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/schema/i) },
       });
@@ -155,18 +155,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/tracked|binary/i) },
       });
-      await expect(move("cover.png", "cover.md")).resolves.toMatchObject({
+      await expect(move("cover.png", "cover.txt")).resolves.toMatchObject({
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/storage|tracked/i) },
       });
-      await expect(context.stat("chapter.md")).resolves.toMatchObject({ ok: true });
+      await expect(context.stat("chapter")).resolves.toMatchObject({ ok: true });
       await expect(context.stat("script.py")).resolves.toMatchObject({ ok: true });
       await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
     });
 
     it("keeps one Postgres document identity when write and rename overlap", async () => {
       const { context, move, pauseNextWrite } = createContextHarness();
-      const initial = await context.write("chapter.md", "Chapter");
+      const initial = await context.write("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let releaseWrite = () => {};
       const writeReleased = new Promise<void>((resolve) => {
@@ -181,9 +181,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await writeReleased;
       });
 
-      const write = context.write("chapter.md", "Revised chapter");
+      const write = context.write("chapter", "Revised chapter");
       await writeStarted;
-      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
+      await expect(move("chapter", "renamed chapter.txt")).resolves.toMatchObject({ ok: true });
       releaseWrite();
 
       await expect(write).resolves.toMatchObject({
@@ -194,26 +194,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db
           .select({ id: documents.id, name: documents.name, extension: documents.extension })
           .from(documents),
-      ).resolves.toEqual([{ id: initial.value.documentId, name: "chapter", extension: "txt" }]);
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+      ).resolves.toEqual([
+        { id: initial.value.documentId, name: "renamed chapter", extension: "" },
+      ]);
+      await expect(context.stat("renamed chapter")).resolves.toMatchObject({
         ok: true,
-        value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
+        value: { documentId: initial.value.documentId, filetype: "markdown", sizeBytes: 15 },
+      });
+      await expect(context.stat("chapter")).resolves.toEqual({ ok: true, value: null });
+      await expect(context.read("renamed chapter")).resolves.toMatchObject({
+        ok: true,
+        value: { content: "Revised chapter" },
+      });
+    });
+
+    it("keeps alias-only Postgres renames in place", async () => {
+      const { context, move } = createContextHarness();
+      const initial = await context.write("Alias", "Unchanged");
+      if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+      expect(await move("Alias", "Alias.txt")).toMatchObject({ ok: true });
+      expect(
+        await db
+          .select({ id: documents.id, name: documents.name, extension: documents.extension })
+          .from(documents),
+      ).toEqual([{ id: initial.value.documentId, name: "Alias", extension: "" }]);
+      expect(await context.read("Alias.md")).toMatchObject({
+        ok: true,
+        value: { content: "Unchanged" },
       });
     });
 
     it("allows a Postgres rename while projection activity changes mid-flight", async () => {
       const { context, move, mutationStore } = createContextHarness();
-      const initial = await context.write("chapter.md", "Chapter");
+      const initial = await context.write("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
       mutationStore.setBeforeDestructiveWrite(async () => {
         mutationStore.setBeforeDestructiveWrite(null);
-        concurrentWrite = await context.write("chapter.md", "Revised chapter");
+        concurrentWrite = await context.write("chapter", "Revised chapter");
       });
 
-      await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
+      await expect(move("chapter", "archive/chapter.txt")).resolves.toMatchObject({
         ok: true,
-        value: { destinationPath: "archive/chapter.txt" },
+        value: { destinationPath: "archive/chapter" },
       });
 
       expect(concurrentWrite).toMatchObject({
@@ -234,9 +257,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: initial.value.documentId,
           name: "chapter",
-          extension: "txt",
+          extension: "",
           markdown: "Revised chapter",
-          filetype: "text",
+          filetype: "markdown",
         },
       ]);
       await expect(db.select().from(folders)).resolves.toHaveLength(1);
@@ -254,8 +277,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         observer,
         createDrizzleContextCatalog(db),
       );
-      const source = await tree.inspect(SOURCE_ID, "rollback-source.md");
-      const target = await tree.inspect(SOURCE_ID, "rollback-target.md");
+      const source = await tree.inspect(SOURCE_ID, "rollback-source");
+      const target = await tree.inspect(SOURCE_ID, "rollback-target");
       expect(source?.kind).toBe("file");
       expect(target?.kind).toBe("file");
 
@@ -273,7 +296,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const result = await tree.commitMove({
         source: source as Extract<NonNullable<typeof source>, { kind: "file" }>,
         destinationSourceId: SOURCE_ID,
-        destinationPath: "rollback-target.md",
+        destinationPath: "rollback-target",
         expectedTarget: {
           state: "occupied",
           token: target as Extract<NonNullable<typeof target>, { kind: "file" }>,
@@ -333,11 +356,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_CREATE_ID,
         folderId: null,
         name: "created",
-        extension: "md",
+        extension: "",
         markdown: "created",
         filetype: "markdown",
       });
-      const deleteToken = await tree.inspect(SOURCE_ID, "delete-me.md");
+      const deleteToken = await tree.inspect(SOURCE_ID, "delete-me");
       expect(deleteToken?.kind).toBe("file");
       await expect(
         tree.commitRecursiveDelete({
@@ -351,15 +374,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           availabilityGeneration: expect.not.stringMatching(/^0$/),
         },
       });
-      const moveSource = await tree.inspect(SOURCE_ID, "move-source.md");
-      const moveTarget = await tree.inspect(SOURCE_ID, "move-target.md");
+      const moveSource = await tree.inspect(SOURCE_ID, "move-source");
+      const moveTarget = await tree.inspect(SOURCE_ID, "move-target");
       expect(moveSource?.kind).toBe("file");
       expect(moveTarget?.kind).toBe("file");
       await expect(
         tree.commitMove({
           source: moveSource as Extract<NonNullable<typeof moveSource>, { kind: "file" }>,
           destinationSourceId: SOURCE_ID,
-          destinationPath: "move-target.md",
+          destinationPath: "move-target",
           expectedTarget: {
             state: "occupied",
             token: moveTarget as Extract<NonNullable<typeof moveTarget>, { kind: "file" }>,
@@ -401,7 +424,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: DOC_AMBIENT_CREATE_ID,
           folderId: null,
           name: "ambient-create",
-          extension: "md",
+          extension: "",
           filetype: "markdown",
           markdown: "ambient-create",
         });

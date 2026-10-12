@@ -25,7 +25,7 @@ const B = uuid(3);
 const C = uuid(4);
 const P = uuid(5);
 const ch = (path: string) => `manuscript://chapters/${path}`;
-const HOLDER = ch("holder.md");
+const HOLDER = ch("holder");
 const fact = (id: string, path: string) => ({ ref: documentRef(id), address: ch(path) });
 // An upload's identity is its `src`, shown at its manuscript path.
 const upload = { ref: `asset:${P}`, address: "manuscript://assets/map.png" };
@@ -35,29 +35,29 @@ function setup() {
     holder: { id: H, uri: HOLDER },
     // A moved since it was written: facts spell where it is now.
     documents: [
-      catalogDocument(A, ch("a-moved.md")),
-      catalogDocument(B, ch("b.md")),
-      catalogDocument(C, ch("c.md")),
+      catalogDocument(A, ch("a-moved")),
+      catalogDocument(B, ch("b")),
+      catalogDocument(C, ch("c")),
       catalogDocument(P, "manuscript://assets/map.png", { image: true }),
     ],
     blocks: [
       schema.node("heading", { level: 1 }, [
         schema.text("Part "),
         schema.text("one", [
-          schema.marks.link.create({ href: ch("c.md"), title: null, ref: documentRef(C) }),
+          schema.marks.link.create({ href: ch("c"), title: null, ref: documentRef(C) }),
         ]),
       ]),
       paragraph(
         "One two three four five six seven eight nine ",
-        docLink("late", B, ch("b.md")),
+        docLink("late", B, ch("b")),
         " words.",
       ),
       paragraph("Edit me."),
       schema.node("paragraph", null, [
-        ...paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon. ").content.content,
+        ...paragraph("See ", docLink("Alpha", A, ch("a")), " soon. ").content.content,
         schema.node("image", { src: `asset:${P}`, alt: "Map" }),
       ]),
-      paragraph("One two three four five six seven ", docLink("cut label", B, ch("b.md")), "."),
+      paragraph("One two three four five six seven ", docLink("cut label", B, ch("b")), "."),
     ],
   });
 }
@@ -70,18 +70,18 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
       expected: {
         holderUri: HOLDER,
         view: { kind: "live" },
-        links: [fact(C, "c.md"), fact(B, "b.md"), fact(A, "a-moved.md"), upload],
+        links: [fact(C, "c"), fact(B, "b"), fact(A, "a-moved"), upload],
       },
     },
     {
       name: "a narrowed read shows only the selected block's links",
       facts: async () => (await setup().read({ in: [4, 4] })).showing?.links,
-      expected: [fact(A, "a-moved.md"), upload],
+      expected: [fact(A, "a-moved"), upload],
     },
     {
       name: "an outline read shows only heading links",
       facts: async () => (await setup().read({ format: "outline" })).showing?.links,
-      expected: [fact(C, "c.md")],
+      expected: [fact(C, "c")],
     },
     {
       name: "an echo's truncated context drops a link past the cut and one the cut splits",
@@ -91,7 +91,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
         // Context blocks 2 and 4 around the edit; block 2's link starts past word eight.
         return outcome.showing?.links;
       },
-      expected: [fact(A, "a-moved.md"), upload],
+      expected: [fact(A, "a-moved"), upload],
     },
     {
       name: "an echo next to a link the eight-word cut splits claims nothing for it",
@@ -110,9 +110,9 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
     projectId: PROJECT,
     documents: [
       catalogDocument(H, HOLDER),
-      catalogDocument(A, ch("a.md")),
-      catalogDocument(B, "kb://same.md", { presence: "deleted" }),
-      catalogDocument(C, "kb://same.md"),
+      catalogDocument(A, ch("a")),
+      catalogDocument(B, "kb://same", { presence: "deleted" }),
+      catalogDocument(C, "kb://same"),
     ],
   });
   await links.prepare({
@@ -130,14 +130,14 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
     codec,
     items: model.serializeBlockLines(toDocHandle(doc), codec).map(modelBlockItem),
   });
-  const alpha = docFromBlocks([paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon.")], 7000);
+  const alpha = docFromBlocks([paragraph("See ", docLink("Alpha", A, ch("a")), " soon.")], 7000);
   const { codec, items } = render(alpha);
   const [item] = items as [AgentEditBlockItem];
   const prefix = (length: number) => [{ hash: item.hash, body: item.body.slice(0, length) }];
-  expect.soft(codec.shownLinks(items), "whole block").toEqual([fact(A, "a.md")]);
+  expect.soft(codec.shownLinks(items), "whole block").toEqual([fact(A, "a")]);
   expect
     .soft(codec.shownLinks(prefix(item.body.indexOf(")") + 1)), "prefix ending at the link's end")
-    .toEqual([fact(A, "a.md")]);
+    .toEqual([fact(A, "a")]);
   expect.soft(codec.shownLinks(prefix(item.body.indexOf(")"))), "one character short").toEqual([]);
   expect
     .soft(codec.shownLinks([{ hash: item.hash, body: "different text" }]), "never rendered")
@@ -164,13 +164,13 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
       "widened",
     )
     .not.toContain(item.hash);
-  expect.soft(codec.shownLinks(items), "hash widened after the render").toEqual([fact(A, "a.md")]);
+  expect.soft(codec.shownLinks(items), "hash widened after the render").toEqual([fact(A, "a")]);
 
-  // Gone B and live C spell the same Markdown at kb://same.md: equal text is not equal identity.
-  const same = docFromBlocks([paragraph(docLink("Target", B, "kb://same.md"))], 7100);
+  // Gone B and live C spell the same Markdown at kb://same: equal text is not equal identity.
+  const same = docFromBlocks([paragraph(docLink("Target", B, "kb://same"))], 7100);
   const gone = render(same);
   const block = same.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
-  updateYFragment(same, block, paragraph(docLink("Target", C, "kb://same.md")), {
+  updateYFragment(same, block, paragraph(docLink("Target", C, "kb://same")), {
     mapping: new Map(),
     isOMark: new Map(),
   } as never);
@@ -179,15 +179,15 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
   expect.soft(gone.codec.shownLinks(gone.items), "never claims the live ref").toEqual([]);
   expect
     .soft(render(same).codec.shownLinks(live.items), "a render of the live state alone")
-    .toEqual([{ ref: documentRef(C), address: "kb://same.md" }]);
+    .toEqual([{ ref: documentRef(C), address: "kb://same" }]);
 
   // Live C, then the same block as an address-only link: the ref-null render clears the fact.
-  const unbound = docFromBlocks([paragraph(docLink("Target", C, "kb://same.md"))], 7200);
+  const unbound = docFromBlocks([paragraph(docLink("Target", C, "kb://same"))], 7200);
   const withRef = render(unbound);
   updateYFragment(
     unbound,
     unbound.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement,
-    paragraph({ text: "Target", href: "kb://same.md", ref: null }),
+    paragraph({ text: "Target", href: "kb://same", ref: null }),
     { mapping: new Map(), isOMark: new Map() } as never,
   );
   const withoutRef = render(unbound, withRef.codec);

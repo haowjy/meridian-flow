@@ -1,5 +1,8 @@
 /** Shared helpers for uploaded editor images and asset-backed rendering. */
-import type { UploadFigureAssetResponse } from "@meridian/contracts/protocol";
+import {
+  parseDocumentFilename,
+  type UploadFigureAssetResponse,
+} from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
@@ -223,11 +226,11 @@ export function imageFilenameFromUrl(url: string): string {
   return PASTED_IMAGE_NAME;
 }
 
-/** Keeps the extension, which is the only part of a token worth reading. */
+/** Keeps a registered extension, which is the only part of a token worth reading. */
 function boundedImageName(name: string): string {
   if (name.length <= PASTED_NAME_LIMIT) return name;
-  const dot = name.lastIndexOf(".");
-  const extension = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
+  const parsed = parseDocumentFilename(name);
+  const extension = parsed.ok && parsed.value.extension ? `.${parsed.value.extension}` : "";
   return PASTED_IMAGE_NAME + extension;
 }
 

@@ -36,6 +36,11 @@ Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
 
+## Document intake
+
+[Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
+DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
+
 ## Before you call it a defect
 
 Two harness races have produced false defects. Rule them out first.
