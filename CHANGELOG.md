@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- Share upload/import classification and filename decoding; preserve case-only upload names and reject multiple upload file parts.
+- Define the verbatim YAML document-properties storage contract.
+
+
 ### Fixed
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
