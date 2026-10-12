@@ -406,6 +406,7 @@ function ReadableProjectDestination({
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     reviewBoundAddressResult(addressBinding, documentLookup.data),
+    addressBinding.kind === "plain" ? "live" : "review",
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
@@ -417,6 +418,7 @@ function ReadableProjectDestination({
     },
     editorDrafts,
     (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
+    reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
   const reviewRouteBinding = reviewAddressRouteBinding(

@@ -628,7 +628,9 @@ A cold different-project transition replaces the old shell with an inert
 boundary. Same-Work pending Editor navigation retains the usable document and
 its identity chrome; recovery and unavailable/error destinations mask it.
 The route publishes authorized tab metadata, while the document host owns
-live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
+live-session binding. A server live-address admission proves live membership
+without waiting for the browser catalog. Review-view admissions carry separate
+provenance and still need live-membership or pending-create evidence. See [Editor document lifecycle](editor-document-lifecycle.md)
 for entry paths, publication ordering, retention, and failure behavior.
 Writer Close commits through accepted navigation; forced availability repair
 remains an identity and revision guarded CAS over the current address projection.

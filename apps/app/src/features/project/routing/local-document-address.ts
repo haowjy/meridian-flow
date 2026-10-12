@@ -186,9 +186,14 @@ export function resolveLocalDocumentAddress(
 export function reconcileDocumentAddress(
   local: ReturnType<typeof resolveLocalDocumentAddress>,
   remote: DocumentAddressResult | undefined,
-): { result: DocumentAddressResult | undefined; localFile: CatalogFile | undefined } {
+  remoteView: "live" | "review" = "review",
+): {
+  result: DocumentAddressResult | undefined;
+  localFile: CatalogFile | undefined;
+  view: "live" | "review" | "local";
+} {
   // The route's open document outranks whatever the server says about the path it holds or left.
-  if (local?.bound) return { result: local.result, localFile: local.file };
+  if (local?.bound) return { result: local.result, localFile: local.file, view: "local" };
   if (remote && remote.kind !== "unavailable") {
     // While the writer's own move is unconfirmed, the path it gave this document is its
     // address; a server alias for that path only remembers where the document used to be.
@@ -197,14 +202,15 @@ export function reconcileDocumentAddress(
       local?.file.placementPending &&
       local.file.documentId === remote.document.documentId
     )
-      return { result: local.result, localFile: local.file };
+      return { result: local.result, localFile: local.file, view: "local" };
     return {
       result: remote,
+      view: remoteView,
       localFile: local?.file.documentId === remote.document.documentId ? local.file : undefined,
     };
   }
-  if (local) return { result: local.result, localFile: local.file };
-  return { result: remote, localFile: undefined };
+  if (local) return { result: local.result, localFile: local.file, view: "local" };
+  return { result: remote, localFile: undefined, view: remoteView };
 }
 
 /** Retain exact local ownership while successful server metadata owns the locator. */
@@ -228,8 +234,9 @@ export function mergeLocalResourceState(
 }
 
 /**
- * The server resolves every tree node, including a new document that only a
- * pending draft proposes and one whose draft was discarded. The live manifest
+ * A successful server live lookup proves live membership, even if the catalog lags.
+ * A review-view lookup may admit a hidden document; it proves no live membership.
+ * The live manifest
  * lists what can open live. A document missing from it has no live
  * view: its pending new-document draft opens as review, and with no such draft
  * the address is unavailable. Never a blank live editor.
@@ -254,10 +261,15 @@ export function gateLiveView(
   },
   drafts: { status: string; groups: ThreadDraftGroup[] | null },
   hasLiveTab: (documentId: string) => boolean,
+  admittedView: "live" | "review" | "local" = "review",
 ): GatedLiveView {
   if (!result || result.kind === "unavailable") return { outcome: "ready", result };
   const documentId = result.document.documentId;
-  if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
+  if (
+    admittedView === "live" ||
+    hasLiveTab(documentId) ||
+    manifest.catalog?.normalized.entries.has(documentId)
+  )
     return { outcome: "ready", result };
   if (manifest.isError || drafts.status === "error")
     return { outcome: "failed", result: undefined };

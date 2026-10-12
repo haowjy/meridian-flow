@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- A successful live document open no longer waits for or fails on an older browser catalog.
+
 - Review opens the draft's document even when a separate live file shares its path. Moved and renamed review documents repair their addresses.
 
 - Inline review keeps the sidebar collapsed during warm address loading; unavailable destinations and Work recovery restore navigation.
