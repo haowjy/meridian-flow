@@ -107,6 +107,7 @@ export function selectReviewCut(
     draftRevisionToken?: string;
     closureClassIds?: string[];
     admissionTokens?: string[];
+    memberPartKeys?: string[];
   },
   requireCompleteClass: boolean,
 ) {
@@ -141,11 +142,16 @@ export function selectReviewCut(
           .map((op) => op.closureClassId),
       )
     : new Set(command.closureClassIds);
-  if (
-    !classes.size ||
-    [...classes].some((id) => !preview.operations.some((op) => op.closureClassId === id))
-  )
-    throw new DraftChangeRefusal("gone");
+  if (!classes.size) throw new DraftChangeRefusal("gone");
+  if ([...classes].some((id) => !preview.operations.some((op) => op.closureClassId === id))) {
+    // Immutable members only distinguish growth from disappearance. They never
+    // authorize a replacement class or widen the clicked class/token selection.
+    const clickedParts = new Set(command.memberPartKeys);
+    const survives =
+      !requireCompleteClass &&
+      preview.operations.some((op) => op.partKey !== undefined && clickedParts.has(op.partKey));
+    throw new DraftChangeRefusal(survives ? "stale" : "gone");
+  }
   const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
   if (!requireCompleteClass) {
     // Clicked classes survive re-journaling; only their unchanged evidence admits.

@@ -126,7 +126,7 @@ it.each([
 it.each([
   "created-parent",
   "surviving-text",
-] as const)("refuses gone Discard when %s dependency replaces the clicked class", async (shape) => {
+] as const)("refuses stale Discard when %s dependency grows the clicked class", async (shape) => {
   const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.", "discard-arrival");
@@ -174,7 +174,7 @@ it.each([
       preview.operations.map((op) => op.operationId),
     );
     expect(await f.collab.draftReview.discardWorkDraft(request)).toEqual({
-      status: "gone",
+      status: "stale",
       draftId: branch.branchId,
     });
     const after = await f.collab.draftReview.preview(command);

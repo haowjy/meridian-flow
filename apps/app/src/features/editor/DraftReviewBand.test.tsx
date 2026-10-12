@@ -120,6 +120,7 @@ it("focuses this document, then applies and discards its classes without closing
           {
             draftId: "draft-a",
             closureClassIds: ["class-2"],
+            memberPartKeys: [],
             admissionTokens: ["class-2"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",

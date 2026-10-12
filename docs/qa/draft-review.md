@@ -123,10 +123,11 @@ the change-list screenshot and browser errors. Stop only this worktree's stack.
 Stage two independent paragraph edits in a named Work. Save a preview and its
 revision tokens with `./mf api`. Append another draft edit, then try a per-change
 Apply using the saved tokens: PASS is `stale`, with no disposition of
-the requested rows. Discard sends the saved `closureClassIds`, `admissionTokens` and revision
+the requested rows. Discard sends the saved `closureClassIds`, `admissionTokens`, `memberPartKeys` and revision
 tokens (not operation IDs): an independent paragraph admission must not refuse it,
-while changed evidence for the same class must return `stale`; a missing or
-replaced class must return `gone`. Refresh
+while changed evidence for the same class must return `stale`. A grown class
+with surviving immutable members also returns `stale`, including after a re-fork;
+a disappeared class or absent fallback-only class returns `gone`. Refresh
 the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
@@ -368,7 +369,8 @@ from CLI success. Record screenshots and the fresh API reads per action.
 3. Apply one row, recreate and Discard one row. PASS: the list stays open, the
    chosen class disappears immediately, live changes only on Apply; both preview
    tokens and all operation IDs of that class go in the Apply request. Discard
-   sends class IDs and their clicked admission tokens, not operation IDs. Refusal restores
+   sends class IDs, their clicked admission tokens and immutable member part keys,
+   not operation IDs. Member keys classify refusals only, never authorize growth. Refusal restores
    that row with the server reason, not a false connection warning. Switch offline
    and click: it returns with a connection refusal, never dispatching on reconnect.
 4. Handle the last change with the list open. PASS: the list closes; Applying or

@@ -148,6 +148,7 @@ it.each([
           ...request,
           closureClassIds: [preview.operations[1].closureClassId],
           admissionTokens: [preview.operations[1].admissionToken],
+          memberPartKeys: preview.operations[1].partKey ? [preview.operations[1].partKey] : [],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         }),

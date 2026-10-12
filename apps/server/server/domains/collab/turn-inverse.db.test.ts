@@ -217,6 +217,7 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
         ...scope,
         closureClassIds: [inverse.operations[0].closureClassId],
         admissionTokens: [inverse.operations[0].admissionToken],
+        memberPartKeys: inverse.operations[0].partKey ? [inverse.operations[0].partKey] : [],
         liveRevisionToken: inverse.liveRevisionToken,
         draftRevisionToken: inverse.draftRevisionToken,
       }),

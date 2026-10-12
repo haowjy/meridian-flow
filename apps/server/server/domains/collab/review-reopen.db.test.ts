@@ -39,6 +39,7 @@ it.each([
       ...command,
       operationIds: preview.operations.map((op) => op.operationId),
       admissionTokens: [...new Set(preview.operations.map((op) => op.admissionToken))],
+      memberPartKeys: preview.operations.flatMap((op) => (op.partKey ? [op.partKey] : [])),
       closureClassIds: [...new Set(preview.operations.map((op) => op.closureClassId))],
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,

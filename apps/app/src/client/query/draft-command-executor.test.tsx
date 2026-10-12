@@ -265,10 +265,12 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     expect(api.discardDraft.mock.calls[0]?.[3]).toMatchObject({
       closureClassIds: [a.closureClassId],
       admissionTokens: [a.admissionToken],
+      memberPartKeys: [a.partKey],
     });
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
       closureClassIds: [b.closureClassId],
       admissionTokens: [b.admissionToken],
+      memberPartKeys: [b.partKey],
     });
     for (const call of api.discardDraft.mock.calls)
       expect(call[3]).not.toHaveProperty("operationIds");
@@ -370,6 +372,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
         expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
           closureClassIds: [b.closureClassId],
           admissionTokens: [b.admissionToken],
+          memberPartKeys: [b.partKey],
           draftRevisionToken: "draft-2",
           liveRevisionToken: "fresh-live",
         });

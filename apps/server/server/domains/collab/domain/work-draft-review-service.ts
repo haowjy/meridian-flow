@@ -259,6 +259,7 @@ export function createWorkDraftReviewService(input: {
     command: {
       closureClassIds?: string[];
       admissionTokens?: string[];
+      memberPartKeys?: string[];
       operationIds?: string[];
       liveRevisionToken?: string;
       draftRevisionToken?: string;
@@ -338,7 +339,8 @@ export function createWorkDraftReviewService(input: {
         !command.liveRevisionToken ||
         !command.draftRevisionToken ||
         !command.closureClassIds?.length ||
-        !command.admissionTokens?.length
+        !command.admissionTokens?.length ||
+        !Array.isArray(command.memberPartKeys)
       )
         return { status: "stale" as const, draftId: command.draftId };
       try {

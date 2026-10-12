@@ -68,6 +68,9 @@ export function fencedRequest<T>(
   return {
     ...command,
     operationIds,
+    memberPartKeys: preview.operations
+      .filter((op) => operationIds.includes(op.operationId))
+      .flatMap((op) => (op.partKey ? [op.partKey] : [])),
     admissionTokens: [
       ...new Set(
         preview.operations
