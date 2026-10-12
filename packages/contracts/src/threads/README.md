@@ -44,3 +44,12 @@ metadata and is excluded from `modelText`. The shared `HandoffBriefProps` and
 `InvocationCardProps` component contracts describe the handoff and spawn-card
 fields. See
 [handoff API](../../../../docs/api/thread-handoff.md).
+
+### Waiting for usage
+
+`ThreadPendingInbox.blocked` optionally carries `{ reason: "credits_exhausted" }`.
+This is an accepted message's durable start block, not an admission refusal or
+a failed assistant. The runtime delivery owner sets it on a credit-gated drain
+and clears it when the next turn starts. Snapshot pending state, socket
+subscription state (including its validator) and `meridian.inbox.changed`
+preserve the same fact. Clients must not guess it from account balance.

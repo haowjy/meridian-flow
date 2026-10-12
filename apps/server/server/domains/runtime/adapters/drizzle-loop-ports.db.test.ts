@@ -319,6 +319,68 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         };
       }
+      it("persists the usage block and publishes it until the next run starts", async () => {
+        const { readPendingInbox } = await import("../loop/pending-inbox.js");
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "usage"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        const row = await delivery.enqueue(message("kept"));
+        await expect(
+          createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure }).blockForUsage(
+            lease,
+          ),
+        ).rejects.toThrow("projection unavailable");
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        await delivery.blockForUsage(lease);
+        await runClaim.release(lease);
+        const saved = await readPendingInbox(createDrizzleInbox(db), THREAD_A);
+        const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
+        const snapshot = await buildThreadSnapshot(
+          repos,
+          {
+            async headSeq() {
+              return 0n;
+            },
+            async readModelProjectionWatermark() {
+              return 0n;
+            },
+          },
+          {
+            async read() {
+              return { kind: "asleep" as const };
+            },
+            async readMany() {
+              return new Map();
+            },
+            readRunningTurnId: runClaim.readRunningTurnId,
+            readPending: (threadId) => readPendingInbox(delivery, threadId),
+          },
+          THREAD_A,
+        );
+        expect(snapshot.liveState.pending.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.items.map((item) => item.id)).toEqual([row.id]);
+        const events = await journalEventsByThread(db, THREAD_A);
+        expect(events.at(-1)?.payload).toMatchObject({
+          pending: { blocked: { reason: "credits_exhausted" } },
+        });
+        const nextLease = required(await runClaim.startExecution(THREAD_A, "restored"));
+        await delivery.adoptBatch(nextLease, async () => ({
+          value: undefined,
+          turnKind: "assistant" as const,
+          turnId: turn.id,
+          messageIds: [row.id],
+        }));
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).toMatchObject({
+          pending: { items: expect.any(Array) },
+        });
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+          "pending.blocked",
+        );
+        await runClaim.release(nextLease);
+      });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
         const writer = createDrizzleEventJournalWriter(db);

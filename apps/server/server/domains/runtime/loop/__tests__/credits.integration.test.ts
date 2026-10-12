@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { runtimeScenario } from "./runtime-harness.js";
-import { gatewayStubDefaults } from "./test-gateway.js";
+import { gatewayStubDefaults, scriptedGateway } from "./test-gateway.js";
 
 function pricedTextResult(text = "done"): GenerateResult {
   return {
@@ -29,6 +29,48 @@ async function setup(gateway: Gateway, creditsMillicredits = "1000000") {
 }
 
 describe("runtime credits", () => {
+  it("records a drain's credit refusal without creating a reply, then clears it on start", async () => {
+    let allowed = false;
+    const rig = await runtimeScenario({
+      gateway: scriptedGateway(),
+      billingUsage: {
+        async canStartTurn() {
+          return allowed;
+        },
+        async canContinueModelCall() {
+          return true;
+        },
+        async debit() {
+          return { transactionId: "debit" };
+        },
+      },
+    });
+    const row = await rig.inbox.enqueue({
+      threadId: rig.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: "user-1" },
+      body: { kind: "text", text: "kept" },
+      idempotencyKey: "kept",
+    });
+    await expect(
+      rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true }),
+    ).rejects.toMatchObject({ code: "credits_exhausted" });
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toEqual({
+      reason: "credits_exhausted",
+    });
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
+        (turn) => turn.role === "assistant",
+      ),
+    ).toHaveLength(0);
+    allowed = true;
+    const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+    expect((await rig.delivery.readPendingProjection(rig.thread.id)).blocked).toBeUndefined();
+    expect((await rig.delivery.selectPending(rig.thread.id)).map((item) => item.id)).toContain(
+      row.id,
+    );
+    await run.execute();
+  });
   it("allows one turn at exact zero balance before blocking negative balances", async () => {
     const gateway: Gateway = {
       ...gatewayStubDefaults,

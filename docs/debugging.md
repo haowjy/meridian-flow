@@ -55,7 +55,12 @@ maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the
 route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
 Use it for setup and durable reads; check send/tail outcomes against the durable
-transcript or in the browser.
+transcript or in the browser. A send that cannot start for lack of usage
+returns `status: "blocked", reason: "credits_exhausted"` with exit code 1,
+not a deadline timeout. This proves that this send's accepted writer turn is
+still in the durable blocked inbox; it does not discard the message. Adding
+usage lets the existing server wake retry it. `--no-wait` still reports only
+admission. Other reply-following limits under #768 are unchanged.
 
 ```bash
 ./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
