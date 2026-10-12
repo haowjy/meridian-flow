@@ -69,6 +69,8 @@ export interface ResponseCommitter {
   ): { staged: readonly string[]; created: readonly string[] };
   dropForThread(docId: string, threadId: string): void;
   refreshResponse(responseId: string): Promise<string[]>;
+  /** The accepted helper is the sole command view; ordinary peer sync must not replace it. */
+  preparedResponseView(responseId: string, docId: string): PreparedResponseView | undefined;
 }
 
 export interface ResponseCommitOptions {
@@ -95,8 +97,8 @@ export interface ResponseStageUpdateInput {
   session: ActorSession;
   runtime: RuntimeDocumentState;
   commandName: DocumentCommandName;
-  documentLabel?: string;
-  description?: string;
+  documentLabel: string;
+  description: string;
   update: Uint8Array;
   segments?: readonly Uint8Array[];
   editParts?: readonly Uint8Array[];
@@ -138,26 +140,31 @@ interface StagedResponseUpdate extends JournaledUpdate {
   copied?: CopySummary;
 }
 
-/** One post-admission transition; rejected write owners retain their per-result receipts. */
-interface ResponseReplaySettlement {
-  updates: StagedResponseUpdate[];
-  rejected: StagedResponseUpdate[];
-  helperState: Uint8Array;
-  helperCut: StagedHelperCut;
-}
-
-interface ResponseDocumentBuffer {
+interface ResponseDocumentBufferFields {
   docId: string;
   session: ActorSession;
-  runtime: RuntimeDocumentState;
   commandName: DocumentCommandName;
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
   discardedUpdates?: StagedResponseUpdate[];
-  helperCut?: StagedHelperCut;
   interactionContext?: InteractionContext;
+}
+
+interface PreparedResponseView {
+  kind: "prepared";
+  runtime: RuntimeDocumentState;
+  replay: NonNullable<DocumentCoordinator["withStagedWrites"]>;
+  cut: StagedHelperCut;
+}
+type ResponseDocumentBuffer = ResponseDocumentBufferFields & {
+  view: { kind: "live"; runtime: RuntimeDocumentState } | PreparedResponseView;
+};
+type PreparedResponseDocumentBuffer = ResponseDocumentBufferFields & { view: PreparedResponseView };
+
+function isPrepared(doc: ResponseDocumentBuffer): doc is PreparedResponseDocumentBuffer {
+  return doc.view.kind === "prepared";
 }
 
 interface ResponseBuffer {
@@ -340,47 +347,47 @@ export function createResponseCommitter(deps: {
     responseDocuments,
     dropForThread,
     refreshResponse,
+    preparedResponseView: (responseId, docId) => {
+      const doc = activeBuffer(responseId)?.docs.get(docId);
+      return doc?.view.kind === "prepared" ? doc.view : undefined;
+    },
   };
 
-  async function replayDocument(docBuffer: ResponseDocumentBuffer, commit: boolean) {
-    const host = coordinator.withStagedWrites;
-    if (!host) throw new Error("Staged replay host is unavailable");
-    if (!docBuffer.helperCut) throw new Error("Staged helper has no authority cut");
-    const accepted = await host({
+  async function replayDocument(docBuffer: PreparedResponseDocumentBuffer, commit: boolean) {
+    const accepted = await docBuffer.view.replay({
       docId: docBuffer.docId,
-      sourceDoc: docBuffer.runtime.doc,
-      helperCut: docBuffer.helperCut,
+      sourceDoc: docBuffer.view.runtime.doc,
+      helperCut: docBuffer.view.cut,
       entries: responseJournalBatch([docBuffer]),
       commit,
     });
     const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
-    const settlement: ResponseReplaySettlement = {
-      updates: docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId)),
-      rejected: docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId)),
-      helperState: accepted.helperState,
-      helperCut: accepted.helperCut,
-    };
+    const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
+    const rejected = docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId));
     const helper = new Y.Doc({ gc: false });
-    Y.applyUpdate(helper, settlement.helperState);
-    const previous = docBuffer.runtime.doc;
+    Y.applyUpdate(helper, accepted.helperState);
+    const previous = docBuffer.view.runtime.doc;
     // No buffer or helper mutation occurs before host admission and CAS accept.
     Object.assign(docBuffer, {
-      updates: settlement.updates,
-      discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...settlement.rejected],
-      helperCut: settlement.helperCut,
-      runtime: { ...docBuffer.runtime, doc: helper },
+      updates,
+      discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...rejected],
+      view: {
+        ...docBuffer.view,
+        cut: accepted.helperCut,
+        runtime: { ...docBuffer.view.runtime, doc: helper },
+      },
     });
-    runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+    runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.view.runtime);
     previous.destroy();
     const notices = new Map<string, StagedResponseUpdate[]>();
-    for (const entry of settlement.rejected) {
+    for (const entry of rejected) {
       const group = notices.get(entry.writeId) ?? [];
       group.push(entry);
       notices.set(entry.writeId, group);
     }
     return {
       dropped: [...notices].map(([handle, writes]) => {
-        const scope = settlement.updates.some((entry) => entry.writeId === handle)
+        const scope = updates.some((entry) => entry.writeId === handle)
           ? "part of this handle"
           : "all staged writes for this handle";
         return `${writes[0]?.documentLabel} ${handle}: ${scope} was discarded with the text it edited. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
@@ -390,10 +397,9 @@ export function createResponseCommitter(deps: {
   }
 
   async function refreshResponse(responseId: string): Promise<string[]> {
-    if (!coordinator.withStagedWrites) return [];
     const dropped: string[] = [];
     for (const doc of activeBuffer(responseId)?.docs.values() ?? [])
-      dropped.push(...(await replayDocument(doc, false)).dropped);
+      if (isPrepared(doc)) dropped.push(...(await replayDocument(doc, false)).dropped);
     return dropped;
   }
 
@@ -463,7 +469,7 @@ export function createResponseCommitter(deps: {
             docBuffer,
             await openCommandLinks(deps, {
               documentId: docBuffer.docId,
-              docs: [docBuffer.runtime.doc, ...before],
+              docs: [docBuffer.view.runtime.doc, ...before],
               context: { responseId, threadId: docBuffer.session.threadId },
             }),
           );
@@ -489,7 +495,7 @@ export function createResponseCommitter(deps: {
             }
             return mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
-              runtime: docBuffer.runtime,
+              runtime: docBuffer.view.runtime,
               links: linksOf(docBuffer),
               deletedHashes: hashes.deletedHashes,
               touchedHashes: hashes.touchedHashes,
@@ -529,7 +535,7 @@ export function createResponseCommitter(deps: {
                 docBuffer.docId,
                 {
                   docId: docBuffer.docId,
-                  runtime: docBuffer.runtime,
+                  runtime: docBuffer.view.runtime,
                   links: linksOf(docBuffer),
                   deletedHashes: new Set(hashes.deletedHashes),
                   touchedHashes: new Set(hashes.touchedHashes),
@@ -547,13 +553,13 @@ export function createResponseCommitter(deps: {
         lockOptions?: { signal?: AbortSignal; timeoutMs?: number },
       ): Promise<ResponseCommitDocumentResult> => {
         let replayBase: Y.Doc | undefined;
-        if (coordinator.withStagedWrites) {
+        if (isPrepared(docBuffer)) {
           const replayed = await replayDocument(docBuffer, true);
           commitLinks.set(
             docBuffer,
             await openCommandLinks(deps, {
               documentId: docBuffer.docId,
-              docs: [docBuffer.runtime.doc],
+              docs: [docBuffer.view.runtime.doc],
               context: { responseId, threadId: docBuffer.session.threadId },
             }),
           );
@@ -581,9 +587,15 @@ export function createResponseCommitter(deps: {
                 return await run(cut);
               } finally {
                 cut.destroy();
+                reportingRuntime.doc.destroy();
               }
             }
           : withLiveDocument;
+        const reportingRuntime = replayBase
+          ? { ...docBuffer.view.runtime, doc: new Y.Doc({ gc: false }) }
+          : docBuffer.view.runtime;
+        if (replayBase)
+          Y.applyUpdate(reportingRuntime.doc, Y.encodeStateAsUpdate(docBuffer.view.runtime.doc));
         const applied = await reportAtCut(
           coordinator,
           docBuffer.docId,
@@ -593,7 +605,7 @@ export function createResponseCommitter(deps: {
               liveDoc,
               {
                 docId: docBuffer.docId,
-                runtime: docBuffer.runtime,
+                runtime: reportingRuntime,
                 links: linksOf(docBuffer),
                 deletedHashes: hashes.deletedHashes,
                 touchedHashes: hashes.touchedHashes,
@@ -612,12 +624,14 @@ export function createResponseCommitter(deps: {
         );
         if (isInternalWriteResult(applied)) throw internalResultError(applied);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
-        for (const concurrent of applied.concurrent.updates) {
+        for (const concurrent of docBuffer.view.kind === "prepared"
+          ? []
+          : applied.concurrent.updates) {
           if (concurrent.update.length > 0) {
-            Y.applyUpdate(docBuffer.runtime.doc, concurrent.update, concurrent.origin);
+            Y.applyUpdate(docBuffer.view.runtime.doc, concurrent.update, concurrent.origin);
           }
         }
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.view.runtime);
         const lateSweep = applied.lateSweep
           ? {
               ...applied.lateSweep,
@@ -757,7 +771,9 @@ export function createResponseCommitter(deps: {
         ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs).catch(() => null)
         : null;
       const recoveryFailure = await runtimeStore
-        .recoverCommittedResponseProjection(docBuffers)
+        .recoverCommittedResponseProjection(
+          docBuffers.map((doc) => ({ ...doc, runtime: doc.view.runtime })),
+        )
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
         emit("recovery_succeeded", responseId, "journalCommitted", {
@@ -868,14 +884,14 @@ export function createResponseCommitter(deps: {
     lateSweep?: DestructiveSweepReport,
   ): ResponseCommitDocumentResult["receipts"] {
     const links = linksOf(docBuffer);
-    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, links.codec);
+    const after = snapshotBlocks(toDocHandle(docBuffer.view.runtime.doc), deps.model, links.codec);
     const lastIndex = docBuffer.updates.length - 1;
     const receipts = docBuffer.updates.map((update, index) => {
       const beforeDoc = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
         const summary = mutationCommit.summarizeMutationEcho({
-          runtime: docBuffer.runtime,
+          runtime: docBuffer.view.runtime,
           links,
           before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, links.codec),
           touchedHashes: update.touchedHashes,
@@ -900,7 +916,7 @@ export function createResponseCommitter(deps: {
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
           ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
           ...(index === lastIndex &&
-          isDocumentEmpty(deps.model, links.codec, toDocHandle(docBuffer.runtime.doc))
+          isDocumentEmpty(deps.model, links.codec, toDocHandle(docBuffer.view.runtime.doc))
             ? { documentEmpty: true }
             : {}),
           ...(update.copied
@@ -1030,11 +1046,11 @@ export function createResponseCommitter(deps: {
         const restored = await runtimeStore.restoreRuntimeFromLive(
           docBuffer.session,
           docBuffer.docId,
-          docBuffer.runtime,
+          docBuffer.view.runtime,
           docBuffer.commandName,
         );
         if (isInternalWriteResult(restored)) throw internalResultError(restored);
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.view.runtime);
       }
       const result = {
         status: "rolledBack" as const,
@@ -1084,13 +1100,18 @@ export function createResponseCommitter(deps: {
     base: DocHandle | null,
     read: (doc: DocHandle) => T | Promise<T>,
   ): Promise<T | null> {
+    const view = activeBuffer(responseId)?.docs.get(docId)?.view;
     const updates = bufferedUpdatesForDoc(responseId, docId);
-    if (updates.length === 0) return null;
+    if (view?.kind !== "prepared" && updates.length === 0) return null;
     const effective = new Y.Doc({ gc: false });
     try {
-      if (base)
-        Y.applyUpdate(effective, Y.encodeStateAsUpdate(unwrapDoc(base)), { type: "system" });
-      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
+      if (view?.kind === "prepared")
+        Y.applyUpdate(effective, Y.encodeStateAsUpdate(view.runtime.doc), { type: "system" });
+      else {
+        if (base)
+          Y.applyUpdate(effective, Y.encodeStateAsUpdate(unwrapDoc(base)), { type: "system" });
+        for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
+      }
       return await read(toDocHandle(effective));
     } finally {
       effective.destroy();
@@ -1152,21 +1173,27 @@ export function createResponseCommitter(deps: {
       docBuffer = {
         docId: input.docId,
         session: input.session,
-        runtime: input.runtime,
         commandName: input.commandName,
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
+        view:
+          input.interactionContext?.mode === "threadPeer" && coordinator.withStagedWrites
+            ? {
+                kind: "prepared",
+                runtime: input.runtime,
+                replay: coordinator.withStagedWrites,
+                cut: {
+                  generation: input.interactionContext.branchGeneration,
+                  state: input.preOwnSnapshot,
+                },
+              }
+            : { kind: "live", runtime: input.runtime },
       };
       buffer.docs.set(input.docId, docBuffer);
     }
 
-    if (!docBuffer.helperCut && input.interactionContext?.mode === "threadPeer")
-      docBuffer.helperCut = {
-        generation: input.interactionContext.branchGeneration,
-        state: input.preOwnSnapshot,
-      };
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
@@ -1179,8 +1206,8 @@ export function createResponseCommitter(deps: {
     }
     docBuffer.updates.push({
       commandName: input.commandName,
-      documentLabel: input.documentLabel ?? input.docId,
-      description: input.description ?? input.commandName,
+      documentLabel: input.documentLabel,
+      description: input.description,
       update: input.update,
       segments: input.segments ?? [input.update],
       meta: input.meta,

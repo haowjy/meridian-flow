@@ -426,6 +426,11 @@ query and one shared folder graph, and expose persisted branch update times.
 
 ### Selective Discard and response replay
 
+Buffered draft commands consume agent-edit's prepared response view, which owns
+helper bytes and their base cut together. Peer pulls do not reconstruct that
+helper; concurrent-edit reports operate on separate snapshots without adding
+ambient bytes outside its cut.
+
 Per-change Discard re-forks the next generation from live plus surviving rows,
 re-journaled with identical bytes and immutable edit/part metadata. It journals
 no restoration and creates no copy. Selective Apply publishes only its class's

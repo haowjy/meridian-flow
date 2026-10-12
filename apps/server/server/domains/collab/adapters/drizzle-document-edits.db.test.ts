@@ -243,7 +243,42 @@ describe("document edit receipts (Postgres)", () => {
           expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
           return;
         }
-        await review("gold", witness === "reply empty apply");
+        if (witness === "reply empty discard") {
+          let entered!: () => void, release!: () => void;
+          const waiting = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const original = fixture.branchCoordinator.withStagedRows.bind(fixture.branchCoordinator);
+          let once = true;
+          fixture.branchCoordinator.withStagedRows = async (...args) => {
+            if (once) {
+              once = false;
+              entered();
+              await gate;
+            }
+            return original(...args);
+          };
+          const reading = read();
+          await waiting;
+          try {
+            await review("gold");
+          } finally {
+            release();
+          }
+          try {
+            const result = await reading;
+            expect(result.status).toBe("success");
+            expect(
+              result.result.blocks?.flatMap((group) => group.items.map((item) => item.body)),
+            ).toEqual(["red", "blue", "lime"]);
+          } finally {
+            fixture.branchCoordinator.withStagedRows = original;
+          }
+          expect(await read()).toMatchObject({ status: "success" });
+        } else await review("gold", witness === "reply empty apply");
         if (witness === "drop before next tool" || droppedAll) {
           const missing = await write("gold", "missing");
           expect(missing.status).toBe("not_found");
@@ -347,34 +382,67 @@ describe("document edit receipts (Postgres)", () => {
         return;
       }
       if (witness === "ambient retired") {
-        expect(await write("green", "lime")).toMatchObject({ status: "success" });
-        await review("gold");
-        const snapshot = await fixture.branchStore.getBranch(branchId);
-        if (!snapshot) throw new Error("Missing branch");
-        const room = new Y.Doc({ gc: false });
+        const writer = async () => {
+          const snapshot = await fixture.branchStore.getBranch(branchId);
+          if (!snapshot) throw new Error("Missing branch");
+          const room = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(room, snapshot.state);
+            const updates: Uint8Array[] = [];
+            room.on("update", (update) => updates.push(update));
+            const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
+              0,
+            ) as Y.XmlText;
+            room.transact(() => {
+              text.delete(0, text.length);
+              text.insert(0, "pink");
+            });
+            expect(
+              await fixture.branchCoordinator.commitWriterUpdate({
+                branchId,
+                expectedGeneration: snapshot.generation,
+                updateData: Y.mergeUpdates(updates),
+                roomDocument: room,
+                actorUserId: USER_ID as never,
+              }),
+            ).toEqual({ admitted: true });
+          } finally {
+            room.destroy();
+          }
+        };
+        let entered!: () => void, release!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const original = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+        let once = true;
+        fixture.branchCoordinator.readBranch = async (branch, fn) => {
+          if (once && branch === branchId && String(fn).includes("listConcurrentJournalRows")) {
+            once = false;
+            entered();
+            await gate;
+          }
+          return original(branch, fn);
+        };
+        const writing = write("green", "lime");
+        await waiting;
         try {
-          Y.applyUpdate(room, snapshot.state);
-          const updates: Uint8Array[] = [];
-          room.on("update", (update) => updates.push(update));
-          const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
-            0,
-          ) as Y.XmlText;
-          room.transact(() => {
-            text.delete(0, text.length);
-            text.insert(0, "pink");
-          });
-          expect(
-            await fixture.branchCoordinator.commitWriterUpdate({
-              branchId,
-              expectedGeneration: snapshot.generation,
-              updateData: Y.mergeUpdates(updates),
-              roomDocument: room,
-              actorUserId: USER_ID as never,
-            }),
-          ).toEqual({ admitted: true });
+          await writer();
         } finally {
-          room.destroy();
+          release();
         }
+        try {
+          expect(await writing).toMatchObject({ status: "success" });
+        } finally {
+          fixture.branchCoordinator.readBranch = original;
+        }
+        await review("pink");
+        expect(await read()).toMatchObject({ status: "success" });
+        // Keep the earlier second-generation residual witness in this setup.
+        await writer();
         expect(await read()).toMatchObject({ status: "success" });
         await review("pink");
         expect(await read()).toMatchObject({ status: "success" });
