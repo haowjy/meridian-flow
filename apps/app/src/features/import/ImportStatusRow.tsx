@@ -50,11 +50,11 @@ export function ImportStatusRow({
   useEffect(() => {
     if (startedHere) element.current?.scrollIntoView({ block: "nearest" });
   }, [startedHere]);
+  const hashedBytes = useSyncExternalStore(store.subscribeHashed, store.getHashed, store.getHashed);
   if (state.dismissing && !state.dismissFailed) return null;
 
   const local = state.local;
   const phase = local?.phase;
-  const hashedBytes = useSyncExternalStore(store.subscribeHashed, store.getHashed, store.getHashed);
   const hashedPercent =
     phase?.kind === "preparing" && !phase.planning && phase.totalBytes > 0
       ? (hashedBytes / phase.totalBytes) * 100

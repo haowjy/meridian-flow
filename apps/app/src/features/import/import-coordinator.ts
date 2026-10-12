@@ -59,7 +59,8 @@ export class ImportCoordinator {
   readonly getSnapshot = () => this.snapshot;
   private lastTreeUpdate = 0;
   private treeTimer: ReturnType<typeof setTimeout> | undefined;
-  private changed() {
+  /** `structural` changes (a row appearing or going) skip the big-import throttle. */
+  private changed(structural = false) {
     // A big import re-renders a big tree; let it catch up at most every few seconds.
     const now = performance.now();
     const big = [...this.stores.values()].some((store) => {
@@ -69,7 +70,7 @@ export class ImportCoordinator {
         (state.local?.rows.length ?? 0) > BIG_IMPORT
       );
     });
-    if (big && now - this.lastTreeUpdate < BIG_IMPORT_TREE_MS) {
+    if (!structural && big && now - this.lastTreeUpdate < BIG_IMPORT_TREE_MS) {
       this.treeTimer ??= setTimeout(
         () => {
           this.treeTimer = undefined;
@@ -79,6 +80,8 @@ export class ImportCoordinator {
       );
       return;
     }
+    if (this.treeTimer) clearTimeout(this.treeTimer);
+    this.treeTimer = undefined;
     this.lastTreeUpdate = now;
     const ids = this.computeKnown();
     const states = ids
@@ -406,17 +409,17 @@ export class ImportCoordinator {
   async dismiss(importId: string) {
     const store = this.store(importId);
     store.update((state) => ({ ...state, dismissing: true, dismissFailed: false }));
-    this.changed();
+    this.changed(true);
     try {
       store.installReport(await this.api.dismiss(this.projectId, importId));
       this.open = {
         ...this.open,
         summaries: this.open.summaries.filter((s) => s.importId !== importId),
       };
-      this.changed();
+      this.changed(true);
     } catch {
       store.update((state) => ({ ...state, dismissing: false, dismissFailed: true }));
-      this.changed();
+      this.changed(true);
     }
   }
 
