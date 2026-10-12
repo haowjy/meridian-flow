@@ -396,10 +396,8 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {
-      // Unreachable for the typed union; kept live for a server that starts
-      // sending a status this build has never heard of.
-      const _exhaust: never = refusal.status;
-      void _exhaust;
+      // Model-only refusal codes do not drive writer controls. Unknown
+      // statuses keep the existing retry path.
       return reversalRetryCopy(refusal.direction);
     }
   }

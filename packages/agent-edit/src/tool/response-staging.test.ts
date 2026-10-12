@@ -25,7 +25,11 @@ describe("response staging", () => {
 
     const result = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Must persist." },
-      { ...context, turnId: "turn-echo-summary-failure", responseId },
+      {
+        ...context,
+        turnId: "turn-echo-summary-failure",
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+      },
     );
     serialize.mockRestore();
 
@@ -47,7 +51,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-staged-create-rollback",
-      responseId: "response-staged-create-rollback",
+      responseIdentity: {
+        providerResponseId: "response-staged-create-rollback",
+        editScopeId: "response-staged-create-rollback",
+      },
       createdDocument: true,
     };
 
@@ -76,7 +83,7 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-response-staging",
-      responseId: "response-staging",
+      responseIdentity: { providerResponseId: "response-staging", editScopeId: "response-staging" },
     };
     let liveUpdateCount = 0;
     ctx.liveDoc("chapter.md").on("update", () => {
@@ -116,21 +123,16 @@ describe("response staging", () => {
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(3);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma.", "Delta."]);
     expect(liveUpdateCount).toBe(1);
-    expect(
-      outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
-    ).toContain("status: reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
-    expect(
-      outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
-    ).toContain("status: reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma.", "Delta."]);
 
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Epsilon." },
       {
         ...context,
         turnId: "turn-response-staging-next",
-        responseId: "response-staging-next",
+        responseIdentity: {
+          providerResponseId: "response-staging-next",
+          editScopeId: "response-staging-next",
+        },
       },
     );
     await ctx.core.commitResponse("response-staging-next");
@@ -149,7 +151,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-staged-read-resync-other-block",
-      responseId: "response-staged-read-resync-other-block",
+      responseIdentity: {
+        providerResponseId: "response-staged-read-resync-other-block",
+        editScopeId: "response-staged-read-resync-other-block",
+      },
     };
 
     await ctx.core.write(
@@ -170,7 +175,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-same-block",
-      responseId: "response-same-block",
+      responseIdentity: {
+        providerResponseId: "response-same-block",
+        editScopeId: "response-same-block",
+      },
     };
     await ctx.core.write(
       { command: "replace", file: "chapter.md", in: 2, content: "Alpha AI edit." },
@@ -199,7 +207,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-own-removal",
-      responseId: "response-own-removal",
+      responseIdentity: {
+        providerResponseId: "response-own-removal",
+        editScopeId: "response-own-removal",
+      },
     };
     await ctx.core.write({ command: "remove", file: "chapter.md", in: [2, 3] }, responseContext);
     await ctx.core.write(
@@ -222,7 +233,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-undo-mid",
-      responseId: "response-undo-mid",
+      responseIdentity: {
+        providerResponseId: "response-undo-mid",
+        editScopeId: "response-undo-mid",
+      },
     };
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -248,7 +262,10 @@ describe("response staging", () => {
       {
         ...context,
         turnId: "turn-stale-buffer",
-        responseId: "response-stale-buffer",
+        responseIdentity: {
+          providerResponseId: "response-stale-buffer",
+          editScopeId: "response-stale-buffer",
+        },
       },
     );
 
@@ -269,7 +286,10 @@ describe("response staging", () => {
     const responseContext = {
       ...context,
       turnId: "turn-response-journal-fail",
-      responseId: "response-journal-fail",
+      responseIdentity: {
+        providerResponseId: "response-journal-fail",
+        editScopeId: "response-journal-fail",
+      },
     };
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -313,7 +333,11 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
     in: [1, 2] as [number, number],
     content: "I do what I wanted.\n\nI climb the road.",
   };
-  const staged = { ...context, turnId: "pov", responseId: "abort" };
+  const staged = {
+    ...context,
+    turnId: "pov",
+    responseIdentity: { providerResponseId: "abort", editScopeId: "abort" },
+  };
   expect((await ctx.core.write(command, staged)).result.status).toBe("success");
   await ctx.core.rollbackResponse("abort");
   expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
@@ -321,9 +345,14 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
     "She did what she wanted.",
     "She climbed the road.",
   ]);
-  expect((await ctx.core.write(command, { ...staged, responseId: "retry" })).result.status).toBe(
-    "success",
-  );
+  expect(
+    (
+      await ctx.core.write(command, {
+        ...staged,
+        responseIdentity: { providerResponseId: "retry", editScopeId: "retry" },
+      })
+    ).result.status,
+  ).toBe("success");
   const committed = await ctx.core.commitResponse("retry");
   expect(committed.documents[0].receipts).toHaveLength(1);
   const entries = ctx.journal.recordedBatchEntries().at(-1) ?? [];

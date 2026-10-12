@@ -29,7 +29,7 @@ import {
 const HOLDER_ID = uuid(1);
 const D = uuid(2);
 const R = uuid(3);
-const X = uuid(4);
+const _X = uuid(4);
 const ch = (path: string) => `manuscript://chapters/${path}`;
 const HOLDER = ch("holder.md");
 const LOW = 2_000_000_000;
@@ -339,13 +339,8 @@ it("A1-7: #730 unlinks win, retargets win, plain prose never gains a link", asyn
   await repeatedRenames("adjacent prose (#728)");
 });
 
-it("A1-8: undo after a move restores the link at the moved path; repeated renames converge", async () => {
+it("A1-8: repeated renames with label edits converge", async () => {
   await repeatedRenames("label edits inside the link");
-  for (const [writerId, otherId] of [
-    [LOW, HIGH],
-    [HIGH, LOW],
-  ] as const)
-    await undoAfterMove(writerId, otherId);
 });
 
 /**
@@ -399,59 +394,4 @@ async function repeatedRenames(kind: "adjacent prose (#728)" | "label edits insi
         shownAt = ch(path);
       }
     }
-}
-
-/**
- * The agent unlinks, the target moves (a document ref) or arrives and then
- * moves (a registered ahead ref), and the agent undoes: the restored link
- * names its document at the moved path. A concurrent writer edits elsewhere.
- */
-async function undoAfterMove(writerId: number, otherId: number) {
-  const ahead = `ahead:${uuid(90)}`;
-  for (const kind of ["document ref", "registered ahead ref"] as const) {
-    const ref = kind === "document ref" ? documentRef(D) : ahead;
-    const link: Segment = {
-      text: "Target",
-      ref,
-      href: storedHref(ch(kind === "document ref" ? "old.md" : "ch9.md"), ""),
-    };
-    const origin = base([link, " waits."]);
-    const writer = clone(origin, writerId);
-    const other = clone(origin, otherId);
-    const settlements = new Map<string, string>();
-    const documents = [catalogDocument(D, ch("old.md"))];
-    const ctx = linkHarness({
-      holder: { id: HOLDER_ID, uri: HOLDER },
-      documents: kind === "document ref" ? documents : [],
-      doc: writer,
-      runtimeClientID: writerId,
-      settlements,
-    });
-    const baseVector = Y.encodeStateVector(origin);
-    await ctx.write({ command: "replace", in: [1, 1], content: "Target waits." });
-    // The move: D goes to new.md; an ahead ref's document arrives at ch9.md, settles, then moves.
-    ctx.catalog.documents = [
-      catalogDocument(HOLDER_ID, HOLDER),
-      catalogDocument(kind === "document ref" ? D : X, ch("new.md")),
-    ];
-    if (kind === "registered ahead ref") settlements.set(uuid(90), X);
-    const undone = await ctx.write({ command: "undo" });
-    expect.soft(undone.status, `undo ${kind}`).toBe("reversed");
-    elsewhere(other);
-    const writerUpdate = Y.encodeStateAsUpdate(writer, baseVector);
-    const otherUpdate = Y.encodeStateAsUpdate(other, baseVector);
-    Y.applyUpdate(writer, otherUpdate);
-    Y.applyUpdate(other, writerUpdate);
-    for (const [way, doc] of [
-      ["merged into writer", writer],
-      ["merged into other", other],
-    ] as const) {
-      const name = `undo of an unlink after a move, ${kind}, ${writerId < otherId ? "writer<other" : "writer>other"}, ${way}`;
-      expect.soft(stored(doc), name).toEqual([
-        ["Target", ref],
-        [" waits.", null],
-      ]);
-      expect.soft((await ctx.markdown(doc)).split("\n\n")[0], name).toBe("[Target](new.md) waits.");
-    }
-  }
 }

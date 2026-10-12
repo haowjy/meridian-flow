@@ -335,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: CREATED_ID as never },
               },
             },
-            responseId: RESPONSE_ID,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
             createdDocument: true,
           },
         ),
@@ -357,7 +357,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID,
             overwrite: true,
           },
-          { ...ctx, responseId: RESPONSE_ID, createdDocument: false, copiedNodes: [link] },
+          {
+            ...ctx,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+            createdDocument: false,
+            copiedNodes: [link],
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
@@ -371,7 +376,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const read = await core.read(
         { file: "chapter.md", documentId: DOC_ID },
-        { ...ctx, responseId: RESPONSE_ID },
+        { ...ctx, responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID } },
       );
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
@@ -410,10 +415,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Saved, then written again; a fresh process undoes that write in the
       // draft it landed in, so its echo spells there and its token is the
       // draft read's.
-      await collab.finalizeResponseCommit(RESPONSE_ID, {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
       await collab.recordManifestDocumentCreated(CREATED_ID as never, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
@@ -483,7 +491,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: LIVE_CREATED_ID as never },
               },
             },
-            responseId: LIVE_RESPONSE_ID,
+            responseIdentity: {
+              providerResponseId: LIVE_RESPONSE_ID,
+              editScopeId: LIVE_RESPONSE_ID,
+            },
             createdDocument: true,
           },
         ),

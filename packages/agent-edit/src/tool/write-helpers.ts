@@ -97,7 +97,8 @@ export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { ty
 }
 
 export function mutationMeta(actor: MutationActor): UpdateMeta {
-  if (actor.kind === "agent") return agentMeta(actor.turnId, actor.responseId);
+  if (actor.kind === "agent")
+    return { ...agentMeta(actor.turnId, actor.responseId), editScopeId: actor.editScopeId };
   if (actor.kind === "human") return { origin: `human:${actor.userId}`, seq: 0 };
   return { origin: `system:${actor.origin}`, seq: 0 };
 }

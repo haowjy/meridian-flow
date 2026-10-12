@@ -40,7 +40,9 @@ const context = (destination: FileDestination, responseId?: string) => ({
   threadId: THREAD_ID,
   turnId: "turn-1",
   grant: testFileGrant(destination),
-  ...(responseId ? { responseId } : {}),
+  ...(responseId
+    ? { responseIdentity: { providerResponseId: responseId, editScopeId: responseId } }
+    : {}),
 });
 const readCh12 = { file: "ch12.md", documentId: "ch12" };
 const insertCh12 = {
@@ -66,15 +68,15 @@ describe("thread-peer pool", () => {
     expect(liveCore.write).not.toHaveBeenCalled();
   });
 
-  // The stray .manifest peer made every live undo throw BranchNotFoundError.
-  it("keeps undo live for a thread that pulled a peer but never drafted", async () => {
+  // History cannot silently move an inverse command to a different destination.
+  it("routes model undo to the current destination, even after a peer pull", async () => {
     const { pool, liveCore, threadCore, pullThreadPeer } = createPool();
     await pullThreadPeer({ documentId: "ch12" as DocumentId, threadId: THREAD_ID });
 
     await pool.write({ command: "undo", file: "ch12.md", documentId: "ch12" }, context(draftA));
 
-    expect(liveCore.write).toHaveBeenCalledOnce();
-    expect(threadCore.write).not.toHaveBeenCalled();
+    expect(threadCore.write).toHaveBeenCalledOnce();
+    expect(liveCore.write).not.toHaveBeenCalled();
   });
 
   it("keeps a document's first destination for the rest of the reply (D19, D42)", async () => {

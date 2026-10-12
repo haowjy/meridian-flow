@@ -21,10 +21,10 @@ import {
   createDrizzlePushCommitStore,
   createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { createFixtureBranchStore } from "../collab/test-support/fixture-branch-store.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -125,7 +125,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("publishes a pull's effect and pending count atomically, including root rollback", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(
+      const branches = createFixtureBranchStore(
         db,
         undefined,
         createBranchCriticalSections(),
@@ -188,7 +188,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("drives real discard, redo, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(
+      const branches = createFixtureBranchStore(
         db,
         undefined,
         createBranchCriticalSections(),

@@ -1,4 +1,4 @@
-// Receipt capture and placement writes; no product reader uses these tables until the policy migration.
+// Immutable edit capture and placement shared by writer inverses and the model stack.
 import {
   type CapturedPart,
   captureEditFrontier,
@@ -25,6 +25,7 @@ export interface ReceiptWrite {
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
   responseId?: string | null;
+  editScopeId?: string | null;
   actor: "agent" | "human" | "system";
   /** Reserved once by the logical model edit; never allocated at capture. */
   wId?: number;
@@ -46,6 +47,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       threadId: input.threadId,
       turnId: input.turnId,
       responseId: input.responseId,
+      editScopeId: input.editScopeId,
       actor: input.actor,
       actorUserId: input.actorUserId,
       kind: input.kind ?? "write",

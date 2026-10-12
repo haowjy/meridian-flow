@@ -1346,6 +1346,7 @@ async function captureBranchEdits(
         typeof meta.authoringResponseId === "string"
           ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
           : undefined,
+      editScopeId: typeof meta.editScopeId === "string" ? meta.editScopeId : undefined,
       actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
       actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
       receipts: captureEditParts(doc, receipts).map((p, i) => ({

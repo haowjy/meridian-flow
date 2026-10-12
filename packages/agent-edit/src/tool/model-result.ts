@@ -15,6 +15,19 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "cant_undo_applied"
+  | "cant_undo_discarded"
+  | "cant_undo_changed"
+  | "cant_undo_held"
+  | "cant_undo_elsewhere"
+  | "cant_redo_applied"
+  | "cant_redo_discarded"
+  | "cant_redo_changed"
+  | "cant_redo_held"
+  | "cant_redo_elsewhere"
+  | "cant_redo_users_undo"
+  | "nothing_to_revert"
+  | "work_archived"
   | "read_required"
   | "binary_file"
   | "permission_denied"
@@ -86,7 +99,7 @@ export interface AgentEditModelPayload {
     writes: string[];
   };
   read?: {
-    format: "full" | "outline";
+    format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows drafts. */
@@ -181,6 +194,19 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "document_not_found":
     case "partial_failure":
     case "cant_undo_dependent":
+    case "cant_undo_applied":
+    case "cant_undo_discarded":
+    case "cant_undo_changed":
+    case "cant_undo_held":
+    case "cant_undo_elsewhere":
+    case "cant_redo_applied":
+    case "cant_redo_discarded":
+    case "cant_redo_changed":
+    case "cant_redo_held":
+    case "cant_redo_elsewhere":
+    case "cant_redo_users_undo":
+    case "nothing_to_revert":
+    case "work_archived":
     case "read_required":
     case "binary_file":
     case "internal_error":

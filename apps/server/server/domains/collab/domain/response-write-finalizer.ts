@@ -46,8 +46,8 @@ export function createResponseWriteFinalizer(input: {
 
   return {
     /** One save step for every reply, live and drafted documents together (D42). */
-    async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
-      const result = await input.agentEdit.commitResponse(responseId, {
+    async finalizeResponseCommit(responseIdentity, ctx, beforeTransactionCommit) {
+      const result = await input.agentEdit.commitResponse(responseIdentity.editScopeId, {
         beforeTransactionCommit: async (saved) => {
           await beforeTransactionCommit?.(mapResult(saved));
           // These effects belong to a committed response, never to its save attempt.
@@ -59,7 +59,7 @@ export function createResponseWriteFinalizer(input: {
               if (saved.awarenessDegraded) {
                 await input.notices.recordAwarenessDegraded({
                   threadId: ctx.threadId,
-                  responseId,
+                  responseId: responseIdentity.providerResponseId,
                   documentIds: saved.documents.map((document) => document.documentId),
                 });
               }
@@ -68,7 +68,7 @@ export function createResponseWriteFinalizer(input: {
                 if (document.lateSweep) {
                   await input.notices.recordLateSweep({
                     threadId: ctx.threadId,
-                    responseId,
+                    responseId: responseIdentity.providerResponseId,
                     documentId: document.documentId,
                     lateSweep: document.lateSweep,
                   });
@@ -94,18 +94,20 @@ export function createResponseWriteFinalizer(input: {
       return mapResult(result);
     },
 
-    async finalizeResponseRollback(responseId, ctx) {
-      const result = await input.agentEdit.rollbackResponse(responseId).catch((cause: unknown) => {
-        if (
-          isResponseLifecycleError(cause) &&
-          cause.detail.responseId === responseId &&
-          cause.detail.operation === "rollback" &&
-          cause.detail.state === "rolledBack"
-        )
-          return { stagedCreates: { committed: [], discarded: [] } };
-        throw cause;
-      });
-      await input.rollback.rollbackResponse({ ...ctx, responseId });
+    async finalizeResponseRollback(responseIdentity, ctx) {
+      const result = await input.agentEdit
+        .rollbackResponse(responseIdentity.editScopeId)
+        .catch((cause: unknown) => {
+          if (
+            isResponseLifecycleError(cause) &&
+            cause.detail.responseId === responseIdentity.editScopeId &&
+            cause.detail.operation === "rollback" &&
+            cause.detail.state === "rolledBack"
+          )
+            return { stagedCreates: { committed: [], discarded: [] } };
+          throw cause;
+        });
+      await input.rollback.rollbackResponse({ ...ctx, responseIdentity });
       return { stagedCreates: result.stagedCreates };
     },
   };
