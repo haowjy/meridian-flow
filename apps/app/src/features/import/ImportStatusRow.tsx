@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { FolderInput, Loader2, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { IconButton } from "@/components/ui/icon-button";
 import { Progress } from "@/components/ui/progress";
 import { contextTreeRowGrowClassName } from "@/features/project/context/context-row-geometry";
 import { cn } from "@/lib/utils";
@@ -143,15 +144,13 @@ export function ImportStatusRow({
         </span>
       </button>
       {dismissible(display) || state.dismissFailed ? (
-        <button
-          type="button"
+        <IconButton
           aria-label={t`Dismiss`}
-          title={t`Dismiss`}
           onClick={() => void coordinator.dismiss(importId)}
-          className="focus-ring flex size-6 shrink-0 items-center justify-center rounded-md text-ink-muted opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100"
+          className="shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100"
         >
-          <X aria-hidden className="size-3" />
-        </button>
+          <X aria-hidden />
+        </IconButton>
       ) : null}
     </div>
   );
