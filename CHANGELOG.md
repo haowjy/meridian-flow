@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Streaming chat now uses the manuscript renderer, repairs only the live Markdown tail, and keeps completed blocks in place when a reply settles.
+
 - Settled chat Markdown now shares the manuscript's document styles, with tight lists, syntax-highlighted code and a hover-only copy action at chat scale.
 
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.

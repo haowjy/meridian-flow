@@ -1,17 +1,31 @@
-/** Settled Markdown: the canonical codec's document nodes rendered without an editor. */
+/** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
 import { t } from "@lingui/core/macro";
 import { markdownCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { Node as PMNode } from "@tiptap/pm/model";
+import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import { common, createLowlight } from "lowlight";
 import { Check, Copy } from "lucide-react";
-import { createElement, Fragment, type ReactNode, useMemo, useState } from "react";
+import {
+  createElement,
+  Fragment,
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import remend from "remend";
 
 import { classifyLinkTarget } from "@/core/editor/links";
+import { createDocumentCache } from "./document-cache";
+import { splitMarkdownBlocks } from "./markdown-blocks";
 import { TranscriptReference } from "./TranscriptReference";
 
 const codec = markdownCodec({ schema: buildDocumentSchema() });
 const lowlight = createLowlight(common);
+const settledBlocks = createDocumentCache<PMNode[]>();
+const settledCode = createDocumentCache<ReactNode>();
 
 type HighlightRoot = ReturnType<typeof lowlight.highlight>;
 type HighlightNode = HighlightRoot | HighlightRoot["children"][number];
@@ -33,21 +47,51 @@ function highlighted(node: HighlightNode, key: number): ReactNode {
   );
 }
 
-function CodeBlock({ node }: { node: PMNode }) {
+function CodeBlock({ node, throttle = false }: { node: PMNode; throttle?: boolean }) {
   const [copied, setCopied] = useState(false);
+  const source = node.textContent;
+  const language = node.attrs.language as string | null;
+  const [snapshot, setSnapshot] = useState({ source, language });
+  const lastHighlight = useRef(0);
+  useEffect(() => {
+    if (!throttle || (snapshot.source === source && snapshot.language === language)) return;
+    if (!lastHighlight.current) lastHighlight.current = performance.now();
+    const timer = setTimeout(
+      () => {
+        lastHighlight.current = performance.now();
+        setSnapshot({ source, language });
+      },
+      Math.max(0, 50 - (performance.now() - lastHighlight.current)),
+    );
+    return () => clearTimeout(timer);
+  }, [source, language, throttle, snapshot]);
+  const highlightSource = throttle ? snapshot.source : source;
+  const highlightLanguage = throttle ? snapshot.language : language;
   const code = useMemo(() => {
-    const language = node.attrs.language;
-    if (language && !lowlight.registered(language)) return node.textContent;
-    const tree = language
-      ? lowlight.highlight(language, node.textContent)
-      : lowlight.highlightAuto(node.textContent);
-    return highlighted(tree, 0);
-  }, [node]);
+    const compute = () => {
+      const language = highlightLanguage;
+      if (language && !lowlight.registered(language)) return highlightSource;
+      const tree = language
+        ? lowlight.highlight(language, highlightSource)
+        : lowlight.highlightAuto(highlightSource);
+      return highlighted(tree, 0);
+    };
+    return throttle
+      ? compute()
+      : settledCode(JSON.stringify([highlightLanguage, highlightSource]), compute);
+  }, [highlightSource, highlightLanguage, throttle]);
   return (
     <div className="document-code-block">
       <pre>
         <code className={node.attrs.language ? `language-${node.attrs.language}` : undefined}>
-          {code}
+          {source.startsWith(highlightSource) && language === highlightLanguage ? (
+            <>
+              {code}
+              {source.slice(highlightSource.length)}
+            </>
+          ) : (
+            source
+          )}
         </code>
       </pre>
       <button
@@ -71,16 +115,60 @@ function CodeBlock({ node }: { node: PMNode }) {
   );
 }
 
-function children(node: PMNode, breaks: boolean): ReactNode[] {
+function renderLink(mark: PMMark, content: ReactNode): ReactNode {
+  const target = classifyLinkTarget(String(mark.attrs.href));
+  if (target?.kind === "external") {
+    return (
+      <a
+        href={target.url}
+        data-link-kind="external"
+        title={mark.attrs.title ?? undefined}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {content}
+      </a>
+    );
+  }
+  if (target) {
+    return <TranscriptReference data-target-href={mark.attrs.href}>{content}</TranscriptReference>;
+  }
+  return content;
+}
+
+function children(node: PMNode, breaks: boolean, throttle: boolean): ReactNode[] {
   const result: ReactNode[] = [];
-  node.forEach((child, _offset, index) => {
-    result.push(<Fragment key={index}>{renderDocumentNode(child, breaks)}</Fragment>);
-  });
+  for (let index = 0; index < node.childCount; index++) {
+    const child = node.child(index);
+    const link = child.marks.find((mark) => mark.type.name === "link");
+    if (!link) {
+      result.push(<Fragment key={index}>{renderDocumentNode(child, breaks, throttle)}</Fragment>);
+      continue;
+    }
+    const key = index;
+    const label: ReactNode[] = [];
+    // A mixed-format label is one chip (and one outbound arrow), like the Editor.
+    for (; index < node.childCount; index++) {
+      const part = node.child(index);
+      if (!part.marks.some((mark) => mark.eq(link))) break;
+      label.push(
+        <Fragment key={index}>
+          {renderDocumentNode(
+            part.mark(part.marks.filter((mark) => mark.type.name !== "link")),
+            breaks,
+            throttle,
+          )}
+        </Fragment>,
+      );
+    }
+    index--;
+    result.push(<Fragment key={key}>{renderLink(link, label)}</Fragment>);
+  }
   return result;
 }
 
 /** Markdown nodes only; MDX's figure/JSX nodes belong to its separate codec. */
-export function renderDocumentNode(node: PMNode, breaks = false): ReactNode {
+function renderDocumentNode(node: PMNode, breaks = false, throttle = false): ReactNode {
   if (node.isText) {
     let content: ReactNode = breaks
       ? node.text?.split("\n").map((line, index) => (
@@ -91,40 +179,19 @@ export function renderDocumentNode(node: PMNode, breaks = false): ReactNode {
         ))
       : node.text;
     for (const mark of node.marks) {
-      if (mark.type.name === "link") {
-        const target = classifyLinkTarget(String(mark.attrs.href));
-        if (target?.kind === "external") {
-          content = (
-            <a
-              href={target.url}
-              data-link-kind="external"
-              title={mark.attrs.title ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {content}
-            </a>
-          );
-        } else if (target) {
-          content = (
-            <TranscriptReference data-target-href={mark.attrs.href}>{content}</TranscriptReference>
-          );
-        }
-      } else {
-        const tags: Record<string, string> = {
-          strong: "strong",
-          em: "em",
-          code: "code",
-          strike: "s",
-        };
-        const tag = tags[mark.type.name];
-        if (!tag) throw new Error(`Unsupported document mark: ${mark.type.name}`);
-        content = createElement(tag, null, content);
-      }
+      const tags: Record<string, string> = {
+        strong: "strong",
+        em: "em",
+        code: "code",
+        strike: "s",
+      };
+      const tag = tags[mark.type.name];
+      if (!tag) throw new Error(`Unsupported document mark: ${mark.type.name}`);
+      content = createElement(tag, null, content);
     }
     return content;
   }
-  const content = children(node, breaks);
+  const content = children(node, breaks, throttle);
   const alignment = node.attrs.align ? { textAlign: node.attrs.align } : undefined;
   switch (node.type.name) {
     case "doc":
@@ -150,7 +217,7 @@ export function renderDocumentNode(node: PMNode, breaks = false): ReactNode {
     case "horizontal_rule":
       return <hr />;
     case "code_block":
-      return <CodeBlock node={node} />;
+      return <CodeBlock node={node} throttle={throttle} />;
     case "image":
       return (
         <img
@@ -193,20 +260,53 @@ export function renderDocumentNode(node: PMNode, breaks = false): ReactNode {
   }
 }
 
+// Source strings, not PM nodes, are the memo boundary: settled blocks never parse
+// or highlight again as their tail grows. Fragments keep all DOM blocks siblings.
+const MarkdownBlock = memo(function MarkdownBlock({
+  source,
+  breaks,
+  repair,
+  throttle,
+}: {
+  source: string;
+  breaks: boolean;
+  repair: boolean;
+  throttle: boolean;
+}) {
+  const blocks = useMemo(
+    () =>
+      repair
+        ? codec.parse(remend(source, { links: false, images: false, katex: false })).blocks
+        : settledBlocks(source, () => codec.parse(source).blocks),
+    [source, repair],
+  );
+  return blocks.map((node, index) => (
+    <Fragment key={index}>{renderDocumentNode(node, breaks, throttle)}</Fragment>
+  ));
+});
+
 export function DocumentMarkdown({
   source,
   breaks = false,
+  streaming = false,
   className,
 }: {
   source: string;
   breaks?: boolean;
+  streaming?: boolean;
   className?: string;
 }) {
-  const blocks = useMemo(() => codec.parse(source).blocks, [source]);
+  const { blocks, openFence } = useMemo(() => splitMarkdownBlocks(source), [source]);
   return (
     <div className={className}>
-      {blocks.map((node, index) => (
-        <Fragment key={index}>{renderDocumentNode(node, breaks)}</Fragment>
+      {blocks.map((block, index) => (
+        <MarkdownBlock
+          key={index}
+          source={block}
+          breaks={breaks}
+          repair={streaming && index === blocks.length - 1}
+          throttle={streaming && openFence && index === blocks.length - 1}
+        />
       ))}
     </div>
   );

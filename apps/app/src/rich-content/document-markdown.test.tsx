@@ -41,6 +41,10 @@ describe("settled document rendering", () => {
     expect(render("[chapter](manuscript://chapter.md)")).toContain(
       'data-link-chip-icon="manuscript"',
     );
+    expect(
+      render("[**chapter** one](manuscript://chapter.md)").match(/data-link-chip=/g),
+    ).toHaveLength(1);
+    expect(render("[**web** link](https://example.com)").match(/data-link-kind=/g)).toHaveLength(1);
     expect(html).not.toContain("data-streamdown");
   });
 

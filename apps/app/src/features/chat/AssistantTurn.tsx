@@ -11,7 +11,6 @@ import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
-import { Markdown } from "@/rich-content/Markdown";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
@@ -471,10 +470,8 @@ function DeliveryBlock({
     if (!text.trim()) return null;
     // Text is the assistant's voice: full prose, no icon, no rail — and it is
     // only ever rendered here, outside the Thinking fold.
-    if (block.status === "partial") {
-      return <StreamingText text={text} />;
-    }
-    return <Markdown>{text}</Markdown>;
+    // Keep the prose component mounted when a partial block settles.
+    return <StreamingText text={text} streaming={block.status === "partial"} />;
   }
   return <TurnBlockStep block={block} />;
 }
