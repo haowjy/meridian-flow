@@ -103,7 +103,11 @@ import {
 } from "./routing/chat-navigation";
 import { EditorRouteChrome } from "./routing/EditorRouteChrome";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
+import {
+  isProjectRouteMasked,
+  ProjectRouteBoundary,
+  type ProjectRouteIssue,
+} from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -569,6 +573,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       }
     : null;
 
+  const editorBoundary = {
+    issue:
+      props.routeIssues?.main ??
+      (props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined),
+    retainWhileLoading: editorPresentation.retainWhileLoading,
+    recovery:
+      props.editorScope.status !== "ready" ? (
+        <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+      ) : undefined,
+  };
+
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
   // never written to prefs, so the writer's saved rail state returns by itself.
@@ -579,7 +594,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // A blocked address has no review prose to enlarge; keep navigation available.
   const layout = useProjectLayout(
     props.activeScreen,
-    props.routeIssues?.editor || props.routeIssues?.main ? [] : proseFocus.collapsedSlots,
+    isProjectRouteMasked(editorBoundary) ? [] : proseFocus.collapsedSlots,
   );
 
   const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
@@ -660,10 +675,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       children: (
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
-          issue={
-            props.routeIssues?.main ??
-            (props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined)
-          }
+          {...editorBoundary}
           chrome={
             <EditorRouteChrome
               projectId={props.projectId}
@@ -678,12 +690,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             />
           }
           onRetry={props.onRetryEditorRoute}
-          retainWhileLoading={editorPresentation.retainWhileLoading}
-          recovery={
-            props.editorScope.status !== "ready" ? (
-              <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
-            ) : undefined
-          }
         >
           {mountedEditor && mountedEditorRoute ? (
             <DraftReviewBoundary value={mountedEditor.editorReview}>

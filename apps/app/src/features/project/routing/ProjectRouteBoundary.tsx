@@ -6,6 +6,20 @@ import { Button } from "@/components/ui/button";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
+/** Whether the destination body is masked, including Work recovery. */
+export function isProjectRouteMasked({
+  issue,
+  retainWhileLoading = false,
+  recovery,
+}: {
+  issue?: ProjectRouteIssue;
+  retainWhileLoading?: boolean;
+  recovery?: ReactNode;
+}): boolean {
+  const retainedPending = issue === "loading" && retainWhileLoading;
+  return (!!issue && !retainedPending) || !!recovery;
+}
+
 export function ProjectRouteBoundary({
   issue,
   children,
@@ -25,8 +39,7 @@ export function ProjectRouteBoundary({
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
 }) {
-  const retainedPending = issue === "loading" && retainWhileLoading && !recovery;
-  const blocked = (!!issue && !retainedPending) || !!recovery;
+  const blocked = isProjectRouteMasked({ issue, retainWhileLoading, recovery });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {blocked ? chrome : null}
@@ -45,9 +58,7 @@ export function ProjectRouteBoundary({
         {recovery ? (
           <div className="absolute inset-0 bg-background">{recovery}</div>
         ) : issue === "loading" ? (
-          !retainedPending && (
-            <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
-          )
+          blocked && <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
         ) : issue ? (
           <div
             className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
