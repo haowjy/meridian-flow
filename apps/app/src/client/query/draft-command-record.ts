@@ -1,11 +1,13 @@
 /** Shared draft commands, selection outcomes, batch leases and distinct list/preview read fences. */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
 import { create } from "zustand";
+import type { DraftCommandOutcome } from "./draft-command-executor";
+import { type ActivePreview, type DraftIntentKeys, previewWithoutKeys } from "./draft-projection";
 
 type DraftScope = { projectId: string; workId: string };
 export type DraftRef = DraftScope & { documentId: string; draftId: string };
-type ListedDraft = { documentId: string; draftId: string };
+type ListedDraft = { documentId: string; draftId: string; draftGeneration?: number };
 
 /**
  * What a held failure is, never its wording. `-offline`: the request never got
@@ -39,7 +41,22 @@ export type ChangeCommandMode = "apply" | "discard";
  * and every operation they hold. One change is a selection of one class; the
  * chat strip's Apply is a selection of several.
  */
-export type ChangeSelection = { classIds: readonly string[]; operationIds: readonly string[] };
+export type ChangeSelection = {
+  classIds: readonly string[];
+  /** The rows to send: names in the generation the selection was made in, valid for admission only. */
+  operationIds: readonly string[];
+  /**
+   * What the changes are across draft generations (`operationKey`). A Discard
+   * re-forks the draft, so its survivors get new row and operation ids; a click
+   * not yet sent, a held failure and the focus find their change again by these.
+   */
+  keys?: readonly string[];
+};
+
+/** A selection's identity: its keys, or the rows themselves when it was made without any. */
+export function selectionKeys(selection: ChangeSelection): readonly string[] {
+  return selection.keys ?? selection.operationIds.map((id) => `row:${id}`);
+}
 
 /**
  * What the server's closing answer left to say about the draft, read when it
@@ -68,9 +85,10 @@ export type PendingDraftCommand =
     };
 
 type DraftClaimRecord =
-  | { phase: "pending"; command: PendingDraftCommand }
+  | { phase: "pending"; command: PendingDraftCommand; token: symbol }
   | { phase: "failed"; failure: DraftCommandFailure; at: number }
-  | { phase: "confirmed"; at: number };
+  /** `draftGeneration` is the generation the command acted on: a newer proposal is not what it confirmed. */
+  | { phase: "confirmed"; at: number; draftGeneration?: number };
 
 type DraftCommandRecord = {
   claim?: DraftClaimRecord;
@@ -82,15 +100,57 @@ const useDraftCommandStore = create<{
   records: DraftCommandRecords;
   queued: QueuedSelections;
   batches: Readonly<Record<string, symbol>>;
+  /** The loop sending each draft's queued clicks; a reset retires it with the queue. */
+  drains: Readonly<Record<string, symbol>>;
   clock: number;
 }>(() => ({
   records: {},
   queued: {},
   batches: {},
+  drains: {},
   clock: 0,
 }));
 
 let boundAccountId: string | null = null;
+/** Moves on every account change: work admitted in an earlier one can no longer publish. */
+let accountEpoch = 0;
+
+/**
+ * An admitted command's capability over its own claim. Everything the command
+ * publishes after an await (answers, confirmations, failures, release) goes
+ * through it, and lands only while this claim is still the draft's pending one
+ * in the account epoch it was admitted in.
+ */
+export type DraftClaim = {
+  readonly draft: DraftRef;
+  readonly epoch: number;
+  readonly token: symbol;
+};
+
+export function claimIsLive(claim: DraftClaim): boolean {
+  const record = recordFor(claim.draft);
+  return (
+    claim.epoch === accountEpoch && record?.phase === "pending" && record.token === claim.token
+  );
+}
+
+/** Work admitted before an account change is dead; a batch or queue checks this between sends. */
+export function accountEpochIs(epoch: number): boolean {
+  return epoch === accountEpoch;
+}
+
+export function currentAccountEpoch(): number {
+  return accountEpoch;
+}
+
+/** A claim, or a bare draft for publication that is not behind an await (and so cannot outlive anything). */
+type Publisher = DraftClaim | DraftRef;
+function mayPublish(by: Publisher): boolean {
+  return !("token" in by) || claimIsLive(by);
+}
+function draftOf(by: Publisher): DraftRef {
+  return "token" in by ? by.draft : by;
+}
 /** List and preview reads retain only their own pre-confirmation masks. */
 const readsInFlight = new Set<{ fence: number; kind: "list" | "preview" }>();
 
@@ -145,10 +205,14 @@ function recordFor(draft: DraftRef): DraftClaimRecord | undefined {
  * `command`, a selection's. One command at a time per draft, whichever
  * surface or session sends it; false when one is already in flight.
  */
-export function beginDraftCommand(draft: DraftRef, command: PendingDraftCommand): boolean {
-  if (recordFor(draft)?.phase === "pending") return false;
-  setRecord(draft, () => ({ phase: "pending", command }));
-  return true;
+export function beginDraftCommand(
+  draft: DraftRef,
+  command: PendingDraftCommand,
+): DraftClaim | null {
+  if (recordFor(draft)?.phase === "pending") return null;
+  const token = Symbol(draftCommandKey(draft));
+  setRecord(draft, () => ({ phase: "pending", command, token }));
+  return { draft, epoch: accountEpoch, token };
 }
 
 /**
@@ -156,25 +220,34 @@ export function beginDraftCommand(draft: DraftRef, command: PendingDraftCommand)
  * closed the draft. Reviews showing it settle on this before the draft list is
  * re-read (`subscribeDraftCommandRecords`).
  */
-export function answerDraftCommandClosed(draft: DraftRef, closed: ClosedDraft): void {
+export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: ClosedDraft): void {
+  const draft = draftOf(by);
   const record = recordFor(draft);
   if (
+    !mayPublish(by) ||
     record?.phase !== "pending" ||
     !record.command ||
     (record.command.target === "all" && !record.command.completesDraft)
   )
     return;
   const change = { ...record.command, draftClosed: closed };
-  setRecord(draft, () => ({ phase: "pending", command: change }));
+  setRecord(draft, () => ({ phase: "pending", command: change, token: record.token }));
 }
 
 /** Publish an addressed selection result before caches refresh or the claim is released. */
 export function answerDraftSelection(
-  draft: DraftRef,
+  by: DraftClaim | DraftRef,
   outcome: PendingChangeCommand["outcome"],
 ): void {
+  const draft = draftOf(by);
+  const record = recordFor(draft);
   const command = pendingChangeCommand(currentDraftCommandRecords(), draft);
-  if (command) setRecord(draft, () => ({ phase: "pending", command: { ...command, outcome } }));
+  if (command && record?.phase === "pending" && mayPublish(by))
+    setRecord(draft, () => ({
+      phase: "pending",
+      command: { ...command, outcome },
+      token: record.token,
+    }));
 }
 
 /**
@@ -182,12 +255,13 @@ export function answerDraftSelection(
  * server's closing answer ends with the claim: the id it closed is reused for
  * the next proposal, so nothing outlives the claim to be mistaken for it.
  */
-export function releaseDraftCommand(draft: DraftRef): void {
-  if (recordFor(draft)?.phase === "pending") setRecord(draft, () => null);
+export function releaseDraftCommand(by: DraftClaim | DraftRef): void {
+  const draft = draftOf(by);
+  if (recordFor(draft)?.phase === "pending" && mayPublish(by)) setRecord(draft, () => null);
 }
 
-export function failDraftCommand(draft: DraftRef, failure: DraftCommandFailure): void {
-  setRecord(draft, (at) => ({ phase: "failed", failure, at }), true);
+export function failDraftCommand(by: DraftClaim | DraftRef, failure: DraftCommandFailure): void {
+  if (mayPublish(by)) setRecord(draftOf(by), (at) => ({ phase: "failed", failure, at }), true);
 }
 
 /** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
@@ -211,8 +285,20 @@ export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
     setRecord(draft, () => null);
 }
 
-export function confirmDraftCommand(draft: DraftRef): void {
-  setRecord(draft, (at) => ({ phase: "confirmed", at }), true);
+export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
+  if (!mayPublish(by)) return;
+  const draft = draftOf(by);
+  const prior = recordFor(draft);
+  const draftGeneration = prior?.phase === "pending" ? prior.command.draftGeneration : undefined;
+  setRecord(
+    draft,
+    (at) => ({
+      phase: "confirmed",
+      at,
+      ...(draftGeneration === undefined ? {} : { draftGeneration }),
+    }),
+    true,
+  );
   retireConfirmations();
 }
 
@@ -267,7 +353,13 @@ export async function readDraftsAfterCommands<T extends ListedDraft>(
     const { records } = useDraftCommandStore.getState();
     const drafts = listed.filter((draft) => {
       const record = records[draftCommandKey({ ...scope, ...draft })]?.claim;
-      return record?.phase !== "confirmed" || record.at <= inFlight.fence;
+      if (record?.phase !== "confirmed" || record.at <= inFlight.fence) return true;
+      // A newer proposal under the same id is not what the command confirmed.
+      return (
+        record.draftGeneration !== undefined &&
+        draft.draftGeneration !== undefined &&
+        draft.draftGeneration > record.draftGeneration
+      );
     });
     const stillListed = new Set(drafts.map((draft) => draftCommandKey({ ...scope, ...draft })));
     const prefix = scopePrefix(scope);
@@ -345,6 +437,27 @@ export function draftCommandPendingIn(records: DraftCommandRecords, scope: Draft
   );
 }
 
+/**
+ * A whole-draft command or a batch holds this Work: per-change commands wait
+ * for it. A per-change command in flight never does; further ones queue
+ * behind it (`runDraftSelection`).
+ */
+export function wholeDraftCommandPendingIn(
+  records: DraftCommandRecords,
+  scope: DraftScope,
+): boolean {
+  const prefix = scopePrefix(scope);
+  return (
+    Boolean(useDraftCommandStore.getState().batches[prefix]) ||
+    Object.entries(records).some(
+      ([key, record]) =>
+        key.startsWith(prefix) &&
+        record.claim?.phase === "pending" &&
+        record.claim.command.target === "all",
+    )
+  );
+}
+
 /** Empty the store when a different account signs in; a no-op for the same one. */
 export function bindDraftCommandAccount(accountId: string): void {
   if (boundAccountId === accountId) return;
@@ -352,8 +465,13 @@ export function bindDraftCommandAccount(accountId: string): void {
   resetDraftCommandRecords();
 }
 
+/** Clears what is shown and revokes every claim: an answer that arrives later has nothing to publish into. */
 export function resetDraftCommandRecords(): void {
-  useDraftCommandStore.setState({ records: {}, queued: {}, batches: {} });
+  accountEpoch += 1;
+  const unsent = Object.values(useDraftCommandStore.getState().queued);
+  useDraftCommandStore.setState({ records: {}, queued: {}, batches: {}, drains: {} });
+  // A click that never got its turn is answered, not left waiting on a queue that is gone.
+  for (const entry of unsent) entry.settle?.({ kind: "blocked" });
 }
 
 /** A Work-wide batch lease lives beside its addressed commands, including request gaps. */
@@ -429,8 +547,20 @@ export type ChangeCommandRecords = {
   drafts: DraftCommandRecords;
 };
 
-/** A selection sent in a batch that has not had its turn: hidden, not claimed. */
-type QueuedSelection = { prefix: string; operationIds: readonly string[] };
+/**
+ * A selection that has not had its turn: hidden, not claimed. One with `settle`
+ * is a click the writer made (sent in order by `runDraftSelection`, which owns
+ * its drain and its caller's promise here); the others belong to a batch, which
+ * sends them itself.
+ */
+type QueuedSelection = ChangeSelection & {
+  prefix: string;
+  mode: ChangeCommandMode;
+  /** The account epoch this click was admitted in. */
+  epoch: number;
+  /** Set for a click `runDraftSelection` sends; settles the caller's promise. */
+  settle?: (outcome: DraftCommandOutcome) => void;
+};
 type QueuedSelections = Readonly<Record<number, QueuedSelection>>;
 
 let nextQueued = 0;
@@ -463,46 +593,113 @@ export function beginChangeCommand(
   mode: ChangeCommandMode,
   draftGeneration: number,
   completesDraft = false,
-): boolean {
-  if (
-    !beginDraftCommand(draft, {
-      target: "selection",
-      classIds: selection.classIds,
-      operationIds: selection.operationIds,
-      mode,
-      draftGeneration,
-      ...(completesDraft ? { completesDraft: true as const } : {}),
-    })
-  ) {
-    return false;
-  }
+): DraftClaim | null {
+  const claim = beginDraftCommand(draft, {
+    target: "selection",
+    classIds: selection.classIds,
+    operationIds: selection.operationIds,
+    ...(selection.keys ? { keys: selection.keys } : {}),
+    mode,
+    draftGeneration,
+    ...(completesDraft ? { completesDraft: true as const } : {}),
+  });
   // The claim is the next action on these changes: a failure they held is stale now.
-  clearChangeFailure(draft, selection);
-  return true;
+  if (claim) clearChangeFailure(draft, selection);
+  return claim;
 }
 
 /** Queued selections hide immediately; each retires when its claim starts or the batch ends. */
-export function queueChangeSelection(draft: DraftRef, selection: ChangeSelection): () => void {
+export function queueChangeSelection(
+  draft: DraftRef,
+  selection: ChangeSelection,
+  mode: ChangeCommandMode,
+  settle?: (outcome: DraftCommandOutcome) => void,
+): QueuedChange {
   const id = nextQueued++;
-  const entry = { prefix: draftCommandKey(draft), operationIds: selection.operationIds };
-  useDraftCommandStore.setState((state) => ({ queued: { ...state.queued, [id]: entry } }));
-  return () => {
-    if (!(id in useDraftCommandStore.getState().queued)) return;
-    useDraftCommandStore.setState((state) => {
-      const { [id]: _retired, ...rest } = state.queued;
-      return { queued: rest };
-    });
+  const entry: QueuedSelection = {
+    ...selection,
+    prefix: draftCommandKey(draft),
+    mode,
+    epoch: accountEpoch,
+    ...(settle ? { settle } : {}),
   };
+  useDraftCommandStore.setState((state) => ({ queued: { ...state.queued, [id]: entry } }));
+  return { id, epoch: accountEpoch, retire: () => retireQueuedSelection(id) };
+}
+
+/** A queued selection's capability: live only while it is still queued in the account epoch it was made in. */
+export type QueuedChange = { id: number; epoch: number; retire: () => void };
+
+export function retireQueuedSelection(id: number): void {
+  if (!(id in useDraftCommandStore.getState().queued)) return;
+  useDraftCommandStore.setState((state) => {
+    const { [id]: _retired, ...rest } = state.queued;
+    return { queued: rest };
+  });
+}
+
+export function queuedChangeIsLive(change: Pick<QueuedChange, "id" | "epoch">): boolean {
+  return change.epoch === accountEpoch && change.id in useDraftCommandStore.getState().queued;
+}
+
+/** Become the one loop sending this draft's queued clicks; null while another is. */
+export function beginIntentDrain(draft: DraftRef): symbol | null {
+  const key = draftCommandKey(draft);
+  if (useDraftCommandStore.getState().drains[key]) return null;
+  const token = Symbol(key);
+  useDraftCommandStore.setState((state) => ({ drains: { ...state.drains, [key]: token } }));
+  return token;
+}
+
+export function intentDrainCurrent(draft: DraftRef, token: symbol): boolean {
+  return useDraftCommandStore.getState().drains[draftCommandKey(draft)] === token;
+}
+
+export function endIntentDrain(draft: DraftRef, token: symbol): void {
+  if (!intentDrainCurrent(draft, token)) return;
+  useDraftCommandStore.setState((state) => {
+    const { [draftCommandKey(draft)]: _done, ...drains } = state.drains;
+    return { drains };
+  });
+}
+
+/** The writer's oldest click on this draft that has not been sent yet. */
+export function nextQueuedClick(draft: DraftRef): {
+  change: QueuedChange;
+  selection: ChangeSelection;
+  mode: ChangeCommandMode;
+  settle: (outcome: DraftCommandOutcome) => void;
+} | null {
+  const prefix = draftCommandKey(draft);
+  for (const [id, entry] of Object.entries(useDraftCommandStore.getState().queued)) {
+    if (entry.settle && entry.prefix === prefix)
+      return {
+        change: {
+          id: Number(id),
+          epoch: entry.epoch,
+          retire: () => retireQueuedSelection(Number(id)),
+        },
+        selection: {
+          classIds: entry.classIds,
+          operationIds: entry.operationIds,
+          ...(entry.keys ? { keys: entry.keys } : {}),
+        },
+        mode: entry.mode,
+        settle: entry.settle,
+      };
+  }
+  return null;
 }
 
 export function failChangeCommand(
-  draft: DraftRef,
+  by: DraftClaim | DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
   code: ChangeFailureCode,
   refusal?: ServerRefusal,
 ): void {
-  setChangeRecord(draft, selection, (at) => ({
+  if (!mayPublish(by)) return;
+  setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "failed",
     mode,
     code,
@@ -511,34 +708,33 @@ export function failChangeCommand(
     at,
     classIds: selection.classIds,
     operationIds: selection.operationIds,
+    ...(selection.keys ? { keys: selection.keys } : {}),
   }));
 }
 
 export function confirmChangeCommand(
-  draft: DraftRef,
+  by: DraftClaim | DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
 ): void {
-  setChangeRecord(draft, selection, (at) => ({
+  if (!mayPublish(by)) return;
+  setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "confirmed",
     mode,
     at,
     classIds: selection.classIds,
     operationIds: selection.operationIds,
+    ...(selection.keys ? { keys: selection.keys } : {}),
   }));
   retireConfirmations();
 }
 
 type FailedRecord = Extract<ChangeCommandRecord, { phase: "failed" }>;
 
-/** The two selections name a class or an operation in common (the server may have regrouped since). */
+/** The two selections name a change in common. */
 function overlaps(left: ChangeSelection, right: ChangeSelection): boolean {
-  const classIds = new Set(right.classIds);
-  const operationIds = new Set(right.operationIds);
-  return (
-    left.classIds.some((id) => classIds.has(id)) ||
-    left.operationIds.some((id) => operationIds.has(id))
-  );
+  const keys = new Set(selectionKeys(right));
+  return selectionKeys(left).some((key) => keys.has(key));
 }
 
 /** Regrouped classes keep failures through operation overlap; unrelated changes do not inherit them. */
@@ -566,35 +762,6 @@ export function clearChangeFailure(draft: DraftRef, selection: ChangeSelection):
   });
 }
 
-type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
-
-/**
- * The preview without the operations (and the hunks only they own) in `hidden`.
- * A hunk no operation owns (unclassified) is nobody's to hide: it stays.
- */
-export function previewWithoutOperations(
-  preview: DraftPreviewResponse,
-  hidden: ReadonlySet<string>,
-): DraftPreviewResponse {
-  if (preview.status !== "active" || hidden.size === 0) return preview;
-  const operations = preview.operations.filter((op) => !hidden.has(op.operationId));
-  const hunks = preview.hunks.flatMap((hunk) => {
-    const operationIds = hunk.operationIds.filter((id) => !hidden.has(id));
-    if (hunk.operationIds.length > 0 && operationIds.length === 0) return [];
-    if (operationIds.length === hunk.operationIds.length) return [hunk];
-    return [
-      hunk.kind === "text"
-        ? {
-            ...hunk,
-            operationIds,
-            spans: hunk.spans.filter((span) => !hidden.has(span.operationId)),
-          }
-        : { ...hunk, operationIds },
-    ];
-  });
-  return { ...preview, operations, hunks } satisfies ActivePreview;
-}
-
 /**
  * Run one preview read. Changes confirmed after the read started are removed
  * from its result, so a read that was already in flight when the writer applied
@@ -616,11 +783,11 @@ export async function readPreviewAfterChangeCommands(
       if (record.phase !== "confirmed" || record.at <= inFlight.fence) {
         continue;
       }
-      for (const id of record.operationIds) hidden.add(id);
+      for (const key of selectionKeys(record)) hidden.add(key);
     }
     // A failure held for a change the preview no longer lists describes nothing.
     if (preview.status === "active") dropFailuresWithoutOperations(prefix, preview, inFlight.fence);
-    return previewWithoutOperations(preview, hidden);
+    return previewWithoutKeys(preview, hidden);
   } finally {
     readsInFlight.delete(inFlight);
     retireConfirmations();
@@ -628,14 +795,14 @@ export async function readPreviewAfterChangeCommands(
 }
 
 function dropFailuresWithoutOperations(key: string, preview: ActivePreview, fence: number): void {
-  const listed = new Set(preview.operations.map((op) => op.operationId));
+  const listed = new Set(preview.operations.map(operationKey));
   updateDraftRecord(key, (prior) => {
     const outcomes = Object.fromEntries(
       Object.entries(prior.outcomes).filter(
         ([, record]) =>
           record.phase !== "failed" ||
           record.at > fence ||
-          record.operationIds.some((id) => listed.has(id)),
+          selectionKeys(record).some((key) => listed.has(key)),
       ),
     );
     return Object.keys(outcomes).length === Object.keys(prior.outcomes).length
@@ -656,22 +823,28 @@ export function currentChangeCommandRecords(): ChangeCommandRecords {
   return { drafts, queued };
 }
 
-/** The operations hidden from this draft's preview: every change queued, pending or confirmed. */
-export function hiddenOperationIds(
-  records: ChangeCommandRecords,
-  draft: DraftRef,
-): ReadonlySet<string> {
+/**
+ * What the writer has done to this draft's changes, by key: those queued,
+ * pending or confirmed are `hidden`, and of them the Discards are `restoring`
+ * (the editor draws their original text until the next generation paints).
+ */
+export function intentKeys(records: ChangeCommandRecords, draft: DraftRef): DraftIntentKeys {
+  const key = draftCommandKey(draft);
   const hidden = new Set<string>();
-  for (const record of Object.values(records.drafts[draftCommandKey(draft)]?.outcomes ?? {})) {
-    if (record.phase === "failed") continue;
-    for (const id of record.operationIds) hidden.add(id);
-  }
-  const prefix = draftCommandKey(draft);
-  for (const queued of Object.values(records.queued)) {
-    if (queued.prefix === prefix) for (const id of queued.operationIds) hidden.add(id);
-  }
-  for (const id of pendingChangeCommand(records.drafts, draft)?.operationIds ?? []) hidden.add(id);
-  return hidden;
+  const restoring = new Set<string>();
+  const add = (selection: ChangeSelection, mode: ChangeCommandMode) => {
+    for (const k of selectionKeys(selection)) {
+      hidden.add(k);
+      if (mode === "discard") restoring.add(k);
+    }
+  };
+  for (const record of Object.values(records.drafts[key]?.outcomes ?? {}))
+    if (record.phase !== "failed") add(record, record.mode);
+  for (const queued of Object.values(records.queued))
+    if (queued.prefix === key) add(queued, queued.mode);
+  const pending = pendingChangeCommand(records.drafts, draft);
+  if (pending) add(pending, pending.mode);
+  return { hidden, restoring };
 }
 
 /**

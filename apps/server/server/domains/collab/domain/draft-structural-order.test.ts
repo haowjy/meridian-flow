@@ -1,12 +1,13 @@
 /** Structural revisions preserve exact manuscript order and independently replayable components. */
 import {
   createAgentEditCodecFactory,
+  getBlockItemId,
   toDocHandle,
   unwrapBlock,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
-import type { ReviewHunk } from "@meridian/contracts/drafts";
+import { blockItemKey, type ReviewHunk } from "@meridian/contracts/drafts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
@@ -22,6 +23,7 @@ function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
   const baseRefs = model.getBlocks(toDocHandle(live));
   const base = baseRefs.map((block) => model.getText(block));
   const baseIds = new Set(baseRefs.map((block) => model.getBlockId(block)));
+  const liveKeys = new Set(baseRefs.map((block) => blockItemKey(getBlockItemId(block))));
   const blocks = model.getBlocks(toDocHandle(peer));
   const target = blocks.map((block) => model.getText(block));
   const resolve = (anchor: string) => {
@@ -36,6 +38,9 @@ function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
     .map((hunk, order) => {
       const from = resolve(hunk.anchor.relStart),
         to = resolve(hunk.anchor.relEnd);
+      // A block taken out whole names the live block it was, which a re-forked draft still has.
+      if (hunk.kind === "block" && hunk.deletedBlock)
+        expect(liveKeys).toContain(hunk.deletedBlock.blockId);
       if (hunk.kind === "block")
         return {
           kind: "block" as const,
@@ -44,7 +49,8 @@ function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
           inserted: hunk.insertedBlock?.display,
           deleted: hunk.deletedBlock?.display,
         };
-      if (from.type instanceof Y.XmlFragment && !(from.type instanceof Y.XmlText))
+      if (from.type instanceof Y.XmlFragment && !(from.type instanceof Y.XmlText)) {
+        expect(liveKeys).toContain(hunk.deletedBlockId);
         return {
           kind: "block" as const,
           block: from.index,
@@ -52,6 +58,8 @@ function expectDisplayHonesty(live: Y.Doc, peer: Y.Doc, hunks: ReviewHunk[]) {
           inserted: undefined,
           deleted: hunk.deletedText,
         };
+      }
+      expect(hunk.deletedBlockId).toBeUndefined();
       const block = blocks.findIndex((ref) => unwrapBlock(ref) === from.type.parent);
       expect(block).toBeGreaterThanOrEqual(0);
       const inserted =

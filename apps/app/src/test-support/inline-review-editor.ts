@@ -117,6 +117,7 @@ export function textHunk(
     spans?: ResolvedReviewSpan[];
     deletedText?: string;
     deletedSpans?: ReviewDeletedSpan[];
+    deletedBlockId?: string;
     mergeArtifact?: boolean;
     unclassified?: boolean;
   } = {},
@@ -130,6 +131,7 @@ export function textHunk(
     spans: extra.spans ?? [],
     ...(extra.deletedText ? { deletedText: extra.deletedText } : {}),
     ...(extra.deletedSpans ? { deletedSpans: extra.deletedSpans } : {}),
+    ...(extra.deletedBlockId ? { deletedBlockId: extra.deletedBlockId } : {}),
     ...(extra.mergeArtifact ? { mergeArtifact: true } : {}),
     ...(extra.unclassified ? { unclassified: true } : {}),
   };

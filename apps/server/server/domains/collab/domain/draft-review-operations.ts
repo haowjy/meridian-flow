@@ -111,6 +111,7 @@ function groupOperationsForHunks(
       return [
         {
           operationId: operation.operationId,
+          ...(operation.partKey ? { partKey: operation.partKey } : {}),
           sourceUpdateIds: operation.sourceUpdateIds,
           closureUpdateIds: operation.physicalSourceUpdateIds,
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),

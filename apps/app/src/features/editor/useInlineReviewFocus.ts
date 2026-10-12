@@ -10,9 +10,9 @@
  * The companion to `useInlineReviewSync`, which pushes the server model. Only
  * the review editor mounts it; the plugin state is the guard.
  */
+import { operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
-
 import {
   getInlineReviewPluginState,
   isUnattributedHunkKey,
@@ -73,12 +73,17 @@ export function useInlineReviewFocus({
         : model?.operations.find((operation) => operation.operationId === operationId)
             ?.closureClassId;
       if (!classId) return;
-      const operationIds = isUnattributedHunkKey(operationId)
+      const operations = isUnattributedHunkKey(operationId)
         ? []
-        : (model?.operations ?? [])
-            .filter((operation) => operation.closureClassId === classId)
-            .map((operation) => operation.operationId);
-      reportFocusedChange({ documentId, draftId }, { classId, operationIds });
+        : (model?.operations ?? []).filter((operation) => operation.closureClassId === classId);
+      reportFocusedChange(
+        { documentId, draftId },
+        {
+          classId,
+          operationIds: operations.map((operation) => operation.operationId),
+          keys: operations.map(operationKey),
+        },
+      );
     };
     live.on("transaction", onTransaction);
     return () => {

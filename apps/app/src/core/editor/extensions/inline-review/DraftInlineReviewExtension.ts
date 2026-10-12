@@ -96,7 +96,11 @@ declare module "@tiptap/core" {
       setInlineReviewPulse: (operationIds: readonly string[]) => ReturnType;
       /** Open a block after the focused change for its bar, when the margin has no room. */
       setInlineReviewBarSlot: (open: boolean) => ReturnType;
-      scrollInlineReviewOperationIntoView: (operationId: string) => ReturnType;
+      /** `instant` jumps: for a scroll the editor is about to be replaced under, which must not stop half way. */
+      scrollInlineReviewOperationIntoView: (
+        operationId: string,
+        options?: { instant?: boolean },
+      ) => ReturnType;
     };
   }
 }
@@ -134,7 +138,7 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
       setInlineReviewPulse: (operationIds) => command({ kind: "set-pulse", operationIds }),
       setInlineReviewBarSlot: (open) => command({ kind: "set-bar-slot", open }),
       scrollInlineReviewOperationIntoView:
-        (operationId) =>
+        (operationId, options) =>
         ({ view }) => {
           // Scroll the manuscript block from cached anchors, never painted marks or selection.
           const geometry = draftInlineReviewPluginKey.getState(view.state)?.geometry;
@@ -147,7 +151,10 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
           const reduceMotion =
             typeof window !== "undefined" &&
             window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-          target.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+          target.scrollIntoView({
+            block: "center",
+            behavior: reduceMotion || options?.instant ? "auto" : "smooth",
+          });
           return true;
         },
     };

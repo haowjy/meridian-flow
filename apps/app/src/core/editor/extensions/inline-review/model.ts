@@ -75,6 +75,21 @@ export interface InlineReviewModel {
   draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ResolvedReviewHunk[];
+  /**
+   * Operations whose Discard is on its way: the editor shows their original
+   * text from the click, until the draft's next generation paints without
+   * them. Their hunks stay in `hunks` so the original can be drawn in place.
+   */
+  restoring?: ReadonlySet<string>;
+}
+
+/** The hunk belongs to a change being discarded: its insertion hides and its removal reads as plain prose. */
+export function isRestoringHunk(
+  model: Pick<InlineReviewModel, "restoring">,
+  hunk: Pick<ResolvedReviewHunk, "operationIds">,
+): boolean {
+  const restoring = model.restoring;
+  return restoring !== undefined && hunk.operationIds.some((id) => restoring.has(id));
 }
 
 /**
@@ -111,6 +126,7 @@ export function buildInlineReviewModel(input: {
   draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
+  restoring?: ReadonlySet<string>;
 }): InlineReviewModel {
   const resolved: ResolvedReviewHunk[] = [];
   for (const hunk of input.hunks) {
@@ -152,6 +168,7 @@ export function buildInlineReviewModel(input: {
       spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
       ...(hunk.deletedSpans ? { deletedSpans: hunk.deletedSpans } : {}),
+      ...(hunk.deletedBlockId ? { deletedBlockId: hunk.deletedBlockId } : {}),
     });
   }
   return {
@@ -161,6 +178,7 @@ export function buildInlineReviewModel(input: {
     draftRevisionToken: input.draftRevisionToken,
     operations: input.operations,
     hunks: resolved,
+    ...(input.restoring?.size ? { restoring: input.restoring } : {}),
   };
 }
 

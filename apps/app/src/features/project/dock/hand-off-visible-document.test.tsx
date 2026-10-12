@@ -55,14 +55,23 @@ vi.mock("../context/context-tab-session", () => ({
 }));
 vi.mock("@/features/editor/SessionEditor", () => ({
   PendingEditorShell: () => <p>Pending</p>,
-  SessionEditor: ({ onConstructed }: { onConstructed?: (editor: Editor | null) => void }) => {
+  SessionEditor: ({
+    identity,
+    onConstructed,
+  }: {
+    identity: { surface: string };
+    onConstructed?: (editor: Editor | null) => void;
+  }) => {
     useEffect(() => {
-      onConstructed?.({} as Editor);
+      onConstructed?.({
+        isDestroyed: false,
+        view: { hasFocus: () => false, dom: document.createElement("div") },
+      } as unknown as Editor);
       return () => onConstructed?.(null);
     }, []);
     return (
-      <p data-prose={onConstructed ? "review" : "live"}>
-        {onConstructed ? "Valid draft prose" : "Live body"}
+      <p data-prose={identity.surface === "review" ? "review" : "live"}>
+        {identity.surface === "review" ? "Valid draft prose" : "Live body"}
       </p>
     );
   },
@@ -88,6 +97,9 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
 vi.mock("@/components/app/PaintHold", () => ({
   PaintCapture: () => null,
   PaintScope: ({ children }: { children: ReactNode }) => children,
+  useAfterPaintRelease: () => (work: (cover: { read: unknown }) => void) =>
+    work({ read: undefined }),
+  usePaintCoverProjection: () => () => {},
 }));
 const liveSession = {
   suspendPresence: () => {},

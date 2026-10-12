@@ -394,6 +394,8 @@ and rich-equal ordered replacement runs are equal at that shared semantic bounda
 not hidden by a review-only cancellation rule. Same-text replacements with different
 immutable identities retain both structural effects and supplying rows in one
 canonical change; only same-identity changes use rich-field-only evidence.
+Review removal block keys come from the live side of this canonical difference,
+not a second alignment or a display excerpt; rich-effect ranges stay unchanged.
 Publication carries explicit before/after canonical block identities through to
 the durable trail; display hashes and serialized prose never supply identity.
 The model-undo engine still needs legacy text/tombstone restoration inference.

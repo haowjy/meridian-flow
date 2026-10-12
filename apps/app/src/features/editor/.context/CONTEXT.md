@@ -118,6 +118,32 @@ settled)` still synchronizes the body, header and completion focus in layout.
 A draft-only tab without a review shows a terminal Close card. Surface wrappers
 carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
 
+**Seamless generation change.** A Discard re-forks the draft and the review
+editor is replaced; the writer must not see it. (1) *Original from the click:* a
+discarded change stays in the inline model flagged `restoring`; its insertion is
+hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
+removed text is drawn as plain prose (`meridian-review-restored`). A Discard
+accepted while a cover already holds the old review shows on the cover too: the
+cover is its capture plus the current projection of the intents
+(`PaintHold.projectCover`, `projectRestoring`), rebuilt when they move. The marks and removals a Discard hides keep their markup under a class (`meridian-review-restoring` / `-restored`), so the cover toggles them both ways and a Discard refused under it comes back; the review keeps the Discards made since its cover's review was on screen. The cover reports its reader's first visible block (`readCoverView`) by Yjs item, never by what the block says. At capture `annotateCoverBlocks` (one pass over the binding, the document and the DOM, linear in blocks) stamps each real top-level block of the copy with its `blockItemKey` (`data-review-block-id`). A block the old review did not have, an original a Discard restores, is a paragraph of its removal widget carrying the live block it was (the server names it on the hunk: `deletedBlock.blockId`, `deletedBlockId`; a re-forked draft keeps the live items). The successor looks the item up in a table of its own items built once, so an item it no longer has names nothing. Only a paragraph the server did not name falls back to the nearest stamped block and the distance to it, and a cover with no stamps to a count; both are approximate (a block inserted between moves them) and the view says so (`near`, `block`). The widget says how many blocks it stands for (`data-review-removed-blocks`), never its children (an open fold also holds a button). A folded removal keeps its paragraphs hidden under the fold class, so restoring it reveals them and suppresses the button, and withdrawing returns the fold. Restored originals are manuscript prose in every state (`inline-review.css` last block: no removal colour, emphasis, pulse, fold, click) while their markup stays for a refusal. A refusal drops the
+flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
+takes the first visible block (Yjs anchor, stable block index, pixel offset), the
+caret and focus ownership in the commit that removes the review editor
+(`core/editor/review-place.ts`, memory only, keyed by draft). The successor
+shows only once it has synced, carried the writer's unsent edits and projected
+the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
+the viewport and focus in the task that lifts the cover. A writer's explicit
+navigation in between (`noteReviewNavigation`, addressed to the draft and naming
+the change by its keys) replaces the held viewport. The cover scrolls (its prose
+is inert, typing is blocked), and how far it was scrolled is added to the
+restored viewport. The same place is applied to
+the warm live editor when a last Apply or Discard hands the page over. (3)
+*Chrome is the draft's:* `shown` is not cleared by a generation change, so the
+header, change list and phone sheet stay; the open review's list is held while
+the review and its preview disagree about the generation. Discard and Apply both
+move the focus to the next change and scroll to it; the place held across the swap
+is the viewport as it is then.
+
 For generation, completion and command ordering, use the
 [draft-review lifecycle reference](../../draft-review/.context/draft-review.md).
 `SessionEditor` constructs the common surface; `EditorView` composes review-only

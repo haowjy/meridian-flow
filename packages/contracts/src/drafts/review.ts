@@ -53,10 +53,28 @@ export type DraftPreviewResponse =
     })
   | { status: "gone"; draftId: string };
 
+/**
+ * The change an operation is across draft generations: its part key, which a
+ * re-fork keeps while it gives the row a new `operationId`. An operation with no
+ * part key is only the row it is.
+ */
+export function operationKey(operation: Pick<ReviewOperation, "operationId" | "partKey">): string {
+  return operation.partKey ?? `row:${operation.operationId}`;
+}
+
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
+  /** The journal row carrying this change in the draft's current generation. Admission names rows; it is not continuity. */
   operationId: string;
+  /**
+   * The change's identity across draft generations: `<editId>:<ordinal>` of the
+   * recorded edit part the row carries. A re-fork re-journals surviving rows
+   * under new `operationId`s with the same part key, so this is what a queued
+   * click, a focus or a held failure finds its change by. Absent for a row that
+   * records no edit part (manifest and reversal rows): it only matches itself.
+   */
+  partKey?: string;
   actorTurnId?: string;
   /** Originating chat and its title at preview time. Agent operations only. */
   actorThreadId?: string;
@@ -112,6 +130,8 @@ export type ReviewTextHunk = ReviewHunkBase & {
   insertedText?: string;
   deletedText?: string;
   deletedSpans?: ReviewDeletedSpan[];
+  /** Set when `deletedText` is a whole live block taken out: that block's `blockItemKey`. */
+  deletedBlockId?: string;
 };
 
 export type ReviewFormattingChange =
@@ -121,7 +141,17 @@ export type ReviewFormattingChange =
   | { kind: "attributes" }
   | { kind: "structure" };
 
-export type ReviewBlockDisplay = { type: string; display: string };
+/**
+ * A block as the review shows it. `blockId` (a `blockItemKey`) is set on a
+ * deleted block: the live block's own Yjs item, which the next generation of
+ * the draft still has when the deletion is discarded.
+ */
+export type ReviewBlockDisplay = { type: string; display: string; blockId?: string };
+
+/** The Yjs item identity of a top-level block, as the wire and the page's copies of it write it. */
+export function blockItemKey(id: { clientID: number; clock: number }): string {
+  return `${id.clientID}:${id.clock}`;
+}
 
 export type ReviewBlockHunk = ReviewHunkBase & {
   kind: "block";

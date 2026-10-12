@@ -5,7 +5,6 @@ import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-
 import {
   createReviewEditor,
   destroyReviewEditors,
@@ -19,6 +18,7 @@ import {
 } from "../../../../test-support/inline-review-editor";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
 import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
+import { projectRestoring } from "./decorations";
 import { type InlineReviewModel, unattributedHunkKey } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
 
@@ -251,6 +251,35 @@ describe("removals", () => {
     expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
   });
 
+  it("shows the original of a change being discarded as plain prose, with its insertion hidden, and can show it as marked again", () => {
+    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
+    const withered = posOf(editor, "one withered");
+    const hunk = textHunk(
+      editor,
+      "h1",
+      ["a1"],
+      { from: withered, to: withered + 12 },
+      { spans: [span(editor, "a1", withered, withered + 12)], deletedText: "his" },
+    );
+    setModel(editor, {
+      ...model([operation("a1", "agent")], [hunk]),
+      restoring: new Set(["a1"]),
+    });
+    expect(marked(editor, "meridian-review-restoring")).toEqual(["one withered"]);
+    const [restored] = editor.view.dom.querySelectorAll(".meridian-review-restored");
+    expect(restored?.textContent).toBe("his");
+    expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
+    // A copy of what was drawn (the paint cover's) is reversible: nothing was thrown away.
+    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
+    projectRestoring(copy, new Set());
+    expect(copy.querySelector(".meridian-review-restoring")).toBeNull();
+    expect(copy.querySelector(".meridian-review-restored")).toBeNull();
+    expect(copy.querySelector(".meridian-review-removal del")?.textContent).toBe("his");
+    projectRestoring(copy, new Set(["a1"]));
+    expect(copy.querySelector(".meridian-review-restoring")?.textContent).toBe("one withered");
+    expect(copy.querySelector(".meridian-review-restored")).not.toBeNull();
+  });
+
   it("paints unclassified insertion and removal in no author's colour", () => {
     const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
     const at = posOf(editor, "breath");
@@ -413,7 +442,47 @@ describe("removals", () => {
     expect(editor.getText()).not.toContain("courtyard");
 
     open?.querySelector("button")?.click();
-    expect(removals(editor)[0]?.querySelectorAll("del")).toHaveLength(0);
+    // Folded again: the text stays in the widget, hidden, for whatever restores it.
+    const folded = removals(editor)[0];
+    expect(folded?.classList.contains("meridian-review-removal-folded")).toBe(true);
+    expect(folded?.querySelectorAll("p")).toHaveLength(3);
+  });
+
+  it("keeps a folded removal's text beneath the fold, named by its blocks, so restoring it has the text to show", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    const long = "The courtyard held its breath while the elders conferred. ".repeat(2);
+    const hunks = [0, 1].map((i) =>
+      textHunk(
+        editor,
+        `h${i}`,
+        ["a1"],
+        { from: between, to: between },
+        { deletedText: `${i}: ${long}`, deletedBlockId: `7:${i}` },
+      ),
+    );
+    setModel(editor, model([operation("a1", "agent")], hunks));
+    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
+    const widget = () => copy.querySelector<HTMLElement>(".meridian-review-removal-block");
+    // As a cover captures it: the label, and the paragraphs held (hidden by the fold's class) with the live blocks they were.
+    expect(widget()?.classList.contains("meridian-review-removal-folded")).toBe(true);
+    expect(widget()?.querySelector("button")?.textContent).toBe("2 paragraphs removed");
+    expect(
+      [...(widget()?.querySelectorAll("p") ?? [])].map((p) => [
+        p.getAttribute("data-review-block-id"),
+        p.textContent?.slice(0, 2),
+      ]),
+    ).toEqual([
+      ["7:0", "0:"],
+      ["7:1", "1:"],
+    ]);
+    // Restoring and withdrawing only toggle the class; the fold and the text stay as they were.
+    const before = widget()?.innerHTML;
+    projectRestoring(copy, new Set(["a1"]));
+    expect(widget()?.classList.contains("meridian-review-restored")).toBe(true);
+    projectRestoring(copy, new Set());
+    expect(widget()?.classList.contains("meridian-review-restored")).toBe(false);
+    expect(widget()?.innerHTML).toBe(before);
   });
 
   it("refreshes removal content and attribution without reusing stale DOM", () => {
@@ -505,6 +574,19 @@ describe("clicking a removal", () => {
     expect(editor.state.selection.from).toBe(2);
     setModel(editor, foldedModel(editor));
     expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
+  });
+
+  it("does nothing for the original of a change being discarded", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    editor.commands.setTextSelection(2);
+    setModel(editor, { ...foldedModel(editor), restoring: new Set(["a1"]) });
+    const [removal] = removals(editor);
+    // Plain prose now: shown whole (no fold to open), and a click neither focuses its change nor moves the caret.
+    expect(removal?.querySelector("button")).toBeNull();
+    removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 5 }));
+    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(false);
+    expect(editor.state.selection.from).toBe(2);
   });
 
   it("keeps keyboard focus on the fold after Enter rebuilds it", async () => {

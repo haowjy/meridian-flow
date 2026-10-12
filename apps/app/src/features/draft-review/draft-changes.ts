@@ -14,7 +14,7 @@ import {
   changeCommandState,
   type DraftCommandFailure,
   draftCommandFailure,
-  hiddenOperationIds,
+  intentKeys,
   pendingDraftCommand,
   useChangeCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -84,7 +84,7 @@ export function useChangeItems(
     [changes, records, draft],
   );
   const hiding = draft
-    ? hiddenOperationIds(records, draft).size > 0 ||
+    ? intentKeys(records, draft).hidden.size > 0 ||
       pendingDraftCommand(records.drafts, draft)?.target === "all"
     : false;
   return { items, hiding };

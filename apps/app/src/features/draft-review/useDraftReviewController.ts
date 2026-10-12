@@ -17,6 +17,7 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { noteReviewNavigation } from "@/core/editor/review-place";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -72,6 +73,12 @@ export type DraftReviewController = {
    * stays available on a frozen Work.
    */
   dispositionLocked: boolean;
+  /**
+   * A change's own Apply and Discard disable on this alone: a command on the
+   * whole draft or a batch is in flight, or the Work is frozen. Clicks during
+   * another change's command are accepted and queued.
+   */
+  changesLocked: boolean;
   /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
@@ -94,7 +101,7 @@ export type DraftReviewController = {
   focusReviewChange: (
     review: DraftReviewSelection,
     change: ReviewChangeTarget,
-    options?: { scroll?: boolean },
+    options?: { scroll?: boolean; instant?: boolean },
   ) => void;
   /**
    * Apply or Discard a selection of changes of any draft of this Work. The
@@ -166,6 +173,7 @@ export function useDraftReviewController({
   const isApplying = activeCommand?.target === "all" && activeCommand.mode === "apply";
   const isDisposing = draftCommandPendingIn(commandRecords, { projectId, workId });
   const dispositionLocked = commands.dispositionLocked;
+  const changesLocked = commands.changesLocked;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
@@ -238,17 +246,24 @@ export function useDraftReviewController({
       type: "changeFocused",
       documentId: review.documentId,
       draftId: review.draftId,
-      focus: { classId: change.classId, operationIds: change.operationIds },
+      focus: { classId: change.classId, operationIds: change.operationIds, keys: change.keys },
     });
   }, []);
 
   const focusReviewChange = useCallback(
-    (review: DraftReviewSelection, change: ReviewChangeTarget, options?: { scroll?: boolean }) => {
+    (
+      review: DraftReviewSelection,
+      change: ReviewChangeTarget,
+      options?: { scroll?: boolean; instant?: boolean },
+    ) => {
       // The identity is checked before anything is touched: the open review, and
       // the editor showing it, are the ones this focus was meant for.
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
       if (inline?.documentId !== review.documentId || inline.draftId !== review.draftId) return;
       reportFocusedChange(review, change);
+      // The writer chose where to go: a place held across an editor swap yields to it.
+      if (options?.scroll)
+        noteReviewNavigation(`${review.documentId}:${review.draftId}`, change.keys ?? []);
       const runtime = inlineRuntimeRef.current;
       if (
         !runtime ||
@@ -259,7 +274,9 @@ export function useDraftReviewController({
         return;
       runtime.editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
       if (options?.scroll)
-        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId);
+        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId, {
+          instant: options.instant,
+        });
     },
     [reportFocusedChange],
   );
@@ -311,6 +328,7 @@ export function useDraftReviewController({
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
+      changesLocked,
       marksVisible: state.marksVisible,
       setMarksVisible,
       focus: inlineReview?.focus ?? null,
@@ -341,6 +359,7 @@ export function useDraftReviewController({
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
+      changesLocked,
       state.marksVisible,
       setMarksVisible,
       inlineReview?.focus,
