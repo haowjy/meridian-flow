@@ -28,9 +28,10 @@
  * A Stop press cancels the target. With no target, or when the cancel is
  * refused, it becomes an intent recording the messages owed at the press; the
  * intent lands only on a target whose execution took on or delivered one of
- * them, and never again on the turn that refused it. A fresh press retries. A
- * message owed after the press retires the waiting intent: the later action
- * wins, so work that batches it with an older message is never cancelled.
+ * them, and never again on the turn that refused it. A fresh press retries.
+ * Messages that become owed after the press join the intent's `owedAfterPress`;
+ * the intent never lands on an execution serving one of them (the later send
+ * wins), but still lands on separate work serving only press-time messages.
  *
  * No React, store, journal or transport imports: this module moves to
  * `packages/` unchanged.
@@ -82,6 +83,8 @@ export type RunFollowSnapshot = {
 export type StopState = {
   /** The messages owed at the press: the only work this Stop may land on. */
   owedAtPress: ReadonlySet<string>;
+  /** Messages owed after the press: an execution serving any of them is never cancelled by it. */
+  owedAfterPress: ReadonlySet<string>;
   /** The last turn whose cancel was refused; the intent skips it until a fresh press. */
   refusedTurnId: string | null;
   /** A cancel sent and not yet answered; while set, the intent waits for its answer. */
@@ -352,7 +355,12 @@ function apply(follow: RunFollow, input: RunFollowInput): RunFollowStep {
       return {
         follow: {
           ...follow,
-          stop: { owedAtPress: view.owed, refusedTurnId: null, inFlightTurnId: view.target },
+          stop: {
+            owedAtPress: view.owed,
+            owedAfterPress: NONE,
+            refusedTurnId: null,
+            inFlightTurnId: view.target,
+          },
         },
         cancel: view.target,
       };
@@ -381,15 +389,18 @@ export function stepRunFollow(follow: RunFollow, input: RunFollowInput): RunFoll
   const owed = owedOf(next);
   if ([...owed].some((id) => !next.tracked.has(id)))
     next = { ...next, tracked: new Set([...next.tracked, ...owed]) };
-  // The later action wins: a message sent after the press retires its waiting
-  // intent, so an execution batching old and new messages is not cancelled.
+  // Kept after delivery: the execution that served a later message stays protected.
   const pressed = next.stop;
-  if (
-    pressed &&
-    pressed.inFlightTurnId === null &&
-    [...owed].some((id) => !pressed.owedAtPress.has(id))
-  )
-    next = { ...next, stop: null };
+  if (pressed) {
+    const later = [...owed].filter(
+      (id) => !pressed.owedAtPress.has(id) && !pressed.owedAfterPress.has(id),
+    );
+    if (later.length > 0)
+      next = {
+        ...next,
+        stop: { ...pressed, owedAfterPress: new Set([...pressed.owedAfterPress, ...later]) },
+      };
+  }
   const view = viewRunFollow(next);
   if (view.settled) {
     const reset =
@@ -404,7 +415,11 @@ export function stepRunFollow(follow: RunFollow, input: RunFollowInput): RunFoll
   if (!stop || stop.inFlightTurnId !== null || target === null || target === stop.refusedTurnId)
     return { follow: next, cancel: null };
   const executionId = next.facts.turns.get(target)?.executionId;
-  if (!executionId || !executionsServing(next.facts, stop.owedAtPress).has(executionId))
+  if (
+    !executionId ||
+    !executionsServing(next.facts, stop.owedAtPress).has(executionId) ||
+    executionsServing(next.facts, stop.owedAfterPress).has(executionId)
+  )
     return { follow: next, cancel: null };
   return { follow: { ...next, stop: { ...stop, inFlightTurnId: target } }, cancel: target };
 }
