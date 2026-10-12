@@ -476,6 +476,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
+    it("refuses a batch whose final namespace puts a document at a folder's alias, folders aside (#766)", async () => {
+      const scenario = await start();
+      const source = scenario.project.sources.manuscript;
+      const moveFolder = await scenario.seedLiveFolder("MoveFolder");
+      const moveDoc = await scenario.seedLive("MoveDoc");
+      const otherFolder = await scenario.seedLiveFolder("OtherFolder");
+      const conflict = { ok: false, code: "conflict" };
+      expect
+        .soft(
+          await batchMove(
+            [source],
+            [toFolder(moveFolder, source, "Batch.md"), toDocument(moveDoc, source, "Batch")],
+          ),
+          "a folder and the document at its alias",
+        )
+        .toEqual(conflict);
+      expect
+        .soft(
+          await batchMove(
+            [source],
+            [
+              toDocument(moveDoc, source, "Batch"),
+              toFolder(moveFolder, source, "Inside", ["Batch.md"]),
+            ],
+          ),
+          "a required ancestor at a planned document's alias",
+        )
+        .toEqual(conflict);
+      expect.soft(await idAt(scenario, "live", "Batch"), "nothing installed").toBeNull();
+      expect.soft(await idAt(scenario, "live", "MoveDoc")).toBe(moveDoc);
+      expect
+        .soft(
+          await batchMove(
+            [source],
+            [toFolder(moveFolder, source, "Lore"), toFolder(otherFolder, source, "Lore.md")],
+          ),
+          "two folders never meet through an alias",
+        )
+        .toEqual({ ok: true });
+    });
+
     it.each([
       { first: "rename" as const, at: "absorb.beforeRepoint" as const },
       { first: "create" as const, at: "createInDraft.afterCandidateLock" as const },

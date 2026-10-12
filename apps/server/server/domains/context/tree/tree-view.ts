@@ -97,12 +97,22 @@ export type VisibleFolder = {
 };
 
 /**
- * A path asked as a claim of one kind also meets the shared document and folder namespace:
- * a document's name is held by a folder whose document alias it is (folder `Lore.md`
- * holds document `Lore`), and a folder's name by the document at its alias. Creates,
- * placements and moves ask this way; reads resolve literally and never do.
+ * A path asked as a claim of one kind also meets the shared document and folder namespace
+ * (`namespaceName`). Creates, placements, moves, Apply's holds and `treeState`'s clash
+ * diagnostics ask this way; browsing (ls, stat, read, a link's resolution) resolves
+ * literally and never does.
  */
 export type NameClaim = "document" | "folder";
+
+/**
+ * The one shared-namespace rule: the document filename a node of this kind holds under its
+ * parent. A document holds its own filename; a folder holds its document alias (folder
+ * `Lore.md` holds document `Lore`). A document and a folder meet when these are equal; two
+ * folders, or two documents, meet only literally (`Lore` and `Lore.md` may both be folders).
+ */
+export function namespaceName(kind: NameClaim, filename: string): string {
+  return kind === "folder" ? folderDocumentName(filename) : filename;
+}
 
 /** A path to resolve; `as` makes it a claim of that kind. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string; as?: NameClaim };
@@ -468,7 +478,7 @@ export function createTreeReader(
     // The document at a claimed folder name's alias.
     const documentAsks = positions(
       asks.flatMap((ask, owner) => {
-        const alias = folderDocumentName(ask.filename);
+        const alias = namespaceName("folder", ask.filename);
         return ask.as === "folder" && alias !== ask.filename
           ? ask.parents.map((parentId) => ({
               owner,
@@ -497,7 +507,8 @@ export function createTreeReader(
                   (folder) =>
                     parents.has(parentKey(folder.contextSourceId, folder.parentId)) &&
                     folder.name !== ask.filename &&
-                    folderDocumentName(folder.name) === ask.filename,
+                    namespaceName("folder", folder.name) ===
+                      namespaceName("document", ask.filename),
                 )
                 .map((folder) => folder.id)
             : [],
@@ -786,6 +797,7 @@ export function createTreeReader(
 
     // Every path a target needs, in the draft's view: its own, then each ancestor folder's,
     // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
+    // Each is a claim of its kind, so the clash is the one Apply's live holds would see.
     const needs = targets.flatMap((target, item) => {
       const path = folderPath(
         chainOf(target.parentFolderId),
@@ -797,6 +809,7 @@ export function createTreeReader(
         target: drop === 0,
         contextSourceId: target.contextSourceId,
         path: segments.slice(0, segments.length - drop).join("/"),
+        as: drop === 0 ? ("document" as const) : ("folder" as const),
       }));
     });
     const occupied = await pathOccupants(view, needs);
