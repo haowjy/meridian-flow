@@ -126,6 +126,17 @@ end-to-end as one suite.
   post-restart Retry result, resumed snapshot, idle status frame, lease rows
   before/after repair, and new-message start time relative to the old expiry.
 
+### Terminal compaction failure crash boundary
+
+The production-adapter DB regression in
+`runtime/adapters/drizzle-loop-ports.db.test.ts` captures a pending compaction
+candidate, calls `failCompactionSuccessor`, then runs orphan recovery without
+failure-close or run-session cleanup. The compaction and successor are failed,
+the adopted inbox is empty, and the thread is asleep with no lease row. The
+in-memory parity case lives in `runtime/loop/__tests__/inbox-drain.test.ts`.
+Run with `pnpm test:db`; these are adapter regressions, not a live process
+restart smoke check.
+
 ## RP-2: Commands wait for messages
 
 - **Protects:** `[A][/compact][B]` adopts A and B at the next tool boundary,
