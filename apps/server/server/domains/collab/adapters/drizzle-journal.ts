@@ -50,7 +50,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
+import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -62,6 +62,7 @@ import {
   materializeProvenanceForDoc,
 } from "../domain/provenance.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../domain/stale-schema.js";
+import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -829,6 +830,31 @@ async function persistRedoEntries(
   return { consumed: true, seqs };
 }
 
+async function materializeCurrentCheckpoint(
+  db: JournalDb,
+  cut: CapturedCheckpointCut,
+): Promise<Uint8Array | null> {
+  const isCurrent = async () => {
+    const current = await findDocumentAuthorityHead(
+      currentDrizzleDb(db as Database),
+      cut.documentId,
+    );
+    return (
+      current?.authorityId === cut.authority.authorityId &&
+      current.generation === cut.authority.generation
+    );
+  };
+  if (!(await isCurrent())) return null;
+  try {
+    return await cut.materializeState();
+  } catch (cause) {
+    // A restore may retire inputs during the unlocked read. Preserve the stale
+    // checkpoint contract; unrelated materialization failures still surface.
+    if (!(await isCurrent())) return null;
+    throw cause;
+  }
+}
+
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
@@ -1246,41 +1272,14 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       )(docId, { fromCheckpoint: false });
     },
 
-    async captureCheckpoint(docId, captured) {
-      return runInDrizzleTransaction(db as Database, async () => {
-        const txDb = currentDrizzleDb(db as Database) as JournalDb;
-        await lockDocumentMutation(txDb, docId);
-        const current = await findDocumentAuthorityHead(txDb, docId);
-        if (
-          !current ||
-          current.authorityId !== captured.authorityId ||
-          current.generation !== captured.generation
-        )
-          return null;
-        const base = await latestCheckpoint(txDb, docId, current);
-        const rows = await txDb
-          .select()
-          .from(documentYjsUpdates)
-          .where(
-            and(
-              eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-              eq(documentYjsUpdates.authorityId, current.authorityId),
-              eq(documentYjsUpdates.authorityGeneration, current.generation),
-              gt(documentYjsUpdates.id, base?.upToSeq ?? 0),
-            ),
-          )
-          .orderBy(asc(documentYjsUpdates.id));
-        return CapturedCheckpointCut.fromJournal(
-          docId,
-          current,
-          base ? { state: toBytes(base.state), upToSeq: base.upToSeq } : null,
-          rows.map((row) => mapUpdate(row)),
-        );
-      });
+    captureCheckpoint(docId, captured) {
+      return captureDrizzleCheckpoint(db, docId, captured);
     },
 
     async storeCheckpoint(cut) {
       const { documentId: docId, authority: captured, upToSeq } = cut;
+      const state = await materializeCurrentCheckpoint(db, cut);
+      if (state === null) return;
       await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
@@ -1293,7 +1292,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           return;
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
-        await insertCheckpoint(txDb, docId, cut.state, upToSeq, "checkpoint", captured);
+        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
         if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
           await txDb
             .delete(documentYjsCheckpoints)
@@ -1617,6 +1616,8 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
   return {
     async createCheckpoint(cut, reason) {
       const { documentId: docId, authority: captured, upToSeq } = cut;
+      const state = await materializeCurrentCheckpoint(db, cut);
+      if (state === null) return null;
       return runInDrizzleTransaction(db as Database, async () => {
         const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
@@ -1630,7 +1631,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
         const checkpointId = await insertCheckpoint(
           tx as JournalDb,
           docId,
-          cut.state,
+          state,
           upToSeq,
           reason,
           captured,

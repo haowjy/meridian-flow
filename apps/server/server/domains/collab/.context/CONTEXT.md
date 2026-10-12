@@ -199,17 +199,23 @@ checkpoint selection, earliest retained-update selection, and replay to that ide
 and generation. Sequence bounds do not authorize retired-generation history; only
 explicit checkpoint lookup/listing and restore expose historical checkpoints.
 
-Live checkpoints use `CapturedCheckpointCut`, never a free state/watermark pair.
-`journal.captureCheckpoint` holds the document mutation lock, validates the
-handle's authority binding, and folds the current-generation checkpoint and
-entire committed suffix. The cut owns immutable bytes and the last folded seq;
-unresolved Yjs structs or deletes refuse capture. Both the room worker and
-explicit checkpoint service pass this cut to persistence, which revalidates its
-generation under lock. Explicit capture and persistence join the caller's
-transaction, so persistence never waits on its own ambient capture lock through
-a second connection. A writer row committed before its room apply is therefore
-already in the checkpoint. Agent-edit's generic journal port does not expose
-checkpoint production; initialize-only seeds and compaction remain host-owned.
+Live checkpoints use the opaque `CapturedCheckpointCut`, minted only by trusted
+journal capture adapters. Capture takes a generation-qualified checkpoint reference
+and closed suffix sequence range under the mutation lock, without reading large
+bytes or replaying journal history there. Its read-only transaction/savepoint is
+rolled back intentionally, releasing capture-acquired locks even in an ambient
+transaction (a normal savepoint commit would retain them). Existing caller-owned
+locks remain the caller's responsibility.
+Persistence materializes the range before acquiring its own mutation lock, then
+revalidates generation under lock. Materialization uses immutable fetched inputs,
+yields between replay batches, and refuses ranges retired by compaction rather
+than advancing a floor over deleted history. Base hydration and final encoding
+remain synchronous Yjs operations. Explicit persistence still joins its caller's
+transaction, so it cannot wait on itself through a second connection. A writer
+row committed before room apply is included in the captured range. The public cut
+contract exposes no raw state/watermark constructor. Agent-edit's generic journal
+port does not expose checkpoint production; initialize-only seeds and compaction
+remain host-owned.
 
 The derivation store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be

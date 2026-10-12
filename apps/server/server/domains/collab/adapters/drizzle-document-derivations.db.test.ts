@@ -142,6 +142,11 @@ describe("durable document derivations", () => {
       update,
       origin: { type: "user", userId: userId as never },
     });
+    const admittedSeq = await persistence.store.latestUpdateSeq(documentId);
+    const before = await db
+      .select({ id: documentYjsCheckpoints.id })
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
     const writer = held.then(() => Y.applyUpdate(room, update));
     try {
       expect(room.getText("prose").toString()).toBe("");
@@ -167,6 +172,17 @@ describe("durable document derivations", () => {
         );
         expect(result.ok).toBe(true);
       }
+      const checkpoints = await db
+        .select()
+        .from(documentYjsCheckpoints)
+        .where(eq(documentYjsCheckpoints.documentId, documentId));
+      expect(
+        checkpoints.some(
+          (checkpoint) =>
+            !before.some((previous) => previous.id === checkpoint.id) &&
+            checkpoint.upToSeq >= admittedSeq,
+        ),
+      ).toBe(true);
       const cold = new Y.Doc({ gc: false });
       try {
         const state = await transport.loadHocuspocusDocument(documentId, cold);
@@ -179,6 +195,52 @@ describe("durable document derivations", () => {
       apply();
       await writer;
       room.destroy();
+      client.destroy();
+    }
+  });
+
+  it("capture releases its own mutation lock inside an ambient transaction before replay", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cut = await runInDrizzleTransaction(db, async () => {
+        const captured = await checkpointCut();
+        const locks = await currentDrizzleDb(db).execute(sql`
+          select count(*)::int as count from pg_locks
+          where pid = pg_backend_pid() and locktype = 'advisory'
+        `);
+        expect(locks[0]?.count).toBe(0);
+        await lockDocumentMutation(currentDrizzleDb(db), documentId);
+        await checkpointCut();
+        const retained = await currentDrizzleDb(db).execute(sql`
+          select count(*)::int as count from pg_locks
+          where pid = pg_backend_pid() and locktype = 'advisory'
+        `);
+        expect(retained[0]?.count).toBe(1);
+        // A later admission is outside the captured sequence range.
+        await append(client, " After");
+        return captured;
+      });
+      const cold = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(cold, await cut.materializeState());
+        expect(cold.getText("prose").toString()).toBe("Before");
+      } finally {
+        cold.destroy();
+      }
+    } finally {
+      client.destroy();
+    }
+  });
+
+  it("refuses a captured range whose suffix was compacted before materialization", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cut = await checkpointCut();
+      await persistence.journal.compact(documentId, new Date(Date.now() + 60_000));
+      await expect(cut.materializeState()).rejects.toThrow("Checkpoint inputs retired");
+    } finally {
       client.destroy();
     }
   });
