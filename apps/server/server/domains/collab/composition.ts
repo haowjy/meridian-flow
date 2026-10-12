@@ -59,13 +59,13 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
-import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleReviewCut } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import {
@@ -459,7 +459,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveCoordinator,
       branchJournal,
     ),
-    links: deps.links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,
@@ -468,8 +467,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveCoordinator,
     ),
     branches,
-    branchCoordinator,
-    branchJournal,
     branchPush,
     branchReview,
     workDraftPending,
@@ -477,7 +474,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     agentEdit,
     resolveDocumentUris: createDocumentUrisResolver(deps.db),
     resolveThreadTitles: lookups.resolveThreadTitles,
-    readLiveReviewCut: createDrizzleDraftReviewLive(deps.db, persistence.journal),
+    readReviewCut: createDrizzleReviewCut({
+      db: deps.db,
+      journal: persistence.journal,
+      branches,
+      rows: branchJournal,
+      links: deps.links,
+      resolveThreadTitles: lookups.resolveThreadTitles,
+    }),
   });
   const branchPeers = scopeBranchPeer(
     createEffectiveDocumentReader({

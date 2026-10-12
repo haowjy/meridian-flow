@@ -472,3 +472,33 @@ it("schema-stale is terminal before marks or the marks wait", async () => {
     expect(review?.roomOwner.inputEligible).toBe(false);
   }, false);
 });
+
+it("offers addressed whole Discard when a corrupt draft cannot open", async () => {
+  await run(async (client) => {
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+    client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), []);
+    mocks.getDraftPreview.mockResolvedValue({
+      status: "corrupt",
+      draftId: draftA.draftId,
+      draftGeneration: 1,
+    });
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    const discardButton = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Discard draft",
+      );
+    await settleReact(() => expect(discardButton()).toBeTruthy());
+    const answer = deferredReviewAnswer<ReturnType<typeof discarded>>();
+    mocks.discardDraft.mockReturnValue(answer.promise);
+    await act(async () => discardButton()?.click());
+    expect(mocks.discardDraft).toHaveBeenCalledWith("project-a", "work-a", documentId, {
+      draftId: draftA.draftId,
+    });
+    expect(discardButton()?.disabled).toBe(true);
+    mocks.getDraftPreview.mockResolvedValue({ ...previewOf(), draftGeneration: 2 });
+    await act(async () => answer.resolve(discarded(true)));
+    await settleReact(() => expect(review?.controller.inlineReview).toBeNull());
+    expect(mocks.discardDraft).toHaveBeenCalledTimes(1);
+    expect(review?.controller.toast).toBeNull();
+  }, false);
+});

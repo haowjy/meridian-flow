@@ -41,6 +41,28 @@ thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
 state a later `read` forks from.
 
+## Review authority cut
+
+Preview and selective disposition consume the same `ReadReviewCut` port and
+pure `domain/review-cut.ts` derivation. The adapter's first branch read fixes a
+root read-only repeatable-read snapshot. Branch generation/bytes, all history
+statuses, live journal/head, manifest memberships, thread titles and prepared
+link scopes join that snapshot. It uses no room reads, pulls, provisioning or
+repair. Missing manifest drafts inherit the captured live membership without
+creating a branch. Pinned memberships open a fresh link scope rather than
+joining a caller's older tree snapshot. Returned bytes and scopes are detached;
+the snapshot closes before rich-difference derivation.
+
+The draft token hashes this observation, including both link views and history
+statuses. Selection also compares it with the branch and review rows supplied
+by the existing admission protocol; a mismatch refuses as stale. Admission's
+current authority and live revision fences remain unchanged. Corrupt preview
+reads return a typed `corrupt` refusal without resetting any state. The review
+error surface offers the addressed whole **Discard draft** command. Its existing
+fenced reset from live does not decode the old branch, and also recovers corrupt
+branches with no pending rows. Healthy rowless branches remain unchanged.
+Thread cores are invalidated after Discard, never as a preview side effect.
+
 ## One save per reply
 
 The thread-peer pool is the only model read/write entry point. Each call
@@ -450,11 +472,8 @@ same connected components without pairwise row comparison. Block alignment
 peels matching ID prefixes and unambiguous suffixes before allocating an LCS
 matrix, retaining its duplicate-ID tie rule.
 
-Standalone live review reads capture revision, checkpoint and journal rows
-under the mutation lock, then replay into an owned private Y.Doc after commit.
-Command reads joined to an ambient transaction retain the caller's lock and
-revision fence. Callers destroy the returned document; no encoded snapshot
-round trip is needed. Draft lists bulk-resolve document paths with one document
+Preview and selection use the [review authority cut](#review-authority-cut).
+Draft lists bulk-resolve document paths with one document
 query and one shared folder graph, and expose persisted branch update times.
 
 ### Selective Discard and response replay

@@ -6,7 +6,9 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { observeReviewSnapshot } from "../../test-support/review-cut-boundaries.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   ALPHA_ID,
@@ -19,11 +21,16 @@ import {
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import {
+  BETA_ID,
   PROJECT_ID,
   THREAD_ID,
   TURN_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import {
+  createTestDocumentLinkScopes,
+  everyRowMembership,
+} from "./test-support/document-link-scopes.js";
 import { commitBranchEdit, fencedRequest } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
@@ -55,6 +62,53 @@ async function setup(
 }
 
 describe("per-change Apply (postgres)", () => {
+  it("whole Discard recovers only the addressed corrupt draft, including a rowless branch", async () => {
+    const { fixture, branch, command } = await setup("Alpha live.", "corrupt-recovery");
+    await stageText(fixture, branch.branchId, 0, " Proposal", "agent");
+    await writeMarkdown(fixture.collab, {
+      documentId: BETA_ID,
+      markdown: "Healthy live.",
+      origin: { type: "user", actorUserId: USER_ID },
+      threadId: THREAD_ID,
+    });
+    const healthy = await fixture.liveCoordinator.withDocument(BETA_ID, (liveDoc) =>
+      fixture.branchStore.resolveWorkDraftBranchForWork({
+        documentId: BETA_ID,
+        workId: WORK_ID,
+        liveDoc,
+      }),
+    );
+    healthy.doc.destroy();
+    await stageText(fixture, healthy.branchId, 0, " Healthy proposal", "agent");
+    const healthyCommand = { ...command, documentId: BETA_ID, draftId: healthy.branchId };
+    const healthyBefore = await fixture.collab.draftReview.preview(healthyCommand);
+    for (const rowless of [false, true]) {
+      await db
+        .update(schema.documentBranches)
+        .set({ state: Buffer.from([255]) })
+        .where(eq(schema.documentBranches.id, branch.branchId));
+      expect(await fixture.collab.draftReview.preview(command)).toMatchObject({
+        status: "corrupt",
+        draftId: branch.branchId,
+      });
+      expect(await fixture.collab.draftReview.discardWorkDraft(command)).toMatchObject({
+        status: "discarded",
+      });
+      expect(await fixture.collab.draftReview.preview(command)).toMatchObject({
+        status: "active",
+        operations: [],
+      });
+      expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha live.\n");
+      expect(await fixture.collab.draftReview.preview(healthyCommand)).toEqual(healthyBefore);
+      if (!rowless)
+        expect(
+          (await fixture.collab.draftReview.list({ workId: WORK_ID })).map(
+            (draft) => draft.draftId,
+          ),
+        ).not.toContain(branch.branchId);
+    }
+  });
+
   it("lists writing chats by their latest pending row, excluding writer and threadless rows", async () => {
     const { fixture, branch } = await setup(
       "Alpha base.\n\nBeta base.\n\nGamma base.",
@@ -700,6 +754,172 @@ describe("per-change Apply (postgres)", () => {
 });
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
+
+describe("ReviewCut concurrent capture (postgres)", () => {
+  it.each([
+    ["preview", "append"],
+    ["preview", "refork"],
+    ["preview", "status"],
+    ["apply", "append"],
+    ["apply", "refork"],
+    ["apply", "status"],
+    ["discard", "append"],
+    ["discard", "refork"],
+    ["discard", "status"],
+  ] as const)("%s stays coherent or refuses %s at every read await", async (action, mutation) => {
+    let enabled = false;
+    let target = -1;
+    let seen = 0;
+    let inject = async () => {};
+    const boundary = async () => {
+      if (!enabled) return;
+      const index = seen++;
+      if (index === target) await runOutsideDrizzleTransaction(inject);
+    };
+    const snapshotDb = observeReviewSnapshot(db, boundary);
+    let membershipCalls = 0;
+    const links = createTestDocumentLinkScopes(db, {
+      membership: async (view) => {
+        membershipCalls++;
+        return everyRowMembership(db)(view);
+      },
+    });
+    const harness = createHarness(snapshotDb, {
+      links,
+      reviewCut: (read) => async (address) => {
+        await boundary();
+        const beforeMembership = membershipCalls;
+        const cut = await read(address);
+        expect(membershipCalls).toBe(beforeMembership);
+        await boundary();
+        return cut;
+      },
+    });
+    warmHarness = harness;
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "review-cut-boundary");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const command = {
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const firstId = await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    // Membership and tree spelling must join the same read-only snapshot.
+    const manifest = await fixture.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
+    const manifestBranch = await fixture.branchStore.resolveWorkDraftBranchForWork({
+      documentId: manifest.documentId,
+      workId: WORK_ID,
+      liveDoc: manifest.doc,
+    });
+    manifest.doc.destroy();
+    manifestBranch.doc.destroy();
+    const before = await fixture.collab.draftReview.preview(command);
+    if (before.status !== "active") throw new Error("missing preview");
+    const [original] = await db
+      .select()
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    const proposed = createCollabYDoc({ gc: false });
+    Y.applyUpdate(proposed, original.state);
+    const vector = Y.encodeStateVector(proposed);
+    const beta = fixture.model.getBlocks(toDocHandle(proposed))[1];
+    fixture.model.applyTextEdit(toDocHandle(proposed), beta, { from: 10, to: 10 }, " Concurrent");
+    const appended = Y.encodeStateAsUpdate(proposed, vector);
+    const appendedState = Y.encodeStateAsUpdate(proposed);
+    const appendedVector = Y.encodeStateVector(proposed);
+    proposed.destroy();
+    let insertedId: number | undefined;
+    inject = async () => {
+      await db.transaction(async (tx) => {
+        if (mutation === "append") {
+          const [row] = await tx
+            .insert(schema.branchWriteJournal)
+            .values({
+              branchId: branch.branchId,
+              generation: original.generation,
+              source: "writer",
+              actorUserId: USER_ID,
+              updateData: Buffer.from(appended),
+              draftBaseUpdateSeq: 0,
+            })
+            .returning({ id: schema.branchWriteJournal.id });
+          insertedId = row.id;
+          await tx
+            .update(schema.documentBranches)
+            .set({ state: Buffer.from(appendedState), stateVector: Buffer.from(appendedVector) })
+            .where(eq(schema.documentBranches.id, branch.branchId));
+        } else if (mutation === "refork") {
+          await tx
+            .update(schema.documentBranches)
+            .set({ generation: original.generation + 1, state: original.liveCut ?? original.state })
+            .where(eq(schema.documentBranches.id, branch.branchId));
+        } else {
+          await tx
+            .update(schema.branchWriteJournal)
+            .set({ status: "pushed" })
+            .where(eq(schema.branchWriteJournal.id, firstId));
+        }
+      });
+    };
+    async function restore() {
+      if (insertedId !== undefined) {
+        await db
+          .delete(schema.branchWriteJournal)
+          .where(eq(schema.branchWriteJournal.id, insertedId));
+        insertedId = undefined;
+      }
+      await db
+        .update(schema.branchWriteJournal)
+        .set({ status: "active" })
+        .where(eq(schema.branchWriteJournal.id, firstId));
+      await db
+        .update(schema.documentBranches)
+        .set({
+          state: original.state,
+          stateVector: original.stateVector,
+          generation: original.generation,
+        })
+        .where(eq(schema.documentBranches.id, branch.branchId));
+    }
+    // Enumerate actual query awaits, plus entry/return of the read port. No
+    // sleeps or guesses about scheduler timing; each mutation commits elsewhere.
+    enabled = true;
+    await fixture.collab.draftReview.preview(command);
+    enabled = false;
+    const boundaryCount = seen;
+    console.info(`ReviewCut ${action}/${mutation}: ${boundaryCount} read await boundaries`);
+    expect(boundaryCount).toBeGreaterThan(8);
+    for (target = 0; target < boundaryCount; target++) {
+      seen = 0;
+      enabled = true;
+      if (action === "preview") {
+        const result = await fixture.collab.draftReview.preview(command);
+        enabled = false;
+        const after = await fixture.collab.draftReview.preview(command);
+        expect([before, after]).toContainEqual(result);
+      } else {
+        const request = fencedRequest(
+          command,
+          before,
+          before.operations.map((op) => op.operationId),
+        );
+        const result =
+          action === "apply"
+            ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
+            : await fixture.collab.draftReview.discardWorkDraft(request);
+        enabled = false;
+        expect(result).toMatchObject({ status: "stale" });
+      }
+      enabled = false;
+      expect(seen).toBeGreaterThan(target);
+      await restore();
+    }
+  });
+});
 
 async function stageText(
   fixture: Fixture,
