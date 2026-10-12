@@ -25,6 +25,7 @@ function view(documentId = "document", uri = "manuscript://chapter.md"): Catalog
         uri: "manuscript://",
       },
       {
+        observationVersion: "1",
         kind: "file",
         entryId: documentId,
         scope: { kind: "project", projectId },
@@ -57,6 +58,7 @@ function scopedView(
     entries: [
       { kind: "source", entryId: "source", scope, scheme, name: scheme, uri: `${scheme}://` },
       {
+        observationVersion: "1",
         kind: "file",
         entryId: "scoped-document",
         scope,

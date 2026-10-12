@@ -1,50 +1,51 @@
 /** Direct-child rows and inline actions for one context catalog scheme. */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { createContext, type KeyboardEvent, type ReactNode, useContext, useState } from "react";
+import { createContext, type KeyboardEvent, type ReactNode, useContext } from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
 import { cn } from "@/lib/utils";
-import {
-  ContextEntryMenu,
-  type EntryAction,
-  type EntryActionTarget,
-  EntryKebabButton,
-} from "./ContextEntryActions";
+import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeRowClassName,
   contextTreeRowGrowClassName,
 } from "./context-row-geometry";
-import { schemeAllowsCreation } from "./context-schemes";
 import { EntryNameField } from "./EntryNameField";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
+import {
+  type EntryCapabilities,
+  type EntryCreation,
+  EntryInteractionShell,
+  useEntryInteraction,
+} from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
-import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type TreeEnv = {
   projectId: string;
-  workId: string | null;
+  owner: ContextOwner;
+  capabilities: EntryCapabilities;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  creating: { kind: ContextCreateKind; parentPath: string } | null;
+  creation?: {
+    creating: { kind: ContextCreateKind; parentPath: string } | null;
+    request: EntryCreation;
+    done: () => void;
+    createdFile: (path: string) => void;
+  };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
-  onCreateDone: () => void;
-  onCreatedFilePath: (path: string) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
@@ -77,8 +78,13 @@ export function TreeChildren({
   const siblings = children;
   return (
     <>
-      {env.creating?.parentPath === parentPath ? (
-        <CreateRow kind={env.creating.kind} parent={parentPath} depth={depth} siblings={siblings} />
+      {env.creation?.creating?.parentPath === parentPath ? (
+        <CreateRow
+          kind={env.creation?.creating.kind}
+          parent={parentPath}
+          depth={depth}
+          siblings={siblings}
+        />
       ) : null}
       {children.map((child) =>
         child.kind === "dir" ? (
@@ -123,6 +129,22 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
+export function ContextTreeEntry({
+  node,
+  depth,
+  siblings,
+}: {
+  node: ContextNode;
+  depth: number;
+  siblings: readonly ContextEntrySibling[];
+}) {
+  return node.kind === "dir" ? (
+    <DirRow dir={node} depth={depth} siblings={siblings} />
+  ) : (
+    <FileRow file={node} depth={depth} siblings={siblings} />
+  );
+}
+
 function DirRow({
   dir,
   depth,
@@ -133,46 +155,30 @@ function DirRow({
   siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
-  const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const interaction = useEntryInteraction({
+    projectId: env.projectId,
+    node: dir,
+    owner: env.owner,
+    scheme: env.scheme,
+    capabilities: env.capabilities,
+    create: env.creation?.request,
+    onRequestDelete: env.onRequestDelete,
+    siblings,
+  });
   const isOpen = env.isExpanded(dir.entryId);
-  // A refused rename offers its name field once, as the failure arrives.
-  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
   const toggle = () => {
-    if (env.creating) env.onCreateDone();
+    if (env.creation?.creating) env.creation.done();
     env.toggleEntry(dir.entryId);
   };
-
-  function handleAction(action: EntryAction) {
-    if (action === "new-file") env.onRequestCreate("file", dir.path);
-    else if (action === "new-folder") env.onRequestCreate("folder", dir.path);
-    else if (action === "rename") setRenaming(true);
-    else if (action === "delete")
-      env.onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-  }
-
-  if (renaming) {
+  if (interaction.renaming) {
     return (
-      <RenameRow
-        entryId={dir.entryId}
-        path={dir.path}
-        currentName={dir.name}
-        repairName={dir.namespaceRepairName}
-        siblings={siblings}
-        kind="folder"
-        depth={depth}
-        icon={isOpen ? FolderOpen : Folder}
-        onRenamed={setNoteOperationId}
-        onDone={() => setRenaming(false)}
-      />
+      <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
     );
   }
 
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
   return (
     <>
-      <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
+      <EntryInteractionShell interaction={interaction}>
         {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
         <div
           role="button"
@@ -194,20 +200,20 @@ function DirRow({
             <LinkUpdateNote
               projectId={env.projectId}
               subject={{ kind: "folder", id: dir.entryId }}
-              operationId={noteOperationId}
+              operationId={interaction.operationId}
               layout="stacked"
             />
           </span>
           {dir.namespaceFailure ? (
-            <NamespaceFailureMark failure={dir.namespaceFailure} folder />
+            <NamespaceFailureMark
+              failure={dir.namespaceFailure}
+              move={Boolean(dir.namespaceRepairMove)}
+              folder
+            />
           ) : null}
-          <EntryKebabButton
-            allowCreate={allowCreate}
-            allowDelete={allowDelete}
-            onAction={handleAction}
-          />
+          <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
         </div>
-      </ContextEntryMenu>
+      </EntryInteractionShell>
       {isOpen ? (
         <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
       ) : null}
@@ -225,47 +231,25 @@ function FileRow({
   siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
-  const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const interaction = useEntryInteraction({
+    projectId: env.projectId,
+    node: file,
+    owner: env.owner,
+    scheme: env.scheme,
+    capabilities: env.capabilities,
+    create: env.creation?.request,
+    onRequestDelete: env.onRequestDelete,
+    siblings,
+  });
   const select = () => env.onSelectFile(env.scheme, file);
-  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
-
-  function handleAction(action: EntryAction) {
-    const parentPath = parentContextEntryPath(file.path);
-    if (action === "new-file") env.onRequestCreate("file", parentPath);
-    else if (action === "new-folder") env.onRequestCreate("folder", parentPath);
-    else if (action === "rename") setRenaming(true);
-    else if (action === "delete")
-      env.onRequestDelete({
-        name: file.name,
-        path: file.path,
-        kind: "file",
-        documentId: file.documentId,
-      });
-  }
-
-  if (renaming) {
-    return (
-      <RenameRow
-        entryId={file.documentId}
-        path={file.path}
-        currentName={file.name}
-        repairName={file.namespaceRepairName}
-        siblings={siblings}
-        kind="file"
-        depth={depth}
-        icon={fileKindIcon(file)}
-        onRenamed={setNoteOperationId}
-        onDone={() => setRenaming(false)}
-      />
-    );
+  if (interaction.renaming) {
+    return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }
 
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
+
   return (
-    <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
+    <EntryInteractionShell interaction={interaction}>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
       <div
         role="button"
@@ -282,58 +266,32 @@ function FileRow({
           <LinkUpdateNote
             projectId={env.projectId}
             subject={{ kind: "file", id: file.documentId }}
-            operationId={noteOperationId}
+            operationId={interaction.operationId}
             layout="stacked"
           />
         </span>
-        {file.namespaceFailure ? <NamespaceFailureMark failure={file.namespaceFailure} /> : null}
-        <EntryKebabButton
-          allowCreate={allowCreate}
-          allowDelete={allowDelete}
-          onAction={handleAction}
-        />
+        {file.namespaceFailure ? (
+          <NamespaceFailureMark
+            failure={file.namespaceFailure}
+            move={Boolean(file.namespaceRepairMove)}
+          />
+        ) : null}
+        <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
       </div>
-    </ContextEntryMenu>
+    </EntryInteractionShell>
   );
 }
 
 function RenameRow({
-  entryId,
-  path,
-  currentName,
-  repairName,
-  siblings,
-  kind,
+  options,
   depth,
   icon,
-  onRenamed,
-  onDone,
 }: {
-  entryId: string;
-  path: string;
-  currentName: string;
-  repairName?: string;
-  siblings: readonly ContextEntrySibling[];
-  kind: ContextCreateKind;
+  options: Parameters<typeof useRenameEntryForm>[0];
   depth: number;
   icon: typeof Folder;
-  onRenamed: (operationId: string) => void;
-  onDone: () => void;
 }) {
-  const env = useTreeEnv();
-  const form = useRenameEntryForm({
-    projectId: env.projectId,
-    owner: { workId: env.workId ?? undefined },
-    scheme: env.scheme,
-    entryId,
-    path,
-    currentName,
-    repairName,
-    siblings,
-    kind,
-    onRenamed,
-    onDone,
-  });
+  const form = useRenameEntryForm(options);
   return (
     <div
       className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
@@ -358,14 +316,16 @@ function CreateRow({
   siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
+  const creation = env.creation;
+  if (!creation) throw new Error("Create row requires creation capability");
   const form = useCreateEntryForm({
     projectId: env.projectId,
     scheme: env.scheme,
     kind,
     parent,
     siblings,
-    onDone: env.onCreateDone,
-    onCreated: kind === "file" ? env.onCreatedFilePath : undefined,
+    onDone: creation.done,
+    onCreated: kind === "file" ? creation.createdFile : undefined,
   });
   return (
     <div

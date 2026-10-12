@@ -17,7 +17,7 @@ import { ResourceContentAccess, type ResourceContentTransfer } from "./resource-
 import { deleteIndexedDb } from "./test-support/delete-indexed-db";
 
 const accountId = "content-access-account";
-const metadataDatabase = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
+const metadataDatabase = `meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`;
 const databases = new Set<string>();
 const stores: IndexedDbResourceMetadata[] = [];
 const accesses: ResourceContentAccess[] = [];
@@ -395,6 +395,7 @@ it("releases every project registry ownership after the final shared-content lea
       uri: "user://",
     },
     {
+      observationVersion: "1",
       kind: "file" as const,
       entryId: record.resource.identity.documentId,
       scope,

@@ -13,7 +13,11 @@ import { DraftReviewBoundary, useDraftReviewScopeValue } from "./DraftReviewProv
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
   coordinator: { promoteAppliedDraft: vi.fn(async () => true), discardDraft: vi.fn() },
-  resources: { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() },
+  resources: {
+    readProjection: async () => ({ records: [], folders: [], catalogs: [] }),
+    acquireCatalog: vi.fn(),
+    acquireCatalogAfter: vi.fn(),
+  },
 }));
 
 vi.mock("@/client/api/drafts-api", () => ({

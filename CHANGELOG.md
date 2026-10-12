@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
+
+- Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
+- Reacquire unversioned catalog checkpoints after a device metadata upgrade without removing document content or queued namespace work.
+- Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
+- Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
+
+- Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.
+- Treat delivery into a retired destination authority as move repair rather than a missing Work.
+- Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
+
+### Fixed
+
+- Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
+
+- Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
+
+- Missing folder parents reuse real recovery identities; synthesized ancestors only navigate.
+
+- Deeply nested pending folder renames no longer stall workspace projection when a destination is missing.
+
+- Folder moves and renames keep descendants visible in the tree and move open Editor and dock paths together, including across Works. Folder repair stays reachable even when its catalog row disappears.
+
+- Folder moves follow destination and ancestor renames regardless of settlement order. Missing destinations keep their last canonical placement instead of breaking the file catalog.
+- Late refusals cannot restart a deleted resource. Queued deletion resolves through exact identity availability when its folder disappears during a move refresh.
+
+- Deletion continues from canonical identity when an earlier pending move is refused. Moving into a pending-deleted folder hides the placed subtree without breaking the file catalog.
+- Chat Recent hides pending-deleted files and folder descendants until deletion is refused.
+
+- Folder deletion hides its rows immediately and uses the same durable retry path as file deletion. Refused deletion restores the folder with a failure mark. Delayed deletion cannot delete a replacement folder at the old path.
+- Chat Recent hides known-deleted documents instead of showing their cached names.
+
+- Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.
+
+- Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.
+- Chat Recent follows document renames and moves from the file catalog.
+
+- Move feedback now appears on a folder’s first move and follows a new document through identity-conflict recovery.
+
 ### Changed
 
 - Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
@@ -12,6 +53,13 @@
 - Server import writes can bind note links to planned identities, reporting invalid targets and minted ahead links.
 
 - Server ahead links can settle to a planned document identity without changing an existing settlement.
+- Consolidate namespace observation migrations into one schema migration and one data backfill.
+
+- Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.
+
+- Move feedback survives slow or offline settlement and names the destination from the move receipt.
+
+- Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.
 
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
 - `.txt` files open as prose. Code, data and images keep their extensions.
@@ -31,7 +79,11 @@
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
-- Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
+- The path above a document is now a way to get around: each part opens the list it sits in, with itself marked: the area among the areas, a folder beside its neighbors, the file name beside the other files, and `…` when folders do not fit. Menus mark where you are, including the folder you just left.
+
+- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker, and Scratch notes can be deleted from the chat's Scratch list. The path no longer has a Rename button; only a document still in Unfiled keeps a short File it button, whose tooltip explains where it sits.
+
+- A document open beside the chat shows its path in the panel header instead of a separate title. With nothing open, the panel reads Recent and lists the documents this chat touched.
 
 - Copying Scratch and Uploads links keeps the applicable owner. Scratch links in No Work uploads stay contextual instead of preventing copy.
 

@@ -47,6 +47,7 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
       authority: { kind: "project", projectId: "project-id" },
       entry: {
         kind: "file",
+        observationVersion: "1",
         entryId: "doc-id",
         parentId: "source",
         sourceId: "source",

@@ -9,9 +9,9 @@ export function workFileSearch(search: string): WorkFileSearch {
 
 export function catalogSiblings(
   catalog: { children(parentId: string): readonly ContextEntrySibling[] } | null | undefined,
-  file: { parentId: string },
+  file: { parentId: string | null },
 ): readonly ContextEntrySibling[] {
-  return catalog?.children(file.parentId) ?? [];
+  return file.parentId ? (catalog?.children(file.parentId) ?? []) : [];
 }
 
 /** A row's place in the file tree: its path, and whether it is a folder. */

@@ -21,6 +21,7 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       inspectMovable: vi.fn(async (path: string) => {
         if (path === "old.md") {
           return Ok({
+            observationVersion: "1",
             kind: "file" as const,
             nodeId: "document-old",
             sourceId: `${scheme}-source`,

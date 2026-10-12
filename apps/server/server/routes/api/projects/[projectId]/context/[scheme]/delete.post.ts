@@ -19,12 +19,12 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (!body.expected || typeof body.expected !== "object") {
     throw createError({ statusCode: 400, message: "expected target is required" });
   }
-  const expected = body.expected as { kind?: unknown; documentId?: unknown };
+  const expected = body.expected as { kind?: unknown; documentId?: unknown; nodeId?: unknown };
   if (expected.kind === "folder") {
     return {
       operationId,
       path: parseContextMutationPath(body.path, "path"),
-      expected: { kind: "folder" },
+      expected: { kind: "folder", nodeId: requireRequestId(expected.nodeId, "expected.nodeId") },
     };
   }
   if (expected.kind !== "file") {

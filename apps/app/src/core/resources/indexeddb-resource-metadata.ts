@@ -16,6 +16,8 @@ import type {
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
+  folderDeletionSettlement,
+  planFolderDeletionResources,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
   validateFolderNamespaceUpdate,
@@ -56,13 +58,21 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     readonly accountId: string,
     onVersionChange: () => void,
   ) {
-    this.database = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    this.database = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "handle",
       intents: "intentId,handle,projectId",
       catalogs: "key,projectId",
+      folders: "handle,projectId",
     });
-    this.database.version(2).stores({ folders: "handle,projectId" });
+    this.database
+      .version(2)
+      .stores({})
+      .upgrade(async (transaction) => {
+        // A cursor with unversioned entries cannot prove canonical freshness.
+        // Checkpoints are reacquirable; content identities and offline journals survive.
+        await transaction.table("catalogs").clear();
+      });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
@@ -266,8 +276,25 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   async commitFolder(input: FolderNamespaceWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.folders, async () => {
+      this.database.transaction("rw", this.folders, this.resources, this.intents, async () => {
         if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
+        const previous = (await this.folders.get(write.next.handle)) ?? null;
+        const receipt = folderDeletionSettlement(previous, write.next);
+        if (receipt) {
+          const records = this.records(
+            await this.resources.toArray(),
+            await this.intents.toArray(),
+          );
+          const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
+          const descendants = planFolderDeletionResources(receipt, records);
+          for (const descendant of descendants) {
+            validateResourceRecordUpdate(
+              byHandle.get(descendant.next.resource.handle) ?? null,
+              descendant.next,
+            );
+          }
+          await this.resources.bulkPut(descendants.map((write) => write.next.resource));
+        }
         await this.folders.put(write.next);
         return "committed" as const;
       }),

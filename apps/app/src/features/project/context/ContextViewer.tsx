@@ -155,14 +155,11 @@ export function ContextViewer({
         {activeTab ? (
           <DocumentPaneChrome
             projectId={projectId}
-            editorWorkId={editorWorkId}
             tab={activeTab}
             reviewDraftId={activeReviewDraftId}
             archivedWork={editorFrozen ? archivedEditorWork : null}
-            identityReadOnly={fileFrozen}
             onCloseTab={onCloseTab}
-            onCommitted={onCommitted}
-            onOpenExisting={onOpenExisting}
+            identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
           />
         ) : null}
         {/* The TRACKED editor host stays mounted while ANY tracked tab is

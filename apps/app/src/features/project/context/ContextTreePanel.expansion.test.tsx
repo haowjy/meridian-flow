@@ -7,7 +7,11 @@ import { ContextTreePanel } from "./ContextTreePanel";
 
 vi.mock("./account-feature-context", () => ({ useAccountId: () => "account" }));
 vi.mock("./TreeCreationProvider", () => ({ useOptionalTreeCreation: () => null }));
-vi.mock("./LinkUpdateNote", () => ({ LinkUpdateNote: () => null }));
+vi.mock("./LinkUpdateNote", () => ({
+  LinkUpdateNote: () => null,
+  useRenameOperation: () => ({ remember: () => {} }),
+}));
+vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ works: [] }) }));
 vi.mock("./ContextEntryActions", () => ({
   ContextEntryMenu: ({ children }: { children: ReactNode }) => children,
   EntryKebabButton: () => null,
