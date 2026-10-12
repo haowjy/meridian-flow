@@ -198,8 +198,9 @@ inset and the prose node's padding
 ([`features/editor/editor-column.ts`](../../../editor-column.ts)). It was 32px
 at the base breakpoint and 40px at `sm`, so 10px and 18px of a 22px grip
 survived, on the phone editor and in any desktop window under 640px. The
-gutters are 48/56/64 now, owned in `editor-column.ts`; either number
-moving out from under the other clips the handle.
+leading gutters are 48/56/64 now, by pane width, owned in `editor-column.ts`;
+either number moving out from under the other clips the handle. The trailing
+gutter is narrower in narrow panes and holds only the table's Add column tab.
 
 `proseColumnEdges` is horizontal only, deliberately. The prose node reserves
 half a viewport of padding under the last line so a writer can keep typing
