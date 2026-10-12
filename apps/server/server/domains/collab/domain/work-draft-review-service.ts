@@ -6,6 +6,7 @@ import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
 } from "@meridian/contracts/drafts";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
@@ -86,7 +87,6 @@ export function createWorkDraftReviewService(input: {
     ]);
     for (const { branch, actorThreadIds } of pending) {
       const uri = uris.get(branch.documentId) ?? null;
-      const location = uri ? parseUnifiedContextUri(uri) : null;
       drafts.push({
         draftId: branch.branchId,
         documentId: branch.documentId,
@@ -99,9 +99,7 @@ export function createWorkDraftReviewService(input: {
         })),
         updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
-        contextLocation: location?.ok
-          ? { scheme: location.value.scheme, path: `/${location.value.path}` }
-          : null,
+        contextLocation: reviewContextLocation(uri),
         ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
       });
     }
@@ -385,4 +383,12 @@ export function createWorkDraftReviewService(input: {
       },
     },
   };
+}
+
+function reviewContextLocation(uri: string | null): ReviewableDraft["contextLocation"] {
+  if (!uri) return null;
+  const parsed = parseUnifiedContextUri(uri);
+  return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+    ? { scheme: parsed.value.scheme, path: `/${parsed.value.path}` }
+    : null;
 }

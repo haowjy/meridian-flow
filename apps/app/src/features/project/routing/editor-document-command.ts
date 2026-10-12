@@ -23,7 +23,7 @@ export type EditorCommandSnapshot = {
   editorWorkId: string | null;
   noWorkId: string | null;
   addressDocumentId?: string;
-  catalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
+  documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
 export function createEditorDocumentCommand({
   projectId,
@@ -65,7 +65,7 @@ export function createEditorDocumentCommand({
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
           draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
-          catalog: current.catalog,
+          catalog: current.documentCatalog,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };

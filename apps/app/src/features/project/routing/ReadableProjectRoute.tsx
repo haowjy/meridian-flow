@@ -259,19 +259,22 @@ function ReadableProjectDestination({
     workId,
     enabled: false,
   });
-  const launchCatalog = {
-    findDocument: (id: string) =>
-      Object.values(launchCatalogs)
-        .map(({ catalog }) => catalog?.findDocument(id))
-        .find((file) => file !== undefined && file !== null) ?? null,
-  };
+  const documentCatalog = useMemo(
+    () => ({
+      findDocument: (id: string) =>
+        CONTEXT_URI_SCHEMES.map((scheme) => launchCatalogs[scheme].catalog?.findDocument(id)).find(
+          (file) => file != null,
+        ) ?? null,
+    }),
+    [launchCatalogs],
+  );
   const latest = useRef({
     address,
     location,
     navigation,
     editorWorkId: workId,
     noWorkId,
-    catalog: launchCatalog,
+    documentCatalog,
   });
   latest.current = {
     address,
@@ -279,7 +282,7 @@ function ReadableProjectDestination({
     navigation,
     editorWorkId: workId,
     noWorkId,
-    catalog: launchCatalog,
+    documentCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
   // through a rename, whatever path the launcher read.
