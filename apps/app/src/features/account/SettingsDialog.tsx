@@ -165,30 +165,33 @@ export function SettingsDialog() {
           <SectionContent section={section} presentation="phone" />
         </PhoneSettingsContent>
       ) : (
-        <DialogContent className="flex h-[540px] max-w-3xl gap-0 overflow-hidden p-0">
-          <aside className="flex w-52 shrink-0 flex-col gap-4 border-r border-border-subtle bg-muted px-3 py-4">
-            <DialogTitle className="px-2 text-lg font-semibold tracking-tight">
-              <Trans>Settings</Trans>
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              <Trans>Account settings.</Trans>
-            </DialogDescription>
-            <nav className="flex flex-col gap-4" aria-label={t`Settings sections`}>
-              <SectionGroup label={<Trans>Account</Trans>}>
-                {SETTINGS_SECTIONS.map((item) => (
-                  <SectionLink
-                    key={item}
-                    section={item}
-                    active={section}
-                    onSelect={switchSection}
-                  />
-                ))}
-              </SectionGroup>
-            </nav>
-          </aside>
-          <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-            <SectionContent section={section} presentation="desktop" />
-          </section>
+        <DialogContent className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0">
+          {/* A container can't query itself, so the direction switch lives one level in. */}
+          <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
+            <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-muted px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
+              <DialogTitle className="px-2 text-lg font-semibold tracking-tight">
+                <Trans>Settings</Trans>
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                <Trans>Account settings.</Trans>
+              </DialogDescription>
+              <nav className="flex flex-col gap-4" aria-label={t`Settings sections`}>
+                <SectionGroup label={<Trans>Account</Trans>}>
+                  {SETTINGS_SECTIONS.map((item) => (
+                    <SectionLink
+                      key={item}
+                      section={item}
+                      active={section}
+                      onSelect={switchSection}
+                    />
+                  ))}
+                </SectionGroup>
+              </nav>
+            </aside>
+            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 @[40rem]/settings:px-6">
+              <SectionContent section={section} presentation="desktop" />
+            </section>
+          </div>
         </DialogContent>
       )}
     </Dialog>
@@ -198,10 +201,12 @@ export function SettingsDialog() {
 function SectionGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <UiSectionLabel variant="group" className="px-2">
+      <UiSectionLabel variant="group" className="hidden px-2 @[40rem]/settings:block">
         {label}
       </UiSectionLabel>
-      {children}
+      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 py-1 @[40rem]/settings:mx-0 @[40rem]/settings:flex-col @[40rem]/settings:overflow-visible @[40rem]/settings:p-0">
+        {children}
+      </div>
     </div>
   );
 }
@@ -223,7 +228,7 @@ function SectionLink({
       onClick={() => onSelect(section)}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "focus-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+        "focus-ring flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm transition-colors",
         isActive
           ? "bg-sidebar-accent font-medium text-foreground"
           : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
@@ -266,15 +271,31 @@ function SectionHeading({ title, description }: { title: ReactNode; description:
 
 /**
  * Sections take a `presentation` because the phone/desktop split is a shell
- * decision (coarse pointer), not a viewport breakpoint. Phone stacks each label
- * above its control; the desktop `w-28` label + flex-1 control row leaves too
- * little input width at 393px.
+ * decision (coarse pointer). Phone always stacks each label above its control.
+ * The desktop dialog decides by its own width: a narrow desktop window gets the
+ * same stacked rows, since a `w-28` label column leaves too little control width.
  */
 type SectionPresentation = "desktop" | "phone";
 
+function rowLayout(presentation: SectionPresentation) {
+  const desktop = presentation === "desktop";
+  return {
+    row: cn(
+      "flex flex-col gap-1.5",
+      desktop &&
+        "@[40rem]/settings:flex-row @[40rem]/settings:items-center @[40rem]/settings:gap-6",
+    ),
+    label: cn(
+      "text-sm font-medium text-foreground",
+      desktop && "@[40rem]/settings:w-28 @[40rem]/settings:shrink-0",
+    ),
+    control: cn("w-full", desktop && "@[40rem]/settings:w-auto @[40rem]/settings:flex-1"),
+  };
+}
+
 function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
   const { user } = useAuth();
-  const stacked = presentation === "phone";
+  const layout = rowLayout(presentation);
   const fields: Array<[label: string, value: string]> = [
     [t`First name`, user?.firstName ?? ""],
     [t`Last name`, user?.lastName ?? ""],
@@ -290,21 +311,9 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
       />
       <div className="flex flex-col gap-4">
         {fields.map(([label, value]) => (
-          <div
-            key={label}
-            className={cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6")}
-          >
-            <span
-              className={cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0")}
-            >
-              {label}
-            </span>
-            <Input
-              aria-label={label}
-              value={value}
-              readOnly
-              className={stacked ? "w-full" : "flex-1"}
-            />
+          <div key={label} className={layout.row}>
+            <span className={layout.label}>{label}</span>
+            <Input aria-label={label} value={value} readOnly className={layout.control} />
           </div>
         ))}
       </div>
@@ -321,10 +330,10 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
   const currentLocale = language.value;
   const currentTextSize = useTextSize();
   const currentUiTheme = theme.value;
-  const stacked = presentation === "phone";
-  const rowClassName = cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6");
-  const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
-  const triggerClassName = cn("focus-ring", stacked ? "w-full" : "flex-1");
+  const layout = rowLayout(presentation);
+  const rowClassName = layout.row;
+  const labelClassName = layout.label;
+  const triggerClassName = cn("focus-ring", layout.control);
 
   return (
     <div>
