@@ -87,10 +87,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectVisibleContentLineage(unwrapBlock(block));
     },
 
-    inlineRunCount(block) {
-      return countTextRuns(unwrapBlock(block));
-    },
-
     transact(doc, fn, origin) {
       unwrapDoc(doc).transact(fn, origin);
     },
@@ -460,23 +456,6 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   };
   visit(block);
   return segments;
-}
-
-function countTextRuns(block: Y.XmlElement): number {
-  let count = 0;
-  const visit = (type: Y.XmlElement | Y.XmlText) => {
-    if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta()) {
-        if (typeof delta.insert === "string" && delta.insert.length > 0) count += 1;
-      }
-      return;
-    }
-    for (const child of type.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(block);
-  return count;
 }
 
 function clearText(type: Y.XmlElement | Y.XmlText): void {

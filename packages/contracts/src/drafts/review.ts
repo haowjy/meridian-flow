@@ -36,7 +36,6 @@ type ActiveDraftPreviewBase = {
   reviewRoomName: string;
   liveRevisionToken: string;
   draftRevisionToken: string;
-  notice?: { code: "branch_corrupt_reset"; message: string };
   /**
    * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
    * open review can render the all-additions `New document` card variant

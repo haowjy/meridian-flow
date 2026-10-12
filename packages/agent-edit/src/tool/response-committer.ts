@@ -172,7 +172,6 @@ interface StagedResponseUpdate extends JournaledUpdate {
   turnId: string;
   actor: Extract<MutationActor, { kind: "agent" }>;
   writeId: string;
-  writeOrdinal: number;
   durableWriteId: string;
   stageSeq: number;
   touchedHashes: ReadonlySet<string>;
@@ -1438,7 +1437,6 @@ export function createResponseCommitter(deps: {
         ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",
-      writeOrdinal: input.writeOrdinal ?? 0,
       durableWriteId:
         input.durableWriteId ?? `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
       liveOrigin: input.liveOrigin,
