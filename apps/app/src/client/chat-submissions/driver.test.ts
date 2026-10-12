@@ -481,3 +481,83 @@ it.each([
   expect(deleted).toHaveBeenCalledTimes(2);
   r.dispose();
 });
+
+it("later Sends behind incomplete deletion settle every row without admission", async () => {
+  const r = rig();
+  const lookup = vi.fn(async () => ({ kind: "deleted" as const, submissionId: "sub-1" }));
+  const admit = vi.fn();
+  const original = { ...record(), creation: undefined };
+  r.records.set(original.recordId, original);
+  let writable = false;
+  const { owner } = r.mount({
+    controller: { lookupSubmission: lookup, recoverSubmission: admit, retireSubmission: admit },
+    deleted: async () => {
+      if (!writable) return false;
+      r.records.clear();
+      return true;
+    },
+  });
+  try {
+    await owner.drive(original.threadId);
+    const later = {
+      ...original,
+      recordId: "record-2",
+      submissionId: "sub-2",
+      createdAt: "2026-10-11T11:00:00Z",
+    };
+    r.records.set(later.recordId, later);
+    await owner.drive(original.threadId);
+    expect([...r.records.values()].map((entry) => entry.state)).toEqual(["rejected", "rejected"]);
+    expect(r.scenario.turns().map((turn) => turn.status)).toEqual(["error", "error"]);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(admit).not.toHaveBeenCalled();
+    writable = true;
+    await owner.retry(later.submissionId);
+    expect(r.records.size).toBe(0);
+    expect(r.scenario.appendRequests).toHaveLength(0);
+  } finally {
+    r.dispose();
+  }
+});
+
+it("Retry and Edit finish incomplete deletion before handling a received first send", async () => {
+  const r = rig();
+  let received = false;
+  let removable = false;
+  const { owner } = r.mount({
+    create: async () => {
+      const { MeridianApiError } = await import("@/client/api/meridian-error");
+      throw new MeridianApiError(
+        {
+          code: "thread_deleted",
+          message: "deleted",
+          retryable: false,
+          source: "system",
+          details: { authenticatedUserId: "account-1", projectDeleted: false },
+        },
+        404,
+      );
+    },
+    transferReceived: () => received,
+    deleted: async () => {
+      received = true;
+      if (!removable) return false;
+      r.records.clear();
+      return true;
+    },
+  });
+  try {
+    await owner.drive("thread_1");
+    expect(received).toBe(true);
+    expect(r.records.get("record-1")?.state).toBe("rejected");
+    await owner.retry("sub-1");
+    await owner.edit("sub-1");
+    removable = true;
+    await owner.retry("sub-1");
+    expect(r.records.size).toBe(0);
+    expect(r.scenario.lookupRequests).toHaveLength(0);
+    expect(r.scenario.appendRequests).toHaveLength(0);
+  } finally {
+    r.dispose();
+  }
+});

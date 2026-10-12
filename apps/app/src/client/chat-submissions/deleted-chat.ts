@@ -85,6 +85,8 @@ export async function cleanDeletedChat(
   underSubmissionLock = false,
   eligible = () => true,
 ): Promise<boolean> {
+  const key = surfaceKey(accountId, threadId);
+  const ownMark = ownDeletes.get(key);
   const clean = async () => {
     if (!ports.current() || !eligible()) return false;
     const panes = ports.surfaces();
@@ -127,12 +129,16 @@ export async function cleanDeletedChat(
       if (!ports.current() || !ports.retire(entry.recordId)) return false;
     }
     for (const pane of panes) pane.leave(moved);
-    if (ownDelete && !mark?.pending && ownDeletes.get(key) === mark) ownDeletes.delete(key);
     return true;
   };
-  return underSubmissionLock
-    ? clean()
-    : ports.lock.run(accountId, threadId, new AbortController().signal, clean);
+  try {
+    return await (underSubmissionLock
+      ? clean()
+      : ports.lock.run(accountId, threadId, new AbortController().signal, clean));
+  } finally {
+    if (reason === "own-delete" && !ownMark?.pending && ownDeletes.get(key) === ownMark)
+      ownDeletes.delete(key);
+  }
 }
 
 /** Once per bind, bounded read-only probes. Not-found and inconclusive results are inert. */

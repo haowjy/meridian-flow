@@ -109,7 +109,7 @@ export class ChatSubmissionDriver {
           if (!this.current()) return;
           // An unresolved predecessor may still land. Do not let later messages overtake it.
           const unresolved = this.read(entry.recordId);
-          if (unresolved && (!unresolved.state || this.incompleteDeletions.has(threadId))) {
+          if (unresolved && !unresolved.state) {
             blocked = true;
             break;
           }
@@ -146,7 +146,8 @@ export class ChatSubmissionDriver {
       .find((entry) => entry.submissionId === submissionId);
     if (!original || this.deletedThreads.has(original.threadId) || !this.current())
       return Promise.resolve();
-    if (this.options.transferReceived(original)) return this.edit(submissionId);
+    if (!this.incompleteDeletions.has(original.threadId) && this.options.transferReceived(original))
+      return this.edit(submissionId);
     this.options.status(original, "pending");
     return this.locked(
       original.threadId,
@@ -365,7 +366,10 @@ export class ChatSubmissionDriver {
     if (await this.options.deleted?.(entry, outcome.kind)) {
       this.incompleteDeletions.delete(entry.threadId);
       this.deletedThreads.add(entry.threadId);
-    } else this.settle(entry, "rejected");
+    } else {
+      for (const record of this.options.journal.entries())
+        if (record.threadId === entry.threadId) this.settle(record, "rejected");
+    }
     return true;
   }
 
