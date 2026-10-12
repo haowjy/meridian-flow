@@ -75,8 +75,8 @@ export const seedCommand: CommandSpec = {
     overwrite: { type: "boolean", description: "Replace docs that already exist" },
   },
   examples: [
-    "./mf seed tools/dev/cli/fixtures/basic.json",
-    "./mf seed tools/dev/cli/fixtures/basic.json --json | jq -r .threadId",
+    "./mf seed tools/mf/fixtures/basic.json",
+    "./mf seed tools/mf/fixtures/basic.json --json | jq -r .threadId",
   ],
   async run(ctx) {
     const fixturePath = requirePositional(ctx, 0, "<fixture.json>");

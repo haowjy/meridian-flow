@@ -4,6 +4,8 @@
 
 ### Changed
 
+- The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
+
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
 - `.txt` files open as prose. Code, data and images keep their extensions.
 - Dotted names stay whole. Renames keep the file type unless a new extension is typed.

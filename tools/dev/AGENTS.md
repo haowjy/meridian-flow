@@ -20,9 +20,10 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Frozen-history and ordering checks for repository and applied database migrations
   (`check-migration-history.ts`, `lib/migration-history.ts`)
 - `pnpm bootstrap` and dev-data seeding
-- `./mf` (`cli/`): the agent-facing dev CLI that wraps this worktree's app API
 
 ## Rules
+
+- **The Portless route contract is shared.** `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts` and `portlessCa` in `dev-readiness.ts`; `apps/app/e2e` also consumes `portless-prefix.ts`. Keep these modules free of import-time side effects. Their runtime dependencies are Node built-ins.
 
 - **`DEV_DATABASES` (in `lib/dev-env.ts`) is the single source of truth.** To add or change a per-worktree database, edit the registry — never hard-code a second database, env var, or `"web"` special-case in `ensure-db`, `drop-db`, `prepare-db`, `.envrc`, or anywhere else. Every consumer iterates the registry.
 - **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. Both `pnpm db:migrate` and `pnpm db:apply-functions` use the shared `resolveDatabaseAdminTarget` path, which resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Their internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the command. `db:migrate` applies migrations and SQL functions as one operation. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
@@ -70,7 +71,6 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Prune a side-lane branch when it merges into its integration branch, not after.** Automatic eligibility needs live proof: an exact merged-PR match, or ancestry of the base branch. Once the integration branch itself is squash-merged into `main` or `staging`, neither proof survives for the branches that fed it. When automatic proof is gone, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md) to reconstruct concrete evidence, then record it with the targeted `--manually-verified <reason>` path. Manual evidence bypasses only automatic discovery; every structural, readiness, and commit-movement guard still applies.
 - **All TypeScript here stays inside one strict Nx boundary.** `tools/dev/project.json` registers `meridian-dev-tools:typecheck`; `tools/dev/tsconfig.json` includes the directory. Do not add per-script typecheck wrappers or weaken strictness.
 - **Surgical Tailscale cleanup in pruning.** Stale route removal goes through `findStaleTailscaleRoutes` + `tailscaleRouteOffArgs` (per-port `off`). Never call `tailscale serve reset` or `tailscale funnel reset`. Never prune a route with any live listener.
-- **`./mf` wraps the API; it never reimplements it.** Before changing `cli/`, read the `./mf` section of [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
 
 - **DB test concurrency:** eight owned workers by default; `DB_TEST_WORKERS=1..8` lowers concurrency under shared-server load. Do not use CPU-count scaling against the shared 100-connection server.
@@ -81,7 +81,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 ## Do not
 
 - Do not run `tools/dev/*` scripts from production code or app runtime
-- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code (except `@meridian/contracts` in `cli/`; see `.context/CONTEXT.md`)
+- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code
 - Do not depend on Node modules outside the root `package.json`'s devDependencies
 - Do not print or persist the `executable` command — stdout, logs, and `.meridian/dev-session.json` get `display` (redacted) only
 - Do not build the tmux command before calling `applyDevEnvToProcess`

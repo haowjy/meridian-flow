@@ -71,7 +71,7 @@ export function renderOverview(groups: readonly CommandGroup[]): string {
     "Global: --json (one object; NDJSON for streams, last line is the result), --fields a,b, -h/--help",
     `Exit codes: ${EXIT_CODE_LINES.join("; ")}`,
     "",
-    'Start: ./mf seed tools/dev/cli/fixtures/basic.json  |  ./mf thread send <id> "hi"  |  ./mf thread view <id>',
+    'Start: ./mf seed tools/mf/fixtures/basic.json  |  ./mf thread send <id> "hi"  |  ./mf thread view <id>',
   ].join("\n");
 }
 

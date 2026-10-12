@@ -1,7 +1,7 @@
 # Unsent composer drafts
 
 Use the lane's `pnpm dev` stack and URLs from `pnpm portless:list`. Sign in with
-dev-login. Seed a document and chat with `./mf seed tools/dev/cli/fixtures/basic.json`
+dev-login. Seed a document and chat with `./mf seed tools/mf/fixtures/basic.json`
 (the optional model send needs `MODEL_PROVIDER=mock`).
 
 1. Open the seeded chat. Type prose and select an `@` reference. Reload right
