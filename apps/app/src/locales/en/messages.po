@@ -1123,6 +1123,10 @@ msgstr "Couldn't apply every change, so you're still in Draft."
 msgid "Couldn't apply. Check your connection and try again."
 msgstr "Couldn't apply. Check your connection and try again."
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't be read"
+msgstr "Couldn't be read"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
 msgstr "Couldn't check Work"
@@ -1224,6 +1228,10 @@ msgstr "Couldn't find {source}."
 msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load"
+msgstr "Couldn't load"
+
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
@@ -1240,6 +1248,10 @@ msgstr "Couldn't load chats."
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
 msgstr "Couldn't load files."
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load properties."
+msgstr "Couldn't load properties."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1821,6 +1833,10 @@ msgstr "Embedded blocks take no formatting."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Embedded blocks take no links."
 msgstr "Embedded blocks take no links."
+
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Empty"
+msgstr "Empty"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
@@ -2583,6 +2599,10 @@ msgstr "New tab"
 msgid "New Work"
 msgstr "New Work"
 
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "No"
+msgstr "No"
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
@@ -2955,6 +2975,10 @@ msgstr "Projects couldn’t load."
 #: src/features/home/ProjectLibrary.tsx
 msgid "Projects couldn’t refresh. Showing saved results."
 msgstr "Projects couldn’t refresh. Showing saved results."
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Properties"
+msgstr "Properties"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Purchase confirmed."
@@ -3896,6 +3920,10 @@ msgstr "These preferences follow your account wherever you sign in."
 msgid "These preferences stay on this device to suit your screen."
 msgstr "These preferences stay on this device to suit your screen."
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "These properties couldn't be read, so they're shown as written."
+msgstr "These properties couldn't be read, so they're shown as written."
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
@@ -4520,6 +4548,10 @@ msgstr "Wrote"
 #: src/features/chat/command-descriptor.ts
 msgid "Wrote file"
 msgstr "Wrote file"
+
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Yes"
+msgstr "Yes"
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"

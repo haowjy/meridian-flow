@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
 

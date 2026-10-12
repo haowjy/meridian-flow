@@ -65,7 +65,21 @@ type PersistedSurfacePrefsBlob = {
   prefs?: PersistedSurfacePrefsMap | null;
   slotPrefs?: PersistedSlotPrefsMap | null;
   railPrefs?: Partial<RailPrefs> | null;
+  documentPrefs?: Partial<DocumentPrefs> | null;
 };
+
+/** How an open document's chrome is set; one choice for every document on this device. */
+export type DocumentPrefs = { propertiesOpen: boolean };
+export const DEFAULT_DOCUMENT_PREFS: DocumentPrefs = { propertiesOpen: false };
+
+export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): DocumentPrefs {
+  return {
+    propertiesOpen:
+      typeof prefs?.propertiesOpen === "boolean"
+        ? prefs.propertiesOpen
+        : DEFAULT_DOCUMENT_PREFS.propertiesOpen,
+  };
+}
 
 export type RailSectionId = "scratch" | "recent";
 export type RailPrefs = {
@@ -98,6 +112,7 @@ export type SurfacePrefsState = {
   prefs: SurfacePrefsMap;
   slotPrefs: SlotPrefsMap;
   railPrefs: RailPrefs;
+  documentPrefs: DocumentPrefs;
 };
 
 export type SurfacePrefsActions = {
@@ -107,6 +122,7 @@ export type SurfacePrefsActions = {
   setDockCollapsed: (collapsed: boolean) => void;
   setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
   setScratchHeight: (height: number | null) => void;
+  setPropertiesOpen: (open: boolean) => void;
   setHydrated: () => void;
 };
 
@@ -183,6 +199,7 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
         prefs: DEFAULT_SURFACE_PREFS,
         slotPrefs: { dock: DEFAULT_DOCK_PREFS },
         railPrefs: DEFAULT_RAIL_PREFS,
+        documentPrefs: DEFAULT_DOCUMENT_PREFS,
         _hydrated: false,
 
         setSurfaceWidth: (id, width) =>
@@ -199,6 +216,8 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({
             railPrefs: normalizeRailPrefs({ ...state.railPrefs, scratchHeight: height }),
           })),
+        setPropertiesOpen: (propertiesOpen) =>
+          set((state) => ({ documentPrefs: { ...state.documentPrefs, propertiesOpen } })),
         setHydrated: () => set({ _hydrated: true }),
       }),
       {
@@ -234,12 +253,14 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
             prefs: normalizeSurfacePrefs(blob.prefs),
             slotPrefs: normalizeSlotPrefs(blob.slotPrefs),
             railPrefs: normalizeRailPrefs(blob.railPrefs),
+            documentPrefs: normalizeDocumentPrefs(blob.documentPrefs),
           };
         },
         partialize: (state) => ({
           prefs: state.prefs,
           slotPrefs: state.slotPrefs,
           railPrefs: state.railPrefs,
+          documentPrefs: state.documentPrefs,
         }),
         skipHydration: true,
       },
@@ -258,6 +279,7 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
       setDockCollapsed: state.setDockCollapsed,
       setRailExpanded: state.setRailExpanded,
       setScratchHeight: state.setScratchHeight,
+      setPropertiesOpen: state.setPropertiesOpen,
       setHydrated: state.setHydrated,
     })),
   );

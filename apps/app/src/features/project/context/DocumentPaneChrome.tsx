@@ -1,6 +1,7 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the review header, the archived-Work notice, and the identity bar.
+ * notice, the review header, the archived-Work notice, the identity bar, and
+ * the document's properties.
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
  * identity bar in its header instead (`identity: null`).
@@ -12,6 +13,7 @@ import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { DocumentProperties } from "./DocumentProperties";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 /** The identity bar's inputs, or null where the pane's header shows the path instead (the dock). */
@@ -79,6 +81,9 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      {/* Properties — read-only frontmatter, under the path in the Editor and
+          the first row in the dock, where the path is in the dock header. */}
+      <DocumentProperties projectId={projectId} tab={tab} />
     </>
   );
 }

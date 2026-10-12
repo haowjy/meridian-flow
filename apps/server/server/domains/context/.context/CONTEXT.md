@@ -587,7 +587,13 @@ a collision rolls back the whole chunk. It neither reallocates nor replays ids:
 the caller owns allocation and planning receipts. The caller resolves a moved
 parent's current source before invoking this source-scoped door.
 Catalog file entries expose strict boolean `importPending`, true only for
-`metadata.importPending === true`.
+`metadata.importPending === true`, and strict boolean `hasProperties`, true only for stored
+properties (`metadata.properties`, `{format:"yaml", text}`) with non-blank text. The properties
+themselves never ride in the catalog: `GET /api/projects/:projectId/documents/:documentId/properties`
+(same read grant as the document) parses the stored YAML in source order into `DocumentProperties`
+(`document-properties.ts`); YAML it cannot read, including duplicate keys, comes back `unreadable`
+with its text. A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
+`copy` writes to the new document's metadata.
 
 Import parent lookup is a Context capability (ContextImportLocations).
 It resolves folder identity, takes the current project-area namespace lock,
