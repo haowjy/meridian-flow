@@ -231,9 +231,7 @@ it("validates and drains all 5,760 file/folder schedules", () => {
                   admittedDelete = true;
                 } else
                   machine.place({
-                    scheme: "manuscript",
-                    workId: null,
-                    folderPath: event === "move" ? "B" : "P",
+                    parent: { kind: "folder", folderId: event === "move" ? "B" : "P" },
                     name: event === "rename" ? "Renamed" : "A",
                   });
               }

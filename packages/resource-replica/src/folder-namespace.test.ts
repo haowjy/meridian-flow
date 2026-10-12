@@ -49,7 +49,10 @@ function command(store: MemoryFolders, name: string, operationId = name) {
     handle: "folder",
     folderId: "folder",
     source,
-    destination: { scheme: "manuscript", folderPath: "", name, workId: null },
+    destination: {
+      parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name: name,
+    },
     intentId: operationId,
     operationId,
   });
@@ -60,6 +63,11 @@ function receipt(name: string, ok: boolean, operationId = name): ContextOperatio
   return {
     operationId,
     command: {
+      destinationParent: {
+        kind: "root" as const,
+        scheme: "manuscript" as const,
+        owner: { workId: null },
+      },
       kind: "move",
       sourceUri: "manuscript://A",
       destinationUri: `manuscript://${name}`,
@@ -170,7 +178,10 @@ it.each([
     intentId: "B",
     kind: "set-location",
     name: "C",
-    destination: { scheme: "manuscript", folderPath: "", name: "C", workId: null },
+    destination: {
+      parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name: "C",
+    },
   });
   await command(reopened, "C", "repair");
   expect(
@@ -370,7 +381,7 @@ it.each([
     source,
     intentId: "move",
     operationId: "move",
-    destination: { scheme: "manuscript", folderPath: "B", name: "A", workId: null },
+    destination: { parent: { kind: "folder", folderId: "destination" }, name: "A" },
   });
   const remove = planFolderDeletion({
     projectId: "project",

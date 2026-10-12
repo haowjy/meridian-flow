@@ -88,7 +88,7 @@ it("reconciles a newly committed intent with no UI subscribers", async () => {
     expect(stopHints).toHaveBeenCalledTimes(1);
     await runtime.finishClose();
     await writer.finishClose();
-    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    await Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     vi.unstubAllGlobals();
   }
 });
@@ -137,11 +137,8 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     release = () => content.release();
     databaseName = content.session.persistenceName ?? undefined;
     await replica.setLocation("project", reservation.key, {
-      scheme: "scratch",
-      folderPath: "",
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "serial" } },
       name: "scene.md",
-      workId: "work",
-      workSlug: "serial",
     });
     // File first, type second, refuse third. The content owner is a real local Yjs session.
     content.session.document.getText("prose").insert(0, "The dragon survives.");
@@ -186,7 +183,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     await replica.finishClose();
     await runtime.finishClose();
     await writer.finishClose();
-    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    await Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     if (databaseName) await Dexie.delete(databaseName);
     await Dexie.delete(`meridian:document-session-authority:${encodeURIComponent(accountId)}`);
     vi.unstubAllGlobals();

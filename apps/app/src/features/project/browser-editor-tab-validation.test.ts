@@ -134,7 +134,16 @@ describe("device-local tab validation", () => {
     });
     resources.readProjection.mockResolvedValue({
       records: [localPlacement()],
-      folders: [],
+      folders: [
+        {
+          projectId: "project",
+          handle: "folder:chapters",
+          folderId: "chapters",
+          revision: 1,
+          canonical: { scheme: "manuscript", path: "/chapters", name: "chapters", workId: null },
+          intents: [],
+        },
+      ],
       catalogs: [],
     });
 
@@ -189,12 +198,7 @@ function localPlacement(): ResourceRecord {
         identityRevision: 1,
         desired: {
           kind: "set-location",
-          destination: {
-            scheme: "manuscript",
-            folderPath: "chapters",
-            name: "Opening.md",
-            workId: null,
-          },
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "Opening.md" },
         },
         attempts: [],
         state: "pending",

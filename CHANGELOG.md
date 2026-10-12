@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
+
+### Fixed
+
 - Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
 
 - Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.

@@ -316,7 +316,7 @@ function projectCatalogDirectory(
             folder && repair.destination
               ? refusedMoveDestination(
                   repair.destination,
-                  placement.folderLocation(folder.folderId)!,
+                  placement.parentForFolder(folder.folderId),
                 )
               : undefined,
           ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
@@ -391,7 +391,10 @@ export function projectCatalogView(
                   namespaceFailure: repair.kind,
                   namespaceRepairName: repair.name,
                   namespaceRepairMove: effective
-                    ? refusedMoveDestination(repair.destination, effective)
+                    ? refusedMoveDestination(
+                        repair.destination,
+                        placement.parentForResource(record),
+                      )
                     : undefined,
                   ...(repairedAt === undefined ? {} : { namespaceFailureAt: repairedAt }),
                 }

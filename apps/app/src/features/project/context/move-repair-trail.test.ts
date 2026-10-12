@@ -1,4 +1,4 @@
-/** Retained moves resolve by authority and full folder path, never by basename. */
+/** Retained moves resolve by folder identity, never by path or basename. */
 import { Folder } from "lucide-react";
 import { expect, it } from "vitest";
 import type { DrillNode } from "@/components/app/DrillInMenu";
@@ -27,38 +27,23 @@ function source(): Pick<ProjectMenuSource, "tree" | "folderFor"> {
         ).map(node),
     },
     folderFor: (id) =>
-      folders[id as keyof typeof folders] as ReturnType<ProjectMenuSource["folderFor"]>,
+      ({ ...folders[id as keyof typeof folders], entryId: id }) as ReturnType<
+        ProjectMenuSource["folderFor"]
+      >,
   };
 }
 
-it("resolves the retained full path in its owner, including an unlisted lineage", () => {
+it("resolves the retained identity in its owner, including an unlisted lineage", () => {
   const tree = source();
   expect(
-    moveRepairTrail(
-      tree,
-      {
-        scheme: "scratch",
-        workId: "work",
-        workSlug: "work",
-        folderPath: "Act/Notes",
-        name: "note.md",
-      },
-      [],
-    )?.map((n) => n.id),
+    moveRepairTrail(tree, { parent: { kind: "folder", folderId: "a" }, name: "note.md" }, [])?.map(
+      (n) => n.id,
+    ),
   ).toEqual(["work", "act", "a"]);
   expect(
-    moveRepairTrail(
-      tree,
-      {
-        scheme: "scratch",
-        workId: null,
-        rootThreadId: "lineage",
-        rootThreadRef: "c12",
-        folderPath: "/Act/Notes",
-        name: "note.md",
-      },
-      [node("lineage")],
-    )?.map((n) => n.id),
+    moveRepairTrail(tree, { parent: { kind: "folder", folderId: "c" }, name: "note.md" }, [
+      node("lineage"),
+    ])?.map((n) => n.id),
   ).toEqual(["lineage", "c"]);
 });
 
@@ -66,7 +51,7 @@ it("does not invent a trail when the retained destination is gone", () => {
   expect(
     moveRepairTrail(
       source(),
-      { scheme: "scratch", workId: "work", workSlug: "work", folderPath: "/gone", name: "note.md" },
+      { parent: { kind: "folder", folderId: "/gone" }, name: "note.md" },
       [],
     ),
   ).toBeNull();

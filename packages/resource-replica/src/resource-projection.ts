@@ -2,7 +2,8 @@
 import { namespaceRepairDestination } from "./namespace-journal-policy";
 import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
 import {
-  ownerOf,
+  type DestinationParentLookup,
+  destinationLocation,
   type ResourceCatalogCheckpoint,
   type ResourceDestination,
   type ResourceLocation,
@@ -54,6 +55,7 @@ export function projectResourceNeedsRepair(
 export function projectResourceLocation(
   projectId: string,
   record: ResourceRecord,
+  lookup: DestinationParentLookup = () => null,
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -66,15 +68,10 @@ export function projectResourceLocation(
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
   if (placement?.kind === "set-location") {
-    const folder = placement.destination.folderPath.split("/").filter(Boolean).join("/");
-    return {
-      scheme: placement.destination.scheme,
-      path: `/${[folder, placement.destination.name].filter(Boolean).join("/")}`,
-      name: placement.destination.name,
-      ...ownerOf(placement.destination),
-      provisional: false,
-    };
+    const location = destinationLocation(placement.destination, lookup);
+    if (location) return { ...location, provisional: false };
   }
+
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;

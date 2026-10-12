@@ -9,6 +9,8 @@ import {
   folderNeedsBackgroundReconciliation,
   installedFolderLocation,
   markResourceCreateEligible,
+  ownerOf,
+  type ParentRef,
   planCachedSessionAdoption,
   planFolderDeletion,
   planFolderLocation,
@@ -18,6 +20,7 @@ import {
   ResourceCatalogAcquisition,
   type ResourceDestination,
   type ResourceKey,
+  type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   reconcileFolderNamespace,
@@ -28,6 +31,7 @@ import {
   resourceNeedsBackgroundReconciliation,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
+  sameOwner,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { nativeLocks } from "@/core/cross-context-locks";
@@ -567,6 +571,37 @@ export class AccountResourceReplica {
   }
 
   /** `operationId` names the move's receipt, for surfaces that show its outcome; absent when nothing changed. */
+  /** Capture a displayed row's identity before admitting a command. Never persist a path edge. */
+  async parentAtLocation(projectId: string, location: ResourceLocation): Promise<ParentRef> {
+    if (!location.path || location.path === "/")
+      return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    for (const entry of snapshot.catalogs.flatMap((catalog) => catalog.entries)) {
+      if (entry.kind !== "folder" || entry.navigationOnly) continue;
+      const home = placement.folderLocation(entry.entryId);
+      if (
+        home &&
+        home.scheme === location.scheme &&
+        sameOwner(home, location) &&
+        home.path === location.path
+      )
+        return { kind: "folder", folderId: entry.entryId };
+    }
+    throw new Error("Destination folder is unavailable");
+  }
+
+  async parentForEntry(projectId: string, entryId: string): Promise<ParentRef> {
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    const record = snapshot.records.find((r) => r.resource.identity.documentId === entryId);
+    const parent = record
+      ? placement.parentForResource(record)
+      : placement.parentForFolder(entryId);
+    if (!parent) throw new Error("Entry parent is unavailable");
+    return parent;
+  }
+
   async setLocation(
     projectId: string,
     key: ResourceKey,

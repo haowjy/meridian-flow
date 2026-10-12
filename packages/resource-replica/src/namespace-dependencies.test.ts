@@ -197,10 +197,17 @@ it.each<NamespaceIdentityAvailability>([
       projectId: "p",
       intentId: "move",
       eligibleAt: 1,
-      destination: { scheme: "manuscript", workId: null, folderPath: "B", name: "doc.md" },
+      destination: { parent: { kind: "folder", folderId: "B" }, name: "doc.md" },
     }),
   );
-  apply(prepareNamespaceAttempt(record, { attemptId: "attempt", operationId: "operation" }));
+  apply(
+    prepareNamespaceAttempt(record, { attemptId: "attempt", operationId: "operation" }, (id) => ({
+      scheme: "manuscript",
+      path: `/${id}`,
+      name: id,
+      workId: null,
+    })),
+  );
   const attempt = record.intents[0].attempts[0];
   apply(recordNamespaceOutcome(record, "move", "attempt", evidence(attempt, false)));
   apply(settleNamespaceOutcome(record, 100));
@@ -232,10 +239,17 @@ it.each([
       projectId: "p",
       intentId: "move",
       eligibleAt: 1,
-      destination: { scheme: "manuscript", workId: null, folderPath: "B", name: "doc.md" },
+      destination: { parent: { kind: "folder", folderId: "B" }, name: "doc.md" },
     }),
   );
-  apply(prepareNamespaceAttempt(record, { attemptId: "attempt", operationId: "operation" }));
+  apply(
+    prepareNamespaceAttempt(record, { attemptId: "attempt", operationId: "operation" }, (id) => ({
+      scheme: "manuscript",
+      path: `/${id}`,
+      name: id,
+      workId: null,
+    })),
+  );
   const attempt = record.intents[0].attempts[0];
   const result = evidence(attempt, disposition !== "accepted", disposition === "refusal");
   apply({

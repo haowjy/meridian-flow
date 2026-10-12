@@ -1,4 +1,4 @@
-/** Alias traversal must retain authority when a move changes owner but not path. */
+/** Identity traversal must retain authority when a move changes owner but not path. */
 import type { CatalogEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { planFolderLocation } from "./folder-namespace";
@@ -42,15 +42,15 @@ const move = (id: string, from: string, path: string, to: string, destination: s
     intentId: `i${id}`,
     operationId: `o${id}`,
     destination: {
-      scheme: "scratch",
-      workId: to,
-      workSlug: to,
-      folderPath: parts.slice(0, -1).join("/"),
+      parent:
+        parts.length > 1
+          ? { kind: "folder", folderId: "sub" }
+          : { kind: "root", scheme: "scratch", owner: { workId: to, workSlug: to } },
       name: parts.at(-1)!,
     },
   })!.next;
 };
-it("binds a descendant through a same-path cross-Work alias in either record order", () => {
+it("binds a descendant through a same-path cross-Work parent in either record order", () => {
   const entries = [
     source("alpha"),
     source("beta"),

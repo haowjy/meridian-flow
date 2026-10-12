@@ -56,10 +56,36 @@ export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): bool
     (left.rootThreadId ?? null) === (right.rootThreadId ?? null)
   );
 }
-/** Where `setLocation` places a document: a folder path in place of the full path. */
-export type ResourceDestination = Readonly<
-  { scheme: ProjectContextTreeScheme; folderPath: string; name: string } & ResourceOwner
->;
+/** A picked folder identity or a qualified area's root. Paths are observations, not edges. */
+export type ParentRef =
+  | Readonly<{ kind: "folder"; folderId: string }>
+  | Readonly<{ kind: "root"; scheme: ProjectContextTreeScheme; owner: ResourceOwner }>;
+export type ResourceDestination = Readonly<{ parent: ParentRef; name: string }>;
+export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
+
+/** Resolve only canonical observations when preparing immutable transport evidence. */
+export function destinationParentLocation(
+  parent: ParentRef,
+  lookup: DestinationParentLookup,
+): ResourceLocation | null {
+  return parent.kind === "folder"
+    ? lookup(parent.folderId)
+    : { scheme: parent.scheme, ...parent.owner, path: "", name: "" };
+}
+
+export function destinationLocation(
+  destination: ResourceDestination,
+  lookup: DestinationParentLookup,
+): ResourceLocation | null {
+  const parent = destinationParentLocation(destination.parent, lookup);
+  return parent
+    ? {
+        ...parent,
+        path: `${parent.path.replace(/\/$/, "")}/${destination.name}`,
+        name: destination.name.split("/").at(-1) ?? destination.name,
+      }
+    : null;
+}
 
 export type ResourceDescriptor = ResourceKey & {
   revision: number;

@@ -1,71 +1,46 @@
-/** Refused namespace work retains its destination without offering name-only move repair. */
-import type { ResourceDestination, ResourceLocation } from "@meridian/resource-replica";
-import { describe, expect, it } from "vitest";
+/** Refused commands retain parent identity, separating rename from move repair. */
+import type { ParentRef, ResourceDestination } from "@meridian/resource-replica";
+import { expect, it } from "vitest";
 import { refusedMoveDestination } from "./context-catalog-projection";
 
-const current: ResourceLocation = {
-  scheme: "manuscript",
-  path: "/Act 1/chapter.md",
-  name: "chapter.md",
-  workId: null,
-};
-const rename: ResourceDestination = {
-  scheme: "manuscript",
-  folderPath: "/Act 1",
-  name: "revised.md",
-  workId: null,
-};
-
-describe("refused namespace repair", () => {
-  it("keeps name-only and normalized same-parent refusals on the rename path", () => {
-    expect(refusedMoveDestination(undefined, current)).toBeUndefined();
-    expect(refusedMoveDestination(rename, current)).toBeUndefined();
-    expect(refusedMoveDestination({ ...rename, folderPath: "Act 1/" }, current)).toBeUndefined();
-    expect(
-      refusedMoveDestination({ ...rename, folderPath: "" }, { ...current, path: "/chapter.md" }),
-    ).toBeUndefined();
-  });
-
-  it.each([
-    { ...rename, folderPath: "/Research" },
-    { ...rename, scheme: "kb" as const },
-    { ...rename, folderPath: "" },
-  ])("retains a refused folder or area move's complete destination", (destination) => {
-    expect(refusedMoveDestination(destination, current)).toEqual(destination);
-  });
-
-  it("compares the actual Scratch owner, not the selected Work", () => {
-    const scratch: ResourceLocation = {
-      ...current,
+const parent: ParentRef = { kind: "folder", folderId: "act-one" };
+const rename: ResourceDestination = { parent, name: "revised.md" };
+it("keeps name-only refusals on the rename path regardless of ancestor paths", () => {
+  expect(refusedMoveDestination(undefined, parent)).toBeUndefined();
+  expect(refusedMoveDestination(rename, { ...parent })).toBeUndefined();
+});
+it.each<ParentRef>([
+  { kind: "folder", folderId: "research" },
+  { kind: "root", scheme: "kb", owner: { workId: null } },
+  { kind: "root", scheme: "manuscript", owner: { workId: null } },
+])("retains a refused folder or area move's destination", (target) => {
+  const destination = { parent: target, name: rename.name };
+  expect(refusedMoveDestination(destination, parent)).toEqual(destination);
+});
+it("compares the actual Scratch owner, not the selected Work", () => {
+  const work: ParentRef = {
+    kind: "root",
+    scheme: "scratch",
+    owner: { workId: "work", workSlug: "notes" },
+  };
+  const other: ResourceDestination = {
+    parent: { kind: "root", scheme: "scratch", owner: { workId: "other", workSlug: "other" } },
+    name: "note.md",
+  };
+  expect(refusedMoveDestination(other, work)).toEqual(other);
+  const lineage: ParentRef = {
+    kind: "root",
+    scheme: "scratch",
+    owner: { workId: null, rootThreadId: "lineage", rootThreadRef: "c1" },
+  };
+  const different: ResourceDestination = {
+    parent: {
+      kind: "root",
       scheme: "scratch",
-      workId: "work",
-      workSlug: "notes",
-    };
-    const otherWork: ResourceDestination = {
-      ...rename,
-      scheme: "scratch",
-      workId: "other",
-      workSlug: "other",
-    };
-    expect(refusedMoveDestination(otherWork, scratch)).toEqual(otherWork);
-    const lineage: ResourceLocation = {
-      ...current,
-      scheme: "scratch",
-      rootThreadId: "lineage",
-      rootThreadRef: "c1",
-    };
-    const otherLineage: ResourceDestination = {
-      ...rename,
-      scheme: "scratch",
-      rootThreadId: "other",
-      rootThreadRef: "c2",
-    };
-    expect(refusedMoveDestination(otherLineage, lineage)).toEqual(otherLineage);
-    expect(
-      refusedMoveDestination(
-        { ...otherLineage, rootThreadId: "lineage", rootThreadRef: "c1" },
-        lineage,
-      ),
-    ).toBeUndefined();
-  });
+      owner: { workId: null, rootThreadId: "other", rootThreadRef: "c2" },
+    },
+    name: "note.md",
+  };
+  expect(refusedMoveDestination(different, lineage)).toEqual(different);
+  expect(refusedMoveDestination({ ...different, parent: lineage }, lineage)).toBeUndefined();
 });

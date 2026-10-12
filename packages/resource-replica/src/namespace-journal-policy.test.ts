@@ -36,7 +36,10 @@ it.each([
               ? { kind: "delete" }
               : {
                   kind,
-                  destination: { scheme: "manuscript", folderPath: "", name: id, workId: null },
+                  destination: {
+                    parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+                    name: id,
+                  },
                 },
           state: id === "move" ? "needs-repair" : id === "delete" ? deleteState : "pending",
           attempts: [],

@@ -18,7 +18,7 @@ import type { TabOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import { parentContextEntryPath, validateContextEntryName } from "./context-entry-name";
+import { validateContextEntryName } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -73,7 +73,7 @@ export function useRenameEntryForm({
         noWork,
       );
       if (!authority) throw unavailable();
-      const destination = { scheme, folderPath: parentContextEntryPath(path), name, ...authority };
+      const destination = { parent: await resources.parentForEntry(projectId, entryId), name };
       if (kind === "folder") {
         return resources
           .setFolderLocation(projectId, entryId, destination)

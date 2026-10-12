@@ -35,7 +35,7 @@ afterEach(async () => {
     await Promise.all([
       Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`),
       Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`),
-      Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`),
+      Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`),
     ]);
   }
   accounts.clear();
@@ -257,7 +257,7 @@ it("closes the account lifetime when another connection upgrades the database", 
   const store = open(account, versionChanged);
   await store.readProjection("project");
 
-  const upgrader = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`);
+  const upgrader = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`);
   upgrader.version(1).stores({
     resources: "handle",
     intents: "intentId,handle,projectId",
@@ -421,14 +421,18 @@ it.each([
           projectId: "project",
           intentId: "file-intent",
           eligibleAt: 1,
-          destination: { scheme: "manuscript", folderPath: "B", name: "child.md", workId: null },
+          destination: { parent: { kind: "folder", folderId: "B" }, name: "child.md" },
         });
   if (!planned) throw new Error("Missing file intent");
   await store.commitResource(planned);
-  const submitted = prepareNamespaceAttempt(planned.next, {
-    attemptId: "file-attempt",
-    operationId: "file-operation",
-  });
+  const submitted = prepareNamespaceAttempt(
+    planned.next,
+    {
+      attemptId: "file-attempt",
+      operationId: "file-operation",
+    },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
   if (!submitted) throw new Error("Missing file attempt");
   await store.commitResource(submitted);
   const folder = planFolderDeletion({

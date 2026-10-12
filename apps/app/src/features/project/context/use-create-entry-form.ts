@@ -68,10 +68,13 @@ export function useCreateEntryForm({
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
         try {
           await resources.setLocation(projectId, reservation.key, {
-            scheme,
-            folderPath: parent,
+            parent: await resources.parentAtLocation(projectId, {
+              scheme,
+              path: parent,
+              name: "",
+              workId: null,
+            }),
             name: trimmed,
-            workId: null,
           });
         } finally {
           reservation.content.handle.release();

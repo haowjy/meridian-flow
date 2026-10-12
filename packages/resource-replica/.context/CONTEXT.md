@@ -41,7 +41,7 @@ the locked No Work row uses a null slug and URI authority `@/`.
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
 single durable URI authority rule (`@/`, `@slug`, or a lineage's `@/c12/`) used by catalog projection,
-receipt matching and folder re-basing. Tab ownership does not use it: app tabs
+receipt matching and identity placement. Tab ownership does not use it: app tabs
 carry the location's Work row id, No Work's included, or a chat's lineage.
 
 A location's owner is `ResourceOwner`: a Work (`workId` and `workSlug`, null for
@@ -73,9 +73,12 @@ until an authorized terminal cleanup transition.
 
 `reconcileResourceNamespace` persists an immutable attempt before dispatch,
 records received evidence separately, and applies it through metadata CAS.
-Move receipt matching checks the selected parent identity as well as the existing
-URI and expected-source fields. Destination identity is currently an optional
-wire capability; the local path-based destination model has not yet been replaced.
+App move attempts always carry the picked `destinationParent`. Preparation looks
+up the folder's server-canonical location; an absent or terminal destination enters
+move repair without a fabricated transport attempt. Folder receipt matching uses
+that parent identity and leaf name rather than the parent's potentially changed
+path or owner. Root moves still match qualified URI authority. Source identity
+and URI remain immutable evidence.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
 refresh obligation; a post-receipt catalog or exact-ID availability lookup may
@@ -108,19 +111,26 @@ Catalog observations install atomically with their checkpoint; exact-ID availabi
 observations use the same metadata CAS. Both journals share typed settlement policy,
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
-Folder placement resolves a stable-identity dependency graph through destination
-and ancestor rename chains, independent of record ordering. Missing destinations
-and cycles fall back to canonical placement. Canonical observations can advance
-placement ahead of older catalog membership without reviving stale intent ownership.
-The graph rebases paths, URI authority, source/scope and parent ids for the folder
-and every descendant. Projection builds placement and parent links with all
-nodes present, then suppresses deleted subtrees of that topology, including nodes
-moved into them. Supply the installed destination source and parent
-catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
-use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
-old location and expose the latest requested name in the cancelled chain through
-`projectFolderNeedsRepair`, anchored to the refused intent for receipt feedback.
-File repair uses the same destination rule through `projectResourceNeedsRepair`.
+Folder and document destinations store `{ parent: ParentRef, name }`, where a
+parent is a picked folder identity or qualified area root. One canonical qualified
+home index binds parent edges from the installed checkpoints and retained journal
+identities. A newer exact canonical folder observation supplies that folder's edge
+without disconnecting children whose checkpoint still names its prior home.
+Effective edges use the owning intent, otherwise the canonical parent. Memoized
+walks produce location and ancestor suppression together. Cycles revert every
+member's canonical parent edge before continuing resolution, including newly
+exposed cycles; independently renamed ancestors still apply. Missing/terminal
+destinations use canonical edges. Pending-deleted or terminal ancestors suppress
+descendants, including known resources absent from catalogs in Recent.
+
+Synthetic ancestors fill only unoccupied qualified homes after all real identities
+are installed. There is no historical-path index, alias anchoring or path-prefix
+rebasing. Supply all destination sources and parent catalogs when projecting
+cross-area or cross-Work moves. Every surface shares `ResourcePlacement`.
+Rejected moves use the accepted home and expose the latest queued name/destination
+through `projectFolderNeedsRepair` or `projectResourceNeedsRepair`; retry pickers
+follow the captured parent ID, falling back to the current folder if unavailable.
+
 Shared namespace journal policy cancels unsubmitted queued placement commands
 for the refused identity revision and offers the newest cancelled destination,
 without changing immutable intentions or the failed receipt anchor. A later admitted
