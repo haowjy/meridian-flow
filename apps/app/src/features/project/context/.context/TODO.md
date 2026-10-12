@@ -2,7 +2,16 @@
 
 ## Optimistic interaction contract
 
-- **CTX-001: Project folder changes into the tree immediately where identity permits.** For rename/move, add a P1 projection with per-entry serialization or version fencing, conflict retirement, and catalog repair. Folder creation is P2 only if the client can mint the stable tree identity; otherwise keep it server-confirmed rather than projecting a fake row. Keep recursive folder deletion and Work-authority changes server-confirmed.
-- **CTX-002: Make by-ID document doors commit the destination before admission.** `open-project-document.ts` awaits both local resource opening and, when absent, server availability before changing the address for wikilinks, trail receipts, and search results. Preserve latest-attempt fencing while moving materialization and failure onto the destination.
+- **CTX-001: Project folder creation into the tree immediately where identity permits.** Project it only if the client can mint the stable tree identity; otherwise keep it server-confirmed rather than projecting a fake row. Folder deletion already uses optimistic namespace intent; Work-authority changes remain server-confirmed.
+- **CTX-002: Make by-ID document doors commit the destination before admission.** `open-project-document.ts` awaits both local resource opening and, when absent, server availability before changing the address for links, trail receipts, and search results. Preserve latest-attempt fencing while moving materialization and failure onto the destination.
 
-- Chat frame and Editor pane: add a chat-launched Scratch/Uploads viewer as a temporary overlay over only the Editor pane, beside the still-usable chat. Block Editor tab switching until it closes, then reveal the same underlying document. Never create resource tabs. Chat-focused viewing belongs in its future right sidebar. Include intake controls there, not in the main document tree. Deferred by the writer; not implemented in this change. GitHub issue publication needs approval.
+## Path decision slices
+
+- **Choose a home as one full-path field** (`IdentityPlacementField.tsx`, `use-identity-commit.ts`). Today the field opens empty on the area list with the content-derived name as ghost text. The settled field holds the whole path on one line: it opens with "Knowledge Base /" as real, editable text and the cursor after it, keeps the content-derived name as ghost text that Tab accepts, never selects the area on focus, cannot save without an area, and still creates missing folders. Missing folders travel as the destination's `createFolders` beneath the deepest existing folder, as linked creation sends them (`../../links/use-create-linked-document.ts`); never fall back to a path destination. Planned as the next slice ([KB: path decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/documents/path-navigates-lists-edit.md)).
+- **Drag documents onto folders** (work item `drag-anywhere` in the docs repo): rows, tabs, crumbs, Recent rows and mention chips as sources; the Files tree, Work Files, the chat's Scratch section, the composer and the editor as targets; multi-select; Move here / Copy here / Cancel across owners. Start with rows in `ContextTreeRows.tsx` and `../chat/ChatScratch.tsx`. Reuse `EntryMovePicker`'s guards (no file targets, no move into the moved folder's own subtree, collision validation) and the same `setLocation`/`setFolderLocation` admission, so drag and Move… cannot disagree. Planned as its own slice after Move….
+
+## Other
+
+- Uploads in the chat's dock document: the dock shows Scratch notes; a chat-launched Uploads viewer with intake controls is still deferred (#625, #631).
+
+- Review the inherited session-authority exception that terminalizes adopted local-origin lineage from availability; it is explicitly out of scope for PR #754.

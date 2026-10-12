@@ -9,9 +9,8 @@ export {
   type ComposerProps,
   type ComposerSelection,
   type ComposerSubmitEnvelope,
-  type ComposerSubmitOutcome,
   type ComposerUploadPort,
   type ComposerUploadScope,
   serializeComposerDraft,
 } from "./Composer";
-export { mergeComposerDraftSnapshots } from "./composer-document";
+export type { ComposerChatCommand } from "./command";

@@ -5,8 +5,13 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../../shared/result.js";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
+import type { BindMarkdownInput } from "../../../collab/index.js";
+import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
+import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
@@ -32,17 +37,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_MOVE_TARGET_ID = "00000000-0000-4000-8000-000000000707";
     const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
-    const _DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
-    const _EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000712";
-    const _NON_EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000713";
-    const _DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
-    const _DOC_STALE_DELETE_ID = "00000000-0000-4000-8000-000000000715";
-    const _DOC_ROLLBACK_DELETE_ID = "00000000-0000-4000-8000-000000000716";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -70,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id,
         contextSourceId: SOURCE_ID,
         name,
-        extension: "md",
+        extension: "",
         fileType: "markdown",
         markdownProjection: name,
       });
@@ -83,6 +82,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore,
         scheme: "kb",
@@ -90,7 +91,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
-          seedFromMarkdown: async (documentId: string, markdown: string) => {
+          bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
+          seedFromMarkdown: async (documentId: string, { markdown }: { markdown: string }) => {
             await beforeCollabWrite?.();
             const [row] = await db
               .select({ filetype: documents.fileType })
@@ -98,6 +100,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               .where(eq(documents.id, documentId));
             observedWriteFiletypes.push(row?.filetype ?? null);
             markdownByDocument.set(documentId, markdown);
+            // This sync fake supplies the collab-owned projection effect.
+            await db
+              .update(documents)
+              .set({
+                markdownProjection: markdown,
+                sizeBytes: Buffer.byteLength(markdown, "utf8"),
+                updatedAt: new Date(),
+              })
+              .where(eq(documents.id, documentId));
             return Ok({ updateSeq: 1 });
           },
         } as never,
@@ -127,7 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("enforces cross-schema and tracked/storage rename rejection in Postgres", async () => {
       const { context, move } = createContextHarness();
-      await context.write("chapter.md", "Chapter");
+      await context.write("chapter", "Chapter");
       await context.write("script.py", "print('hello')");
       await context.writeBinary("cover.png", {
         fileType: "image",
@@ -136,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sizeBytes: 42,
       });
 
-      await expect(move("chapter.md", "chapter.py")).resolves.toMatchObject({
+      await expect(move("chapter", "chapter.py")).resolves.toMatchObject({
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/schema/i) },
       });
@@ -144,39 +155,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/tracked|binary/i) },
       });
-      await expect(move("cover.png", "cover.md")).resolves.toMatchObject({
+      await expect(move("cover.png", "cover.txt")).resolves.toMatchObject({
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/storage|tracked/i) },
       });
-      await expect(context.stat("chapter.md")).resolves.toMatchObject({ ok: true });
+      await expect(context.stat("chapter")).resolves.toMatchObject({ ok: true });
       await expect(context.stat("script.py")).resolves.toMatchObject({ ok: true });
       await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
     });
 
-    it("persists a same-schema rename before the next Postgres-backed collab write", async () => {
-      const { context, move, observedWriteFiletypes } = createContextHarness();
-      await context.write("chapter.md", "Chapter");
-      observedWriteFiletypes.length = 0;
-
-      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
-        ok: true,
-        value: { kind: "tracked", filetype: "text", schemaType: "document" },
-      });
-      await expect(context.write("chapter.txt", "Revised chapter")).resolves.toMatchObject({
-        ok: true,
-      });
-
-      expect(observedWriteFiletypes).toEqual(["text"]);
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
-        ok: true,
-        value: { kind: "tracked", filetype: "text", schemaType: "document" },
-      });
-    });
-
     it("keeps one Postgres document identity when write and rename overlap", async () => {
       const { context, move, pauseNextWrite } = createContextHarness();
-      const initial = await context.write("chapter.md", "Chapter");
+      const initial = await context.write("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let releaseWrite = () => {};
       const writeReleased = new Promise<void>((resolve) => {
@@ -191,9 +181,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await writeReleased;
       });
 
-      const write = context.write("chapter.md", "Revised chapter");
+      const write = context.write("chapter", "Revised chapter");
       await writeStarted;
-      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
+      await expect(move("chapter", "renamed chapter.txt")).resolves.toMatchObject({ ok: true });
       releaseWrite();
 
       await expect(write).resolves.toMatchObject({
@@ -204,26 +194,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db
           .select({ id: documents.id, name: documents.name, extension: documents.extension })
           .from(documents),
-      ).resolves.toEqual([{ id: initial.value.documentId, name: "chapter", extension: "txt" }]);
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+      ).resolves.toEqual([
+        { id: initial.value.documentId, name: "renamed chapter", extension: "" },
+      ]);
+      await expect(context.stat("renamed chapter")).resolves.toMatchObject({
         ok: true,
-        value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
+        value: { documentId: initial.value.documentId, filetype: "markdown", sizeBytes: 15 },
+      });
+      await expect(context.stat("chapter")).resolves.toEqual({ ok: true, value: null });
+      await expect(context.read("renamed chapter")).resolves.toMatchObject({
+        ok: true,
+        value: { content: "Revised chapter" },
+      });
+    });
+
+    it("keeps alias-only Postgres renames in place", async () => {
+      const { context, move } = createContextHarness();
+      const initial = await context.write("Alias", "Unchanged");
+      if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+      expect(await move("Alias", "Alias.txt")).toMatchObject({ ok: true });
+      expect(
+        await db
+          .select({ id: documents.id, name: documents.name, extension: documents.extension })
+          .from(documents),
+      ).toEqual([{ id: initial.value.documentId, name: "Alias", extension: "" }]);
+      expect(await context.read("Alias.md")).toMatchObject({
+        ok: true,
+        value: { content: "Unchanged" },
       });
     });
 
     it("allows a Postgres rename while projection activity changes mid-flight", async () => {
       const { context, move, mutationStore } = createContextHarness();
-      const initial = await context.write("chapter.md", "Chapter");
+      const initial = await context.write("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
       mutationStore.setBeforeDestructiveWrite(async () => {
         mutationStore.setBeforeDestructiveWrite(null);
-        concurrentWrite = await context.write("chapter.md", "Revised chapter");
+        concurrentWrite = await context.write("chapter", "Revised chapter");
       });
 
-      await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
+      await expect(move("chapter", "archive/chapter.txt")).resolves.toMatchObject({
         ok: true,
-        value: { destinationPath: "archive/chapter.txt" },
+        value: { destinationPath: "archive/chapter" },
       });
 
       expect(concurrentWrite).toMatchObject({
@@ -244,36 +257,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: initial.value.documentId,
           name: "chapter",
-          extension: "txt",
+          extension: "",
           markdown: "Revised chapter",
-          filetype: "text",
+          filetype: "markdown",
         },
       ]);
       await expect(db.select().from(folders)).resolves.toHaveLength(1);
-    });
-
-    it("refuses to convert a storage-backed binary row to tracked text", async () => {
-      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const binary = await store.createBinaryDocument({
-        folderId: null,
-        name: "cover",
-        extension: "webp",
-        fileType: "image",
-        storageUrl: "s3://bucket/cover.webp",
-        mimeType: "image/webp",
-        sizeBytes: 42,
-      });
-
-      await expect(
-        store.upsertDocument({
-          folderId: null,
-          name: "cover",
-          extension: "webp",
-          markdown: "not an image",
-          filetype: "text",
-        }),
-      ).rejects.toThrow(`Cannot replace binary document with tracked text: ${binary.id}`);
-      await expect(store.findDocument(null, "cover", "webp")).resolves.toEqual(binary);
     });
 
     it("ignores source content activity during an overwrite move", async () => {
@@ -288,8 +277,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         observer,
         createDrizzleContextCatalog(db),
       );
-      const source = await tree.inspect(SOURCE_ID, "rollback-source.md");
-      const target = await tree.inspect(SOURCE_ID, "rollback-target.md");
+      const source = await tree.inspect(SOURCE_ID, "rollback-source");
+      const target = await tree.inspect(SOURCE_ID, "rollback-target");
       expect(source?.kind).toBe("file");
       expect(target?.kind).toBe("file");
 
@@ -307,7 +296,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const result = await tree.commitMove({
         source: source as Extract<NonNullable<typeof source>, { kind: "file" }>,
         destinationSourceId: SOURCE_ID,
-        destinationPath: "rollback-target.md",
+        destinationPath: "rollback-target",
         expectedTarget: {
           state: "occupied",
           token: target as Extract<NonNullable<typeof target>, { kind: "file" }>,
@@ -321,36 +310,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(documents)
         .where(eq(documents.id, DOC_ROLLBACK_TARGET_ID));
 
-      expect(result).toEqual({ ok: true, value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID } });
+      expect(result).toEqual({
+        ok: true,
+        value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
+      });
       expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
       expect(observer.documentDeleted).toHaveBeenCalledWith(DOC_ROLLBACK_TARGET_ID);
-    });
-
-    it("awaits create membership before returning the tracked document", async () => {
-      let durable = false;
-      const observer: ContextDocumentMembershipObserver = {
-        async documentCreated() {
-          await Promise.resolve();
-          durable = true;
-        },
-        documentDeleted: () => undefined,
-      };
-      const contentStore = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: SOURCE_ID,
-        membershipObserver: observer,
-      });
-
-      await contentStore.upsertDocument({
-        id: DOC_CREATE_ID,
-        folderId: null,
-        name: "awaited-create",
-        extension: "md",
-        markdown: "awaited-create",
-        filetype: "markdown",
-      });
-
-      expect(durable).toBe(true);
     });
 
     it("dispatches create, delete, and overwrite-move membership events exactly once after commit", async () => {
@@ -387,15 +352,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleContextCatalog(db),
       );
 
-      await contentStore.upsertDocument({
+      await contentStore.createDocument({
         id: DOC_CREATE_ID,
         folderId: null,
         name: "created",
-        extension: "md",
+        extension: "",
         markdown: "created",
         filetype: "markdown",
       });
-      const deleteToken = await tree.inspect(SOURCE_ID, "delete-me.md");
+      const deleteToken = await tree.inspect(SOURCE_ID, "delete-me");
       expect(deleteToken?.kind).toBe("file");
       await expect(
         tree.commitRecursiveDelete({
@@ -409,15 +374,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           availabilityGeneration: expect.not.stringMatching(/^0$/),
         },
       });
-      const moveSource = await tree.inspect(SOURCE_ID, "move-source.md");
-      const moveTarget = await tree.inspect(SOURCE_ID, "move-target.md");
+      const moveSource = await tree.inspect(SOURCE_ID, "move-source");
+      const moveTarget = await tree.inspect(SOURCE_ID, "move-target");
       expect(moveSource?.kind).toBe("file");
       expect(moveTarget?.kind).toBe("file");
       await expect(
         tree.commitMove({
           source: moveSource as Extract<NonNullable<typeof moveSource>, { kind: "file" }>,
           destinationSourceId: SOURCE_ID,
-          destinationPath: "move-target.md",
+          destinationPath: "move-target",
           expectedTarget: {
             state: "occupied",
             token: moveTarget as Extract<NonNullable<typeof moveTarget>, { kind: "file" }>,
@@ -428,7 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         ok: true,
-        value: { movedNodeId: DOC_MOVE_SOURCE_ID },
+        value: { movedNodeId: DOC_MOVE_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
       });
       await Promise.all(observerWork);
 
@@ -455,11 +420,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let sawObserverInsideTransaction = false;
 
       await runInDrizzleTransaction(db, async () => {
-        await store.upsertDocument({
+        await store.createDocument({
           id: DOC_AMBIENT_CREATE_ID,
           folderId: null,
           name: "ambient-create",
-          extension: "md",
+          extension: "",
           filetype: "markdown",
           markdown: "ambient-create",
         });

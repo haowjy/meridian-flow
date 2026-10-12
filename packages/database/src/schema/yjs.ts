@@ -34,7 +34,6 @@ type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
 type ReversalOpDirection = "undo" | "redo";
 type DocumentBranchKind = "work_draft" | "thread_peer";
-type DocumentBranchPushPolicy = "manual" | "auto";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
@@ -70,7 +69,6 @@ export const documentBranches = pgTable(
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
-    pushPolicy: text("push_policy").$type<DocumentBranchPushPolicy>().notNull().default("manual"),
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
@@ -96,7 +94,6 @@ export const documentBranches = pgTable(
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
     check("document_branches_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
-    check("document_branches_push_policy_valid", sql`${table.pushPolicy} IN ('manual', 'auto')`),
     check("document_branches_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_branches_owner_shape",
@@ -686,4 +683,22 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     { onDelete: "set null" },
   ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Independently certifiable outputs of the live-document derive step. */
+export const documentDerivations = pgTable("document_derivations", {
+  documentId: uuid("document_id")
+    .$type<DocumentId>()
+    .primaryKey()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  projectionGeneration: bigint("projection_generation", { mode: "bigint" }).notNull(),
+  projectionAdmissionSequence: bigint("projection_admission_sequence", {
+    mode: "bigint",
+  }).notNull(),
+  projectionLocationVersion: bigint("projection_location_version", { mode: "bigint" }).notNull(),
+  projectionExtractorVersion: integer("projection_extractor_version").notNull(),
+  linksGeneration: bigint("links_generation", { mode: "bigint" }),
+  linksAdmissionSequence: bigint("links_admission_sequence", { mode: "bigint" }),
+  linksLocationVersion: bigint("links_location_version", { mode: "bigint" }),
+  linksExtractorVersion: integer("links_extractor_version"),
 });

@@ -15,9 +15,14 @@ export {
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export type { ConcurrentEditInfo, ConcurrentEditRun } from "./apply/types.js";
-export type { AgentEditCodec } from "./codec-adapter.js";
-export { createAgentEditCodec } from "./codec-adapter.js";
+export { overwriteWithAssigned } from "./apply/overwrite.js";
+export type {
+  ConcurrentEditInfo,
+  ConcurrentEditRun,
+  ConcurrentUpdateOrigin,
+} from "./apply/types.js";
+export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";
+export { createAgentEditCodecFactory } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
 export {
   applyConcurrentRenderBudget,
@@ -25,7 +30,7 @@ export {
   renderedRunBytes,
 } from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
-export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
@@ -37,13 +42,16 @@ export {
   normalizeLineageRanges,
   subtractLineageRanges,
 } from "./lineage/range-set.js";
+export type { AssignInput, AssignResult } from "./links/assign-refs.js";
+export { assignLinkRefs } from "./links/assign-refs.js";
+export type { ShownLink } from "./links/correspondence.js";
+export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
   ActorSession,
-  ActorSessionDocumentState,
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type { DocumentCoordinator, DocumentLockOptions } from "./ports/document-coordinator.js";
@@ -53,19 +61,25 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
+  AheadMint,
+  DocumentLinksPort,
+  LinkPrepareRequest,
+} from "./ports/document-links.js";
+export type {
   AgentEditModel,
   BlockLookup,
   CanonicalBlockIdentity,
   DocumentModel,
-  TextRun,
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
-  TurnDiffChange,
-  TurnDiffQuery,
-  TurnDiffResult,
-  TurnDiffTrailState,
-} from "./ports/turn-diff-query.js";
+  StaticCatalogDocument,
+  StaticDocumentCatalog,
+} from "./ports/static-document-links.js";
+export {
+  createStaticDocumentLinks,
+  type StaticDocumentLinksOptions,
+} from "./ports/static-document-links.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -78,6 +92,7 @@ export type {
 } from "./ports/types.js";
 export type {
   ActiveWriteSummary,
+  JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
@@ -106,8 +121,20 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export { isWriteErrorStatus } from "./tool/response-format.js";
+export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
+export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
+export {
+  decodeUpdateForDependencies,
+  deleteRanges,
+  dependsOnRows,
+  hasDependentLaterRows,
+  rangeCovers,
+  suppliedRanges,
+} from "./undo/journal-dependencies.js";
 export type {
   PersistUndoWatermarkRecord,
   PersistUndoWatermarkUpdate,

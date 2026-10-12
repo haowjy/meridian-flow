@@ -4,8 +4,12 @@ import type { GenerateResult } from "../gateway/domain/index.js";
 
 export function modelResponseTimingFields(
   result: Pick<GenerateResult, "timing">,
-): Pick<ModelResponseReceivedRow, "latencyMs" | "timeToFirstTokenMs" | "generationMs"> {
+): Pick<
+  ModelResponseReceivedRow,
+  "requestStartedAt" | "latencyMs" | "timeToFirstTokenMs" | "generationMs"
+> {
   return {
+    requestStartedAt: result.timing?.requestStartedAt ?? null,
     latencyMs: result.timing?.latencyMs ?? null,
     timeToFirstTokenMs: result.timing?.timeToFirstTokenMs ?? null,
     generationMs: result.timing?.generationMs ?? null,

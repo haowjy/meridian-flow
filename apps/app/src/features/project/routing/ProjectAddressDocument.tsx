@@ -1,10 +1,12 @@
 /** Publish an authorized address into the workspace; the document host owns live-session binding. */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
+  contextOwner,
   type DocumentAddressResult,
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
@@ -12,7 +14,8 @@ import { useContextTabsActions } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
-import { type ProjectAddress, projectAddressHref, workIdSelection } from "./project-address";
+import { type ProjectAddress, projectAddressHref } from "./project-address";
+import { workSelectionFor } from "./project-address-resolution";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -29,7 +32,9 @@ export function ProjectAddressDocument({
   address,
   result,
   localFile,
+  draftOnlyId,
   workId,
+  noWorkId,
   navigation,
   onAdmission,
 }: {
@@ -39,21 +44,31 @@ export function ProjectAddressDocument({
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
   localFile?: CatalogFile;
+  /** Pending draft that alone proposes this document: it has no live view, only review. */
+  draftOnlyId?: string;
   workId: string | null;
+  noWorkId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
-  const admissionInput = useRef({ address, result, localFile });
-  admissionInput.current = { address, result, localFile };
+  const admissionInput = useRef({ address, result, localFile, draftOnlyId });
+  admissionInput.current = { address, result, localFile, draftOnlyId };
   // Address/catalog projections are rebuilt from JSON snapshots. Their object
   // identity is not an admission event; only their serialized meaning is.
-  const admissionFingerprint = JSON.stringify({ result, localFile });
+  const admissionFingerprint = JSON.stringify({ result, localFile, draftOnlyId });
   useEffect(() => {
-    const { address, result, localFile } = admissionInput.current;
-    if (!navigation || !result || result.kind === "unavailable") return;
+    const { address, result, localFile, draftOnlyId } = admissionInput.current;
+    if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
+    if (draftOnlyId) {
+      // No tab and no live room: the address carries the draft and
+      // EditorReviewAddressOwner opens its review.
+      if (address.draftId !== draftOnlyId)
+        void navigation.replaceIfCurrent(ticket, { ...address, draftId: draftOnlyId });
+      return;
+    }
     const identity = { href, key: entryKey, documentId: result.document.documentId };
     const controller = new AbortController();
     const isCurrent = () => !controller.signal.aborted && navigation.isCurrent(ticket);
@@ -66,14 +81,15 @@ export function ProjectAddressDocument({
       return;
     }
     const scope = document.scope;
-    const routeWorkId = scope.kind === "work" ? scope.workId : workId;
+    const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
+    const lineageId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
     void (async () => {
       const installed = openTab(
         projectId,
         contextTabFromFile(
           uri.value.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
-          routeWorkId,
+          contextOwner(tabWorkId, lineageId),
         ),
         isCurrent,
       );
@@ -82,19 +98,33 @@ export function ProjectAddressDocument({
         publish("unavailable");
         return;
       }
-      const next: ProjectAddress = {
-        ...address,
-        destination: {
-          kind: "document",
-          scheme: uri.value.scheme,
-          path: document.path.join("/"),
-        },
-        work: workIdSelection(
-          scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-            ? scope.workId
-            : workId,
-        ),
+      const destination: ProjectAddress["destination"] = {
+        kind: "document",
+        scheme: uri.value.scheme,
+        path: document.path.join("/"),
       };
+      // A chat's Scratch is addressed by its lineage; the Editor's own Work stays implicit.
+      const { lineage: _previousLineage, ...previous } = address;
+      const next: ProjectAddress = lineageId
+        ? {
+            ...previous,
+            destination,
+            work: { kind: "absent" },
+            ...(parseRequestId(lineageId)
+              ? { lineage: parseRequestId(lineageId) as ParsedRequestId }
+              : {}),
+          }
+        : {
+            ...previous,
+            destination,
+            work: workSelectionFor(
+              destination,
+              scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
+                ? scope.workId
+                : workId,
+              noWorkId,
+            ),
+          };
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);
         if (
@@ -110,6 +140,16 @@ export function ProjectAddressDocument({
       if (!controller.signal.aborted && navigation.isCurrent(ticket)) publish("error");
     });
     return () => controller.abort();
-  }, [projectId, href, entryKey, admissionFingerprint, workId, navigation, openTab, onAdmission]);
+  }, [
+    projectId,
+    href,
+    entryKey,
+    admissionFingerprint,
+    workId,
+    noWorkId,
+    navigation,
+    openTab,
+    onAdmission,
+  ]);
   return null;
 }

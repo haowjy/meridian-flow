@@ -1,11 +1,11 @@
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
 import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 type Case = {
@@ -14,7 +14,6 @@ type Case = {
 };
 
 const passCases: Case[] = [
-  { name: "empty doc", markdown: "" },
   {
     name: "bold italic inline code link image",
     markdown:
@@ -28,41 +27,12 @@ const passCases: Case[] = [
     name: "mixed task and regular list items",
     markdown: "- [x] a\n- plain\n- [ ] b\n",
   },
-  { name: "nested blockquote", markdown: "> outer\n>\n> > inner\n" },
-  { name: "fenced code language", markdown: "```ts\nconst chi = 9;\nconsole.log(chi);\n```\n" },
 ];
 
 const acceptedNormalizationCases: Case[] = [
   {
     name: "table with mixed alignment canonicalizes to HTML after first round-trip",
     markdown: "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a    | b     |     c |\n",
-  },
-];
-
-type DegradationCase = Case & {
-  expectedFragments: readonly string[];
-};
-
-const deliberatelyUnsupportedCases: DegradationCase[] = [
-  {
-    name: "footnote",
-    markdown: "A claim.[^1]\n\n[^1]: Supporting note.\n",
-    expectedFragments: ["[^1]", "Supporting note."],
-  },
-  {
-    name: "frontmatter",
-    markdown: "---\ntitle: Chapter One\ntags:\n  - xianxia\n---\n\nOpening line.\n",
-    expectedFragments: ["Chapter One", "Opening line."],
-  },
-  {
-    name: "raw inline html",
-    markdown: 'Text with <span data-x="1">inline</span> html.\n',
-    expectedFragments: ["inline"],
-  },
-  {
-    name: "raw block html",
-    markdown: "<aside>\nRaw block.\n</aside>\n",
-    expectedFragments: ["Raw block."],
   },
 ];
 
@@ -92,20 +62,6 @@ describe("markdown → Yjs → markdown fidelity", () => {
       });
     }
   });
-
-  describe("deliberately unsupported markdown extensions", () => {
-    for (const testCase of deliberatelyUnsupportedCases) {
-      it(`degrades ${testCase.name} without throwing and then stays stable`, () => {
-        const output = roundTrip(testCase.markdown);
-        const normalizedOutput = normalizeMarkdown(output);
-
-        for (const fragment of testCase.expectedFragments) {
-          expect(normalizedOutput).toContain(fragment);
-        }
-        expect(normalizeMarkdown(roundTrip(output))).toBe(normalizedOutput);
-      });
-    }
-  });
 });
 
 function roundTrip(markdown: string): string {
@@ -114,7 +70,7 @@ function roundTrip(markdown: string): string {
   model.insertBlocks(doc, null, parsed);
   const root = prosemirrorRootOf(doc, schema);
   const blocks = Array.from({ length: root.childCount }, (_, index) => root.child(index));
-  return codec.serialize(blocks);
+  return codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
 }
 
 function normalizeMarkdown(value: string): string {

@@ -1,15 +1,21 @@
-// Thin facade wiring dispatch, idempotency, and response lifecycle for the write tool.
+// Thin facade wiring the read and mutation entry points, idempotency, and response lifecycle.
+import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
+import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
-import { WriteCommandSchema } from "./command-schema.js";
+import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import type { InternalWriteResult } from "./internal-result.js";
+import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
+  DocumentCommandName,
+  ReadFunction,
   RedoResult,
   ResponseCommitSuccessResult,
   ResponseRollbackResult,
@@ -45,6 +51,7 @@ export type {
 const DEFAULT_UNDO_CLIENT_ID = 999;
 
 export interface WriteTool {
+  read: ReadFunction;
   write: WriteFunction;
   recover(docId: string): Promise<void>;
   commitResponse(
@@ -59,8 +66,9 @@ export interface WriteTool {
   withResponseDocument: ResponseCommitter["withResponseDocument"];
   responseDocuments: ResponseCommitter["responseDocuments"];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
-  undo(docId: string, threadId: string): Promise<UndoResult>;
-  redo(docId: string, threadId: string): Promise<RedoResult>;
+  /** `linkView`: the view of the destination whose history the host routed this to. */
+  undo(docId: string, threadId: string, linkView?: LinkView): Promise<UndoResult>;
+  redo(docId: string, threadId: string, linkView?: LinkView): Promise<RedoResult>;
   reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
 }
@@ -75,10 +83,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
+    links: options.links,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,
-    codec: options.codec,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
@@ -91,6 +99,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
@@ -105,6 +114,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     undoClientId,
     reversalNoticePort: options.reversalNoticePort,
     deferUntilCommit: options.deferUntilCommit,
@@ -119,7 +129,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
+      links: options.links,
       semanticProvenance: options.semanticProvenance,
+      onLinkSpliceFallback: options.onLinkSpliceFallback,
     },
     threadOrigins,
     autoTurnCounter,
@@ -138,20 +150,36 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     threadOrigins,
   });
-  const dispatch = createWriteDispatch({
-    commands,
-    reversal: reversalEndpoints,
-    turnDiffQuery: options.turnDiffQuery,
-  });
+  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
+
+  const read: ReadFunction = async (command, context = {}) => {
+    const parsed = ReadCommandSchema.safeParse(command);
+    if (!parsed.success) return invalidCommand("read", parsed.error);
+    return execute("read", parsed.data, context, (valid, session) =>
+      commands.read(valid, session, context),
+    );
+  };
 
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);
-    const commandName = parsed.success ? parsed.data.command : fallbackCommandName(command);
-    if (!parsed.success) {
-      return toOutcome(commandName, status("invalid_write", writeSchemaError(parsed.error)));
-    }
+    if (!parsed.success) return invalidCommand(fallbackCommandName(command), parsed.error);
+    return execute(parsed.data.command, parsed.data, context, (valid, session) =>
+      dispatch(valid, session, context),
+    );
+  };
 
-    const validCommand = parsed.data;
+  function invalidCommand(commandName: AgentEditResultCommand, error: z.ZodError): WriteOutcome {
+    return toOutcome(commandName, status("invalid_write", writeSchemaError(error)));
+  }
+
+  async function execute<
+    Command extends { file: string; documentId?: string; tool_use_id?: string },
+  >(
+    commandName: DocumentCommandName,
+    validCommand: Command,
+    context: WriteContext,
+    run: (command: Command, session: ActorSession) => Promise<InternalWriteResult>,
+  ): Promise<WriteOutcome> {
     const session = await resolveSession(context);
     const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
     const cacheKey = idempotencyCache.cacheKeyForToolUse(session, context, toolUseId);
@@ -166,19 +194,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
     }
 
-    let result: Awaited<ReturnType<typeof dispatch>>;
+    let result: InternalWriteResult;
     try {
-      result = await dispatch(validCommand, session, context);
+      result = await run(validCommand, session);
     } catch (cause) {
       try {
         options.onUnexpectedWriteError?.({
           cause,
-          command: validCommand.command,
-          ...("documentId" in validCommand && validCommand.documentId
-            ? { documentId: validCommand.documentId }
-            : "document_id" in validCommand && validCommand.document_id
-              ? { documentId: validCommand.document_id }
-              : {}),
+          command: commandName,
+          ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
           sessionId: session.id,
           threadId: session.threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
@@ -190,11 +214,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
       result = writeError(cause);
     }
-    const outcome = toOutcome(validCommand.command, result);
+    const outcome = toOutcome(commandName, result, validCommand.file);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
     return outcome;
-  };
+  }
 
   async function resolveSession(context: WriteContext): Promise<ActorSession> {
     if (context.session) return context.session;
@@ -209,12 +233,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
     const existing = localSessions.get(id);
     if (existing) return existing;
-    const session: ActorSession = { id, threadId, documents: new Map() };
+    const session: ActorSession = { id, threadId, documents: new Set() };
     localSessions.set(id, session);
     return session;
   }
 
   return {
+    read,
     write,
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
@@ -223,8 +248,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     withResponseDocument: responseCommitter.withResponseDocument,
     responseDocuments: responseCommitter.responseDocuments,
     getAvailability: writeReversal.getAvailability,
-    undo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
+    undo: (docId, threadId, linkView) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo", linkView),
+    redo: (docId, threadId, linkView) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo", linkView),
     reverse: reversalEndpoints.reverse,
     invalidateThread: reversalEndpoints.invalidateThread,
   };

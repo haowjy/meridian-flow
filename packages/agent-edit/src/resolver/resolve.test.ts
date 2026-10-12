@@ -1,4 +1,4 @@
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
   createCollabYDoc,
@@ -6,32 +6,27 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import type { ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 import { resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
-  it("resolves scoped find replacement to the matching live block", () => {
-    const doc = createDoc("A sword.\n\nB sword.");
-    const blocks = model.getBlocks(doc);
-    const targetHash = model.getBlockId(blocks[1]);
+  it("records a whole-scope replace as fresh only when it rewrote every block", () => {
+    const doc = createDoc("Alpha.\n\nBeta.");
+    const intent = (content: string) => {
+      const result = resolve(doc, { command: "replace", content, in: [1, 2] });
+      return result.ok ? result.ir.intent.kind : result.error.code;
+    };
 
-    const edits = expectOk(
-      resolve(doc, { command: "replace", content: "blade", find: "sword", in: targetHash }),
-    );
-
-    expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "text", span: { start: 2, end: 7 }, newText: "blade" });
-    expect(edits[0].kind === "text" ? edits[0].block : null).toBe(blocks[1]);
+    expect(intent("Gamma.\n\nDelta.")).toBe("fullScopeFreshReplacement");
+    expect(intent("Alpha.\n\nDelta.")).toBe("mappedEdits");
   });
 
   it("lowers insertion anchors to the after-block contract", () => {
@@ -56,36 +51,19 @@ describe("resolveWrite", () => {
       resolve(doc, { command: "insert", content: "!", find: "*starts*\n\nends *Omega*" }),
     );
 
-    expect(edits.map((edit) => edit.kind)).toEqual(["text", "text"]);
-    expect(edits[1]).toMatchObject({
-      kind: "text",
-      block: omega,
-      span: { start: 0, end: "ends Omega".length },
-      newText: "ends *Omega*!",
-    });
-  });
-
-  it("maps one serialized inline markdown anchor to a flat-text replacement", () => {
-    const doc = createDoc("He could *feel* the qi in the air now.");
-
-    const edits = expectOk(resolve(doc, { command: "replace", content: "sense", find: "*feel*" }));
-
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({
-      kind: "text",
-      span: { start: 0, end: "He could feel the qi in the air now.".length },
-      newText: "He could sense the qi in the air now.",
-    });
+    expect(edits[0]).toMatchObject({ kind: "block", block: omega });
+    expect(edits[0].kind === "block" ? edits[0].replacement.textContent : null).toBe("ends Omega!");
   });
 
-  it("decomposes a block range replace across text/delete/insert primitives", () => {
+  it("decomposes a block range replace across block/delete/insert primitives", () => {
     const doc = createDoc("Alpha\n\nBeta\n\nGamma");
     const [alpha, beta, gamma] = model.getBlocks(doc);
     const range = `${model.getBlockId(alpha)}..${model.getBlockId(gamma)}`;
 
     const fewer = expectOk(resolve(doc, { command: "replace", content: "One", in: range }));
-    expect(fewer.map((edit) => edit.kind)).toEqual(["text", "delete", "delete"]);
-    expect(fewer[0].kind === "text" ? fewer[0].block : null).toBe(alpha);
+    expect(fewer.map((edit) => edit.kind)).toEqual(["block", "delete", "delete"]);
+    expect(fewer[0].kind === "block" ? fewer[0].block : null).toBe(alpha);
     expect(fewer[1].kind === "delete" ? fewer[1].block : null).toBe(beta);
 
     const more = expectOk(
@@ -95,7 +73,7 @@ describe("resolveWrite", () => {
         in: rangeFor("Alpha\n\nBeta"),
       }),
     );
-    expect(more.map((edit) => edit.kind)).toEqual(["text", "text", "insert"]);
+    expect(more.map((edit) => edit.kind)).toEqual(["block", "block", "insert"]);
   });
 
   it("matches find text with NFC normalization while preserving original spans", () => {
@@ -104,7 +82,14 @@ describe("resolveWrite", () => {
     const edits = expectOk(resolve(doc, { command: "replace", content: "tea", find: "café" }));
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "text", span: { start: 0, end: 5 }, newText: "tea" });
+    expect(edits[0]).toMatchObject({
+      kind: "textRanges",
+      replacements: [{ span: { start: 0, end: 5 } }],
+      output: "tea",
+    });
+    const [edit] = edits;
+    if (edit?.kind !== "textRanges") throw new Error("expected textRanges");
+    expect(edit.replacements.map(inlineReplacementText)).toEqual(["tea"]);
   });
 
   it("scopes find-based writes to the around window", () => {
@@ -117,7 +102,7 @@ describe("resolveWrite", () => {
     );
 
     expect(replace).toHaveLength(1);
-    expect(replace[0]).toMatchObject({ kind: "text", block: blocks[4] });
+    expect(replace[0]).toMatchObject({ kind: "textRanges", block: blocks[4] });
   });
 
   it("returns representative resolution errors", () => {
@@ -138,7 +123,12 @@ describe("resolveWrite", () => {
     });
     expect(resolve(doc, { command: "replace", content: "x", in: "deadbeef" })).toMatchObject({
       ok: false,
-      error: { code: "not_found", message: 'Block hash "deadbeef" was not found' },
+      error: {
+        code: "not_found",
+        message: expect.stringContaining(
+          'Block hash "deadbeef" was not found in the version your writes change',
+        ),
+      },
     });
     expect(
       resolve(doc, {
@@ -155,12 +145,17 @@ describe("resolveWrite", () => {
     expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
     for (const params of [
       { command: "replace" as const, content: "Replacement", in: "#cafe" },
-      { command: "delete" as const, in: "#cafe" },
+      { command: "remove" as const, in: "#cafe" },
       { command: "replace" as const, content: "Replacement", find: "Scene", in: "#cafe" },
     ]) {
       expect(resolve(doc, params)).toMatchObject({
         ok: false,
-        error: { code: "not_found", message: 'Block hash "cafe" was not found' },
+        error: {
+          code: "not_found",
+          message: expect.stringContaining(
+            'Block hash "cafe" was not found in the version your writes change',
+          ),
+        },
       });
     }
   });
@@ -178,86 +173,27 @@ describe("resolveWrite", () => {
     expect(edits[2].kind === "delete" ? edits[2].block : null).toBe(body);
   });
 
-  it("resolves real block hashes used as mutating file fragments", () => {
+  it("removes the blocks selected by `in` or a path fragment", () => {
     const doc = createDoc("Alpha\n\nBeta");
     const [, beta] = model.getBlocks(doc);
     const hash = model.getBlockId(beta);
-
-    const edits = expectOk(
-      resolveWrite(
-        { doc, model, codec },
-        {
-          documentAddress: {
-            documentId: "123e4567-e89b-12d3-a456-426614174000",
-            filePath: "chapter.md",
-            fragment: hash,
-          },
-          command: "replace",
-          content: "Gamma",
-        },
-      ),
-    );
-
-    expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "text", block: beta, newText: "Gamma" });
-  });
-
-  it("keeps delete on its single required in scope", () => {
-    const doc = createDoc("Alpha\n\nBeta");
-    const [, beta] = model.getBlocks(doc);
-    const hash = model.getBlockId(beta);
-
-    expect(
-      resolveWrite(
-        { doc, model, codec },
-        {
-          documentAddress: {
-            documentId: "123e4567-e89b-12d3-a456-426614174000",
-            filePath: "chapter.md",
-            fragment: hash,
-          },
-          command: "delete",
-          in: hash,
-        },
-      ),
-    ).toMatchObject({ ok: false, error: { code: "invalid_write" } });
-  });
-
-  it("returns an actionable ambiguous error for insert block anchors", () => {
-    const doc = createDoc(collisionMarkdown());
-    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
-
-    const result = resolve(doc, {
-      command: "insert",
-      content: "Inserted",
-      after: fixture.sharedPrefix,
+    const address = (fragment?: string) => ({
+      documentId: "123e4567-e89b-12d3-a456-426614174000",
+      filePath: "chapter.md",
+      ...(fragment === undefined ? {} : { fragment }),
     });
+    const remove = (fragment: string | undefined, scope: string | undefined) =>
+      resolveWrite(
+        { doc, model, codec, links: "preassigned" },
+        {
+          documentAddress: address(fragment),
+          command: "remove",
+          ...(scope === undefined ? {} : { in: scope }),
+        },
+      );
 
-    expect(result).toMatchObject({ ok: false, error: { code: "ambiguous_match" } });
-    if (result.ok) throw new Error("expected ambiguous insert failure");
-    expect(result.error.message).toContain("ambiguous");
-    expect(result.error.message).not.toContain("not found");
-    for (const candidate of fixture.candidates) {
-      expect(result.error.message).toContain(candidate.displayHash);
-    }
-  });
-
-  it("returns an actionable ambiguous error for replace scopes", () => {
-    const doc = createDoc(collisionMarkdown());
-    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
-
-    const result = resolve(doc, {
-      command: "replace",
-      content: "Replacement",
-      in: fixture.sharedPrefix,
-    });
-
-    expect(result).toMatchObject({ ok: false, error: { code: "ambiguous_match" } });
-    if (result.ok) throw new Error("expected ambiguous replace failure");
-    expect(result.error.message).toContain("ambiguous");
-    expect(result.error.message).not.toContain("not found");
-    for (const candidate of fixture.candidates) {
-      expect(result.error.message).toContain(candidate.displayHash);
+    for (const removed of [remove(hash, undefined), remove(undefined, hash)]) {
+      expect(expectOk(removed).map((edit) => edit.kind)).toEqual(["delete"]);
     }
   });
 
@@ -289,7 +225,7 @@ describe("resolveWrite", () => {
         in: fixture.target.displayHash,
       }),
     )[0];
-    expect(displayedReplace.kind === "text" ? displayedReplace.block : null).toBe(
+    expect(displayedReplace.kind === "block" ? displayedReplace.block : null).toBe(
       fixture.target.block,
     );
 
@@ -344,7 +280,7 @@ function resolve(
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(
-    { doc, model, codec },
+    { doc, model, codec, links: "preassigned" },
     {
       documentAddress: {
         documentId: "123e4567-e89b-12d3-a456-426614174000",

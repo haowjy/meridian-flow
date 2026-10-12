@@ -9,7 +9,7 @@ import { bodyFromHashline } from "./trail-read-kernel.js";
 
 export function projectCommittedChangeEvent(
   projection: CommittedChangeTrailProjection,
-  codec: AgentEditCodec,
+  codec: Pick<AgentEditCodec, "parse">,
 ): Omit<ChangeEventWsMessage, "type"> {
   const capped = projection.changes.slice(0, 100);
   return {
@@ -44,7 +44,7 @@ export function projectChangeEventForRecipient(
 
 function projectChange(
   change: CommittedChangeTrailProjection["changes"][number],
-  codec: AgentEditCodec,
+  codec: Pick<AgentEditCodec, "parse">,
 ): ChangeEventProjection {
   const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
   const body = bodyFromHashline(hashline);
@@ -85,7 +85,10 @@ export function detectPureDeletionOffset(
   return before.slice(0, prefix) + before.slice(before.length - suffix) === after ? prefix : null;
 }
 
-export function renderedBodyText(hashline: string | null, codec: AgentEditCodec): string | null {
+export function renderedBodyText(
+  hashline: string | null,
+  codec: Pick<AgentEditCodec, "parse">,
+): string | null {
   const body = bodyFromHashline(hashline);
   if (body.status !== "available") return null;
   try {

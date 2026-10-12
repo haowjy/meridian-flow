@@ -1,9 +1,12 @@
 /** Project document tree. Chat resources have no ordinary Editor tabs or sidebar sections. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -18,6 +21,8 @@ import {
 } from "./context-schemes";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
+import { treeFolderIds } from "./tree-expansion-state";
+import { useTreeExpansion } from "./use-tree-expansion";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
@@ -69,23 +74,20 @@ export function ContextTreePanel({
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
-      key={scheme}
+      key={`${projectId}:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
       catalogState={catalogs[scheme]}
       activeScheme={activeScheme}
       activePath={activePath}
-      defaultExpanded={scheme === schemes[0]}
       onSelectFile={onSelectFile}
       creating={
-        creating?.scheme === scheme && creating.workId === editorWorkId
+        creating?.scheme === scheme
           ? { kind: creating.kind, parentPath: creating.parentPath }
           : null
       }
-      onRequestCreate={(kind, parentPath) =>
-        onRequestCreate({ scheme, kind, parentPath, workId: editorWorkId })
-      }
+      onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
       onCreateDone={onCreateDone}
     />
   );
@@ -108,7 +110,6 @@ function SchemeSection({
   scheme,
   activeScheme,
   activePath,
-  defaultExpanded,
   onSelectFile,
   creating,
   onRequestCreate,
@@ -120,7 +121,6 @@ function SchemeSection({
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  defaultExpanded: boolean;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
@@ -131,11 +131,24 @@ function SchemeSection({
   // selection and creation changes below expand it as one-shot events, so a
   // later user collapse sticks until the user reopens it or a new selection
   // lands inside.
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
+  const { catalog, isComplete, isError, refetch } = catalogState;
+  const folderIds = useMemo(() => {
+    if (!catalog || !isComplete) return null;
+    return treeFolderIds((parentId) =>
+      catalog
+        .children(parentId ?? catalog.root.entryId)
+        .filter((entry) => entry.kind === "dir")
+        .map((entry) => entry.entryId),
+    );
+  }, [catalog, isComplete]);
+  const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
+    projectId,
+    `editor:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`,
+    folderIds,
+  );
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
-  const { catalog, isError, refetch } = catalogState;
+  const revealed = useRef<string | null>(null);
 
   const revealPath = useCallback(
     (path: string) => {
@@ -153,20 +166,25 @@ function SchemeSection({
         return next;
       });
     },
-    [catalog],
+    [catalog, setExpandedEntryIds],
   );
 
   useEffect(() => {
-    if (!activeLocationPath) return;
+    if (!activeLocationPath) {
+      revealed.current = null;
+      return;
+    }
+    if (!catalog?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
+    revealed.current = activeLocationPath;
     setExpanded(true);
     revealPath(parentContextPath(activeLocationPath));
-  }, [activeLocationPath, revealPath]);
+  }, [activeLocationPath, catalog, revealPath, setExpanded]);
 
   useEffect(() => {
     if (!creating) return;
     setExpanded(true);
     revealPath(creating.parentPath);
-  }, [creating, revealPath]);
+  }, [creating, revealPath, setExpanded]);
 
   const requestCreate = useCallback(
     (kind: ContextCreateKind, parentPath: string) => {
@@ -174,15 +192,8 @@ function SchemeSection({
       revealPath(parentPath);
       onRequestCreate(kind, parentPath);
     },
-    [onRequestCreate, revealPath],
+    [onRequestCreate, revealPath, setExpanded],
   );
-
-  const toggleEntry = useCallback((entryId: string, defaultOpen: boolean) => {
-    setExpandedEntryIds((current) => ({
-      ...current,
-      [entryId]: !(current[entryId] ?? defaultOpen),
-    }));
-  }, []);
 
   // Catalogs stay warm while collapsed so a newly created row can resolve and open.
   useEffect(() => {
@@ -194,24 +205,33 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
+  const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog
         ? ({
             projectId,
-            workId: editorWorkId,
+            owner: { workId: editorWorkId },
             scheme,
+            capabilities: [
+              "rename",
+              "move",
+              ...(scheme !== "uploads" ? (["delete"] as const) : []),
+            ],
             activeScheme,
             activePath,
-            creating,
+            creation: schemeAllowsCreation(scheme)
+              ? {
+                  creating,
+                  request: requestCreate,
+                  done: onCreateDone,
+                  createdFile: setPendingOpenPath,
+                }
+              : undefined,
             onSelectFile,
-            onRequestCreate: requestCreate,
             onRequestDelete: deleteConfirm.requestDelete,
-            onCreateDone,
-            onCreatedFilePath: setPendingOpenPath,
             catalog,
-            isExpanded: (entryId, depth) => expandedEntryIds[entryId] ?? depth < 2,
+            isExpanded,
             toggleEntry,
           } satisfies TreeEnv)
         : null,
@@ -226,7 +246,7 @@ function SchemeSection({
       requestCreate,
       deleteConfirm.requestDelete,
       onCreateDone,
-      expandedEntryIds,
+      isExpanded,
       toggleEntry,
       catalog,
     ],

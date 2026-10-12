@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createCollabYDoc, isReservedClientId, RESERVED_CLIENT_ID_MAX } from "./index.js";
+import { createCollabYDoc, RESERVED_CLIENT_ID_MAX } from "./index.js";
 
 const randomState = vi.hoisted(() => ({
   draws: [] as number[],
@@ -29,10 +29,5 @@ describe("reserved Yjs clientID protocol", () => {
     const doc = createCollabYDoc({ guid: "reserved-then-safe" });
 
     expect(doc.clientID).toBe(safeDraw);
-  });
-  it("identifies reserved clientID band boundaries", () => {
-    expect(isReservedClientId(0)).toBe(true);
-    expect(isReservedClientId(999)).toBe(true);
-    expect(isReservedClientId(1000)).toBe(false);
   });
 });

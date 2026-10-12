@@ -43,16 +43,19 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [] };
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
  * for empty paths. Callers must resolve Work/no-Work authority before building
- * a Work-capable route. Empty Scratch belongs only to the device workspace and
- * coordinator, never recency.
+ * a Work-capable route; a chat's Scratch passes its lineage instead of a Work.
+ * Empty Scratch belongs only to the device workspace and coordinator, never
+ * recency.
  */
 export function buildWorkingSetRoute(
   documentId: DocumentId,
   scheme: ProjectContextTreeScheme,
   path: string,
   workId: string | null | undefined,
+  rootThreadId?: string | null,
 ): WorkingSetRoute | null {
   if (path.length === 0) return null;
+  if (scheme === "scratch" && rootThreadId) return { documentId, scheme, path, rootThreadId };
   if (isWorkScopedProjectContextScheme(scheme)) {
     if (workId === undefined) {
       throw new TypeError("Work-capable working-set routes require resolved authority");
@@ -78,7 +81,8 @@ export function workingSetRouteEquals(
     left.documentId === right.documentId &&
     left.scheme === right.scheme &&
     left.path === right.path &&
-    left.workId === right.workId
+    left.workId === right.workId &&
+    left.rootThreadId === right.rootThreadId
   );
 }
 

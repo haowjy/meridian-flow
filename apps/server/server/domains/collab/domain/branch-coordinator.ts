@@ -26,7 +26,6 @@ import { currentResponseTransactionId, enlistResponseParticipant } from "./respo
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
-export type BranchPushPolicy = "manual" | "auto";
 export type BranchStatus = "active" | "closed";
 
 export type BranchSnapshot = {
@@ -36,7 +35,6 @@ export type BranchSnapshot = {
   upstreamBranchId: string | null;
   workId: WorkId | null;
   threadId: ThreadId | null;
-  pushPolicy: BranchPushPolicy;
   status: BranchStatus;
   generation: number;
   state: Uint8Array;
@@ -270,6 +268,7 @@ export function createBranchCoordinator(input: {
     doc: Y.Doc,
     journal?: AppendBranchJournalInput,
     publishUpdate?: Uint8Array,
+    kind: "mutation" | "pull" = "mutation",
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
@@ -283,7 +282,12 @@ export function createBranchCoordinator(input: {
       stateVector,
       ...(journal ? { journal } : {}),
     };
-    const ok = await input.store.commitBranchMutation(mutation);
+    // Replication creates no reviewable edit. Its CAS must not reacquire the
+    // Work lifecycle lock a reader may already hold in another transaction.
+    const ok =
+      kind === "pull"
+        ? await input.store.updateBranchSnapshot(mutation)
+        : await input.store.commitBranchMutation(mutation);
     if (!ok) {
       cached.delete(snapshot.branchId);
       dirtyTransientBranches.delete(snapshot.branchId);
@@ -339,6 +343,7 @@ export function createBranchCoordinator(input: {
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
     updateToPublish?: (result: T) => Uint8Array,
+    kind: "mutation" | "pull" = "mutation",
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -350,7 +355,7 @@ export function createBranchCoordinator(input: {
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
-          await persist(snapshot, doc, undefined, updateToPublish?.(result));
+          await persist(snapshot, doc, undefined, updateToPublish?.(result), kind);
           return result;
         });
       } catch (cause) {
@@ -478,6 +483,7 @@ export function createBranchCoordinator(input: {
         branchId,
         async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
+        "pull",
       );
     },
 

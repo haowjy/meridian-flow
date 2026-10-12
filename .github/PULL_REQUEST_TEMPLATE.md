@@ -35,6 +35,23 @@
 - **Bug fix: <what was broken>.** Before: ... After: ...
 - **<capability or behavior change>.** After: ...
 
+## Walkthrough / Reproduction
+
+<!-- Step-by-step instructions that walk a reviewer through every change so
+     they can see it for themselves. Give one ### subsection per Before / After
+     item, in the same order. In each, say how to set up (main or this branch,
+     how to start it, seed data), then numbered steps, then what to expect: what
+     main does for a bug fix, and what this branch does. Prefer the running app
+     or ./mf. When a change has no manual path, say so and give the exact test
+     command plus the edit that makes it fail. Keep every command
+     copy-pasteable. -->
+
+### <Before / After item>
+
+1. Setup: ...
+2. ...
+3. Expect: main ... This branch ...
+
 ## Code Changes
 
 <!-- Group production-code additions, refactors, and deletions by area; include
@@ -70,14 +87,14 @@
 
 ## Verification
 
-<!-- Describe how to exercise changed behavior, then record what was tested and
-     observed. Include setup, steps, expected/actual results, and workflows a
-     probe covered. If no manual path exists, say why. For performance changes,
-     report comparable numbers with metric, method, environment/workload, and
-     baseline/result; omit benchmarks when performance is unaffected. -->
+<!-- Record what was tested and observed: probes and the workflows they covered,
+     gates, and expected versus actual results. Step-by-step instructions belong
+     in Walkthrough / Reproduction; don't repeat them here. For performance
+     changes, report comparable numbers with metric, method,
+     environment/workload, and baseline/result; omit benchmarks when
+     performance is unaffected. -->
 
 - Workflow/probe:
-- Setup and steps:
 - Expected / observed:
 - Performance (when relevant):
 

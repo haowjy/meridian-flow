@@ -32,6 +32,14 @@ export interface ContextCatalogMutationPort {
     sourceIds: readonly string[],
     invalidatedRootIds?: readonly string[],
   ): Promise<string>;
+}
+
+export interface ProjectDocumentCatalogRefreshPort {
+  /** Reconcile only the project catalog after live Manuscript membership changes. */
+  refreshProjectDocuments(projectId: string): Promise<void>;
+}
+
+export interface ProjectCatalogLifecyclePort {
   /** Reconcile project authority entries after a Work/project lifecycle mutation. */
   refreshProject(projectId: string): Promise<void>;
 }

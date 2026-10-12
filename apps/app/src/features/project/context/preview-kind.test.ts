@@ -1,48 +1,59 @@
+import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
+
 import type { ContextTab } from "@/client/stores";
 import { previewKind } from "./preview-kind";
 
-const viewer = (
-  name: string,
-  fileType: Extract<ContextTab, { kind: "viewer" }>["fileType"] = "binary",
-) => ({
-  kind: "viewer" as const,
-  documentId: name,
-  scheme: "kb" as const,
-  path: `/${name}`,
-  name,
-  editable: false as const,
-  fileType,
+type ViewerTab = Extract<ContextTab, { kind: "viewer" }>;
+
+function tab(name: string, fileType: ViewerTab["fileType"] = "binary"): ViewerTab {
+  return {
+    kind: "viewer",
+    documentId: "doc",
+    scheme: "manuscript",
+    path: `/${name}`,
+    name,
+    editable: false,
+    fileType,
+  };
+}
+
+const tracked = (filetype: "markdown" | "text" | "json"): ContextReadResponse => ({
+  kind: "tracked",
+  path: "/x",
+  schemaType: filetype === "json" ? "code" : "document",
+  filetype,
+  content: "",
 });
 
-const binary = (fileType: "binary" | "image" | "pdf", mimeType: string) => ({
-  kind: "binary" as const,
-  path: "/file",
-  url: "/signed-file",
+const binary = (
+  mimeType: string,
+  fileType: ViewerTab["fileType"] = "binary",
+): ContextReadResponse => ({
+  kind: "binary",
+  path: "/x",
+  url: "https://example.test/x",
   fileType,
   mimeType,
 });
 
 describe("previewKind", () => {
-  it("routes tracked reads as read-only text in every host", () => {
-    const tracked = {
-      kind: "tracked" as const,
-      path: "/Note.md",
-      schemaType: "document" as const,
-      filetype: "markdown" as const,
-      content: "A note",
-    };
-    expect(previewKind(viewer("Note.md"), tracked)).toBe("markdown");
-    expect(previewKind(viewer("Note.txt"), { ...tracked, path: "/Note.txt" })).toBe("text");
+  it("previews a prose document by its stored classification, whatever its name", () => {
+    expect(previewKind(tab("Chapter 13"), tracked("markdown"))).toBe("markdown");
+    expect(previewKind(tab("Vol. 2"), tracked("markdown"))).toBe("markdown");
+    expect(previewKind(tab("notes"), tracked("markdown"))).toBe("markdown");
   });
 
-  it("preserves stored image and PDF classification over misleading names and MIME", () => {
-    expect(previewKind(viewer("Map.png", "image"), binary("image", "image/png"))).toBe("image");
-    expect(previewKind(viewer("Story.md", "pdf"), binary("pdf", "application/pdf"))).toBe(
-      "markdown",
-    );
-    expect(previewKind(viewer("archive.bin"), binary("binary", "application/octet-stream"))).toBe(
-      "binary",
-    );
+  it("previews a visible-extension file as text, even when its name ends .md", () => {
+    expect(previewKind(tab("outline.json"), tracked("json"))).toBe("text");
+    expect(previewKind(tab("config.toml"), tracked("text"))).toBe("text");
+    expect(previewKind(tab("Story.md"), tracked("text"))).toBe("text");
+  });
+
+  it("does not let a binary file's name override its classification", () => {
+    expect(previewKind(tab("Story.md", "pdf"), binary("application/pdf", "pdf"))).toBe("pdf");
+    expect(previewKind(tab("map.png", "image"), binary("image/png", "image"))).toBe("image");
+    expect(previewKind(tab("blob"), binary("application/octet-stream"))).toBe("binary");
+    expect(previewKind(tab("data"), binary("application/json"))).toBe("text");
   });
 });

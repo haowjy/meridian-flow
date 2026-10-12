@@ -29,7 +29,7 @@ export function useWorkChrome(
 ) {
   const toggleArchive = useWorkArchiveToggle(projectId);
   const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);
-  const onCollection = routeWork.status === "none" || routeWork.status === "new";
+  const onCollection = routeWork.status === "absent" || routeWork.status === "new";
   const pendingName = routeWork.status === "creating" ? routeWork.name : undefined;
   const openCollection = () => {
     void routeCommands.closeWork({ replace: false });

@@ -17,7 +17,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
       "./adapters/drizzle/index.js"
     );
@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const journalReader = createDrizzleEventJournalReader(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         schema.eventJournal,
         schema.threads,
         schema.projects,
@@ -47,6 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "thread-event-hub-transaction-test",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -85,9 +86,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const event = {
         type: "subagent.activity" as const,
-        rootThreadId: THREAD_ID,
         childThreadId: "child",
-        activity: { descendants: [] },
+        activity: { children: [] },
       };
       try {
         await expect(

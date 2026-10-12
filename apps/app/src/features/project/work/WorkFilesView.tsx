@@ -10,21 +10,21 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import { useTreeExpansion } from "../context/use-tree-expansion";
 import { RuledList, type RuledRow } from "../RuledList";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkDrafts } from "./WorkDrafts";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
 import {
-  catalogSiblingNames,
+  catalogSiblings,
   compareTreePlaces,
   type TreePlace,
   workFileSearch,
@@ -75,19 +75,16 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
 export function WorkFilesView({
   projectId,
   work,
-  commands,
   search,
   files,
 }: {
   projectId: string;
   work: AddressableWork;
-  commands: ProjectRouteCommands;
   search: string;
   files: WorkFiles;
 }) {
   const { scratch, intake } = files;
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const scratchDelete = useDeleteConfirmation({ projectId, workId: work.id, scheme: "scratch" });
+  const scratchDelete = useDeleteConfirmation({ projectId });
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
     scratch.catalog && scratchRoot
@@ -95,23 +92,34 @@ export function WorkFilesView({
           .children(scratchRoot)
           .filter((node): node is CatalogDirectory => node.kind === "dir")
       : [];
+  const folderIds = useMemo(
+    () =>
+      scratch.catalog && scratch.isComplete
+        ? scratch.catalog
+            .children(scratch.catalog.root.entryId)
+            .filter((node) => node.kind === "dir")
+            .map((node) => node.entryId)
+        : null,
+    [scratch.catalog, scratch.isComplete],
+  );
+  const { isExpanded, toggleEntry } = useTreeExpansion(
+    projectId,
+    `work-files:scratch:${work.id}`,
+    folderIds,
+  );
+  const expandedPaths = scratchFolders
+    .filter((folder) => isExpanded(folder.entryId))
+    .map((folder) => folder.path);
   const scratchFiles =
     scratch.catalog
       ?.files()
       .filter(
         (file) =>
           file.parentId === scratchRoot ||
-          [...expanded].some((path) => file.path.startsWith(`${path}/`)),
+          expandedPaths.some((path) => file.path.startsWith(`${path}/`)),
       ) ?? [];
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
-  const toggleFolder = (path: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
 
   const scratchRows = inTreeOrder([
     ...visible.map((node) => ({
@@ -120,31 +128,25 @@ export function WorkFilesView({
       node:
         node.kind === "dir" ? (
           <FolderRow
+            projectId={projectId}
+            workId={work.id}
+            siblings={catalogSiblings(scratch.catalog, node)}
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
             folder={node}
-            open={expanded.has(node.path)}
-            onToggle={() => toggleFolder(node.path)}
+            open={isExpanded(node.entryId)}
+            onToggle={() => toggleEntry(node.entryId)}
           />
         ) : (
           <ScratchFileRow
             projectId={projectId}
             workId={work.id}
             file={node}
-            siblingNames={catalogSiblingNames(scratch.catalog, node)}
-            edit={
-              files.editable
-                ? {
-                    renaming: files.renaming === node.path,
-                    onRename: files.setRenaming,
-                    onDelete: () =>
-                      scratchDelete.requestDelete({
-                        kind: "file",
-                        name: node.name,
-                        path: node.path,
-                        documentId: node.documentId,
-                      }),
-                  }
-                : undefined
-            }
+            siblings={catalogSiblings(scratch.catalog, node)}
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
+            requestRename={files.renaming === node.path}
+            onRenameDone={() => files.setRenaming(null)}
           />
         ),
     })),
@@ -167,12 +169,7 @@ export function WorkFilesView({
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
-      <WorkDrafts
-        projectId={projectId}
-        workId={work.id}
-        commands={commands}
-        matchesSearch={matchesSearch}
-      />
+      <WorkDrafts projectId={projectId} workId={work.id} matchesSearch={matchesSearch} />
       <WorkFileGroup label={t`Scratch`}>
         {scratch.isError ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />

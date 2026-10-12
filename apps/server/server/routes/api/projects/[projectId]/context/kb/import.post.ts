@@ -10,6 +10,11 @@ import { requireProjectOwner } from "../../../../../../domains/projects/index.js
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { handleContextKbImportFilesRequest } from "../../../../../../lib/context-import-route.js";
 import { corpusFilesFromMultipart } from "../../../../../../lib/corpus-import-route.js";
+import {
+  containerTarget,
+  requireFileGrant,
+  withEditGrants,
+} from "../../../../../../lib/file-access-http.js";
 
 export default defineEventHandler(async (event): Promise<CorpusImportResponse> => {
   const { app, user } = await requireAppUser(event);
@@ -21,14 +26,17 @@ export default defineEventHandler(async (event): Promise<CorpusImportResponse> =
     throw createError({ statusCode: 400, message: "multipart field 'files' is required" });
   }
 
-  const result = await handleContextKbImportFilesRequest(
-    { contextPorts: app.contextPorts },
-    {
-      userId: user.userId,
-      projectId,
-      files,
-      source: { kind: "upload" },
-    },
+  const kb = await requireFileGrant(
+    app.fileAccess,
+    user.userId,
+    await containerTarget(app.workRepo, { projectId, scheme: "kb", workId: null }),
+    "edit",
+  );
+  const result = await withEditGrants(app.fileAccess, [kb], () =>
+    handleContextKbImportFilesRequest(
+      { contextPorts: app.contextPorts },
+      { userId: user.userId, projectId, files, source: { kind: "upload" } },
+    ),
   );
   setResponseStatus(event, 201);
   return result;

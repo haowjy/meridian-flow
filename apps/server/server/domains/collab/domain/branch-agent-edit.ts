@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
+  type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentCoordinator,
   DocumentNotFoundError,
@@ -21,7 +22,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { AutoBranchPushPort, BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
@@ -35,6 +36,7 @@ import {
   stageBranchReversal,
 } from "./branch-reversal-history.js";
 import {
+  type AttributionRow,
   docFromState,
   partitionByBlockCoverage,
   touchedHashesForCoverage,
@@ -64,8 +66,6 @@ export type BranchAgentEditDiagnostics = {
     writeId: string | null;
   }): void;
   mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
-  autoPushUnapplied(payload: { workDraftBranchId: string; result: unknown }): void;
-  autoPushFailed(payload: { workDraftBranchId: string; cause: unknown }): void;
 };
 
 export type AfterCommit = (callback: () => void | Promise<void>) => void;
@@ -97,15 +97,12 @@ export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJourn
   };
 }
 
-type ConcurrentUpdateOrigin =
-  | { type: "human"; userId: string }
-  | { type: "agent"; actorTurnId: string };
-
 type ConcurrentAttributionBasis = {
+  baselineSnapshot: Y.Snapshot;
   baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
-  journalRows: readonly BranchJournalRow[];
+  journalRows: readonly AttributionRow[];
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 };
@@ -133,15 +130,7 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  branchPush?: AutoBranchPushPort;
-  journalRows?: {
-    listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-    listConcurrentJournalRows(
-      branchId: string,
-      generation: number,
-      options: { afterJournalId?: number; documentId: DocumentId },
-    ): Promise<BranchJournalRow[]>;
-  };
+  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -155,7 +144,6 @@ export function createBranchAgentEditCoordinator(input: {
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
-      let autoPushBranchId: string | null = null;
       let result: T;
       try {
         result = await input.branchCoordinator.withBranchTransient(
@@ -210,7 +198,6 @@ export function createBranchAgentEditCoordinator(input: {
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;
-              autoPushBranchId = workDraftBranchId;
               advanceConcurrentJournalWatermark(
                 concurrentJournalWatermarks,
                 input.threadId,
@@ -238,14 +225,6 @@ export function createBranchAgentEditCoordinator(input: {
         concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
         throw cause;
       }
-      if (autoPushBranchId && input.branchPush) {
-        scheduleAutoPushAfterCommit({
-          workDraftBranchId: autoPushBranchId,
-          branchPush: input.branchPush,
-          diagnostics: input.diagnostics,
-          afterCommit: input.afterCommit,
-        });
-      }
       return result;
     },
 
@@ -262,69 +241,74 @@ export function createBranchAgentEditCoordinator(input: {
       attemptId,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
+      const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
         afterJournalId,
       );
-      try {
-        // Durable upstream work-draft rows are never suppressed as "self" merely
-        // because they came from this thread; the journal watermark is the fence.
-        const liveRows = input.liveJournal
-          ? liveAttributionRows(
-              (await input.liveJournal.readForReconstruction(docId)).updates.filter(
-                (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
-              ),
-            )
-          : [];
-        const partitioned = partitionConcurrentUpdates({
-          baselineState,
-          journalRows: [...concurrent.rows, ...liveRows],
-          currentUpstreamState: concurrent.upstreamState,
-          fallbackCurrentUpstream: doc,
-          model: input.model,
-          codec: input.codec,
+      // Durable upstream work-draft rows are never suppressed as "self" merely
+      // because they came from this thread; the journal watermark is the fence.
+      const liveRows = input.liveJournal
+        ? liveAttributionRows(
+            (await input.liveJournal.readForReconstruction(docId)).updates.filter(
+              (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
+            ),
+          )
+        : [];
+      const partitioned = partitionConcurrentUpdates({
+        baselineSnapshot,
+        baselineState,
+        journalRows: [
+          ...concurrent.rows.map((row) => ({
+            id: row.id,
+            origin: originForJournalRow(row),
+            update: row.updateData,
+          })),
+          ...liveRows,
+        ],
+        currentUpstreamState: concurrent.upstreamState,
+        fallbackCurrentUpstream: doc,
+        model: input.model,
+        codec: input.codec,
+      });
+      const maxRowId = partitioned.reduce(
+        (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
+        0,
+      );
+      if (maxRowId > 0) {
+        // Load-bearing: this is only a captured candidate. Advancing the floor here would
+        // skip rows if the surrounding branch write later fails or CAS-exhausts.
+        concurrentJournalWatermarks.capturePending(
+          input.threadId,
+          docId as DocumentId,
+          maxRowId,
+          attemptId,
+        );
+        // Capture itself is provisional: failures before branch persistence must
+        // clear the candidate even though no watermark-advance participant exists yet.
+        input.enlistResponseParticipant({
+          commit() {},
+          abort() {
+            concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
+          },
         });
-        const maxRowId = partitioned.reduce(
-          (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
-          0,
-        );
-        if (maxRowId > 0) {
-          // Load-bearing: this is only a captured candidate. Advancing the floor here would
-          // skip rows if the surrounding branch write later fails or CAS-exhausts.
-          concurrentJournalWatermarks.capturePending(
-            input.threadId,
-            docId as DocumentId,
-            maxRowId,
-            attemptId,
-          );
-          // Capture itself is provisional: failures before branch persistence must
-          // clear the candidate even though no watermark-advance participant exists yet.
-          input.enlistResponseParticipant({
-            commit() {},
-            abort() {
-              concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
-            },
-          });
-        }
-        return partitioned.map((item) =>
-          item.type === "journal"
-            ? {
-                update: item.effectiveUpdate,
-                origin: item.origin,
-                touchedHashes: item.touchedHashes,
-                deletedHashes: item.deletedHashes,
-              }
-            : {
-                update: item.residualUpdate,
-                origin: item.origin,
-                touchedHashes: item.touchedHashes,
-                deletedHashes: item.deletedHashes,
-              },
-        );
-      } finally {
-        // baselineDoc is owned by the agent-edit core; this coordinator only snapshots it.
       }
+      return partitioned.map((item) =>
+        item.type === "journal"
+          ? {
+              update: item.effectiveUpdate,
+              origin: item.origin,
+              touchedHashes: item.touchedHashes,
+              deletedHashes: item.deletedHashes,
+            }
+          : {
+              update: item.residualUpdate,
+              origin: item.origin,
+              touchedHashes: item.touchedHashes,
+              deletedHashes: item.deletedHashes,
+            },
+      );
     },
   };
 }
@@ -597,7 +581,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -707,62 +691,25 @@ async function concurrentUpstreamJournalRows(
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: {
-      listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-      listConcurrentJournalRows(
-        branchId: string,
-        generation: number,
-        options: { afterJournalId?: number; documentId: DocumentId },
-      ): Promise<BranchJournalRow[]>;
-    };
+    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   },
   documentId: DocumentId,
   afterJournalId?: number,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
-  if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
+  if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
   const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  if (typeof input.branchCoordinator.readBranch === "function") {
-    return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
-      const rows = await listConcurrentRows(journalRows, {
-        branchId: upstreamBranchId,
-        generation: snapshot.generation,
-        afterJournalId,
-        documentId,
-      });
-      return {
-        rows,
-        upstreamState: Y.encodeStateAsUpdate(doc),
-      };
-    });
-  }
-  const upstream = await input.branches.getBranch(upstreamBranchId);
-  if (!upstream) return { rows: [] };
-  const rows = await listConcurrentRows(journalRows, {
-    branchId: upstreamBranchId,
-    generation: upstream.generation,
-    afterJournalId,
-    documentId,
-  });
-  return { rows };
-}
-
-async function listConcurrentRows(
-  journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
-  input: {
-    branchId: string;
-    generation: number;
-    afterJournalId?: number;
-    documentId: DocumentId;
-  },
-): Promise<BranchJournalRow[]> {
-  return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
-    afterJournalId: input.afterJournalId,
-    documentId: input.documentId,
+  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+    const rows = await journalRows.listConcurrentJournalRows(
+      upstreamBranchId,
+      snapshot.generation,
+      { afterJournalId, documentId },
+    );
+    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
   });
 }
 
@@ -773,33 +720,25 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
 }
 
-function liveAttributionRows(updates: readonly PersistedUpdate[]): BranchJournalRow[] {
-  return updates.map((update) => {
-    const reversalActor = update.meta.reversalActor;
-    const source =
-      reversalActor?.type === "agent" || update.meta.origin.startsWith("agent:")
-        ? "agent"
-        : "writer";
-    const actorUserId =
-      reversalActor?.type === "user"
-        ? reversalActor.userId
-        : update.meta.origin.startsWith("human:")
-          ? update.meta.origin.slice("human:".length)
-          : null;
-    return {
-      id: -update.seq,
-      branchId: "live-journal",
-      generation: 0,
-      wId: null,
-      source,
-      threadId: null,
-      turnId: (update.meta.actorTurnId ?? null) as BranchJournalRow["turnId"],
-      actorUserId: actorUserId as BranchJournalRow["actorUserId"],
-      updateData: update.update,
-      draftBaseUpdateSeq: 0,
-      status: "pushed",
-      updateMeta: update.meta,
-    };
+function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRow[] {
+  return updates.map(({ seq, update, meta }) => {
+    let origin: ConcurrentUpdateOrigin;
+    if (meta.origin === "system:reconcile") {
+      origin = { type: "system" };
+    } else if (meta.reversalActor?.type === "agent" || meta.origin.startsWith("agent:")) {
+      origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
+    } else {
+      origin = {
+        type: "human",
+        userId:
+          meta.reversalActor?.type === "user"
+            ? meta.reversalActor.userId
+            : meta.origin.startsWith("human:")
+              ? meta.origin.slice("human:".length)
+              : "unknown",
+      };
+    }
+    return { id: -seq, origin, update };
   });
 }
 
@@ -808,37 +747,35 @@ function partitionConcurrentUpdates(
 ): PartitionedConcurrentUpdate[] {
   const upstreamState =
     input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
-  const coverage = partitionByBlockCoverage({
-    baselineState: input.baselineState,
-    upstreamState,
-    rows: input.journalRows.map((row) => ({
-      id: row.id,
-      source: row.source,
-      actorTurnId: actorTurnIdForJournalRow(row),
-      update: row.updateData,
-    })),
-    model: input.model,
-    codec: input.codec,
-  });
-
+  // A state vector alone misses delete-only edits. Capture structs and tombstones
+  // before journal reads yield, so both checks use the same baseline cut.
+  const rows = input.journalRows.filter(
+    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.update),
+  );
+  if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
+    return [];
+  }
   const scratch = docFromState(input.baselineState);
   try {
+    const coverage = partitionByBlockCoverage({
+      baselineState: input.baselineState,
+      upstreamState,
+      rows,
+      model: input.model,
+      codec: input.codec,
+    });
+
     const partitioned: PartitionedConcurrentUpdate[] = [];
-    for (const row of input.journalRows) {
-      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
-      if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
-      const actorTurnId = actorTurnIdForJournalRow(row);
-      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.source, actorTurnId);
-      const deletedHashes = touchedHashesForCoverage(
-        coverage.deletedCoverage,
-        row.source,
-        actorTurnId,
-      );
+    for (const row of rows) {
+      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.update);
+      if (!effectiveUpdate) Y.applyUpdate(scratch, row.update);
+      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.origin);
+      const deletedHashes = touchedHashesForCoverage(coverage.deletedCoverage, row.origin);
       if (effectiveUpdate || touchedHashes || deletedHashes) {
         partitioned.push({
           type: "journal",
           rowId: row.id,
-          origin: originForJournalRow(row),
+          origin: row.origin,
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
           touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
           deletedHashes,
@@ -879,11 +816,6 @@ function partitionConcurrentUpdates(
   }
 }
 
-function actorTurnIdForJournalRow(row: BranchJournalRow): string | null {
-  if (row.source !== "agent") return null;
-  return row.turnId ?? row.threadId ?? "unknown-agent";
-}
-
 function effectiveUpdateFromApplyingToScratch(
   scratch: Y.Doc,
   update: Uint8Array,
@@ -922,36 +854,5 @@ function advanceConcurrentJournalWatermark(
   }
   afterCommit(() => {
     watermarks.commitPending(threadId, documentId, attemptId);
-  });
-}
-
-function scheduleAutoPushAfterCommit(input: {
-  workDraftBranchId: string;
-  branchPush: AutoBranchPushPort;
-  diagnostics?: BranchAgentEditDiagnostics;
-  afterCommit: AfterCommit;
-}): void {
-  input.afterCommit(() => {
-    void input.branchPush
-      .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
-      .then((result) => {
-        if (
-          result.status === "pushed" ||
-          result.status === "already_pushed" ||
-          result.status === "skipped"
-        ) {
-          return;
-        }
-        input.diagnostics?.autoPushUnapplied({
-          workDraftBranchId: input.workDraftBranchId,
-          result,
-        });
-      })
-      .catch((cause: unknown) => {
-        input.diagnostics?.autoPushFailed({
-          workDraftBranchId: input.workDraftBranchId,
-          cause,
-        });
-      });
   });
 }

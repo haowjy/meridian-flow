@@ -1,12 +1,18 @@
 /** Validates this browser tab's persisted Editor membership against current resources. */
 
 import {
+  type ContextOwner,
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
   type ProjectContextIdentityResolution,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import { type ResourceRecord, resourceVisibleInProject } from "@meridian/resource-replica";
+import {
+  createResourcePlacement,
+  type ResourceRecord,
+  resourcePlacementForSnapshot,
+  resourceVisibleInProject,
+} from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import {
@@ -17,7 +23,11 @@ import {
 import { reconcileContextRoutes } from "@/client/working-set";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { workingSetRouteForTab } from "./context/context-removal-planner";
-import { contextTabFromFile, contextTabFromResource } from "./context/context-tab-from-file";
+import {
+  contextTabFromFile,
+  contextTabFromResource,
+  editorTabWorkId,
+} from "./context/context-tab-from-file";
 
 export type EditorTabValidationScope = {
   projectId: string;
@@ -52,18 +62,24 @@ function availableTab(
 ): ContextTab {
   const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
   if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
-  const workId = isWorkScopedProjectContextScheme(scheme)
-    ? resolution.authority.kind === "work"
-      ? resolution.authority.workId
-      : undefined
-    : undefined;
-  if (isWorkScopedProjectContextScheme(scheme) && workId === undefined) {
+  if (
+    isWorkScopedProjectContextScheme(scheme) &&
+    resolution.authority.kind !== "work" &&
+    resolution.authority.kind !== "lineage"
+  ) {
     throw new TypeError("Invalid available route authority");
   }
-  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId);
+  const owner: ContextOwner =
+    resolution.authority.kind === "lineage"
+      ? { rootThreadId: resolution.authority.rootThreadId }
+      : {
+          workId:
+            resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
+        };
+  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), owner);
 }
 
-async function validateServerRoute(
+export async function validateServerRoute(
   projectId: string,
   route: WorkingSetRoute,
 ): Promise<ValidatedRoute> {
@@ -98,25 +114,30 @@ export async function validateEditorWorkspaceTabs({
   const needsProjection = restored.some(
     (tab) => tab.kind === "new" || (tab.kind === "tracked" && tab.origin === "local-resource"),
   );
-  const recordIndex = needsProjection
+  const projection = needsProjection
     ? await resources.readProjection(projectId).then(
-        (snapshot) =>
-          indexResourceRecords(
+        (snapshot) => ({
+          records: indexResourceRecords(
             snapshot.records.filter((record) =>
               resourceVisibleInProject(projectId, record, snapshot.catalogs),
             ),
           ),
+          placement: resourcePlacementForSnapshot(projectId, snapshot),
+        }),
         () => null,
       )
-    : new Map<string, ResourceRecord>();
+    : {
+        records: new Map<string, ResourceRecord>(),
+        placement: createResourcePlacement(projectId, [], []),
+      };
   const results = await Promise.allSettled(
     restored.map(
       async (tab): Promise<{ tab: ContextTab | null; removedRoute: WorkingSetRoute | null }> => {
         if (tab.kind === "new") {
-          if (!recordIndex) throw new Error("Resource projection is unavailable");
-          const record = resourceRecordForTab(recordIndex, tab);
+          if (!projection) throw new Error("Resource projection is unavailable");
+          const record = resourceRecordForTab(projection.records, tab);
           return {
-            tab: record ? contextTabFromResource(projectId, record) : null,
+            tab: record ? contextTabFromResource(projectId, record, projection.placement) : null,
             removedRoute: null,
           };
         }
@@ -127,9 +148,11 @@ export async function validateEditorWorkspaceTabs({
           );
           return restored;
         }
-        if (!recordIndex) throw new Error("Resource projection is unavailable");
-        const record = resourceRecordForTab(recordIndex, tab);
-        const projected = record ? contextTabFromResource(projectId, record) : null;
+        if (!projection) throw new Error("Resource projection is unavailable");
+        const record = resourceRecordForTab(projection.records, tab);
+        const projected = record
+          ? contextTabFromResource(projectId, record, projection.placement)
+          : null;
         return {
           tab: projected,
           removedRoute: projected ? null : workingSetRouteForTab(tab),

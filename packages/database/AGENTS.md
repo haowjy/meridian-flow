@@ -2,7 +2,7 @@
 
 Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (plain `postgres:16` Docker container in dev).
 
-- PL/pgSQL functions live in `src/functions/` and are applied with `pnpm db:apply-functions`.
+- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies them after migrations; `pnpm db:apply-functions` is the guarded standalone sync command.
 - Keep provider-specific auth assumptions at the adapter/composition boundary; schema should remain ordinary Postgres where possible.
 - Thread-domain usage/cost rollups are persisted columns maintained by
   application repositories/projectors, not database triggers or functions.
@@ -20,9 +20,34 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
   migration.
+- Migrations merged to `main` or `staging` are frozen: never edit, remove,
+  renumber, or retimestamp them. After merging the base branch, regenerate this
+  branch's unmerged generated migrations from the merged schema so they append
+  after the base tip; never renumber or rename them by hand (see
+  `.context/CONTEXT.md`). CI enforces this with `pnpm db:migration-history`;
+  journal indexes must be contiguous, timestamps strictly increasing, and tags
+  and timestamps unique. `db:migrate` refuses divergent applied history rather
+  than skipping it.
+- **Write migrations as if production data exists.** A migration must be
+  correct on populated tables and lose no writer data: move it, never delete
+  it. No `migration-lint: skip` may rely on empty tables. Use online-safe DDL:
+  CHECKs and FKs `NOT VALID`, then `VALIDATE CONSTRAINT`; indexes built and
+  dropped `CONCURRENTLY` in a `-- migration: no-transaction` file whose
+  statements are all re-runnable. Authoring rules and runner semantics are in
+  `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
+  edits; reapply them.
+- Column retirement requires auditing the removed values and removing readers
+  in the same release. Transfer valid pins to canonical Favorites before
+  retirement. Bound the lock acquisition wait with transactional
+  `SET LOCAL lock_timeout` of 1–5 seconds; migration lint enforces that bound.
+- **Until launch, a migration need not keep the previous server version
+  working.** Do not split a change into expand/contract releases or add
+  old-binary tolerance code; a broken deploy is reset instead, with explicit
+  owner authorization.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
-  (destroys local data); the new baseline is not an incremental upgrade. Never
-  reset another developer's database. Legacy imports are a separate ETL.
+  (destroys local data); the new baseline is not an incremental upgrade. Reset
+  only the current checkout's own dev database. Never reset another
+  developer's database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.

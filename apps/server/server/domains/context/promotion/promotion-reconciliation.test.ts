@@ -33,7 +33,6 @@ function harness(outcome: { kind: "definitely_not_committed" | "unknown"; error:
     },
     results: {
       createOrConverge: vi.fn(async () => outcome),
-      listByProject: vi.fn(async () => []),
     },
     eventSink: sink,
     workAuthorityResolver: {
@@ -87,7 +86,7 @@ describe("promotion terminal reconciliation", () => {
         list: vi.fn() as never,
         getSignedUrl: vi.fn() as never,
       },
-      results: { createOrConverge: vi.fn() as never, listByProject: vi.fn(async () => []) },
+      results: { createOrConverge: vi.fn() as never },
       eventSink: test.sink,
       workAuthorityResolver: {
         async byId() {

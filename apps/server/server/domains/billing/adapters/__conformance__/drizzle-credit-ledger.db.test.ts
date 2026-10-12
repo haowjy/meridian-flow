@@ -17,16 +17,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { sql } = await import("drizzle-orm");
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleCreditLedger } = await import("../drizzle/credit-ledger.js");
     const { ensureFreeTier } = await import("../../domain/free-grants.js");
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 8,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
     let ledger = createDrizzleCreditLedger(db);

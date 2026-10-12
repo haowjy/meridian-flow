@@ -136,3 +136,10 @@ one lives in [tool-expands.md](tool-expands.md).
 - **Open state is local to the row.** It resets when the row unmounts. Process
   folds live and settled alike, so settlement is not a remount — do not hoist
   it.
+
+## Activity scope
+
+The server sends only the viewed thread's direct children. The strip and panel
+consume that list without filtering or subtree rebasing. Live current-tool and
+run lifecycle refreshes land on the direct parent's journal. A subagent's path
+row reads its direct parent's activity for its own run times, never the root's.

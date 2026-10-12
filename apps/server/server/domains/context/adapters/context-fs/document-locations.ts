@@ -1,4 +1,6 @@
 /** Transactional namespace claims and direct-to-identity document location history. */
+import { folderDocumentName } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contentDocumentPredicate,
@@ -11,40 +13,47 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
+import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 
-function namespaceKey(input: {
+export type ContextNamespace = {
   projectId: string;
   userId: string;
   scheme: string;
   workId: string | null;
-}): string {
+};
+
+export function contextNamespaceKey(input: ContextNamespace): string {
   return input.scheme === "user"
     ? `context-user:${input.userId}`
     : `context-project:${input.projectId}:${input.workId ?? "none"}:${input.scheme}`;
 }
 
-/** Acquire every authority and absent-path lock before provisioning or publishing any source. */
+/** Acquire only namespace locks. Callers are responsible for Work checks. */
+export async function lockNamespaceKeys(
+  db: Database,
+  namespaces: readonly ContextNamespace[],
+): Promise<void> {
+  await lockAdvisoryKeys(db, namespaces.map(contextNamespaceKey));
+}
+
+/**
+ * Seam C (file-access §5): Work rows in id order, the bound edit grants'
+ * confirmation, then every advisory lock sorted by key, before provisioning
+ * or publishing any source.
+ */
 export async function lockContextNamespaces(
   db: Database,
   owner: { projectId: string; userId: string },
   scopes: readonly ContextCommandScope[],
 ): Promise<void> {
-  if (scopes.some((scope) => scope.scheme === "user")) {
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${owner.userId}, 0::bigint))`,
-    );
-  }
-  const workIds = [
-    ...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : []))),
-  ].sort();
-  for (const workId of workIds) await requireLockedActiveWork(db, workId);
-  const keys = [...new Set(scopes.map((scope) => namespaceKey({ ...owner, ...scope })))].sort();
-  for (const key of keys)
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
-    );
+  const workIds = [...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])))];
+  await requireLockedActiveWorks(db, workIds);
+  await lockAdvisoryKeys(db, [
+    ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
+    ...scopes.map((scope) => contextNamespaceKey({ ...owner, ...scope })),
+  ]);
 }
 
 /** Direct persistence callers use exactly the same logical locks as Context commands. */
@@ -52,8 +61,46 @@ export async function lockContextSources(
   db: Database,
   sourceIds: readonly string[],
 ): Promise<void> {
-  const tx = currentDrizzleDb(db);
-  const rows = await tx
+  const rows = await sourceNamespaces(db, sourceIds);
+  await requireLockedActiveWorks(
+    db,
+    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
+  );
+  await lockAdvisoryKeys(db, [
+    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
+    ...rows.map(contextNamespaceKey),
+  ]);
+}
+
+/**
+ * Namespace keys of the sources these documents occupy now, deleted rows included (a restore
+ * locks before it unhides). Arrivals that are not authored writes (Apply, Work restore) take
+ * these after their Work locks and before any holder lock (contract §9.2, O6).
+ */
+export async function lockDocumentNamespaces(
+  db: Database,
+  documentIds: readonly string[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  const rows = await currentDrizzleDb(db)
+    .selectDistinct({ sourceId: documents.contextSourceId })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      rows.map((row) => row.sourceId),
+    ),
+  );
+}
+
+async function sourceNamespaces(
+  db: Database,
+  sourceIds: readonly string[],
+): Promise<ContextNamespace[]> {
+  if (sourceIds.length === 0) return [];
+  const rows = await currentDrizzleDb(db)
     .select({
       projectId: contextSources.projectId,
       userId: projects.userId,
@@ -65,27 +112,37 @@ export async function lockContextSources(
     .leftJoin(projects, eq(projects.id, contextSources.projectId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  for (const userId of [
-    ...new Set(rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : []))),
-  ].sort()) {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`);
-  }
-  const workIds = [...new Set(rows.flatMap((row) => (row.workId ? [row.workId] : [])))].sort();
-  for (const workId of workIds) await requireLockedActiveWork(db, workId);
-  const keys = [
-    ...new Set(
-      rows.map((row) =>
-        namespaceKey({
-          projectId: (row.projectId ?? row.workProjectId) as string,
-          userId: row.userId ?? "",
-          workId: row.workId,
-          scheme: row.scheme,
-        }),
-      ),
-    ),
-  ].sort();
-  for (const key of keys)
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`);
+  return rows.map((row) => ({
+    projectId: (row.projectId ?? row.workProjectId) as string,
+    userId: row.userId ?? "",
+    workId: row.workId,
+    scheme: row.scheme,
+  }));
+}
+
+async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {
+  for (const key of [...new Set(keys)].sort())
+    await currentDrizzleDb(db).execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
+    );
+}
+
+/**
+ * Row-lock every document a move mutates (moved files and an overwrite victim), sorted. NO KEY
+ * UPDATE is compatible with the journal's holder FK KEY SHARE but orders a same-source move
+ * against derive certification and other moves of the same rows.
+ */
+export async function lockMovedDocumentRows(
+  db: Database,
+  documentIds: readonly DocumentId[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  await currentDrizzleDb(db)
+    .select({ id: documents.id })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]))
+    .orderBy(documents.id)
+    .for("no key update");
 }
 
 export type NamespaceLocation = { id: string; path: string; kind: "file" | "directory" };
@@ -155,6 +212,15 @@ export async function recordDocumentMove(
   // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
   for (let offset = 0; offset < vacated.length; offset += 500) {
     const batch = vacated.slice(offset, offset + 500);
+    await tx
+      .update(documents)
+      .set({ locationVersion: sql`${documents.locationVersion} + 1` })
+      .where(
+        inArray(
+          documents.id,
+          batch.map((entry) => entry.id),
+        ),
+      );
     await tx.delete(documentPreviousLocations).where(
       and(
         eq(documentPreviousLocations.contextSourceId, sourceId),
@@ -187,7 +253,7 @@ export async function recordDocumentMove(
   }
 }
 
-/** Caller holds the logical namespace lock; files and folders share rendered names. */
+/** Caller holds the logical namespace lock; folder aliases participate in document claims. */
 export async function hasOppositeContextEntry(
   db: Database,
   sourceId: string,
@@ -197,19 +263,17 @@ export async function hasOppositeContextEntry(
 ): Promise<boolean> {
   const tx = currentDrizzleDb(db);
   if (kind === "file") {
-    const [row] = await tx
-      .select({ id: folders.id })
+    const siblings = await tx
+      .select({ name: folders.name })
       .from(folders)
       .where(
         and(
           eq(folders.contextSourceId, sourceId),
           parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, filename),
           isNull(folders.deletedAt),
         ),
-      )
-      .limit(1);
-    return !!row;
+      );
+    return siblings.some((row) => folderDocumentName(row.name) === filename);
   }
   const [row] = await tx
     .select({ id: documents.id })
@@ -219,10 +283,63 @@ export async function hasOppositeContextEntry(
         eq(documents.contextSourceId, sourceId),
         contentDocumentPredicate(),
         parentId === null ? isNull(documents.folderId) : eq(documents.folderId, parentId),
-        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${filename}`,
+        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${folderDocumentName(filename)}`,
         isNull(documents.deletedAt),
       ),
     )
     .limit(1);
   return !!row;
+}
+
+/** Check the complete arriving Work tree before restoring either table. */
+export async function guardWorkContextRestore(db: Database, workId: string): Promise<void> {
+  const sources = await currentDrizzleDb(db)
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(eq(contextSources.workId, workId as never));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      sources.map((row) => row.id),
+    ),
+  );
+  const rows = await currentDrizzleDb(db).execute<{
+    source: string;
+    parent: string | null;
+    name: string;
+    kind: "file" | "folder";
+    arriving: boolean;
+  }>(sql`
+    SELECT d.context_source_id AS source, d.folder_id AS parent,
+      d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
+      'file' AS kind, coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
+    FROM documents d WHERE d.kind = 'content'
+      AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
+    UNION ALL
+    SELECT f.context_source_id, f.parent_id, f.name, 'folder',
+      coalesce(f.deleted_by_work_id = ${workId}::uuid, false)
+    FROM folders f WHERE f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
+  `);
+  const files = new Map<string, boolean>();
+  const directories = new Map<string, boolean>();
+  const folderAliases = new Map<string, boolean>();
+  const key = (row: (typeof rows)[number], name: string) =>
+    JSON.stringify([row.source, row.parent, name]);
+  for (const row of rows) {
+    const namespace = row.kind === "file" ? files : directories;
+    const literal = key(row, row.name);
+    if (namespace.has(literal) && (row.arriving || namespace.get(literal)))
+      throw new ContextEntryConflictError();
+    namespace.set(literal, row.arriving || namespace.get(literal) === true);
+    if (row.kind === "folder") {
+      const alias = key(row, folderDocumentName(row.name));
+      folderAliases.set(alias, row.arriving || folderAliases.get(alias) === true);
+    }
+  }
+  for (const [name, arriving] of files)
+    if (folderAliases.has(name) && (arriving || folderAliases.get(name)))
+      throw new ContextEntryConflictError();
 }

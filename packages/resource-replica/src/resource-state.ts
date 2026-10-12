@@ -1,10 +1,10 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
-import { assertAvailabilityGeneration } from "@meridian/contracts/protocol";
-import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
+import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
   ResourceDescriptor,
-  ResourceLocation,
+  ResourceDestination,
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
@@ -86,19 +86,31 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
-  destination: Omit<ResourceLocation, "path"> & { folderPath: string };
+  operationId?: string;
+  destination: ResourceDestination;
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
-  const latest = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find((intent) => intent.state !== "cancelled" && intent.state !== "settled-locally");
+  const latest = owningLocationIntent(
+    input.projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  );
+  // Compute the optimistic name once, retaining the input for server dispatch.
+  const stored = storedFilename(
+    input.destination.name,
+    latest?.desired.kind === "set-location"
+      ? latest.desired.destination.name
+      : record.resource.canonical?.name,
+  );
+  const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&
     latest?.desired.kind === "set-location" &&
     latest.state === "pending" &&
-    JSON.stringify(latest.desired.destination) === JSON.stringify(input.destination)
+    latest.desired.typedName === input.destination.name &&
+    JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
   const intent: NamespaceIntent = {
@@ -107,7 +119,12 @@ export function planResourceLocation(input: {
     intentId: input.intentId,
     sequence: nextSequence(record),
     identityRevision: record.resource.identity.revision,
-    desired: { kind: "set-location", destination: input.destination },
+    desired: {
+      kind: "set-location",
+      typedName: input.destination.name,
+      destination,
+    },
+    ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",
   };
@@ -207,7 +224,7 @@ export function remintCreateConflict(input: {
       intents: [
         ...record.intents.map((intent) => {
           if (intent.intentId === conflicted.intentId)
-            return { ...intent, state: "settled" as const };
+            return { ...intent, state: "superseded" as const };
           if (dependents.some((dependent) => dependent.intentId === intent.intentId))
             return { ...intent, state: "cancelled" as const };
           return intent;

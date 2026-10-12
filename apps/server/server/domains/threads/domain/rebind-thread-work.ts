@@ -3,7 +3,7 @@ import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   type RebindThreadWorkResult,
   type Work,
-  type WorkBindingReceiptState,
+  type WorkBindingState,
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkContextNotices } from "../../projects/index.js";
@@ -42,7 +42,7 @@ export interface RebindThreadWorkInput {
   workId: WorkId;
 }
 
-function receiptState(work: Work): WorkBindingReceiptState {
+function receiptState(work: Work): WorkBindingState {
   return {
     workId: work.id,
     name: work.name,
@@ -107,6 +107,5 @@ export async function rebindThreadWork(
     before,
     after,
     changed: rebound.changed,
-    receipt: { operation: "switch", category: "binding", before, after, inverse: null },
   };
 }

@@ -6,3 +6,10 @@
   to exercise this seam; narrow the production capability only if the ownership
   boundary supports it. Preserve degraded rollback and live-reversal tests
   until a stronger behavioral boundary replaces them.
+
+- Recovery sweep scan cost: the stale query scans every current document every
+  ten seconds per process (100,000 current documents took about 100 ms in the
+  review probe; cost is linear). LIMIT 100 bounds returned rows, not the scan.
+  Revisit when sweep cost shows up in production metrics. Likely fixes are
+  watermark columns on the head row with a partial index, or a work-budgeted
+  cursor with an explicit recovery-latency tradeoff.

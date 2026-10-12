@@ -1,7 +1,7 @@
 /** One history policy for project destinations, secondary choices, and delayed address repair. */
 
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import {
+  type AddressSelection,
   type ProjectAddress,
   parseProjectAddress,
   projectAddressHref,
@@ -24,27 +24,43 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  workId: ParsedRequestId | null;
+  work: AddressSelection;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
-  | { kind: "failed"; ticket: ProjectNavigationTicket };
+  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
 export type NavigationSettlement =
   | { kind: "applied" | "cancelled" | "superseded" }
-  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
+  | {
+      kind: "failed";
+      error: unknown;
+      ticket: ProjectNavigationTicket;
+      stage: "before-acceptance" | "workspace-commit";
+    };
+export type NavigationEffects = { afterCommit?: () => void };
 export type PreparedWorkspaceNavigation = {
   isCurrent(): boolean;
   commit(): void;
+  afterCommit?: () => void;
 };
 export type ProjectLeaveGuard = {
   request(intent: { run(): void; cancel(): void }): void;
   dirty(): boolean;
   cancel(): void;
 };
+
+/** Whether the entry already holds exactly this address, including its no-Work pin. */
+function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
+  return (
+    entry.href === projectAddressHref(address) &&
+    JSON.stringify(entry.state.meridianProjectEmptySelection) ===
+      JSON.stringify(projectAddressState(address).meridianProjectEmptySelection)
+  );
+}
 
 export function createProjectNavigation(
   port: ProjectNavigationPort,
@@ -72,10 +88,15 @@ export function createProjectNavigation(
     // Native history must agree with the workspace snapshot before either can be reloaded.
     try {
       port.flush();
+    } catch (error) {
+      operation.finish({ kind: "failed", error, ticket: capture(), stage: "before-acceptance" });
+      return;
+    }
+    try {
       operation.commit?.();
       operation.finish({ kind: "applied" });
     } catch (error) {
-      operation.finish({ kind: "failed", error, ticket: capture() });
+      operation.finish({ kind: "failed", error, ticket: capture(), stage: "workspace-commit" });
     }
   });
   function claimIntent(restoreNative: boolean) {
@@ -132,15 +153,9 @@ export function createProjectNavigation(
     if (parsed.kind !== "valid") return;
     const current = parsed.address;
     const shown = displayed();
-    const workId = shown.workId;
     const frozen: ProjectAddress = {
       ...current,
-      work:
-        current.work.kind === "absent"
-          ? workId
-            ? { kind: "id", id: workId }
-            : { kind: "none" }
-          : current.work,
+      work: current.work.kind === "absent" ? shown.work : current.work,
     };
     const href = projectAddressHref(frozen);
     port.replaceEntry(
@@ -157,20 +172,45 @@ export function createProjectNavigation(
     options: { replace: boolean; state?: Record<string, unknown> },
     prepared?: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement> {
-    const { ticket, restoration } = claimIntent(true);
+    let intent: ReturnType<typeof claimIntent>;
+    try {
+      intent = claimIntent(true);
+    } catch (error) {
+      return Promise.resolve({
+        kind: "failed",
+        error,
+        ticket: capture(),
+        stage: "before-acceptance",
+      });
+    }
+    const { ticket, restoration } = intent;
     const requestedRevision = ticket.revision;
     return new Promise((resolve) => {
       const dispatch = () => {
-        if (revision !== requestedRevision || prepared?.isCurrent() === false) {
-          resolve({ kind: "superseded" });
-          return;
-        }
-        const current = parsedEntry(port.read());
-        const next =
-          current.kind === "valid" && !address.settings
-            ? { ...address, settings: current.address.settings }
-            : address;
         try {
+          if (revision !== requestedRevision || prepared?.isCurrent() === false) {
+            resolve({ kind: "superseded" });
+            return;
+          }
+          const current = parsedEntry(port.read());
+          const next =
+            current.kind === "valid" && !address.settings
+              ? { ...address, settings: current.address.settings }
+              : address;
+          // A replacement of the entry by itself: another writer (address admission following a
+          // rename) already put this address there. Writing it again only repeats the history
+          // write, so the destination is reached without one.
+          if (options.replace && !options.state && sameEntryAddress(port.read(), next)) {
+            try {
+              prepared?.commit();
+              prepared?.afterCommit?.();
+            } catch (error) {
+              resolve({ kind: "failed", error, ticket: capture(), stage: "workspace-commit" });
+              return;
+            }
+            resolve({ kind: "applied" });
+            return;
+          }
           if (!options.replace) {
             departureWrite = true;
             try {
@@ -183,7 +223,10 @@ export function createProjectNavigation(
           const id = crypto.randomUUID();
           const operation = {
             id,
-            commit: prepared?.commit,
+            commit: () => {
+              prepared?.commit();
+              prepared?.afterCommit?.();
+            },
             finish(result: NavigationSettlement) {
               if (pending !== operation) return;
               pending = null;
@@ -199,27 +242,44 @@ export function createProjectNavigation(
                 meridianNavigationOperation: id,
               },
             })
-            .catch((error) => operation.finish({ kind: "failed", error, ticket: capture() }));
+            .catch((error) =>
+              operation.finish({
+                kind: "failed",
+                error,
+                ticket: capture(),
+                stage: "before-acceptance",
+              }),
+            );
         } catch (error) {
-          pending?.finish({ kind: "failed", error, ticket: capture() });
-          resolve({ kind: "failed", error, ticket: capture() });
+          pending?.finish({ kind: "failed", error, ticket: capture(), stage: "before-acceptance" });
+          resolve({ kind: "failed", error, ticket: capture(), stage: "before-acceptance" });
         }
       };
-      requestLeave(
-        () => {
-          try {
-            if (restoration) {
-              void restoration.then(
-                (restored) => (restored ? dispatch() : resolve({ kind: "superseded" })),
-                (error) => resolve({ kind: "failed", error, ticket: capture() }),
-              );
-            } else dispatch();
-          } catch (error) {
-            resolve({ kind: "failed", error, ticket: capture() });
-          }
-        },
-        () => resolve({ kind: revision === requestedRevision ? "cancelled" : "superseded" }),
-      );
+      try {
+        requestLeave(
+          () => {
+            try {
+              if (restoration) {
+                void restoration.then(
+                  (restored) => (restored ? dispatch() : resolve({ kind: "superseded" })),
+                  (error) =>
+                    resolve({
+                      kind: "failed",
+                      error,
+                      ticket: capture(),
+                      stage: "before-acceptance",
+                    }),
+                );
+              } else dispatch();
+            } catch (error) {
+              resolve({ kind: "failed", error, ticket: capture(), stage: "before-acceptance" });
+            }
+          },
+          () => resolve({ kind: revision === requestedRevision ? "cancelled" : "superseded" }),
+        );
+      } catch (error) {
+        resolve({ kind: "failed", error, ticket: capture(), stage: "before-acceptance" });
+      }
     });
   }
 
@@ -250,12 +310,15 @@ export function createProjectNavigation(
       return ticket.key === entryKey ? ticket : null;
     },
     isCurrent,
-    async navigate(
+    navigate(
       address: ProjectAddress,
-      options: { replace: boolean; state?: Record<string, unknown> },
+      options: { replace: boolean; state?: Record<string, unknown> } & NavigationEffects,
     ) {
-      const result = await transition(address, options);
-      if (result.kind === "failed") throw result.error;
+      return transition(address, options, {
+        isCurrent: () => true,
+        commit: () => undefined,
+        afterCommit: options.afterCommit,
+      });
     },
     /** Rewrites the current entry in place: canonical path (bare project → `/chats`) and invalid `?work=`. */
     repairAddress(
@@ -280,20 +343,17 @@ export function createProjectNavigation(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
     ): Promise<ProjectAddressReplacement> {
-      if (!isCurrent(ticket)) return { kind: "superseded" };
+      // Address ownership effects may race a writer's destination command. A
+      // delayed repair must never retire that command or ask its leave guard.
+      if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
-      const href = projectAddressHref(address);
-      const state = projectAddressState(address, entry.state);
-      if (
-        href === entry.href &&
-        JSON.stringify(state.meridianProjectEmptySelection) ===
-          JSON.stringify(entry.state.meridianProjectEmptySelection)
-      )
+      if (sameEntryAddress(entry, address)) return { kind: "replaced" };
+      try {
+        port.replaceEntry(projectAddressHref(address), projectAddressState(address, entry.state));
         return { kind: "replaced" };
-      const result = await transition(address, { replace: true, state });
-      if (result.kind === "applied") return { kind: "replaced" };
-      if (result.kind === "failed") return { kind: "failed", ticket: result.ticket };
-      return { kind: "superseded" };
+      } catch (error) {
+        return { kind: "failed", error, ticket: capture() };
+      }
     },
     dispose() {
       claimIntent(false);

@@ -1,3 +1,4 @@
+import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
 
 /** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
@@ -6,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createProjectRepositoryForTest } from "../domains/projects/test-support/project-repository.js";
+import { createLocalFileAccessChanges } from "../domains/file-policy/index.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -32,7 +33,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createDrizzleProjectWorkRepository } = await import("../domains/projects/index.js");
-    const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createDrizzleNoticePort } = await import("../domains/notices/index.js");
     const { handleRebindThreadWorkRequest } = await import("./thread-work-rebind-route.js");
     const { default: interruptErrorHandler } = await import("./interrupt-error-handler.js");
@@ -47,7 +47,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const notices = createDrizzleNoticePort(db);
@@ -79,6 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
           works,
+          readChainPermission: async () => "edit" as const,
         }),
       });
       const control = postgres(DATABASE_URL, { max: 1 });
@@ -128,7 +131,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             threads: threads.threads,
             threadWorks: threads.threadWorks,
-            projects: createDrizzleProjectRepository({ db }),
             works,
             notices,
             workContextNotices: {
@@ -186,7 +188,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("excludes a writer rebind while another server instance owns the run", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const projects = createDrizzleProjectRepository({ db });
       const modelInstance = createDrizzleRunClaim(db);
       const writerInstance = createDrizzleRunClaim(db);
       const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run");
@@ -199,7 +200,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               threads: threads.threads,
               threadWorks: threads.threadWorks,
-              projects,
               works,
               workContextNotices: {
                 threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -233,7 +233,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
-          projects,
           works,
           workContextNotices: {
             threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -257,7 +256,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("serializes a target deleted after preflight as a refreshable lifecycle conflict", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const projects = createDrizzleProjectRepository({ db });
       const staleTarget = await works.findById(TARGET_WORK_ID);
       if (!staleTarget) throw new Error("Expected target fixture");
       let targetReads = 0;
@@ -277,7 +275,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             threads: threads.threads,
             threadWorks: threads.threadWorks,
-            projects,
             works: stalePreflightWorks,
             workContextNotices: {
               threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -318,7 +315,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns 5xx when the real lifecycle lock query is cancelled", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const projects = createDrizzleProjectRepository({ db });
       const failingDb = createDb(DATABASE_URL, {
         max: 1,
         postgres: { connection: { statement_timeout: 50 } },
@@ -347,7 +343,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               threads: threads.threads,
               threadWorks: failingThreads.threadWorks,
-              projects,
               works,
               workContextNotices: {
                 threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -382,13 +377,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("commits the writer binding and one durable Notice in the same transaction", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const projects = createDrizzleProjectRepository({ db });
 
       await handleRebindThreadWorkRequest(
         {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
-          projects,
           works,
           workContextNotices: {
             threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -417,7 +410,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toBe(true);
 
       const recreatedPort = createDrizzleNoticePort(db);
-      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
+      const noticesForThread = await recreatedPort.peek(THREAD_ID);
+      expect(noticesForThread).toMatchObject([
         {
           kind: "work_switched",
           scope: { kind: "thread", threadId: THREAD_ID },
@@ -430,19 +424,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       ]);
-      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+      await recreatedPort.consume(noticesForThread.map(({ id }) => id));
+      await expect(recreatedPort.peek(THREAD_ID)).resolves.toEqual([]);
     });
 
     it("rolls back binding, context obligation, and Notice on Notice failure", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const projects = createDrizzleProjectRepository({ db });
 
       await expect(
         handleRebindThreadWorkRequest(
           {
             threads: threads.threads,
             threadWorks: threads.threadWorks,
-            projects,
             works,
             workContextNotices: {
               threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
@@ -474,7 +467,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .selectPending(THREAD_ID)
           .then((rows) => rows.length > 0),
       ).resolves.toBe(false);
-      await expect(notices.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+      await expect(notices.peek(THREAD_ID)).resolves.toEqual([]);
     });
   });
 }

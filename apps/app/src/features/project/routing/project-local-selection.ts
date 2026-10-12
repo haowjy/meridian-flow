@@ -27,7 +27,7 @@ export function resolveLocalDocumentSelection(input: {
     !pointer.resourceHandle
   )
     return { kind: "unavailable" } as const;
-  if (!input.hydrated) return { kind: "loading" } as const;
+  if (!input.hydrated || !input.workId) return { kind: "loading" } as const;
   const tab = input.tabs.find((candidate) => candidate.resourceHandle === pointer.resourceHandle);
   if (!tab) return { kind: "unavailable" } as const;
   const owner = resolveWorkspaceRoute({
@@ -45,7 +45,7 @@ export function selectEditorEntryTab(input: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   recentRoutes: readonly WorkingSetRoute[];
-  /** The Editor being entered: its Work, or null for No Work. */
+  /** The Editor being entered: its row id, or null while unresolved. */
   workId: string | null;
 }): ContextTab | null {
   const eligible = input.tabs.filter((tab) => isEditorTab(tab, input.workId));

@@ -20,22 +20,18 @@ export function SubagentHeader({
   const [filter, setFilter] = useState("");
   const filterId = useId();
   const [open, setOpen] = useState(false);
-  const directNodes = useMemo(
-    () => nodes.filter((node) => node.parentThreadId === threadId),
-    [nodes, threadId],
-  );
   const ordered = useMemo(
     () =>
-      [...directNodes].sort(
+      [...nodes].sort(
         (a, b) =>
           Number(b.status.kind === "awake") - Number(a.status.kind === "awake") ||
           Date.parse(b.runEndedAt ?? "") - Date.parse(a.runEndedAt ?? ""),
       ),
-    [directNodes],
+    [nodes],
   );
   const visible = ordered.filter((node) => matchesSubagentIdentity(runFromActivity(node), filter));
-  if (!directNodes.length) return null;
-  const running = directNodes.filter((node) => node.status.kind === "awake");
+  if (!nodes.length) return null;
+  const running = nodes.filter((node) => node.status.kind === "awake");
   const finished = visible.filter((node) => node.status.kind !== "awake");
   const active = visible.filter((node) => node.status.kind === "awake");
   const show = (node: ThreadActivityNode) => {
@@ -54,13 +50,13 @@ export function SubagentHeader({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={t`Subagents, ${directNodes.length}`}
+          aria-label={t`Subagents, ${nodes.length}`}
           aria-expanded={open}
           aria-haspopup="dialog"
           className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Network className="size-3.5" aria-hidden />
-          <span aria-hidden="true">{directNodes.length}</span>
+          <span aria-hidden="true">{nodes.length}</span>
           {running.length ? (
             <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
           ) : null}

@@ -42,6 +42,13 @@ lifetime.
 
 ## Contracts
 
+- The registry alone reacts when the server refuses a live room's pending
+  edits (4409): it drops the room, clearing its local copy. Hosts unbind while
+  `whenRefusedRoomDropped` runs and reopen after; a refused review room is
+  rebuilt by its editor. A branch room whose last owner released during the
+  teardown drain is not reopened when the drain ends, so a rebuild cannot leave
+  an unowned session behind. Branch rooms live in `branch-room-pool.ts` and the
+  private local-transfer facet in `local-document-session-transfers.ts`.
 - `createEditorExtensions()` is the only app-side extension assembly point for
   collaborative documents, and its TipTap schema must stay structurally equal to
   `buildDocumentSchema()`. The two are built separately and parity is not
@@ -81,14 +88,16 @@ lifetime.
     CollaborationCaret is installed. Every field changes which extensions exist
     or which shared document backs them, so `editorMountKey()` renders it into
     the React key that owns the mount, and `editorRoomKey()` names the room the
-    session registry must supply. Callers derive both from the same identity, so
-    a session swap cannot arrive without a new mount.
+    session registry must supply. A rebuilt or reopened room keeps its name, so
+    `EditorView` adds the session's Y.Doc `guid` to the key; together they
+    make a session swap arrive with a new mount.
   - `useMountedEditor()` freezes one construction bundle on first render:
-    extension configuration, initial options, and the witness's document,
-    horizon-degradation flag, and report callback. It manually constructs TipTap
-    in its own effect. One synchronous block snapshots the Y.Doc, arms the
-    schema-repair witness in its open phase, calls `new Editor`, and flips the
-    witness to live before yielding. The hook also owns destruction. Surface
+    extension configuration, initial options, the owning session,
+    and horizon-degradation flag. It manually constructs TipTap in its own
+    effect through the session's `bindEditor()` seam, which lazily snapshots
+    the Y.Doc and arms its one schema-repair witness before `new Editor`,
+    then flips it to live before yielding. Later mounts attach attribution
+    to the existing live witness. The hook also owns destruction. Surface
     changes are reconciled onto the live instance with `setOptions()` and
     `setEditable()`; they never become construction dependencies or alter the
     armed witness.
@@ -106,6 +115,27 @@ lifetime.
   together: `detached` (proven local Y.Doc, no authorized transport), `syncing`,
   `synced`, `offline`, `access-lost`, `destroyed`. `schemaFence` is orthogonal,
   never a status value.
+- `synced` is a handshake fact (connected, Hocuspocus `provider.synced` after
+  the server's SyncStep2), not a claim that the server has the writer's latest
+  edits. That claim is `DocumentSessionSnapshot.serverHasLocalChanges`, true
+  only while `synced` and only while the server has acknowledged the connection's
+  handshake SyncStep2 and every document Update sent on it. It is false on any
+  local edit (including same-browser peer and IndexedDB replay, which the
+  provider also sends), on disconnect, and in terminal states, and becomes true
+  again after each reconnect. For a live room the server journals each client
+  update (unless already contained), then applies it and replies `SyncStatus`,
+  so an acknowledgement means applied and journaled; only the debounced
+  full-document store is asynchronous, and the next handshake's state-vector
+  diff re-sends whatever the server lost. The
+  transport counts frames on its own socket (`core/transport/server-acknowledgement.ts`)
+  because Hocuspocus' `unsyncedChanges` resets to one on every handshake.
+  `SyncStatus.tsx` renders one label from it: "Closed" and "Access lost" always
+  win; otherwise an outage (`offline`, or `adoptionStalled`, a `detached`
+  session whose cache adoption failed) shows "Saved locally (offline)" until the
+  server has acknowledged every local change, then "Back online (all changes
+  saved)" for three seconds. Healthy sessions and first loads show nothing, and
+  there is no detached-duration timer: a healthy cold load is `detached` for
+  about a second.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation. Every session receives
@@ -130,8 +160,14 @@ lifetime.
   verified `localContentReady` sessions do not wait for first server sync. Other
   attached sessions wait under the existing five-second overall timeout; expiry
   permits binding with degraded evidence, not upload authorization.
-- `schema-repair-witness.ts` owns one Y.Doc update listener across open and live
-  phases. Open-phase local delete-only normalization is classified
+- `DocumentSession.bindEditor()` owns one `schema-repair-witness.ts` witness
+  per session Y.Doc, with one update listener across open and live phases.
+  It takes the pre-bind snapshot immediately before the first construction.
+  Every view supplies PM lifecycle attribution to this shared witness, including
+  writer transactions from the warm Editor tab or dock. Peer binding callbacks
+  cannot replace the originating writer's active attribution. Releasing either
+  view removes only its PM callbacks; session destruction removes the witness.
+  Later views subscribe to session verdicts instead of duplicating observation. Open-phase local delete-only normalization is classified
   synchronously during construction and resolved against the pre-bind snapshot
   by Y item identity; structural boundary tokens keep separate removed passages
   from being concatenated. In live mode, `beforeAllTransactions` and
@@ -155,8 +191,8 @@ lifetime.
   Verdicts append to
   `DocumentSessionSnapshot.schemaRepairs`; they do not raise a schema fence,
   write quarantine, change connection status, or pause editing.
-  Reporting is per replica: a client reports only a repair performed by its own
-  binding. Several replicas can therefore report the same arriving invalid
+  Reporting is per session replica, not per mounted view: a client reports once
+  for a repair performed by any of its bindings. Several replicas can therefore report the same arriving invalid
   content, while a replica that only receives another replica's remote repair
   reports nothing. There is no room-level reporter or suppression protocol.
 - Live peer marks are the session projection of durable trail changes. Their
@@ -221,6 +257,21 @@ lifetime.
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
+- **Two editors can share one session** (an Editor tab kept warm behind the screen,
+  and the dock's document). Presence is the session's, but each editor's cursor
+  plugin clears a caret it did not place whenever its own view updates unfocused,
+  so two bound editors ping-pong awareness writes and peers see the caret flap.
+  `useMountedEditor` therefore hands each editor `gateCaretPresence(session.presence,
+  () => surface.publishPresence)`: only its `cursor` writes through `caretProvider`
+  are arbitrated (pass while the editor is `active`, dropped otherwise). Every other
+  field, image-upload announcements and their clears included, passes through
+  ungated, because that work belongs to the session whether or not the view shows.
+  When an editor goes to the back it calls `retire()` once, which clears the caret
+  it still owns, meaning it is the session's current caret publisher
+  (`LocalPresence.caretPublisher`, one slot set by each accepted cursor write), never by
+  comparing cursor values, so retire-then-publish and publish-then-retire with equal
+  cursors both leave the front view's caret. Undo needs no such rule: stacks are per editor and both track every
+  local edit.
 - The account resource replica durably reserves metadata before exact content
   opening. Content opening awaits account authority readiness and initializes
   the reserved database before exposing an editable handle. A failure may leave
@@ -391,8 +442,10 @@ lifetime.
   reintroduce markup the schema would accept.
 - Clipboard **text** goes through `markdown-paste.ts` and comes out as the
   document it describes. It is the same `markdownCodec` the wire uses, so
-  headings, lists, quotes, fences, tables, links and `[[wikilinks]]` all arrive
-  as themselves and nothing in the app has to know what markdown looks like.
+  headings, lists, quotes, fences, tables and links all arrive as themselves and
+  nothing in the app has to know what markdown looks like. A pasted `[[Name]]`
+  becomes a standard link afterwards, in `transformPasted`
+  ([`links/.context/CONTEXT.md`](../links/.context/CONTEXT.md)).
   `markdownCodec` rather than `mdxCodec`: clipboard text comes from anywhere and
   MDX reads `<` and `{` as syntax, which fiction contains.
   Three refusals bound it, and each is a behaviour, not an implementation detail:
@@ -410,8 +463,9 @@ lifetime.
   already worked.
 - Editable link clicks place a cursor instead of navigating: `openOnClick` is
   off and a plugin calls `preventDefault()` while still letting ProseMirror
-  resolve the selection. `link-url.ts` is the single normalizer for
-  writer-entered targets (http/https/mailto only).
+  resolve the selection. `normalizeLinkHref` in `links/link-target.ts` is the
+  single normalizer for writer-entered targets: web addresses, internal scheme
+  addresses and relative document paths.
 
 ## Holding a position across a remote write
 
@@ -533,7 +587,7 @@ a menu from retaining state for a block that has been deleted.
 
 Colocated under `extensions/slash/`, with its own
 [`AGENTS.md`](../extensions/slash/AGENTS.md). It is one spec over the lane
-mechanism in `extensions/suggestion/`, which `[[` shares, so the first two
+mechanism in `extensions/suggestion/`, which `@` shares, so the first two
 contracts below hold for every lane; the store and catalog a lane publishes
 through are `core/completion/`. Two contracts cross this boundary:
 
@@ -579,24 +633,13 @@ writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
 well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
 the codec reads, and all of them produce the same node.
 
-`MarkdownAutoformatExtension` owns completed wikilinks, the fence info string,
-and the Backspace recovery policy for inherited rules.
+`MarkdownAutoformatExtension` owns the fence info string and the Backspace
+recovery policy for inherited rules; a typed `[[name]]` stays text.
 `MarkdownAutoformatExtension.test.ts` exercises representative inherited
 triggers and the local mutation, refusal, and Undo/Redo boundaries. It is not
 an exhaustive table of accepted Markdown spellings; when changing a distinct
 local rule or upgrading inherited rules, check the affected behavior directly.
 
-- Completing `[[target]]` or `[[target|display text]]` in manuscript prose
-  parses the shared wire grammar into an ordinary link mark without a catalog
-  choice. Automatic closers alone do not complete it. Missing targets use the
-  existing unresolved decoration after resolution; no resolution state is stored.
-  Code, existing links and ranges containing inline objects are not converted.
-  The input-rule string may contain synthetic leaf text with a different length
-  from document positions, so reject such ranges before mutation.
-- Wikilink conversion uses ordinary Undo/Redo, with capture boundaries on both
-  sides so subsequent typing is a separate item. Undo restores the literal
-  source. Generic `undoInputRule` Backspace replay would duplicate the final
-  auto-paired bracket, so this rule does not participate in that replay.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting

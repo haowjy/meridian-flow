@@ -9,11 +9,15 @@ Drizzle schema and migrations for the v3 Meridian Postgres database (plain `post
 From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
 
 ```bash
-pnpm db:migrate          # apply pending migrations
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ (after migrate in dev)
+pnpm db:migrate          # apply pending migrations and sync SQL functions
+pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ after editing functions
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio
 ```
+
+In the main checkout, append `-- --allow-main-database` only when intentionally
+targeting its registered database (for example,
+`pnpm db:migrate -- --allow-main-database`).
 
 From this package:
 
@@ -22,7 +26,7 @@ pnpm typecheck
 pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
-**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
+**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then migrate + apply functions).
 
 ## Auth boundary
 
@@ -52,4 +56,4 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
 
-Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:apply-functions` keeps dev DB functions in sync after edits.
+Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` reapplies functions after migrations, and `db:apply-functions` keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.

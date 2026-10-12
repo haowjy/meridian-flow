@@ -58,7 +58,6 @@ export interface FigureAssetServiceOptions {
   signedUrlExpiresAt: () => string;
   generateId?: () => string;
   eventSink: EventSink;
-  assetPaths?: { remember(assetDocumentId: string, path: string): void };
 }
 
 export interface FigureAssetService {
@@ -271,8 +270,6 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         });
         return err("repository_error", "Failed to create figure asset document");
       }
-      options.assetPaths?.remember(assetDocumentId, assetUri.slice("manuscript://".length));
-
       let asset: DocumentFileRecord | null;
       try {
         asset = await options.documents.findDocumentFileForProject(

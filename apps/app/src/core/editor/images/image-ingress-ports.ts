@@ -9,7 +9,7 @@
  * picker that leads nowhere (law 5).
  */
 
-/** What an upload gives back: the ref the document holds, and where it lives. */
+/** What an upload gives back: the ref the document holds. */
 export type UploadedImage = {
   /**
    * The document's `src`, always a stable `asset:<documentId>`. A signed URL
@@ -17,9 +17,6 @@ export type UploadedImage = {
    */
   src: string;
   alt: string | null;
-  assetDocumentId: string;
-  /** Project-relative path, which is how an asset travels on the clipboard. */
-  assetPath: string;
 };
 
 /**

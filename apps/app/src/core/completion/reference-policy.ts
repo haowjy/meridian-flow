@@ -22,7 +22,9 @@ export const MAX_REFERENCE_QUERY_LENGTH = 80;
 export type StableReferenceAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
 
 export type AuthoritativeReference = {
   documentId: DocumentId;
@@ -67,7 +69,6 @@ export type ReferenceRow =
       fileKind: "document" | "asset";
       aliases: readonly string[];
       matchedAlias: string | null;
-      ambiguous: boolean;
       action: ReferenceSelectAction;
     };
 
@@ -105,7 +106,7 @@ export function authoritativeReferenceForFile(
   entry: CatalogFileEntry,
   authorities: ReferenceAuthorityIndex,
 ): AuthoritativeReference | null {
-  const authority = stableAuthority(entry.scope, authorities);
+  const authority = stableAuthority(entry.scope, authorities, entry.uri);
   if (!authority) return null;
   const uri = referenceUriForAuthority(entry.uri, authority);
   if (!uri) return null;
@@ -125,7 +126,7 @@ export function canonicalReferenceUri(
   uri: CanonicalContextUri,
   authorities: ReferenceAuthorityIndex,
 ): CanonicalContextUri | null {
-  const authority = stableAuthority(scope, authorities);
+  const authority = stableAuthority(scope, authorities, uri);
   return authority ? referenceUriForAuthority(uri, authority) : null;
 }
 
@@ -144,13 +145,16 @@ export function rankReferenceRows(
 ): ReferenceRow[] {
   if (!validReferenceQuery(query) || limit <= 0) return [];
   const needle = normalizeReferenceName(query);
-  const ambiguousNames = duplicatedResolvableNames(rows);
   const kinds = options.kinds ? new Set(options.kinds) : null;
   const ranked: RankedRow[] = [];
 
   rows.forEach((row, order) => {
     if (row.kind === "file" && kinds && !kinds.has(row.fileKind)) return;
-    const match = bestRowMatch(row, needle);
+    const match = bestNameMatch(
+      row.label,
+      row.kind === "file" ? row.aliases : row.matchAliases,
+      needle,
+    );
     if (!match) return;
     const documentId = row.kind === "file" ? row.action.reference.documentId : null;
     ranked.push({
@@ -180,16 +184,7 @@ export function rankReferenceRows(
     if (seen.has(identity)) continue;
     seen.add(identity);
     result.push(
-      match.row.kind === "file"
-        ? {
-            ...match.row,
-            matchedAlias: match.matchedAlias,
-            ambiguous:
-              ambiguousNames.has(normalizeReferenceName(match.row.label)) ||
-              (match.matchedAlias !== null &&
-                ambiguousNames.has(normalizeReferenceName(match.matchedAlias))),
-          }
-        : match.row,
+      match.row.kind === "file" ? { ...match.row, matchedAlias: match.matchedAlias } : match.row,
     );
     if (result.length === limit) break;
   }
@@ -207,8 +202,21 @@ export function normalizeReferenceName(value: string): string {
 function stableAuthority(
   scope: CatalogScope,
   authorities: ReferenceAuthorityIndex,
+  uri: CanonicalContextUri,
 ): StableReferenceAuthority | null {
   switch (scope.kind) {
+    case "lineage": {
+      // The scope names the lineage by id; the handle is only in the URI it spells.
+      const parsed = parseContextUri(uri);
+      return parsed.ok && parsed.value.authority.kind === "lineage"
+        ? {
+            kind: "lineage",
+            projectId: scope.projectId,
+            rootThreadId: scope.rootThreadId,
+            rootThreadRef: parsed.value.authority.rootThreadRef,
+          }
+        : null;
+    }
     case "project":
       return { kind: "project", projectId: scope.projectId };
     case "user":
@@ -232,6 +240,12 @@ export function referenceUriForAuthority(
 ): CanonicalContextUri | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok) return null;
+  if (authority.kind === "lineage")
+    return parsed.value.scheme === "scratch" &&
+      parsed.value.authority.kind === "lineage" &&
+      parsed.value.authority.rootThreadRef === authority.rootThreadRef
+      ? parsed.value.normalized
+      : null;
   if (authority.kind === "work") {
     if (authority.workSlug === null) {
       return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
@@ -259,14 +273,14 @@ function canonicalRowIdentity(row: ReferenceRow): string {
   return `${row.kind}:${row.action.scope.kind}:${row.action.containerId ?? row.action.prefix}`;
 }
 
-function bestRowMatch(
-  row: ReferenceRow,
+function bestNameMatch(
+  label: string,
+  aliases: readonly string[],
   needle: string,
 ): { tier: number; matchedAlias: string | null } | null {
-  const labelTier = lexicalTier(row.label, needle);
+  const labelTier = lexicalTier(label, needle);
   let best: { tier: number; matchedAlias: string | null } | null =
     labelTier === null ? null : { tier: labelTier, matchedAlias: null };
-  const aliases = row.kind === "file" ? row.aliases : row.matchAliases;
   for (const alias of aliases) {
     const tier = lexicalTier(alias, needle);
     if (tier !== null && (!best || tier < best.tier)) best = { tier, matchedAlias: alias };
@@ -301,20 +315,4 @@ function isSubsequence(needle: string, value: string): boolean {
     if (index === needle.length) return true;
   }
   return false;
-}
-
-function duplicatedResolvableNames(rows: readonly ReferenceRow[]): ReadonlySet<string> {
-  const identitiesByName = new Map<string, Set<string>>();
-  const duplicated = new Set<string>();
-  for (const row of rows) {
-    if (row.kind !== "file") continue;
-    for (const spelling of [row.label, ...row.aliases]) {
-      const name = normalizeReferenceName(spelling);
-      const identities = identitiesByName.get(name) ?? new Set<string>();
-      identities.add(row.action.reference.documentId);
-      identitiesByName.set(name, identities);
-      if (identities.size > 1) duplicated.add(name);
-    }
-  }
-  return duplicated;
 }

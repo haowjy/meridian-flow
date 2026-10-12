@@ -1,5 +1,6 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
 import { decodeWorkSlug } from "./works/index.js";
 
@@ -37,12 +38,42 @@ export interface ContextSchemeCapabilities {
 export type ParsedContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
+  | { kind: "lineage"; rootThreadRef: string }
   | { kind: "work"; workSlug: WorkSlug };
+
+/** The owners a holder's authority supplies, independently for each owned scheme. */
+export function holderAuthorities(
+  authority: ParsedContextAuthority,
+): Record<WorkScopedContextUriScheme, ParsedContextAuthority | null> {
+  switch (authority.kind) {
+    case "work":
+      return { scratch: authority, uploads: authority };
+    case "lineage":
+      return { scratch: authority, uploads: { kind: "none" } };
+    case "none":
+      return { scratch: null, uploads: authority };
+    case "contextual":
+      return { scratch: null, uploads: null };
+  }
+}
+
+/** Qualify a contextual address only when its holder supplies that scheme's owner. */
+export function qualifyContextUriByHolder(uri: string, holderUri: string | null): string {
+  const target = parseContextUri(uri);
+  const holder = holderUri ? parseContextUri(holderUri) : null;
+  if (!target.ok || target.value.authority.kind !== "contextual" || !holder?.ok) return uri;
+  if (isProjectScopedScheme(target.value.scheme)) return uri;
+  const authority = holderAuthorities(holder.value.authority)[target.value.scheme];
+  return authority
+    ? formatParsedContextUri(target.value.scheme, target.value.path, authority)
+    : uri;
+}
 
 /** Authority accepted by stable URI serialization. */
 export type CanonicalContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
+  | { kind: "lineage"; rootThreadRef: string }
   | ResolvedWorkAuthority;
 
 export interface ParsedContextUri {
@@ -54,7 +85,11 @@ export interface ParsedContextUri {
   normalized: string;
 }
 
-type ContextUriParseError = { ok: false; error: { uri: string; reason: string } };
+type ContextUriParseError = {
+  ok: false;
+  /** `unknownScheme` marks a URI that names no context scheme, so it addresses no document. */
+  error: { uri: string; reason: string; unknownScheme?: string };
+};
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
   | { ok: true; value: { authority: ParsedContextAuthority; rawPath: string } }
@@ -97,6 +132,12 @@ export function canonicalContextUri(
     throw new RangeError('Path segments beginning with "@" are reserved');
   }
   const normalizedPath = segments.join("/");
+  if (scheme !== "scratch" && "kind" in authority && authority.kind === "lineage") {
+    throw new RangeError("Only Scratch supports a chat qualifier");
+  }
+  if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
+    throw new RangeError(missingScratchHandle);
+  }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
     return normalizedPath
@@ -106,6 +147,11 @@ export function canonicalContextUri(
 }
 
 function authorityQualifier(authority: CanonicalContextAuthority): string | null {
+  if ("kind" in authority && authority.kind === "lineage") {
+    if (!/^c[1-9][0-9]*$/.test(authority.rootThreadRef))
+      throw new RangeError("Invalid first-chat handle");
+    return `@/${authority.rootThreadRef}`;
+  }
   if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
   return authority.kind === "none" ? "@" : null;
 }
@@ -126,7 +172,14 @@ export function parseContextUri(
   if (schemeMatch) {
     const parsedScheme = schemeMatch[1] ?? "";
     if (!isContextScheme(parsedScheme, schemes)) {
-      return invalidContextUri(raw, `Unknown scheme "${parsedScheme}"`);
+      return {
+        ok: false,
+        error: {
+          uri: raw,
+          reason: `Unknown scheme "${parsedScheme}". Known schemes: ${schemes.map((known) => `${known}://`).join(", ")}`,
+          unknownScheme: parsedScheme,
+        },
+      };
     }
     scheme = parsedScheme;
     rawPath = schemeMatch[2] ?? "";
@@ -211,6 +264,15 @@ function parseAuthorityPrefix(
     );
   }
   const qualifier = qualifiers[0] ?? "";
+  if (qualifier === "@" && scheme === "scratch" && segments.length) {
+    const rootThreadRef = segments.shift() ?? "";
+    if (!/^c[1-9][0-9]*$/.test(rootThreadRef))
+      return invalidContextUri(rawUri, missingScratchHandle);
+    return {
+      ok: true,
+      value: { authority: { kind: "lineage", rootThreadRef }, rawPath: segments.join("/") },
+    };
+  }
   if (qualifier === "@") {
     return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
   }
@@ -231,13 +293,20 @@ export function isProjectScopedScheme(
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
-function formatParsedContextUri(
+/** Spell parsed address syntax; this does not resolve or grant Work authority. */
+export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,
 ): string {
   const qualifier =
-    authority.kind === "work" ? `@${authority.workSlug}` : authority.kind === "none" ? "@" : null;
+    authority.kind === "lineage"
+      ? `@/${authority.rootThreadRef}`
+      : authority.kind === "work"
+        ? `@${authority.workSlug}`
+        : authority.kind === "none"
+          ? "@"
+          : null;
   if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
   return path ? `${scheme}://${path}` : `${scheme}://`;
 }
@@ -246,12 +315,26 @@ function invalidContextUri(uri: string, reason: string): ContextUriParseError {
   return { ok: false, error: { uri, reason } };
 }
 
+/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
+export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
+  const index = value.search(/[?#]/);
+  return index < 0
+    ? { path: value, suffix: "" }
+    : { path: value.slice(0, index), suffix: value.slice(index) };
+}
+
 /**
- * Derives a document title from the final URI/path segment.
+ * The name a writer sees for the document at the final URI/path segment: the
+ * stored name as the codec spells it. A stored segment is already canonical
+ * (`Chapter 13`, `outline.json`, `Vol. 2`); a segment someone typed is
+ * canonicalized (`ch12.md` and `notes.txt` read `ch12` and `notes`). No
+ * extension is stripped on its own.
  *
- * Context documents use the basename stem as their title. Callers own the
- * fallback because some server notices prefer a document id while writer-facing
- * surfaces use "Untitled document".
+ * This accepts decoded addresses, not hrefs. Href/tool callers split suffixes
+ * before decoding at their boundary.
+ *
+ * Callers own the fallback because some server notices prefer a document id
+ * while writer-facing surfaces use "Untitled document".
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
@@ -259,5 +342,9 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
-  return segment.replace(/\.[^.]+$/, "") || null;
+  const parsed = parseDocumentFilename(segment);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
 }
+
+const missingScratchHandle =
+  "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";

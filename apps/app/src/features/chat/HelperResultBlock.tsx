@@ -1,4 +1,8 @@
-/** Invocation card block: joins live activity and the saved report source to the launch card. */
+/**
+ * Invocation card block: joins live activity and the saved report source to the
+ * launch card. The card's `from` source is durable on its props from the first
+ * write, so a reload renders it from the snapshot alone.
+ */
 
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ComponentBlockProps } from "./component-registry";
@@ -51,6 +55,11 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
       directResult={invocationResult}
       savedReport={savedReport}
       run={run}
+      from={
+        props.fromThreadId
+          ? { threadId: props.fromThreadId, title: props.fromThreadTitle ?? null }
+          : null
+      }
     />
   );
 }

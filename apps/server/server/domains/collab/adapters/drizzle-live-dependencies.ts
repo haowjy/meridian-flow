@@ -1,4 +1,5 @@
 /** Drizzle-backed dependency checks for live turn reversal affordances. */
+import { dependsOnRows } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -7,7 +8,6 @@ import {
   documentYjsUpdates,
 } from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
-import { hasDependentLaterRows } from "../domain/journal-dependencies.js";
 
 type LiveDependencyDb = Pick<Database, "select">;
 
@@ -105,9 +105,8 @@ export async function checkDependentLaterLiveRows(
     .orderBy(asc(documentYjsUpdates.id));
 
   const checkedUntilSeq = Math.max(maxSelectedSeq, ...laterRows.map((row) => Number(row.seq)));
-  const blockingRows = laterRows
-    .filter(isNonSystemLiveDependencyRow)
-    .filter((row) => selected.length > 0 && hasDependentLaterRows(selected, [row]));
+  const dependsOnSelected = dependsOnRows(selected);
+  const blockingRows = laterRows.filter(isNonSystemLiveDependencyRow).filter(dependsOnSelected);
   return {
     hasDependents: blockingRows.length > 0,
     blockingActorTypes: [

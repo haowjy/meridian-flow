@@ -1,0 +1,438 @@
+// Behavioral coverage for inline replacement, update replay fidelity, and echo.
+
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
+import { describe, expect, it } from "vitest";
+import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import * as Y from "yjs";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
+import type { BlockRef } from "../handles.js";
+import { toRef } from "../handles.js";
+import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import { applyEdits } from "./apply-edits.js";
+import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
+import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
+
+const schema = buildDocumentSchema();
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
+const baseModel = yProsemirrorModel(schema);
+const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
+
+describe("applyEdits inline replacement", () => {
+  it("replaces text across mark boundaries", () => {
+    const doc = createDoc("A **bold** plain");
+    const [block] = baseModel.getBlocks(doc);
+
+    const result = applyEdits(doc, baseModel, textEdit(block, { start: 5, end: 8 }, "X"), origin);
+
+    expectOk(result);
+    expect(baseModel.getText(block)).toBe("A bolXlain");
+    expectNoOrphanedElements(doc);
+  });
+});
+
+describe("applyEdits update fidelity", () => {
+  it.each([
+    [
+      "text",
+      "Alpha sword.",
+      "Alpha blade.",
+      (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
+    ],
+    [
+      "formatting",
+      "Alpha sword.",
+      "Alpha **blade**.",
+      (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "**blade**"),
+    ],
+    [
+      "insert",
+      "Alpha\n\nBeta",
+      "Alpha\n\nInserted\n\nBeta",
+      (doc: Y.Doc): ResolvedEdit => ({
+        documentId: "doc-1",
+        file: "chapter.md",
+        kind: "insert",
+        after: toRef(baseModel.getBlocks(doc)[0]),
+        newText: "Inserted",
+        blocks: codec.parse("Inserted").blocks,
+      }),
+    ],
+    [
+      "delete",
+      "Alpha\n\nBeta",
+      "Alpha",
+      (doc: Y.Doc): ResolvedEdit => ({
+        documentId: "doc-1",
+        file: "chapter.md",
+        kind: "delete",
+        block: toRef(baseModel.getBlocks(doc)[1]),
+      }),
+    ],
+  ] satisfies Array<
+    [string, string, string, (doc: Y.Doc) => ResolvedEdit]
+  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit) => {
+    const doc = createDoc(markdown, 1);
+    doc.clientID = 2;
+    const fresh = cloneDoc(doc, 9);
+    const prevVector = Y.encodeStateVector(doc);
+
+    const result = applyEdits(doc, baseModel, makeEdit(doc), origin);
+
+    expectOk(result);
+    const update = Y.encodeStateAsUpdate(doc, prevVector);
+    Y.applyUpdate(fresh, update);
+    expect(documentJson(fresh)).toEqual(documentJson(doc));
+    expect(baseModel.serializeBlockBodies(doc, codec, baseModel.getBlocks(doc)).join("\n\n")).toBe(
+      expected,
+    );
+    expectNoOrphanedElements(doc);
+  });
+});
+
+describe("applyEdits preflight safety", () => {
+  it("detects same-turn references to a deleted block before mutating", () => {
+    const doc = createDoc("Alpha\n\nBeta");
+    const [alpha] = baseModel.getBlocks(doc);
+    const before = documentJson(doc);
+
+    const result = applyEdits(
+      doc,
+      baseModel,
+      [
+        { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(alpha) },
+        textEdit(alpha, { start: 0, end: 5 }, "Changed"),
+      ],
+      origin,
+    );
+
+    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(documentJson(doc)).toEqual(before);
+  });
+});
+
+describe("mutation and echo composition", () => {
+  it("echoes the agent window and lists a non-overlapping concurrent human edit", () => {
+    const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
+    const local = cloneDoc(live, 2);
+    const before = snapshotBlocks(local, baseModel, codec);
+    const localBlocks = baseModel.getBlocks(local);
+    const alphaHash = baseModel.getBlockId(localBlocks[0]);
+    const betaHash = baseModel.getBlockId(localBlocks[1]);
+    const remoteHash = baseModel.getBlockId(localBlocks[3]);
+    const remoteUpdate = remoteTextUpdate(live, 3, { from: 0, to: 5 }, "Omega", {
+      type: "human",
+      userId: "user-1",
+    });
+    const [localAlpha] = baseModel.getBlocks(local);
+
+    const result = applyEdits(
+      local,
+      baseModel,
+      textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
+      origin,
+    );
+
+    expectOk(result);
+    const concurrent = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+    const echo = computeEcho({
+      before,
+      after: snapshotBlocks(local, baseModel, codec),
+      agentTouchedHashes: new Set(result.changedBlocks),
+      agentDeletedHashes: new Set(result.deletedBlocks),
+    });
+    expect(concurrent.info?.human).toEqual([remoteHash]);
+    expect(echo).toEqual([
+      { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
+      { mode: "truncated", blocks: [`${betaHash}|Beta waits.`] },
+    ]);
+    expect(blockTexts(local)).toEqual([
+      "Alpha blade.",
+      "Beta waits.",
+      "Gamma waits.",
+      "Omega waits.",
+    ]);
+    expectNoOrphanedElements(local);
+  });
+});
+
+describe("applyConcurrentUpdates rendered concurrent blocks", () => {
+  it("places separated deletion tombstones at their own boundary windows", () => {
+    const live = createDoc(
+      Array.from({ length: 9 }, (_, index) => `Block ${index}.`).join("\n\n"),
+      1,
+    );
+    const local = cloneDoc(live, 2);
+    const first = remoteDeleteUpdate(live, 1, { type: "human", userId: "user-1" });
+    const second = remoteDeleteUpdate(live, 6, { type: "human", userId: "user-1" });
+
+    const result = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [first, second].map((update) => ({
+        update,
+        origin: { type: "human" as const, userId: "user-1" },
+      })),
+      origin,
+    );
+
+    expect(result.info?.runs).toHaveLength(2);
+    expect(result.info?.runs[0]?.tombstones[0]?.capturedBody).toBe("Block 1.");
+    expect(result.info?.runs[0]?.blocks.join("\n")).toContain("Block 0.");
+    expect(result.info?.runs[1]?.tombstones[0]?.capturedBody).toBe("Block 7.");
+    expect(result.info?.runs[1]?.blocks.join("\n")).toContain("Block 8.");
+  });
+
+  it("prefers stable hash matches when duplicate bodies surround a deletion", () => {
+    const live = createDoc("same\n\nsame", 1);
+    const local = cloneDoc(live, 2);
+    const deletedHash = baseModel.getBlockId(baseModel.getBlocks(local)[0]);
+    const survivorHash = baseModel.getBlockId(baseModel.getBlocks(local)[1]);
+    const update = remoteDeleteUpdate(live, 0, { type: "human", userId: "user-1" });
+
+    const result = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+
+    expect(result.info?.human).toEqual([deletedHash]);
+    expect(result.info?.human).not.toContain(survivorHash);
+    expect(result.info?.runs.flatMap((run) => run.tombstones)).toEqual([
+      { hash: deletedHash, capturedBody: "same" },
+    ]);
+  });
+
+  it("ignores the acting agent's own updates", () => {
+    const live = createDoc("Alpha sword.", 1);
+    const local = cloneDoc(live, 2);
+    const update = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", origin);
+
+    const result = applyConcurrentUpdates(local, baseModel, codec, [{ update, origin }], origin);
+
+    expect(result.info).toBeUndefined();
+    expect(result.touchedHashes).toEqual(new Set());
+  });
+
+  it("does not smear a deletion-bearing no-op agent origin onto the next human change", () => {
+    const live = createDoc("Alpha.\n\nDelete me.\n\nBeta waits.", 1);
+    const local = cloneDoc(live, 2);
+    const deleteUpdate = remoteDeleteUpdate(live, 1, { type: "agent", actorTurnId: "turn-2" });
+    Y.applyUpdate(local, deleteUpdate);
+    const humanUpdate = remoteTextUpdate(live, 1, { from: 0, to: 4 }, "Gamma", {
+      type: "human",
+      userId: "user-1",
+    });
+
+    const result = applyConcurrentUpdates(local, baseModel, codec, [
+      { update: deleteUpdate, origin: { type: "agent", actorTurnId: "turn-2" } },
+      { update: humanUpdate, origin: { type: "human", userId: "user-1" } },
+    ]);
+
+    expect(result.info?.human).toHaveLength(1);
+    expect(result.info?.agent).toEqual([]);
+    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("Gamma waits.");
+  });
+
+  it("matches unchanged blocks across a deletion-bearing whole-document rewrite", () => {
+    const live = createDoc("R6 block one.\n\nR6 block two old.\n\nR6 block three.", 1);
+    const local = cloneDoc(live, 2);
+    const update = remoteWholeDocumentReplace(
+      live,
+      "R6 block one.\n\nR6 block two changed.\n\nR6 block three.",
+      { type: "agent", actorTurnId: "turn-2" },
+    );
+
+    const result = applyConcurrentUpdates(local, baseModel, codec, [
+      { update, origin: { type: "agent", actorTurnId: "turn-2" } },
+    ]);
+
+    expect(result.info?.human).toEqual([]);
+    expect(result.humanTouchedHashes).toEqual(new Set());
+    expect(result.touchedHashes.size).toBeGreaterThan(0);
+    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain(
+      "R6 block two changed.",
+    );
+    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("R6 block one.");
+    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("R6 block three.");
+  });
+});
+
+describe("computeEcho", () => {
+  it("deduplicates overlapping windows in document order before rendering", () => {
+    const before = [
+      block("A", "ctx0"),
+      block("B", "old1"),
+      block("X", "deleted"),
+      block("C", "ctx2"),
+      block("D", "old3"),
+      block("E", "ctx4"),
+    ];
+    const after = [
+      block("A", "ctx0"),
+      block("B", "new1"),
+      block("C", "ctx2"),
+      block("D", "new3"),
+      block("E", "ctx4"),
+    ];
+
+    const echo = computeEcho({
+      before,
+      after,
+      agentTouchedHashes: new Set(["B", "D"]),
+      agentDeletedHashes: new Set(["X"]),
+    });
+    const lines = echo.flatMap((hunk) => hunk.blocks);
+
+    expect(lines).toEqual(["A|ctx0", "B|new1", "C|ctx2", "D|new3", "E|ctx4"]);
+    expect(lines.map((line) => line.split("|")[0])).toEqual(["A", "B", "C", "D", "E"]);
+    expect(new Set(lines.map((line) => line.split("|")[0])).size).toBe(lines.length);
+    expect(echo.map((hunk) => hunk.mode)).toEqual([
+      "truncated",
+      "full",
+      "truncated",
+      "full",
+      "truncated",
+    ]);
+  });
+});
+
+function block(hash: string, body: string) {
+  return {
+    hash,
+    clientID: 1,
+    clock: Number.parseInt(hash, 36),
+    renderedContent: `paragraph|${body}`,
+    body,
+    serialized: `${hash}|${body}`,
+    lineage: [],
+  };
+}
+
+function createDoc(markdown: string, clientID = 1): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = clientID;
+  const parsed = codec.parse(markdown);
+  const root = schema.node("doc", null, parsed.blocks);
+  prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+  return doc;
+}
+
+function cloneDoc(source: Y.Doc, clientID: number): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = clientID;
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  doc.clientID = clientID;
+  return doc;
+}
+
+function textEdit(
+  element: BlockRef,
+  span: { start: number; end: number },
+  newText: string,
+): ResolvedEdit {
+  return {
+    documentId: "doc-1",
+    file: "chapter.md",
+    kind: "textRanges",
+    block: toRef(element),
+    replacements: [{ span, content: inlineText(newText) }],
+    output: newText,
+  };
+}
+function remoteTextUpdate(
+  doc: Y.Doc,
+  blockIndex: number,
+  span: { from: number; to: number },
+  newText: string,
+  transactionOrigin: unknown,
+): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  const block = baseModel.getBlocks(doc)[blockIndex];
+  doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function remoteDeleteUpdate(
+  doc: Y.Doc,
+  blockIndex: number,
+  transactionOrigin: unknown,
+): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  const block = baseModel.getBlocks(doc)[blockIndex];
+  doc.transact(() => baseModel.deleteBlock(doc, block), transactionOrigin);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function remoteWholeDocumentReplace(
+  doc: Y.Doc,
+  markdown: string,
+  transactionOrigin: unknown,
+): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  doc.transact(() => {
+    for (const block of [...baseModel.getBlocks(doc)].reverse()) baseModel.deleteBlock(doc, block);
+    baseModel.insertBlocks(doc, null, codec.parse(markdown));
+  }, transactionOrigin);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function blockTexts(doc: Y.Doc): string[] {
+  return baseModel.getBlocks(doc).map((block) => baseModel.getText(block));
+}
+
+function documentJson(doc: Y.Doc): unknown {
+  return schema.node("doc", null, baseModel.projectBlocks(doc)).toJSON();
+}
+
+function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) throw new Error(result.error.message);
+}
+
+function expectNoOrphanedElements(doc: Y.Doc): void {
+  const reachable = new Set<Y.XmlElement>();
+  const visit = (value: Y.XmlElement | Y.XmlFragment | Y.XmlText) => {
+    if (value instanceof Y.XmlElement) reachable.add(value);
+    if (value instanceof Y.XmlText) return;
+    for (const child of value.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+
+  for (const element of liveXmlElementsInStore(doc)) {
+    expect(reachable.has(element)).toBe(true);
+  }
+}
+
+function liveXmlElementsInStore(doc: Y.Doc): Y.XmlElement[] {
+  const elements: Y.XmlElement[] = [];
+  const store = (doc as unknown as { store: { clients: Map<number, unknown[]> } }).store;
+  for (const structs of store.clients.values()) {
+    for (const struct of structs) {
+      const item = struct as { deleted?: boolean; content?: { type?: unknown } };
+      if (item.deleted === true) continue;
+      const type = item.content?.type;
+      if (type instanceof Y.XmlElement) elements.push(type);
+    }
+  }
+  return elements;
+}
+
+/** Inline content of one markup paragraph, as the resolver hands it to apply. */
+function inlineText(markup: string): Fragment {
+  return markup.length === 0
+    ? Fragment.empty
+    : (codec.parse(markup).blocks[0]?.content ?? Fragment.empty);
+}

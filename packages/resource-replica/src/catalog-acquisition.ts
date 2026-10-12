@@ -12,6 +12,10 @@ import {
   catalogResponseMatchesRequest,
   sameCatalogProjectionScope,
 } from "./catalog-scope";
+import {
+  folderObservationFence,
+  planFolderCatalogInstallation,
+} from "./folder-catalog-installation";
 import type {
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
@@ -33,6 +37,8 @@ export interface ResourceCatalogTransport {
 type AcquisitionState = {
   hintedHighWater: bigint;
   inFlight: Promise<CatalogCacheView> | null;
+  /** The acquisition that starts once `inFlight` settles; shared by every `acquireAfter` caller meanwhile. */
+  followUp: Promise<CatalogCacheView> | null;
 };
 
 function checkpointFor(
@@ -54,6 +60,7 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
     {
       revision: number;
       canonical: ResourceRecord["resource"]["canonical"];
+      canonicalParent: ResourceRecord["resource"]["canonicalParent"];
       classification: ResourceRecord["resource"]["classification"];
     }
   >();
@@ -61,10 +68,11 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
     resources.set(resource.handle, {
       revision: resource.revision,
       canonical: structuredClone(resource.canonical),
+      canonicalParent: structuredClone(resource.canonicalParent),
       classification: structuredClone(resource.classification),
     });
   }
-  return { resources };
+  return { resources, folders: folderObservationFence(snapshot.folders) };
 }
 
 function revision(value: string): bigint | null {
@@ -83,15 +91,13 @@ function checkpointMatchesView(
   const entries = [...view.entries.values()].sort((left, right) =>
     left.entryId.localeCompare(right.entryId),
   );
-  const invalidatedEntryIds = [...view.invalidatedEntryIds].sort();
   return (
     checkpoint !== null &&
     checkpoint.generation === view.generation &&
     checkpoint.appliedRevision === view.appliedRevision &&
     checkpoint.observedHeadRevision === view.observedHeadRevision &&
     checkpoint.cursor === view.cursor &&
-    JSON.stringify(checkpoint.entries) === JSON.stringify(entries) &&
-    JSON.stringify(checkpoint.invalidatedEntryIds) === JSON.stringify(invalidatedEntryIds)
+    JSON.stringify(checkpoint.entries) === JSON.stringify(entries)
   );
 }
 
@@ -116,7 +122,7 @@ export class ResourceCatalogAcquisition {
     const key = catalogProjectionKey(projectId, scope);
     let state = this.states.get(key);
     if (!state) {
-      state = { hintedHighWater: 0n, inFlight: null };
+      state = { hintedHighWater: 0n, inFlight: null, followUp: null };
       this.states.set(key, state);
     }
     return state;
@@ -149,11 +155,23 @@ export class ResourceCatalogAcquisition {
         view,
         observedAfter: fence,
       });
-      if (plan.resources.length === 0 && checkpointMatchesView(previous, view)) return "committed";
+      const folders = planFolderCatalogInstallation({
+        projectId,
+        folders: snapshot.folders,
+        view,
+        fence,
+      });
+      if (
+        plan.resources.length === 0 &&
+        folders.length === 0 &&
+        checkpointMatchesView(previous, view)
+      )
+        return "committed";
       const result = await this.metadata.commitCatalog({
         expectedRevision: previous?.revision ?? null,
         next: plan.checkpoint,
         resources: plan.resources,
+        folders,
       });
       this.assertCurrent(epoch);
       if (result === "committed") return result;
@@ -256,6 +274,25 @@ export class ResourceCatalogAcquisition {
     this.operations.add(operation);
     state.inFlight = inFlight;
     return inFlight;
+  }
+
+  /**
+   * Observe membership no earlier than this call. `acquire` joins an in-flight
+   * acquisition whose snapshot may predate the caller's evidence, so a caller
+   * that needs fresher-than-now state waits for it to settle and starts a new
+   * one.
+   */
+  acquireAfter(projectId: string, scope: CatalogScope): Promise<CatalogCacheView> {
+    const running = this.state(projectId, scope).inFlight;
+    if (!running) return this.acquire(projectId, scope);
+    const state = this.state(projectId, scope);
+    state.followUp ??= running
+      .catch(() => undefined)
+      .then(() => {
+        state.followUp = null;
+        return this.acquire(projectId, scope);
+      });
+    return state.followUp;
   }
 
   hint(projectId: string, scope: CatalogScope, headRevision: string): Promise<CatalogCacheView> {

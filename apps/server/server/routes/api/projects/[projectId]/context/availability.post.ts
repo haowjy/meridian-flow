@@ -27,7 +27,22 @@ export function parseAvailabilityBody(
   if (documentIds.length > 128) {
     throw createError({ statusCode: 400, message: "documentIds must contain at most 128 IDs" });
   }
-  return { projectId: projectId as ProjectId, documentIds: documentIds as DocumentId[] };
+  const rawFolders = (raw as { folderIds?: unknown }).folderIds;
+  if (rawFolders !== undefined && !Array.isArray(rawFolders))
+    throw createError({ statusCode: 400, message: "folderIds must be an array" });
+  const folderIds = [
+    ...new Set((rawFolders ?? []).map((id: unknown) => requireRequestId(id, "folderIds[]"))),
+  ];
+  if (folderIds.length + documentIds.length > 128)
+    throw createError({
+      statusCode: 400,
+      message: "availability lookup must contain at most 128 IDs",
+    });
+  return {
+    projectId: projectId as ProjectId,
+    documentIds: documentIds as DocumentId[],
+    ...(rawFolders !== undefined ? { folderIds } : {}),
+  };
 }
 
 export default defineEventHandler(async (event) => {

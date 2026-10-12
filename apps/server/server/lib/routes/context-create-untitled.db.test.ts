@@ -1,7 +1,12 @@
 /** Postgres-backed coverage for work-scoped untitled creation and manifest repair. */
 
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../domains/collab/test-support/document-link-scopes.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
@@ -18,7 +23,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../../domains/collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
@@ -28,10 +32,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../domains/projects/index.js"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
@@ -42,7 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const CROSS_SCHEME_DOCUMENT_ID = "00000000-0000-4000-8000-000000000935";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
 
@@ -67,12 +70,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { ...bootstrap, workId };
     }
 
+    const collabs: Array<{ dispose(): void }> = [];
+    afterEach(() => {
+      for (const collab of collabs.splice(0)) collab.dispose();
+    });
+
     function createBoundCollab() {
       const collab = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -81,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             collab.storeHocuspocusDocument(documentName, document),
         }),
       );
+      collabs.push(collab);
       return collab;
     }
 
@@ -89,6 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
         manifestMembership: collab,
@@ -115,8 +125,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "created",
         documentId: DOCUMENT_ID,
         scheme: "scratch",
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
+        path: "Untitled 1",
+        name: "Untitled 1",
       });
 
       await expect(
@@ -126,21 +136,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: expect.any(String),
           kind: "file",
           entryId: DOCUMENT_ID,
-          name: "Untitled 1.md",
+          name: "Untitled 1",
           provisionalName: true,
         },
       });
 
       await expect(
-        port.move(
-          `scratch://@current-work/Untitled 1.md`,
-          `scratch://@current-work/Opening scene.md`,
-          {
-            origin: { type: "human", userId: USER_ID },
-          },
-        ),
+        port.move(`scratch://@current-work/Untitled 1`, `scratch://@current-work/Opening scene`, {
+          origin: { type: "human", userId: USER_ID },
+        }),
       ).resolves.toMatchObject({ ok: true });
       await expect(
         catalog.lookup({
@@ -149,9 +156,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: expect.any(String),
           kind: "file",
           entryId: DOCUMENT_ID,
-          name: "Opening scene.md",
+          name: "Opening scene",
           provisionalName: false,
         },
       });
@@ -168,6 +176,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       let failNextMembershipWrite = true;
       const contextPorts = createProductionUnifiedContextPortFactory({
+        links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
         manifestMembership: {
@@ -180,6 +189,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           recordManifestDocumentDeleted: (documentId, view) =>
             collab.recordManifestDocumentDeleted(documentId, view),
+          resolveManifestMembership: (input) => collab.resolveManifestMembership(input),
+          transferLiveManifestMembership: (ids, projects) =>
+            collab.transferLiveManifestMembership(ids, projects),
         },
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
@@ -203,8 +215,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(create()).resolves.toMatchObject({
         status: "created",
         documentId: REPAIR_DOCUMENT_ID,
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
+        path: "Untitled 1",
+        name: "Untitled 1",
       });
 
       const membership = await collab.resolveManifestMembership({ projectId });
@@ -218,6 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
         manifestMembership: collab,
@@ -263,7 +276,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             scope: "project",
             workId: null,
           }),
-          expect.objectContaining({ slug: "scratch", scope: "work", projectId: null }),
           expect.objectContaining({ slug: "uploads", scope: "work", projectId: null }),
         ]),
       );

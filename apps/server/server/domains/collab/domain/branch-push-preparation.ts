@@ -1,6 +1,6 @@
 /** Projects a locked branch push into durable change-trail rows. */
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   snapshotBlocks,
   toDocHandle,
   type YProsemirrorDocumentModel,
@@ -18,6 +18,7 @@ import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import type { RawTrailChange } from "./trail-read-kernel.js";
 
 export type PushPreparationPhase = {
@@ -30,7 +31,9 @@ export type PushPreparationPhase = {
 
 type PushPreparationInput = {
   model: YProsemirrorDocumentModel;
-  attributionCodec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  /** The push's open scope: the trail text the writer reads spells through it. */
+  links: DocumentLinkScopes;
 };
 
 export async function preparePushUnderLiveLock(
@@ -45,8 +48,11 @@ export async function preparePushUnderLiveLock(
   try {
     Y.applyUpdate(afterDoc, lockCutUpdate);
     Y.applyUpdate(afterDoc, phase.pushUpdate);
-    const before = snapshotBlocks(toDocHandle(lockCutDoc), input.model, input.attributionCodec);
-    const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.attributionCodec);
+    const holder = { documentId: phase.branch.documentId, view: LIVE_VIEW };
+    await input.links.prepare({ holders: [holder], docs: [lockCutDoc, afterDoc] });
+    const codec = input.codec.forScope(input.links.holder(holder));
+    const before = snapshotBlocks(toDocHandle(lockCutDoc), input.model, codec);
+    const after = snapshotBlocks(toDocHandle(afterDoc), input.model, codec);
     const attribution = journalAttributionByChangedBlock({
       liveDoc: lockCutDoc,
       rows: phase.rows,

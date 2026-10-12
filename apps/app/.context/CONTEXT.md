@@ -3,6 +3,17 @@
 How the frontend is structured and why its seams exist. Visual implementation
 conventions live in [visual-conventions.md](visual-conventions.md).
 
+## Browser records
+
+`src/client/storage/browser-record.ts` owns best-effort JSON storage and the
+`{ version, accountId, scope?, payload }` envelope for workspace tabs, dock,
+reading places, composer drafts, remembered selections, and tree expansion.
+Domain parsers accept unknown payloads; `undefined` means absent/invalid on read
+and deletion on write, while `null` can mean explicitly empty. Scope stamps bind
+selections to project/kind and drafts to destination; features still own their
+state transitions and LRU. Old formats are absent, never migrated. The settings
+first-paint cache and raw boot-script preferences remain separate.
+
 ## Frontend performance
 
 Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
@@ -87,6 +98,11 @@ Two interfaces are the only paths between the visual layer and the substrate:
   for placement, interaction ownership, and mid-thread rebind behavior.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
+  A passive reader of a key another hook fetches (`useMissingChatFallback`,
+  `useDisplayedThread` over the thread snapshot) spreads that hook's shared
+  options with `enabled: false`. Never pass `skipToken` there: observer options
+  land on the shared query, so the sentinel replaces the live host's fetch
+  function and its invalidations fail with "Missing queryFn".
   `project-invalidation` supplies project-level invalidators;
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
   thread or Work transition that can change the Chat index also invalidates `chatFeed`.
@@ -146,8 +162,29 @@ delivery into ToolViews. For the full process/text/artifact contract, see
 grammar for presentation and `reference-occurrences.ts` for submitted-reference
 authority. Those are separate decisions: grammar may make syntax readable, but
 only an exact submitted `(documentId, uri)` match grants occurrence navigation.
-Syntax-only navigation still goes through the project-scoped link resolver and
-must never inherit attachment authority.
+Syntax-only navigation goes through the hosting surface's link follower
+(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution, watch }`,
+built by `features/chat/useChatLinkFollowing.ts` over
+[`features/links`](../src/features/links/AGENTS.md)) and must
+never inherit attachment authority. `resolution` is the cache those follows
+use; a syntax link draws its chip state from it, so what it shows and what a
+click finds agree. `watch` is the surface's single requester
+(`createLinkRequester`): a shown link registers its href, and the requester
+asks about every shown link in one batched request per pass. A link never
+asks for itself. A syntax reference `canFollow` rejects (a relative path in
+chat, which has no base URI) renders as plain text with its href as a tooltip:
+no link role, no tab stop, no context menu.
+
+Every other reference is a link chip
+([`components/app/link-chip`](../src/components/app/link-chip/AGENTS.md)). An
+exact reference draws in its URI's family from the host's
+`TranscriptReferenceResolution` map. In chat that is the chat's
+`ReferenceAvailability` store (`features/chat/reference-availability.ts`):
+user turns watch their document ids, the store looks every new id up in one
+batched availability request, and the catalog revision change that
+re-registers the link resolver asks again about everything watched. Dashed
+and unfollowable once its document is gone for this writer; filled while the
+answer is out, indeterminate, or for a document that has moved since.
 
 Occurrence coordinates are offsets in the original serialized message, not in
 decoded mdast text. Keep authorized content in one source block, use
@@ -214,7 +251,7 @@ which reconciles server turns against local optimistic state via
 
 `useThreadSnapshotSync` is always stale and refetches on activation. Its one
 mounted-thread transport handler also owns addressed `meridian.block.upserted`
-and `meridian.block.pruned` reduction after a run terminates; the run controller
+reduction after a run terminates; the run controller
 owns deltas, commands and terminals, and flushes buffered deltas before a
 thread-owned block mutation. The handler refetches on `RUN_STARTED` and gap.
 A thread that advanced while the writer was elsewhere — a background child's
@@ -275,18 +312,33 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`DraftApplyRecoveryProvider` → `WorkingSetSyncPreferenceProvider` →
+`AccountSettingsProvider` →
 `ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
 `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
 
-The account-lifetime `WorkingSetSyncPreferenceProvider` owns the cross-device
-working-set preference: it runs the command hook once per account, seeds from
-the loader only before the first local revision, and drives both the Settings
-row and `configureWorkingSetSync` from the same confirmed value. A stale or
-`null` loader commit cannot hide the switch or move the driver once a local
-confirm exists; an account epoch reset clears the override.
+The account-lifetime `AccountSettingsProvider` owns language, theme, Stats for
+nerds and working-set sync. Serialized partial PATCH commands keep per-setting
+revisions, pending state and retryable errors. Pending or failed intents own
+the displayed choice; confirmed values drive `configureWorkingSetSync` and
+are the only values relayed or cached. Newer ordered reads may replace settled
+choices. Account epoch changes remount the owner and fence abandoned writes.
+
+`meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
+cache using the shared browser-record versioned envelope, not a pending-write journal. The active-account pointer lets the theme
+boot script read it before hydration; SSR supplies the current account and a
+server theme seed that wins over cached appearance. The cache is used only
+when that seed is unavailable and contains confirmed snapshots only. Pending
+and failed choices are this tab's overlay, never relayed as saved values. Server
+reads carry a browser request-start generation; command settlements fence older
+reads, while newer reads can replace settled edits. Storage relays confirmed
+snapshots and reconciles unowned fields through a server read, without duplicate
+PATCHes. `?locale=` seeds a local language override; an
+explicit language command takes over for this account session. Settings controls
+show the account record, not that URL override.
+Text size alone stays device-local at `meridian:text-size:v1`. Settings uses
+shared section bodies for desktop and phone, grouped by these two scopes.
 
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated
@@ -328,13 +380,18 @@ context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
 creation dialog, distinct from every UUID-addressed Work. Documents and folders
 live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
 and for Scratch and Uploads it is required because the Work is the file's
-identity. The recognized query keys are `work`, `settings`, `results`, and
-`view`. Selectors distinguish omitted, explicit no-Work (empty), a Work ID, and
-malformed input; duplicate recognized keys and malformed encodings are invalid
-rather than normalized into another destination. Older shapes have no alias and
-render the unavailable state. Case and trailing-slash canonical replacement use
-the address serializer. Settings remains the layout-owned overlay; Results
-remains auxiliary state. The full grammar is in
+identity. Inside the client, No Work is the locked row's id, including the
+Editor's Work. Work-scoped tabs always carry their Work id.
+Only `workSelectionFor` spells No Work as `none` for project-content
+addresses; Scratch and Uploads addresses carry the row id.
+Work-scoped resource locations carry their Work id and slug; the No Work
+row's slug is null (`ResourceWorkAuthority`). The recognized query keys are
+`work`, `settings`, `results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
+a Work ID, and malformed input; duplicate recognized keys and malformed
+encodings are invalid rather than normalized into another destination. Older
+shapes have no alias and render the unavailable state. Case and trailing-slash
+canonical replacement use the address serializer. Settings remains the
+layout-owned overlay; Results remains auxiliary state. The full grammar is in
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and

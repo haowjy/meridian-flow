@@ -1,10 +1,12 @@
-/** Executor capability plumbing for the `thread_message` registration. */
+/** Executor input parsing and capability plumbing for spawn-family registrations. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { threadReadError } from "../spawn/resolve-readable-thread.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
+import type { ToolRegistration } from "./types.js";
 
 const executionBase = { threadId: "thread-1" as ThreadId, turnId: "turn-1" as TurnId };
 
@@ -15,38 +17,52 @@ function executorFor(name: "thread_message" | "thread_report") {
   return createToolExecutor(createToolRegistry({ registrations }));
 }
 
-describe("thread_message capability plumbing", () => {
-  it("fails the call when the threadMessage context is absent", async () => {
-    const executor = executorFor("thread_message");
-
-    const result = await executor.executeTool(
-      { id: "call-1", name: "thread_message", arguments: { ref: "p1", message: "p" } },
-      { ...executionBase, agentSlug: null },
-    );
-
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.output)).toContain("missing threadMessage context");
-  });
+it("marks a structured thread-report refusal as an error result", async () => {
+  const result = await executorFor("thread_report").executeTool(
+    { id: "call-denied", name: "thread_report", arguments: { ref: "p9" } },
+    {
+      ...executionBase,
+      agentSlug: null,
+      threadReport: async () => threadReadError("thread_not_connected", "Not connected"),
+    },
+  );
+  expect(result.isError).toBe(true);
+  expect(result.result).toMatchObject({ code: "thread_not_connected" });
 });
 
-describe("thread_report capability plumbing", () => {
-  it("injects the exact-report reader", async () => {
-    const expected: ThreadReportResult = {
-      childThreadId: "child-1" as ThreadId,
-      ref: "p1",
-      status: "unavailable",
+describe("input parsing before dispatch", () => {
+  const input = z
+    .object({
+      mode: z.enum(["foreground", "background"]).default("foreground"),
+      count: z.number().int().positive().optional(),
+    })
+    .strict();
+
+  function parsingExecutor() {
+    const handler = vi.fn(async (parsed: unknown) => parsed);
+    const registration: ToolRegistration = {
+      source: "core",
+      definition: { type: "function", name: "probe", description: "", inputSchema: {} },
+      input,
+      execution: { type: "server", handler },
     };
-    const threadReportFn = vi.fn(async () => expected);
-    const executor = executorFor("thread_report");
+    return {
+      handler,
+      executor: createToolExecutor(createToolRegistry({ registrations: [registration] })),
+    };
+  }
+
+  it("refuses invalid values and unknown keys without calling the handler", async () => {
+    const { handler, executor } = parsingExecutor();
     const result = await executor.executeTool(
-      {
-        id: "call-1",
-        name: "thread_report",
-        arguments: { ref: "p1" },
-      },
-      { ...executionBase, agentSlug: null, threadReport: threadReportFn },
+      { id: "call-1", name: "probe", arguments: { mode: "invalid", count: 1.5, extra: true } },
+      { ...executionBase, agentSlug: null },
     );
-    expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
-    expect(result.output).toEqual(expected);
+    expect(handler).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    expect(result.result).toMatchObject({
+      error: "invalid_arguments",
+      issues: [{ path: "mode" }, { path: "count" }, { path: "extra" }],
+    });
   });
 });

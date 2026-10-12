@@ -1,15 +1,11 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
-import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import type { ContextOwner } from "@meridian/contracts/protocol";
+import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,15 +26,12 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import {
-  useAccountResourceReplica,
-  useProjectContextAvailabilityCoordinator,
-} from "./account-feature-context";
+import { useAccountResourceReplica } from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "new-file" | "new-folder" | "rename" | "delete";
+export type EntryAction = "new-file" | "new-folder" | "rename" | "move" | "delete";
 
 type EntryActionSpec = {
   action: EntryAction;
@@ -52,6 +45,7 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
+  { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,
@@ -61,35 +55,28 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   },
 ];
 
-function visibleEntryActions(allowCreate: boolean): readonly EntryActionSpec[] {
-  return allowCreate ? ENTRY_ACTIONS : ENTRY_ACTIONS.filter((spec) => spec.group !== "create");
-}
-
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
   name: string;
   /** Full scheme-relative path. */
   path: string;
-} & ({ kind: "file"; documentId: string } | { kind: "dir" });
+} & ({ kind: "file"; documentId: string } | { kind: "dir"; entryId: string });
 
-type DeleteTarget = EntryActionTarget & { workId: string | null };
+export type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
 export function ContextEntryMenu({
   children,
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
   children: React.ReactNode;
-  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
-  allowCreate: boolean;
-  /** Upload intake owns deletion; its tree projection cannot issue generic deletes. */
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  if (allowedActions.length === 0) return children;
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
@@ -102,11 +89,7 @@ export function ContextEntryMenu({
           )}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          <ContextActionItems
-            allowCreate={allowCreate}
-            allowDelete={allowDelete}
-            onAction={dispatch}
-          />
+          <ContextActionItems allowedActions={allowedActions} onAction={dispatch} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -134,23 +117,20 @@ function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
 
 export function EntryKebabButton({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
   className,
   align = "start",
   sideOffset = 2,
 }: {
-  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
-  allowCreate: boolean;
-  /** Upload intake owns deletion; its tree projection cannot issue generic deletes. */
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
   className?: string;
   align?: "start" | "center" | "end";
   sideOffset?: number;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  if (allowedActions.length === 0) return null;
   return (
     <OverflowMenu
       label={t`Actions`}
@@ -159,11 +139,7 @@ export function EntryKebabButton({
       onCloseAutoFocus={onCloseAutoFocus}
       triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
-      <DropdownActionItems
-        allowCreate={allowCreate}
-        allowDelete={allowDelete}
-        onAction={dispatch}
-      />
+      <DropdownActionItems allowedActions={allowedActions} onAction={dispatch} />
     </OverflowMenu>
   );
 }
@@ -171,17 +147,13 @@ export function EntryKebabButton({
 // ─── Primitive-specific renderers over the shared action specification ─────
 
 function ContextActionItems({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowCreate: boolean;
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = visibleEntryActions(allowCreate).filter(
-    (spec) => allowDelete || spec.action !== "delete",
-  );
+  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
   return (
     <>
       {actions.map((spec, index) => {
@@ -211,17 +183,13 @@ function ContextActionItems({
 }
 
 function DropdownActionItems({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowCreate: boolean;
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = visibleEntryActions(allowCreate).filter(
-    (spec) => allowDelete || spec.action !== "delete",
-  );
+  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
   return actions.map((spec, index) => {
     const Icon = spec.icon;
     const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
@@ -245,30 +213,16 @@ function DropdownActionItems({
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────
 
-export function useDeleteConfirmation({
-  projectId,
-  workId,
-  scheme,
-}: {
-  projectId: string;
-  workId: string | null;
-  scheme: ProjectContextTreeScheme;
-}) {
-  const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
+export function useDeleteConfirmation({ projectId }: { projectId: string }) {
+  const [target, setTarget] = useState<DeleteTarget | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const mutation = useDeleteContextEntry(projectId, scheme);
   const resources = useAccountResourceReplica();
   const [localPending, setLocalPending] = useState(false);
-  const availability = useProjectContextAvailabilityCoordinator();
-  const queryClient = useQueryClient();
 
-  const requestDelete = useCallback(
-    (t: EntryActionTarget) => {
-      setError(null);
-      setTarget({ ...t, workId, operationId: crypto.randomUUID() });
-    },
-    [workId],
-  );
+  const requestDelete = useCallback((t: DeleteTarget) => {
+    setError(null);
+    setTarget(t);
+  }, []);
   const cancel = useCallback(() => {
     setError(null);
     setTarget(null);
@@ -278,47 +232,26 @@ export function useDeleteConfirmation({
     if (!target) return;
     setError(null);
     try {
-      if (target.kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
-        setLocalPending(true);
+      setLocalPending(true);
+      if (target.kind === "file") {
         const key = await resources.keyForDocument(projectId, target.documentId);
         if (!key) throw new Error("Document resource is unavailable");
         await resources.deleteDocument(projectId, key);
-        setTarget(null);
-        return;
+      } else {
+        await resources.deleteFolder(projectId, target.entryId);
       }
-      const result = await mutation.mutateAsync({
-        operationId: target.operationId,
-        path: target.path,
-        workId: target.workId,
-        expected:
-          target.kind === "dir"
-            ? { kind: "folder" }
-            : { kind: "file", documentId: target.documentId },
-      });
-      await availability.acceptCommittedDelete({
-        projectId,
-        deletedDocumentIds: result.deletedDocumentIds,
-        generation: result.availabilityGeneration,
-      });
       setTarget(null);
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextCatalogView(
-          projectId,
-          scheme,
-          isWorkScopedProjectContextScheme(scheme) ? target.workId : undefined,
-        ),
-      });
     } catch (cause) {
       // Keep the target visible so the writer can refresh and retry.
       setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
     } finally {
       setLocalPending(false);
     }
-  }, [availability, projectId, queryClient, resources, scheme, target, mutation]);
+  }, [projectId, resources, target]);
 
   return {
     target,
-    isPending: mutation.isPending || localPending,
+    isPending: localPending,
     error,
     requestDelete,
     cancel,

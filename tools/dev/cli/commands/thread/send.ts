@@ -200,28 +200,52 @@ async function followToOutcome(
 ): Promise<SendOutcome> {
   const { threadId } = input;
   let ourTurn: string | null = admitted.assistantTurnId;
+  let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {
-    await followThread({
-      session,
-      threadId,
-      lastSeq: admitted.resumeAfterSeq,
-      deadlineAt: Date.now() + input.timeoutMs,
-      out,
-      full: input.full,
-      textStream: "err",
-      shouldStop(event: CliEvent) {
-        if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
-        if (event.type === "turn.finished") return isOurs(event.turnId);
-        if (event.type === "turn.failed") return ourTurn !== null;
-        if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
-          interrupt = { turnId: event.turnId, interruptId: event.interruptId };
-          return true;
-        }
-        return false;
-      },
-    });
+    const deadlineAt = Date.now() + input.timeoutMs;
+    for (;;) {
+      const followed = await followThread({
+        session,
+        threadId,
+        lastSeq,
+        deadlineAt,
+        out,
+        full: input.full,
+        textStream: "err",
+        shouldStop(event: CliEvent) {
+          if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
+          if (event.type === "turn.finished") return isOurs(event.turnId);
+          if (event.type === "turn.failed") return ourTurn !== null;
+          if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
+            interrupt = { turnId: event.turnId, interruptId: event.interruptId };
+            return true;
+          }
+          return false;
+        },
+      });
+      lastSeq = followed.lastSeq;
+      if (followed.stoppedBy?.type !== "turn.failed") break;
+
+      // A previous run can fail while this send's user turn is still queued.
+      // If release already started its successor, follow that reply instead.
+      const snapshot = await session.request<ThreadSnapshotResponse>(
+        "GET",
+        apiThreadSnapshotPath(threadId),
+      );
+      const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+      if (answer) {
+        ourTurn = answer.id;
+        if (["complete", "cancelled", "error"].includes(answer.status)) break;
+        continue;
+      }
+      if (snapshot.liveState.pending.items.some((item) => item.id === admitted.userTurnId)) {
+        ourTurn = null;
+        continue;
+      }
+      break;
+    }
   } catch (error) {
     if (error instanceof CliError && error.code === "timeout") {
       return {
@@ -252,6 +276,22 @@ async function followToOutcome(
     error: turn?.error ?? null,
     ...(interrupt ? { interrupt } : {}),
   };
+}
+
+function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | undefined {
+  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+  const descendsFromUserTurn = (turn: Turn) => {
+    let current: Turn | undefined = turn;
+    while (current?.prevTurnId) {
+      if (current.prevTurnId === userTurnId) return true;
+      current = byId.get(current.prevTurnId);
+    }
+    return false;
+  };
+  return turns
+    .filter((turn) => turn.role === "assistant" && descendsFromUserTurn(turn))
+    .sort((left, right) => left.position - right.position)
+    .at(-1);
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */

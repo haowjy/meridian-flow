@@ -28,14 +28,14 @@ export function useCreateContextEntry(projectId: string) {
         projectId,
         args.scheme,
         { type: args.type, path: args.path, content: args.content },
-        contextRequestOptionsForScheme(args.scheme, args.workId),
+        contextRequestOptionsForScheme(args.scheme, { workId: args.workId }),
       ),
     onSuccess: (_result, args) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           args.scheme,
-          isWorkScopedProjectContextScheme(args.scheme) ? args.workId : undefined,
+          isWorkScopedProjectContextScheme(args.scheme) ? { workId: args.workId } : undefined,
         ),
       });
     },

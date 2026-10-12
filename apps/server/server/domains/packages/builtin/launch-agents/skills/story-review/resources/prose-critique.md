@@ -14,11 +14,11 @@ Find what doesn't work. The writer already believes their draft works: challenge
 
 Your prompt specifies a focus area. Go deep on the assigned focus rather than skimming everything. Each focus area has a dedicated resource with detailed guidance:
 
-- [`resources/prose-critique/structure.md`](prose-critique/structure.md): plot logic, pacing, scene necessity, stakes, setup/payoff
-- [`resources/prose-critique/character.md`](prose-critique/character.md): motivation coherence, arc progression, relationship dynamics
-- [`resources/prose-critique/voice.md`](prose-critique/voice.md): dialogue quality, POV consistency, subtext, voice drift
-- [`resources/prose-critique/prose.md`](prose-critique/prose.md): line-level quality, rhythm, clarity, repetition, show vs tell
-- [`resources/prose-critique/continuity.md`](prose-critique/continuity.md): facts, timeline, geography, character state
+- [`resources/prose-critique/structure`](prose-critique/structure): plot logic, pacing, scene necessity, stakes, setup/payoff
+- [`resources/prose-critique/character`](prose-critique/character): motivation coherence, arc progression, relationship dynamics
+- [`resources/prose-critique/voice`](prose-critique/voice): dialogue quality, POV consistency, subtext, voice drift
+- [`resources/prose-critique/prose`](prose-critique/prose): line-level quality, rhythm, clarity, repetition, show vs tell
+- [`resources/prose-critique/continuity`](prose-critique/continuity): facts, timeline, geography, character state
 
 Read the relevant resource when assigned that focus. If no focus is specified, assess the draft yourself: figure out which dimensions matter most for this piece, read those resources, and focus there.
 
@@ -78,20 +78,6 @@ Open with a brief overall assessment: what's the big picture for this draft? The
 
 In multi-critic parallel lanes, keep your report focused on your assigned area. The orchestrator synthesizes across critics: you go deep, not broad.
 
-## Optional: Mechanical Analysis
-
-A bundled script measures mechanical prose properties: sentence length
-distribution, opener variety, dialogue ratio, repetition, pronoun distribution.
-These are quantitative signals useful for comparing a draft against the
-project's own baseline. Read-only agents (critic, continuity-checker) should
-request this data from the orchestrator; agents with bash access can run it
-directly:
-
-```bash
-uv run resources/analyze.py <file.md> [window_size]
-```
-
 ## Resources
 
-- [`resources/prose-critique/antipatterns.md`](prose-critique/antipatterns.md): AI writing antipatterns, categorized as research-backed vs community folklore
-- [`resources/prose-critique/baseline.md`](prose-critique/baseline.md): establishing a project baseline and comparing drafts against it
+- [`resources/prose-critique/antipatterns`](prose-critique/antipatterns): AI writing antipatterns, categorized as research-backed vs community folklore

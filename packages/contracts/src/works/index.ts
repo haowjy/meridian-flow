@@ -1,24 +1,7 @@
 export type AiWriteMode = "direct" | "draft";
 
-export const WORK_STATUS_MAX_LENGTH = 32;
-export const INVALID_WORK_STATUS = Symbol("invalid_work_status");
-
-export function normalizeWorkStatus(
-  raw: string | null,
-): string | null | typeof INVALID_WORK_STATUS {
-  if (raw === null) return null;
-  const normalized = raw.replace(/\s+/g, " ").trim();
-  if (!normalized) return null;
-  if (normalized.length > WORK_STATUS_MAX_LENGTH || normalized.split(" ").length > 3) {
-    return INVALID_WORK_STATUS;
-  }
-  return normalized;
-}
-
-export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
-
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
-import type { WorkBindingReceiptState } from "./receipts.js";
+import type { WorkReceiptState } from "./receipts.js";
 import type { WorkSlug } from "./work-slug.js";
 
 export interface Work {
@@ -107,23 +90,21 @@ export type RebindThreadWorkError =
   | { code: "target_work_unavailable"; workId: WorkId }
   | { code: "project_mismatch"; workId: WorkId };
 
-export type WorkRequiredError = { code: "work_required"; operation: string };
-
 export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
+
+/** One side of a thread's Work rebind. */
+export type WorkBindingState = WorkReceiptState & {
+  workId: WorkId;
+  slug: WorkSlug | null;
+  aiWriteMode: AiWriteMode;
+};
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */
 export interface RebindThreadWorkResult {
   threadId: ThreadId;
-  before: WorkBindingReceiptState;
-  after: WorkBindingReceiptState;
+  before: WorkBindingState;
+  after: WorkBindingState;
   changed: boolean;
-  receipt: {
-    operation: "switch";
-    category: "binding";
-    before: WorkBindingReceiptState;
-    after: WorkBindingReceiptState;
-    inverse: null;
-  };
 }
 
 export interface RebindThreadWorkResponse extends RebindThreadWorkResult {
@@ -139,6 +120,7 @@ export interface WorkContextProjectionSignal {
   scope: ThreadWorkScope;
 }
 
+export * from "./metadata.js";
 export * from "./receipts.js";
 export * from "./work-authority.js";
 export * from "./work-retention.js";

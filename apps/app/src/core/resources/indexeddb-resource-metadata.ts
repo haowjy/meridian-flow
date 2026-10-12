@@ -1,6 +1,9 @@
 /** Account-qualified metadata transactions and one shared reactive projection stream. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
+  FolderNamespaceRecord,
+  FolderNamespaceStore,
+  FolderNamespaceWrite,
   NamespaceIntent,
   ResourceCatalogCheckpoint,
   ResourceDescriptor,
@@ -13,8 +16,11 @@ import type {
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
+  folderDeletionSettlement,
+  planFolderDeletionResources,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
+  validateFolderNamespaceUpdate,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
@@ -22,6 +28,7 @@ import Dexie, { liveQuery, type Table } from "dexie";
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 type ProjectionListener = {
@@ -30,12 +37,16 @@ type ProjectionListener = {
   onError(error: unknown): void;
 };
 
-/** Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply. */
-export class IndexedDbResourceMetadata implements ResourceMetadataStore {
+/**
+ * Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply.
+ * Folder placement shares the file journal's transactions, catalog commits and projection stream.
+ */
+export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderNamespaceStore {
   private readonly database: Dexie;
   private readonly resources: Table<ResourceDescriptor, string>;
   private readonly intents: Table<NamespaceIntent, string>;
   private readonly catalogs: Table<StoredCatalog, string>;
+  private readonly folders: Table<FolderNamespaceRecord, string>;
   private readonly operations = new Set<Promise<unknown>>();
   private readonly projectionListeners = new Map<symbol, ProjectionListener>();
   private projectionStop: (() => void) | null = null;
@@ -47,15 +58,25 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     readonly accountId: string,
     onVersionChange: () => void,
   ) {
-    this.database = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    this.database = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "handle",
       intents: "intentId,handle,projectId",
       catalogs: "key,projectId",
+      folders: "handle,projectId",
     });
+    this.database
+      .version(2)
+      .stores({})
+      .upgrade(async (transaction) => {
+        // A cursor with unversioned entries cannot prove canonical freshness.
+        // Checkpoints are reacquirable; content identities and offline journals survive.
+        await transaction.table("catalogs").clear();
+      });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
+    this.folders = this.database.table("folders");
     this.database.on("versionchange", () => {
       this.beginClose();
       try {
@@ -98,17 +119,26 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   }
 
   private readAccountProjection(): Promise<AccountProjectionSnapshot> {
-    return this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
-      const [resources, intents, catalogs] = await Promise.all([
-        this.resources.toArray(),
-        this.intents.toArray(),
-        this.catalogs.toArray(),
-      ]);
-      return {
-        records: this.records(resources, intents),
-        catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
-      };
-    });
+    return this.database.transaction(
+      "r",
+      this.resources,
+      this.intents,
+      this.catalogs,
+      this.folders,
+      async () => {
+        const [resources, intents, catalogs, folders] = await Promise.all([
+          this.resources.toArray(),
+          this.intents.toArray(),
+          this.catalogs.toArray(),
+          this.folders.toArray(),
+        ]);
+        return {
+          records: this.records(resources, intents),
+          folders,
+          catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
+        };
+      },
+    );
   }
 
   private projectSnapshot(
@@ -117,6 +147,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   ): ResourceProjectionSnapshot {
     return {
       records: snapshot.records,
+      folders: snapshot.folders,
       catalogs: snapshot.catalogs.filter((catalog) => catalog.projectId === projectId),
     };
   }
@@ -218,6 +249,58 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
+  readFolder(key: ResourceKey): Promise<FolderNamespaceRecord | null> {
+    return this.run(async () => (await this.folders.get(key.handle)) ?? null);
+  }
+
+  readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]> {
+    return this.run(() =>
+      this.folders
+        .filter((folder) => folder.projectId === null || folder.projectId === projectId)
+        .toArray(),
+    );
+  }
+
+  private async foldersAreCurrent(writes: readonly FolderNamespaceWrite[]): Promise<boolean> {
+    const handles = new Set<string>();
+    for (const { expectedRevision, next } of writes) {
+      if (handles.has(next.handle)) throw new Error("Duplicate folder write");
+      handles.add(next.handle);
+      const current = (await this.folders.get(next.handle)) ?? null;
+      if ((current?.revision ?? null) !== expectedRevision) return false;
+      validateFolderNamespaceUpdate(current, next);
+    }
+    return true;
+  }
+
+  async commitFolder(input: FolderNamespaceWrite) {
+    const write = structuredClone(input);
+    return this.run(() =>
+      this.database.transaction("rw", this.folders, this.resources, this.intents, async () => {
+        if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
+        const previous = (await this.folders.get(write.next.handle)) ?? null;
+        const receipt = folderDeletionSettlement(previous, write.next);
+        if (receipt) {
+          const records = this.records(
+            await this.resources.toArray(),
+            await this.intents.toArray(),
+          );
+          const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
+          const descendants = planFolderDeletionResources(receipt, records);
+          for (const descendant of descendants) {
+            validateResourceRecordUpdate(
+              byHandle.get(descendant.next.resource.handle) ?? null,
+              descendant.next,
+            );
+          }
+          await this.resources.bulkPut(descendants.map((write) => write.next.resource));
+        }
+        await this.folders.put(write.next);
+        return "committed" as const;
+      }),
+    );
+  }
+
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
     const key = catalogProjectionKey(projectId, scope);
     return this.run(async () => {
@@ -231,25 +314,34 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   async commitCatalog(command: Parameters<ResourceMetadataStore["commitCatalog"]>[0]) {
     const input = structuredClone(command);
     return this.run(() =>
-      this.database.transaction("rw", this.catalogs, this.resources, this.intents, async () => {
-        if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
-          throw new Error("Catalog scope belongs to another project");
-        const key = catalogProjectionKey(input.next.projectId, input.next.scope);
-        const current = await this.catalogs.get(key);
-        if (
-          (current?.revision ?? null) !== input.expectedRevision ||
-          !(await this.isCurrent(input.resources))
-        )
-          return "stale" as const;
-        if (input.next.revision !== (input.expectedRevision ?? 0) + 1)
-          throw new Error("Invalid catalog revision");
-        await this.putResources(input.resources);
-        await this.catalogs.put({
-          ...input.next,
-          key,
-        });
-        return "committed" as const;
-      }),
+      this.database.transaction(
+        "rw",
+        this.catalogs,
+        this.resources,
+        this.intents,
+        this.folders,
+        async () => {
+          if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
+            throw new Error("Catalog scope belongs to another project");
+          const key = catalogProjectionKey(input.next.projectId, input.next.scope);
+          const current = await this.catalogs.get(key);
+          if (
+            (current?.revision ?? null) !== input.expectedRevision ||
+            !(await this.isCurrent(input.resources)) ||
+            !(await this.foldersAreCurrent(input.folders))
+          )
+            return "stale" as const;
+          if (input.next.revision !== (input.expectedRevision ?? 0) + 1)
+            throw new Error("Invalid catalog revision");
+          await this.putResources(input.resources);
+          await this.folders.bulkPut(input.folders.map(({ next }) => next));
+          await this.catalogs.put({
+            ...input.next,
+            key,
+          });
+          return "committed" as const;
+        },
+      ),
     );
   }
 

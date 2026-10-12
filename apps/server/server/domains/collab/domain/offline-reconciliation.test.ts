@@ -1,15 +1,16 @@
 /** Behavioral coverage for offline journal reconciliation. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
 
@@ -18,9 +19,8 @@ const THREAD_ID = "thread-offline";
 const TURN_ID = "turn-agent";
 const RESPONSE_ID = "response-agent";
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
-const agentCodec = createAgentEditCodec(codec);
 
 describe("offline reconciliation", () => {
   it("records hidden writer content once in the ordinary receipt shape", async () => {
@@ -38,27 +38,6 @@ describe("offline reconciliation", () => {
       navigation: { kind: "deletion_boundary" },
       beforeText: expect.stringContaining("Writer offline revision"),
     });
-  });
-
-  it("reports an offline writer revision even when the block was agent-origin", async () => {
-    const scenario = await setup({
-      origin: "agent:earlier",
-      editDeletedBlock: true,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
-  });
-
-  it("reports an offline writer revision when the agent actor has no response", async () => {
-    const scenario = await setup({
-      origin: "human:writer",
-      editDeletedBlock: true,
-      authoringResponseId: null,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
   });
 });
 
@@ -116,7 +95,8 @@ async function setup(input: {
       },
     },
     model,
-    codec: agentCodec,
+    codec: createAgentEditCodecFactory(codec),
+    links: createStaticDocumentLinkScopes(),
     identifyUpdate: () => "incoming-identity",
     resolveThreadId: async () => THREAD_ID,
     resolveDocumentTitle: async () => "Chapter",

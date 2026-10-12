@@ -13,10 +13,17 @@
  * Props split in two: those that form the `EditorMountIdentity` decide which
  * editor exists (they key the mount), and the rest are surface config applied
  * to whatever editor is already running.
+ *
+ * The room's access scope is surface config too: a room the server makes
+ * read-only (an archived Work's draft or scratch) stops taking edits in place,
+ * with no remount. Only a review room whose pending edits the server refused
+ * is rebuilt, from the server's state.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -30,8 +37,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
+import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -39,21 +48,29 @@ import {
   editorRoomKey,
   useMountedEditor,
 } from "@/core/editor/mounted-editor";
+import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import { useLinkableDocuments } from "@/features/links";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+  useAccountResourceProjection,
+  useLiveDocumentSessionRegistry,
+} from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
+import { captureReview, FrozenReview, type FrozenReviewMarkup } from "./FrozenReview";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
-import { ProjectLinkRuntimeWithIndex, useLinkableDocuments } from "./surfaces/link";
+import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
@@ -87,13 +104,6 @@ export type EditorViewProps = {
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
-  /**
-   * The Work this editor is open in — the active editing context, not a review's
-   * ownership. It scopes what a `[[` menu offers, what the resolver is asked, and
-   * where a followed link is looked for. Runtime scope: changing it never
-   * remounts the editor.
-   */
-  workId?: string | null;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
   /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */
@@ -112,36 +122,64 @@ let editorSessionOwnerSequence = 0;
  * not resolved the room yet, and review decorations must never be projected
  * onto the live manuscript room.
  */
-function mountIdentity(props: EditorViewProps): EditorMountIdentity {
+function mountIdentity(props: EditorViewProps, surface: "live" | "review"): EditorMountIdentity {
   const shared = {
     documentId: props.documentId,
-    bindingKey: props.bindingKey,
     projectId: props.projectId,
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
   } as const;
   const reviewDraftId = props.reviewDraftId;
   const reviewRoomName = props.reviewRoomName;
-  if ((reviewDraftId && !reviewRoomName) || (!reviewDraftId && reviewRoomName)) {
-    throw new Error("Review editor requires both reviewDraftId and reviewRoomName");
+  if (!reviewDraftId && reviewRoomName) {
+    throw new Error("Review editor requires a reviewDraftId with its reviewRoomName");
   }
-  return reviewDraftId && reviewRoomName
-    ? { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
-    : { ...shared, surface: "live", detached: props.detached ?? false };
+  return surface === "review" && reviewDraftId && reviewRoomName
+    ? // A branch room is its own session: the live binding's identity (which a
+      // rename can re-mint) must not rebuild the review.
+      { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
+    : {
+        ...shared,
+        bindingKey: props.bindingKey,
+        surface: "live",
+        detached: props.detached ?? false,
+      };
 }
 
 export function EditorView(props: EditorViewProps) {
-  const identity = mountIdentity(props);
+  const identity = mountIdentity(props, "review");
   const roomKey = editorRoomKey(identity);
   const inReview = identity.surface === "review";
+  // Review is intended from the click, before its room resolves or paints. Until
+  // the branch editor owns input, the live manuscript stays painted but read-only.
+  const reviewRequested = Boolean(props.reviewDraftId);
   const registry = useLiveDocumentSessionRegistry();
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
+  // The review mount whose editor exists. Until then the live editor stays on
+  // screen, so entering review never shows an empty body.
+  const [paintedReviewKey, setPaintedReviewKey] = useState<string | null>(null);
+  // The painted review while its refused room is rebuilt: an inert copy, so neither the
+  // live prose nor an empty shell shows under a review the writer is still in. It belongs to
+  // the one review identity (document, room, draft) it was copied from and renders for no other.
+  const reviewIdentity = inReview ? editorMountKey(identity) : null;
+  const [replaced, setReplaced] = useState<{
+    identity: string;
+    markup: FrozenReviewMarkup;
+  } | null>(null);
+  const replacedReview = replaced && replaced.identity === reviewIdentity ? replaced.markup : null;
+  // The rebuild in flight for the current review identity. Leaving or changing the review
+  // retires it, so a late completion or failure can neither bind nor report for another review.
+  const rebuildAttemptRef = useRef<symbol | null>(null);
+  const reviewHostRef = useRef<HTMLDivElement | null>(null);
+  const reviewPaintedRef = useRef(false);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
   useEffect(() => {
     if (!inReview) {
       setBoundSession(null);
+      setPaintedReviewKey(null);
+      setReplaced(null);
       return;
     }
     const ownerId = sessionOwnerIdRef.current;
@@ -155,12 +193,43 @@ export function EditorView(props: EditorViewProps) {
       throw error;
     }
     setBoundSession(session);
-    return () => registry.releaseBranchRooms(ownerId);
+    return () => {
+      rebuildAttemptRef.current = null;
+      setReplaced(null);
+      registry.releaseBranchRooms(ownerId);
+    };
   }, [inReview, registry, roomKey]);
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
+    let rebuilding = false;
     return boundSession.subscribe((snapshot) => {
+      if (rebuilding) return;
+      if (boundSession.refusedLocalEdits()) {
+        // Only the refused characters are lost: the review stays open on a
+        // fresh session synced from the server.
+        rebuilding = true;
+        // Hold what is painted, then unbind before the retired session's Y.Doc is destroyed
+        // under the editor. A replacement still waiting to paint keeps the copy already held.
+        if (reviewPaintedRef.current) {
+          const held = captureReview(reviewHostRef.current);
+          if (held && reviewIdentity) setReplaced({ identity: reviewIdentity, markup: held });
+        }
+        setBoundSession(null);
+        const attempt = Symbol("review-rebuild");
+        rebuildAttemptRef.current = attempt;
+        void registry.rebuildBranchRoom(roomKey).then(
+          (rebuilt) => {
+            if (rebuildAttemptRef.current === attempt) setBoundSession(rebuilt);
+          },
+          () => {
+            if (rebuildAttemptRef.current !== attempt) return;
+            setReplaced(null);
+            props.onReviewSessionUnavailable?.();
+          },
+        );
+        return;
+      }
       if (
         snapshot.status === "destroyed" ||
         snapshot.connectionState?.kind === "terminal" ||
@@ -170,27 +239,61 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, inReview, roomKey]);
+  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey, reviewIdentity]);
 
-  const session = inReview
-    ? boundSession?.roomKey === roomKey
-      ? boundSession
-      : null
-    : (props.session ?? null);
+  const liveSession = props.session ?? null;
+  const reviewSession = inReview && boundSession?.roomKey === roomKey ? boundSession : null;
+  const reviewKey =
+    inReview && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
+  const reviewVisible = reviewSession !== null && paintedReviewKey === reviewKey;
+  reviewPaintedRef.current = reviewVisible;
+  // Until the replacement paints, the copy stands in for the review it replaces.
+  const replacing = inReview && !reviewVisible && replacedReview !== null;
+  // With no live editor underneath, the branch's own shell (or notice) is all
+  // there is to see, so it shows from its first render.
+  const reviewShown = reviewVisible || (!liveSession && !replacing);
 
-  if (!session) return <PendingEditorShell {...props} />;
+  useEffect(() => {
+    if (reviewVisible) setReplaced(null);
+  }, [reviewVisible]);
 
-  // The one place an editor's lifetime is decided. Every input the session
-  // lookup above reads is part of this key, so a session swap always arrives
-  // with a fresh mount and nothing else can force one.
+  if (!liveSession && !reviewSession && !replacing) return <PendingEditorShell {...props} />;
+
+  // The one place an editor's lifetime is decided. Every input a session lookup
+  // reads is part of its key, so a session swap always arrives with a fresh
+  // mount and nothing else can force one. A rebuilt or reopened room keeps its
+  // name, so the session's own Y.Doc is part of the key. A document's live
+  // editor stays mounted, hidden, underneath its review: Apply, Discard and
+  // Back to live then reveal the warm editor instead of rebuilding one.
   return (
-    <SessionEditorView
-      key={editorMountKey(identity)}
-      {...props}
-      identity={identity}
-      session={session}
-      liveSession={props.session ?? null}
-    />
+    <>
+      {liveSession ? (
+        <div className={reviewVisible || replacing ? "hidden" : "contents"}>
+          <SessionEditorView
+            key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
+            {...props}
+            editable={reviewRequested ? false : props.editable}
+            identity={mountIdentity(props, "live")}
+            session={liveSession}
+            liveSession={liveSession}
+            held={reviewRequested}
+          />
+        </div>
+      ) : null}
+      {replacing && replacedReview ? <FrozenReview markup={replacedReview} /> : null}
+      {reviewSession && reviewKey ? (
+        <div ref={reviewHostRef} className={reviewShown ? "contents" : "hidden"}>
+          <SessionEditorView
+            key={reviewKey}
+            {...props}
+            identity={identity}
+            session={reviewSession}
+            liveSession={liveSession}
+            onPainted={() => setPaintedReviewKey(reviewKey)}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -198,6 +301,10 @@ type SessionEditorViewProps = EditorViewProps & {
   identity: EditorMountIdentity;
   session: DocumentSession;
   liveSession: DocumentSession | null;
+  /** The live editor kept warm under an active review: its chrome and navigation stand down. */
+  held?: boolean;
+  /** Called once this mount's TipTap editor exists and is showing its content. */
+  onPainted?: () => void;
 };
 
 function SessionEditorView(props: SessionEditorViewProps) {
@@ -255,16 +362,20 @@ function ActiveSessionEditorView({
   className,
   editable = true,
   showToolbar = true,
-  active = true,
+  active: hostActive = true,
   ariaLabel,
-  workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
   liveSession,
+  held = false,
+  onPainted,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
+  const active = hostActive && !held;
+  const accountId = useAccountId();
+  const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const { controller } = useDraftReview();
   const inReview = identity.surface === "review";
@@ -274,15 +385,29 @@ function ActiveSessionEditorView({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
-  const effectiveEditable = editable && !snapshot.schemaFence;
+  const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
-  // Which project and which Work this editor is open in. Everything that has to
-  // reach past the document — the `[[` candidates, the resolver, a followed
-  // link — reads this one value, and none of it is a reason to remount.
+  // Links belong to their holder, never to the route's or a chat's Work.
+  const { records, placement } = useAccountResourceProjection(projectId ?? "");
+  const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const holder = resourceForDocumentIdentity(records, documentId);
+  const location = holder && projectId ? placement.resourceLocation(holder) : null;
+  // A draft-created document has no holder record until Apply, so under review
+  // its links belong to the draft's Work. Without one the scope would stay
+  // pending and a followed link would wait forever.
+  // A note in a chat's Scratch has no Work; it links as No Work and names its lineage.
+  const linkRootThreadId = location?.rootThreadId ?? null;
+  const linkWorkId = !location
+    ? reviewWorkId
+    : linkRootThreadId
+      ? (noWork?.id ?? null)
+      : location.scheme === "scratch" || location.scheme === "uploads"
+        ? location.workId
+        : (noWork?.id ?? null);
   const scope = useMemo<EditorScope>(
-    () => ({ projectId: projectId ?? null, workId }),
-    [projectId, workId],
+    () => ({ projectId: projectId ?? null, workId: linkWorkId, rootThreadId: linkRootThreadId }),
+    [projectId, linkWorkId, linkRootThreadId],
   );
 
   // Marks render before anyone clicks one. Warming their trail detail here is
@@ -317,25 +442,68 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // Read when the `[[` menu opens, for the same reason as the slash catalog:
-  // the label resolves against whatever locale is active then, and the document
-  // list changes every time the writer creates or renames a file.
+  // The scope's document index: what this document's relative links resolve
+  // against, and which addresses already hold a document.
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  const { documents: wikilinkDocuments } = linkableDocuments;
-  const wikilinkCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: wikilinkDocuments };
-  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+  // This document's own address: what its relative links resolve against and
+  // what a link inserted into it is spelled relative to. Null until the tree
+  // carrying it arrives, or while it has no address yet, which spells full URIs.
+  const holderUri = useMemo(
+    () =>
+      linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
+      null,
+    [linkableDocuments, documentId],
+  );
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
-    active ? workId : null,
+    active ? scope.workId : null,
     t`Reference a file`,
+    active ? scope.rootThreadId : null,
   );
-  const atReferenceCatalog = useCallback(
-    () => (identity.schemaType === "document" && effectiveEditable ? sharedReferenceCatalog : null),
-    [effectiveEditable, identity.schemaType, sharedReferenceCatalog],
+  // Where a link to a document nobody has written goes, unless a document is
+  // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
+  // names nothing (with folders, for a path link). Dashed until a follow's
+  // Create makes the document.
+  const occupied = useMemo(
+    () => new Set(linkableDocuments.documents.map((document) => document.uri)),
+    [linkableDocuments],
+  );
+  const linkAhead = useCallback(
+    (name: string, folders?: readonly string[]) => {
+      const uri = linkAheadAddress(holderUri, name, folders);
+      return uri && !occupied.has(uri) ? { uri } : null;
+    },
+    [holderUri, occupied],
+  );
+  // Read when the `@` menu opens.
+  const atReferenceCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
+      return null;
+    return { ...sharedReferenceCatalog, linkAhead: (name: string) => linkAhead(name) };
+  }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
+  // What a pasted `[[Name]]` may name: the Editor's link index (the same one
+  // its links resolve against and link-ahead checks), in Manuscript, KB, User,
+  // Unfiled and this Work's Scratch. Uploads hold files rather than documents.
+  const pasteTargets = useMemo(
+    () =>
+      linkableDocuments.documents.flatMap((document) => {
+        const parsed = parseContextUri(document.uri);
+        return parsed.ok && isLinkDocumentScheme(parsed.value.scheme)
+          ? [{ documentId: document.documentId, uri: document.uri }]
+          : [];
+      }),
+    [linkableDocuments],
+  );
+  // Read at paste time. An index still loading converts nothing, rather than
+  // turning every link dashed.
+  const wikilinkPasteCatalog = useCallback(
+    () =>
+      identity.schemaType === "document" && linkableDocuments.complete
+        ? { holderUri, targets: pasteTargets, linkAhead }
+        : null,
+    [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
   );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
@@ -357,9 +525,9 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     slashCommandCatalog,
-    wikilinkCatalog,
     atReferenceCatalog,
-    surface: { editable: effectiveEditable, editorProps },
+    wikilinkPasteCatalog,
+    surface: { editable: effectiveEditable, editorProps, publishPresence: active },
     evidenceDegraded,
   });
 
@@ -401,9 +569,13 @@ function ActiveSessionEditorView({
   }, [editor]);
 
   useEffect(() => {
-    if (!editor || inReview) return;
+    if (!editor || inReview || held) return;
     return registerLiveRangeEditor(documentId, editor);
-  }, [documentId, editor, inReview]);
+  }, [documentId, editor, inReview, held]);
+
+  useEffect(() => {
+    if (editor) onPainted?.();
+  }, [editor, onPainted]);
 
   useEffect(
     () => () => {
@@ -412,18 +584,22 @@ function ActiveSessionEditorView({
     [],
   );
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      const scroller = scrollContainerRef.current;
-      if (scroller?.scrollTop !== 0) return;
-      const savedTop = Number(scroller.dataset.stableLayoutScrollTop ?? 0);
-      if (savedTop > 0) scroller.scrollTop = savedTop;
-    }, 250);
-    return () => window.clearInterval(interval);
-  }, []);
+  useReadingPosition({
+    editor,
+    pane: scrollContainerRef,
+    accountId,
+    documentId,
+    active,
+    review: inReview || held,
+    signal: accountEpoch,
+  });
 
   return (
-    <EditorScopeProvider projectId={scope.projectId} workId={scope.workId}>
+    <EditorScopeProvider
+      projectId={scope.projectId}
+      workId={scope.workId}
+      rootThreadId={scope.rootThreadId}
+    >
       <section
         className={cn(
           "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
@@ -455,14 +631,6 @@ function ActiveSessionEditorView({
             ) : undefined
           }
           scrollRef={scrollContainerRef}
-          onScroll={(event) => {
-            event.currentTarget.dataset.stableLayoutScrollTop = String(
-              event.currentTarget.scrollTop,
-            );
-            event.currentTarget.dataset.stableLayoutScrollLeft = String(
-              event.currentTarget.scrollLeft,
-            );
-          }}
         />
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
@@ -470,9 +638,10 @@ function ActiveSessionEditorView({
         {/* Where an internal link goes, and where a picture's bytes go. Ports, not
           surfaces: each renders nothing, and what a writer sees from either lane
           mounts through the host above. */}
-        <ProjectLinkRuntimeWithIndex
+        <ProjectLinkRuntime
           editor={editor}
           documentId={documentId}
+          baseUri={holderUri}
           index={linkableDocuments}
           active={active}
         />

@@ -4,13 +4,14 @@ import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import type {
   ReferenceBrowserOpenContext,
   ReferenceCatalogPort,
+  ReferenceMenuRow,
   ReferenceRow,
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
-import { insertWikilink } from "../wikilink";
 import { allowsAtTrigger } from "./at-trigger";
+import { insertDocumentReference, insertLinkAhead } from "./document-link-insertion";
 
 export type AtReferenceCatalog = {
   port: ReferenceCatalogPort;
@@ -22,9 +23,15 @@ export type AtReferenceCatalog = {
   ) => boolean;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
+  /**
+   * The Editor's link-ahead row: where a link to a not-yet-written document
+   * named `name` would point, or null for none. Omitted where a reference
+   * must name an existing document (the chat composer).
+   */
+  linkAhead?: (name: string) => { uri: string } | null;
 };
 export type AtReferenceMenu = SuggestionMenu<
-  ReferenceRow,
+  ReferenceMenuRow,
   import("@/core/completion").ReferenceBrowserMeta
 >;
 
@@ -44,24 +51,17 @@ function insertReference(
       })
       .run();
   }
-  if (!row.ambiguous && reference.authority.kind === "project")
-    return insertWikilink(editor, range, reference.label);
-  return editor
-    .chain()
-    .focus()
-    .insertContentAt(range, {
-      type: "text",
-      text: reference.label,
-      marks: [{ type: "link", attrs: { href: reference.uri, title: null } }],
-    })
-    .unsetMark("link")
-    .run();
+  return insertDocumentReference(editor, range, {
+    label: reference.label,
+    documentId: reference.documentId,
+    uri: reference.uri,
+  });
 }
 
 const lane = createSuggestionLane<
   AtReferenceCatalog,
   never,
-  ReferenceRow,
+  ReferenceMenuRow,
   import("@/core/completion").ReferenceBrowserMeta
 >({
   name: "atReferenceSuggestion",
@@ -87,14 +87,20 @@ const lane = createSuggestionLane<
       },
       openContext: () => catalog()?.openContext() ?? null,
       label: () => catalog()?.label ?? "References",
+      linkAhead: (name) => catalog()?.linkAhead?.(name) ?? null,
+      onLinkAhead: ({ row, triggerRange }) => {
+        yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+        editor.view.dispatch(closeHistory(editor.state.tr));
+        insertLinkAhead(editor, triggerRange, { label: row.label, uri: row.uri });
+      },
       onCompleteSegment: ({ prefix, triggerRange }) => {
         editor.chain().focus().insertContentAt(triggerRange, prefix).run();
       },
       onSelect: ({ row, triggerRange }) => {
         yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
         editor.view.dispatch(closeHistory(editor.state.tr));
-        const hostInsert = catalog()?.insertReference;
-        if (hostInsert) hostInsert(editor, triggerRange, row);
+        const current = catalog();
+        if (current?.insertReference) current.insertReference(editor, triggerRange, row);
         else insertReference(editor, triggerRange, row);
       },
     }),

@@ -12,6 +12,8 @@ export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;
 export const asTurnId = (s: string) => s as TurnId;
+export type PromptBakeId = string;
+export const asPromptBakeId = (s: string) => s as PromptBakeId;
 export type TurnBlockId = string;
 export const asTurnBlockId = (s: string) => s as TurnBlockId;
 export type ModelResponseId = string;

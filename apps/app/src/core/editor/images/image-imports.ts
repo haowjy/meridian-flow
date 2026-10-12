@@ -95,7 +95,6 @@ function landImport(editor: Editor, id: string, uploaded: UploadedImage): void {
     sendIngressMessage(editor, { drop: id });
     return;
   }
-  storage.assetIndex.remember(uploaded.assetDocumentId, uploaded.assetPath);
   const transaction = editor.state.tr.replaceWith(
     link.from,
     link.to,

@@ -8,6 +8,7 @@ import {
   parseComponentProps,
   stringifyBlock,
 } from "../../helpers.js";
+import { spelledSource } from "../../markdown/blocks/image-html.js";
 import type { BlockCodec } from "../../types.js";
 
 const FIGURE_ATTRS = new Set(["src", "alt", "label", "caption"]);
@@ -19,7 +20,7 @@ export function createFigureCodec(): BlockCodec<MdastJsxFlow> {
     serialize(node, ctx) {
       const attrs: MdxJsxAttribute[] = [];
       for (const key of ["src", "alt", "label", "caption"] as const) {
-        const value = node.attrs[key];
+        const value = key === "src" ? spelledSource(node, ctx) : node.attrs[key];
         if (value !== null && value !== undefined) attrs.push(jsxAttribute(key, String(value)));
       }
       return stringifyBlock(ctx, {
@@ -40,7 +41,7 @@ export function createFigureCodec(): BlockCodec<MdastJsxFlow> {
         if (typeof parsed.props[key] !== "string") return invalidJsxFallback(ast, ctx);
       }
       return ctx.schema.node("figure", {
-        src: parsed.props.src ?? "",
+        src: String(parsed.props.src ?? ""),
         alt: parsed.props.alt ?? null,
         label: parsed.props.label ?? null,
         caption: parsed.props.caption ?? "",

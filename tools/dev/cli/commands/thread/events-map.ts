@@ -25,8 +25,10 @@ export type CliEvent =
       name: string;
       args: string;
       result: string;
+      /** A later result for the same call: a staged write's receipt settled and replaced it. */
+      settled?: true;
     }
-  | { type: "tool.errored"; seq: string; toolCallId: string }
+  | { type: "tool.errored"; seq: string; toolCallId: string; name: string }
   | {
       type: "interrupt.requested" | "interrupt.resolved" | "interrupt.expired";
       seq: string;
@@ -34,10 +36,16 @@ export type CliEvent =
       interruptId: string;
     }
   | { type: "turn.finished"; seq: string; turnId: string }
-  | { type: "turn.failed"; seq: string; message: string; error?: unknown }
+  | {
+      type: "turn.failed";
+      seq: string;
+      message: string;
+      error?: unknown;
+      failureReason?: string;
+    }
   | { type: "event"; seq: string; name: string; value?: unknown };
 
-type ToolCallState = { name: string; args: string };
+type ToolCallState = { name: string; args: string; completed?: true };
 
 /** Stateful mapper: one instance per followed stream. */
 export class RunEventMapper {
@@ -55,15 +63,23 @@ export class RunEventMapper {
         return [{ type: "turn.started", seq, turnId: String(e.runId) }];
       case "RUN_FINISHED":
         return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
-      case "RUN_ERROR":
+      case "RUN_ERROR": {
+        const details =
+          sequenced.error?.details &&
+          typeof sequenced.error.details === "object" &&
+          !Array.isArray(sequenced.error.details)
+            ? sequenced.error.details
+            : undefined;
         return [
           {
             type: "turn.failed",
             seq,
             message: String(e.message ?? "run failed"),
             ...(sequenced.error ? { error: sequenced.error } : {}),
+            ...(typeof details?.reason === "string" ? { failureReason: details.reason } : {}),
           },
         ];
+      }
       case "TEXT_MESSAGE_START":
       case "REASONING_MESSAGE_START":
         this.messages.set(String(e.messageId), {
@@ -117,8 +133,10 @@ export class RunEventMapper {
         return [];
       case "TOOL_CALL_RESULT": {
         const toolCallId = String(e.toolCallId);
+        // The call stays known after its result: a settled receipt and an error mark follow it.
         const tool = this.tools.get(toolCallId) ?? { name: "tool", args: "" };
-        this.tools.delete(toolCallId);
+        const settled = tool.completed;
+        this.tools.set(toolCallId, { ...tool, completed: true });
         return [
           {
             type: "tool.completed",
@@ -127,6 +145,7 @@ export class RunEventMapper {
             name: tool.name,
             args: tool.args,
             result: String(e.content ?? ""),
+            ...(settled ? { settled } : {}),
           },
         ];
       }
@@ -158,7 +177,9 @@ export class RunEventMapper {
     }
     if (name === "meridian.tool.result_error") {
       // Follows its TOOL_CALL_RESULT, so it marks the already-emitted completion.
-      return [{ type: "tool.errored", seq, toolCallId: String(record.toolCallId) }];
+      const toolCallId = String(record.toolCallId);
+      const name = this.tools.get(toolCallId)?.name ?? "tool";
+      return [{ type: "tool.errored", seq, toolCallId, name }];
     }
     return [{ type: "event", seq, name, value }];
   }
@@ -179,9 +200,9 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
     case "tool.started":
       return `tool.started ${event.name} (${event.toolCallId})`;
     case "tool.completed":
-      return `tool.completed ${event.name}(${truncate(oneLine(event.args), limit)}) -> ${truncate(oneLine(event.result), limit)}`;
+      return `${event.settled ? "tool.settled" : "tool.completed"} ${event.name}(${truncate(oneLine(event.args), limit)}) -> ${truncate(oneLine(event.result), limit)}`;
     case "tool.errored":
-      return `tool.errored ${event.toolCallId}`;
+      return `tool.errored ${event.name} (${event.toolCallId})`;
     case "interrupt.requested":
       return `interrupt.requested ${event.interruptId} on turn ${event.turnId}`;
     case "interrupt.resolved":
@@ -190,6 +211,6 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
     case "turn.failed":
-      return `turn.failed ${event.message}`;
+      return `turn.failed ${event.message}${event.failureReason ? ` (failure reason: ${event.failureReason})` : ""}`;
   }
 }

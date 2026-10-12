@@ -6,9 +6,11 @@ import type { UpdateMeta } from "../ports/types.js";
 import { writeCommandName } from "./command-schema.js";
 import type { RenderedRead } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import type { AgentEditResultCommand } from "./model-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
-import { result, status } from "./response-format.js";
-import type { MutationActor, WriteCommand, WriteErrorStatus } from "./types.js";
+import { status } from "./response-format.js";
+import { readCall } from "./result-text.js";
+import type { MutationActor, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
 
@@ -28,23 +30,34 @@ export function parseFileAddress(command: {
   return parseDocumentAddress(command.file, command.documentId);
 }
 
+/**
+ * A `not_found` points at a re-read, since the model's hashes are stale,
+ * unless its message already names the read to make. A block number past the
+ * end isn't stale, so it gets the document's size.
+ */
 export function errorResponse(
   code: WriteErrorStatus,
   message: string,
   filePath: string,
+  documentBlocks?: number,
 ): InternalWriteResult {
-  const needsRead = code === "not_found" && !message.includes('write(command="read"');
-  return status(
-    code,
-    needsRead ? `${message}. Run write(command="read", path="${filePath}") to re-sync.` : message,
-  );
+  if (documentBlocks !== undefined) {
+    return status(
+      code,
+      `${message}. ${filePath} has ${documentBlocks === 1 ? "1 block" : `${documentBlocks} blocks`}.`,
+    );
+  }
+  const needsRead = code === "not_found" && !/\bread\b/.test(message);
+  const sentence = message.replace(/\.$/, "");
+  return status(code, needsRead ? `${sentence}. Run ${readCall(filePath)} to re-sync.` : message);
 }
 
 export function readSuccess(read: RenderedRead): InternalWriteResult {
-  return result("success", read.text, {
+  return {
+    status: "success",
     phase: "committed",
     model: {
-      read: { format: read.format },
+      read: { format: read.format, documentBlocks: read.documentBlocks },
       blocks:
         read.blocks.length > 0
           ? [
@@ -56,7 +69,7 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
             ]
           : [],
     },
-  });
+  };
 }
 
 export function writeError(cause: unknown): InternalWriteResult {
@@ -95,8 +108,8 @@ export function mutationUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrig
   return { type: "system" };
 }
 
-export function fallbackCommandName(command: unknown): WriteCommand["command"] {
-  return writeCommandName(command) ?? "read";
+export function fallbackCommandName(command: unknown): AgentEditResultCommand {
+  return writeCommandName(command) ?? "unknown";
 }
 
 export function writeSchemaError(error: {

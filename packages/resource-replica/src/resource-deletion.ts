@@ -1,6 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
-import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { newerCanonicalObservation } from "./canonical-observation";
+import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
@@ -8,12 +9,7 @@ export function planResourceDeletion(
   projectId: string,
   intentId: string,
 ): ResourceWrite | null {
-  if (
-    record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some(
-      (intent) => intent.desired.kind === "delete" && intent.state !== "needs-repair",
-    )
-  )
+  if (record.resource.lifecycle.kind === "terminal" || record.intents.some(intentOwnsDeletion))
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
@@ -49,12 +45,37 @@ export function planResourceDeletion(
       },
       intents: [
         ...superseded.intents.map((intent) =>
-          !superseded.repaired && intent.attempts.length === 0 && intent.state !== "cancelled"
+          !superseded.repaired &&
+          intent.attempts.length === 0 &&
+          intent.state !== "cancelled" &&
+          intent.state !== "superseded"
             ? { ...intent, state: "cancelled" as const }
             : intent,
         ),
         deletion,
       ],
     },
+  };
+}
+
+/** Server-proven deletion from namespace receipts, never availability observations. */
+export function committedResourceDeletion(
+  resource: ResourceRecord["resource"],
+  generation: string,
+  transitionId: string,
+  observationVersion: string,
+): ResourceRecord["resource"] {
+  if (!newerCanonicalObservation(observationVersion, resource.observationVersion)) return resource;
+  const {
+    sessionAdoption: _superseded,
+    canonicalRefresh: _unexecutable,
+    ...obligations
+  } = resource.obligations;
+  return {
+    ...resource,
+    canonical: null,
+    observationVersion,
+    obligations,
+    lifecycle: { kind: "terminal", generation, transitionId },
   };
 }

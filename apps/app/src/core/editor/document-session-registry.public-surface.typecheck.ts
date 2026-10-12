@@ -12,10 +12,6 @@ declare const ownerId: string;
 
 // @ts-expect-error live get requires a lease
 registry.get(documentId);
-// @ts-expect-error detached get requires a lease
-registry.getDetached(documentId);
-// @ts-expect-error attach requires a lease
-registry.attachDetached(documentId);
 // @ts-expect-error restart requires a lease
 registry.restartUnavailableRoom(documentId);
 // @ts-expect-error retain requires leases, not ids

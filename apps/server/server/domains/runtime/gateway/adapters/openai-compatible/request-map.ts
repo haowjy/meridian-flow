@@ -13,7 +13,7 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
- * - Prompt caching (OpenRouter's Anthropic-family models only — capability-
+ * - Prompt caching (OpenRouter's Anthropic-family models only — descriptor-
  *   gated in the model registry, so a plain OpenAI-Chat-Compatible endpoint
  *   never sees any of this): the loop's canonical `ContentPart.cacheBreakpoint`
  *   is only honored on the *system* message, as an explicit per-part
@@ -24,7 +24,7 @@
  *   for us. That one field does the job of the read-point/tail marks the
  *   loop also leaves on other messages (deliberately unread here — see
  *   `mapMessage`), so the rest of the conversation never needs an explicit
- *   per-part mark. Both use the owner-chosen 1h ttl.
+ *   per-part mark. Both use the TTL declared by the registered model.
  */
 import type OpenAI from "openai";
 
@@ -44,12 +44,22 @@ function textFromParts(parts: ContentPart[]): string {
     .join("");
 }
 
-/** Owner-chosen default: 1h everywhere OpenRouter makes cache TTL configurable. */
-const CACHE_CONTROL_1H = { type: "ephemeral" as const, ttl: "1h" as const };
+type CacheControl = { type: "ephemeral"; ttl: "5m" | "1h" };
+
+function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
+  switch (ttlMs) {
+    case 5 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "5m" };
+    case 60 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "1h" };
+    default:
+      return undefined;
+  }
+}
 
 /** OpenRouter's per-part `cache_control` passthrough uses Anthropic's own block shape. */
 type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPartText & {
-  cache_control?: typeof CACHE_CONTROL_1H;
+  cache_control?: CacheControl;
 };
 
 /**
@@ -58,7 +68,7 @@ type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPa
  * providers. Not part of the OpenAI SDK's own ChatCompletionCreateParams type.
  */
 type ChatCompletionCreateParamsWithCache = OpenAI.Chat.Completions.ChatCompletionCreateParams & {
-  cache_control?: typeof CACHE_CONTROL_1H;
+  cache_control?: CacheControl;
 };
 
 /**
@@ -107,6 +117,7 @@ function mapContentParts(
  */
 function mapSystemMessage(
   message: Message,
+  cacheControl: CacheControl | undefined,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
   const textParts = message.content.filter(
     (p): p is Extract<ContentPart, { type: "text" }> => p.type === "text" && p.text.length > 0,
@@ -115,10 +126,11 @@ function mapSystemMessage(
   if (!textParts.some((p) => p.cacheBreakpoint)) {
     return { role: "system", content: textFromParts(textParts) };
   }
+  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
   const content: CacheControllableTextPart[] = textParts.map((p) => ({
     type: "text",
     text: p.text,
-    ...(p.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+    ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
   }));
   return { role: "system", content };
 }
@@ -139,8 +151,11 @@ function hasContent(
  * other roles pass through directly. Messages with empty content are
  * filtered out (null return).
  */
-function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
-  if (message.role === "system") return mapSystemMessage(message);
+function mapMessage(
+  message: Message,
+  cacheControl: CacheControl | undefined,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
+  if (message.role === "system") return mapSystemMessage(message, cacheControl);
 
   if (message.role === "tool") {
     const result = message.content.find((p) => p.type === "tool_result");
@@ -241,7 +256,7 @@ function mapResponseFormat(
   };
 }
 
-/** True when the loop marked the system message for prompt caching (registry capability-gated). */
+/** True when the loop marked the system message for explicit prompt caching. */
 function systemHasCacheBreakpoint(messages: Message[]): boolean {
   return messages.some(
     (m) => m.role === "system" && m.content.some((p) => p.type === "text" && p.cacheBreakpoint),
@@ -257,11 +272,17 @@ function systemHasCacheBreakpoint(messages: Message[]): boolean {
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
   modelId: string,
+  promptCacheTtlMs?: number | null,
 ): ChatCompletionCreateParamsWithCache {
+  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
+  const systemHasCacheMark = systemHasCacheBreakpoint(request.messages);
+  if (systemHasCacheMark && !cacheControl) {
+    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
+  }
   return {
     model: modelId,
     messages: request.messages
-      .map(mapMessage)
+      .map((message) => mapMessage(message, cacheControl))
       .filter((m): m is OpenAI.Chat.Completions.ChatCompletionMessageParam => m !== null),
     tools: mapTools(request.tools),
     tool_choice: mapToolChoice(request.toolChoice),
@@ -272,6 +293,6 @@ export function toOpenAIChatCompletionParams(
     response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },
-    ...(systemHasCacheBreakpoint(request.messages) ? { cache_control: CACHE_CONTROL_1H } : {}),
+    ...(systemHasCacheMark && cacheControl ? { cache_control: cacheControl } : {}),
   };
 }

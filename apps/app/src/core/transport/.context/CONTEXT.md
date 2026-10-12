@@ -22,6 +22,42 @@ socket. `CollabSchemaWebSocket` formats the current version through
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
 
+## Access scope and 4409
+
+The server names a room's scope in Hocuspocus's authenticated message on every
+(re)connect. The transport publishes only what the server names through
+`subscribeAccess` (the last named scope on subscribe, nothing before the
+first), and `DocumentSession` carries it as `snapshot.access`: `null` until
+the server names one, then the last named scope, kept across drops and
+transport restarts. An unnamed room is writable (local-first). Access is not a
+connection state: a read-only room that drops offline stays read-only.
+
+`null` is what lets a named `edit` count. The Editor host's `readOnly` comes
+from its Works catalog, which can predate the room's first connect (a tab
+that loaded while the Work was archived and whose room connected after the
+unarchive). The host's `RoomScopeCatalogCheck`
+(`features/project/context/ContextDocumentHost.tsx`) watches each named
+scope, and each activation, against its `readOnly` and refreshes its Works
+catalog when they disagree. Its own changes to `readOnly` never ask, so the
+tab that archives fetches nothing extra.
+
+A 4409 `access-changed` close (a Work archived, unarchived, deleted or
+restored) is not terminal. The transport freezes the room (`read`) and lets
+Hocuspocus reconnect with the same Y.Doc; the new authenticated scope then
+switches the mounted editor in place. The one exception is a close that lands
+while local updates are still unacknowledged: the server refused them, and a
+reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
+resets with reason `access-changed` instead of reconnecting, and
+`DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
+session. A branch (draft review) room rebuilds through
+`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+live room (scratch) goes through the registry's `dropRefusedRoom`, which
+revokes each lease's access: the session is torn down and its IndexedDB copy,
+which still holds the refused edits, is cleared. Editor hosts unbind at once
+(`useRefusedEditsReopen`) and reopen when the drop settles, so the editor
+loads the server's state. A drop that fails leaves the refused session bound
+read-only rather than reopening again.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with
@@ -78,3 +114,54 @@ to `toSeq` before re-subscribing, so the next read asks for history the server
 can serve. The truncated catch-up that follows is skipped by the monotonic seq
 guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
 A gap burst coalesces into one resync rather than one per gap.
+
+## Shared connectivity hints
+
+`ConnectivityProvider` owns one `ConnectivityHints` instance above authenticated
+account composition. Browser/document targets and randomness are injected;
+clocks and timers use late-bound globals. Its listeners last until unmount.
+Connections receive the port through their factories, including room restarts.
+
+Online, focus, visible visibility changes, pageshow, and connection success
+queue `retry-now`. A 50 ms burst window coalesces signals; each subscriber gets
+0–300 ms jitter and at least two seconds between retries. Cooldown signals
+schedule one deferred hint. Success reports are transition-based and exclude
+the successful source. Offline cancels pending retries, resets the cooldown,
+and immediately emits `suspect-offline`. Retry hints restart aggressive backoff,
+so repeated wakes against a down server cost at most one attempt per cooldown.
+
+Sockets leave healthy connections alone and fence terminal/destroyed owners.
+Offline takes the normal close path without awaiting a native handshake;
+`disconnect()` instead disables reconnection. Hocuspocus 4.3 has two retry races:
+native open clears the cancellation handle before the first frame settles the
+attempt, and post-settlement close schedules a delayed reconnect that can
+replace a still-CONNECTING hinted socket. The room adapter retains cancellation
+until settlement and owns/fences the delayed close timer. Superseded attempts
+settle and cancel before replacement; library queues and acknowledgements stay
+intact. Thread success requires the server's `connected` frame.
+
+The resource replica keeps its 30-second interval for pending HTTP work without
+new hints. Working-set pagehide/hidden-visibility flushes are persistence signals;
+its preference owner binds recovery only for the committed account epoch.
+Local document peers and session wakeup keep their content-recovery listeners,
+independent of network jitter, cooldowns, or unrelated connection successes.
+
+## Thread socket deadlines
+
+`SocketLifecycleController` owns the attempt phases: connecting, transport-open
+awaiting the protocol `connected` frame, and connected. One watchdog starts at
+socket creation and ends only on `connected`, close, or teardown. Its default
+is 10 seconds (`handshakeTimeoutMs` is injectable); opening or receiving other
+frames does not extend it. The separate 45-second ping deadline starts on open
+and resets on every inbound frame. Expiry of either deadline retires the socket
+before requesting native close and uses the same reconnect backoff as a network
+close, without waiting for a close acknowledgement. Retired sockets cannot drive
+product callbacks. Both timers are cancelled on retirement or teardown; protocol
+`connected` cancels only the handshake watchdog.
+
+Protocol readiness lives in this lifecycle, not in a second transport flag.
+Subscriptions still resume from the last delivered cursor after `connected`;
+catch-up and gap reconciliation are unchanged. These deadlines bound handshake
+wait and inbound silence, not time to recovery: retries still depend on the
+server/network returning and browser timers running (background suspension can
+delay either deadline).

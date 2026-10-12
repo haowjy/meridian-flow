@@ -1,0 +1,2 @@
+ALTER TABLE "document_branches" DROP CONSTRAINT "document_branches_push_policy_valid";--> statement-breakpoint
+ALTER TABLE "document_branches" DROP COLUMN "push_policy"; -- migration-lint: skip DROP_COLUMN (no deployed data; every read of push_policy was removed in the same change)

@@ -16,8 +16,13 @@ the authoritative history fetch:
   every activation refetches. Cached turns render first and the fetch reconciles
   behind them; navigate-first is preserved.
 - The hook owns one mounted-thread transport subscription. It refetches
-  (debounced 250 ms) on `RUN_STARTED` and gap, and directly applies addressed
-  custom block upserts/prunes even after the parent run ends. Missing turns
+  (debounced 250 ms) on `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`,
+  `meridian.usage`, every `meridian.inbox.changed` frame, and gap. Compaction
+  and brief turns have no stream of their own, and a cancelled
+  autocompaction projects no `RUN_FINISHED`; the server sends an inbox frame
+  after every lease release, so that frame is when a divider reserves, settles,
+  or stops. It directly applies addressed
+  custom block upserts even after the parent run ends. Missing turns
   request authoritative history, never a synthetic streaming turn. The store's
   durable wire cursor and snapshot floor reject replay rewinds and old HTTP
   responses. A server-initiated run has no local submit to learn it from, so
@@ -54,3 +59,14 @@ activates first:
 Do not reintroduce a mount-scoped boolean that blocks after the first run, and
 do not move the snapshot fetch behind a cache window. Either one breaks live
 updates for a background child's report.
+
+## Live CUSTOM events
+
+`core/session/reduce-turn-event.ts` reduces AG-UI `CUSTOM` frames by name.
+Every name the server's orchestrator event projector emits has an explicit
+branch there: apply it to the store, leave it to the snapshot sync above
+(`meridian.block.upserted`, `meridian.inbox.changed`, `meridian.usage`), or
+ignore it (`meridian.agent.spawn`, whose source the spawn card already carries
+in its durable props). An unmatched name falls through to an opaque custom
+block on the streaming reply and renders "Unknown component". When the server
+adds a CUSTOM name, add its branch and a reducer test in the same change.

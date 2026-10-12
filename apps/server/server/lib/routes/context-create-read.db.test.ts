@@ -1,8 +1,17 @@
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
+import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createContextEntry as createClientContextEntry } from "../../../../app/src/client/api/projects-api.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../domains/collab/test-support/document-link-scopes.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
@@ -32,11 +41,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { drizzleFileAccess } = await import("../../test-support/file-grants.js");
+    const { containerTarget, requireFileGrant, withEditGrants } = await import(
+      "../file-access-http.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createContextEntry, parseCreateContextEntryBody } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create.post.js"
     );
@@ -46,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK_ID = "00000000-0000-4000-8000-000000000923";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     const fixtures: Array<{
@@ -64,10 +75,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture(options: { load?: boolean; store?: boolean } = {}) {
       const collab = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -75,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ? {}
           : {
               async onLoadDocument({ documentName, document }) {
-                const state = await collab.loadHocuspocusDocument(documentName);
+                const state = await collab.loadHocuspocusDocument(documentName, document);
                 if (state) Y.applyUpdate(document, state);
               },
             }),
@@ -92,6 +103,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
+          links: createTestDocumentLinkScopes(db),
           db,
           documentSync: collab,
           manifestMembership: collab,
@@ -104,6 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         hocuspocus.closeConnections();
         hocuspocus.flushPendingStores();
         await collab.drainHocuspocusPersistence();
+        collab.dispose();
       }
     });
 
@@ -156,8 +169,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(
           handleContextReadRequest(
             {
+              fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              workRepo: {} as never,
+              workRepo: createDrizzleProjectWorkRepository({
+                db,
+                lineageScratch: createDrizzleLineageScratchLifecycle(db),
+                fileAccessChanges: createLocalFileAccessChanges(),
+                projectionMutation: createTestWorkProjectionMutation(db),
+              }),
               contextPorts,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),
@@ -198,6 +217,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
     });
 
+    it.each([
+      { occupant: "folder", existing: "outline.json", type: "file", path: "outline.json" },
+      { occupant: "file", existing: "Taken", type: "folder", path: "Taken.md" },
+    ] as const)("carries a server-discovered $occupant conflict through the create HTTP client", async ({
+      occupant,
+      existing,
+      type,
+      path,
+    }) => {
+      const { contextPorts } = createFixture();
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body: { type: occupant, path: existing },
+      });
+      const body = { type, path };
+      // No sibling snapshot is supplied: the route, not the app, discovers the clash.
+      const result = await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body,
+      });
+      expect(result).toMatchObject({ status: "conflict", occupantKind: occupant });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify(result), {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            }),
+        ),
+      );
+      try {
+        await expect(createClientContextEntry(PROJECT_ID, "manuscript", body)).resolves.toEqual(
+          result,
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
       const { contextPorts } = createFixture();
       const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
@@ -207,19 +271,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           scheme: "manuscript",
           workId: null,
-          body: parseCreateContextEntryBody({ type: "file", path: "/race.md", content }),
+          body: parseCreateContextEntryBody({ type: "file", path: "/race", content }),
         });
 
       const results = await Promise.all([create("alpha"), create("beta")]);
       expect(results.map((result) => result.status).sort()).toEqual(["conflict", "created"]);
       const winner = results.find((result) => result.status === "created");
-      const read = await port.read("manuscript://race.md");
+      const read = await port.read("manuscript://race");
       expect(read).toEqual({
         ok: true,
         value: {
           content: winner === results[0] ? "alpha\n" : "beta\n",
           documentId: winner?.documentId,
-          uri: "manuscript://race.md",
+          uri: "manuscript://race",
         },
       });
     });
@@ -241,14 +305,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return result.documentId;
       };
 
-      const kbDocumentId = await create(port, "kb", "/kb.md");
+      const kbDocumentId = await create(port, "kb", "/kb");
       await collab.drainHocuspocusPersistence();
       const kbMembership = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
       expect(kbMembership.members).toContain(kbDocumentId);
 
-      const userDocumentId = await create(port, "user", "/user.md");
+      const userDocumentId = await create(port, "user", "/user");
       await collab.drainHocuspocusPersistence();
       const personalProject = (await db.select().from(schema.projects)).find(
         (project) => project.isPersonal,
@@ -260,7 +324,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(userMembership.members).toContain(userDocumentId);
 
       await expect(
-        port.delete("user://user.md", {
+        port.delete("user://user", {
           expected: { kind: "file", documentId: userDocumentId },
         }),
       ).resolves.toMatchObject({
@@ -278,88 +342,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(deletedMembership.members).not.toContain(userDocumentId);
     });
 
-    it("registers scratch documents in the live project manifest and resolves their project", async () => {
-      await db.insert(schema.contextSources).values({
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
-      });
+    it("refuses a writer's create in an archived Work's scratch before anything is written", async () => {
       await db.insert(schema.works).values({
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        name: "Scratch Work",
-        slug: "scratch-work",
+        name: "Archived",
+        slug: "archived",
+        archivedAt: new Date(),
       });
-      const { collab, contextPorts } = createFixture({ load: false });
+      const { contextPorts } = createFixture({ load: false });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority) throw new Error("missing Work authority");
+      if (!authority?.workSlug) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+        new Map([[authority.workSlug, authority]]),
       );
+      const fileAccess = drizzleFileAccess(db);
+      const container = await containerTarget(
+        { findNoWork: async () => null },
+        { projectId: PROJECT_ID, scheme: "scratch", workId: WORK_ID },
+      );
+      // As the create route does: the container grant first, then the write.
+      const create = async () =>
+        withEditGrants(
+          fileAccess,
+          [await requireFileGrant(fileAccess, USER_ID, container, "edit")],
+          () =>
+            createContextEntry({
+              port,
+              userId: USER_ID,
+              scheme: "scratch",
+              workId: WORK_ID,
+              body: parseCreateContextEntryBody({ type: "file", path: "/notes", content: "x" }),
+            }),
+        );
 
-      const created = await createContextEntry({
-        port,
-        userId: USER_ID,
-        scheme: "scratch",
-        workId: WORK_ID,
-        body: parseCreateContextEntryBody({
-          type: "file",
-          path: "/notes.md",
-          content: "scratch content",
-        }),
+      await expect(create()).rejects.toMatchObject({
+        status: 403,
+        data: { __meridianInterruptEnvelope: { error: { code: "work_archived" } } },
       });
-      if (created.status !== "created" || !created.documentId) {
-        throw new Error("scratch creation did not return a document id");
-      }
-
-      await collab.drainHocuspocusPersistence();
-      const liveMembership = await collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      expect(liveMembership.members).toContain(created.documentId);
-      await expect(
-        createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
-      ).resolves.toBe(PROJECT_ID);
-
-      await db
-        .update(schema.works)
-        .set({ archivedAt: new Date() })
-        .where(eq(schema.works.id, WORK_ID));
-      await expect(port.read(`scratch://@${authority.workSlug}/notes.md`)).resolves.toMatchObject({
-        ok: true,
-        value: { content: "scratch content\n", documentId: created.documentId },
-      });
-      await expect(
-        port.write(`scratch://@${authority.workSlug}/notes.md`, "blocked"),
-      ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
-      await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, WORK_ID));
-
-      await expect(
-        port.delete(`scratch://@${authority.workSlug}/notes.md`, {
-          expected: { kind: "file", documentId: created.documentId },
-        }),
-      ).resolves.toMatchObject({
-        ok: true,
-        value: {
-          status: "deleted",
-          deletedDocumentIds: [created.documentId],
-          availabilityGeneration: expect.not.stringMatching(/^0$/),
-        },
-      });
-      await collab.drainHocuspocusPersistence();
-      const membershipAfterDelete = await collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      expect(membershipAfterDelete.members).not.toContain(created.documentId);
+      await expect(db.select({ id: schema.documents.id }).from(schema.documents)).resolves.toEqual(
+        [],
+      );
     });
 
     it("lists an archived Work with no scratch source as empty without provisioning", async () => {
@@ -384,9 +414,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         new Map([[authority.workSlug, authority]]),
       );
 
-      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toEqual({
+      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toMatchObject({
         ok: true,
-        value: [],
+        value: { entries: [] },
       });
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, WORK_ID)),
@@ -427,7 +457,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "legacy-notes",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
 
@@ -463,7 +493,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "retained-id",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db
@@ -471,11 +501,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ deletedAt: new Date() })
         .where(eq(schema.projects.id, PROJECT_ID));
 
-      const access = createDrizzleDocumentAccess(db);
-      await expect(access.canAccessDocument(USER_ID as never, scratchDocumentId)).resolves.toBe(
-        false,
-      );
-      await expect(access.projectIdForDocument(scratchDocumentId)).resolves.toBeNull();
+      await expect(
+        drizzleFileAccess(db).authorize(
+          { accountId: USER_ID as never },
+          { kind: "document", documentId: scratchDocumentId as never },
+          "read",
+        ),
+      ).resolves.toMatchObject({ denied: true, reason: "not_found" });
     });
   });
 }

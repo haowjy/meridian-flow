@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   return readThreadContextDocument(
     {
       contextPorts: app.contextPorts,
+      fileAccess: app.fileAccess,
       threads: app.threadRepos.threads,
       threadWorks: app.threadRepos.threadWorks,
       works: app.workRepo,

@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   const workId = typeof query.workId === "string" ? query.workId : null;
   const response = await handleContextReadRequest(
     {
+      fileAccess: app.fileAccess,
       projectRepo: app.projectRepo,
       workRepo: app.workRepo,
       contextPorts: app.contextPorts,
@@ -19,7 +20,14 @@ export default defineEventHandler(async (event) => {
       eventSink: app.eventSink,
       workAuthorityResolver: app.workAuthorityResolver,
     },
-    { projectId, userId: user.userId, scheme, rawPath: query.path, workId },
+    {
+      projectId,
+      userId: user.userId,
+      scheme,
+      rawPath: query.path,
+      workId,
+      rootThreadId: typeof query.rootThreadId === "string" ? query.rootThreadId : null,
+    },
   );
   return serializeTransport(response);
 });

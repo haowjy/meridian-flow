@@ -135,6 +135,15 @@ export async function bindAdmittedInvocationCard(input: {
             startedAt: input.admittedAt,
             terminalAt: null,
             ...(input.props.title !== undefined ? { title: input.props.title } : {}),
+            ...(input.props.fromThreadId !== undefined
+              ? { fromThreadId: input.props.fromThreadId }
+              : {}),
+            ...(input.props.fromThreadRef !== undefined
+              ? { fromThreadRef: input.props.fromThreadRef }
+              : {}),
+            ...(input.props.fromThreadTitle !== undefined
+              ? { fromThreadTitle: input.props.fromThreadTitle }
+              : {}),
             execution: input.execution,
           }),
           status: "complete",
@@ -175,7 +184,7 @@ export async function persistReturnResult(
           if (!report) throw new Error("Execution report was not admitted");
           await input.executionReports.captureOnce(
             transcript.threadId,
-            report.assistantTurnId,
+            report.executionTurnId,
             input.toolCallId,
             input.capture,
           );
@@ -185,13 +194,16 @@ export async function persistReturnResult(
         }
       }
       const isError = !output.ok;
+      // A refusal reaches the model as its message (D65); `result` keeps the outcome.
+      const modelOutput = output.ok ? output : output.message;
       const toolRow = contentForBlockInput({
         turnId: transcript.turnId,
         blockType: "tool_result",
         sequence: transcript.blockSeqRef.value++,
         content: {
           toolCallId: input.toolCallId,
-          output,
+          output: modelOutput,
+          result: output,
           isError,
         },
         status: "complete",
@@ -201,7 +213,8 @@ export async function persistReturnResult(
         {
           type: "tool.result" as const,
           toolCallId: input.toolCallId,
-          output,
+          output: modelOutput,
+          result: output,
           isError,
         },
       ];

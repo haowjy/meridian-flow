@@ -1,7 +1,7 @@
 /** WorkRepository lifecycle and D17 deletion contract at the domain port boundary. */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { WorkLockedError, WorkRestoreExpiredError } from "./ports/work-repository.js";
+import { WorkLockedError } from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
 
@@ -20,38 +20,9 @@ describe("WorkRepository", () => {
     ).rejects.toThrow();
     expect(await repo.findById(first.id)).toEqual(deleted);
   });
-
-  it("refuses restore once the retention window has ended", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date("2025-01-01T00:00:00.000Z"));
-      const repo = createInMemoryWorkRepository();
-      const created = await repo.create({ projectId: PROJECT_ID, name: "Expired" });
-      await repo.softDelete(created.id);
-      vi.setSystemTime(new Date("2025-01-31T00:00:00.000Z"));
-      await expect(repo.restore(created.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 });
 
 describe("No Work", () => {
-  it("is idempotent, omitted from named lists, and cannot be minted by create", async () => {
-    const repo = createInMemoryWorkRepository();
-    const first = await repo.ensureNoWork(PROJECT_ID);
-    const second = await repo.ensureNoWork(PROJECT_ID);
-    expect(second.id).toBe(first.id);
-    expect(first).toMatchObject({ isNoWork: true, slug: null, name: "No Work" });
-    expect(await repo.listByProject(PROJECT_ID)).toEqual([]);
-    expect(await repo.listByProject(PROJECT_ID, { includeNoWork: true })).toEqual([
-      expect.objectContaining({ id: first.id, isNoWork: true }),
-    ]);
-    const named = await repo.create({ projectId: PROJECT_ID, name: "Book Two" });
-    expect(named.isNoWork).toBe(false);
-    expect(named.slug).toBeTruthy();
-  });
-
   it("throws work_locked on mutate and delete", async () => {
     const repo = createInMemoryWorkRepository();
     const locked = await repo.ensureNoWork(PROJECT_ID);

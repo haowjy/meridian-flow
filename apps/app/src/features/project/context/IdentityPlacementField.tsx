@@ -8,7 +8,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  type ContextOwner,
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,7 +23,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { invalidContextEntryNameReason } from "./context-entry-name";
+import {
+  entryNameKey,
+  entryNameStemEnd,
+  invalidContextEntryNameReason,
+} from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
@@ -61,7 +70,7 @@ export function IdentityPlacementField({
   failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
   onExit: (reason: ExitReason) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 }) {
   const resources = useAccountResourceReplica();
   const localSessionRef = useRef<import("@/core/editor/document-session").DocumentSession | null>(
@@ -75,6 +84,7 @@ export function IdentityPlacementField({
   const [destination, setDestination] = useState<{
     scheme: ProjectContextTreeScheme;
     folderPath: string;
+    parent?: import("@meridian/resource-replica").ParentRef;
   } | null>(null);
   const [value, setValue] = useState(
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
@@ -95,7 +105,8 @@ export function IdentityPlacementField({
   useEffect(() => {
     const input = inputRef.current;
     input?.focus();
-    if (input?.value) input.select();
+    // Only the part before a visible extension: `outline` in `outline.json`.
+    if (input?.value) input.setSelectionRange(0, entryNameStemEnd(input.value));
   }, []);
 
   useEffect(() => {
@@ -135,13 +146,25 @@ export function IdentityPlacementField({
     };
   }, [projectId, provisionalPlacement, resources, tab]);
 
+  // The document's own owner scopes its Scratch suggestions, collisions and "Open
+  // existing"; the Editor's selected Work does not (a chat's Scratch has none).
+  const { workId: locationWorkId, rootThreadId, rootThreadRef } = location;
+  const owner = useMemo<ContextOwner>(
+    () =>
+      rootThreadId !== undefined
+        ? { rootThreadId, rootThreadRef }
+        : { workId: locationWorkId ?? editorWorkId },
+    [editorWorkId, locationWorkId, rootThreadId, rootThreadRef],
+  );
+  const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
+    isWorkScopedProjectContextScheme(scheme) ? owner : { workId: null };
   const suggestionOptions = useMemo(
     () => ({
       schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
       kinds: ["dir", "file"] as const,
-      workId: editorWorkId ?? location.workId ?? null,
+      owner,
     }),
-    [editorWorkId, location.scheme, location.workId],
+    [location.scheme, owner],
   );
   const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
@@ -170,7 +193,9 @@ export function IdentityPlacementField({
     ? `${[schemeLabel(destination.scheme), ...treeSegments(destination.folderPath)].join("/")}/`
     : "";
 
-  const liveReason = noteValue.trim() ? invalidContextEntryNameReason(noteValue.trim()) : null;
+  const liveReason = noteValue.trim()
+    ? invalidContextEntryNameReason(noteValue.trim(), location.leaf)
+    : null;
   const localCollision = useMemo(
     () =>
       findCollision(
@@ -178,6 +203,7 @@ export function IdentityPlacementField({
         destination?.scheme ?? location.scheme,
         destination?.folderPath ?? location.parentPath,
         noteValue.trim(),
+        location.leaf,
         location.path,
       ),
     [allEntries, destination, location, noteValue],
@@ -206,7 +232,11 @@ export function IdentityPlacementField({
               tabIndex={-1}
               className="focus-ring ml-1.5 font-medium underline underline-offset-2"
               onClick={() =>
-                onOpenExisting(identityNote.collision.scheme, identityNote.collision.path)
+                onOpenExisting(
+                  identityNote.collision.scheme,
+                  identityNote.collision.path,
+                  ownerOfScheme(identityNote.collision.scheme),
+                )
               }
             >
               <Trans>Open existing</Trans>
@@ -230,7 +260,7 @@ export function IdentityPlacementField({
       setCommitReason(t`Name is required`);
       return;
     }
-    const reason = invalidContextEntryNameReason(name);
+    const reason = invalidContextEntryNameReason(name, location.leaf);
     if (reason) {
       setCommitReason(reason);
       setNoteValue(value);
@@ -242,6 +272,7 @@ export function IdentityPlacementField({
         destination?.scheme ?? location.scheme,
         destination?.folderPath ?? location.parentPath,
         name,
+        location.leaf,
         location.path,
       )
     ) {
@@ -367,11 +398,17 @@ export function IdentityPlacementField({
           onSelect={(entry) => {
             clearFeedback();
             if (entry.kind === "dir") {
-              setDestination({ scheme: entry.scheme, folderPath: entry.path });
+              setDestination({
+                scheme: entry.scheme,
+                folderPath: entry.path,
+                ...(entry.path === "/"
+                  ? {}
+                  : { parent: { kind: "folder", folderId: entry.entryId } }),
+              });
               inputRef.current?.focus();
               return;
             }
-            onOpenExisting(entry.scheme, entry.path);
+            onOpenExisting(entry.scheme, entry.path, ownerOfScheme(entry.scheme));
           }}
           onClose={() => onExit("escape")}
           onNavigateUp={
@@ -399,13 +436,17 @@ function findCollision(
   entries: readonly AnnotatedFileSuggestion[],
   scheme: ProjectContextTreeScheme,
   folderPath: string,
-  name: string,
+  typed: string,
+  currentName: string,
   currentPath: string | null,
 ): LocalCollision {
-  if (!name) return null;
+  if (!typed) return null;
+  // The same name by the codec's spelling: `Chapter 12.md` finds `Chapter 12`.
+  const stored = storedFilename(typed, currentName);
+  const key = entryNameKey(stored.ok ? stored.name : typed);
   return (
     folderChildren(entries, scheme, folderPath).find(
-      (entry) => entry.name === name && entry.path !== currentPath,
+      (entry) => entryNameKey(entry.name) === key && entry.path !== currentPath,
     ) ?? null
   );
 }
@@ -439,7 +480,7 @@ function suggestionForSession(
     session.document.getXmlFragment(session.fragmentName),
   );
   if (!suggestion || tab.kind === "new") return suggestion;
-  const extensionIndex = tab.name.lastIndexOf(".");
-  const extension = extensionIndex > 0 ? tab.name.slice(extensionIndex) : "";
+  // The suggestion carries the file's visible extension (`.json`); a prose name has none.
+  const extension = tab.name.slice(entryNameStemEnd(tab.name));
   return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
 }

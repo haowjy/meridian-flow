@@ -3,7 +3,7 @@
 ## Key invariants
 
 “Live” and “canonical” below mean the document supplied by this core's
-coordinator. A host may supply a branch rather than the published document.
+coordinator. A host may supply a branch rather than the live document.
 The memory-only runtime replica is distinct from that host-owned branch.
 
 - **Block identity and display address are different.** Canonical identity is the
@@ -31,10 +31,24 @@ The memory-only runtime replica is distinct from that host-owned branch.
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
     to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
+- **Written links are assigned before alignment and never round-trip.** Every door that
+  turns written Markdown into nodes runs ref assignment over the replaced span
+  before block alignment and no-op detection, and applies the assigned nodes as
+  they are. An unchanged link keeps its old attrs verbatim and emits no format
+  item; copies, undo, redo and reply save never assign. Ahead refs a write
+  mints are registered before it applies or locks anything
+  ([link identity](link-correspondence.md)). A host whose door runs inside its
+  own transaction binds the whole document first, outside it, and hands the
+  core the bound nodes as a `create`'s content (`WriteContext.boundNodes`);
+  the core applies them as an ordinary overwrite (or, bound fresh, a create
+  into an empty document) and never assigns again. A create without overwrite
+  checks emptiness again at the admission that journals it, before
+  journaling: a writer admitted after the first check refuses it.
+
 ### Destructive scope targeting and recovery
 
-`delete` is the structural block-removal command and requires an explicit `in`
-scope. `replace({ find, content: "" })` remains exact text-span deletion, while
+`remove` is the structural block-removal command and takes exactly one of `in`
+or a `#fragment` in the path; it never deletes the document. `replace({ find, content: "" })` remains exact text-span deletion, while
 an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
 confused with structural deletion.
 
@@ -69,18 +83,18 @@ going blind to a concurrent human edit.
 - **Offline-peer model.** The model never edits the live doc. It edits a
   per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
-- **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
-  runtime has seen") is set by `markSynced` on read / create / write / commit. A
-  mutating write requires a prior sync (`requireSynced`); when the runtime replica
-  is missing or the live doc is stale, `requireSynced` transparently cold-rebuilds
+- **Session membership is the write gate.** `markSynced` adds the document ID to
+  `session.documents` (a set) on read / create / write / commit. A mutating write
+  calls `requireSynced`; when the document is absent from the set or the live doc
+  is stale, `requireSynced` transparently cold-rebuilds
   from canonical rather than forcing the model to `read` — a read is never
   *required* to edit. Only a genuinely missing document errors. Staleness of the
   shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
 - **Runtime sync state is memory-only and not an attribution source.**
-  `session.documents[docId]` keeps only the current state vector (`V_sync`) while
-  a process/session is live; nothing in that map is persisted. Attribution/echo
+  `session.documents` holds initialized-document membership, not vectors or
+  snapshots, while a process/session is live; nothing in that set is persisted. Attribution/echo
   baselines are cold-derived per interaction from durable pull-time primitives
   (thread-peer branch state plus journal floor) and passed through the write
   context. If a standalone package caller lacks that host baseline, detection
@@ -103,7 +117,7 @@ going blind to a concurrent human edit.
   pending: otherwise a write after a mid-response `read` could re-match
   already-edited text and self-mangle at commit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
-  advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
+  mark session document synced → emit echo`; the echo's concurrent set = blocks the re-sync
   touched. Deferred commit collapses **only** the merge+re-sync to once per turn
   (N writes → 1); each buffered write already emitted its per-write echo before
   commit.
@@ -120,16 +134,18 @@ going blind to a concurrent human edit.
   suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). Model-facing framing is a versioned JSON envelope:
-  groups carry `{ extent, relation, items: [{ hash, body }] }`, so each logical
-  block remains distinct without repeating shared semantics. Only full
-  document/changed/swept groups and prefix context groups exist. Concurrent
+  deterministically (#383). The typed result's groups carry
+  `{ extent, relation, items: [{ hash, body }] }`, so each logical block remains
+  distinct without repeating shared semantics; `renderAgentEditResult` renders
+  them to the text the model reads. Only full document/changed/swept groups and
+  prefix context/copied groups exist. Concurrent
   blocks and tombstones sit in `concurrent.runs`; placement, not another block
   relation, conveys their concurrent semantics.
-- **Tool results have one model representation.** Read, diff, mutation, undo,
-  redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
-  JSON-stringify that object; no provider receives the internal diagnostic
-  hashline stream or a parallel compatibility rendering.
+- **Tool results have one typed form and one rendering.** Read, mutation, undo,
+  redo, and write errors return a `meridian.agent-edit.v1` result.
+  `renderAgentEditResult` (`tool/result-text.ts`) is the only path from it to
+  the model's text: a status line, notes, then `hash|text` blocks. Hosts keep
+  the typed result beside the text and never parse the text back (D43).
 - **Convergence is not intent preservation.** Two edits to the same span can CRDT-merge at character level
   into garbled prose. Convergence does not guarantee intent preservation or that
   every concurrent word remains visible. The model is **told** via the echo,
@@ -154,7 +170,11 @@ going blind to a concurrent human edit.
   double-commits.
 - **`find` matching happens in serialized markdown space.** When a matched block
   body is identical to flat editable text and the payload is plain text, same-block
-  matches lower to exact text spans (`text` for one match, `textRanges` for several).
+  matches (one or more) lower to one `textRanges` edit of exact spans.
   All formatted, escaped, entity, and cross-block cases splice and parse the
   affected serialized range before `replaceScope(...)`; they must not use
   serialized-body→flat offset mapping.
+- **No serialize/reparse between resolution and application.** Resolved edits
+  carry ProseMirror nodes; apply and the model adapter mutate from those nodes
+  and never call the codec. Parse failures surface in the resolver, before any
+  transaction.

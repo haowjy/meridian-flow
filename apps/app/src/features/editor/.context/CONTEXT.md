@@ -109,10 +109,10 @@ visible signal that the draft surface is active.
 
 ### Command modules the surfaces consume
 
-`block-alignment.ts`, `link-selection.ts`, and `core/editor/table-operations.ts`
-outlived the chrome that called them and are the command and resolution layer
-the rebuilt surfaces consume. The toolbar uses the first two; the third waits
-for the table surfaces.
+`block-alignment.ts`, `core/editor/links/link-commands.ts`, and
+`core/editor/table-operations.ts` are the command and resolution layer the
+surfaces consume. The toolbar uses the first two; the table surfaces use the
+third.
 
 `linkAttributesAtSelection` exists because `editor.isActive("link")` can miss an
 empty selection at a mark boundary, notably the link's start. It uses
@@ -132,25 +132,25 @@ null on a code surface, on a read-only host, and behind a schema fence — the
 last because a slash command dispatches through a chain, and chains run on a
 non-editable editor. The wikilink getter answers null on the same three, plus a
 host with no project: without one there is nothing to search and nothing a link
-could resolve against. Its documents are the manuscript plus the active Work's
-scratch, which is the resolver's own candidate set.
+could resolve against. Its documents are `useLinkableDocuments`' index, which
+is the resolver's own candidate set
+([`features/links`](../../links/.context/CONTEXT.md)).
 
 ## The editor's scope
 
-One value, `{ projectId, workId }`, provided by `EditorView` around everything it
-renders (`editor-scope.tsx`) and read with `useEditorScope()`. It answers the
-questions the document itself cannot:
+One plain value, `{ projectId, workId }`, provided by `EditorView` around
+its host (`editor-scope.tsx`) and read with `useEditorScope()`. The Editor has
+no Work: for links, Scratch and Uploads holders use the replica's projected
+resource location `workId` (including No Work); manuscript, kb, user, and
+unfiled holders use the project's No Work row. Until the location or No Work
+row is known, the scope is unresolved. Neither `?work`, remembered Work, nor
+`baseUri` supplies a fallback.
 
-| Consumer | What the Work decides |
-|---|---|
-| `useLinkableDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
-| `ResolveDocumentLinkRequest.workId` | a `work://` shorthand has a Work to be relative to |
-| `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
-
-`workId` arrives as a prop (the active thread's Work, or the project's default)
-and is deliberately NOT part of `EditorMountIdentity`: it is runtime scope, and
-remounting a collaborative editor destroys its UndoManager. `reviewWorkId` is a
-different fact — the Work that owns a draft under review — and stays separate.
+This same value drives the local link index, `@` and LinkForm catalogs,
+resolution/cache registration, contextual Create, and link destinations.
+Scope is deliberately NOT part of `EditorMountIdentity`: moving a holder
+must not destroy its collaborative editor or UndoManager. Route `workId`
+and `reviewWorkId` remain separate inputs for draft navigation and review.
 
 The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
 are ports and render nothing; the surfaces those lanes show the writer mount

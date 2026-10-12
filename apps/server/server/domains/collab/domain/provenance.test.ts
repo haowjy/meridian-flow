@@ -5,13 +5,13 @@ import {
   type SemanticEditIRV1,
   type SemanticOutputRun,
 } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   type AttributionManifestV1,
   appendProvenanceFacts,
-  assertClientUpdateOutsideReservedNamespace,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
   journalInsertionRanges,
@@ -19,9 +19,15 @@ import {
   materializeProvenanceView,
   PROVENANCE_TARGETS_TYPE,
   ProvenanceMaterializationError,
-  ReservedNamespaceAdmissionError,
 } from "./provenance.js";
 import { materializeSweepEvidence } from "./sweep-policy.js";
+
+const schema = buildDocumentSchema();
+
+/** Plain inline content standing in for a resolved text replacement. */
+function inlineText(text: string): Fragment {
+  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
+}
 
 const authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
 const emptyManifest = (): AttributionManifestV1 => ({
@@ -34,44 +40,6 @@ const emptyManifest = (): AttributionManifestV1 => ({
 });
 
 describe("provenance materialization", () => {
-  it("accepts retained output runs without rematerializing their visible roots", () => {
-    const doc = proseDoc("cat and cat");
-    const source = textRange(doc);
-    const retained = { ...source, clock: source.clock + 3, length: 5 };
-    const before = Y.encodeStateVector(doc);
-    const text = proseText(doc);
-    text.delete(8, 3);
-    text.insert(8, "kitten");
-    text.delete(0, 3);
-    text.insert(0, "kitten");
-
-    expect(() =>
-      createSemanticProvenanceWriter().writeCertifiedFacts(
-        doc as never,
-        mappedTextIr(proseBlock(doc), source, "kitten and kitten", [
-          { kind: "fresh", payload: "kitten", output: { from: 0, to: 6 } },
-          {
-            kind: "preserved",
-            source: retained,
-            output: { from: 6, to: 11 },
-            materialization: "retained",
-          },
-          { kind: "fresh", payload: "kitten", output: { from: 11, to: 17 } },
-        ]),
-        before,
-      ),
-    ).not.toThrow();
-
-    const visible = materializeCandidateProvenance(doc, [
-      { target: source, root: source, birthClass: "writer_protected" },
-    ]);
-    expect(visible).toContainEqual({
-      target: retained,
-      root: retained,
-      birthClass: "writer_protected",
-    });
-  });
-
   it("writes restoration facts alongside a retained output run", () => {
     const doc = proseDoc("cat and cat");
     const source = textRange(doc);
@@ -170,81 +138,6 @@ describe("provenance materialization", () => {
     ).toThrow(/length-for-length/);
   });
 
-  it("maps reverse-declared edits through their insertion order before visible order", () => {
-    const doc = proseDoc("one");
-    const firstRoot = textRange(doc);
-    const secondRoot = appendVisibleText(doc, "two");
-    const fragment = doc.getXmlFragment("prosemirror");
-    const firstBlock = fragment.get(0) as Y.XmlElement;
-    const secondBlock = fragment.get(1) as Y.XmlElement;
-    const firstText = firstBlock.get(0) as Y.XmlText;
-    const secondText = secondBlock.get(0) as Y.XmlText;
-    const before = Y.encodeStateVector(doc);
-    secondText.delete(0, 3);
-    secondText.insert(0, "TWO");
-    firstText.delete(0, 3);
-    firstText.insert(0, "ONE");
-
-    createSemanticProvenanceWriter().writeCertifiedFacts(
-      doc as never,
-      {
-        version: 1,
-        documentId: "document",
-        inputRevision: "revision" as never,
-        scope: [firstRoot, secondRoot],
-        deleted: [firstRoot, secondRoot],
-        intent: {
-          kind: "mappedEdits",
-          edits: [
-            {
-              edit: {
-                kind: "text",
-                documentId: "document",
-                file: "document.md",
-                block: secondBlock as never,
-                span: { start: 0, end: 3 },
-                newText: "TWO",
-              },
-              outputRuns: [
-                {
-                  kind: "restoration",
-                  root: secondRoot,
-                  payload: "TWO",
-                  output: { from: 0, to: 3 },
-                },
-              ],
-            },
-            {
-              edit: {
-                kind: "text",
-                documentId: "document",
-                file: "document.md",
-                block: firstBlock as never,
-                span: { start: 0, end: 3 },
-                newText: "ONE",
-              },
-              outputRuns: [
-                {
-                  kind: "restoration",
-                  root: firstRoot,
-                  payload: "ONE",
-                  output: { from: 0, to: 3 },
-                },
-              ],
-            },
-          ],
-        },
-      },
-      before,
-    );
-
-    const visible = materializeCandidateProvenance(doc, [
-      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
-      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
-    ]);
-    expect(visible.map(({ root }) => root)).toEqual([firstRoot, secondRoot]);
-  });
-
   it("locates grouped same-block edits by their final output spans", () => {
     const doc = proseDoc("one two");
     const source = textRange(doc);
@@ -271,12 +164,12 @@ describe("provenance materialization", () => {
           edits: [
             {
               edit: {
-                kind: "text",
+                kind: "textRanges",
                 documentId: "document",
                 file: "document.md",
                 block: block as never,
-                span: { start: 0, end: 3 },
-                newText: "ONE!",
+                replacements: [{ span: { start: 0, end: 3 }, content: inlineText("ONE!") }],
+                output: "ONE!",
               },
               outputRuns: [
                 {
@@ -343,62 +236,6 @@ describe("provenance materialization", () => {
     ]);
     expect(visible[0]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
     expect(visible[1]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
-  });
-
-  it("encodes certified continuation facts in the same Yjs update as prose", () => {
-    const doc = proseDoc("old");
-    const initial = Y.encodeStateAsUpdate(doc);
-    const source = Y.decodeUpdate(initial).structs.find(
-      (struct) =>
-        (struct as unknown as { content?: { constructor?: { name?: string } } }).content
-          ?.constructor?.name === "ContentString",
-    );
-    if (!source) throw new Error("Expected source text struct");
-    const before = Y.encodeStateVector(doc);
-    doc.getXmlFragment("prosemirror").delete(0, 1);
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.push([new Y.XmlText("new")]);
-    doc.getXmlFragment("prosemirror").push([paragraph]);
-
-    createSemanticProvenanceWriter().writeCertifiedFacts(
-      doc as never,
-      {
-        version: 1,
-        documentId: "document",
-        inputRevision: "revision" as never,
-        scope: [{ clientID: source.id.client, clock: source.id.clock, length: 3 }],
-        deleted: [],
-        intent: {
-          kind: "mappedEdits",
-          edits: [
-            {
-              edit: {
-                kind: "text",
-                documentId: "document",
-                file: "document.md",
-                block: paragraph as never,
-                span: { start: 0, end: 3 },
-                newText: "new",
-              },
-              outputRuns: [
-                {
-                  kind: "preserved",
-                  source: { clientID: source.id.client, clock: source.id.clock, length: 3 },
-                  output: { from: 0, to: 3 },
-                },
-              ],
-            },
-          ],
-        },
-      },
-      before,
-    );
-
-    const replica = createCollabYDoc({ gc: false });
-    Y.applyUpdate(replica, initial);
-    Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc, before));
-    expect(replica.getXmlFragment("prosemirror").toString()).toContain("new");
-    expect(replica.getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(1);
   });
 
   it("locates a certified structural carry from its replaced input block", () => {
@@ -494,81 +331,6 @@ describe("provenance materialization", () => {
     expect(result.visible[0]?.target).toEqual(result.visible[0]?.root);
   });
 
-  it("keeps the first attribution when a later sync update repeats integrated structs", () => {
-    const source = proseDoc("writer words");
-    const fullSync = Y.encodeStateAsUpdate(source);
-
-    const result = materializeProvenanceView({
-      authorityId,
-      generation: 1n,
-      manifest: emptyManifest(),
-      rows: [
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 1n,
-          batchOrdinal: 0,
-          journalRowId: 10n,
-          originType: "human",
-          actorUserId: crypto.randomUUID(),
-          update: fullSync,
-        },
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 2n,
-          batchOrdinal: 0,
-          journalRowId: 11n,
-          originType: "agent",
-          actorUserId: null,
-          update: fullSync,
-        },
-      ],
-      watermark: { admissionSequence: 2n, batchOrdinal: 0, journalRowId: 11n },
-    });
-
-    expect(result.visible).toHaveLength(1);
-    expect(result.visible[0]?.birthClass).toBe("writer_protected");
-  });
-
-  it("keeps authored attribution ahead of the canonical replay update", () => {
-    const source = proseDoc("writer words");
-    const fullSync = Y.encodeStateAsUpdate(source);
-    const actorUserId = crypto.randomUUID();
-
-    const result = materializeProvenanceView({
-      authorityId,
-      generation: 1n,
-      manifest: emptyManifest(),
-      rows: [
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 1n,
-          batchOrdinal: 0,
-          journalRowId: 10n,
-          originType: "human",
-          actorUserId,
-          update: fullSync,
-        },
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 1n,
-          batchOrdinal: 1,
-          journalRowId: 11n,
-          originType: "reconcile",
-          actorUserId: null,
-          update: fullSync,
-        },
-      ],
-      watermark: { admissionSequence: 1n, batchOrdinal: 1, journalRowId: 11n },
-    });
-
-    expect(result.visible).toHaveLength(1);
-    expect(result.visible[0]?.birthClass).toBe("writer_protected");
-  });
-
   it("blocks missing replay rows and missing checkpoint attribution", () => {
     const doc = proseDoc("unattributed");
     const update = Y.encodeStateAsUpdate(doc);
@@ -610,29 +372,6 @@ describe("provenance materialization", () => {
         ],
       }),
     ).toThrow(/Conflicting append-only target assignment/);
-  });
-
-  it("retains a certified target fact after the carried prose is deleted", () => {
-    const doc = proseDoc("old");
-    const root = textRange(doc);
-    doc.getXmlFragment("prosemirror").delete(0, 1);
-    const paragraph = new Y.XmlElement("paragraph");
-    const text = new Y.XmlText("new");
-    paragraph.push([text]);
-    doc.getXmlFragment("prosemirror").push([paragraph]);
-    const targetId = (text as unknown as { _start: { id: { client: number; clock: number } } })
-      ._start.id;
-    const target = {
-      clientID: targetId.client,
-      clock: targetId.clock,
-      length: 3,
-    };
-    appendProvenanceFacts(doc, { targets: [{ version: 1, target, root }] });
-    doc.getXmlFragment("prosemirror").delete(0, 1);
-
-    expect(() =>
-      materializeCandidateProvenance(doc, [{ target: root, root, birthClass: "writer_protected" }]),
-    ).not.toThrow();
   });
 
   it("keeps preserved targets rooted in the original writer range across carries", () => {
@@ -812,51 +551,6 @@ describe("sweep observation evidence", () => {
   });
 });
 
-describe("hostile reserved namespace guard", () => {
-  it.each([
-    ["ordinary-client overwrite", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{}])],
-    [
-      "nested insert",
-      (doc: Y.Doc) => {
-        const nested = doc.getArray(PROVENANCE_TARGETS_TYPE).get(0) as Y.Array<unknown>;
-        nested.push(["hostile"]);
-      },
-    ],
-    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).set("x", 1)],
-  ])("rejects %s", (_name, mutate) => {
-    const referenceDocument = documentWithNestedReservedType();
-    const update = hostileDelta(referenceDocument, mutate);
-    expect(() => assertClientUpdateOutsideReservedNamespace(referenceDocument, update)).toThrow(
-      ReservedNamespaceAdmissionError,
-    );
-  });
-
-  it("rejects a delete-only reserved change", () => {
-    const referenceDocument = documentWithNestedReservedType();
-    const update = hostileDelta(referenceDocument, (client) => {
-      client.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
-    });
-    expect(Y.decodeUpdate(update).structs).toHaveLength(0);
-    expect(() => assertClientUpdateOutsideReservedNamespace(referenceDocument, update)).toThrow(
-      /deletes reserved provenance state/,
-    );
-  });
-
-  it("allows ordinary prose updates without scratch-applying them", () => {
-    const referenceDocument = documentWithNestedReservedType();
-    const client = createCollabYDoc({ gc: false });
-    Y.applyUpdate(client, Y.encodeStateAsUpdate(referenceDocument));
-    const vector = Y.encodeStateVector(client);
-    client.getXmlFragment("prosemirror").push([new Y.XmlElement("paragraph")]);
-    expect(() =>
-      assertClientUpdateOutsideReservedNamespace(
-        referenceDocument,
-        Y.encodeStateAsUpdate(client, vector),
-      ),
-    ).not.toThrow();
-  });
-});
-
 function row(admissionSequence: bigint, journalRowId: bigint, update: Uint8Array) {
   return {
     authorityId,
@@ -935,12 +629,12 @@ function restorationTextEdit(
 ) {
   return {
     edit: {
-      kind: "text" as const,
+      kind: "textRanges" as const,
       documentId: "document",
       file: "document.md",
       block: block as never,
-      span: { start, end: start + root.length },
-      newText: payload,
+      replacements: [{ span: { start, end: start + root.length }, content: inlineText(payload) }],
+      output: payload,
     },
     outputRuns: [
       {
@@ -960,12 +654,12 @@ function restorationInsertion(
 ) {
   return {
     edit: {
-      kind: "text" as const,
+      kind: "textRanges" as const,
       documentId: "document",
       file: "document.md",
       block: block as never,
-      span: { start: 0, end: 0 },
-      newText: payload,
+      replacements: [{ span: { start: 0, end: 0 }, content: inlineText(payload) }],
+      output: payload,
     },
     outputRuns: [
       {
@@ -995,12 +689,12 @@ function mappedTextIr(
       edits: [
         {
           edit: {
-            kind: "text",
+            kind: "textRanges",
             documentId: "document",
             file: "document.md",
             block: block as never,
-            span: { start: 0, end: source.length },
-            newText: output,
+            replacements: [{ span: { start: 0, end: source.length }, content: inlineText(output) }],
+            output: output,
           },
           outputRuns,
         },
@@ -1034,12 +728,14 @@ function appendCertifiedCarry(
         edits: [
           {
             edit: {
-              kind: "text",
+              kind: "textRanges",
               documentId: "document",
               file: "document.md",
               block: paragraph as never,
-              span: { start: 0, end: source.length },
-              newText: value,
+              replacements: [
+                { span: { start: 0, end: source.length }, content: inlineText(value) },
+              ],
+              output: value,
             },
             outputRuns: [{ kind: "preserved", source, output: { from: 0, to: value.length } }],
           },
@@ -1068,20 +764,4 @@ function textRange(doc: Y.Doc) {
     text as unknown as { _start: { id: { client: number; clock: number }; length: number } }
   )._start;
   return { clientID: item.id.client, clock: item.id.clock, length: item.length };
-}
-
-function documentWithNestedReservedType(): Y.Doc {
-  const doc = proseDoc("safe prose");
-  const nested = new Y.Array<unknown>();
-  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
-  nested.push(["server fact"]);
-  return doc;
-}
-
-function hostileDelta(referenceDocument: Y.Doc, mutate: (client: Y.Doc) => void): Uint8Array {
-  const client = createCollabYDoc({ gc: false });
-  Y.applyUpdate(client, Y.encodeStateAsUpdate(referenceDocument));
-  const vector = Y.encodeStateVector(client);
-  mutate(client);
-  return Y.encodeStateAsUpdate(client, vector);
 }

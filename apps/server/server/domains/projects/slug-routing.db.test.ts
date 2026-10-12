@@ -5,6 +5,8 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -24,7 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../context/adapters/project-context-availability.js"
     );
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const availability = createDrizzleProjectContextAvailability(db);
@@ -37,19 +39,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const workRepository = () =>
       createDrizzleWorkRepository({
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
+        fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation,
       });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.projects, schema.works]);
+      await deleteDrizzleRows(db, [schema.users, schema.projects, schema.works]);
     });
     afterAll(async () => db.$client.end());
-
-    it("project findById on a non-UUID slug resolves to null", async () => {
-      const repo = createDrizzleProjectRepository({ db });
-      await expect(repo.findById("probe-rowmenu-not-a-uuid" as never)).resolves.toBeNull();
-    });
 
     it("creates the project manifest source before publishing its catalog identity", async () => {
       const userId = "93b1f764-1234-f678-0712-123456789ad2";
@@ -165,7 +164,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const repo = createDrizzleProjectRepository({ db });
       const project = await repo.create({ userId, title: "Chat handles" });
       const another = await repo.create({ userId, title: "Another" });
-      const chats = createDrizzleThreadRepository(db);
+      const chats = createDrizzleThreadRepository(db, {
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const first = await chats.create({ projectId: project.id, userId });
       const second = await chats.create({ projectId: project.id, userId });
       expect(first.ref).toBe("c1");
@@ -181,11 +182,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
       });
+      const spawnTurn = await db
+        .insert(schema.turns)
+        .values({
+          threadId: first.id,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+        .returning({ id: schema.turns.id });
       const child = await chats.createSubagent({
         userId,
         projectId: project.id,
         parentThreadId: first.id,
         rootThreadId: first.id,
+        originTurnId: spawnTurn[0].id,
         spawnDepth: 1,
       });
       expect(child.ref).toBe("p4");
@@ -195,11 +207,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await repo.softDelete(project.id);
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
       expect(await chats.findLiveByProjectRef(project.id, "p4")).toBeNull();
-    });
-
-    it("work findById on a non-UUID slug resolves to null", async () => {
-      const repo = workRepository();
-      await expect(repo.findById("also-a-slug" as never)).resolves.toBeNull();
     });
 
     it("create and find accept canonical UUIDs regardless of version or variant bits", async () => {

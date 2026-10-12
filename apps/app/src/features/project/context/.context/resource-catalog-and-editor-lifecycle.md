@@ -23,15 +23,15 @@ periodic refresh, and wake hints schedule background acquisition through the sam
 serialized owner.
 
 Editable-file create, rename, move, and delete commands write ordered durable
-resource intentions before transport. Folder commands retain the direct context
-mutation adapter. Rejected deletion restores the row with repair state; transport
+resource intentions before transport. Folder placement and recursive deletion
+share that journal; folder creation retains the direct context mutation adapter. Rejected deletion restores the row with repair state; transport
 uncertainty leaves the submitted attempt recoverable. Rejected placement
 reopens the identity field. Cache absence never supplies
 removal evidence.
 
 The project availability coordinator watches server-backed tabs, bound route
-selection, retained sessions, and capped recent routes by stable file ID. Exact
-delete receipts enter it directly; explicit authorization-loss observers and
+selection, retained sessions, and capped recent routes by stable file ID.
+Namespace receipt projections and explicit authorization-loss observers, plus
 focus, online, and bounded polling recheck watched identities. A catalog wake
 for a cold Work triggers the same exact-ID availability path without warming a
 second tree. Cache omission is presentation state and never removal evidence.
@@ -84,10 +84,54 @@ document.
 
 When the resource boundary returns an exact initialized local session, it also
 returns verified-local readiness through `ContextTabSessionBoundary` and
-`ContextEditorMountHost`. `EditorView` may bind that content without waiting for
+`ContextDocumentHost`. `EditorView` may bind that content without waiting for
 first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
+
+A cached session is adopted into the registry at the document's current
+admission generation, which advances on any project mutation. Its persistence
+incarnation keeps the generation it was captured at, exactly as a live `admit`
+reuses it, so adoption must accept an older bindable incarnation (only a newer
+one is a foreign lineage). Refusing it strands the cached session `detached`:
+local edits never reach the server and the pill stays silent. When adoption
+itself fails (authority unreachable or the handoff errors), the adopter reports
+it to the session, which records the failure only while it is `detached` with no
+transport. The snapshot's `adoptionStalled` is derived from that: true only
+while `detached`, cleared by attaching a transport or a successful adoption,
+and never alongside a terminal state. `SyncStatus` treats it as an outage
+(see `core/editor/.context/CONTEXT.md`); elapsed detached time alone shows
+nothing, because a session merely awaiting its transport is healthy.
+
+A tab that loses its resource handle but keeps its document (a review launch
+re-opens it without one) keeps painting its cached session while the exact
+lookup re-probes; the boundary never drops to a skeleton for that identity flip.
+
+The desktop `ContextTabSessionBoundary` opens the ordinary live binding once its
+local session has been probed (`useLiveDocumentBinding`: open, bind, explicit
+retry). It presents the live session in place of the cached one when that
+binding opens, and shows the session's own connection state. An availability
+recheck that returns terminal, deleted, or schema-mismatch releases the cached
+handle and its resource ownership lease rather than leaving the stale session
+mounted. A local cache-open failure falls through to exact server availability
+instead of terminalizing the tab from stale metadata. A failed binding offers
+Retry and also retries once each time the resource availability revision
+advances. The phone document host (`MobileDocumentHost`) uses the same binding
+but neither offers Retry nor retries on a revision change, so a failed phone
+open has no in-place recovery yet.
+
+A draft-only tab (a new document proposed by a draft) opens no live binding at
+all: it has no live manifest membership and the server refuses a room for it,
+so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
+failed branch room offers Retry or closing the tab, never a fallback to an empty
+live editor. The phone hosts it through the same `ContextEditorMountHost`
+(`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
+shells find the tab through `route-document-owner.ts`, the bound identity in the
+live catalog and then the draft-only admission before any path occupant.
+Once the server confirms Apply the tab is promoted to a durable tab
+and this host opens its live room like any other document. Whether that open is
+slow, fails, or disconnects is the host's business and never changes whether
+Apply completed.
 
 ## Unfiled materialization and recovery
 
@@ -112,15 +156,15 @@ opened as blank documents.
 
 ## Editor versus chat resources
 
-Editor tree and tabs admit project documents only. Scratch/Uploads remain valid
-storage and reference/tool schemes; direct resource URLs show an explicit
-viewing-not-available state. Persisted resource tab entries are removed without
-deleting resource documents or durable local content. The deferred chat-launched pane
-overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
+Editor trees list project document schemes only. Scratch documents open in
+Editor tabs through links, Work Files and a chat's Scratch section, owned by their
+Work or, for a No Work chat, by their lineage; nothing in the Editor browses
+Scratch, and a Scratch crumb links nowhere. Uploads remain storage and
+reference/tool resources; their direct URLs show the viewing-not-available state.
 
-Eligibility is enforced at every live workspace transition, including
-bootstrap, adoption and availability updates. Hiding a resource row alone is
-insufficient: a hidden tab must not remain eligible for close fallback.
+Eligibility is enforced at live workspace transitions, including bootstrap,
+adoption and availability updates. Hiding a row alone must not leave an
+ineligible tab available for close fallback.
 
 Every editable tab keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed tabs resolve through their stable resource handle before and after

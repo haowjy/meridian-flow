@@ -7,7 +7,12 @@
 
 import { z } from "zod";
 import { parseContextUri } from "../context-uri.js";
-import { type ArtifactRef, artifactRefSchema, type MeridianError } from "../interrupt/index.js";
+import {
+  type ArtifactRef,
+  artifactRefSchema,
+  type MeridianError,
+  meridianErrorSchema,
+} from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
@@ -54,7 +59,7 @@ export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
 export type SavedOutcome = "succeeded" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
-export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
+type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
 
 /** Durable user-facing identity carried by a child-completion turn. */
@@ -92,9 +97,9 @@ export type ExecutionReportCorrelation = {
 };
 
 export type SavedExecutionReport = {
-  terminalAssistantTurnId: TurnId | null;
+  terminalTurnId: TurnId | null;
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   /** Durable report-row creation time, which commits with run admission. */
   admittedAt: string;
   handle: string;
@@ -105,14 +110,15 @@ export type SavedExecutionReport = {
   toolCallId: string | null;
   cardBlockId: TurnBlockId | null;
   agentSlug: string | null;
-  description: string | null;
+  /** The spawn's task label (`spawn.name`). */
+  name: string | null;
   capture: ReturnResultCapture | null;
   captureToolCallId: string | null;
   reason: string | null;
   payload?: JsonValue;
   artifacts: ArtifactRef[] | null;
   costMillicredits: number | null;
-  publication: "none" | "pending" | "published" | "skipped";
+  publication: "none" | "pending" | "published";
   publishedAt: string | null;
 } & (
   | { outcome: null; source: null; summary: null; terminalAt: null }
@@ -120,6 +126,7 @@ export type SavedExecutionReport = {
 );
 
 export type ThreadReportResult =
+  | { ok: false; error: MeridianError }
   | {
       childThreadId: ThreadId;
       ref: string;
@@ -135,7 +142,29 @@ export type ThreadReportResult =
     }
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
+/**
+ * The model's `thread_report` result: the child's latest finished report. It
+ * has no run number (D6, D17); `running` marks a newer run still in progress,
+ * and `message` carries the line the model reads about it.
+ */
+export type ModelThreadReportResult =
+  | Extract<ThreadReportResult, { ok: false }>
+  | {
+      ref: string;
+      outcome: SavedOutcome;
+      summary: string;
+      payload?: JsonValue;
+      artifacts?: ArtifactRef[];
+      reason?: string;
+      partial?: true;
+      source?: ExecutionReportSource;
+      running?: true;
+      message?: string;
+    }
+  | { ref: string; status: "not_ready" | "unavailable"; message?: string };
+
 const threadReportResultSchema = z.union([
+  z.object({ ok: z.literal(false), error: meridianErrorSchema }),
   z.object({
     childThreadId: z.string(),
     ref: z.string(),
@@ -154,6 +183,23 @@ const threadReportResultSchema = z.union([
     ref: z.string(),
     status: z.enum(["not_ready", "unavailable"]),
   }),
+  z.object({
+    ref: z.string(),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    summary: z.string(),
+    payload: jsonValueSchema.optional(),
+    artifacts: z.array(artifactRefSchema).optional(),
+    reason: z.string().optional(),
+    partial: z.literal(true).optional(),
+    source: z.enum(["return_result", "final_assistant", "empty"]).optional(),
+    running: z.literal(true).optional(),
+    message: z.string().optional(),
+  }),
+  z.object({
+    ref: z.string(),
+    status: z.enum(["not_ready", "unavailable"]),
+    message: z.string().optional(),
+  }),
 ]);
 
 /** Client-facing saved report details shared by the tool output and API reader. */
@@ -166,23 +212,25 @@ export type SavedReportContentValue = {
   reason?: string | null;
 };
 
-export function parseThreadReportResult(value: unknown): ThreadReportResult | null {
+export function parseThreadReportResult(
+  value: unknown,
+): ThreadReportResult | ModelThreadReportResult | null {
   const parsed = threadReportResultSchema.safeParse(value);
-  return parsed.success ? (parsed.data as ThreadReportResult) : null;
+  return parsed.success ? (parsed.data as ThreadReportResult | ModelThreadReportResult) : null;
 }
 
 /** Project a ready saved report into the common report-content presentation shape. */
 export function toReportContentValue(
-  report: ThreadReportResult | null,
+  report: ThreadReportResult | ModelThreadReportResult | null,
 ): SavedReportContentValue | null {
-  if (!report || "status" in report) return null;
+  if (!report || "status" in report || "error" in report) return null;
   return {
     summary: report.summary,
     ...(report.payload === undefined ? {} : { payload: report.payload }),
     artifacts: report.artifacts ?? [],
-    partial: report.partial,
+    partial: report.partial ?? report.outcome !== "succeeded",
     outcome: report.outcome,
-    reason: report.reason,
+    reason: "reason" in report ? (report.reason ?? null) : null,
   };
 }
 
@@ -199,10 +247,11 @@ export type AgentReport = {
   handle: string;
   /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
+  /** Where the report came from: `return_result`, the final reply, or nothing. */
+  source: ExecutionReportSource;
   summary: string;
   payload?: JsonValue;
   artifacts?: ArtifactRef[];
-  costMillicredits: number;
 };
 
 export type SpawnResult =
@@ -212,9 +261,15 @@ export type SpawnResult =
       handle: string;
       threadId: string;
       agentSlug: string;
-      description?: string;
+      name?: string;
       /** Present for a spawned execution; absent for queue-only thread_message. */
       execution?: TurnId;
+      /**
+       * Queue-only thread_message: true when the caller re-tasked its own child,
+       * so the caller gets the completion notice when that run finishes. A
+       * queued message gets no helper card either way.
+       */
+      notifiesCaller?: boolean;
     }
   | {
       status: "error";

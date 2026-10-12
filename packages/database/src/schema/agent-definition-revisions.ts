@@ -1,5 +1,9 @@
 /** Retained Agent source/definition identity and account/system future-chat selection. */
-import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import type {
+  InvocationOverlay,
+  ResolvedAgentConfiguration,
+  RetainedSkillReference,
+} from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -121,6 +125,15 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
   configuration: jsonb("configuration").$type<ResolvedAgentConfiguration>().notNull(),
   /** Raw spawn-time overlay; effective values are already resolved into `configuration`. */
   invocationOverlay: jsonb("invocation_overlay").$type<InvocationOverlay>(),
+  /**
+   * Packaged skills the user invoked with `/skill` in this thread, by slug,
+   * pinned to the reference the body was read from (D64). The only mutable
+   * field: re-invoking replaces a slug's pin. Children start empty.
+   */
+  invokedSkills: jsonb("invoked_skills")
+    .$type<Record<string, RetainedSkillReference>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
   createdAt: createdAt(),
 });
 

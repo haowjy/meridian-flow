@@ -25,16 +25,5 @@ export function workReceiptLine(receipt: WorkReceipt): string {
       const values = { name: receipt.workName };
       return i18n._("workReceipt.deleted", values, { message: "Deleted Work {name}" });
     }
-    case "switch": {
-      const values = { name: receipt.after.name };
-      const changed = JSON.stringify(receipt.before) !== JSON.stringify(receipt.after);
-      return changed
-        ? i18n._("workReceipt.switched", values, {
-            message: "Switched this conversation to Work {name}",
-          })
-        : i18n._("workReceipt.alreadyCurrent", values, {
-            message: "This conversation is already using Work {name}",
-          });
-    }
   }
 }

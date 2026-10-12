@@ -101,6 +101,36 @@ for ~200ms).
    must not warn about phantom pending changes (and must be disabled until
    the drafts query has settled).
 
+## Probe E — cold load and reload of a draft-only review
+
+1. Leave a pending new-document draft unapplied. Open its review, copy the
+   address (`/editor/manuscript/<name>.md?work=…&draft=…`), and open it in a
+   fresh tab, then reload. Run it at desktop width and as a phone (390px wide,
+   coarse pointer).
+   PASS: the document opens in review at the same URL with `?draft=` kept,
+   and no other document shows at any point. Record the history writes with a
+   `history.replaceState` wrapper installed before first load: there must be
+   none beyond the router's own startup write. FAIL: the address ends on
+   another open document with `?draft=` dropped (a tab at a path spelling the
+   route does not match, or a phone host rejecting the route before the
+   address admitted it).
+
+## Probe F — copied No Work review address, remote disposition, history writes
+
+1. Leave a pending new-document draft in No Work. Copy its review address
+   (`…/editor/manuscript/<name>.md?work=&draft=…`: the draft states its Work).
+   Select a named Work in this browser, then open the copied address cold, at
+   desktop width and as a phone.
+   PASS: the same draft opens in review, `?draft=` kept, no history write beyond the
+   router's startup one. FAIL: `?draft=` dropped or another document shown.
+2. Open a draft-only review in two pages. Apply all in one.
+   PASS: the other page leaves review in place within about a second and shows the
+   document live. Repeat with Discard all: the other page closes the draft-only tab.
+3. On a live No Work document opened from a copied URL (no `?work=`), click Review
+   draft. PASS: one `replaceState`, no `pushState`.
+4. With a review open, rename the document from the manuscript tree.
+   PASS: exactly one history write for the new address.
+
 ## History
 
 - 2026-07-07 — #151 combined quality-fixes probe (disposition lock, bulk pump

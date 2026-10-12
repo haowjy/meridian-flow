@@ -14,6 +14,7 @@ import {
   BranchPushCommitConflictError,
   BranchPushRetryExhaustedError,
   type BranchReviewService,
+  type BranchTurnReversal,
   type PushCommitStore,
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
@@ -63,29 +64,30 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     branchIds: readonly string[],
     run: (branches: readonly BranchSnapshot[]) => Promise<T>,
   ): Promise<T> {
-    const retryBranchId = branchIds[0];
-    if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+    if (branchIds.length === 0) throw new Error("active work draft lock requires a branch");
+    return criticalSections.withBranches(branchIds, () => retryingCas(branchIds, run));
+  }
+
+  /** Re-reads the branches and runs again when another process moved one under us. */
+  async function retryingCas<T>(
+    branchIds: readonly string[],
+    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
       try {
-        return await criticalSections.withBranches(branchIds, async () => {
-          const branches = await Promise.all(
-            branchIds.map(async (branchId) =>
-              assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
-            ),
-          );
-          return run(branches);
-        });
+        const branches = await Promise.all(
+          branchIds.map(async (branchId) =>
+            assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
+          ),
+        );
+        return await run(branches);
       } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
-          }
-          continue;
+        if (!(cause instanceof BranchPushCommitConflictError)) throw cause;
+        if (attempt >= maxCasRetries) {
+          throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
         }
-        throw cause;
       }
     }
-    throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
   }
 
   async function discardSelected(discardInput: {
@@ -140,68 +142,82 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     });
   }
 
-  async function reverseBranchTurn(turnInput: {
-    branchId: string;
+  async function reverseBranchTurns(turnInput: {
+    branchIds: readonly string[];
     threadId: ThreadId;
     turnId: TurnId;
     direction: "undo" | "redo";
     reviewedByUserId?: UserId;
-  }): Promise<
-    | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-    | {
-        status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo";
-        branchId: string;
-        journalIds: number[];
+  }): Promise<BranchTurnReversal[]> {
+    const branchIds = [...new Set(turnInput.branchIds)];
+    if (branchIds.length === 0) return [];
+    // Branch critical sections, then every branch's Work once, then each
+    // branch's change-trail and document locks (file-access §5). A concurrent
+    // push holds its branch section while it waits for the Work row.
+    return criticalSections.withBranches(branchIds, async () => {
+      const frozen = await deps.commitStore.lockDraftWorks(branchIds);
+      const results: BranchTurnReversal[] = [];
+      for (const branchId of branchIds) {
+        results.push(
+          frozen.has(branchId)
+            ? { status: "permission_denied", branchId, journalIds: [] }
+            : await retryingCas([branchId], ([branch]) => reverseOneBranchTurn(branch, turnInput)),
+        );
       }
-  > {
-    return withActiveWorkDraftBranchLock([turnInput.branchId], async ([branch]) => {
-      const prepared = await prepareBranchTurnReversal({
-        branch,
-        threadId: turnInput.threadId,
-        turnId: turnInput.turnId,
-        direction: turnInput.direction,
-      });
-      if (!prepared.ok) {
-        return {
-          status: prepared.status,
-          branchId: branch.branchId,
-          journalIds: prepared.journalIds,
-        };
-      }
-      if (turnInput.direction === "undo") {
-        await deps.commitStore.commitDiscard({
-          branch,
-          journalRows: prepared.journalRows,
-          state: prepared.state,
-          stateVector: prepared.stateVector,
-          reviewedByUserId: turnInput.reviewedByUserId,
-        });
-      } else {
-        await deps.commitStore.commitTurnRedo({
-          branch,
-          journalRows: prepared.journalRows,
-          state: prepared.state,
-          stateVector: prepared.stateVector,
-          reviewedByUserId: turnInput.reviewedByUserId,
-        });
-      }
-      broadcastAfterCommit({ branchId: branch.branchId, update: prepared.publishUpdate });
+      return results;
+    });
+  }
+
+  async function reverseOneBranchTurn(
+    branch: BranchSnapshot,
+    turnInput: {
+      threadId: ThreadId;
+      turnId: TurnId;
+      direction: "undo" | "redo";
+      reviewedByUserId?: UserId;
+    },
+  ): Promise<BranchTurnReversal> {
+    const prepared = await prepareBranchTurnReversal({
+      branch,
+      threadId: turnInput.threadId,
+      turnId: turnInput.turnId,
+      direction: turnInput.direction,
+    });
+    if (!prepared.ok) {
       return {
         status: prepared.status,
         branchId: branch.branchId,
         journalIds: prepared.journalIds,
       };
-    });
+    }
+    const commit = {
+      branch,
+      journalRows: prepared.journalRows,
+      state: prepared.state,
+      stateVector: prepared.stateVector,
+      reviewedByUserId: turnInput.reviewedByUserId,
+    };
+    if (turnInput.direction === "undo") await deps.commitStore.commitDiscard(commit);
+    else await deps.commitStore.commitTurnRedo(commit);
+    broadcastAfterCommit({ branchId: branch.branchId, update: prepared.publishUpdate });
+    return {
+      status: prepared.status,
+      branchId: branch.branchId,
+      journalIds: prepared.journalIds,
+    };
   }
 
   return {
     discardSelected,
-    reverseBranchTurn,
+    reverseBranchTurns,
     async markFailedResponseRollbackPending(rollbackInput) {
-      const reversed = await reverseBranchTurn({
-        ...rollbackInput,
+      const [reversed] = await reverseBranchTurns({
+        branchIds: [rollbackInput.branchId],
+        threadId: rollbackInput.threadId,
+        turnId: rollbackInput.turnId,
         direction: "undo",
       });
+      if (!reversed) throw new Error(`Branch ${rollbackInput.branchId} was not reversed`);
       if (reversed.status === "reversed") {
         return {
           status: "discarded",

@@ -1,8 +1,6 @@
-/** Policy for projection/activity effects after durable document writes. */
+/** Post-durability activity and document-derivation hook with failure diagnostics. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentWriteHook } from "../contracts.js";
-import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import { syncErrorMessage } from "./markdown-document.js";
 import type { DocumentProjectionEffects } from "./ports/document-projection-effects.js";
 
 export type DocumentProjectionRefreshService = {
@@ -27,11 +25,12 @@ export type DocumentWriteHookRunner = (
 
 export function createProjectionEffectsDocumentWriteHook(
   effects: DocumentProjectionEffects,
+  derive: (documentId: DocumentId, at: Date) => Promise<unknown>,
 ): DocumentWriteHook {
-  return async ({ documentId, threadId, markdown, at }) => {
+  return async ({ documentId, threadId, at }) => {
     const results = await Promise.allSettled([
       effects.touchDocumentActivity({ documentId, threadId, at }),
-      effects.updateProjection({ documentId, markdown, at }),
+      derive(documentId, at),
     ]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
@@ -55,41 +54,5 @@ export function createDocumentWriteHookRunner(input: {
         payload: input.diagnostics.payload(cause),
       });
     }
-  };
-}
-
-export function createDocumentProjectionRefresher(input: {
-  documents: Pick<MarkdownDocumentEngine, "readAsMarkdown">;
-  runDocumentWriteHook: DocumentWriteHookRunner;
-  diagnostics: DocumentProjectionDiagnostics;
-}): DocumentProjectionRefreshService {
-  return {
-    async refresh({ documentId, threadId }, source = "collab.document_write") {
-      try {
-        const read = await input.documents.readAsMarkdown(documentId);
-        if (!read.ok) {
-          input.diagnostics.failed({
-            documentId,
-            threadId,
-            source,
-            name: "projection_refresh.failed",
-            payload: {
-              code: read.error.code,
-              message: syncErrorMessage(read.error),
-            },
-          });
-          return;
-        }
-        await input.runDocumentWriteHook({ documentId, threadId, markdown: read.value }, source);
-      } catch (cause) {
-        input.diagnostics.failed({
-          documentId,
-          threadId,
-          source,
-          name: "projection_refresh.failed",
-          payload: input.diagnostics.payload(cause),
-        });
-      }
-    },
   };
 }

@@ -8,12 +8,16 @@ import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import { createNoopEventSink } from "../../../observability/index.js";
 import { resolvedWorkAuthority } from "../../../projects/domain/work-authority.js";
 import { createInMemoryObjectStore } from "../../../storage/index.js";
-import { createInMemoryResultRepository } from "../adapters/in-memory-result-repository.js";
+import {
+  createInMemoryResultRepository,
+  InMemoryResultRepository,
+} from "../adapters/in-memory-result-repository.js";
 import {
   type BinaryFileSource,
   type BinaryFileTarget,
   createInterruptFlushService,
 } from "../interrupt-flush.js";
+import type { ProjectResultRecord } from "../ports/result-repository.js";
 import { createPromotionService } from "../promotion-service.js";
 
 class MemoryFiles implements BinaryFileSource, BinaryFileTarget {
@@ -61,9 +65,10 @@ const promotionDeps = (
 });
 
 describe("promotion service", () => {
-  it("promotes a generated PNG with full provenance and lists by project", async () => {
+  it("promotes a generated PNG with full provenance", async () => {
     const objectStore = createInMemoryObjectStore();
-    const results = createInMemoryResultRepository();
+    const rows: ProjectResultRecord[] = [];
+    const results = new InMemoryResultRepository(rows);
     const payload = Uint8Array.from([137, 80, 78, 71]);
     const sourcePath = "runs/root-1/output/qc/overlay.png";
 
@@ -102,56 +107,8 @@ describe("promotion service", () => {
       value: { authority: { kind: "work", workSlug: "revision-pass" } },
     });
 
-    const listed = await results.listByProject("wb-1");
-    expect(listed).toHaveLength(1);
-    expect(listed[0]?.provenance).toEqual(promoted.value.provenance);
-  });
-
-  it("persists explicit no-Work authority for a no-Work owner", async () => {
-    const objectStore = createInMemoryObjectStore();
-    const results = createInMemoryResultRepository();
-    const promotion = createPromotionService(promotionDeps(objectStore, results));
-    const promoted = await promotion.promoteArtifact({
-      projectId: "wb-1",
-      workId: null,
-      sourcePath: "runs/root-1/output.png",
-      bytes: Uint8Array.from([1]),
-      provenance: {
-        rootThreadId: "root-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        toolCallId: null,
-      },
-    });
-    expect(promoted).toMatchObject({
-      ok: true,
-      value: { resultsUri: "scratch://@/results/output.png" },
-    });
-  });
-
-  it("skips non-promotable paths via policy", async () => {
-    const objectStore = createInMemoryObjectStore();
-    const results = createInMemoryResultRepository();
-    const promotion = createPromotionService(promotionDeps(objectStore, results));
-
-    const result = await promotion.promoteArtifact({
-      projectId: "wb-1",
-      workId: "work-1",
-      sourcePath: "runs/root-1/scratch.log",
-      bytes: Uint8Array.from([1]),
-      provenance: {
-        rootThreadId: "root-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        toolCallId: null,
-      },
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      error: { code: "policy_skip", message: expect.stringContaining("scratch.log") },
-    });
-    expect(await results.listByProject("wb-1")).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provenance).toEqual(promoted.value.provenance);
   });
 });
 

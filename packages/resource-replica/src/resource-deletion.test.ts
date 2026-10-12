@@ -135,11 +135,10 @@ it("lets delete supersede a failed location and dispatch next", () => {
       identityRevision: 1,
       desired: {
         kind: "set-location",
+        typedName: "Renamed.md",
         destination: {
-          scheme: "manuscript",
-          folderPath: "",
+          parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
           name: "Renamed.md",
-          workId: null,
         },
       },
       attempts: [],
@@ -151,7 +150,7 @@ it("lets delete supersede a failed location and dispatch next", () => {
   if (!deletion) throw new Error("Expected deletion");
   expect(deletion.next.intents.map(({ state }) => state)).toEqual([
     "settled",
-    "settled",
+    "superseded",
     "pending",
   ]);
   expect(

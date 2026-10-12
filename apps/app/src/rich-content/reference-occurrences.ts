@@ -1,5 +1,10 @@
-/** Project original-source authority onto parsed inline references, never onto code or title matches. Skill `/slug` ranges split the same text nodes; they are not wikilinks. */
-import { formatWikilink } from "@meridian/markup";
+/**
+ * Project original-source authority onto parsed inline references, never onto
+ * code or title matches. A sent `@` reference is a standard Markdown link
+ * (`[label](uri)`) whose source range the occurrence names exactly; a
+ * Markdown link to a Context URI without one is a syntax link the surface
+ * resolves. `[[name]]` is text. Skill `/slug` ranges split the same text nodes.
+ */
 import { decodeString } from "micromark-util-decode-string";
 import { classifyLinkTarget } from "@/core/editor/links";
 
@@ -22,8 +27,6 @@ type Node = {
   type: string;
   value?: string;
   url?: string;
-  target?: string;
-  label?: string;
   children?: Node[];
   position?: { start: { offset?: number }; end: { offset?: number } };
   data?: { hName?: string; hProperties?: Record<string, string> };
@@ -81,13 +84,8 @@ function presentation(
         hName: REFERENCE_TAG,
         hProperties: { dataDocumentId: occurrence.documentId, dataUri: occurrence.uri },
       }
-    : {
-        hName: REFERENCE_TAG,
-        hProperties: {
-          dataTargetHref: node.target ? formatWikilink(node.target) : (node.url ?? ""),
-        },
-      };
-  if (node.label !== undefined || node.type === "wikiLinkResource" || authoredLabel) {
+    : { hName: REFERENCE_TAG, hProperties: { dataTargetHref: node.url ?? "" } };
+  if (authoredLabel) {
     node.data.hProperties = { ...node.data.hProperties, dataAuthoredLabel: "true" };
   }
   // A standard link handler would otherwise emit its href around the custom control.
@@ -119,10 +117,6 @@ function transform(
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
   const exact = occurrences.find((item) => item.from === start && item.to === end);
-  if (node.type === "wikiLink" || node.type === "wikiLinkResource") {
-    presentation(node, exact);
-    return true;
-  }
   const target = node.type === "link" && node.url ? classifyLinkTarget(node.url) : null;
   if (target && target.kind !== "external") {
     const authoredLabel = typeof start === "number" && source[start] === "[";
@@ -153,7 +147,7 @@ function transform(
     }
     const start = child.position.start.offset;
     const end = child.position.end.offset;
-    // Only literal canonical URIs use text splitting. Wikilinks belong to the parser above.
+    // Only literal canonical URIs use text splitting; links belong to the parser above.
     const within: TextRange[] = [
       ...occurrences
         .filter(

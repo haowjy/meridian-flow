@@ -8,7 +8,7 @@ export function createTestAgentBinding(
   boundThreads: () => readonly string[] = () => [],
 ): Pick<
   AgentRevisionStore,
-  "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
+  "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
 > {
   return {
     async readThreadBinding(threadId) {
@@ -25,8 +25,14 @@ export function createTestAgentBinding(
             metadata: { model },
           },
         },
-        configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
+        configuration: {
+          model,
+          skills: { load: [], available: [] },
+          namedTargets: [],
+          permission: "edit",
+        },
         invocationOverlay: null,
+        invokedSkills: {},
       };
     },
     async listInstallations() {
@@ -37,6 +43,9 @@ export function createTestAgentBinding(
     },
     async readRevision() {
       return undefined;
+    },
+    async recordInvokedSkill(threadId) {
+      return boundThreads().includes(threadId);
     },
   };
 }
@@ -50,10 +59,13 @@ export function createTestNoticePort(initial: Notice[] = []): NoticePort & { row
       const notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
     },
-    async drainForModelContext(threadId) {
-      const consumed = rows.filter((notice) => notice.scope.threadId === threadId);
-      for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
-      return consumed;
+    async peek(threadId) {
+      return rows.filter((notice) => notice.scope.threadId === threadId);
+    },
+    async consume(ids) {
+      const consumed = new Set(ids);
+      for (const notice of rows.filter((notice) => consumed.has(notice.id)))
+        rows.splice(rows.indexOf(notice), 1);
     },
   };
 }

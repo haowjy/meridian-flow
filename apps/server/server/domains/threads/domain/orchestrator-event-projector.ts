@@ -254,15 +254,6 @@ export function createOrchestratorEventProjector() {
         return events;
       }
 
-      case "block.pruned":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.block.pruned",
-            value: { blockId: event.blockId },
-          }),
-        ];
-
       case "tool.executing":
         return [
           parseAguiEvent({
@@ -308,8 +299,10 @@ export function createOrchestratorEventProjector() {
             messageId,
             toolCallId: event.toolCallId,
             content: typeof event.output === "string" ? event.output : JSON.stringify(event.output),
-            // AG-UI's event schema is passthrough: `metadata` survives the
-            // protocol parse and the client reads it directly off this event.
+            // AG-UI's event schema is passthrough: `result` and `metadata`
+            // survive the protocol parse and the client reads them directly
+            // off this event.
+            ...(event.result !== undefined ? { result: event.result } : {}),
             ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
           }),
         );
@@ -441,8 +434,17 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // The producer recomputed the full subtree, so the frame is a bounded
-      // replace of the client's activity state with no refetch race.
+      case "agent.spawn":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.agent.spawn",
+            value: event,
+          }),
+        ];
+
+      // The producer recomputed the parent's direct children, so this frame is
+      // a bounded replace of the client's activity state with no refetch race.
       case "subagent.activity":
         return [
           parseAguiEvent({
@@ -460,6 +462,19 @@ export function createOrchestratorEventProjector() {
             type: EventType.CUSTOM,
             name: "meridian.inbox.changed",
             value: event.pending,
+          }),
+        ];
+
+      case "thread.status":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.thread.status",
+            value: {
+              threadId: event.threadId,
+              status: event.status,
+              runningTurnId: event.runningTurnId,
+            },
           }),
         ];
 

@@ -3,15 +3,16 @@ import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
-import { and, eq, isNull } from "drizzle-orm";
-import { HTTPError } from "nitro/h3";
+import { eventJournal } from "@meridian/database";
+import { eq } from "drizzle-orm";
 import { readThreadActivity } from "./domain/thread-activity.js";
+import { threadAvailabilityCode } from "./domain/thread-availability.js";
 import type {
   ExecutionReportRepository,
   ThreadRepository,
   ThreadStatusReader,
 } from "./ports/index.js";
+import { throwThreadDeleted, throwThreadNotFound } from "./thread-access.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -27,40 +28,27 @@ export function createThreadRuntimeService(deps: {
   db: Database;
   /** Supplies the lease-derived run status; the runtime authority satisfies it. */
   statusReader: ThreadStatusReader;
-  /** Supplies the descendant walk for the per-thread activity read. */
-  threads: Pick<ThreadRepository, "listDescendants">;
+  /** Supplies direct children for the per-thread activity read. */
+  threads: Pick<ThreadRepository, "listChildren" | "findByIdIncludingDeleted">;
   /** Supplies the latest admitted execution per child. */
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
   /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
   readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
-    const [thread] = await deps.db
-      .select({
-        id: threads.id,
-        projectId: threads.projectId,
-        workId: threadWorks.workId,
-        activeLeafTurnId: threads.activeLeafTurnId,
-        nextSeq: threads.nextSeq,
-      })
-      .from(threads)
-      .innerJoin(projects, eq(projects.id, threads.projectId))
-      .leftJoin(
-        threadWorks,
-        and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
-      )
-      .where(
-        and(
-          eq(threads.id, threadId),
-          eq(projects.userId, userId),
-          isNull(threads.deletedAt),
-          isNull(projects.deletedAt),
-        ),
-      )
-      .limit(1);
+    const thread = await deps.threads.findByIdIncludingDeleted(threadId);
 
-    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-    return thread as OwnedThread;
+    const code = threadAvailabilityCode(thread, thread?.project, userId);
+    if (code === "thread_deleted") throwThreadDeleted(userId, !!thread?.project?.deletedAt);
+    if (code === "thread_not_found" || !thread) throwThreadNotFound(userId);
+    if (thread.nextSeq === undefined) throw new Error("Thread runtime sequence is unavailable");
+    return {
+      id: thread.id,
+      projectId: thread.projectId,
+      workId: thread.workId,
+      activeLeafTurnId: thread.activeLeafTurnId,
+      nextSeq: BigInt(thread.nextSeq),
+    };
   }
 
   async function liveState(threadId: ThreadId, userId: UserId): Promise<ThreadLiveState> {

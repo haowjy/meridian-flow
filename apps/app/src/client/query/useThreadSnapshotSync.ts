@@ -21,6 +21,7 @@ import {
   isDurableBlockEvent,
   isWellFormedDurableBlockEvent,
 } from "@/core/session/reduce-turn-event";
+import { pendingInboxFromEvent } from "@/features/chat/pending-inbox";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -45,9 +46,9 @@ export type ThreadSnapshotSyncStatus = {
   activateProjection: (after?: string) => boolean;
 };
 
-/** Shared options for the live host and route's passive missing-identity
- * observer (`useMissingChatFallback`). That observer stays `enabled: false`
- * and only reads whatever the live host's own richer query already put in
+/** Shared options for the live host and its passive observers
+ * (`useMissingChatFallback`, `useDisplayedThread`). They stay `enabled: false`
+ * and only read whatever the live host's own richer query already put in
  * the shared cache entry, so this queryFn's simpler shape never actually
  * runs; never replace it with skipToken, which would drop the shared key.
  */
@@ -129,8 +130,22 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
               onEvent: ({ event, seq, sourceThreadId }) => {
                 if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
                 if ("threadId" in event && event.threadId !== threadId) return;
-                if (event.type === EventType.RUN_STARTED) refresh(expected);
+                if (
+                  event.type === EventType.RUN_STARTED ||
+                  event.type === EventType.RUN_FINISHED ||
+                  event.type === EventType.RUN_ERROR
+                )
+                  refresh(expected);
                 if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
+                  refresh(expected);
+                // Compaction turns have no stream of their own, and a cancelled
+                // one ends without RUN_FINISHED. The server sends an inbox frame
+                // after every lease release, so every inbox frame revalidates:
+                // that is when a divider reserves, settles, or stops.
+                if (pendingInboxFromEvent(event)) refresh(expected);
+                // A handoff brief holds the chat with no lease or run, so its
+                // start and end reach the chat only as a status frame.
+                if (event.type === EventType.CUSTOM && event.name === "meridian.thread.status")
                   refresh(expected);
                 if (
                   !isDurableBlockEvent(event) ||

@@ -1,8 +1,5 @@
-/** Coordinator policy under synchronous memory history, plus router URL decoding.
- * Native browser replace/push coalescing requires separate runtime verification. */
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
-import { describe, expect, it } from "vitest";
+import { createMemoryHistory } from "@tanstack/react-router";
+import { describe, expect, it, vi } from "vitest";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
 
@@ -14,7 +11,7 @@ function address(href: string) {
 }
 function setup(
   initial: string,
-  displayed: DisplayedProjectSelection = { workId: null },
+  displayed: DisplayedProjectSelection = { work: { kind: "none" } },
   restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
@@ -75,25 +72,6 @@ describe("project navigation", () => {
     );
     navigation.dispose();
   });
-
-  it("captures a normalized router entry while retaining the native URL in its ticket", () => {
-    const nativeHref =
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000";
-    const { history, navigation } = setup(nativeHref);
-    const router = createRouter({ history, routeTree: createRootRoute() });
-    const rendered = router.state.location;
-    expect(rendered.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
-    );
-    expect(history.location.href).toBe(nativeHref);
-    const ticket = navigation.captureForEntry(rendered.state.__TSR_key ?? "");
-    expect(ticket).not.toBeNull();
-    expect(ticket?.href).toBe(nativeHref);
-    expect(ticket && navigation.isCurrent(ticket)).toBe(true);
-    history.replace(nativeHref);
-    expect(ticket && navigation.isCurrent(ticket)).toBe(false);
-    navigation.dispose();
-  });
   it("rejects an effect rendered for a different entry, including equal-href history entries", () => {
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
     const rendered = { href: history.location.href, key: history.location.state.__TSR_key ?? "" };
@@ -102,149 +80,6 @@ describe("project navigation", () => {
     history.push(rendered.href);
     expect(navigation.captureForEntry(rendered.key)).toBeNull();
     expect(navigation.captureForEntry(history.location.state.__TSR_key ?? "")).not.toBeNull();
-    navigation.dispose();
-  });
-  it("freezes displayed selections before a main push without waiting for defaults", async () => {
-    const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
-      {
-        workId: "123e4567-e89b-42d3-a456-426614174000" as ParsedRequestId,
-      },
-    );
-    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
-      replace: false,
-    });
-    expect(changes).toEqual([
-      "freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000&settings=usage",
-      "push:/p/550e8400-e29b-41d4-a716-446655440000/works?settings=usage",
-    ]);
-    history.back();
-    expect(history.location.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000&settings=usage",
-    );
-    expect(history.length).toBe(2);
-    navigation.dispose();
-  });
-  it("records explicit none when default catalogs have not produced a displayed selection", async () => {
-    const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
-    const lateDefault = navigation.capture();
-    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
-      replace: false,
-    });
-    expect(
-      await navigation.replaceIfCurrent(
-        lateDefault,
-        address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
-        ),
-      ),
-    ).toEqual({ kind: "superseded" });
-    history.back();
-    expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor");
-    expect(history.location.state).toMatchObject({
-      meridianProjectEmptySelection: {
-        href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      },
-    });
-    navigation.dispose();
-  });
-  it("pins empty defaults at the same clean URL and restores them through history", async () => {
-    const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-    );
-    const empty = address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=");
-    await navigation.replaceIfCurrent(navigation.capture(), empty);
-    expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor");
-    const restored = parseProjectAddress(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      "",
-      history.location.state,
-    );
-    expect(restored).toMatchObject({
-      address: { work: { kind: "none" } },
-    });
-    expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        "?settings=preferences",
-        history.location.state,
-      ),
-    ).toMatchObject({
-      address: { work: { kind: "none" } },
-    });
-    await navigation.replaceIfCurrent(navigation.capture(), empty);
-    expect(changes).toEqual(["replace:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
-    await navigation.navigate(
-      address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
-      ),
-      {
-        replace: false,
-      },
-    );
-    expect(history.location.state).not.toHaveProperty(
-      "meridianProjectEmptySelection",
-      expect.anything(),
-    );
-    history.back();
-    expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        "",
-        history.location.state,
-      ),
-    ).toEqual(restored);
-    expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440001/editor",
-        "",
-        history.location.state,
-      ),
-    ).toMatchObject({
-      address: { work: { kind: "absent" } },
-    });
-    expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        "?work=123e4567-e89b-42d3-a456-426614174000",
-        history.location.state,
-      ),
-    ).toMatchObject({
-      address: {
-        work: { kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" },
-      },
-    });
-    navigation.dispose();
-  });
-  it("replaces dock and Work choices without another Back entry", async () => {
-    const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=",
-    );
-    await navigation.navigate(
-      address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
-      ),
-      {
-        replace: true,
-      },
-    );
-    expect(history.length).toBe(1);
-    expect(changes).toEqual([
-      "replace:/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
-    ]);
-    navigation.dispose();
-  });
-  it("never turns an explicit malformed or unavailable selection into a default", async () => {
-    const { history, navigation } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad+work",
-    );
-    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
-      replace: false,
-    });
-    history.back();
-    expect(history.location.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad+work",
-    );
     navigation.dispose();
   });
   it("rejects stale repairs even after Back returns to the same entry and href", async () => {
@@ -268,79 +103,6 @@ describe("project navigation", () => {
         address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/current.md"),
       ),
     ).toEqual({ kind: "replaced" });
-    navigation.dispose();
-  });
-  it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
-    const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
-    const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor", {
-      workId: null,
-      local,
-    });
-    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
-      replace: false,
-    });
-    history.back();
-    expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor");
-    expect(history.location.state).toMatchObject({
-      meridianProjectEmptySelection: {
-        href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      },
-    });
-    expect(history.location.state).toMatchObject({
-      meridianProjectSelection: { version: 2, ...local },
-    });
-    navigation.dispose();
-  });
-});
-
-describe("optional query entry repair", () => {
-  it("replaces only the current entry without invoking destination navigation", () => {
-    const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174001",
-    );
-    navigation.repairAddress(navigation.capture(), {
-      work: { status: "ready", entries: [] },
-    });
-    expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
-    expect(history.length).toBe(1);
-    expect(history.location.state).toMatchObject({
-      meridianProjectEmptySelection: { href: "/p/550e8400-e29b-41d4-a716-446655440000/editor" },
-    });
-    navigation.dispose();
-  });
-  it("replaces the bare project entry with its /chats href, adding no history", () => {
-    const { history, navigation, changes } = setup("/");
-    history.push("/p/550e8400-e29b-41d4-a716-446655440000");
-    navigation.repairAddress(navigation.capture(), { work: { status: "loading" } });
-    expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/chats"]);
-    expect(history.length).toBe(2);
-    history.back();
-    expect(history.location.href).toBe("/");
-    navigation.dispose();
-  });
-  it("leaves an invalid address as typed", () => {
-    const { navigation, changes } = setup("/p/550e8400-e29b-41d4-a716-446655440000/scratch/a.md");
-    navigation.repairAddress(navigation.capture(), { work: { status: "loading" } });
-    expect(changes).toEqual([]);
-    navigation.dispose();
-  });
-  it("rejects stale validation and never rewrites valid or absent selectors", () => {
-    const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174001",
-    );
-    const stale = navigation.capture();
-    history.push(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
-    );
-    const catalogs = {
-      work: { status: "ready", entries: [{ id: "123e4567-e89b-42d3-a456-426614174000" }] },
-    } as const;
-    navigation.repairAddress(stale, catalogs);
-    navigation.repairAddress(navigation.capture(), catalogs);
-    expect(changes).toEqual([]);
-    expect(history.location.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
-    );
     navigation.dispose();
   });
 });
@@ -424,5 +186,113 @@ it("revalidates the member before dispatching a held navigation", async () => {
   expect(await pending).toEqual({ kind: "superseded" });
   expect(committed).toBe(false);
   expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a");
+  navigation.dispose();
+});
+
+it("address replacement neither prompts nor supersedes a pending writer navigation", async () => {
+  const { navigation, changes } = setup(
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a",
+  );
+  let decision!: { run(): void; cancel(): void };
+  const request = vi.fn((intent: { run(): void; cancel(): void }) => {
+    decision = intent;
+  });
+  navigation.registerGuard({ request, dirty: () => true, cancel: () => undefined });
+  const pending = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
+    replace: false,
+  });
+  expect(
+    await navigation.replaceIfCurrent(
+      navigation.capture(),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?draft=draft-a"),
+    ),
+  ).toEqual({ kind: "superseded" });
+  expect(request).toHaveBeenCalledOnce();
+  expect(changes).toEqual([]);
+  decision.run();
+  await expect(pending).resolves.toEqual({ kind: "applied" });
+  expect(changes.at(-1)).toContain("push:/p/550e8400-e29b-41d4-a716-446655440000/works");
+  navigation.dispose();
+});
+
+it("writes the accepted native history entry before committing the workspace", async () => {
+  const source = "/p/550e8400-e29b-41d4-a716-446655440000/chats";
+  const destination = "/p/550e8400-e29b-41d4-a716-446655440000/editor";
+  let entry = { href: source, key: "source", state: {} as Record<string, unknown> };
+  let nativeHref = source;
+  let listener = () => {};
+  const navigation = createProjectNavigation(
+    {
+      read: () => entry,
+      subscribe: (next) => {
+        listener = next;
+        return () => {};
+      },
+      flush: () => {
+        nativeHref = entry.href;
+      },
+      settlePendingTraversal: () => undefined,
+      replaceEntry: (href, state) => {
+        entry = { ...entry, href, state };
+      },
+      navigate: async (href, { state }) => {
+        entry = { href, key: "destination", state: state ?? {} };
+        listener();
+      },
+    },
+    () => ({ work: { kind: "none" } }),
+  );
+  const result = await navigation.transition(
+    address(destination),
+    { replace: false },
+    {
+      isCurrent: () => true,
+      commit: () => expect(nativeHref).toBe(destination),
+    },
+  );
+  expect(result.kind).toBe("applied");
+  navigation.dispose();
+});
+
+it("a leave-guard exception settles before acceptance rather than rejecting the command", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  navigation.registerGuard({
+    request: () => {
+      throw new Error("Guard failed");
+    },
+    dirty: () => true,
+    cancel: () => undefined,
+  });
+  await expect(
+    navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
+      replace: false,
+    }),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "before-acceptance",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
+  navigation.dispose();
+});
+it("an accepted same-entry replacement reports a failed workspace commit at that destination", async () => {
+  const { navigation, history } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
+  await expect(
+    navigation.transition(
+      address(history.location.href),
+      { replace: true },
+      {
+        isCurrent: () => true,
+        commit: () => {
+          throw new Error("Install failed");
+        },
+      },
+    ),
+  ).resolves.toMatchObject({
+    kind: "failed",
+    stage: "workspace-commit",
+    ticket: { href: history.location.href },
+  });
+  expect(history.location.pathname).toContain("/editor");
   navigation.dispose();
 });

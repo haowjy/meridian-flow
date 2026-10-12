@@ -6,8 +6,8 @@ on:
   # `ready_for_review` is included so marking a draft ready triggers a run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on the durable trunk verifies the post-merge result. Add a staging
-  # branch here when one exists; don't encode temporary integration branches.
+  # Push CI on main verifies the post-merge result. Staging invokes this workflow
+  # from Deploy Staging, so listing it here would run the full workflow twice.
   push:
     branches: [main]
   workflow_call:
@@ -18,9 +18,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: quality
-    # Skip draft PRs; pushes and workflow_call always run.
+  # scripts.check remains the inventory; keep explicit jobs so the required
+  # aggregate checks each result directly, including after partial reruns.
+  quality-static:
+    name: quality-static
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs static
+
+  quality-typecheck:
+    name: quality-typecheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Keep Nx outputs local to this runner. Project-scoped Nx inputs omit
+      # root config changes, so restoring outputs across runs is unsafe.
+      - run: node tools/ci/run-check-group.mjs typecheck
+
+  # Vitest partitions the same default projects into disjoint file sets.
+  quality-test-1:
+    name: quality-test-1
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -35,11 +67,44 @@ jobs:
           node-version: 24.17.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - run: node tools/ci/run-check-group.mjs test --shard=1/2
+
+  quality-test-2:
+    name: quality-test-2
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # S7 reads the pre-history snapshot when bootstrapping its immutable
+          # append-only schema-version baseline.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs test --shard=2/2
+
+  quality:
+    name: quality
+    needs: [quality-static, quality-typecheck, quality-test-1, quality-test-2]
+    # A skipped required job counts as passing. Run even after a dependency
+    # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality group to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
 
   migration-checks:
     name: migration-checks
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
@@ -59,6 +124,27 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meridian/database exec drizzle-kit check
+      - name: Guard frozen migration history (pull request)
+        if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'staging')
+        run: |
+          pnpm db:migration-history -- --base HEAD^1
+      - name: Guard frozen migration history (non-PR)
+        if: github.event_name != 'pull_request'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Skipping migration history guard: this event has no prior revision to compare against; db:migrate's runtime guard still refuses divergent database history."
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration history guard: no prior revision is available."
+          else
+            git fetch origin "$BEFORE" || true
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "Migration history guard failed: prior tip $BEFORE is unavailable (force push?); main and staging history must not be rewritten." >&2
+              exit 1
+            fi
+            pnpm db:migration-history -- --base "$BEFORE"
+          fi
       # PRs: lint only migrations this branch introduces. Warnings block merges
       # to main/staging (production-bound); feature-branch PRs block errors only.
       - name: Migration lint (pull request)
@@ -81,24 +167,50 @@ jobs:
     name: db-tests
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/meridian_test_ci
       PGPASSWORD: postgres
+      # Docker Hub's official image via AWS's public mirror: Docker Hub rate-limits
+      # anonymous pulls per runner IP, which GitHub runners share. Postgres runs from
+      # a step, not a service container, because services start before any step
+      # and so can never use the image cache below.
+      PG_IMAGE: public.ecr.aws/docker/library/postgres:16
+      PG_IMAGE_TAR: /tmp/postgres-image.tar
     steps:
       - uses: actions/checkout@v4
+      # Weekly key so the floating `16` tag picks up patch releases.
+      - name: Postgres image cache key
+        id: pg-key
+        run: echo "key=postgres-16-$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image
+        id: pg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.PG_IMAGE_TAR }}
+          key: ${{ steps.pg-key.outputs.key }}
+      - name: Load cached Postgres image
+        if: steps.pg-cache.outputs.cache-hit == 'true'
+        run: docker load -i "$PG_IMAGE_TAR"
+      - name: Pull Postgres image
+        if: steps.pg-cache.outputs.cache-hit != 'true'
+        run: docker pull "$PG_IMAGE" && docker save "$PG_IMAGE" -o "$PG_IMAGE_TAR"
+      # Saved right after the pull so a failing test run still fills the cache.
+      - name: Save Postgres image
+        if: steps.pg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.PG_IMAGE_TAR }}
+          key: ${{ steps.pg-key.outputs.key }}
+      - name: Start Postgres
+        run: |
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres "$PG_IMAGE"
+          for _ in $(seq 1 60); do
+            pg_isready -h 127.0.0.1 -U postgres && exit 0
+            sleep 1
+          done
+          docker logs postgres
+          exit 1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

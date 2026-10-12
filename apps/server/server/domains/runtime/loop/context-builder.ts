@@ -1,38 +1,36 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
+import {
+  type AgentEditResultV1,
+  isAgentEditResultEnvelope,
+  renderAgentEditResult,
+} from "@meridian/agent-edit/integration";
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
+import {
+  ChildCompletionMetadataCodec,
+  ChildCompletionMetadataTagCodec,
+} from "../../threads/index.js";
+import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
+import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  /**
+   * The thread's system prompt: its frozen bake, or the would-be first bake
+   * while unfrozen. Required once frozen; an unfrozen thread without one gets
+   * the bare runtime instructions.
+   */
+  systemPrompt?: string;
   tools?: Tool[];
-  /** Raw agent/project prompt used only while the thread prompt is not frozen. */
-  unfrozenBasePrompt?: string | null;
-  /** Additive per-invocation prompt layer, pre-freeze only. */
-  appendPrompt?: string | null;
-  /**
-   * Available skill listings for pre-freeze assembly only.
-   * Ignored when the thread prompt is already frozen.
-   */
-  availableSkills?: readonly { slug: string; name: string; description: string }[];
-  /**
-   * Named subagent listings for pre-freeze assembly only.
-   * Ignored when the thread prompt is already frozen.
-   */
-  namedSubagents?: readonly { slug: string; name: string; description: string }[];
-  /** Frozen Work section for a would-be first bake. */
-  workContext?: string;
-  /** Subagent closing instruction; pre-freeze only, owns the prompt's last layer. */
-  subagentGuidance?: string | null;
   /** Dev observability for invalid persisted chat contracts. */
   eventSink?: EventSink;
 }
@@ -45,97 +43,24 @@ export function buildContext(input: BuildContextInput): {
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
-  const composed = input.thread.composedSystemPrompt;
-  if (composed && isThreadPromptFrozen(input.thread)) {
-    messages.push(system(composed));
-  } else {
-    const systemPrompt = input.unfrozenBasePrompt ?? composed;
-    messages.push(
-      system(
-        assembleComposedSystemPrompt({
-          basePrompt: systemPrompt,
-          appendPrompt: input.appendPrompt,
-          workContext: input.workContext,
-          availableSkills: input.availableSkills,
-          namedSubagents: input.namedSubagents,
-          subagentGuidance: input.subagentGuidance,
-        }),
-      ),
-    );
-  }
+  if (isThreadPromptFrozen(input.thread) && input.systemPrompt === undefined)
+    throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
+  messages.push(system(input.systemPrompt ?? assembleComposedSystemPrompt({})));
 
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
-    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
     blocksByTurn.set(key, list);
   }
-  for (const list of blocksByTurn.values()) {
-    list.sort((a, b) => a.sequence - b.sequence);
-  }
 
-  for (const turn of input.turns) {
+  for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
-    if (turn.role === "user") {
-      const parts = userTurnContentParts(turnBlocks);
-      if (parts.length > 0) {
-        messages.push({ role: "user", content: parts });
-      }
-      continue;
-    }
-    if (turn.role === "system") {
-      const textParts = turnBlocks
-        .flatMap((b) =>
-          b.blockType === "text" && b.textContent
-            ? [b.textContent]
-            : b.blockType === "custom"
-              ? [componentModelText(b.content as ComponentBlockContent)].filter(
-                  (v): v is string => !!v,
-                )
-              : [],
-        )
-        .join("\n");
-      if (textParts) {
-        const update =
-          textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
-            ? textParts
-            : `<system_update>\n${textParts}\n</system_update>`;
-        messages.push({ role: "user", content: [text(update)] });
-      }
-      continue;
-    }
-
-    if (turn.role === "assistant") {
-      const assistantParts: ContentPart[] = [];
-      for (const block of turnBlocks) {
-        if (block.blockType === "tool_result") {
-          if (assistantParts.length > 0) {
-            const message = assistant(assistantParts.slice());
-            messages.push(message);
-            sourceTurnStatusByMessage.set(message, turn.status);
-            assistantParts.length = 0;
-          }
-          const content = block.content as {
-            toolCallId?: string;
-            output?: JsonValue;
-            isError?: boolean;
-          } | null;
-          const toolCallId = content?.toolCallId ?? "";
-          messages.push(
-            toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
-          );
-          continue;
-        }
-        const part = blockToContentPart(block);
-        if (part) assistantParts.push(part);
-      }
-      if (assistantParts.length > 0) {
-        const message = assistant(assistantParts.slice());
-        messages.push(message);
-        sourceTurnStatusByMessage.set(message, turn.status);
-      }
+    const rendered = turnContextMessages(turn, turnBlocks);
+    for (const message of rendered) {
+      messages.push(message);
+      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
     }
   }
 
@@ -147,17 +72,79 @@ export function buildContext(input: BuildContextInput): {
   };
 }
 
+/** One model-visible turn, shared by live requests and cold summary transcripts. */
+export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
+  const messages: Message[] = [];
+  const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
+  if (turn.role === "user") {
+    const parts = userTurnContentParts(turnBlocks);
+    if (parts.length > 0) {
+      messages.push({ role: "user", content: parts });
+    }
+    return messages;
+  }
+  if (turn.role === "system") {
+    const textParts = turnBlocks
+      .flatMap((b) =>
+        b.blockType === "text" && b.textContent
+          ? [b.textContent]
+          : b.blockType === "custom"
+            ? [componentModelText(b.content as ComponentBlockContent)].filter(
+                (v): v is string => !!v,
+              )
+            : [],
+      )
+      .join("\n");
+    if (textParts) {
+      const update =
+        textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
+          ? textParts
+          : `<system_update>\n${textParts}\n</system_update>`;
+      messages.push({ role: "user", content: [text(update)] });
+    }
+    return messages;
+  }
+
+  if (turn.role === "assistant") {
+    const assistantParts: ContentPart[] = [];
+    for (const block of turnBlocks) {
+      if (block.blockType === "tool_result") {
+        if (assistantParts.length > 0) {
+          const message = assistant(assistantParts.slice());
+          messages.push(message);
+          assistantParts.length = 0;
+        }
+        const content = block.content as {
+          toolCallId?: string;
+          output?: JsonValue;
+          isError?: boolean;
+        } | null;
+        const toolCallId = content?.toolCallId ?? "";
+        messages.push(
+          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+        );
+        continue;
+      }
+      const part = blockToContentPart(block);
+      if (part) assistantParts.push(part);
+    }
+    if (assistantParts.length > 0) {
+      const message = assistant(assistantParts.slice());
+      messages.push(message);
+    }
+  }
+
+  return messages;
+}
+
 function reportPersistedContractFailures(input: BuildContextInput): void {
   if (!input.eventSink) return;
   const threadId = input.thread.id as string;
   for (const turn of input.turns) {
     const metadata = turn.metadata;
     if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "subagent_update" &&
-      !parseSubagentUpdateMetadata(metadata)
+      ChildCompletionMetadataTagCodec.safeParse(metadata).success &&
+      !ChildCompletionMetadataCodec.safeParse(metadata).success
     ) {
       emitEvent(input.eventSink, {
         level: "warn",
@@ -170,7 +157,7 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
     }
   }
   for (const block of input.blocks) {
-    if (block.pruned || block.blockType !== "custom") continue;
+    if (block.blockType !== "custom") continue;
     const content = block.content;
     if (
       !content ||
@@ -263,6 +250,13 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
   for (const block of blocks) {
+    if (block.blockType === "custom") {
+      const content = block.content as ComponentBlockContent;
+      if (content.kind === "thread-reference") {
+        const modelText = componentModelText(content);
+        if (modelText) parts.push(text(`\n\n${modelText}`));
+      }
+    }
     const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;
     const key = `${reference.documentId}\0${reference.uri}`;
@@ -270,22 +264,11 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
     included.add(key);
     parts.push(
       text(
-        `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
+        `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
       ),
     );
   }
   return parts;
-}
-
-// Pre-admission failures are model context; saved run reports remain transcript UI.
-export function componentModelText(content: ComponentBlockContent): string | null {
-  if (content.kind !== "helper-result") return null;
-  const props = parseInvocationCard(content);
-  if (!props || props.terminalAt === null) return null;
-  if ("reason" in props) {
-    return `Subagent "${props.agentName}" could not start: ${props.reason}`;
-  }
-  return null;
 }
 
 // Unsupported or empty blocks have no gateway content part.
@@ -373,7 +356,7 @@ function formatNotice(notice: Notice): string {
       : [];
     const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
     const noun = documentNames.length > 1 ? "documents" : "document";
-    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
+    return `The system could not verify whether concurrent user content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
   }
   return notice.message;
 }
@@ -390,34 +373,44 @@ function formatUndoNotices(notices: readonly Notice[]): string {
       direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
     }));
   });
+  const first = new Map<string, (typeof notifications)[number]>();
   const latest = new Map<string, (typeof notifications)[number]>();
   for (const notification of notifications) {
-    latest.set(`${notification.uri}::${notification.writeHandle}`, notification);
+    const key = `${notification.uri}::${notification.writeHandle}`;
+    if (!first.has(key)) first.set(key, notification);
+    latest.set(key, notification);
   }
-  const reversals = [...latest.values()].filter(
-    (notification) => notification.direction === "undo",
-  );
-  // URI, not basename, identifies a document; distinct documents can share a name.
-  const grouped = new Map<string, { label: string; handles: string[] }>();
-  for (const notification of reversals) {
-    const key = notification.uri || notification.writeHandle;
-    const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
-    const entry = grouped.get(key) ?? { label, handles: [] };
-    entry.handles.push(notification.writeHandle);
-    grouped.set(key, entry);
-  }
-
-  const lines = Array.from(
-    grouped.values(),
-    ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
-  );
-  return lines.length > 0
-    ? [
-        "The writer reversed the following edits before this message:",
+  // Reversals in one undelivered batch cancel in pairs. A standalone redo
+  // restores an edit whose undo the model already saw in an earlier batch.
+  const changes = [...latest.entries()]
+    .filter(([key, notification]) => first.get(key)?.direction === notification.direction)
+    .map(([, notification]) => notification);
+  const sections: string[] = [];
+  for (const direction of ["undo", "redo"] as const) {
+    // URI, not basename, identifies a document; distinct documents can share a name.
+    const grouped = new Map<string, { label: string; handles: string[] }>();
+    for (const notification of changes.filter((change) => change.direction === direction)) {
+      const key = notification.uri || notification.writeHandle;
+      const label =
+        filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
+      const entry = grouped.get(key) ?? { label, handles: [] };
+      entry.handles.push(notification.writeHandle);
+      grouped.set(key, entry);
+    }
+    const lines = Array.from(
+      grouped.values(),
+      ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
+    );
+    if (lines.length === 0) continue;
+    sections.push(
+      [
+        `The user ${direction === "undo" ? "reversed" : "restored"} the following edits before this message:`,
         ...lines,
-        "They are signaling these changes were unwanted.",
-      ].join("\n")
-    : "";
+        ...(direction === "undo" ? ["They are signaling these changes were unwanted."] : []),
+      ].join("\n"),
+    );
+  }
+  return sections.join("\n\n");
 }
 
 function stringData(notice: Notice, key: string): string | null {
@@ -437,4 +430,12 @@ function filenameFromUri(uri: string): string {
     return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
   }
   return uri;
+}
+
+/** A reference read reaches the model as the same text a `read` call returns (D43). */
+function referenceReadText(result: JsonValue): string {
+  if (typeof result === "string") return result;
+  return isAgentEditResultEnvelope(result)
+    ? renderAgentEditResult(result as AgentEditResultV1)
+    : JSON.stringify(result);
 }

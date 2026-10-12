@@ -14,7 +14,6 @@ export default defineEventHandler(async (event) => {
   return handleGetModelRequestDebugRecords(
     {
       repos: app.repos,
-      projectRepo: app.projectRepo,
       modelRequestDebug: app.modelRequestDebug,
     },
     { threadId, userId: user.userId, ...selection },

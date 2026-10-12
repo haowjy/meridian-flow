@@ -12,7 +12,8 @@ export interface CreateWorkInput {
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;
-  goal?: string;
+  /** Omitted or null means no goal. */
+  goal?: string | null;
 }
 
 export interface UpdateWorkInput {
@@ -39,11 +40,13 @@ export class WorkNameConflictError extends Error {
 }
 
 export class WorkRestoreConflictError extends Error {
-  constructor(public readonly reason: "name" | "slug") {
+  constructor(public readonly reason: "name" | "slug" | "content") {
     super(
       reason === "name"
         ? "Work cannot be restored because its name is now in use"
-        : "Work cannot be restored because its slug is now in use",
+        : reason === "slug"
+          ? "Work cannot be restored because its slug is now in use"
+          : "Work cannot be restored because a file or folder name is now in use",
     );
     this.name = "WorkRestoreConflictError";
   }

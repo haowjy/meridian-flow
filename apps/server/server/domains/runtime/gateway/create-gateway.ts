@@ -228,11 +228,11 @@ export function createGateway(config: GatewayConfig): Gateway {
         )) {
           if (event.type === "error") {
             lastError = event;
-            if (emittedCommittedOutput) {
+            if (emittedCommittedOutput || !event.retryable) {
               yield event;
               return;
             }
-            failed = event.retryable;
+            failed = true;
             break;
           }
           yield event;

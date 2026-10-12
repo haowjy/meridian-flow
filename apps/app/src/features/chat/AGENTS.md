@@ -20,6 +20,30 @@ the rebind adapter.
 never writes a URL. The first-send journal survives reload under the remembered
 current thread ID, including when creation starts in the dock.
 
+Unsent authoring state has one session owner, `client/composer-drafts`, mounted through
+`useComposerSessionDraft`, keyed by
+account/chat for `ChatView` and account/project for `CreationComposer` on every
+host. Work selection is prospective context, not a separate creation draft.
+Hosts share the tab-local owner, so a pane change before the debounce flushes
+still hydrates the latest words. Each mount captures its initial snapshot once.
+It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
+on pagehide/unmount. Transfer to the submission journal clears it synchronously
+at Send. `client/chat-submissions/owner.ts` owns writer rows, command orchestration and the
+shared account/thread presentation snapshot. Every mounted pane subscribes to the
+same row model; pending belongs only to a live session/submission attempt. `useChatSubmissions` only binds cancellation,
+external wakes and keyed announcements to that owner; first sends and later sends share
+that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
+this tab. The binding announces only a new failed transition, keyed by the stable
+record id (account-qualified), never a restored rejection. Retry, successful Edit,
+acceptance and unmount clear only that record's alert. Retry looks up before posting. Edit fences first, prepends the rejected
+structured document before newer writing and saves a stable record-id receipt with
+the draft, then retires the journal record. A received transfer shows no old Send
+commands, and reload finishes retirement without prepending again.
+Never-created chat Edit returns all its messages and unsent writing to New chat
+in the same pane. Lifecycle transfers publish a new editor mount; typing does
+not. `useThreadRunResume` only attaches snapshot-based active runs.
+Pending upload bytes do not persist. Successfully uploaded reference atoms do.
+
 ## Mental model
 
 An assistant turn renders as one **ordered list of render items** (see
@@ -55,14 +79,14 @@ combine launch, live current tool, and expandable result. `thread_report` is
 always a folded process step ("Read report from ..."), in either mode, because
 the card is the one surface per run: the step expands to the report, and its
 agent name links to the launch card (a `subagentBlock: "card"` reveal).
-Background `subagent_update` notices render as quiet rows ("<name>
-<description> finished"); adjacent completions merge into one disclosure.
+Background `subagent_update` notices render as quiet rows ("<agent>
+<run name> finished"); adjacent completions merge into one disclosure.
 Notice text is never repeated there.
 
 Every subagent surface (launch card, running panel, Subagents pop-up, finished
 row, report step, path row) builds on the normalized `subagent/SubagentRun`
 and the shared `subagent/SubagentRow` anatomy. The mark leads, then the agent
-name (generic runs read "Subagent"), then the description in muted text,
+name (generic runs read "Subagent"), then the run's `name` in muted text,
 separated only by spacing; never a raw ref. **Only the chat icon
 (`OpenSubagentChatButton`, labeled Open "<agent>") opens a child chat**, through
 the project chat navigation route, replacing the current chat; chat tabs are
@@ -71,8 +95,8 @@ within the current chat; it never switches threads. A pop-up row jumps through
 a block-level conversation reveal to the child's latest point: the finished
 row once it completed, else its launch card.
 
-Server activity (snapshot plus `meridian.subagent.activity`) is still the
-viewed thread's whole subtree. The shared `useThreadActivity` store owns the
+Server activity (snapshot plus `meridian.subagent.activity`) is the viewed
+thread's direct children (see `activity-row-anatomy.md`). The shared `useThreadActivity` store owns the
 cached live view and one transport subscription per thread; the running panel
 shows direct children running in the background, and the Subagents pop-up
 lists every direct child.
@@ -80,7 +104,22 @@ lists every direct child.
 `subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
 notices by child thread, ref, and execution. A saved running card with no live
 lease is `unknown`, not running. `transcript-model.ts` classifies turns and
-derives response parts, delivery rows, and reveal targets in one pass.
+derives transcript rows, response parts, delivery rows, and reveal targets in
+one pass. Rows have kinds (turn, compaction divider, handoff brief card,
+`from` reference) and stay index-aligned with the visible turns; grouping
+switches on row kind, never on role. Compaction turns are divider rows there,
+never in the head; see
+[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Queued
+`/compact` waits at the transcript tail until replies finish. Fork,
+handoff, the brief card, and a fork's inherited rows are in
+[`.context/fork-and-handoff.md`](.context/fork-and-handoff.md). The handoff
+brief is not an inbox command: `derivation/useHandoffBrief.ts` owns its Retry
+(an optimistic card after the turn it followed, reconciled by the seed's id) and Stop (turn
+cancel on the seed), and a pending seed is the composer's active run. A failed
+reply's Retry (`useReplyRetry.ts`) shares that optimistic half
+(`useRetryStandIns.ts`); see
+[`.context/failed-reply-retry.md`](.context/failed-reply-retry.md). Hand off
+also sits under a delivered writer message; Fork stays on replies.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their
@@ -90,7 +129,7 @@ notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
-`meridian.block.upserted` and `meridian.block.pruned` projection for the whole
+`meridian.block.upserted` projection for the whole
 mounted thread lifetime. The existing upsert frame also carries historical card
 replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather

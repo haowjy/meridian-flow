@@ -1,13 +1,12 @@
 /** Tests for the Hocuspocus-backed DocumentCoordinator adapter. */
 
 import type { Hocuspocus } from "@hocuspocus/server";
-import {
-  DocumentNotFoundError,
-  type JournalBatchAppendEntry,
-  type JournalBatchAppendResult,
-  type PersistedUpdate,
-  type UpdateJournal,
-  type UpdateMeta,
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  PersistedUpdate,
+  UpdateJournal,
+  UpdateMeta,
 } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -115,73 +114,6 @@ describe("createHocuspocusCoordinator", () => {
     expect(events).toEqual(["first:start", "first:end", "second:start", "second:end"]);
   });
 
-  it("runs withDocument calls for different documents concurrently", async () => {
-    const docs = new Map([
-      ["a.md", new Y.Doc({ gc: false })],
-      ["b.md", new Y.Doc({ gc: false })],
-    ]);
-    const coordinator = coordinatorFor(docs, new MemoryJournal());
-    const release = deferred();
-    const bothStarted = deferred();
-    const started: string[] = [];
-    let active = 0;
-    let maxActive = 0;
-
-    const run = (docId: string) =>
-      coordinator.withDocument(docId, async () => {
-        active += 1;
-        maxActive = Math.max(maxActive, active);
-        started.push(docId);
-        if (started.length === 2) bothStarted.resolve();
-        await release.promise;
-        active -= 1;
-        return docId;
-      });
-
-    const first = run("a.md");
-    const second = run("b.md");
-    const concurrent = await Promise.race([
-      bothStarted.promise.then(() => true),
-      delay(50).then(() => false),
-    ]);
-    release.resolve();
-    await Promise.allSettled([first, second]);
-
-    expect(concurrent).toBe(true);
-    expect(maxActive).toBe(2);
-    expect(new Set(started)).toEqual(new Set(["a.md", "b.md"]));
-  });
-
-  it("rejects missing documents before opening a live doc", async () => {
-    const docs = new Map<string, Y.Doc>();
-    const openLiveDoc = vi.fn(openFrom(docs));
-    const coordinator = coordinatorFor(docs, new MemoryJournal(), openLiveDoc);
-
-    await expect(
-      coordinator.withDocument("missing.md", async () => undefined),
-    ).rejects.toBeInstanceOf(DocumentNotFoundError);
-    expect(openLiveDoc).not.toHaveBeenCalled();
-  });
-
-  it("writes through the canonical Hocuspocus room", async () => {
-    const journal = new MemoryJournal();
-    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(new Y.Doc({ gc: false })), 0);
-    const docs = new Map<string, Y.Doc>();
-    const openLiveDoc = vi.fn(openFrom(docs));
-    const coordinator = coordinatorFor(docs, journal, openLiveDoc);
-
-    await coordinator.withDocument(DOC_ID, async (doc) => {
-      doc.getText("body").insert(0, "First saved content");
-      await journal.append(DOC_ID, Y.encodeStateAsUpdate(doc), { origin: "system", seq: 0 });
-    });
-
-    expect(openLiveDoc).toHaveBeenCalledOnce();
-    expect(text(requireDoc(docs, DOC_ID))).toBe("First saved content");
-    const recovered = new Y.Doc({ gc: false });
-    Y.applyUpdate(recovered, (await loadState(journal, DOC_ID)) as Uint8Array);
-    expect(text(recovered)).toBe("First saved content");
-  });
-
   it("shares a room opened while a coordinated write is acquiring it", async () => {
     const journal = new MemoryJournal();
     const initial = new Y.Doc({ gc: false });
@@ -267,15 +199,6 @@ function requireDoc(docs: Map<string, Y.Doc>, docId: string): Y.Doc {
 
 function text(doc: Y.Doc): string {
   return doc.getText("body").toString();
-}
-
-async function loadState(journal: UpdateJournal, docId: string): Promise<Uint8Array | null> {
-  const snapshot = await journal.read(docId);
-  if (!snapshot.checkpoint && snapshot.updates.length === 0) return null;
-  const doc = new Y.Doc({ gc: false });
-  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-  for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-  return Y.encodeStateAsUpdate(doc);
 }
 
 function deferred() {

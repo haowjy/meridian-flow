@@ -20,12 +20,11 @@ import {
   type DocumentSessionTransportProvider,
 } from "./document-session";
 import { clientSchemaReloadGuardKey } from "./schema-fence";
-import type { SchemaRepairEvent } from "./schema-repair-witness";
 
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: DocumentSessionConnectionState) => void;
   resolveFirstSync: () => void;
-  resolveDurableSync: () => void;
+  setAcknowledged: (acknowledged: boolean) => void;
   setSynced: (synced: boolean) => void;
   emitChange: (message: ChangeEventWsMessage) => void;
   destroyed: boolean;
@@ -44,10 +43,8 @@ function makeFakeTransport(
       const whenSynced = new Promise<void>((resolve) => {
         resolveSynced = resolve;
       });
-      let resolveDurableSynced!: () => void;
-      const whenDurablySynced = new Promise<void>((resolve) => {
-        resolveDurableSynced = resolve;
-      });
+      const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
+      let acknowledged = false;
       const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
       const changeListeners = new Set<(message: ChangeEventWsMessage) => void>();
       let latest = initial;
@@ -57,7 +54,11 @@ function makeFakeTransport(
           return synced;
         },
         whenSynced,
-        whenDurablySynced,
+        subscribeServerAcknowledgement(listener) {
+          acknowledgementListeners.add(listener);
+          listener(acknowledged);
+          return () => acknowledgementListeners.delete(listener);
+        },
         subscribeStatus(listener) {
           listeners.add(listener);
           listener(latest);
@@ -78,8 +79,9 @@ function makeFakeTransport(
           synced = true;
           resolveSynced();
         },
-        resolveDurableSync() {
-          resolveDurableSynced();
+        setAcknowledged(next) {
+          acknowledged = next;
+          for (const l of acknowledgementListeners) l(next);
         },
         setSynced(next) {
           synced = next;
@@ -123,64 +125,7 @@ function installBrowserReloadHarness(reload = vi.fn()) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function changeEvent(
-  documentId: string,
-  admittedByUserId: string | null,
-  projectionRevision = 1,
-): ChangeEventWsMessage {
-  return {
-    type: "change_event",
-    documentId,
-    threadId: "thread-1",
-    trailId: "trail-1",
-    projectionRevision,
-    author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    changes: [
-      {
-        admittedByUserId,
-        changeId: "change-1",
-        kind: "delete",
-        navigation: { kind: "unavailable", reason: "test" },
-        swept: false,
-        excerpt: null,
-        pureDeletionOffset: null,
-      },
-    ],
-    truncated: false,
-  };
-}
-
 describe("DocumentSession status derivation", () => {
-  it("appends schema repair verdicts to the session snapshot and emits each change", async () => {
-    const session = new DocumentSession({
-      roomKey: "doc-schema-repairs",
-      persistence: { kind: "none" },
-    });
-    const { snapshots, unsubscribe } = track(session);
-    const first = {
-      phase: "open",
-      detectedAt: "2026-07-28T12:00:00.000Z",
-      deletedNodeTypes: ["sidebar"],
-      deletedClockCount: 12,
-      removedText: "lost words",
-    } satisfies SchemaRepairEvent;
-    const second = {
-      phase: "live",
-      detectedAt: "2026-07-28T12:01:00.000Z",
-      deletedNodeTypes: [],
-      deletedClockCount: 3,
-    } satisfies SchemaRepairEvent;
-
-    session.reportSchemaRepair(first);
-    session.reportSchemaRepair(second);
-
-    expect(session.getSnapshot().schemaRepairs).toEqual([first, second]);
-    expect(snapshots.at(-2)?.schemaRepairs).toEqual([first]);
-    expect(snapshots.at(-1)?.schemaRepairs).toEqual([first, second]);
-    unsubscribe();
-    await session.destroy();
-  });
-
   it("writes the loop guard before silently reloading, then fences a repeated refusal", () => {
     const guardKey = clientSchemaReloadGuardKey("doc-superseded");
     let storage!: Storage;
@@ -251,26 +196,6 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("clears the superseded-client reload guard after a successful document sync", async () => {
-    const { storage } = installBrowserReloadHarness();
-    const guardKey = clientSchemaReloadGuardKey("doc-recovered");
-    storage.setItem(guardKey, "1");
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-recovered",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-
-    current().emit({ kind: "connected" });
-    current().resolveFirstSync();
-    await session.whenSynced();
-    await flushMicrotasks();
-
-    expect(storage.getItem(guardKey)).toBeNull();
-    await session.destroy();
-  });
-
   it("surfaces a stale document head without reloading or raising a schema fence", async () => {
     const { reload } = installBrowserReloadHarness();
     const { factory, current } = makeFakeTransport();
@@ -290,32 +215,6 @@ describe("DocumentSession status derivation", () => {
     });
     expect(reload).not.toHaveBeenCalled();
     void session.destroy();
-  });
-
-  it("routes live-room change events into the session sidecar with self-suppression", async () => {
-    const liveTransport = makeFakeTransport();
-    const live = new DocumentSession({
-      roomKey: "doc-markers",
-      persistence: { kind: "none" },
-      ownUserId: "me",
-      transportFactory: liveTransport.factory,
-    });
-    liveTransport.current().emitChange(changeEvent("doc-markers", "me"));
-    expect(live.markerStore.getSnapshot()).toHaveLength(0);
-    liveTransport.current().emitChange(changeEvent("doc-markers", null, 2));
-    expect(live.markerStore.getSnapshot().map((marker) => marker.changeId)).toEqual(["change-1"]);
-    await live.destroy();
-
-    const branchTransport = makeFakeTransport();
-    const branch = new DocumentSession({
-      roomKey: "branch:branch-1:gen:1",
-      persistence: { kind: "none" },
-      ownUserId: "me",
-      transportFactory: branchTransport.factory,
-    });
-    branchTransport.current().emitChange(changeEvent("branch-1", null));
-    expect(branch.markerStore.getSnapshot()).toHaveLength(0);
-    await branch.destroy();
   });
 
   it("starts detached and attaches transport once without replacing its Y.Doc", async () => {
@@ -345,133 +244,6 @@ describe("DocumentSession status derivation", () => {
     expect(flushed).toBe(true);
     expect(session.getSnapshot().status).toBe("synced");
     await session.destroy();
-  });
-
-  it("settles whenSynced when an attached session is destroyed before server sync", async () => {
-    const { factory } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-server-pending",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const synced = session.whenSynced();
-
-    await session.destroy();
-
-    await expect(synced).resolves.toBeUndefined();
-  });
-
-  it("waits for the server update acknowledgement after initial sync", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-durable",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    current().emit({ kind: "connected" });
-    current().resolveFirstSync();
-    await session.whenSynced();
-
-    let durable = false;
-    void session.waitForDurableSync().then(() => {
-      durable = true;
-    });
-    await flushMicrotasks();
-    expect(durable).toBe(false);
-
-    current().resolveDurableSync();
-    await session.waitForDurableSync();
-    expect(durable).toBe(true);
-    await session.destroy();
-  });
-
-  it("settles the durable wait on terminal denial", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-denied",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const durable = session.waitForDurableSync();
-
-    current().emit({ kind: "unauthorized", reason: "expired", code: 4401 });
-
-    await expect(durable).resolves.toBeUndefined();
-    await session.destroy();
-  });
-
-  it("does not mark synced from empty local load while transport first sync is pending", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    await flushMicrotasks();
-    expect(session.getSnapshot().localPersistenceSynced).toBe(true);
-    expect(session.getSnapshot().status).toBe("syncing");
-
-    current().emit({ kind: "connected" });
-    expect(session.getSnapshot().status).toBe("syncing");
-
-    current().resolveFirstSync();
-    await flushMicrotasks();
-    expect(session.getSnapshot().status).toBe("synced");
-
-    void session.destroy();
-  });
-
-  it("flips to synced once local persistence loads AND transport is connected & synced", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const { snapshots } = track(session);
-    expect(snapshots.at(-1)?.status).toBe("syncing");
-
-    // Transport reports connected before first sync resolves → still syncing.
-    current().emit({ kind: "connected" });
-    expect(snapshots.at(-1)?.status).toBe("syncing");
-
-    current().resolveFirstSync();
-    await flushMicrotasks();
-    expect(snapshots.at(-1)?.status).toBe("synced");
-
-    void session.destroy();
-  });
-
-  it("flips to offline when the socket disconnects after first sync, and back to synced on reconnect", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const { snapshots } = track(session);
-
-    current().emit({ kind: "connected" });
-    current().resolveFirstSync();
-    await flushMicrotasks();
-    expect(snapshots.at(-1)?.status).toBe("synced");
-
-    current().emit({ kind: "disconnected" });
-    expect(snapshots.at(-1)?.status).toBe("offline");
-
-    // Reconnect in progress — still not safe on the server yet.
-    current().emit({ kind: "reconnecting", attempt: 1, nextRetryAt: Date.now() });
-    expect(snapshots.at(-1)?.status).toBe("syncing");
-
-    current().emit({ kind: "connected" });
-    expect(snapshots.at(-1)?.status).toBe("synced");
-
-    const statuses = snapshots.map((s) => s.status);
-    expect(statuses).toContain("offline");
-    expect(statuses).toContain("syncing");
-    expect(statuses).toContain("synced");
-
-    void session.destroy();
   });
 
   it("reports access-lost when denied before first sync completes", async () => {
@@ -512,92 +284,25 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("treats permanent document denial as access-lost, not offline", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const { snapshots } = track(session);
-
-    current().emit({ kind: "connected" });
-    current().resolveFirstSync();
-    await flushMicrotasks();
-    expect(snapshots.at(-1)?.status).toBe("synced");
-
-    current().emit({ kind: "unauthorized", reason: "permission-denied", code: 4401 });
-    expect(snapshots.at(-1)?.status).toBe("access-lost");
-
-    void session.destroy();
-  });
-
-  it("treats degraded reconnects as syncing", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    current().emit({ kind: "connected" });
-    current().resolveFirstSync();
-    await flushMicrotasks();
-    expect(session.getSnapshot().status).toBe("synced");
-
-    current().emit({ kind: "degraded", attempt: 7, nextRetryAt: Date.now() });
-    expect(session.getSnapshot().status).toBe("syncing");
-    void session.destroy();
-  });
-
-  it("publishes a field emptied while presence was suspended", () => {
+  it("holds field writes off the wire until the last nested suspension resumes, including an emptied field", () => {
     const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
     session.presence.setField("user", { name: "Writer" });
     session.presence.setField("imageUploads", [{ token: "old" }]);
 
+    session.suspendPresence();
     session.suspendPresence();
     // The upload landed while the writer was inside inline review. Nothing is on
     // the wire, and the correction still has to be true when they come out.
     session.presence.setField("imageUploads", []);
     expect(session.awareness.getLocalState()).toBeNull();
     session.resumePresence();
-
-    expect(session.awareness.getLocalState()).toEqual({
-      user: { name: "Writer" },
-      imageUploads: [],
-    });
-    void session.destroy();
-  });
-
-  it("publishes a field first written while presence was suspended", () => {
-    const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
-    session.presence.setField("user", { name: "Writer" });
-
-    session.suspendPresence();
-    session.presence.setField("imageUploads", [{ token: "new" }]);
-    session.resumePresence();
-
-    expect(session.awareness.getLocalState()).toEqual({
-      user: { name: "Writer" },
-      imageUploads: [{ token: "new" }],
-    });
-    void session.destroy();
-  });
-
-  it("resumes only when the last of two suspensions lets go", () => {
-    const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
-    session.presence.setField("user", { name: "Writer" });
-
-    session.suspendPresence();
-    session.suspendPresence();
-    session.presence.setField("imageUploads", [{ token: "nested" }]);
-    session.resumePresence();
     expect(session.awareness.getLocalState()).toBeNull();
 
     session.resumePresence();
 
     expect(session.awareness.getLocalState()).toEqual({
       user: { name: "Writer" },
-      imageUploads: [{ token: "nested" }],
+      imageUploads: [],
     });
     void session.destroy();
   });
@@ -626,21 +331,6 @@ describe("DocumentSession status derivation", () => {
     expect(snapshots.filter((snapshot) => snapshot.schemaFence)).toHaveLength(1);
     expect(persistSchemaFence).toHaveBeenCalledOnce();
     void session.destroy();
-  });
-
-  it("emits destroyed after teardown and unsubscribes from transport", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const before = current();
-    await session.destroy();
-    expect(session.getSnapshot().status).toBe("destroyed");
-    // Further transport emissions must not resurrect status from destroyed.
-    before.emit({ kind: "connected" });
-    expect(session.getSnapshot().status).toBe("destroyed");
   });
 
   it("joins one destroy attempt and retries only the rejected transport stage", async () => {

@@ -1,6 +1,6 @@
-import type { ReversalStore } from "@meridian/agent-edit/integration";
+import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
-import { ReverseThreadContextError } from "../contracts.js";
+import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
 
 function createService(input: {
@@ -12,10 +12,20 @@ function createService(input: {
 }) {
   const agentReverse =
     input.agentReverse ??
-    vi.fn(async () => ({ command: "undo", status: "reversed", isError: false, text: "ok" }));
+    vi.fn(async () => ({
+      command: "undo",
+      status: "reversed",
+      isError: false,
+      result: modelResult({ command: "undo", status: "reversed" }),
+    }));
   const liveReverse =
     input.liveReverse ??
-    vi.fn(async () => ({ command: "undo", status: "reversed", isError: false, text: "ok" }));
+    vi.fn(async () => ({
+      command: "undo",
+      status: "reversed",
+      isError: false,
+      result: modelResult({ command: "undo", status: "reversed" }),
+    }));
   const refreshDocumentProjection = vi.fn(async () => undefined);
   const resolveContextDocument = vi.fn(async () => ({
     documentId: input.resolvedDocumentId === undefined ? "document-1" : input.resolvedDocumentId,
@@ -30,16 +40,12 @@ function createService(input: {
       refreshDocumentProjection,
     },
     agentEdit: { reverse: agentReverse } as never,
-    branchReview: { reverseBranchTurn: vi.fn() } as never,
+    branchReview: { reverseBranchTurns: vi.fn(async () => []) } as never,
     branchJournal: { listJournalRowsForTurn: async () => [] },
     branches: { getBranch: async () => null },
     resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
     listEditedDocumentsForTurn: async () => input.lineage ?? [],
-    documentAccess: {
-      canAccessDocument: async (_userId, documentId) => input.allowed?.has(documentId) ?? true,
-      canAccessProjectDocument: async (_userId, documentId) =>
-        input.allowed?.has(documentId) ?? true,
-    },
+    fileAccess: visibleOnly(input.allowed),
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
@@ -61,58 +67,12 @@ const base = {
 };
 
 describe("reverseThreadContext", () => {
-  it("rejects invalid write handles before reversal dispatch", async () => {
-    const { service, agentReverse, resolveContextDocument } = createService({
-      resolvedDocumentId: null,
-    });
-
-    await expect(
-      service.reverseThreadContext({
-        ...base,
-        uri: "manuscript://chapter.md",
-        scope: "write",
-        selection: "bad",
-        turnId: "" as never,
-      }),
-    ).rejects.toEqual(new ReverseThreadContextError("invalid_write", "invalid_write"));
-    expect(agentReverse).not.toHaveBeenCalled();
-    expect(resolveContextDocument).not.toHaveBeenCalled();
-  });
-
-  it("resolves a write handle and publishes the resolver URI", async () => {
-    const { service, agentReverse, refreshDocumentProjection } = createService({});
-
-    await expect(
-      service.reverseThreadContext({
-        ...base,
-        uri: "scratch://context.md",
-        scope: "write",
-        selection: "w7",
-        turnId: "" as never,
-      }),
-    ).resolves.toMatchObject({
-      status: "reversed",
-      documents: [{ uri: "scratch://@original/context.md", status: "reversed" }],
-    });
-
-    expect(agentReverse).toHaveBeenCalledWith(
-      expect.objectContaining({
-        docId: "document-1",
-        selection: { kind: "single", to: "w7" },
-      }),
-    );
-    expect(refreshDocumentProjection).toHaveBeenCalledWith({
-      documentId: "document-1",
-      threadId: "thread-1",
-    });
-  });
-
   it("owner-gates and filters live lineage before turn reversal", async () => {
     const liveReverse = vi.fn(async () => ({
       command: "undo",
       status: "reversed",
       isError: false,
-      text: "ok",
+      result: modelResult({ command: "undo", status: "reversed" }),
     }));
     const { service } = createService({
       liveReverse,
@@ -136,12 +96,12 @@ describe("reverseThreadContext", () => {
 
 describe("cross-scope reversal", () => {
   it("does not reverse branch documents excluded by the authorized live lineage", async () => {
-    const reverseBranchTurn = vi.fn();
+    const reverseBranchTurns = vi.fn(async () => []);
     const liveReverse = vi.fn(async () => ({
       command: "undo",
       status: "reversed",
       isError: false,
-      text: "ok",
+      result: modelResult({ command: "undo", status: "reversed" }),
     }));
     const service = createTurnReversalService({
       live: {
@@ -152,7 +112,7 @@ describe("cross-scope reversal", () => {
         refreshDocumentProjection: async () => undefined,
       },
       agentEdit: { reverse: vi.fn() } as never,
-      branchReview: { reverseBranchTurn } as never,
+      branchReview: { reverseBranchTurns } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-denied" }],
       } as never,
@@ -161,10 +121,7 @@ describe("cross-scope reversal", () => {
       } as never,
       resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -183,7 +140,7 @@ describe("cross-scope reversal", () => {
       status: "reversed",
       documents: [{ uri: "manuscript://allowed.md", status: "reversed" }],
     });
-    expect(reverseBranchTurn).not.toHaveBeenCalled();
+    expect(reverseBranchTurns).toHaveBeenCalledWith(expect.objectContaining({ branchIds: [] }));
     expect(liveReverse).toHaveBeenCalledTimes(1);
   });
 
@@ -209,7 +166,12 @@ describe("cross-scope reversal", () => {
         agentEdit: {
           reverse: async () => {
             liveReversed = true;
-            return { command: "undo", status: "reversed", isError: false, text: "ok" };
+            return {
+              command: "undo",
+              status: "reversed",
+              isError: false,
+              result: modelResult({ command: "undo", status: "reversed" }),
+            };
           },
         } as never,
         resolveDocumentUri: async () => "manuscript://live.md",
@@ -218,24 +180,19 @@ describe("cross-scope reversal", () => {
       },
       agentEdit: { reverse: vi.fn() } as never,
       branchReview: {
-        reverseBranchTurn: async () => ({
-          status: "cant_undo_dependent",
-          branchId: "branch-1",
-          journalIds: [1],
-        }),
+        reverseBranchTurns: async () => [
+          { status: "cant_undo_dependent", branchId: "branch-1", journalIds: [1] },
+        ],
       } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-1" }],
       } as never,
       branches: {
-        getBranch: async () => ({ documentId: "document-branch" }),
+        getBranch: async () => ({ branchId: "branch-1", documentId: "document-branch" }),
       } as never,
       resolveDocumentUri: async () => "manuscript://branch.md",
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -254,3 +211,26 @@ describe("cross-scope reversal", () => {
     expect(liveReversed).toBe(false);
   });
 });
+
+/** Every document is the writer's to edit, except those outside `visible`. */
+function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
+  const open = createAllowAllFileAccess();
+  return {
+    ...open,
+    async authorize(principal, target, need) {
+      if (visible && target.kind !== "container" && !visible.has(target.documentId)) {
+        return {
+          denied: true,
+          target,
+          reason: "not_found",
+          level: "none",
+          archivedWork: null,
+          facts: null,
+          destination: null,
+          agentChain: null,
+        };
+      }
+      return open.authorize(principal, target, need);
+    },
+  };
+}

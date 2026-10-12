@@ -89,7 +89,7 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
         else history.push(href, options.state, { ignoreBlocker: true });
       },
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   let held: { run(): void; cancel(): void } | null = null;
   navigation.registerGuard({
@@ -117,7 +117,6 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
         destination: { kind: "editor" },
 
         work: { kind: "none" },
-        results: false,
       },
       { replace: false },
     );
