@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Recovery preserves newer child replies’ adopted messages when an older repair candidate is already complete, preventing duplicate replies.
+
 - After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.

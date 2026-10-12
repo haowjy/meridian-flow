@@ -24,9 +24,12 @@ that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
 The bounded sweep calls delivery's `settleStaleExecution` while holding the
 exclusive session claim. That one recovery boundary finalizes turns, retires
-receipts, deletes the stale lease through `RunClaim.release`, and journals the
-resulting inbox projection in the same thread-lock transaction. Only after
-commit does it publish `thread.status`, so subscribers see asleep immediately
+receipts, deletes the stale lease through `RunClaim.release` only after its
+receipt is empty, and journals the resulting inbox projection in the same thread-lock transaction. Delivery owns
+that release decision: a successful repair callback alone is not proof that it
+settled the captured receipt's execution. Stale child-report or placeholder
+candidates must preserve a newer orphan's selector and adopted-message IDs for
+its later repair. Only after commit does it publish `thread.status`, so subscribers see asleep immediately
 and a new message can start without waiting for lease expiry. Rollback preserves
 both the unfinished turn and its lease and publishes nothing. Run-start repair
 instead retains the replacement run's already-acquired lease; it only retires
