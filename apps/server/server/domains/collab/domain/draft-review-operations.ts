@@ -97,7 +97,7 @@ function groupOperationsForHunks(
     return {
       ...hunk.review,
       ...attributionFields,
-      ...(!hunk.complete ? { insertedText: hunk.raw.insertedText } : {}),
+      ...(hunk.raw.insertedText ? { insertedText: hunk.raw.insertedText } : {}),
       ...(hunk.raw.deletedText ? { deletedSpans: hunk.deletedSpans } : {}),
       spans: hunkSpans(hunk.insertedAttribution),
     } satisfies ReviewHunk;

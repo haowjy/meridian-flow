@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Show every removed and inserted run in change-row excerpts, in document order; only the row width truncates the display.
+- Keep phone review tap targets inside their own horizontal boxes and remove empty whole-document Work expand controls.
+
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.

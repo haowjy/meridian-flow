@@ -71,7 +71,8 @@ Paths outside this directory are relative to `apps/app/src`.
 - `isWholeDocumentChange` is the shared layout rule: a ready sole whole-draft
   item is its document row, not a file header plus a repeated change. Chat and
   expanded Work files use that row’s name as the review door and keep its
-  whole-draft commands. Real per-change items retain their header and rows.
+  whole-draft commands. Work rows replace the empty expansion control with an
+  alignment spacer. Real per-change items retain their header and rows.
 - Review chrome, strip and change rows each use one line. Lists close on last
   disposition; only the header shows completion. Success has no toast.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion
@@ -95,3 +96,7 @@ Paths outside this directory are relative to `apps/app/src`.
 [reference]: .context/draft-review.md
 [editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md
 [authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-command-authority.md
+
+Change-row excerpts read complete ordered hunk runs, including attributed
+insertions, never the operations’ first-hunk summaries. Only row CSS truncates
+their display; repeated words in separate runs remain separate.

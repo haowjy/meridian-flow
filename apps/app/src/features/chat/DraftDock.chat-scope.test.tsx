@@ -320,7 +320,8 @@ it("new documents have one review door and whole-draft commands in chat and Work
         expect(workRows?.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
       );
       expect(strip()?.querySelectorAll("[data-draft-dock-file] button")).toHaveLength(6);
-      expect(workRows?.querySelectorAll("button")).toHaveLength(9);
+      for (const name of ["chapter-a", "chapter-b"])
+        expect(workRows?.querySelector(`[aria-label="Changes in ${name}"]`)).toBeNull();
       for (const surface of [strip(), workRows]) {
         for (const name of ["chapter-a", "chapter-b"]) {
           expect(

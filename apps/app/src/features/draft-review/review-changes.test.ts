@@ -114,7 +114,10 @@ describe("reviewChanges", () => {
       afterExcerpt: "one withered frail",
     });
     const [change] = reviewChanges([agent, writer], []);
-    expect(changeExcerpt(change)).toEqual({ added: "one withered frail", removed: "his" });
+    expect(changeExcerpt(change)).toEqual([
+      { kind: "removed", text: "his" },
+      { kind: "added", text: "one withered frail" },
+    ]);
   });
 });
 
@@ -140,9 +143,52 @@ describe("a change's hunks", () => {
       textHunk({ hunkId: "h2", operationIds: ["b"], deletedText: "old b" }),
     ];
     const [first, second] = reviewChanges(ops, hunks);
-    expect(first.change.removed).toBeNull();
-    expect(first.change.added).toBeNull();
-    expect(changeExcerpt(first)).toEqual({ added: "Bold on “red”", removed: null });
-    expect(second.change.removed).toBe("old b");
+    expect(first.change.runs).toEqual([]);
+    expect(changeExcerpt(first)).toEqual([{ kind: "added", text: "Bold on “red”" }]);
+    expect(second.change.runs).toEqual([{ kind: "removed", text: "old b" }]);
+  });
+});
+
+describe("change excerpts", () => {
+  it("carries every removed and inserted run of a multi-pair replacement in document order", () => {
+    const [change] = reviewChanges(
+      [
+        op({
+          operationId: "replace",
+          closureClassId: "replacement",
+          classification: "rewrite",
+          beforeExcerpt: "broken",
+          afterExcerpt: "weathered",
+        }),
+      ],
+      [
+        textHunk({
+          hunkId: "first",
+          operationIds: ["replace"],
+          deletedText: "broken",
+          insertedText: "weathered",
+        }),
+        textHunk({
+          hunkId: "second",
+          operationIds: ["replace"],
+          deletedText: "archway",
+          insertedText: "gate",
+        }),
+        textHunk({
+          hunkId: "third",
+          operationIds: ["replace"],
+          deletedText: "archway",
+          insertedText: "gate",
+        }),
+      ],
+    );
+    expect(changeExcerpt(change)).toEqual([
+      { kind: "removed", text: "broken" },
+      { kind: "added", text: "weathered" },
+      { kind: "removed", text: "archway" },
+      { kind: "added", text: "gate" },
+      { kind: "removed", text: "archway" },
+      { kind: "added", text: "gate" },
+    ]);
   });
 });
