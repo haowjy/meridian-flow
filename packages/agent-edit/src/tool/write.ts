@@ -132,7 +132,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       createRuntimeDoc: options.createRuntimeDoc,
       links: options.links,
       semanticProvenance: options.semanticProvenance,
-      segmentDraftWrites: options.segmentDraftWrites,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
     },
     threadOrigins,

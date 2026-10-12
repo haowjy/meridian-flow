@@ -1,10 +1,5 @@
 // Formats shared write and reversal responses for the tool surface.
-import type * as Y from "yjs";
-import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
@@ -51,19 +46,6 @@ export interface ReversalSuccessResponseInput {
   /** Write handles actually reversed, oldest first. */
   writeIds: readonly string[];
   sync: SyncedMutationSummary;
-}
-
-/** True when the document is down to one blank block, which removing every block leaves. */
-export function isDocumentEmpty(
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  doc: DocHandle,
-): boolean {
-  const blocks = model.getBlocks(doc);
-  return (
-    blocks.length <= 1 &&
-    model.serializeBlockBodies(doc, codec, blocks).every((body) => body.trim() === "")
-  );
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -122,15 +104,6 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
         : {}),
     },
   };
-}
-
-export function truncateCreateEcho(
-  renderer: { renderBlockLines: (doc: DocHandle, codec: AgentEditCodec) => string[] },
-  codec: AgentEditCodec,
-  doc: Y.Doc,
-  toDocHandle: (doc: Y.Doc) => DocHandle,
-): string[] {
-  return renderer.renderBlockLines(toDocHandle(doc), codec).map(truncateSerializedBlock);
 }
 
 export function status(

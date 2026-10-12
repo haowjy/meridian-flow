@@ -70,7 +70,7 @@ export function harness(
   const agentEditModel = options.model ?? model;
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
-  const journal = new MemoryJournal();
+  const journal = new MemoryJournal(options.segmentDraftWrites);
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));

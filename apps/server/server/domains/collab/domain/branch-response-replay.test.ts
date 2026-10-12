@@ -61,6 +61,29 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
     );
     expect(kept.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
     expect(current.getText("chapter").toString()).toBe("red Zblue green");
+    // The command boundary now sends one envelope with ordered parts; storage expands rows.
+    const logical = cloneYDoc(live);
+    const mutation = rows[0].mutation;
+    if (!mutation) throw new Error("Missing test edit identity");
+    try {
+      const parts = rows.slice(0, 2).map((row) => row.update);
+      const envelopes = [
+        { ...rows[0], update: Y.mergeUpdates(parts), mutation: { ...mutation, editParts: parts } },
+        ...rows.slice(2),
+      ];
+      expect(
+        reconcileStagedBranchWrites(
+          logical,
+          helper,
+          envelopes,
+          [retired],
+          Y.encodeStateAsUpdate(draft),
+        ).map((entry) => entry.mutation?.writeId),
+      ).toEqual(["independent"]);
+      expect(logical.getText("chapter").toString()).toBe("red Zblue green");
+    } finally {
+      logical.destroy();
+    }
     const forged = cloneYDoc(helper);
     const untouched = cloneYDoc(live);
     try {

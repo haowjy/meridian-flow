@@ -39,9 +39,11 @@ describe("write tool dispatch", () => {
   });
 
   it("reports degraded awareness when destructive reporting fails after append", async () => {
+    const transitions: string[] = [];
     const ctx = harness(
       { "chapter.md": "Writer protected." },
       {
+        onResponseCommitterTransition: (event) => transitions.push(event.transition),
         journalOverride: (journal) => {
           const destructiveJournal: UpdateJournal = journal;
           destructiveJournal.materializeDestructiveProvenance = async () => {
@@ -67,6 +69,23 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("destructive awareness degraded");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
+    const staged = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Agent replacement.",
+        content: "Accepted response text.",
+      },
+      { ...context, responseId: "report-failure", turnId: "report-failure" },
+    );
+    expectOutcome(staged, "success");
+    const committed = await ctx.core.commitResponse("report-failure");
+    expect(committed.documents[0].receipts).toMatchObject([
+      { writeId: staged.result.write?.id, result: { status: "success", awarenessDegraded: true } },
+    ]);
+    expect(transitions).not.toContain("recovery_succeeded");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Accepted response text."]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
   });
 
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
@@ -545,6 +564,42 @@ describe("write tool dispatch", () => {
     const reread = await ctx.core.read({ file: "chapter.md" }, context);
     expectOutcome(reread, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
+    for (const command of [
+      {
+        command: "replace" as const,
+        file: "chapter.md",
+        in: [1, 2] as [number, number],
+        content: "kitten one\n\nkitten two",
+      },
+      {
+        command: "create" as const,
+        file: "chapter.md",
+        overwrite: true,
+        content: "kitten one\n\nkitten two",
+      },
+    ]) {
+      let certified = 0;
+      const multipart = harness(
+        { "chapter.md": "cat one\n\ncat two" },
+        {
+          semanticProvenance: {
+            writeCertifiedFacts() {
+              if (++certified === 2) throw new Error("second part rejected");
+            },
+          },
+        },
+      );
+      const rejected = await multipart.core.write(command, {
+        ...context,
+        responseId: "certification",
+        createdDocument: false,
+      });
+      expectOutcome(rejected, "partial_failure", true);
+      expect(certified).toBe(2);
+      expect((await multipart.core.commitResponse("certification")).updateCount).toBe(0);
+      expect((await multipart.journal.read("chapter.md")).updates).toHaveLength(0);
+      expect(blockTexts(multipart.liveDoc("chapter.md"))).toEqual(["cat one", "cat two"]);
+    }
   });
 });
 

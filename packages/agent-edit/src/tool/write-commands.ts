@@ -5,18 +5,17 @@ import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems, shownEvidence } from "../links/shown.js";
+import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
-import { copyEdgeLines, copySummary } from "./copy-receipt.js";
+import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -26,14 +25,9 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
+import { renderReceipt } from "./receipt.js";
 import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
-import {
-  formatApplySuccess,
-  formatUnchangedSuccess,
-  isDocumentEmpty,
-  status,
-  truncateCreateEcho,
-} from "./response-format.js";
+import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
@@ -69,7 +63,6 @@ export function createWriteCommands(deps: {
     | "semanticProvenance"
     | "links"
     | "onLinkSpliceFallback"
-    | "segmentDraftWrites"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -131,15 +124,6 @@ export function createWriteCommands(deps: {
       },
       (lease) => handler(command, session, context, lease),
     );
-  }
-
-  function emptiedDocument(
-    runtime: { doc: Y.Doc },
-    codec: AgentEditCodec,
-  ): { documentEmpty?: true } {
-    return isDocumentEmpty(options.model, codec, toDocHandle(runtime.doc))
-      ? { documentEmpty: true }
-      : {};
   }
 
   async function read(
@@ -209,7 +193,6 @@ export function createWriteCommands(deps: {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const actor = mutationActor(session, address.documentId, context);
-    const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
       return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
@@ -310,206 +293,24 @@ export function createWriteCommands(deps: {
         ? parsed.parsed
         : { blocks: assigner.assignSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner, address.documentId, context);
-    const writeIdentity = await nextWriteIdentity(
-      address.documentId,
+    return finishPreparedEdit({
+      command,
       session,
       context,
-      command.tool_use_id,
-    );
-    const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    let touchedHashes = new Set<string>();
-    let deletedHashes = new Set<string>();
-    let insertedHashes: string[] = [];
-    let semanticEditIr: SemanticEditIRV1 | undefined;
-    const {
-      result: failure,
-      update,
-      parts,
-    } = captureWriteUpdate(
-      runtime.doc,
-      (beforeSegment) => {
-        if (overwrite) {
-          semanticEditIr = overwrite.ir;
-          const applied = applyEdits(
-            toDocHandle(runtime.doc),
-            options.model,
-            overwrite.edits,
-            origin,
-            beforeSegment,
-            certifySegment(runtime, overwrite.ir, beforeVector, preWriteSnapshot),
-          );
-          if (!applied.ok) {
-            restorePreWriteSnapshot(runtime, preWriteSnapshot);
-            return errorResponse(applied.error.code, applied.error.message, address.filePath);
-          }
-          touchedHashes = new Set(applied.changedBlocks);
-          deletedHashes = new Set(applied.deletedBlocks);
-          insertedHashes = applied.insertedBlocks;
-        } else {
-          beforeSegment?.();
-          runtime.doc.transact(() => {
-            insertedHashes = options.model
-              .insertBlocks(toDocHandle(runtime.doc), null, written)
-              .map((block) => options.model.getBlockId(block));
-          }, origin);
-        }
-        return undefined;
-      },
-      options.segmentDraftWrites,
-    );
-    if (failure) return failure;
-    const copied = copiedNodes
-      ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
-          edges: false,
-        })
-      : undefined;
-    const meta = mutationMeta(actor);
-
-    if (context.responseId && actor.kind === "agent") {
-      try {
-        const rejected = responseCommitter.stageUpdate({
-          responseId: context.responseId,
-          docId: address.documentId,
-          session,
-          runtime,
-          commandName: command.command,
-          documentLabel: command.file,
-          description: stagedWriteDescription(command),
-          update,
-          editParts: parts,
-          meta,
-          liveOrigin: mutationUpdateOrigin(actor),
-          actor,
-          turnId: actor.turnId,
-          writeId: writeIdentity.handle,
-          writeOrdinal: writeIdentity.ordinal,
-          durableWriteId: writeIdentity.durableId,
-          ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
-          ensureDocumentBeforeCommit: true,
-          createdDocumentBeforeCommit: context.createdDocument === true,
-          touchedHashes,
-          deletedHashes,
-          preOwnSnapshot: preWriteSnapshot,
-          ...(semanticEditIr ? { semanticEditIr } : {}),
-          ...(copied ? { copied } : {}),
-          ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
-        });
-        if (rejected) {
-          restorePreWriteSnapshot(runtime, preWriteSnapshot);
-          markSynced(session, address.documentId);
-          return rejected;
-        }
-      } catch (cause) {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId);
-        throw cause;
-      }
-      markSynced(session, address.documentId);
-      const summary = mutationCommit.summarizeMutationEcho({
-        runtime,
-        links,
-        before,
-        touchedHashes,
-        deletedHashes,
-      });
-      return withShown(
-        links,
-        formatApplySuccess({
-          ...emptiedDocument(runtime, links.codec),
-          phase: "staged",
-          writeId: writeIdentity.handle,
-          settlementId: writeIdentity.durableId,
-          echo:
-            summary.echo.length > 0
-              ? summary.echo
-              : [
-                  {
-                    mode: "truncated",
-                    blocks: truncateCreateEcho(renderer, links.codec, runtime.doc, toDocHandle),
-                  },
-                ],
-          concurrentEdits: summary.concurrentEdits,
-          ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
-        }),
-      );
-    }
-
-    const committed = await submitPreparedMutation(
-      {
-        docId: address.documentId,
-        commandName: command.command,
-        runtime,
-        links,
-        before,
-        updates: [
-          {
-            update,
-            meta,
-            mutation: {
-              editParts: parts,
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              writeId: writeIdentity.durableId,
-              wId: writeIdentity.ordinal,
-              ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
-              ...(semanticEditIr ? { semanticEditIr } : {}),
-              ...mutationMode(context.interactionContext),
-            },
-          },
-        ],
-        liveOrigin: mutationUpdateOrigin(actor),
-        actor,
-        touchedHashes,
-        deletedHashes,
-        preOwnSnapshot: preWriteSnapshot,
-        // Empty when checked and restored is not empty when admitted: a writer may land between.
-        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
-        ...(turnId ? { turnId } : {}),
-        interactionContext: interactionContextForAttempt(
-          context.interactionContext,
-          writeIdentity.durableId,
-        ),
-      },
-      session,
-    );
-    if (!committed.ok) {
-      if (committed.journalCommitKind !== "durable") {
-        return committed.response;
-      }
-    }
-
-    runtime.attach();
-    return withShown(
+      runtime,
       links,
-      formatApplySuccess({
-        ...emptiedDocument(runtime, links.codec),
-        phase: "committed",
-        revision: committed.ok ? committed.revision : null,
-        writeId: writeIdentity.handle,
-        echo:
-          committed.ok && committed.summary.echo.length > 0
-            ? committed.summary.echo
-            : [
-                {
-                  mode: "truncated",
-                  blocks: truncateCreateEcho(renderer, links.codec, runtime.doc, toDocHandle),
-                },
-              ],
-        ...(committed.ok && committed.summary.concurrentEdits
-          ? { concurrentEdits: committed.summary.concurrentEdits }
-          : {}),
-        ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
-        ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
-        ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
-      }),
-    );
+      actor,
+      docId: address.documentId,
+      filePath: address.filePath,
+      plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
+      creation: {
+        createdDocument: context.createdDocument === true,
+        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
+      },
+      ...(copiedNodes
+        ? { copy: { from: command.command === "copy" ? command.from.path : "", edges: false } }
+        : {}),
+    });
   }
 
   async function mutate(
@@ -579,211 +380,227 @@ export function createWriteCommands(deps: {
     if (resolved.edits.length === 0) return formatUnchangedSuccess();
     await registerMinted(assigner, address.documentId, context);
 
-    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const actor = mutationActor(session, address.documentId, context);
-    const turnId = actor.kind === "agent" ? actor.turnId : null;
-    const writeIdentity = await nextWriteIdentity(
-      address.documentId,
+    return finishPreparedEdit({
+      command,
       session,
       context,
-      command.tool_use_id,
-    );
-    const interactionContext = interactionContextForAttempt(
-      context.interactionContext,
-      writeIdentity.durableId,
-    );
+      runtime,
+      links,
+      actor: mutationActor(session, address.documentId, context),
+      docId: address.documentId,
+      filePath: address.filePath,
+      plan: { edits: resolved.edits, ir: resolved.ir },
+      ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
+    });
+  }
+
+  interface PreparedEdit {
+    command: WriteCommand;
+    session: ActorSession;
+    context: WriteContext;
+    runtime: CommandDocumentLease;
+    links: CommandLinks;
+    actor: MutationActor;
+    docId: string;
+    filePath: string;
+    plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
+    creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
+    copy?: { from: string; edges: boolean };
+  }
+
+  /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
+  async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
+    const { command, session, context, runtime, links, actor, docId, filePath, plan } = edit;
+    const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
+    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const {
-      result: applied,
-      update: ownUpdate,
-      segments,
-      parts,
-    } = captureWriteUpdate(
-      runtime.doc,
-      (beforeSegment) => {
-        const applied = applyEdits(
-          toDocHandle(runtime.doc),
-          options.model,
-          resolved.edits,
-          origin,
-          beforeSegment,
-          certifySegment(runtime, resolved.ir, beforeVector, preOwnSnapshot),
-        );
-        return applied;
-      },
-      options.segmentDraftWrites,
-    );
-    if (!applied.ok) {
+    const origin = threadOrigins.getThreadOrigin(docId, session.threadId);
+    const semanticEditIr = "ir" in plan ? plan.ir : undefined;
+    const restore = () => {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
-      return errorResponse(applied.error.code, applied.error.message, address.filePath);
+      markSynced(session, docId);
+    };
+    let captured: ReturnType<typeof captureWriteUpdate<import("../apply/types.js").ApplyResult>>;
+    try {
+      captured = captureWriteUpdate(runtime.doc, (beforeSegment) => {
+        if ("edits" in plan)
+          return applyEdits(
+            toDocHandle(runtime.doc),
+            options.model,
+            plan.edits,
+            origin,
+            beforeSegment,
+            certifySegment(runtime, plan.ir, beforeVector),
+          );
+        beforeSegment?.();
+        let insertedBlocks: string[] = [];
+        runtime.doc.transact(() => {
+          insertedBlocks = options.model
+            .insertBlocks(toDocHandle(runtime.doc), null, { blocks: [...plan.blocks] })
+            .map((block) => options.model.getBlockId(block));
+        }, origin);
+        return { ok: true, changedBlocks: [], deletedBlocks: [], insertedBlocks };
+      });
+    } catch (cause) {
+      restore();
+      throw cause;
     }
-    const copied =
-      from && copiedNodes
-        ? copySummary(from.path, applied.insertedBlocks, { edges: true })
-        : undefined;
-    const copiedEcho = () =>
-      copied
-        ? {
-            copied: {
-              summary: copied,
-              edges: copyEdgeLines(
-                copied,
-                snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
-              ),
-            },
-          }
-        : {};
-
-    const meta = mutationMeta(actor);
-
+    const { result: applied, update, parts } = captured;
+    if (!applied.ok) {
+      restore();
+      return errorResponse(applied.error.code, applied.error.message, filePath);
+    }
+    const touchedHashes = new Set(applied.changedBlocks),
+      deletedHashes = new Set(applied.deletedBlocks);
+    const copied = edit.copy
+      ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
+      : undefined;
+    const interactionContext = interactionContextForAttempt(
+      context.interactionContext,
+      identity.durableId,
+    );
+    const meta = mutationMeta(actor),
+      liveOrigin = mutationUpdateOrigin(actor);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
+    let phase: "staged" | "committed",
+      revision: string | null = null;
+    let concurrentEdits: import("../apply/types.js").ConcurrentEditInfo | undefined;
+    let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
+    let awarenessDegraded = false;
     if (context.responseId && actor.kind === "agent") {
+      // Await attribution before staging: the lease must still be current at acceptance.
       try {
-        const concurrent = interactionContext
-          ? await mutationCommit.detectConcurrentEdits({
-              docId: address.documentId,
-              runtime,
-              links,
-              agentUpdate: ownUpdate,
-              reportingOnly: runtime.reportingOnly,
-              interactionContext,
-              preOwnSnapshot,
-              ...(turnId ? { ownTurnId: turnId } : {}),
-            })
-          : undefined;
-        const summary = mutationCommit.summarizeMutationEcho(
-          {
+        if (interactionContext) {
+          const concurrent = await mutationCommit.detectConcurrentEdits({
+            docId,
             runtime,
             links,
-            before,
-            touchedHashes: new Set(applied.changedBlocks),
-            deletedHashes: new Set(applied.deletedBlocks),
-          },
-          concurrent,
-        );
-        const result = formatApplySuccess({
-          ...emptiedDocument(runtime, links.codec),
-          phase: "staged",
-          writeId: writeIdentity.handle,
-          settlementId: writeIdentity.durableId,
-          echo: summary.echo,
-          concurrentEdits: summary.concurrentEdits,
-          deletedBlocks: applied.deletedBlocks,
-          ...copiedEcho(),
-        });
+            reportingOnly: runtime.reportingOnly,
+            interactionContext,
+            preOwnSnapshot,
+            ownTurnId: actor.turnId,
+          });
+          concurrentEdits = concurrent.info;
+        }
+      } catch {
+        awarenessDegraded = true;
+      }
+      try {
         const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
-          docId: address.documentId,
+          docId,
           session,
           runtime,
           commandName: command.command,
           documentLabel: command.file,
           description: stagedWriteDescription(command),
-          update: ownUpdate,
-          segments,
+          update,
           editParts: parts,
           meta,
-          liveOrigin: mutationUpdateOrigin(actor),
+          liveOrigin,
           actor,
           turnId: actor.turnId,
-          writeId: writeIdentity.handle,
-          writeOrdinal: writeIdentity.ordinal,
-          durableWriteId: writeIdentity.durableId,
-          ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
-          createdDocumentBeforeCommit: false,
-          touchedHashes: new Set(applied.changedBlocks),
-          deletedHashes: new Set(applied.deletedBlocks),
+          writeId: identity.handle,
+          writeOrdinal: identity.ordinal,
+          durableWriteId: identity.durableId,
+          toolCallId: identity.toolCallId,
+          ensureDocumentBeforeCommit: Boolean(edit.creation),
+          createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
+          touchedHashes,
+          deletedHashes,
           preOwnSnapshot,
-          semanticEditIr: resolved.ir,
-          ...(copied ? { copied } : {}),
-          ...(interactionContext ? { interactionContext } : {}),
+          semanticEditIr,
+          copied,
+          interactionContext,
         });
         if (rejected) {
-          restorePreWriteSnapshot(runtime, preOwnSnapshot);
-          markSynced(session, address.documentId);
+          restore();
           return rejected;
         }
-        markSynced(session, address.documentId);
-        return withShown(links, result);
       } catch (cause) {
-        restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId);
+        restore();
         throw cause;
       }
-    }
-
-    let syncedMutation = await submitPreparedMutation(
-      {
-        docId: address.documentId,
-        commandName: command.command,
-        runtime,
-        links,
-        updates: segments.map((update) => ({
-          update,
-          meta,
-          mutation: {
-            editParts: parts,
-            threadId: session.threadId,
-            turnId,
-            ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-            actorKind: actor.kind,
-            ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-            ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-            ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
-            writeId: writeIdentity.durableId,
-            wId: writeIdentity.ordinal,
-            ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
-            ...mutationMode(interactionContext),
-          },
-        })),
-        liveOrigin: mutationUpdateOrigin(actor),
-        actor,
-        before,
-        touchedHashes: new Set(applied.changedBlocks),
-        deletedHashes: new Set(applied.deletedBlocks),
-        ...(turnId ? { turnId } : {}),
-        preOwnSnapshot,
-        ...(interactionContext ? { interactionContext } : {}),
-      },
-      session,
-    );
-    if (!syncedMutation.ok) {
-      if (syncedMutation.journalCommitKind !== "durable") {
-        return syncedMutation.response;
-      }
-      const awarenessDegraded = syncedMutation.awarenessDegraded;
-      syncedMutation = {
-        ok: true,
-        journalCommitKind: "durable",
-        revision: null,
-        ...(awarenessDegraded ? { awarenessDegraded: true } : {}),
-        summary: mutationCommit.summarizeMutationEcho({
+      markSynced(session, docId);
+      phase = "staged";
+    } else {
+      const committed = await submitPreparedMutation(
+        {
+          docId,
+          commandName: command.command,
           runtime,
           links,
-          before,
-          touchedHashes: new Set(applied.changedBlocks),
-          deletedHashes: new Set(applied.deletedBlocks),
-        }),
-      };
+          updates: [
+            {
+              update,
+              meta,
+              mutation: {
+                editParts: parts,
+                threadId: session.threadId,
+                turnId,
+                ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+                actorKind: actor.kind,
+                ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+                ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+                writeId: identity.durableId,
+                wId: identity.ordinal,
+                toolCallId: identity.toolCallId,
+                semanticEditIr,
+                ...mutationMode(interactionContext),
+              },
+            },
+          ],
+          liveOrigin,
+          actor,
+          touchedHashes,
+          deletedHashes,
+          preOwnSnapshot,
+          refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
+          ...(turnId ? { turnId } : {}),
+          interactionContext,
+        },
+        session,
+      );
+      if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
+      if (committed.ok) {
+        revision = committed.revision;
+        concurrentEdits = committed.concurrentEdits;
+        lateSweep = committed.lateSweep;
+        awarenessDegraded = Boolean(committed.awarenessDegraded);
+      } else awarenessDegraded = true;
+      runtime.attach();
+      phase = "committed";
     }
-
-    runtime.attach();
-    return withShown(
-      links,
-      formatApplySuccess({
-        ...emptiedDocument(runtime, links.codec),
-        phase: "committed",
-        revision: syncedMutation.revision,
-        writeId: writeIdentity.handle,
-        echo: syncedMutation.summary.echo,
-        concurrentEdits: syncedMutation.summary.concurrentEdits,
-        deletedBlocks: applied.deletedBlocks,
-        ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
-        ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
-        ...copiedEcho(),
-      }),
-    );
+    const outcome = {
+      phase,
+      revision,
+      writeId: identity.handle,
+      ...(phase === "staged" ? { settlementId: identity.durableId } : {}),
+      concurrentEdits,
+      lateSweep,
+      awarenessDegraded,
+    };
+    try {
+      return withShown(
+        links,
+        renderReceipt(
+          {
+            commandName: command.command,
+            writeId: identity.handle,
+            durableWriteId: identity.durableId,
+            touchedHashes,
+            deletedHashes,
+            copied,
+          },
+          before,
+          snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
+          { ...outcome, concurrentEdits: withRunShownLinks(concurrentEdits, links) },
+        ),
+      );
+    } catch {
+      return formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true });
+    }
   }
 
   async function submitPreparedMutation(
@@ -924,7 +741,6 @@ export function createWriteCommands(deps: {
     runtime: { doc: Y.Doc },
     ir: SemanticEditIRV1,
     beforeStateVector: Uint8Array,
-    snapshot: Uint8Array,
   ): (segment: readonly ResolvedEdit[]) => void {
     return (segment) => {
       const intent = ir.intent;
@@ -939,32 +755,12 @@ export function createWriteCommands(deps: {
               part.replacements.some((replacement) => edit.replacements.includes(replacement))),
         ),
       );
-      writeCertifiedProvenance(
-        runtime,
+      options.semanticProvenance?.writeCertifiedFacts(
+        toDocHandle(runtime.doc),
         { ...ir, intent: { ...intent, edits } },
         beforeStateVector,
-        snapshot,
       );
     };
-  }
-
-  function writeCertifiedProvenance(
-    runtime: { doc: Y.Doc },
-    ir: SemanticEditIRV1,
-    beforeStateVector: Uint8Array,
-    preWriteSnapshot: Uint8Array,
-  ): void {
-    if (!options.semanticProvenance) return;
-    try {
-      options.semanticProvenance.writeCertifiedFacts(
-        toDocHandle(runtime.doc),
-        ir,
-        beforeStateVector,
-      );
-    } catch (error) {
-      restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      throw error;
-    }
   }
 }
 
@@ -973,7 +769,9 @@ const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blo
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });
   Y.applyUpdate(restored, snapshot, { type: "system" });
+  const previous = runtime.doc;
   runtime.doc = restored;
+  previous.destroy();
 }
 
 function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
@@ -987,8 +785,7 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
 function captureWriteUpdate<T>(
   doc: Y.Doc,
   write: (beforeSegment?: () => void) => T,
-  segmented = false,
-): { result: T; update: Uint8Array; segments: Uint8Array[]; parts: Uint8Array[] } {
+): { result: T; update: Uint8Array; parts: Uint8Array[] } {
   const updates: Uint8Array[] = [];
   const segments: Uint8Array[] = [];
   const flush = () => {
@@ -1006,7 +803,7 @@ function captureWriteUpdate<T>(
     const result = write(beforeSegment);
     flush();
     const update = Y.mergeUpdates(segments);
-    return { result, update, segments: segmented ? segments : [update], parts: segments };
+    return { result, update, parts: segments };
   } finally {
     doc.off("update", collect);
   }

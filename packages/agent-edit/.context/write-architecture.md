@@ -62,6 +62,20 @@ falls back to block-identity diffing. Scoring and gap policy stay with callers.
 Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
+### Prepared edits and receipts (`tool/write-commands.ts`, `tool/receipt.ts`)
+
+Create, copy and mutation planning feed one `PreparedEdit` finishing path. It
+reserves identity, captures the before cut and ordered transaction parts, applies
+and certifies each segment, then stages or submits one logical edit. Certification
+runs inside each segment's own transaction before its fresh client rotates.
+Restoration handles pre-acceptance failure; receipt rendering is outside it.
+Creation ownership and its empty-document admission precondition stay explicit.
+
+Commands submit one merged update with ordered `editParts`, not expanded journal
+rows. The host storage adapter chooses row expansion (paragraph parts for a draft,
+one update for live). Accepted before/after cuts feed the pure receipt renderer;
+report failures preserve settlement identity and return degraded awareness.
+
 ### Edit application (`src/apply/apply-edits.ts`)
 `applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
 and inserted IDs in insertion order, without rendering prose or building per-edit
