@@ -42,7 +42,6 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
@@ -76,6 +75,7 @@ import {
   recordDocumentEdit,
   settleDraftGeneration,
 } from "./drizzle-document-edits.js";
+import { runWithTrailDrafts } from "./drizzle-trail-owners.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -734,13 +734,9 @@ export function createDrizzleBranchStore(
             if (present) map.set(documentId, { present: true });
             else map.delete(documentId);
             const updateData = Y.encodeStateAsUpdate(doc, before);
-            const persisted = await runWithActiveWorkDrafts(
-              db,
-              { workIds: [view.workId] },
-              async () => {
-                return persistManifestMembership(branch, doc, updateData, documentId, present);
-              },
-            );
+            const persisted = await runWithTrailDrafts(db, { workIds: [view.workId] }, async () => {
+              return persistManifestMembership(branch, doc, updateData, documentId, present);
+            });
             if (persisted) return;
           } finally {
             doc.destroy();
@@ -800,9 +796,9 @@ export function createDrizzleBranchStore(
       // runInDrizzleTransaction joins ambient transactions. Do not wrap the
       // agent write path in a larger app-level transaction unless floor ordering
       // is re-audited: branch journal ids must commit while this mutex is held.
-      return await runWithActiveWorkDrafts(
+      return await runWithTrailDrafts(
         db,
-        { branchIds: [input.workDraftBranchId] },
+        { branchIds: [input.workDraftBranchId], owners: [input] },
         async () => {
           const peerPersisted = await updateBranchSnapshot({
             branchId: peer.branchId,
@@ -918,93 +914,98 @@ export function createDrizzleBranchStore(
     },
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
-        const journals = input.journals ?? [];
-        const editBranch = await getBranchSnapshot(input.branchId);
-        await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
-        if (
-          journals.some(
-            (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+      return runWithTrailDrafts(
+        db,
+        { branchIds: [input.branchId], owners: input.journals ?? [] },
+        async () => {
+          const journals = input.journals ?? [];
+          const editBranch = await getBranchSnapshot(input.branchId);
+          await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
+          if (
+            journals.some(
+              (row) =>
+                row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+            )
           )
-        )
-          throw new BranchMutationRollback();
-        const ok = await updateBranchSnapshot(input);
-        if (!ok) throw new BranchMutationRollback();
-        for (const journal of journals) {
-          if (journal?.expectedJournalWatermark !== undefined) {
-            const [head] = await currentDrizzleDb(db)
-              .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-              .from(branchWriteJournal)
-              .where(
-                and(
-                  eq(branchWriteJournal.branchId, journal.branchId),
-                  eq(branchWriteJournal.generation, journal.generation),
-                ),
-              );
-            if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
-              throw new BranchMutationRollback();
-            }
-          }
-          if (journal?.expectedJournalRevision !== undefined) {
-            const rows = await currentDrizzleDb(db)
-              .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-              .from(branchWriteJournal)
-              .where(
-                and(
-                  eq(branchWriteJournal.branchId, journal.branchId),
-                  eq(branchWriteJournal.generation, journal.generation),
-                ),
-              )
-              .orderBy(branchWriteJournal.id)
-              .for("update");
-            if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
-              throw new BranchMutationRollback();
-            }
-          }
-        }
-        if (journals.length) {
-          await mutatePending(
-            journals.map((journal) => journal.branchId),
-            async () => {
-              const rows = await currentDrizzleDb(db)
-                .insert(branchWriteJournal)
-                .values(
-                  journals.map((journal) => ({
-                    branchId: journal.branchId,
-                    generation: journal.generation,
-                    updateData: Buffer.from(journal.updateData),
-                    draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
-                    source: journal.source,
-                    wId: journal.wId ?? null,
-                    toolCallId: journal.toolCallId ?? null,
-                    threadId: journal.threadId ?? null,
-                    turnId: journal.turnId ?? null,
-                    actorUserId: journal.actorUserId ?? null,
-                    updateMeta: journal.updateMeta ?? null,
-                  })),
-                )
-                .returning({ id: branchWriteJournal.id });
-              const branch = await getBranchSnapshot(input.branchId);
-              const doc = createCollabYDoc({ gc: false });
-              Y.applyUpdate(doc, input.expectedState);
-              try {
-                await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
-              } finally {
-                doc.destroy();
+            throw new BranchMutationRollback();
+          const ok = await updateBranchSnapshot(input);
+          if (!ok) throw new BranchMutationRollback();
+          for (const journal of journals) {
+            if (journal?.expectedJournalWatermark !== undefined) {
+              const [head] = await currentDrizzleDb(db)
+                .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                );
+              if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
+                throw new BranchMutationRollback();
               }
-            },
-          );
-        }
-        return true;
-      }).catch((cause) => {
+            }
+            if (journal?.expectedJournalRevision !== undefined) {
+              const rows = await currentDrizzleDb(db)
+                .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                )
+                .orderBy(branchWriteJournal.id)
+                .for("update");
+              if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
+                throw new BranchMutationRollback();
+              }
+            }
+          }
+          if (journals.length) {
+            await mutatePending(
+              journals.map((journal) => journal.branchId),
+              async () => {
+                const rows = await currentDrizzleDb(db)
+                  .insert(branchWriteJournal)
+                  .values(
+                    journals.map((journal) => ({
+                      branchId: journal.branchId,
+                      generation: journal.generation,
+                      updateData: Buffer.from(journal.updateData),
+                      draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
+                      source: journal.source,
+                      wId: journal.wId ?? null,
+                      toolCallId: journal.toolCallId ?? null,
+                      threadId: journal.threadId ?? null,
+                      turnId: journal.turnId ?? null,
+                      actorUserId: journal.actorUserId ?? null,
+                      updateMeta: journal.updateMeta ?? null,
+                    })),
+                  )
+                  .returning({ id: branchWriteJournal.id });
+                const branch = await getBranchSnapshot(input.branchId);
+                const doc = createCollabYDoc({ gc: false });
+                Y.applyUpdate(doc, input.expectedState);
+                try {
+                  await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
+                } finally {
+                  doc.destroy();
+                }
+              },
+            );
+          }
+          return true;
+        },
+      ).catch((cause) => {
         if (cause instanceof BranchMutationRollback) return false;
         throw cause;
       });
     },
 
     async resetBranchSnapshot(input: ResetBranchSnapshotInput) {
-      return runInDrizzleTransaction(db, () =>
-        mutatePending([input.branchId], async () => {
+      return runWithTrailDrafts(db, { branchIds: [input.branchId] }, async () => {
+        return mutatePending([input.branchId], async () => {
           const txDb = currentDrizzleDb(db);
           const [row] = await txDb
             .update(documentBranches)
@@ -1045,12 +1046,12 @@ export function createDrizzleBranchStore(
             input.editDisposition ?? "discarded",
           );
           return true;
-        }),
-      );
+        });
+      });
     },
 
     async appendJournal(input: AppendBranchJournalInput) {
-      await runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
+      await runWithTrailDrafts(db, { branchIds: [input.branchId], owners: [input] }, async () => {
         await mutatePending([input.branchId], () =>
           currentDrizzleDb(db)
             .insert(branchWriteJournal)

@@ -71,6 +71,7 @@ describe("change trail aggregate projections (postgres)", () => {
         role: "assistant" as const,
         origin: "assistant" as const,
         status: "complete" as const,
+        trailDirtyRevision: 1n,
       })),
     );
     await db.insert(schema.changeTrailShells).values(

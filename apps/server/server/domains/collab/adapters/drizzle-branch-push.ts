@@ -1,6 +1,5 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -13,10 +12,6 @@ import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import {
-  lockDraftBranchWorks,
-  runWithActiveWorkDrafts,
-} from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -41,6 +36,11 @@ import type {
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
+import {
+  invalidateTrailOwners,
+  lockTrailDraftWorks,
+  runWithTrailDrafts,
+} from "./drizzle-trail-owners.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -210,7 +210,7 @@ export function createDrizzlePushCommitStore(
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
     async commitPush(input) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
+      return runWithTrailDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], async () => {
           const txDb = currentDrizzleDb(db);
           const existing = await findLineage(txDb, input.idempotencyKey);
@@ -236,7 +236,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitDiscard(input) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
+      return runWithTrailDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], () =>
           commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
         ),
@@ -244,7 +244,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitTurnRedo(input) {
-      return runWithActiveWorkDrafts(
+      return runWithTrailDrafts(
         db,
         { branchIds: input.journalRows.map((row) => row.branchId) },
         () =>
@@ -256,11 +256,11 @@ export function createDrizzlePushCommitStore(
     },
 
     async lockDraftWorks(branchIds) {
-      return lockDraftBranchWorks(db, branchIds);
+      return lockTrailDraftWorks(db, branchIds);
     },
 
     async commitPushBatch(input) {
-      return runWithActiveWorkDrafts(
+      return runWithTrailDrafts(
         db,
         { branchIds: input.pushes.map(({ branch }) => branch.branchId) },
         () =>
@@ -300,20 +300,26 @@ export function createDrizzlePushCommitStore(
     },
 
     async markRollbackPending(input) {
-      const rows = await db
-        .update(branchWriteJournal)
-        .set({ status: "rollback_pending" })
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, input.branchId),
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
-            eq(branchWriteJournal.generation, input.generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        )
-        .returning({ id: branchWriteJournal.id });
-      return rows.length;
+      return runInDrizzleTransaction(db, async () => {
+        await invalidateTrailOwners(currentDrizzleDb(db), {
+          branchIds: [input.branchId],
+          owners: [input],
+        });
+        const rows = await currentDrizzleDb(db)
+          .update(branchWriteJournal)
+          .set({ status: "rollback_pending" })
+          .where(
+            and(
+              eq(branchWriteJournal.branchId, input.branchId),
+              eq(branchWriteJournal.threadId, input.threadId),
+              eq(branchWriteJournal.turnId, input.turnId),
+              eq(branchWriteJournal.generation, input.generation),
+              eq(branchWriteJournal.status, "active"),
+            ),
+          )
+          .returning({ id: branchWriteJournal.id });
+        return rows.length;
+      });
     },
   };
 }

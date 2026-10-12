@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Settle chat change trails from durable owner revisions instead of a no-op work queue. Late Apply and Discard reopen their producing trails after restart.
+- Settle chat change trails from durable owner revisions instead of a no-op work queue. Late Apply, Discard and writer inverses reopen their producing trails after restart without reversing lifecycle lock order.
 
 - Keep independent AI edits saving across repeated Discards and preserve every write result on publication retries. Dropped-edit notices distinguish partial handle groups and name the affected text.
 

@@ -1,4 +1,5 @@
-/** Atomic full Discard with branch → live → Work locking and selective draft-only membership cleanup. */
+import { runWithTrailDrafts } from "./drizzle-trail-owners.js";
+/** Atomic full Discard and empty generation settlement with selective draft-only membership cleanup. */
 
 import type { Database } from "@meridian/database";
 import {
@@ -11,7 +12,6 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import type { BranchJournalReadStore } from "../domain/branch-push-contracts.js";
@@ -55,52 +55,60 @@ export function createDrizzleWorkDraftDiscard(
         liveCoordinator.withDocument(command.documentId, async (liveDoc) => {
           for (let attempt = 0; ; attempt += 1) {
             try {
-              await runInDrizzleSavepoint(db, async () => {
-                await requireLockedActiveWorks(db, [command.workId]);
-                const content = await branches.getBranch(command.contentBranchId);
-                if (
-                  content?.kind !== "work_draft" ||
-                  content.status !== "active" ||
-                  content.workId !== command.workId ||
-                  content.documentId !== command.documentId
-                )
-                  throw new Error("Draft discard content owner changed");
-                const [pending] = await currentDrizzleDb(db)
-                  .select({ id: branchWriteJournal.id })
-                  .from(branchWriteJournal)
-                  .where(
-                    and(
-                      eq(branchWriteJournal.branchId, content.branchId),
-                      eq(branchWriteJournal.generation, content.generation),
-                      inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-                    ),
-                  )
-                  .limit(1);
-                if (!pending) return;
-                const liveMembership =
-                  manifest && command.draftOnlyProjectId
-                    ? await branches.resolveManifestMembership({
-                        projectId: command.draftOnlyProjectId,
-                      })
-                    : null;
-                if (manifest && !liveMembership?.members.includes(command.documentId))
-                  await branches.removeWorkManifestEntryForDraftDiscard({
-                    lease,
-                    manifestBranchId: manifest.branchId,
-                    manifestDocumentId: manifest.documentId,
-                    workId: command.workId,
-                    documentId: command.documentId,
-                  });
-                const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
-                  branchId: content.branchId,
-                  upstream: liveDoc,
-                  expectedGeneration: content.generation,
-                  expectedState: content.state,
-                  expectedStateVector: content.stateVector,
-                  schemaVersion: content.schemaVersion,
-                });
-                if (!reset) throw new BranchCasConflictError(content.branchId);
-              });
+              await runInDrizzleSavepoint(db, () =>
+                runWithTrailDrafts(
+                  db,
+                  {
+                    workIds: [command.workId],
+                    branchIds: [command.contentBranchId, ...(manifest ? [manifest.branchId] : [])],
+                  },
+                  async () => {
+                    const content = await branches.getBranch(command.contentBranchId);
+                    if (
+                      content?.kind !== "work_draft" ||
+                      content.status !== "active" ||
+                      content.workId !== command.workId ||
+                      content.documentId !== command.documentId
+                    )
+                      throw new Error("Draft discard content owner changed");
+                    const [pending] = await currentDrizzleDb(db)
+                      .select({ id: branchWriteJournal.id })
+                      .from(branchWriteJournal)
+                      .where(
+                        and(
+                          eq(branchWriteJournal.branchId, content.branchId),
+                          eq(branchWriteJournal.generation, content.generation),
+                          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+                        ),
+                      )
+                      .limit(1);
+                    if (!pending) return;
+                    const liveMembership =
+                      manifest && command.draftOnlyProjectId
+                        ? await branches.resolveManifestMembership({
+                            projectId: command.draftOnlyProjectId,
+                          })
+                        : null;
+                    if (manifest && !liveMembership?.members.includes(command.documentId))
+                      await branches.removeWorkManifestEntryForDraftDiscard({
+                        lease,
+                        manifestBranchId: manifest.branchId,
+                        manifestDocumentId: manifest.documentId,
+                        workId: command.workId,
+                        documentId: command.documentId,
+                      });
+                    const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
+                      branchId: content.branchId,
+                      upstream: liveDoc,
+                      expectedGeneration: content.generation,
+                      expectedState: content.state,
+                      expectedStateVector: content.stateVector,
+                      schemaVersion: content.schemaVersion,
+                    });
+                    if (!reset) throw new BranchCasConflictError(content.branchId);
+                  },
+                ),
+              );
               return;
             } catch (error) {
               if (!(error instanceof BranchCasConflictError) || attempt >= 3) throw error;
@@ -125,43 +133,52 @@ export function createDrizzleEmptyDraftSettlement(
       liveCoordinator.withDocument(command.documentId, async (liveDoc) => {
         for (let attempt = 0; ; attempt += 1) {
           try {
-            return await runInDrizzleSavepoint(db, async () => {
-              await requireLockedActiveWorks(db, [command.workId]);
-              const branch = await branches.getBranch(command.branchId);
-              if (
-                branch?.kind !== "work_draft" ||
-                branch.status !== "active" ||
-                branch.workId !== command.workId ||
-                branch.documentId !== command.documentId
-              )
-                return { draftClosed: false } as const;
-              const draftDoc = createCollabYDoc({ gc: false });
-              const frozenLive = createCollabYDoc({ gc: false });
-              try {
-                Y.applyUpdate(draftDoc, branch.state);
-                Y.applyUpdate(frozenLive, Y.encodeStateAsUpdate(liveDoc));
-                if (!command.isEmpty(frozenLive, draftDoc)) return { draftClosed: false } as const;
-                const history = await journal.listJournalRowsForBranch({
-                  branchId: branch.branchId,
-                  generation: branch.generation,
-                });
-                const draftDisposition = command.disposition(history);
-                const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
-                  branchId: branch.branchId,
-                  upstream: frozenLive,
-                  expectedGeneration: branch.generation,
-                  expectedState: branch.state,
-                  expectedStateVector: branch.stateVector,
-                  schemaVersion: branch.schemaVersion,
-                  editDisposition: "retired",
-                });
-                if (!reset) throw new BranchCasConflictError(branch.branchId);
-                return { draftClosed: true, draftDisposition } as const;
-              } finally {
-                draftDoc.destroy();
-                frozenLive.destroy();
-              }
-            });
+            return await runInDrizzleSavepoint(db, () =>
+              runWithTrailDrafts(
+                db,
+                {
+                  workIds: [command.workId],
+                  branchIds: [command.branchId],
+                },
+                async () => {
+                  const branch = await branches.getBranch(command.branchId);
+                  if (
+                    branch?.kind !== "work_draft" ||
+                    branch.status !== "active" ||
+                    branch.workId !== command.workId ||
+                    branch.documentId !== command.documentId
+                  )
+                    return { draftClosed: false } as const;
+                  const draftDoc = createCollabYDoc({ gc: false });
+                  const frozenLive = createCollabYDoc({ gc: false });
+                  try {
+                    Y.applyUpdate(draftDoc, branch.state);
+                    Y.applyUpdate(frozenLive, Y.encodeStateAsUpdate(liveDoc));
+                    if (!command.isEmpty(frozenLive, draftDoc))
+                      return { draftClosed: false } as const;
+                    const history = await journal.listJournalRowsForBranch({
+                      branchId: branch.branchId,
+                      generation: branch.generation,
+                    });
+                    const draftDisposition = command.disposition(history);
+                    const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
+                      branchId: branch.branchId,
+                      upstream: frozenLive,
+                      expectedGeneration: branch.generation,
+                      expectedState: branch.state,
+                      expectedStateVector: branch.stateVector,
+                      schemaVersion: branch.schemaVersion,
+                      editDisposition: "retired",
+                    });
+                    if (!reset) throw new BranchCasConflictError(branch.branchId);
+                    return { draftClosed: true, draftDisposition } as const;
+                  } finally {
+                    draftDoc.destroy();
+                    frozenLive.destroy();
+                  }
+                },
+              ),
+            );
           } catch (error) {
             if (!(error instanceof BranchCasConflictError) || attempt >= 3) throw error;
           }

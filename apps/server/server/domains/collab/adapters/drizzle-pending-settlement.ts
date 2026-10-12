@@ -56,6 +56,7 @@ import {
 } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
+import { invalidateTrailOwners } from "./drizzle-trail-owners.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -125,6 +126,7 @@ export function createDrizzlePendingSettlementStore(
     async settlePushTrail(input) {
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
+        await invalidateTrailOwners(txDb, { pushIds: [input.push.id] });
         await lockDocumentMutation(txDb, input.push.documentId);
         const [owned] = await txDb
           .select({
@@ -193,6 +195,7 @@ export function createDrizzlePendingSettlementStore(
       try {
         return await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
+          await invalidateTrailOwners(txDb, { pushIds: [input.pushId] });
           // Completion touches the draft's Work row; take it before the
           // document lock, in the order every write seam uses (file-access §5).
           await lockWorksInIdOrder(txDb, await pushWorkIds(txDb, input.pushId));
@@ -336,12 +339,61 @@ export function createDrizzlePendingSettlementStore(
       try {
         return await readPendingSettlement(db, input.pushId, eventSink);
       } catch (cause) {
-        await db
+        await runInDrizzleTransaction(db, async () => {
+          const tx = currentDrizzleDb(db);
+          await invalidateTrailOwners(tx, { pushIds: [input.pushId] });
+          await tx
+            .update(branchPushSettlementOutbox)
+            .set({
+              state: "blocked",
+              lastErrorCode: "corrupt_settlement_authority",
+              lastError: cause instanceof Error ? cause.message : String(cause),
+              blockedAt: sql`clock_timestamp()`,
+              claimToken: null,
+              claimKind: null,
+              claimedAt: null,
+              leaseExpiresAt: null,
+              updatedAt: sql`clock_timestamp()`,
+            })
+            .where(ownerPredicate(input.pushId, claimed));
+        });
+        throw cause;
+      }
+    },
+
+    async recordFailure(failure) {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
+        await invalidateTrailOwners(tx, { pushIds: [failure.pushId] });
+        const [failed] = await tx
+          .update(branchPushSettlementOutbox)
+          .set({
+            state: "pending",
+            attemptCount: sql`${branchPushSettlementOutbox.attemptCount} + 1`,
+            lastError: failure.error,
+            availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementOutbox.attemptCount} + 1))::int))`,
+            claimToken: null,
+            claimKind: null,
+            claimedAt: null,
+            leaseExpiresAt: null,
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(ownerPredicate(failure.pushId, failure.claim))
+          .returning({ pushId: branchPushSettlementOutbox.pushId });
+        return Boolean(failed);
+      });
+    },
+
+    async block(failure) {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
+        await invalidateTrailOwners(tx, { pushIds: [failure.pushId] });
+        const [blocked] = await tx
           .update(branchPushSettlementOutbox)
           .set({
             state: "blocked",
-            lastErrorCode: "corrupt_settlement_authority",
-            lastError: cause instanceof Error ? cause.message : String(cause),
+            lastErrorCode: failure.code,
+            lastError: failure.error,
             blockedAt: sql`clock_timestamp()`,
             claimToken: null,
             claimKind: null,
@@ -349,47 +401,10 @@ export function createDrizzlePendingSettlementStore(
             leaseExpiresAt: null,
             updatedAt: sql`clock_timestamp()`,
           })
-          .where(ownerPredicate(input.pushId, claimed));
-        throw cause;
-      }
-    },
-
-    async recordFailure(failure) {
-      const [failed] = await db
-        .update(branchPushSettlementOutbox)
-        .set({
-          state: "pending",
-          attemptCount: sql`${branchPushSettlementOutbox.attemptCount} + 1`,
-          lastError: failure.error,
-          availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementOutbox.attemptCount} + 1))::int))`,
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(ownerPredicate(failure.pushId, failure.claim))
-        .returning({ pushId: branchPushSettlementOutbox.pushId });
-      return Boolean(failed);
-    },
-
-    async block(failure) {
-      const [blocked] = await db
-        .update(branchPushSettlementOutbox)
-        .set({
-          state: "blocked",
-          lastErrorCode: failure.code,
-          lastError: failure.error,
-          blockedAt: sql`clock_timestamp()`,
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(ownerPredicate(failure.pushId, failure.claim))
-        .returning({ pushId: branchPushSettlementOutbox.pushId });
-      return Boolean(blocked);
+          .where(ownerPredicate(failure.pushId, failure.claim))
+          .returning({ pushId: branchPushSettlementOutbox.pushId });
+        return Boolean(blocked);
+      });
     },
   };
 }

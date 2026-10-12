@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { drizzleFileAccess } from "../../test-support/file-grants.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
+import { invalidateTrailOwners } from "./adapters/drizzle-trail-owners.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -274,7 +275,10 @@ describe("change trail (postgres)", () => {
     "cancelled",
     "error",
   ])("settles an empty %s turn after restart", async (status) => {
-    await db.update(schema.turns).set({ status }).where(eq(schema.turns.id, TURN_ID));
+    await db.transaction(async (tx) => {
+      await invalidateTrailOwners(tx, { turnIds: [TURN_ID] });
+      await tx.update(schema.turns).set({ status }).where(eq(schema.turns.id, TURN_ID));
+    });
     const coldDb = createTestDatabase();
     try {
       const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
@@ -334,6 +338,7 @@ describe("change trail (postgres)", () => {
         .trailDirtyRevision;
     const initial = await revision();
     const receipt = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+      await invalidateTrailOwners(tx, { owners: [{ threadId: THREAD_ID, turnId: TURN_ID }] });
       const [edit] = await tx
         .insert(schema.documentEdits)
         .values({
@@ -364,21 +369,24 @@ describe("change trail (postgres)", () => {
     expect(await revision()).toBe(initial);
     expect(await db.select().from(schema.documentEdits)).toEqual([]);
     const id = await db.transaction(receipt);
-    expect(await revision()).toBe(initial + 2n);
+    const admitted = await revision();
+    expect(admitted).toBeGreaterThan(initial);
     await db.transaction(async (tx) => {
+      await invalidateTrailOwners(tx, { editIds: [id] });
       await tx
         .update(schema.documentEditParts)
         .set({ placement: { kind: "discarded" } })
         .where(eq(schema.documentEditParts.editId, id));
     });
-    expect(await revision()).toBe(initial + 3n);
+    const placed = await revision();
+    expect(placed).toBeGreaterThan(admitted);
     const coldDb = createTestDatabase();
     try {
       const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
       await cold.reconcileTerminalOwners();
       await cold.reconcileTerminalOwners();
       expect(await coldDb.select().from(schema.changeTrailShells)).toEqual([
-        expect.objectContaining({ state: "settled", reconciledRevision: initial + 3n }),
+        expect.objectContaining({ state: "settled", reconciledRevision: placed }),
       ]);
     } finally {
       await closeDatabase(coldDb);

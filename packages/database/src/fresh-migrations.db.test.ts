@@ -98,11 +98,6 @@ if (!enabled || !databaseUrl) {
         `;
         expect(functions.map((row) => row.name)).toEqual([
           "consume_credit_lots_fifo",
-          "dirty_change_trail_from_owned_row",
-          "dirty_change_trail_from_part",
-          "dirty_change_trail_from_settlement",
-          "dirty_change_trail_from_turn",
-          "dirty_change_trail_owner",
           "enforce_prompt_bake_insert_only",
           "enforce_prompt_bake_write_once",
           "enforce_turn_position_write_once",
