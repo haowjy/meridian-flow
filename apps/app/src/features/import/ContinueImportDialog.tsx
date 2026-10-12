@@ -25,6 +25,7 @@ import {
   type SelectionDifference,
 } from "./continue-check";
 import type { ImportCoordinator } from "./import-coordinator";
+import { fullyRead } from "./import-state";
 import { type BuiltManifest, buildManifest, bytesToHash } from "./manifest";
 import { namesSentence } from "./report-copy";
 import { PickZone, useSelectionPicker } from "./SelectionPicker";
@@ -74,7 +75,7 @@ export function ContinueImportDialog({
   );
   // The check needs every entry; read them as soon as the dialog opens.
   useEffect(() => {
-    if (!store.getSnapshot().report?.complete) void store.refresh(true);
+    if (!fullyRead(store.getSnapshot().report)) void store.refresh(true);
   }, [store]);
   const checked = useRef<Selection | null>(null);
 
@@ -89,9 +90,9 @@ export function ContinueImportDialog({
     const control = new AbortController();
     (async () => {
       try {
-        if (!store.getSnapshot().report?.complete) await store.refresh(true);
+        if (!fullyRead(store.getSnapshot().report)) await store.refresh(true);
         const report = store.getSnapshot().report;
-        if (!report?.complete) throw new Error("report");
+        if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };
         const structural = compareStructure(stored, selection);
         if (structural) return setStep({ kind: "mismatch", difference: structural });

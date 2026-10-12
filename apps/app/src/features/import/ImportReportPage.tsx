@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { processed } from "./display-state";
 import { useImports } from "./ImportProvider";
 import { useImportRoute } from "./import-route";
+import { fullyRead } from "./import-state";
 import {
   FailedSection,
   NotImportedSection,
@@ -50,7 +51,7 @@ export function ImportReportPage({
   const names = local?.roots.map((root) => root.name) ?? model.roots.map((root) => root.name);
 
   // Load failures stand in for the page.
-  if (!report?.complete && !local) {
+  if (!fullyRead(report) && !local) {
     if (state.load === "missing")
       return (
         <Centered>

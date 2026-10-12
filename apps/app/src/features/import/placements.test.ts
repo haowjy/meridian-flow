@@ -70,7 +70,7 @@ function elsewhere(destination: ImportSummary["destination"]): ImportState {
       },
       roots: [],
       entries: new Map(),
-      complete: false,
+      cursor: null,
     },
   } as ImportState;
 }

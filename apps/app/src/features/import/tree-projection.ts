@@ -16,7 +16,7 @@ import type {
 import type { ClientRow } from "./client-rows";
 import { joinCatalogPath, parentCatalogPath } from "./destination";
 import { filenameForDisplay } from "./display-name";
-import { effectiveEntry, type ImportState } from "./import-state";
+import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
 
 export const CLIENT_ROW_PREFIX = "import:";
 
@@ -52,7 +52,7 @@ function place(state: ImportState): Placed[] {
   if (!local || local.rows.length === 0) return [];
   // A finished import has nothing left to draw: what landed is in the catalog.
   if (state.report?.summary.state === "finished") return [];
-  const report = state.report?.complete ? state.report : null;
+  const report = fullyRead(state.report) ? state.report : null;
   const rootPath = new Map<number, string | null>();
   for (const root of report?.roots ?? []) rootPath.set(root.rootId, catalogPathOfUri(root.uri));
   return local.rows.map<Placed>((row) => {
@@ -214,7 +214,7 @@ export function withImportRows(
     return hasReport(p.importId) && dirNames.has(p.name);
   };
   const reports = new Set(
-    imports.filter((state) => state.report?.complete).map((state) => state.importId),
+    imports.filter((state) => fullyRead(state.report)).map((state) => state.importId),
   );
   const hasReport = (importId: string) => reports.has(importId);
 

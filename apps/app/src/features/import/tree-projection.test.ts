@@ -96,7 +96,7 @@ function stateWith(report?: { entries: ImportEntryReport[]; rootUri: string }): 
           summary,
           roots: [{ rootId: 0, kind: "folder", name: "vault", id: "f", uri: report.rootUri }],
           entries: new Map(report.entries.map((e) => [e.entryId, e])),
-          complete: true,
+          cursor: "1",
         }
       : null,
     local: {

@@ -2,7 +2,7 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { type ImportScheme, isImportScheme } from "./destination";
-import type { ImportState } from "./import-state";
+import { fullyRead, type ImportState } from "./import-state";
 import { catalogPathOfUri } from "./tree-projection";
 
 export type Placement = { scheme: ImportScheme; path: string; folderId: string | null };
@@ -25,7 +25,7 @@ export function placementsOf(state: ImportState): Placement[] {
   // A Meridian export fills its own areas wherever it was started; once the report is
   // loaded, its entries say which ones.
   const report = state.report;
-  if (report?.complete && report.roots.length === 1 && report.roots[0].id === null) {
+  if (fullyRead(report) && report.roots.length === 1 && report.roots[0].id === null) {
     const areas = new Set<ImportScheme>();
     for (const entry of report.entries.values()) {
       const scheme = entry.uri?.match(/^([a-z]+):\/\//)?.[1];

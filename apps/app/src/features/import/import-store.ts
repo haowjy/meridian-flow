@@ -12,7 +12,13 @@ import type {
 import { ImportRequestError } from "@/client/api/imports-api";
 import { ACTIVITY_FRESH_MS, deriveDisplayState, type ImportDisplayState } from "./display-state";
 import type { ImportApi } from "./import-api-port";
-import { effectiveCounts, type ImportState, type LocalRun, type ReportData } from "./import-state";
+import {
+  effectiveCounts,
+  fullyRead,
+  type ImportState,
+  type LocalRun,
+  type ReportData,
+} from "./import-state";
 
 const POLL_MS = 2000;
 const NOTICE_POLL_MS = 5000;
@@ -98,40 +104,40 @@ export class ImportStore {
     this.stopTimer();
   }
 
-  /** Install a summary seen in the open-imports list (no entries). */
+  /** Install a summary seen in the open-imports list (no entries). The cursor stays. */
   seedSummary(summary: ImportSummary) {
     this.update((state) => {
-      if (
-        state.report?.complete &&
-        compareVersions(state.report.summary.version, summary.version) >= 0
-      ) {
-        return state;
-      }
-      const seen = noteActivity(state, summary);
+      const current = state.report?.summary;
+      if (current && compareVersions(current.version, summary.version) >= 0) return state;
       return {
         ...state,
-        ...seen,
+        ...noteActivity(state, summary),
         report: state.report
-          ? { ...state.report, summary: newerSummary(state.report.summary, summary) }
-          : { summary, roots: [], entries: new Map(), complete: false },
+          ? { ...state.report, summary }
+          : { summary, roots: [], entries: new Map(), cursor: null },
       };
     });
   }
 
-  /** A full read, from the plan's answer or a first load. */
+  /** A full read, from the plan's answer or a first load. An older read changes nothing. */
   installReport(report: ImportReport) {
-    this.update((state) => ({
-      ...state,
-      ...noteActivity(state, report),
-      load: "idle",
-      refreshFailed: false,
-      report: {
-        summary: summaryOf(report),
-        roots: report.roots,
-        entries: new Map(report.entries.map((entry) => [entry.entryId, entry])),
-        complete: true,
-      },
-    }));
+    this.update((state) => {
+      const cursor = state.report?.cursor;
+      if (cursor != null && compareVersions(cursor, report.version) > 0)
+        return { ...state, load: "idle", refreshFailed: false };
+      return {
+        ...state,
+        ...noteActivity(state, report),
+        load: "idle",
+        refreshFailed: false,
+        report: {
+          summary: newerSummary(state.report?.summary, summaryOf(report)),
+          roots: report.roots,
+          entries: new Map(report.entries.map((entry) => [entry.entryId, entry])),
+          cursor: report.version,
+        },
+      };
+    });
   }
 
   /** Entries this tab's own uploads answered. */
@@ -146,21 +152,30 @@ export class ImportStore {
 
   private mergeChanges(changes: ImportReportChanges) {
     this.update((state) => {
-      if (!state.report) return state;
+      const report = state.report;
+      if (!fullyRead(report)) return state;
+      // An answer to an older request: what it says is already known.
+      if (compareVersions(changes.version, report.cursor) < 0) return state;
       // A poll that found nothing changes nothing, so nothing downstream re-renders.
       if (
         changes.entries.length === 0 &&
-        changes.version === state.report.summary.version &&
+        changes.version === report.cursor &&
+        changes.version === report.summary.version &&
         !state.refreshFailed
       )
         return state;
-      const merged = new Map(state.report.entries);
+      const merged = new Map(report.entries);
       for (const entry of changes.entries) merged.set(entry.entryId, entry);
       return {
         ...state,
         ...noteActivity(state, changes),
         refreshFailed: false,
-        report: { ...state.report, summary: summaryOf(changes), entries: merged },
+        report: {
+          ...report,
+          summary: newerSummary(report.summary, summaryOf(changes)),
+          entries: merged,
+          cursor: changes.version,
+        },
       };
     });
   }
@@ -178,10 +193,8 @@ export class ImportStore {
       const phase = this.state.local?.phase.kind;
       if (!report && (phase === "preparing" || phase === "not-started")) return;
       if (!report && this.state.stop === "stopped") return;
-      if (report?.complete) {
-        this.mergeChanges(
-          await this.api.changes(this.projectId, this.importId, report.summary.version),
-        );
+      if (fullyRead(report)) {
+        this.mergeChanges(await this.api.changes(this.projectId, this.importId, report.cursor));
       } else if (forceFull || this.wantsEntries() || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));
         this.installReport(await this.api.report(this.projectId, this.importId));
@@ -190,10 +203,10 @@ export class ImportStore {
       if (
         error instanceof ImportRequestError &&
         error.status === 404 &&
-        !this.state.report?.complete
+        !fullyRead(this.state.report)
       ) {
         this.update((state) => ({ ...state, load: "missing" }));
-      } else if (this.state.report?.complete) {
+      } else if (fullyRead(this.state.report)) {
         this.update((state) => ({ ...state, refreshFailed: true }));
       } else {
         this.update((state) => ({ ...state, load: "error" }));
@@ -209,17 +222,24 @@ export class ImportStore {
     this.timer = setTimeout(async () => {
       this.timer = undefined;
       if (this.watchers.size === 0) return;
-      const finished = this.state.report?.summary.state === "finished";
-      if (!(finished && this.state.report?.complete)) await this.refresh();
-      const stillWatched = this.watchers.size > 0;
-      const done = this.state.report?.summary.state === "finished" && this.state.report.complete;
-      if (stillWatched && !done) {
+      if (!this.caughtUp()) await this.refresh();
+      if (this.watchers.size > 0 && !this.caughtUp()) {
         // A big import is read less often: each read redraws a big tree.
         const big = (this.state.report?.entries.size ?? 0) > 500;
         const base = [...this.watchers.values()].includes("report") ? POLL_MS : NOTICE_POLL_MS;
         this.schedule(big ? base * 2 : base);
       }
     }, delay);
+  }
+
+  /** Finished, and every change up to the finishing version has been read. */
+  private caughtUp(): boolean {
+    const report = this.state.report;
+    return (
+      report?.summary.state === "finished" &&
+      fullyRead(report) &&
+      compareVersions(report.cursor, report.summary.version) >= 0
+    );
   }
 
   private stopTimer() {
@@ -229,7 +249,7 @@ export class ImportStore {
 
   /** Retry the first load or a failed refresh now. */
   retryLoad() {
-    this.update((state) => ({ ...state, load: state.report?.complete ? state.load : "idle" }));
+    this.update((state) => ({ ...state, load: fullyRead(state.report) ? state.load : "idle" }));
     void this.refresh();
     this.schedule(POLL_MS);
   }
@@ -246,8 +266,8 @@ export function compareVersions(a: string, b: string): number {
   return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
 }
 
-function newerSummary(current: ImportSummary, incoming: ImportSummary): ImportSummary {
-  return compareVersions(incoming.version, current.version) >= 0 ? incoming : current;
+function newerSummary(current: ImportSummary | undefined, incoming: ImportSummary): ImportSummary {
+  return !current || compareVersions(incoming.version, current.version) >= 0 ? incoming : current;
 }
 
 function noteActivity(state: ImportState, summary: ImportSummary): Partial<ImportState> {

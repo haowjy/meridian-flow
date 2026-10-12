@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { processed } from "./display-state";
 import { useImports } from "./ImportProvider";
 import { useImportRoute } from "./import-route";
+import { fullyRead } from "./import-state";
 import { buildReportModel } from "./report-model";
 import { statusLines } from "./status-copy";
 import { useImport } from "./use-import";
@@ -41,7 +42,7 @@ export function ImportStatusRow({
   // A finished import's "worth a look" count comes from the whole report (the server's
   // count includes renames), so read it once for a row that shows one.
   const needsReport =
-    display === "finished" && (counts?.findings ?? 0) > 0 && !state.report?.complete;
+    display === "finished" && (counts?.findings ?? 0) > 0 && !fullyRead(state.report);
   useEffect(() => {
     if (needsReport) void store.refresh(true);
   }, [needsReport, store]);
@@ -68,7 +69,7 @@ export function ImportStatusRow({
     hashedPercent,
     stopped: false,
     // Until the report is read, say nothing rather than a count the report would contradict.
-    worthALook: state.report?.complete ? buildReportModel(state).worthALookCount : 0,
+    worthALook: fullyRead(state.report) ? buildReportModel(state).worthALookCount : 0,
   });
   const failed = (FAILURE_STATES as readonly string[]).includes(display);
   const line2 = state.dismissFailed ? t`Couldn't dismiss. Try again.` : lines.line2;

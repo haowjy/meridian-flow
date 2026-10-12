@@ -36,9 +36,20 @@ export type ReportData = {
   summary: ImportSummary;
   roots: ImportReport["roots"];
   entries: ReadonlyMap<number, ImportEntryReport>;
-  /** The full report was read; `since` cuts are now valid. */
-  complete: boolean;
+  /**
+   * The version through which every entry change has been read: a full read, then
+   * each `since` cut. Null until the full report is read. The summary can be newer
+   * (the open-imports list moves it); this never moves past changes not yet read.
+   */
+  cursor: string | null;
 };
+
+/** Whether every entry has been read, so `since` cuts are valid and the report can be drawn. */
+export function fullyRead(report: ReportData | null | undefined): report is ReportData & {
+  cursor: string;
+} {
+  return report?.cursor != null;
+}
 
 /**
  * Stop here as this tab asked for it, whether or not it holds the files: a

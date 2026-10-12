@@ -32,7 +32,7 @@ function stateOf(entries: ImportEntryReport[], finished = true): ImportState {
       summary: { state: finished ? "finished" : "ready", counts: {} } as never,
       roots: [{ rootId: 0, kind: "folder", name: "vault", id: "f", uri: "kb://vault/" }],
       entries: new Map(entries.map((e) => [e.entryId, e])),
-      complete: true,
+      cursor: "1",
     },
     local: null,
     load: "idle",
