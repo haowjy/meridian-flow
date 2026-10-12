@@ -17,15 +17,6 @@ import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
 
-/**
- * The change an operation is, across draft generations: the server's part key
- * (`ReviewOperation.partKey`), which a re-fork keeps while it gives the row a new
- * `operationId`. An operation with no part key is only the row it is.
- */
-export function operationKey(operation: Pick<ReviewOperation, "operationId" | "partKey">): string {
-  return operation.partKey ?? `row:${operation.operationId}`;
-}
-
 const UNATTRIBUTED_PREFIX = "unattributed:";
 
 /**

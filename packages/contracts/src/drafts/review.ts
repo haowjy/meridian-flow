@@ -53,6 +53,15 @@ export type DraftPreviewResponse =
     })
   | { status: "gone"; draftId: string };
 
+/**
+ * The change an operation is across draft generations: its part key, which a
+ * re-fork keeps while it gives the row a new `operationId`. An operation with no
+ * part key is only the row it is.
+ */
+export function operationKey(operation: Pick<ReviewOperation, "operationId" | "partKey">): string {
+  return operation.partKey ?? `row:${operation.operationId}`;
+}
+
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {

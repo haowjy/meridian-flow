@@ -1,8 +1,7 @@
 /** Shared draft commands, selection outcomes, batch leases and distinct list/preview read fences. */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
 import { create } from "zustand";
-import { operationKey } from "@/core/editor/extensions/inline-review";
 import type { DraftCommandOutcome } from "./draft-command-executor";
 import { type ActivePreview, type DraftIntentKeys, previewWithoutKeys } from "./draft-projection";
 

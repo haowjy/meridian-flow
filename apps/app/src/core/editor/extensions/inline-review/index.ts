@@ -5,7 +5,7 @@ export {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";
-export { inlineReviewClassNames, restoreRenderedChanges } from "./decorations";
+export { inlineReviewClassNames, projectRestoring } from "./decorations";
 export {
   buildInlineReviewModel,
   changeOperationIds,
@@ -14,7 +14,6 @@ export {
   type InlineReviewOperationKind,
   indexOperations,
   isUnattributedHunkKey,
-  operationKey,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,

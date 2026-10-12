@@ -271,7 +271,7 @@ it("draft-only has no live fallback, including closed completion and terminal fa
 });
 
 it("pending Discard is inert warm live, refusal restores review, and confirmed Apply preserves live Undo", async () => {
-  await run(async (_client, room) => {
+  await run(async (client, room) => {
     const liveNode = document.querySelector<
       HTMLElement & { editor?: import("@tiptap/core").Editor }
     >('[data-editor-surface="live"] .ProseMirror');
@@ -299,6 +299,13 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(document.querySelector("[data-paint-hold]")?.textContent).toContain("Warm live edit.");
     await act(async () => refusalSync.resolve());
     await settleReact(() => expect(surfaces()).toEqual(["review"]));
+    // The refused Discard left the change in the draft: the writer's view has it again.
+    await act(async () =>
+      client.setQueryData(
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
+        { ...previewOf("2"), reviewRoomName: room },
+      ),
+    );
     const apply = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(apply.promise);
     await act(async () => {

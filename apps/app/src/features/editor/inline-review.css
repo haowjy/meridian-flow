@@ -39,15 +39,11 @@
 
 /* A Discard in flight shows the original from the click: the discarded insertion
    hides, and the removed text it replaced is drawn as ordinary prose (no tint,
-   strike or air), so the next generation's paint changes nothing the writer sees. */
+   strike or air), so the next generation's paint changes nothing the writer sees.
+   Both stay what they were under the class, which is what lets a cover show a
+   withdrawn Discard again. */
 .meridian-editor .ProseMirror .meridian-review-restoring {
   display: none;
-}
-
-.meridian-editor .ProseMirror .meridian-review-restored {
-  cursor: default;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 /* Removed live text — a read-only widget (never document text) struck through
@@ -132,8 +128,20 @@
   margin-top: 0.9em;
 }
 
-.meridian-editor .ProseMirror .meridian-review-restored > p + p {
-  margin-top: 0.9em;
+/* The removal, plain: same words in the manuscript's own typography. */
+.meridian-editor .ProseMirror span.meridian-review-removal.meridian-review-restored {
+  margin-inline-end: 0;
+  color: inherit;
+  cursor: default;
+}
+
+.meridian-editor .ProseMirror .meridian-review-restored .meridian-review-removal-text {
+  color: inherit;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  text-decoration: none;
+  padding-inline-end: 0;
 }
 
 .meridian-editor
