@@ -71,27 +71,55 @@ transcript or in the browser.
 
 Contract:
 
-Until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands,
+Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
 `./mf thread send` and `thread tail --until-idle` can report another message's
 reply or stop before the reply that answers yours. Check run outcomes against
 `./mf thread view` (the durable transcript) or in the browser; exit 0 does not
 prove your message was answered or the thread is idle.
 
-- Compact text by default; `--json` prints exactly one object, or NDJSON for
-  streams (`send`, `tail`, `events`, `log --follow`) whose last `send` line is
-  the terminal `{type: "result" | "error", status, finalText, ...}` envelope.
-  `--fields a,b` trims JSON (each stream line keeps `type` plus the requested
-  keys it has). Errors go to stderr (`{error, code, hint}` under
-  `--json`).
-- `send` waits by default and its exit code reports the observed outcome,
-  not necessarily the reply answering your message: 0 complete,
-  1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
-  `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
-  not running or dev login failed. Every wait is bounded by `--timeout`.
-  When a run splits across a compaction (for example overflow recovery), the
-  result can name the run's first turn with a null `finalText` instead of the
-  reply that answered: inspect the durable transcript with `./mf thread view`
+- Compact text by default. `--json` prints one object, or NDJSON for streams.
+  Every live claim (`send`, `tail --until-idle`, `respond`, and each seed send)
+  and `events` ends in a `result` envelope. Seed embeds its sends' envelopes in
+  `messages` and reports the worst exit among all sends in its final result.
+  `--fields a,b` keeps `type` on every stream line and always keeps `type`,
+  `command`, `outcome`, and `reason` on terminal results. CLI errors (usage,
+  not found, unavailable) remain on stderr (`{error, code, hint}` under `--json`).
+- Outcomes map to exits: **0 complete**, **1 failed**, **5 cancelled**,
+  **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
+  **3 not found**, **4 unavailable** (stack, login, terminal socket close).
+  `reason` is null for a proven outcome; timeout uses `running` or `owed`.
+  Unproven reasons today are `admission_unknown`, `replay_truncated`, and
+  `unconfirmed`. Send and tail still use the interim follow predicates above:
+  their complete results are not yet proof of your reply or chat idle.
+- In text mode, a final answer goes to stdout only for complete or failed.
+  Stderr reports `<outcome> <turn> [reason]` and any follow-up commands.
+  A failed or cancelled run is a `result`, never a terminal `error` record.
+- A send or `tail --until-idle` deadline reads one final snapshot. Its result
+  reports `stillRunning` (turn id and status, or null), `owed` (pending writer
+  messages), and `next` commands. If the snapshot lacks the pending inbox,
+  `pendingUnavailable: true` replaces `owed`. Text says when the server is
+  still running and how to stop it. **Timeout never cancels a run.** Plain
+  `tail` remains a bounded live view and exits 0 when its wait expires.
+- `tail --until-idle` currently waits for the next `turn.finished` or
+  `turn.failed` event. It does not confirm chat idle and does not return
+  immediately when attached to an already-idle thread.
+- `respond` exits 0 only after the journal records `meridian.interrupt`
+  resolved for that interrupt id. A rejecting error frame exits 1; its
+  confirmation deadline (`--timeout`, default 15s) exits 6 `unconfirmed`.
+  It does not prove the reply that follows.
+- `events` prints the replay, then exits 6 `replay_truncated` if a gap arrived.
+  Otherwise its complete result proves only that the printed replay had no gap.
+- If a message POST loses its HTTP answer, send looks up its `submissionId`
+  once through the app's admission route. Accepted resumes following; rejected
+  or not seen exits 1; a failed lookup or still-pending admission exits 6
+  `admission_unknown`. `send --no-wait` proves admission only.
+- Write tools emit `tool.completed` for the staged result, then `tool.settled`
+  for the committed receipt, in both JSON and text. There is no `settled` flag.
+  The staged result alone does not prove a committed write.
+- A run split across compaction can still report its first turn with null
+  `finalText` instead of the answering reply: inspect `thread view`
   ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
@@ -103,6 +131,13 @@ prove your message was answered or the thread is idle.
   or in `--project <id>`.
 - `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
   stack other than this worktree's Portless routes.
+
+Terminal record example (command-specific fields follow the reserved keys):
+
+```json
+{"type":"result","command":"thread.send","threadId":"…","outcome":"timeout","reason":"running","stillRunning":{"turnId":"B","status":"streaming"},"owed":[],"next":["./mf thread cancel … --turn B","./mf thread tail … --until-idle"]}
+```
+
 
 Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
 debug gate open, the in-process mock model accepts queued replies through the

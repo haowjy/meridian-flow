@@ -44,7 +44,10 @@ export interface CommandGroup {
 
 export const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   json: { type: "boolean", description: "JSON output (one object; NDJSON for streams)" },
-  fields: { type: "string", description: "Comma-separated top-level JSON fields to keep" },
+  fields: {
+    type: "string",
+    description: "JSON fields to keep (terminal type, command, outcome, reason always retained)",
+  },
   help: { type: "boolean", short: "h", description: "Show help for this command" },
 };
 
