@@ -328,6 +328,8 @@ function ReadableProjectDestination({
       documentDestination?.scheme,
       documentDestination?.path,
       addressOwner.rootThreadId ?? addressOwner.workId,
+      address.draftId ? addressWorkId : null,
+      address.draftId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -337,7 +339,12 @@ function ReadableProjectDestination({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
-        addressOwner,
+        {
+          ...addressOwner,
+          ...(address.draftId && addressWorkId
+            ? { review: { workId: addressWorkId, draftBranchId: address.draftId } }
+            : {}),
+        },
       );
     },
     enabled: !!documentDestination && editorWork.status === "present",

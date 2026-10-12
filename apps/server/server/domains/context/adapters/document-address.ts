@@ -210,7 +210,11 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
         });
         if (!sourceId) return null;
-        const current = await new DrizzleContextTreeMutationStore(db).inspect(sourceId, input.path);
+        const current = await new DrizzleContextTreeMutationStore(db).inspect(
+          sourceId,
+          input.path,
+          input.view,
+        );
         if (current)
           return current.kind === "file"
             ? { kind: "current", documentId: current.nodeId as DocumentId }

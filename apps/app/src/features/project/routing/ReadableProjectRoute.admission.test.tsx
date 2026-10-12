@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
   lookupRefetch: vi.fn(),
   issue: undefined as ProjectRouteIssue | undefined,
   retry: undefined as (() => void) | undefined,
+  query: null as { queryFn: () => Promise<unknown>; queryKey: unknown[] } | null,
+  addressRequest: vi.fn().mockResolvedValue({ kind: "unavailable" }),
 }));
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
@@ -46,15 +48,19 @@ vi.mock("./work-route", async (original) => ({
 }));
 vi.mock("@tanstack/react-query", async (original) => ({
   ...(await original<typeof import("@tanstack/react-query")>()),
-  useQuery: () => ({
-    data: {
-      kind: "current",
-      document: { kind: "available", documentId: "document-new" },
-    },
-    isError: false,
-    refetch: state.lookupRefetch,
-  }),
+  useQuery: (options: typeof state.query) => {
+    state.query = options;
+    return {
+      data: {
+        kind: "current",
+        document: { kind: "available", documentId: "document-new" },
+      },
+      isError: false,
+      refetch: state.lookupRefetch,
+    };
+  },
 }));
+vi.mock("@/client/api/projects-api", () => ({ getProjectDocumentAddress: state.addressRequest }));
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [], isError: false }),
 }));
@@ -105,10 +111,10 @@ vi.mock("../ProjectView", () => ({
   },
 }));
 
-async function coldOpen(drafts: unknown) {
+async function coldOpen(drafts: unknown, search = "?work=&draft=draft-n") {
   state.drafts = drafts;
   state.history = createMemoryHistory({
-    initialEntries: [`/p/${projectId}/editor/manuscript/new-draft.md?work=&draft=draft-n`],
+    initialEntries: [`/p/${projectId}/editor/manuscript/new-draft.md${search}`],
   });
   state.router = { history: state.history, navigate: async () => undefined };
   const prior = useContextTabsStore.getState();
@@ -149,4 +155,22 @@ it("ends the wait with a failure, keeping the address, when the Work's drafts fa
   expect(refetch).toHaveBeenCalledOnce();
   expect(state.catalogRefetch).toHaveBeenCalledOnce();
   expect(state.lookupRefetch).toHaveBeenCalledOnce();
+});
+
+it("sends the review selector only for an address with a draft and resolved Work", async () => {
+  const drafts = { status: "ready", groups: [], refetch: vi.fn() };
+  state.addressRequest.mockClear();
+  await coldOpen(drafts);
+  await state.query?.queryFn();
+  expect(state.addressRequest).toHaveBeenLastCalledWith(projectId, "manuscript", "new-draft.md", {
+    workId: null,
+    review: { workId, draftBranchId: "draft-n" },
+  });
+  const reviewKey = state.query?.queryKey;
+  await coldOpen(drafts, "");
+  await state.query?.queryFn();
+  expect(state.addressRequest).toHaveBeenLastCalledWith(projectId, "manuscript", "new-draft.md", {
+    workId: null,
+  });
+  expect(state.query?.queryKey).not.toEqual(reviewKey);
 });
