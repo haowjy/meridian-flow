@@ -76,6 +76,7 @@ export function scopeAgentEdit(
     hasResponseDocument: core.hasResponseDocument,
     withResponseDocument: core.withResponseDocument,
     responseDocuments: core.responseDocuments,
+    hasStagedDraftWrites: core.hasStagedDraftWrites,
     responseDestination: core.responseDestination,
     getAvailability: core.getAvailability,
     invalidateThread: core.invalidateThread,

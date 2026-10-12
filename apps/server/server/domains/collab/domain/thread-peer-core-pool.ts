@@ -20,7 +20,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
 import {
@@ -113,6 +113,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
+  afterDraftResponseSettled?(document: { documentId: DocumentId; workId: WorkId }): Promise<void>;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
@@ -120,6 +121,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   return createThreadPeerCorePool({
     liveUtilityCore: input.liveUtilityCore,
     liveHistory: input.journal,
+    afterDraftResponseSettled: input.afterDraftResponseSettled,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
@@ -237,6 +239,7 @@ export function createThreadPeerCorePool(input: {
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
+  afterDraftResponseSettled?(document: { documentId: DocumentId; workId: WorkId }): Promise<void>;
   /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
   afterLiveCommit?(documentId: DocumentId): void;
   /**
@@ -338,6 +341,17 @@ export function createThreadPeerCorePool(input: {
       if (active?.size === 0) activeResponseIds.delete(record.threadId);
     }
     await evictIdleCores();
+    for (const [documentId, pinned] of [
+      ...(record?.documents ?? []),
+      ...(record?.reversals ?? []),
+    ]) {
+      const destination = pinned.grant.destination;
+      if (destination.kind === "draft")
+        await input.afterDraftResponseSettled?.({
+          documentId,
+          workId: destination.workId as WorkId,
+        });
+    }
   }
 
   function seenKey(threadId: string, documentId: DocumentId): string {
@@ -605,6 +619,19 @@ export function createThreadPeerCorePool(input: {
         },
         input.responseTransactionSettlement,
       );
+    },
+    hasStagedDraftWrites(documentId, workId) {
+      for (const [responseId, record] of responses) {
+        for (const pinned of [record.documents.get(documentId), record.reversals.get(documentId)]) {
+          if (
+            pinned?.grant.destination.kind === "draft" &&
+            pinned.grant.destination.workId === workId &&
+            pinned.core.responseDocuments(responseId, record.threadId).staged.includes(documentId)
+          )
+            return true;
+        }
+      }
+      return false;
     },
     responseDestination(responseId, docId) {
       return responses.get(responseId)?.documents.get(docId as DocumentId)?.grant.destination;

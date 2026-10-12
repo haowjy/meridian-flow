@@ -1,11 +1,92 @@
 /** Real-Yjs source identity and independent class replay regressions. */
-import { toDocHandle } from "@meridian/agent-edit/integration";
+import { captureServerRestoration, toDocHandle } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { captureUpdate, cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("writer review classes", () => {
+  it("keeps two changes sharing a Discard restoration in separate classes", () => {
+    const live = createDoc("red\n\nblue"),
+      draft = cloneDoc(live);
+    const fragment = draft.getXmlFragment("prosemirror");
+    const origin = Symbol("discarded");
+    const undo = new Y.UndoManager(fragment, { trackedOrigins: new Set([origin]) });
+    draft.transact(() => {
+      for (const [index, text] of ["gold", "azure"].entries()) {
+        const block = model.getBlocks(toDocHandle(draft))[index];
+        model.applyTextEdit(
+          toDocHandle(draft),
+          block,
+          { from: 0, to: model.getText(block).length },
+          text,
+        );
+      }
+    }, origin);
+    const receipt = captureServerRestoration(draft, () => undo.undo());
+    if (!receipt) throw new Error("Discard emitted no restoration");
+    const rows = [
+      {
+        id: 10,
+        actorUserId: "writer",
+        actorTurnId: null,
+        updateData: receipt.update,
+        updateMeta: {
+          kind: "discard",
+          restorationAliases: receipt.aliases.map((alias) => ({
+            source: { ...alias.source, length: alias.len },
+            target: { ...alias.target, length: alias.len },
+          })),
+        },
+      },
+    ];
+    for (const [index, text] of ["silver", "copper"].entries()) {
+      draft.clientID = 20 + index;
+      const deltas: Uint8Array[] = [];
+      const listener = (delta: Uint8Array) => deltas.push(delta);
+      draft.on("update", listener);
+      const block = model.getBlocks(toDocHandle(draft))[index];
+      model.applyTextEdit(
+        toDocHandle(draft),
+        block,
+        { from: 0, to: model.getText(block).length },
+        text,
+      );
+      draft.off("update", listener);
+      rows.push({
+        id: 11 + index,
+        actorUserId: "writer",
+        actorTurnId: null,
+        updateData: Y.mergeUpdates(deltas),
+        updateMeta: { kind: "write", restorationAliases: [] },
+      });
+    }
+    const cold = cloneDoc(draft);
+    try {
+      const result = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: cold,
+        model,
+        draftUpdates: rows,
+      });
+      expect(
+        result.operations.map((op) => ({
+          source: op.sourceUpdateIds,
+          closure: op.closureUpdateIds,
+          after: op.afterExcerpt,
+        })),
+      ).toEqual([
+        { source: [11], closure: [11], after: "silver" },
+        { source: [12], closure: [12], after: "copper" },
+      ]);
+      expect(new Set(result.operations.map((op) => op.closureClassId)).size).toBe(2);
+    } finally {
+      undo.destroy();
+      live.destroy();
+      draft.destroy();
+      cold.destroy();
+    }
+  });
   it.each([0, 1, 2])("keeps independent writer typing separate in block %i", (blockIndex) => {
     const live = createDoc(
       "Alpha base with plenty of unchanged words around the edits.\n\nBeta base with plenty of unchanged words.\n\nGamma base with plenty of unchanged words.",

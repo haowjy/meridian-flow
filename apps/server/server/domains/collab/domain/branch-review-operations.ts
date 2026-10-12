@@ -100,7 +100,12 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const selection = await discardInput.selectRows(branch, reviewableRows);
-      const selected = new Set(selection.journalIds);
+      const suppliers = new Set(
+        reviewableRows
+          .filter((row) => (row.updateMeta as { kind?: string } | null)?.kind === "discard")
+          .map((row) => row.id),
+      );
+      const selected = new Set(selection.journalIds.filter((id) => !suppliers.has(id)));
       if (selected.size === 0) throw new Error("selective_discard_requires_rows");
       const rows = reviewableRows.filter((row) => selected.has(row.id));
       if (rows.length !== selected.size) {
@@ -284,7 +289,10 @@ function buildReversalPeer(input: {
   const stackRows = new Map<unknown, BranchJournalRow[]>();
   let previousTarget: string | undefined;
   for (const row of input.rows) {
-    if (input.selectedIds.has(row.id)) {
+    if (
+      input.selectedIds.has(row.id) &&
+      (row.updateMeta as { kind?: string } | null)?.kind !== "discard"
+    ) {
       const meta = row.updateMeta as { documentEdit?: { editId: string } } | undefined;
       const target = meta?.documentEdit?.editId ?? `${row.threadId}:${row.wId ?? row.id}`;
       if (target !== previousTarget) undoManager.stopCapturing();

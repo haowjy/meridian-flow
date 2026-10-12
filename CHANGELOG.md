@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply or discard edits built on restored draft text without reviving rejected text or joining independent changes. Keep an in-flight model reply savable when a per-change action empties its draft.
+
 - Discard successive draft changes without replay errors, preserve restored-text attribution, and reject overlapping restoration copies.
 
 - Recover unrelated typing after a draft generation retires, release unanchorable carries, and report lost typing on its document.

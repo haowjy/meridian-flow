@@ -224,7 +224,8 @@ export function indexDraftUpdates(input: {
       if (deletedContent.text.length > 0) {
         deletedContentByOperationId.set(operationId, deletedContent);
       }
-      if (!hasOwnEffect) byOperationId.delete(operationId);
+      if (!hasOwnEffect || (update.updateMeta as { kind?: string } | null)?.kind === "discard")
+        byOperationId.delete(operationId);
     }
     for (const operation of byOperationId.values()) {
       operation.physicalSourceUpdateIds = sortedUpdateIds(

@@ -107,6 +107,7 @@ export class DraftChangeRefusal extends Error {
 }
 
 export type PreparedPushCommit = {
+  transportRows?: BranchJournalRow[];
   expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];

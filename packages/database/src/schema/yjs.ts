@@ -198,6 +198,7 @@ export const branchPushSettlementOutbox = pgTable(
     state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
     documentTitle: text("document_title").notNull(),
     lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
+    transportJournalIds: jsonb("transport_journal_ids").$type<number[]>().notNull().default([]),
     pushUpdate: byteaColumn("push_update").notNull(),
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),

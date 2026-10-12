@@ -74,7 +74,7 @@ async function stageDraft(
     .from(schema.branchWriteJournal)
     .where(eq(schema.branchWriteJournal.branchId, branchId))
     .orderBy(schema.branchWriteJournal.id);
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(writes.length);
   return { fixture, branchId, rows, baseUpdate };
 }
 
@@ -82,6 +82,379 @@ describe("document edit receipts (Postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));
+  it.each([
+    "nonempty Discard",
+    "overlap Discard",
+    "empty Discard",
+    "empty Discard net-zero save",
+    "empty Apply",
+    "whole Discard",
+    "rollback after empty Discard",
+    "rollback after empty Apply",
+  ] as const)("in-flight reply: %s", async (mode) => {
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(
+        db,
+        harness,
+        "red\n\nblue\n\ngreen",
+        "replace",
+        mode === "nonempty Discard" || mode === "overlap Discard"
+          ? [
+              ["red", "gold"],
+              ["blue", "azure"],
+            ]
+          : [["red", "gold"]],
+      );
+      const responseId = randomUUID();
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 2,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      expect(
+        await fixture.collab.agentEdit().write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: mode === "overlap Discard" ? "gold" : "green",
+            content: mode === "overlap Discard" ? "golden" : "lime",
+            tool_use_id: "in-flight",
+          },
+          {
+            sessionId: THREAD_ID,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+            grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+          },
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      if (mode === "empty Discard net-zero save") {
+        expect(
+          await fixture.collab.agentEdit().write(
+            {
+              command: "replace",
+              file: "alpha.md",
+              documentId: ALPHA_ID,
+              find: "lime",
+              content: "green",
+              tool_use_id: "net-zero-tail",
+            },
+            {
+              sessionId: THREAD_ID,
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              responseId,
+              grant: testFileGrant({
+                kind: "draft",
+                workId: WORK_ID,
+                workSlug: "atomicity-work",
+              }),
+            },
+          ),
+        ).toMatchObject({ status: "success", phase: "staged" });
+      }
+      const target = {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: branchId,
+      };
+      const preview = await fixture.collab.draftReview.preview(target);
+      if (preview.status !== "active") throw new Error("Missing preview");
+      const gold = preview.operations.find((op) => op.afterExcerpt === "gold");
+      if (!gold) throw new Error("Missing gold");
+      const command = {
+        ...target,
+        userId: USER_ID as never,
+        operationIds: [gold.operationId],
+        liveRevisionToken: preview.liveRevisionToken,
+        draftRevisionToken: preview.draftRevisionToken,
+      };
+      const result =
+        mode === "whole Discard"
+          ? await fixture.collab.draftReview.discardWorkDraft({
+              ...target,
+              userId: USER_ID as never,
+            })
+          : mode.includes("Apply")
+            ? await fixture.collab.draftReview.applyWorkDraftChanges(command)
+            : await fixture.collab.draftReview.discardWorkDraft(command);
+      expect(result).toMatchObject({ status: mode.includes("Apply") ? "applied" : "discarded" });
+      if (mode === "whole Discard") {
+        expect(fixture.collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID)).toBe(false);
+        await expect(harness.commit(responseId)).rejects.toThrow("already rolled back");
+        expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n\ngreen\n");
+        expect((await fixture.branchStore.getBranch(branchId))?.generation).toBe(2);
+        return;
+      }
+      expect((await fixture.branchStore.getBranch(branchId))?.generation).toBe(1);
+      if (mode.startsWith("rollback")) {
+        await fixture.collab.agentEdit().rollbackResponse(responseId);
+        expect((await fixture.branchStore.getBranch(branchId))?.generation).toBe(2);
+        expect(await fixture.draftMarkdown(branchId)).toBe(
+          mode.includes("Apply") ? "gold\n\nblue\n\ngreen\n" : "red\n\nblue\n\ngreen\n",
+        );
+      } else {
+        expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
+        if (mode === "empty Discard net-zero save") {
+          expect((await fixture.branchStore.getBranch(branchId))?.generation).toBe(2);
+          expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+          expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n\ngreen\n");
+          return;
+        }
+
+        expect(await fixture.draftMarkdown(branchId)).toBe(
+          mode === "overlap Discard"
+            ? "redgolden\n\nazure\n\ngreen\n"
+            : `${mode.includes("Apply") ? "gold" : "red"}\n\n${mode === "nonempty Discard" ? "azure" : "blue"}\n\nlime\n`,
+        );
+        expect((await fixture.branchStore.getBranch(branchId))?.generation).toBe(1);
+        const next = await fixture.collab.draftReview.preview(target);
+        if (next.status !== "active") throw new Error("Missing saved reply preview");
+        expect(next.operations.map((op) => op.afterExcerpt).sort()).toEqual(
+          mode === "overlap Discard"
+            ? ["azure", "redgolden"]
+            : mode === "nonempty Discard"
+              ? ["azure", "lime"]
+              : ["lime"],
+        );
+      }
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+        mode.includes("Apply") ? "gold\n\nblue\n\ngreen\n" : "red\n\nblue\n\ngreen\n",
+      );
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+  it.each(
+    (["agent", "writer"] as const).flatMap((actor) =>
+      (["replace", "delete", "apply", "apply deletion", "apply from deletion"] as const).map(
+        (operation) => ({
+          actor,
+          operation,
+        }),
+      ),
+    ),
+  )("$actor $operation after Discard uses the restored word", async ({ actor, operation }) => {
+    let pause = false;
+    const harness = createHarness(db, {
+        afterDurableCommit: async () => {
+          if (pause) {
+            pause = false;
+            throw new Error("pause carried publication");
+          }
+        },
+      }),
+      fixture = harness.crossWorkProbeFixture();
+    const responseId = randomUUID();
+    try {
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      await harness.seedWriterDocument("red\n\nblue", responseId);
+      const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+      const branchId = branch.branchId;
+      branch.doc.destroy();
+      const target = {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: branchId,
+      };
+      const replace = async (paragraph: number, text: string) => {
+        const snapshot = await fixture.branchStore.getBranch(branchId);
+        if (!snapshot) throw new Error("Missing branch");
+        const doc = new Y.Doc({ gc: false });
+        try {
+          Y.applyUpdate(doc, snapshot.state);
+          const deltas: Uint8Array[] = [];
+          doc.on("update", (update: Uint8Array) => deltas.push(update));
+          const node = doc.getXmlFragment("prosemirror").get(paragraph) as Y.XmlElement;
+          const value = node.get(0) as Y.XmlText;
+          doc.transact(() => {
+            value.delete(0, value.length);
+            if (text) value.insert(0, text);
+          });
+          expect(
+            await fixture.branchCoordinator.commitSegmentRows({
+              branchId,
+              sourceDoc: doc,
+              expectedGeneration: snapshot.generation,
+              rows: [
+                {
+                  branchId,
+                  updateData: Y.mergeUpdates(deltas),
+                  source: actor,
+                  actorUserId: actor === "writer" ? (USER_ID as never) : null,
+                  threadId: actor === "agent" ? THREAD_ID : null,
+                  turnId: actor === "agent" ? TURN_ID : null,
+                  wId: null,
+                  updateMeta: null,
+                },
+              ],
+            }),
+          ).toBeTruthy();
+        } finally {
+          doc.destroy();
+        }
+      };
+      const review = async (apply: boolean) => {
+        const preview = await fixture.collab.draftReview.preview(target);
+        if (preview.status !== "active") throw new Error("Missing preview");
+        const change = preview.operations.find((op) => op.beforeExcerpt === "red");
+        if (!change) throw new Error(`Missing red change: ${JSON.stringify(preview.operations)}`);
+        const command = {
+          ...target,
+          userId: USER_ID as never,
+          operationIds: [change.operationId],
+          liveRevisionToken: preview.liveRevisionToken,
+          draftRevisionToken: preview.draftRevisionToken,
+        };
+        if (apply && operation === "apply from deletion") {
+          pause = true;
+          await expect(fixture.collab.draftReview.applyWorkDraftChanges(command)).rejects.toThrow(
+            "pause carried publication",
+          );
+          const [outbox] = await db
+            .select()
+            .from(schema.branchPushSettlementOutbox)
+            .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
+          const history = await db
+            .select()
+            .from(schema.branchWriteJournal)
+            .where(eq(schema.branchWriteJournal.branchId, branchId))
+            .orderBy(schema.branchWriteJournal.id);
+          expect(outbox.transportJournalIds).toEqual([history[0].id, history[2].id]);
+          const [push] = await db
+            .select()
+            .from(schema.pushLineage)
+            .where(eq(schema.pushLineage.id, outbox.pushId));
+          expect(push.journalIds).toEqual([history[3].id]);
+          harness.cancelScheduledPulls();
+          harness.destroyWarmState();
+          await db
+            .update(schema.branchPushSettlementOutbox)
+            .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
+            .where(eq(schema.branchPushSettlementOutbox.pushId, outbox.pushId));
+          const cold = createHarness(db);
+          try {
+            expect(await cold.recoverPendingLiveSettlements()).toBe(1);
+          } finally {
+            cold.cancelScheduledPulls();
+            cold.destroyWarmState();
+          }
+        } else
+          expect(
+            await (apply
+              ? fixture.collab.draftReview.applyWorkDraftChanges(command)
+              : fixture.collab.draftReview.discardWorkDraft(command)),
+          ).toMatchObject({ status: apply ? "applied" : "discarded" });
+      };
+      await replace(0, operation === "apply from deletion" ? "" : "gold");
+      await replace(1, "azure");
+      await review(false);
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n");
+      await replace(0, operation === "delete" || operation === "apply deletion" ? "" : "silver");
+      const apply = operation.startsWith("apply");
+      await review(apply);
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+        apply
+          ? operation === "apply deletion"
+            ? "\u00a0\n\nblue\n"
+            : "silver\n\nblue\n"
+          : "red\n\nblue\n",
+      );
+      expect(await fixture.draftMarkdown(branchId)).toBe(
+        apply
+          ? operation === "apply deletion"
+            ? "\u00a0\n\nazure\n"
+            : "silver\n\nazure\n"
+          : "red\n\nazure\n",
+      );
+      if (operation === "apply deletion") {
+        expect(
+          await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
+            (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement)
+              .toArray()
+              .map((text) => text.toString())
+              .join(""),
+          ),
+        ).toBe("");
+      }
+      if (apply) {
+        const history = await db
+          .select()
+          .from(schema.branchWriteJournal)
+          .where(eq(schema.branchWriteJournal.branchId, branchId))
+          .orderBy(schema.branchWriteJournal.id);
+        const original = history[0],
+          restoration = history[2];
+        for (const row of [original, restoration]) {
+          const [part] = await db
+            .select()
+            .from(schema.documentEditParts)
+            .where(
+              eq(schema.documentEditParts.origin, {
+                kind: "pending",
+                branchId,
+                generation: row.generation,
+                rowId: row.id,
+              }),
+            );
+          expect(part.placement.kind).toBe(row === original ? "discarded" : "live");
+          const transported = await db
+            .select()
+            .from(schema.documentYjsUpdates)
+            .where(
+              and(
+                eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
+                eq(schema.documentYjsUpdates.updateData, row.updateData),
+              ),
+            );
+          expect(
+            transported.map((live) => ({
+              origin: live.originType,
+              user: live.actorUserId,
+              turn: live.actorTurnId,
+            })),
+          ).toEqual([{ origin: "reconcile", user: null, turn: null }]);
+        }
+        const preview = await fixture.collab.draftReview.preview(target);
+        if (preview.status !== "active") throw new Error("Missing azure preview");
+        expect(preview.operations.map((op) => op.afterExcerpt)).toEqual(["azure"]);
+        expect(
+          await fixture.collab.draftReview.applyWorkDraftChanges({
+            ...target,
+            userId: USER_ID as never,
+            operationIds: [preview.operations[0].operationId],
+            liveRevisionToken: preview.liveRevisionToken,
+            draftRevisionToken: preview.draftRevisionToken,
+          }),
+        ).toMatchObject({ status: "applied" });
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(await fixture.draftMarkdown(branchId));
+      }
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
   it.each([
     "insert",
     "replace",

@@ -432,3 +432,20 @@ because an active Discard restoration delta can depend on their inserted clocks.
 Reconstruction history never grants selection eligibility. Server-owned Discard
 aliases use the existing journal metadata range contract (length on both source
 and target); the immutable inverse receipt retains its compact len format.
+
+
+Discard restorations are replay suppliers, never selectable sources or class
+edges. Selective Apply closes transport dependencies and cancellation pairs in
+both directions: a discarded supplier brings its restorations, and a restoration
+brings the rows it cancelled, even a pure deletion whose clocks are already in
+live. Rows, not entire edits, are the unit of carrying. The settlement outbox
+retains transport row IDs for cold completion; these become system reconcile
+rows outside trail and reversal ownership. Discarded parts stay terminal;
+carried restoration parts move live at completed admission.
+
+An empty per-change disposition waits while the thread-core pool holds staged
+writes for that Work/document. The review service remembers only deferred
+writer-requested settlements and retries them after response save or rollback;
+ordinary model saves do not retire drafts. Whole Discard clears that request
+and rolls the reply back as before. This is response-lifecycle state, not an
+inverse cache or a new product read policy over the edit tables.
