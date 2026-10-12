@@ -339,15 +339,27 @@ export function snapshotTurn(
     /** A writer message's deliverer once delivered (null: unknown deliverer). */
     deliveredBy?: string | null;
     status?: Turn["status"];
+    /** `Turn.position`; by default `snapshotResponse` numbers turns in order. */
+    position?: number;
   } = {},
 ): Turn {
   return {
     ...goldenAssistantTurn(id, "thread_1", facts.status ?? "complete"),
+    position: facts.position ?? 0,
     role,
     executionId: facts.executionId ?? null,
     reservedForUserTurnIds: facts.reservedFor ?? [],
     delivery: facts.deliveredBy === undefined ? null : { byTurnId: facts.deliveredBy },
   } as Turn;
+}
+
+/** Give unpositioned turns the position after their predecessor, as the server's run. */
+function inTranscriptOrder(turns: Turn[]): Turn[] {
+  let position = 0;
+  return turns.map((turn) => {
+    position = turn.position || position + 1;
+    return { ...turn, position };
+  });
 }
 
 /** A thread snapshot: turns, the open execution, and the writer messages still pending. */
@@ -362,7 +374,7 @@ export function snapshotResponse(input: {
   return {
     threadId: "thread_1",
     thread: { id: "thread_1", userId: "account-1" },
-    turns: input.turns,
+    turns: inTranscriptOrder(input.turns),
     nextSeq: input.nextSeq ?? "100",
     actionRequired: false,
     liveState: {

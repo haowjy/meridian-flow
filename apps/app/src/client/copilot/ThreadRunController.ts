@@ -33,10 +33,13 @@ import {
   pendingInboxFromEvent,
 } from "@/features/chat/pending-inbox";
 import {
+  EMPTY_RUN_FACTS,
   INITIAL_RUN_FOLLOW,
   isBound,
+  type RunFacts,
   type RunFollow,
   type RunFollowInput,
+  type RunFollowView,
   stepRunFollow,
   viewRunFollow,
 } from "./run-follow";
@@ -115,6 +118,11 @@ type Subscription = {
   token: number;
   /** The reply un-addressed stream deltas belong to (one run claim per thread). */
   streamTurn?: string;
+  /**
+   * The seq `streamTurn` was observed at. A late HTTP snapshot is read before
+   * newer starts and ends this stream already applied, so it must not move it.
+   */
+  streamSeq: string | null;
   unsubscribe?: () => void;
   dispose: () => void;
   flush: () => void;
@@ -127,6 +135,8 @@ type Subscription = {
 type Follow = {
   threadId: string;
   rule: RunFollow;
+  /** `viewRunFollow(rule)`, recomputed only when `step` changes the rule (stream deltas read it). */
+  view: RunFollowView;
   /** The latest pending projection's writer messages, and the seq it was read at. */
   pending: { ids: readonly string[]; seq: string | null };
   /** Admitted messages no pending projection has shown yet (it will, before delivering them). */
@@ -169,6 +179,23 @@ function isOlderSeq(seq: string | null, than: string | null): boolean {
   const a = parseSeq(seq);
   const b = parseSeq(than);
   return a !== null && b !== null && BigInt(a) < BigInt(b);
+}
+
+/**
+ * Point un-addressed deltas at `turnId` as of `seq`, unless this stream already
+ * observed a newer start or end. `onlyIfUnset` keeps a hint from replacing a
+ * known reply.
+ */
+function routeStream(
+  subscription: Subscription,
+  turnId: string | undefined,
+  seq: string | null,
+  onlyIfUnset = false,
+): void {
+  if (onlyIfUnset && subscription.streamTurn !== undefined) return;
+  if (isOlderSeq(seq, subscription.streamSeq)) return;
+  subscription.streamTurn = turnId;
+  if (seq !== null) subscription.streamSeq = seq;
 }
 
 export class ThreadRunController {
@@ -407,7 +434,7 @@ export class ThreadRunController {
     // The rule refuses the attach while unsettled; the step still reopens a lost stream.
     this.step(follow, { kind: "attach", executionId: options.executionId }, options.after);
     if (follow.subscription && options.runningTurnId)
-      follow.subscription.streamTurn ??= options.runningTurnId;
+      routeStream(follow.subscription, options.runningTurnId, options.after, true);
   }
 
   /** Merge a durable snapshot's facts and pending projection (the mounted snapshot owner's feed). */
@@ -421,6 +448,11 @@ export class ThreadRunController {
   observePending(threadId: string, pending: ThreadPendingInbox, seq: string): void {
     if (this.disposed || this.accountSignal.aborted) return;
     this.mergePending(this.followFor(threadId), pending, seq);
+  }
+
+  /** The run identity facts this controller has merged for a thread (stream and snapshots). */
+  runFacts(threadId: string): RunFacts {
+    return this.follows.get(threadId)?.rule.facts ?? EMPTY_RUN_FACTS;
   }
 
   /** The composer's view of this thread's follow; stable per state for `useSyncExternalStore`. */
@@ -510,7 +542,8 @@ export class ThreadRunController {
     }
     if (result.steersTurnId) {
       this.step(follow, { kind: "steer", turnId: result.steersTurnId }, result.resumeAfterSeq);
-      if (follow.subscription) follow.subscription.streamTurn ??= result.steersTurnId;
+      if (follow.subscription)
+        routeStream(follow.subscription, result.steersTurnId, result.resumeAfterSeq, true);
     }
   }
 
@@ -537,6 +570,7 @@ export class ThreadRunController {
       follow = {
         threadId,
         rule: INITIAL_RUN_FOLLOW,
+        view: viewRunFollow(INITIAL_RUN_FOLLOW),
         pending: { ids: [], seq: null },
         admitted: new Set(),
         status: SETTLED,
@@ -568,8 +602,10 @@ export class ThreadRunController {
       liveState.pending ?? EMPTY_THREAD_PENDING_INBOX,
       liveState.resumeAfterSeq,
     );
+    // The snapshot's facts merge whatever its age; its running reply routes
+    // deltas only when the stream has seen nothing newer.
     if (follow.subscription && liveState.runningTurnId)
-      follow.subscription.streamTurn = liveState.runningTurnId;
+      routeStream(follow.subscription, liveState.runningTurnId, liveState.resumeAfterSeq);
   }
 
   /**
@@ -578,8 +614,11 @@ export class ThreadRunController {
    */
   private step(follow: Follow, input: RunFollowInput, after?: string): void {
     const { follow: rule, cancel } = stepRunFollow(follow.rule, input);
-    follow.rule = rule;
-    const view = viewRunFollow(rule);
+    if (rule !== follow.rule) {
+      follow.rule = rule;
+      follow.view = viewRunFollow(rule);
+    }
+    const { view } = follow;
     if (cancel) this.requestCancel(follow, cancel);
     if (view.settled) this.closeSubscription(follow);
     else if (!follow.subscription && after !== undefined) this.openSubscription(follow, after);
@@ -605,6 +644,7 @@ export class ThreadRunController {
     let lastPushedTurn: string | undefined;
     const subscription: Subscription = {
       token,
+      streamSeq: after,
       dispose: () => {
         if (!this.accountSignal.aborted) coalescer.flush();
       },
@@ -645,8 +685,8 @@ export class ThreadRunController {
           if (effectiveEvent.type === EventType.RUN_STARTED) {
             this.step(follow, { kind: "event", event: effectiveEvent });
             if (!live()) return;
-            subscription.streamTurn = effectiveEvent.runId;
-            if (isBound(follow.rule, effectiveEvent.runId))
+            routeStream(subscription, effectiveEvent.runId, seq);
+            if (isBound(follow.rule, effectiveEvent.runId, follow.view))
               push(effectiveEvent.runId, effectiveEvent);
             return;
           }
@@ -655,7 +695,7 @@ export class ThreadRunController {
               ? effectiveEvent.runId
               : subscription.streamTurn;
           // Another execution's events, or a reply this client does not follow.
-          if (!turnId || !isBound(follow.rule, turnId)) return;
+          if (!turnId || !isBound(follow.rule, turnId, follow.view)) return;
           this.actions.ensureAssistantTurn(threadId, turnId);
           push(turnId, effectiveEvent);
           if (
@@ -663,7 +703,7 @@ export class ThreadRunController {
               effectiveEvent.type === EventType.RUN_ERROR) &&
             subscription.streamTurn === turnId
           )
-            subscription.streamTurn = undefined;
+            routeStream(subscription, undefined, seq);
         },
         onError: (error) => {
           if (!live()) return;
