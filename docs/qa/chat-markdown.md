@@ -32,8 +32,18 @@ messages (without changing content or sequence) in a browser capture to check:
 - Repeat with loose/nested lists, longer tilde fences, reference definitions,
   source replacements, and leading blank lines. They retain canonical parsing.
 
-Reference/skill occurrence turns still use Streamdown at this migration stage.
-Diagrams remain source. Those migrations belong to the next phase.
+Static reference/skill occurrence turns use the same canonical codec and document
+renderer. Only exact authored link ranges may resolve to a document; adjacent
+same-destination links must not acquire combined identity. Skills stay outside
+code and rewritten/unmappable ranges remain ordinary Markdown.
+
+Closed diagram fences draw through the Editor's sanitized provider boundary;
+open fences stay source, including list/quote-contained fences. Verify that
+quoted or four-space-indented delimiters inside a top-level fence stay literal
+code. Checkboxes and ordinary bracketed text must not disable settled-block reuse;
+actual link reference definitions still require whole-document parsing. Chat
+images use the Editor's positive browser-source allowlist; unavailable sources
+show their alt text without fetching an app-origin or disallowed URL.
 
 Performance: `pnpm --filter @meridian/app bench:markdown` runs 4,000 whitespace
 chunks at 30/s and measures synchronous React commits with forced layout. Keep
