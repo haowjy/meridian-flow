@@ -10,6 +10,7 @@ import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
   lastSeq: string;
+  turnIds: string[];
   truncated: boolean;
   stoppedBy: CliEvent | null;
   state: ThreadLiveState | null;
@@ -33,6 +34,7 @@ export type FollowOptions = {
   shouldStop?: (event: CliEvent) => boolean;
   /** Idle lease/pending updates can arrive after the final turn event. */
   shouldStopState?: (state: ThreadLiveState) => boolean;
+  drainCheckpoint?: boolean;
   transport?: ThreadTransport;
 };
 
@@ -41,10 +43,14 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   const subscription = subscribeThread(transport, options.threadId, options.lastSeq);
   const mapper = new RunEventMapper();
   let lastSeq = options.lastSeq;
+  const turnIds = new Set<string>();
+  let requestedStop: CliEvent | null = null;
+  let stopRequested = false;
   let truncated = false;
   let state: ThreadLiveState | null = null;
 
   const emit = (event: CliEvent): boolean => {
+    if ("turnId" in event) turnIds.add(event.turnId);
     const shown = options.present
       ? options.present(event)
       : { value: event, line: renderEventLine(event, options.full) };
@@ -72,12 +78,14 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       switch (message.type) {
         case "live":
           state = message.state;
-          if (options.catchupOnly || options.shouldStopState?.(state))
-            return { lastSeq, truncated, stoppedBy: null, state };
+          if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
         case "event": {
           const stop = consume(message.event.seq, message.event);
-          if (stop) return { lastSeq, truncated, stoppedBy: stop, state };
+          if (stop) {
+            stopRequested = true;
+            requestedStop = stop;
+          }
           break;
         }
         case "gap": {
@@ -98,6 +106,9 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
           break;
         }
       }
+      // A checkpoint must not cut off an already queued catch-up/live batch.
+      if (stopRequested && (!options.drainCheckpoint || !subscription.hasQueued()))
+        return { lastSeq, turnIds: [...turnIds], truncated, stoppedBy: requestedStop, state };
     }
   } finally {
     subscription.unsubscribe();
