@@ -40,6 +40,29 @@ describe("thread", () => {
     expect((await mf(["thread", "view", "c9"])).code).toBe(EXIT.notFound);
   });
 
+  it.each([
+    ["turn-a1", EXIT.ok, "complete", "cancelled"],
+    ["missing", EXIT.notFound, "failed", "not_found"],
+  ] as const)("cancel %s emits one acknowledgement envelope and preserves its exit", async (turnId, code, outcome, status) => {
+    const isolated = await startFakeStack();
+    try {
+      await isolated.mf(["thread", "send", THREAD_ID, "hang", "--no-wait"]);
+      const result = await isolated.mf(["thread", "cancel", THREAD_ID, "--turn", turnId, "--json"]);
+      expect(result.code).toBe(code);
+      expect(JSON.parse(result.stdout)).toEqual({
+        type: "result",
+        command: "thread.cancel",
+        threadId: THREAD_ID,
+        turnId,
+        outcome,
+        reason: null,
+        status,
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it("send --json streams NDJSON whose last line is the result envelope", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
     expect(result.code).toBe(EXIT.ok);
