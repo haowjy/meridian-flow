@@ -10,18 +10,47 @@
  * regrouping or after. Mounted by the review's owner (`useDraftReviewScopeValue`),
  * never by a reader.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import type { PresentedDocument } from "@/features/project/presented-document";
 import { resolveFocusedChange } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
-export function useReconcileReviewFocus(controller: DraftReviewController): void {
-  const { documentId, draftId, changes } = useOpenReviewChanges(controller);
+export function useReconcileReviewFocus(
+  controller: DraftReviewController,
+  presented?: PresentedDocument | null,
+): void {
+  const { documentId, draftId, changes, status } = useOpenReviewChanges(controller);
   const { focus, reportFocusedChange } = controller;
+  const restored = useRef<string | null>(null);
   useEffect(() => {
-    if (!documentId || !draftId) return;
+    if (!documentId || !draftId) {
+      restored.current = null;
+      return;
+    }
+    const identity = `${documentId}:${draftId}`;
+    if (restored.current !== identity) {
+      if (status !== "ready") return;
+      restored.current = identity;
+      if (presented?.review?.draftId === draftId && presented.review.changeId && !focus) {
+        // Stable part-key classes survive reload; a handled class falls back silently.
+        const change =
+          changes.find((item) => item.classId === presented.review?.changeId) ?? changes[0];
+        if (change) controller.focusReviewChange({ documentId, draftId }, change);
+        return;
+      }
+    }
     const resolved = resolveFocusedChange(changes, focus);
     if (!resolved) return;
     reportFocusedChange({ documentId, draftId }, resolved);
-  }, [changes, focus, documentId, draftId, reportFocusedChange]);
+  }, [
+    changes,
+    focus,
+    documentId,
+    draftId,
+    reportFocusedChange,
+    presented,
+    status,
+    controller.focusReviewChange,
+  ]);
 }

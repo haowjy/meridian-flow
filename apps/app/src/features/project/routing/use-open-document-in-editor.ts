@@ -33,7 +33,7 @@ export function openDocumentInEditor(
       replace: false,
       ...routeOptions,
       ...(tab ? { tab } : {}),
-      ...(review ? { draftId: review.draftId } : {}),
+      ...(review ? { draftId: review.draftId, changeId: review.changeId } : {}),
     },
   );
 }

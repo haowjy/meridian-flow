@@ -991,7 +991,7 @@ msgstr "Close artifact preview"
 msgid "Close chat"
 msgstr "Close chat"
 
-#: src/features/project/dock/DockDocumentButtons.tsx
+#: src/features/project/dock/DockDocumentActions.tsx
 msgid "Close document"
 msgstr "Close document"
 
@@ -1054,6 +1054,7 @@ msgstr "Collaborator"
 msgid "Collapse changes"
 msgstr "Collapse changes"
 
+#: src/features/project/dock/DockDocumentActions.tsx
 #: src/features/project/dock/DockHeader.tsx
 msgid "Collapse dock"
 msgstr "Collapse dock"
@@ -1885,6 +1886,10 @@ msgstr "Divider"
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
 msgstr "Document"
+
+#: src/features/project/dock/DockDocumentActions.tsx
+msgid "Document actions"
+msgstr "Document actions"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
@@ -3099,7 +3104,7 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
-#: src/features/project/dock/DockDocumentButtons.tsx
+#: src/features/project/dock/DockDocumentActions.tsx
 msgid "Open in Editor"
 msgstr "Open in Editor"
 
@@ -4514,7 +4519,7 @@ msgstr "This selection holds blocks that keep their own block type."
 msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
 
-#: src/features/project/dock/DockDocumentButtons.tsx
+#: src/features/project/dock/DockDocumentActions.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "This view couldn’t open."
 msgstr "This view couldn’t open."

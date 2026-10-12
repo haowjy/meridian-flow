@@ -60,7 +60,7 @@ export function DraftChipFace({
           state === "failed" ? "bg-destructive" : "bg-primary",
         )}
       />
-      {children}
+      <span className="identity-version-label">{children}</span>
       {menu ? <ChevronDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
     </span>
   );

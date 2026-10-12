@@ -135,7 +135,7 @@ export function useDraftReviewScopeValue({
     disposing: controller.isDisposing,
     presented,
   });
-  useReconcileReviewFocus(controller);
+  useReconcileReviewFocus(controller, presented);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth

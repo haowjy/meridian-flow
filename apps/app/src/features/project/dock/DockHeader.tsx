@@ -8,7 +8,7 @@ import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
-import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
+import { DockDocumentActions } from "./DockDocumentActions";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
 import type { DockDocument } from "./dock-document-store";
 
@@ -42,13 +42,9 @@ export function DockHeader({
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
-      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center gap-1 pr-1">
         {dockDocument ? (
-          <>
-            <DockDocumentClose />
-            <DockOpenInEditor projectId={projectId} document={dockDocument} />
-            <DockDocumentIdentity projectId={projectId} document={dockDocument} />
-          </>
+          <DockDocumentIdentity projectId={projectId} document={dockDocument} />
         ) : (
           <>
             {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
@@ -64,7 +60,11 @@ export function DockHeader({
           </>
         )}
       </div>
-      {onClose || dockDocument ? (
+      {dockDocument ? (
+        <div className="flex shrink-0 items-center">
+          <DockDocumentActions document={dockDocument} onCollapse={onClose} />
+        </div>
+      ) : onClose ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.

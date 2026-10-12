@@ -1,4 +1,4 @@
-/** Owns inline-review restoration and the draft identity on the presenting container address. */
+/** Owns inline-review restoration and the draft/selected-change identity on the presenting container address. */
 import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import {
@@ -63,8 +63,16 @@ export function ReviewAddressOwner({
       // of competing with itself through an address-owner replacement.
       ownedReview.current = presented;
       if (presented.container === "editor" && pendingDraftId === inline.draftId) return;
-      if (requestedDraftId !== inline.draftId)
-        write({ workId: review.controller.workId, draftId: inline.draftId });
+      const changeId = review.controller.focus?.classId;
+      if (
+        requestedDraftId !== inline.draftId ||
+        ((changeId || !presented.review?.changeId) && presented.review?.changeId !== changeId)
+      )
+        write({
+          workId: review.controller.workId,
+          draftId: inline.draftId,
+          ...(changeId ? { changeId } : {}),
+        });
       return;
     }
     if (ownedReview.current) {
@@ -87,7 +95,7 @@ export function ReviewAddressOwner({
       restoring.current = null;
       return;
     }
-    if (!presented || presented.scheme !== "manuscript") {
+    if (presented?.scheme !== "manuscript") {
       restoring.current = null;
       write(null);
       return;

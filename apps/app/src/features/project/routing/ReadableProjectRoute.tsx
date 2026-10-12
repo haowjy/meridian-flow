@@ -521,7 +521,7 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const setEditorReviewDraftId = useCallback((draftId: string | null) => {
+  const setEditorReviewDraftId = useCallback((draftId: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
@@ -535,6 +535,7 @@ function ReadableProjectDestination({
       ...address,
       work,
       draftId: draftId ?? undefined,
+      changeId: draftId ? changeId : undefined,
     });
   }, []);
   const closeDestination = useCallback(
@@ -780,6 +781,7 @@ function ReadableProjectDestination({
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewDraftId={address.draftId}
+            reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}

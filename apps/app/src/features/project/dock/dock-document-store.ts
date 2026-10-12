@@ -125,7 +125,8 @@ export function createDockDocumentStore(
             return state;
           if (
             document.review?.workId === review?.workId &&
-            document.review?.draftId === review?.draftId
+            document.review?.draftId === review?.draftId &&
+            document.review?.changeId === review?.changeId
           )
             return state;
           return { occupant: { ...document, review } };
