@@ -101,7 +101,7 @@ export type DraftReviewController = {
   focusReviewChange: (
     review: DraftReviewSelection,
     change: ReviewChangeTarget,
-    options?: { scroll?: boolean },
+    options?: { scroll?: boolean; instant?: boolean },
   ) => void;
   /**
    * Apply or Discard a selection of changes of any draft of this Work. The
@@ -251,7 +251,11 @@ export function useDraftReviewController({
   }, []);
 
   const focusReviewChange = useCallback(
-    (review: DraftReviewSelection, change: ReviewChangeTarget, options?: { scroll?: boolean }) => {
+    (
+      review: DraftReviewSelection,
+      change: ReviewChangeTarget,
+      options?: { scroll?: boolean; instant?: boolean },
+    ) => {
       // The identity is checked before anything is touched: the open review, and
       // the editor showing it, are the ones this focus was meant for.
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
@@ -270,7 +274,9 @@ export function useDraftReviewController({
         return;
       runtime.editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
       if (options?.scroll)
-        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId);
+        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId, {
+          instant: options.instant,
+        });
     },
     [reportFocusedChange],
   );

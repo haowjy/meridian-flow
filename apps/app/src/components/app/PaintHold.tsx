@@ -27,10 +27,11 @@ export class PaintHold extends Component<FrameProps, Hold> {
   private lastPainted: Paint | null = null;
   private raf = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private released: ((cover: { scrolledBy: readonly number[] }) => void)[] = [];
+  private released: ((cover: { read: unknown }) => void)[] = [];
 
   private projection: ((cover: HTMLElement) => void) | null = null;
-  private scrolledBy: number[] = [];
+  private reader: ((cover: HTMLElement) => unknown) | null = null;
+  private coverRead: unknown;
 
   /**
    * The cover is an immutable capture plus the current projection of the
@@ -55,29 +56,35 @@ export class PaintHold extends Component<FrameProps, Hold> {
    * Set how the writer's intents show on a cover (or null for none), replacing
    * the last. A cover up now is rebuilt from its capture, so an intent withdrawn
    * (a refused Discard) comes back; where the reader has scrolled it to is kept.
+   * `read` says where a reader of the cover is, in terms the content that replaces
+   * it understands; it is asked once, as the cover lifts, and only if they scrolled.
    */
-  projectCover = (project: ((cover: HTMLElement) => void) | null) => {
+  projectCover = (
+    project: ((cover: HTMLElement) => void) | null,
+    read: ((cover: HTMLElement) => unknown) | null = null,
+  ) => {
     this.projection = project;
+    this.reader = read;
     const { paint } = this.state;
     if (this.cover.current && paint)
       this.renderCover(this.cover.current, paint, coverScrolls(this.cover.current));
   };
 
-  /** How far each editor of the cover was scrolled from the paint it copies. */
+  /** Where the reader of the cover is, if they scrolled it (read before the cover goes). */
   private measureCover(paint: Paint) {
-    this.scrolledBy = coverScrolls(this.cover.current).map(
-      (top, index) => top - (paint.scrolls[index] ?? 0),
-    );
+    const cover = this.cover.current;
+    const scrolled = coverScrolls(cover).some((top, index) => top !== (paint.scrolls[index] ?? 0));
+    this.coverRead = cover && scrolled ? this.reader?.(cover) : undefined;
   }
 
   /**
    * Run `work` once the cover is gone and the page is live again, in the same
-   * task as that release (before the browser paints), told how far the reader
-   * scrolled the cover. At once when nothing is covering.
+   * task as that release (before the browser paints), told what `projectCover`'s
+   * reader found if the cover was scrolled. At once when nothing is covering.
    */
-  afterRelease = (work: (cover: { scrolledBy: readonly number[] }) => void) => {
+  afterRelease = (work: (cover: { read: unknown }) => void) => {
     if (this.state.paint) this.released.push(work);
-    else work({ scrolledBy: [] });
+    else work({ read: undefined });
   };
 
   capture = (refresh = false) => {
@@ -136,8 +143,8 @@ export class PaintHold extends Component<FrameProps, Hold> {
       if (previous.paint) {
         const work = this.released;
         this.released = [];
-        const cover = { scrolledBy: this.scrolledBy };
-        this.scrolledBy = [];
+        const cover = { read: this.coverRead };
+        this.coverRead = undefined;
         for (const run of work) run(cover);
       }
       if (document.activeElement === this.status.current)
@@ -251,18 +258,17 @@ export function PaintScope({ active, children }: { active: boolean; children: Re
 /** Set how the writer's intents show on the page's cover (see `PaintHold.projectCover`). */
 export function usePaintCoverProjection(): (
   project: ((cover: HTMLElement) => void) | null,
+  read?: ((cover: HTMLElement) => unknown) | null,
 ) => void {
   const frame = useContext(FrameContext);
-  return useCallback((project) => frame?.projectCover(project), [frame]);
+  return useCallback((project, read) => frame?.projectCover(project, read), [frame]);
 }
 
 /** The page's cover, if one holds it: run `work` the moment it lifts (see `PaintHold.afterRelease`). */
-export function useAfterPaintRelease(): (
-  work: (cover: { scrolledBy: readonly number[] }) => void,
-) => void {
+export function useAfterPaintRelease(): (work: (cover: { read: unknown }) => void) => void {
   const frame = useContext(FrameContext);
   return useCallback(
-    (work) => (frame ? frame.afterRelease(work) : work({ scrolledBy: [] })),
+    (work) => (frame ? frame.afterRelease(work) : work({ read: undefined })),
     [frame],
   );
 }

@@ -210,8 +210,8 @@ function focusIsFree(): boolean {
 export function restoreReviewPlace(
   key: string,
   editor: Editor,
-  /** How far the reader scrolled the paint cover that stood in for the old editor. */
-  coverScrolledBy = 0,
+  /** Where the reader of the paint cover that stood in for the old editor had scrolled to, if they did. */
+  coverView?: CoverView | null,
 ): boolean {
   const place = places.get(key);
   if (!place) return true;
@@ -241,10 +241,8 @@ export function restoreReviewPlace(
     }
     const destination = place.navigateTo && operationOfChange(editor, place.navigateTo);
     if (destination) editor.commands.scrollInlineReviewOperationIntoView(destination);
-    else if (place.viewport) {
-      restoreViewport(editor, pane, runtime, place.viewport);
-      pane.scrollTop += coverScrolledBy;
-    }
+    else if (coverView) restoreViewport(editor, pane, runtime, { ...coverView, rel: null });
+    else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
     if (place.focus && editor.isEditable && focusIsFree()) editor.view.focus();
     // The live editor of a finished review is inert until the server answers: focus waits for it.
     else if (place.focus && !editor.isEditable)
@@ -253,6 +251,28 @@ export function restoreReviewPlace(
     // Deleted anchors and unavailable layout are convenience loss, never a broken editor.
   }
   return true;
+}
+
+/** Where a reader of a paint cover is: its first visible block, counted as the editor that replaces it will have it. */
+export type CoverView = { block: number; offset: number };
+
+const NOT_A_BLOCK =
+  ".meridian-review-bar-slot,.meridian-review-removal-block,.meridian-review-restoring";
+
+export function readCoverView(cover: HTMLElement): CoverView | null {
+  const pane = cover.querySelector<HTMLElement>(".meridian-editor");
+  const prose = pane?.querySelector<HTMLElement>(".ProseMirror");
+  if (!pane || !prose) return null;
+  const top = paneTop(pane);
+  let block = 0;
+  for (const element of Array.from(prose.children)) {
+    // Widgets and hidden insertions are drawn here and not blocks of the successor.
+    if (element.matches(NOT_A_BLOCK)) continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.height > 0 && rect.bottom > top) return { block, offset: rect.top - top };
+    block += 1;
+  }
+  return null;
 }
 
 /** The successor's operation for a change the writer chose, found by what it is. */
@@ -291,14 +311,13 @@ function restoreViewport(
 export function restoreReviewPlaceWhenMeasured(
   key: string,
   editor: Editor,
-  coverScrolledBy = 0,
+  coverView?: CoverView | null,
 ): void {
-  if (restoreReviewPlace(key, editor, coverScrolledBy)) return;
+  if (restoreReviewPlace(key, editor, coverView)) return;
   const pane = paneOf(editor);
   if (!pane) return;
   const observer = new ResizeObserver(() => {
-    if (editor.isDestroyed || restoreReviewPlace(key, editor, coverScrolledBy))
-      observer.disconnect();
+    if (editor.isDestroyed || restoreReviewPlace(key, editor, coverView)) observer.disconnect();
   });
   observer.observe(pane);
   setTimeout(() => observer.disconnect(), 5_000);
