@@ -139,7 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const ascension = await scenario.work("Ascension", "draft");
       const rival = await scenario.work("Rival", "draft");
 
-      const kael = await scenario.model(ascension).create("lore/kael.md", "Kael, drafted.");
+      const kael = await scenario.model(ascension).create("lore/kael", "Kael, drafted.");
       const draft = await scenario.draftOf(ascension);
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(kael), "live Yjs is never seeded")
@@ -175,7 +175,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const again = await scenario.model(ascension).reply();
       const rewritten = await again.call("write", {
         command: "create",
-        path: "manuscript://lore/kael.md",
+        path: "manuscript://lore/kael",
         content: "Kael, again.",
         overwrite: true,
       });
@@ -184,11 +184,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await createdIn(scenario, ascension), "one create per draft").toEqual([kael]);
 
       // Another draft's create at the path joins the same hidden document.
-      const joined = await scenario.model(rival).create("lore/kael.md", "Kael, the rival's.");
+      const joined = await scenario.model(rival).create("lore/kael", "Kael, the rival's.");
       expect.soft(joined, "a second draft joins").toBe(kael);
       expect.soft(await createdIn(scenario, rival), "the rival's create").toEqual([kael]);
       expect
-        .soft(await scenario.view("live").stat("lore/kael.md"), "still not live")
+        .soft(await scenario.view("live").stat("lore/kael"), "still not live")
         .toMatchObject({ ok: false, error: { code: "not_found" } });
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(kael), "live stays empty")
@@ -199,10 +199,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reveals the hidden document and its folder on an empty live create (C-3)", async () => {
       const { scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const kael = await scenario.model(ascension).create("lore/kael.md", "Kael, drafted.");
+      const kael = await scenario.model(ascension).create("lore/kael", "Kael, drafted.");
       const lore = await folderAt(scenario, await draftView(scenario, ascension), "lore");
 
-      expect(await scenario.writer.create("lore/kael.md")).toEqual({
+      expect(await scenario.writer.create("lore/kael")).toEqual({
         status: "created",
         documentId: kael,
       });
@@ -214,10 +214,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reveals the drafted document by path with the live create's content (C-3)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const harbor = await scenario.model(ascension).create("lore/harbor.md", "Harbor, drafted.");
+      const harbor = await scenario.model(ascension).create("lore/harbor", "Harbor, drafted.");
 
       expect(
-        await scenario.writer.create("lore/harbor.md", { content: "The writer's harbor." }),
+        await scenario.writer.create("lore/harbor", { content: "The writer's harbor." }),
       ).toEqual({ status: "created", documentId: harbor });
       const text = await runtime.ports.documentSync.readAsMarkdown(harbor);
       expect(text.ok && text.value, "the created content").toContain("The writer's harbor.");
@@ -226,7 +226,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reveals the hidden folder at the path on mkdir (C-3)", async () => {
       const { scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      await scenario.model(ascension).create("notes/first.md", "Notes, drafted.");
+      await scenario.model(ascension).create("notes/first", "Notes, drafted.");
       const notes = await folderAt(scenario, await draftView(scenario, ascension), "notes");
 
       await scenario.writer.mkdir("notes");
@@ -237,7 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("leaves durable and warm live state alone when a held write fails before commit (C-3)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const tide = await scenario.model(ascension).create("tide.md", "Tide, drafted.");
+      const tide = await scenario.model(ascension).create("tide", "Tide, drafted.");
       // A writer has the document open, so its live room stays warm through the create.
       const warm = await runtime.hocuspocus.openDirectConnection(tide, {
         origin: { type: "system", reason: "warm-room" },
@@ -250,7 +250,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       try {
         await expect(
-          scenario.writer.create("tide.md", { content: "The writer's tide." }),
+          scenario.writer.create("tide", { content: "The writer's tide." }),
         ).rejects.toThrow();
       } finally {
         remove();
@@ -275,7 +275,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("drains a room's background checkpoint before the next fixture reset", async () => {
       const { runtime, scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
-      const id = await scenario.model(drafting).create("checkpoint.md", "Drafted.");
+      const id = await scenario.model(drafting).create("checkpoint", "Drafted.");
       const warm = await runtime.hocuspocus.openDirectConnection(id, {
         origin: { type: "system", reason: "checkpoint-reset" },
       });
@@ -334,8 +334,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ])("tombstones a shared hidden ancestor when one batch ends sibling subtrees, %s", async (order) => {
       const { scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
-      const one = await scenario.seedHidden(drafting, "root/one/x.md");
-      const two = await scenario.seedHidden(drafting, "root/two/y.md");
+      const one = await scenario.seedHidden(drafting, "root/one/x");
+      const two = await scenario.seedHidden(drafting, "root/two/y");
       const draft = await scenario.draftOf(drafting);
       const ids = order === "one first" ? [one, two] : [two, one];
       await runInDrizzleTransaction(db, () => endUse(db, { draftId: draft.id, documentIds: ids }));
@@ -351,7 +351,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "a hidden document its draft places in another source",
         async arrange(scenario: DraftTreeScenario) {
           const drafting = await scenario.work("Drafting", "draft");
-          const id = await scenario.model(drafting).create("draft-place/x.md", "Placed elsewhere.");
+          const id = await scenario.model(drafting).create("draft-place/x", "Placed elsewhere.");
           // The draft has it in KB; the row stays in Manuscript.
           await db
             .update(draftTreeChanges)
@@ -364,7 +364,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "a hidden document revealed into a Work's unprovisioned Scratch",
         async arrange(scenario: DraftTreeScenario) {
           const drafting = await scenario.work("Drafting", "draft");
-          const id = await scenario.model(drafting).create("cold/x.md", "Revealed cold.");
+          const id = await scenario.model(drafting).create("cold/x", "Revealed cold.");
           // A direct Work whose Scratch no create has provisioned yet: discovery mustn't need it.
           return { id, destination: await scenario.work("Cold Scratch", "direct") };
         },
@@ -372,7 +372,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ])("Create by id reveals $name (C-3)", async ({ arrange }) => {
       const { scenario } = await start();
       const { id, destination } = await arrange(scenario);
-      const created = await scenario.writer.create("revealed.md", {
+      const created = await scenario.writer.create("revealed", {
         documentId: id,
         ...(destination ? { inScratchOf: destination } : {}),
       });
@@ -387,7 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "visible",
         address: {
           contextSourceId: scratch?.id ?? scenario.project.sources.manuscript,
-          path: "revealed.md",
+          path: "revealed",
         },
       });
     });
@@ -399,7 +399,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         async arrange() {
           const { scenario: victim } = await start();
           const theirs = await victim.work("Theirs", "draft");
-          const id = await victim.model(theirs).create("secret.md", "Their secret.");
+          const id = await victim.model(theirs).create("secret", "Their secret.");
           const untouched = {
             kind: "hidden",
             address: { contextSourceId: victim.project.sources.manuscript },
@@ -417,7 +417,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "a tombstone",
         async arrange(scenario: DraftTreeScenario) {
           const drafting = await scenario.work("Drafting", "draft");
-          const id = await scenario.model(drafting).create("gone/x.md", "Discarded.");
+          const id = await scenario.model(drafting).create("gone/x", "Discarded.");
           await scenario.discard(drafting, [id]);
           return { id, untouched: { kind: "gone" }, tombstone: true };
         },
@@ -425,7 +425,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ])("Create by id refuses $name (C-3)", async ({ arrange }) => {
       const { scenario } = await start();
       const { id, untouched, tombstone } = await arrange(scenario);
-      expect(await scenario.writer.create("revealed.md", { documentId: id })).toEqual({
+      expect(await scenario.writer.create("revealed", { documentId: id })).toEqual({
         status: "conflict",
       });
       // No view can say "no row anywhere": a hidden row or one in another source counts.
@@ -447,11 +447,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { scenario } = await start();
       const firstWork = await scenario.work("First", "draft");
       const second = await scenario.work("Second", "draft");
-      const x = await scenario.model(firstWork).create("lore/x.md", "First's x.");
+      const x = await scenario.model(firstWork).create("lore/x", "First's x.");
       const { bWaited, by } = await race(
         db,
         {
-          join: () => scenario.model(second).create("lore/x.md", "Second's x."),
+          join: () => scenario.model(second).create("lore/x", "Second's x."),
           discard: () => scenario.discard(firstWork, [x]),
         },
         first,
@@ -482,11 +482,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }) => {
       const { scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
-      const y = await scenario.model(drafting).create("lore/y.md", "Drafted y.");
+      const y = await scenario.model(drafting).create("lore/y", "Drafted y.");
       const { bWaited, by } = await race(
         db,
         {
-          reveal: () => scenario.writer.create("lore/y.md"),
+          reveal: () => scenario.writer.create("lore/y"),
           discard: () => scenario.discard(drafting, [y]),
         },
         first,
@@ -498,7 +498,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const created = by.reveal.value as { status: string; documentId?: string };
       expect.soft(created.status, "created").toBe("created");
       expect
-        .soft(await at(scenario, LIVE_TREE, "lore/y.md"), "one live y, the created one")
+        .soft(await at(scenario, LIVE_TREE, "lore/y"), "one live y, the created one")
         .toMatchObject({ kind: "found", node: { document: { id: created.documentId } } });
       expect.soft(created.documentId === y, "y revealed only while used").toBe(revealsY);
       expect.soft(await tombstoned(y), "y tombstoned only when not revealed").toBe(!revealsY);
@@ -516,8 +516,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { bWaited, by } = await race(
         db,
         {
-          draft: () => scenario.model(drafting).create("lore/z.md", "Drafted z."),
-          live: () => scenario.writer.create("lore/z.md"),
+          draft: () => scenario.model(drafting).create("lore/z", "Drafted z."),
+          live: () => scenario.writer.create("lore/z"),
         },
         first,
         point,
@@ -526,7 +526,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(by.live.ok, "the live create settles").toBe(true);
       if (!by.draft.ok) throw by.draft.error;
       expect
-        .soft(await at(scenario, LIVE_TREE, "lore/z.md"), "one document, live, the draft's")
+        .soft(await at(scenario, LIVE_TREE, "lore/z"), "one document, live, the draft's")
         .toMatchObject({ kind: "found", node: { document: { id: by.draft.value } } });
     });
 
@@ -543,12 +543,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }) => {
       const { scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
-      await scenario.seedLive("kb://atlas/coast.md");
-      const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
+      await scenario.seedLive("kb://atlas/coast");
+      const isle = await scenario.model(drafting).create("kb://atlas/isle", "Isle.");
       const { bWaited, by } = await race(
         db,
         {
-          reveal: () => scenario.writer.create("isle.md", { documentId: isle }),
+          reveal: () => scenario.writer.create("isle", { documentId: isle }),
           live: () =>
             operation === "split"
               ? scenario.writer.delete("kb://atlas")
@@ -566,7 +566,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual({ status: "created", documentId: isle });
       expect.soft(await liveStatus(isle), "where the writer asked").toMatchObject({
         kind: "visible",
-        address: { uri: "manuscript://isle.md" },
+        address: { uri: "manuscript://isle" },
       });
     });
   });

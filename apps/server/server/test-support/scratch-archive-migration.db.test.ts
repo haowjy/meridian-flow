@@ -215,10 +215,10 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       if (!chapter.ok)
         throw new Error("Could not render the migrated chapter", { cause: chapter.error });
       expect(chapter.value).toContain(
-        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
       expect(chapter.value).toContain(
-        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
       // Exercise the actual lifecycle reader, not just the migrated row shape.
       const intakeRepository = createDrizzleUploadIntakeRepository(db);
@@ -255,9 +255,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         expect.arrayContaining([
           expect.objectContaining({
             entryId: id(14),
-            uri: "unfiled://Scratch (2)/nested/deep/jade-map.md",
+            uri: "unfiled://Scratch (2)/nested/deep/jade-map",
           }),
-          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note.md" }),
+          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note" }),
         ]),
       );
       expect(snapshot.entries.some((entry) => entry.entryId === id(16))).toBe(false);

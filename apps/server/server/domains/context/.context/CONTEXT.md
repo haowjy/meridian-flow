@@ -1,10 +1,39 @@
 # domains/context — context filesystem primitives (unified)
 
 Agent-readable/writable project workspace content addressed by context URIs.
-The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
-with a single unified `ContextPort` that resolves durable project schemes
+A single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus No Work Uploads at `uploads://@/` and lineage Scratch at `scratch://@/c12/`.
+
+## Document names
+
+`@meridian/contracts/protocol` owns basename parsing (`parseDocumentFilename`) and rendering (`renderFilename`). Prose is stored as
+`name` with empty `extension` and `fileType = 'markdown'`. Input accepts and
+repeatedly strips `md`, `markdown`, `mdx` and `txt`, case-insensitively. Registered
+non-prose suffixes retain their lower-case extension; unknown suffixes belong to
+the name. Names are trimmed and must have a nonempty stem other than `.` or `..`.
+A prose stem ending in a registered non-prose suffix is `invalid_name`, with
+alternatives in its message, not another spelling for that data file.
+
+Lookups use exact parsed parts, not link extension omission. File results return
+the canonical URI. Create-on-existing through `ensureTrackedDocument` reaches
+the same identity for all prose spellings. Untitled documents are `Untitled N`.
+`storedFilename` in contracts owns destination naming for optimistic clients,
+the router and the tree mover. Commands consume its parsed parts once, preserving
+the source's actual extension before target inspection and CAS. Same-identity
+renames are in place. Type changes still respect the existing Yjs schema guard.
+
+Binary storage uses `filenameForBinary` after the same parse: prose names take
+the storage type's registered suffix when available, otherwise keep the parsed
+name. Reads and tree inspection never guess storage kind before resolving identity.
+
+Documents and folders cannot share document names within a parent. A folder's
+comparison name is parsed by the document codec (`Lore.md` clashes with document
+`Lore`); its own spelling stays unchanged. Creation, parent
+provisioning and tree commits check opposite-kind occupancy under the existing
+sorted logical namespace advisory locks, held through the transaction. Work
+restore takes those same locks and checks the complete arriving tree before
+unhiding either table. Location-only CAS tokens still fence moved identities.
 
 ## Revision queries and reads
 
@@ -394,7 +423,9 @@ currently available to the request owner in the requested project.
   `kb://`, `user://`, `unfiled://` carry no Work authority. Scratch and uploads
   use named-Work owners; No Work Scratch instead uses the lineage owner.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
-- Scheme and relative paths are exact (an omitted final extension may match);
+- Scheme and relative paths canonicalize the final name through the document codec.
+  Exact names win; only without an exact match may exactly one non-prose file
+  match with its final extension omitted;
   relative traversal cannot escape its scheme root. Canonical qualifiers may explicitly name another
   non-deleted Work in the project. Contextual scratch/uploads use the selected
   scope; a lineage handle is part of the owner, so relative traversal cannot
@@ -407,6 +438,20 @@ currently available to the request owner in the requested project.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;
   they never echo syntax-only request URIs as document identity.
+- Intake parses filenames through the document-name codec before reserving a URI.
+  Prose uploads read bytes through the same tracked Markdown path regardless of
+  their typed prose suffix. Original filenames remain in intake metadata and
+  import provenance; collisions use the shared smallest ` (2)` allocator.
+  Corpus conversion removes only its DOCX source suffix before using the codec;
+  imported titles and directories retain their spelling. Atomic creation refuses
+  replacement if another intake claims the allocated name. Whole-batch planning
+  reserves folder names and desired document names before numbering; already-
+  canonical source names win, then source filename order determines allocation.
+  Response items remain in input order. Identity-bound uploads accept one file
+  per request; only corpus intake accepts multi-file and relative-path batches.
+- File output uses `exportFilename`: prose gains `.md` from persisted `fileType`;
+  all other documents retain their stored filename. Download headers encode
+  Unicode names, and binary document downloads serve bytes with that filename.
 - `uploads://` is intake, not an authoring workspace. F0 owns its authority,
   provisioning, and resolution; F4 owns the actual `UploadIntake` lifecycle. Tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an
@@ -467,8 +512,9 @@ currently available to the request owner in the requested project.
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
-  boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
-  and installs an empty Yjs authority in one
+  boundary: it atomically allocates `Untitled N` under the Document names
+  contract (past live documents and live folders' document aliases), persists
+  `provisionalName`, and installs an empty Yjs authority in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID
   (`ContextPort.locate`, the same scan) across every project scheme and authorized
@@ -511,14 +557,6 @@ currently available to the request owner in the requested project.
   Files contribute their one committed `documents.id`; recursive folder deletion
   contributes every committed descendant document ID, while an empty folder
   contributes none.
-
-## Deleted (cleanse removal)
-
-- **Legacy `ContextPortFactory`** (dual-port with `forThread`/`forProject`) — deleted.
-- **`fs1://`** scheme — sandbox-era vestige, removed.
-- **`scratch://.results`** — promotion cruft, removed. Results use canonical Scratch paths.
-- **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
-- **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
 
 ## Negative space
 
@@ -571,3 +609,6 @@ Writer routes can read, edit, rename or move notes out, but cannot create notes
 or move files into a lineage. Canonical AI writes use the normal edit policy.
 Rebinding selects a different bare Scratch owner; it never moves notes. The
 durable Work-switch Notice names the previous canonical Scratch root.
+
+Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
+and HTTP error data; it is absent when the failure cannot prove an occupant.

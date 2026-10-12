@@ -13,6 +13,7 @@ import {
   type AgentEditResultCommand,
   type AgentEditResultV1,
   agentEditResultCommand,
+  DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   modelResult,
   ReadToolInputSchema,
@@ -222,6 +223,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "read",
         description:
+          DOCUMENT_NAMES_DESCRIPTION +
+          "\n" +
           "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
         inputSchema: modelToolSchema(ReadToolInputSchema),
       },
@@ -242,6 +245,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
+          DOCUMENT_NAMES_DESCRIPTION +
+          "\n" +
           "Change documents. In draft mode your changes go to this Work's draft, except `scratch://`, which is always edited directly.",
         inputSchema: modelToolSchema(WriteToolInputSchema),
       },
@@ -278,7 +283,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ls",
-        description: "List files and folders.",
+        description: `${DOCUMENT_NAMES_DESCRIPTION}\nList files and folders.`,
         inputSchema: modelToolSchema(LsToolInputSchema),
       },
       input: LsToolInputSchema,
@@ -292,7 +297,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "search",
-        description: "Search document text across all context files.",
+        description: `${DOCUMENT_NAMES_DESCRIPTION}\nSearch document text across all context files.`,
         inputSchema: modelToolSchema(SearchToolInputSchema),
       },
       input: SearchToolInputSchema,

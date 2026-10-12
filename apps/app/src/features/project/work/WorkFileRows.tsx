@@ -2,6 +2,7 @@
  * The Work Files tab's Scratch rows: a folder, a file (renamed in place, or
  * only opened when its Work is not editable), and a new note still on its way.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
@@ -13,6 +14,7 @@ import {
   type EntryAction,
   EntryKebabButton,
 } from "../context/ContextEntryActions";
+import type { ContextEntrySibling } from "../context/context-entry-name";
 import { fileKindIcon } from "../context/context-file-icon";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryNameField } from "../context/EntryNameField";
@@ -57,13 +59,13 @@ export function ScratchFileRow({
   projectId,
   workId,
   file,
-  siblingNames,
+  siblings,
   edit,
 }: {
   projectId: string;
   workId: string;
   file: CatalogFile;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   /** Absent: the row only opens, with no menu, kebab or rename. */
   edit?: ScratchFileEdit;
 }) {
@@ -85,7 +87,7 @@ export function ScratchFileRow({
           projectId={projectId}
           workId={workId}
           file={file}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onRenamed={setNoteOperationId}
           onDone={() => edit.onRename(null)}
         />
@@ -198,14 +200,14 @@ function InlineRename({
   projectId,
   workId,
   file,
-  siblingNames,
+  siblings,
   onRenamed,
   onDone,
 }: {
   projectId: string;
   workId: string;
   file: CatalogFile;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
@@ -217,7 +219,7 @@ function InlineRename({
     path: file.path,
     currentName: file.name,
     repairName: file.namespaceRepairName,
-    siblingNames,
+    siblings,
     kind: "file",
     onRenamed,
     onDone,

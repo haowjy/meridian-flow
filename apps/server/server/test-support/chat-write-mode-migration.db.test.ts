@@ -1,5 +1,5 @@
 /**
- * Populated upgrade contract for 0039/0040: every chat starts in its primary Work's mode, the
+ * Populated upgrade contract for 0040/0041: every chat starts in its primary Work's mode, the
  * Work's mode survives its rename to the default, and a control body may carry a mode switch.
  */
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,17 +11,17 @@ import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
 import {
   isolateSchemas,
   journalIndex,
-  readMigrationJournal,
+  MIGRATIONS,
+  readJournal,
   restoreSchemas,
   stageThrough,
-} from "./migration-upgrade.js";
+} from "./staged-migrations.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73900000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const PREFIX = "chat_write_mode_upgrade";
 
-/** Rows in the 0038 shape: the mode lives on the Work only. */
+/** Rows in the 0039 shape (after #766's names and the Work-branch foundation): the mode lives on the Work only. */
 async function seedWorkModeShape(sql: postgres.Sql) {
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'chat-mode-upgrade', 'chat-mode@example.test')`;
   await sql`INSERT INTO projects (id, user_id, name, slug) VALUES (${id(2)}, ${id(1)}, 'Upgrade', 'upgrade')`;
@@ -55,15 +55,15 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-chat-mode-upgrade-"));
     let isolated = false;
     try {
-      const journal = await readMigrationJournal();
-      const first = journalIndex(journal, "0039_d62_chat_write_mode");
-      await isolateSchemas(target, PREFIX);
+      const journal = await readJournal();
+      const first = journalIndex(journal, "0040_d62_chat_write_mode");
+      await isolateSchemas(target);
       isolated = true;
-      await stageThrough(directory, journal, first);
+      await stageThrough(MIGRATIONS, directory, journal, first);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedWorkModeShape(target);
       await rm(directory, { recursive: true, force: true });
-      await stageThrough(directory, journal, journal.entries.length);
+      await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
 
       expect(await target`SELECT id, default_ai_write_mode FROM works ORDER BY id`).toEqual([
@@ -96,7 +96,7 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
         target`UPDATE threads SET ai_write_mode = 'live' WHERE id = ${id(10)}`,
       ).rejects.toMatchObject({ code: "23514" });
     } finally {
-      if (isolated) await restoreSchemas(target, PREFIX);
+      if (isolated) await restoreSchemas(target);
       await target.end();
       await rm(directory, { recursive: true, force: true });
     }

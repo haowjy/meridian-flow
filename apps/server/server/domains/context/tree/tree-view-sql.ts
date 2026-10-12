@@ -447,6 +447,39 @@ export async function loadDraftCreatedDocuments(
 }
 
 /** The `hidden` column of a documents alias, for the address loader's identity rows. */
+/**
+ * A Work's context rows as its restore would bring them back, rendered for the shared
+ * document and folder namespace: what is live now and what the Work's delete took
+ * (`arriving`). Hidden rows are a draft's and stay hidden through a restore (F11).
+ */
+export async function loadWorkRestoreNamespaceRows(
+  db: DrizzleDb,
+  workId: string,
+): Promise<
+  {
+    source: string;
+    parent: string | null;
+    name: string;
+    kind: "file" | "folder";
+    arriving: boolean;
+  }[]
+> {
+  return currentDrizzleDb(db).execute(sql`
+    SELECT d.context_source_id AS source, d.folder_id AS parent,
+      d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
+      'file' AS kind, coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
+    FROM documents d WHERE NOT d.hidden
+      AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
+    UNION ALL
+    SELECT f.context_source_id, f.parent_id, f.name, 'folder',
+      coalesce(f.deleted_by_work_id = ${workId}::uuid, false)
+    FROM folders f WHERE NOT f.hidden
+      AND f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
+      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
+  `);
+}
+
 export function documentHiddenSql(alias: string): SQL {
   return sql.raw(`${alias}.hidden`);
 }

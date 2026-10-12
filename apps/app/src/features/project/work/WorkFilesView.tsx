@@ -24,7 +24,7 @@ import { WorkDrafts } from "./WorkDrafts";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
 import {
-  catalogSiblingNames,
+  catalogSiblings,
   compareTreePlaces,
   type TreePlace,
   workFileSearch,
@@ -137,7 +137,7 @@ export function WorkFilesView({
             projectId={projectId}
             workId={work.id}
             file={node}
-            siblingNames={catalogSiblingNames(scratch.catalog, node)}
+            siblings={catalogSiblings(scratch.catalog, node)}
             edit={
               files.editable
                 ? {

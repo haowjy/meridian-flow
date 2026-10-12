@@ -16,6 +16,7 @@ import {
   type WriteErrorStatus,
   type WriteToolInput,
 } from "@meridian/agent-edit/integration";
+import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import { z } from "zod";
 import {
@@ -84,9 +85,14 @@ async function invokeSkill(deps: SkillFilesDeps, threadId: string, name: string)
 }
 
 function readError(status: WriteErrorStatus, message: string, path: string) {
+  const { path: filename, suffix } = splitDocumentHrefSuffix(path);
   return {
     isError: true as const,
-    output: modelResult({ command: "read", status, payload: { path, message } }),
+    output: modelResult({
+      command: "read",
+      status,
+      payload: { path: documentPathKey(filename) + suffix, message },
+    }),
   };
 }
 
@@ -115,7 +121,7 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
   }
   const outline = format === "outline";
   if (fragment === undefined && !outline) return renderSkillFile(file.skill, file.path, file.text);
-  if (!file.path.endsWith(".md")) {
+  if (file.filetype !== "markdown") {
     return invalidArguments([
       { path: fragment === undefined ? "format" : "path", message: NOT_MARKDOWN },
     ]);

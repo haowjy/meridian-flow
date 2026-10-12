@@ -22,6 +22,7 @@ import type { AdapterFault } from "../../ports/context-adapter.js";
 import {
   type ContextDocument,
   type ContextDocumentStore,
+  ContextEntryConflictError,
   LiveCreateCandidateChangedError,
 } from "../../ports/context-document-store.js";
 import type { ContextWriteOptions } from "../../ports/context-port.js";
@@ -103,7 +104,7 @@ class DocumentCreationFault extends Error {
 }
 
 type Discovery =
-  | { kind: "conflict" }
+  | { kind: "conflict"; occupantKind?: "file" | "folder" }
   | { kind: "existing"; documentId: DocumentId }
   | { kind: "reveal"; reveal: RevealExpectation }
   | { kind: "none" };
@@ -140,7 +141,12 @@ export class LiveCreate {
       const found = await this.deps.executor.exclusive(() =>
         this.discover(path, target.value, options),
       );
-      if (found.kind === "conflict") return Err({ code: "conflict" });
+      if (found.kind === "conflict") {
+        return Err({
+          code: "conflict",
+          ...(found.occupantKind ? { occupantKind: found.occupantKind } : {}),
+        });
+      }
       if (found.kind === "existing") return Ok({ documentId: found.documentId });
       // Holding nothing: a split or move may change the candidate before its sources lock.
       if (found.kind === "reveal" && options?.revealDocumentId) {
@@ -220,7 +226,12 @@ export class LiveCreate {
       target.name,
       target.extension,
     );
-    if (found.kind === "occupant") return { kind: "conflict" };
+    if (found.kind === "occupant") {
+      return {
+        kind: "conflict",
+        ...(found.occupantKind ? { occupantKind: found.occupantKind } : {}),
+      };
+    }
     if (found.kind === "none") return { kind: "none" };
     return {
       kind: "reveal",
@@ -243,7 +254,11 @@ export class LiveCreate {
       target.extension,
     );
     if (existing) {
-      return Err(existing.fileType !== null ? binaryTrackedWriteFault(path) : { code: "conflict" });
+      return Err(
+        existing.fileType !== null
+          ? binaryTrackedWriteFault(path)
+          : { code: "conflict", occupantKind: "file" },
+      );
     }
     if (
       (plan.kind === "insert-with-content" || plan.kind === "reveal-with-content") &&
@@ -287,13 +302,19 @@ export class LiveCreate {
         },
         initializeContent: (documentId) => this.initializeContent(documentId, plan, options),
       });
-      if (!created.created) return Err({ code: "conflict" });
+      if (!created.created) return Err({ code: "conflict", occupantKind: "file" });
       if (!document) {
         return Err({ code: "io_error", message: "Created document identity was not returned" });
       }
       return Ok({ document, markdown: created.value });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
+      if (error instanceof ContextEntryConflictError) {
+        return Err({
+          code: "conflict",
+          ...(error.occupantKind ? { occupantKind: error.occupantKind } : {}),
+        });
+      }
       throw error;
     }
   }

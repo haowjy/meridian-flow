@@ -36,6 +36,7 @@ export function useCreationComposer(projectId: string) {
           blocks: submission.blocks,
           references: submission.references,
           submissionId: submission.submissionId,
+          draft: submission.draft,
           activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
           workId: context.workId,

@@ -189,6 +189,7 @@ function localPlacement(): ResourceRecord {
         identityRevision: 1,
         desired: {
           kind: "set-location",
+          typedName: "Opening.md",
           destination: {
             scheme: "manuscript",
             folderPath: "chapters",

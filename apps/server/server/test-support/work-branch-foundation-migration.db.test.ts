@@ -1,6 +1,8 @@
 /**
- * Populated upgrade contract for 0037/0038: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0038/0039: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
+ * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037) runs over
+ * them first, as it does in a deploy.
  */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,18 +18,20 @@ import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./dra
 import {
   isolateSchemas,
   journalIndex,
-  readMigrationJournal,
+  MIGRATIONS,
+  readJournal,
   restoreSchemas,
   stageThrough,
-} from "./migration-upgrade.js";
+} from "./staged-migrations.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73600000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const FOUNDATION = "0037_work_branch_foundation";
-const ONLINE = "0038_work_branch_foundation_online";
+const NAMES = "0037_old_adam_destine";
+const FOUNDATION = "0038_work_branch_foundation";
+const ONLINE = "0039_work_branch_foundation_online";
 
-/** Rows in `main`'s 0036 shape: every kind of row the foundation migration moves. */
+/** Rows in `main`'s 0036 shape (prose stored as `.md`): every kind of row the foundation migration moves. */
 async function seedMainShape(sql: postgres.Sql) {
   const bytes = Buffer.from([0, 0]);
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'foundation-upgrade', 'foundation@example.test')`;
@@ -61,12 +65,14 @@ async function seedMainShape(sql: postgres.Sql) {
   }
 }
 
-const PREFIX = "foundation_upgrade";
-
-/** The repository's migration journal and the index of the foundation's entry in it. */
-async function readJournal() {
-  const journal = await readMigrationJournal();
-  return { journal, foundation: journalIndex(journal, FOUNDATION) };
+/** The repository's journal, where the foundation sits, and where the name migration does. */
+async function foundationJournal() {
+  const journal = await readJournal();
+  return {
+    journal,
+    names: journalIndex(journal, NAMES),
+    foundation: journalIndex(journal, FOUNDATION),
+  };
 }
 
 describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
@@ -74,13 +80,15 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
     const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-foundation-upgrade-"));
-    const { journal, foundation } = await readJournal();
+    const migrations = MIGRATIONS;
+    const { journal, names, foundation } = await foundationJournal();
     expect(journal.entries[foundation + 1]?.tag).toBe(ONLINE);
+    expect(names).toBe(foundation - 1);
     let isolated = false;
     try {
-      await isolateSchemas(target, PREFIX);
+      await isolateSchemas(target);
       isolated = true;
-      await stageThrough(directory, journal, foundation);
+      await stageThrough(migrations, directory, journal, names);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedMainShape(target);
       const projections = await target`
@@ -88,10 +96,13 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         FROM documents WHERE kind = 'content' ORDER BY id`;
       const outbox = await target`SELECT * FROM branch_push_settlement_outbox ORDER BY push_id`;
 
-      await stageThrough(directory, journal, foundation + 1);
+      // The document-name migration, then the foundation's transactional half.
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, foundation + 1);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
 
-      await stageThrough(directory, journal, foundation + 2);
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, foundation + 2);
       // A failed concurrent build leaves an invalid remnant; the runner replaces it.
       await expect(
         target.unsafe(
@@ -135,10 +146,11 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       expect(
         await target`SELECT document_id, markdown, updated_at FROM document_markdown_projections ORDER BY document_id`,
       ).toEqual(projections);
-      expect((await target`SELECT id FROM documents ORDER BY id`).map((row) => row.id)).toEqual([
-        id(10),
-        id(11),
-        id(12),
+      // Prose kept its identity under its canonical name: no extension.
+      expect(await target`SELECT id, name, extension FROM documents ORDER BY id`).toEqual([
+        { id: id(10), name: "live", extension: "" },
+        { id: id(11), name: "trashed", extension: "" },
+        { id: id(12), name: "second", extension: "" },
       ]);
       expect(
         await target`SELECT column_name FROM information_schema.columns
@@ -206,7 +218,7 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       ).toEqual([]);
     } finally {
       await writer.end();
-      if (isolated) await restoreSchemas(target, PREFIX);
+      if (isolated) await restoreSchemas(target);
       await target.end();
       await rm(directory, { recursive: true, force: true });
     }
@@ -289,7 +301,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
   // app shuts down against the upgraded schema before the saved one comes back.
   afterEach(async () => {
     await db?.close();
-    if (isolated) await restoreSchemas(target, PREFIX);
+    if (isolated) await restoreSchemas(target);
     await target.end();
   });
   const runtimes = useComposedRuntimes(() => {
@@ -300,14 +312,14 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
   it("stay hidden, listed new in each draft that uses them, revealed and tombstoned by id", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-pending-create-upgrade-"));
     try {
-      const { journal, foundation } = await readJournal();
-      await isolateSchemas(target, PREFIX);
+      const { journal, names } = await foundationJournal();
+      await isolateSchemas(target);
       isolated = true;
-      await stageThrough(directory, journal, foundation);
+      await stageThrough(MIGRATIONS, directory, journal, names);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedPendingCreates(target);
       await rm(directory, { recursive: true, force: true });
-      await stageThrough(directory, journal, journal.entries.length);
+      await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -346,6 +358,14 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
         await target`SELECT deleted_at IS NOT NULL AS gone FROM documents WHERE id = ${documentId}`
       )[0]?.gone;
 
+    // The name migration ran first: each draft's create is at its row's canonical name.
+    expect(
+      await target`SELECT node_id, name, extension FROM draft_tree_changes ORDER BY node_id, draft_id`,
+    ).toEqual([
+      { node_id: created, name: "new", extension: "" },
+      { node_id: shared, name: "shared", extension: "" },
+      { node_id: shared, name: "shared", extension: "" },
+    ]);
     // A pending create is not live; the writer's own empty document still is.
     const live = s.view("live");
     expect(await live.idAt("new.md")).toBeNull();
@@ -359,7 +379,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     // A Work whose only branch was the manifest's has no draft.
     expect(await s.draftStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
 
-    // A live create at its path reveals the same identity.
+    // A live create at any prose spelling of its path reveals the same identity.
     expect(await s.writer.create("new.md")).toMatchObject({
       status: "created",
       documentId: created,

@@ -17,7 +17,8 @@
  * unrecognized on the way out, and neither answer can drift from the other.
  */
 
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
+import { CONTEXT_URI_SCHEMES, splitDocumentHrefSuffix } from "@meridian/contracts";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type LinkTarget =
   /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
@@ -74,13 +75,11 @@ export function linkInputStepsAsideFromReferences(input: string): boolean {
   return Boolean(scheme && !INTERNAL_SCHEMES.has(scheme));
 }
 
-/**
- * A writer-typed target that reads as a document path rather than a hostname.
- * `chapter-213.md` and `example.com` are the same shape, so the extension is
- * the only honest signal about which one a writer meant, and §5.5 names the
- * markdown extension as the relative spelling.
- */
-const DOCUMENT_PATH = /\.mdx?($|[?#])/i;
+/** Host-like first segments retain the original Markdown-path exception. */
+function readsAsDocumentPath(value: string): boolean {
+  const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
+  return /\.mdx?($|[?#])/i.test(value) || /\s/.test(firstSegment);
+}
 
 /**
  * What this href is, or null when it is nothing the editor will act on — an
@@ -111,9 +110,9 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
  * The one convenience is the missing `https://`, because writers paste bare
  * hostnames constantly. It is deliberately last, so `manuscript://…` and
  * `../notes/kael.md` keep their own meaning. A path whose first segment has no
- * dot (`notes/kael`, `kael`) is relative, since a hostname always has one; a
- * dotted first segment (`example.com/x`) is a web address unless the path ends
- * in a document extension.
+ * dot (`notes/kael`, `Chapter 13`) is relative, since a hostname always has
+ * one; a dotted first segment (`example.com/x`) is a web address unless it
+ * reads as a document path (see `readsAsDocumentPath`).
  */
 export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
@@ -130,7 +129,7 @@ export function normalizeLinkHref(input: string): string | null {
   }
 
   if (value.startsWith("./") || value.startsWith("../")) return value;
-  if (DOCUMENT_PATH.test(value)) return value;
+  if (readsAsDocumentPath(value)) return value;
   const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
   if (!firstSegment.includes(".")) return value;
   return validExternalHref(`https://${value}`);
@@ -148,11 +147,24 @@ export function linkTargetHref(target: LinkTarget): string {
   }
 }
 
-/** A readable fallback while an internal destination's catalog title is unavailable. */
+/**
+ * A readable fallback while an internal destination's catalog title is
+ * unavailable: the address's last segment, which is the document's name.
+ */
 export function linkTargetLabel(target: LinkTarget): string {
   if (target.kind === "external") return target.url;
-  const path = target.kind === "scheme" ? target.uri : target.path;
-  return path.slice(path.lastIndexOf("/") + 1) || path;
+  const written = target.kind === "scheme" ? target.uri : target.path;
+  const { path, suffix } = splitDocumentHrefSuffix(written);
+  const name = documentTitleFromUri(safeDecode(path).replace(/\/+$/, ""));
+  return name ? `${name}${suffix}` : written;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function externalTarget(candidate: string): LinkTarget | null {

@@ -3,6 +3,7 @@
  * version rule (D14) and the source's own destination (D20), and the binary
  * copy that duplicates a stored object (D24).
  */
+
 import type {
   DocumentVersion,
   WriteOutcome,
@@ -10,10 +11,11 @@ import type {
 } from "@meridian/agent-edit/integration";
 import {
   documentNotFoundMessage,
+  formatDocumentFile,
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { documentPathKey, type LinkView } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
@@ -96,7 +98,7 @@ export async function resolveCopySource(
     address: {
       documentId: ref.value.documentId ?? "",
       uri: ref.value.uri,
-      filePath: basePath,
+      filePath: ref.value.uri,
       ...(fragment === undefined ? {} : { fragment }),
     },
   };
@@ -167,7 +169,8 @@ export function binaryCopySelectionMessage(
 
 /** Errors about the source say so, since `path` names the destination. */
 export function fromMessage(source: CopySource, message: string): string {
-  return `from ${source.path}: ${message}`;
+  const { filePath, fragment } = splitDocumentFile(source.path);
+  return `from ${formatDocumentFile({ filePath: documentPathKey(filePath), fragment })}: ${message}`;
 }
 
 /**
@@ -207,10 +210,10 @@ export async function copyBinary(
       status: "success",
       phase: "committed",
       payload: {
-        path: input.path,
+        path: copied.value.uri,
         destination,
         ...(destination === "draft" ? { draftWork: draftWork?.slug ?? "/" } : {}),
-        copied: { from: input.from.path },
+        copied: { from: source.uri },
       },
     }),
   };

@@ -173,10 +173,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
 
       try {
-        const target = (await ok(port.createTrackedDocument("manuscript://target.md", "")))
-          .documentId;
-        const holder = (await ok(port.createTrackedDocument("manuscript://holder.md", "")))
-          .documentId;
+        const target = (await ok(port.createTrackedDocument("manuscript://target", ""))).documentId;
+        const holder = (await ok(port.createTrackedDocument("manuscript://holder", ""))).documentId;
         const targetRef = `doc:${target}`;
         let soon: string | null = null;
 
@@ -191,9 +189,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "writer overwrite binds a resolved link and mints one ahead",
             act: async () => {
-              await ok(
-                port.write("manuscript://holder.md", "[T](target.md) and [S](soon.md).", writer),
-              );
+              await ok(port.write("manuscript://holder", "[T](target) and [S](soon).", writer));
               return holder;
             },
             refs: (refs) => {
@@ -204,11 +200,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "an overwrite after the target moved keeps every ref it leaves in place",
             act: async () => {
-              await ok(port.move("manuscript://target.md", "manuscript://moved/target.md"));
+              await ok(port.move("manuscript://target", "manuscript://moved/target"));
               await ok(
                 port.write(
-                  "manuscript://holder.md",
-                  "[T](moved/target.md) and [S](soon.md).\n\n[L](later.md)",
+                  "manuscript://holder",
+                  "[T](moved/target) and [S](soon).\n\n[L](later)",
                   writer,
                 ),
               );
@@ -221,11 +217,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             act: async () =>
               (
                 await ok(
-                  port.write(
-                    "manuscript://imported.md",
-                    "[T](moved/target.md) and [S](soon.md).",
-                    imported,
-                  ),
+                  port.write("manuscript://imported", "[T](moved/target) and [S](soon).", imported),
                 )
               ).documentId ?? "",
             refs: () => [targetRef, expect.not.stringMatching(soon ?? "")],
@@ -235,11 +227,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             act: async () =>
               (
                 await ok(
-                  port.createTrackedDocument(
-                    "manuscript://uploaded.md",
-                    "[U](unwritten.md)",
-                    imported,
-                  ),
+                  port.createTrackedDocument("manuscript://uploaded", "[U](unwritten)", imported),
                 )
               ).documentId,
             refs: () => [expect.stringMatching(/^ahead:/)],
@@ -247,7 +235,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "an upload binds before finalize's transaction and persists under its locks",
             act: async () => {
-              const bytes = new TextEncoder().encode("# Upload\n\n[Ahead](manuscript://future.md)");
+              const bytes = new TextEncoder().encode("# Upload\n\n[Ahead](manuscript://future)");
               const uploaded = await app.uploadIntake.intake({
                 intakeId: randomUUID(),
                 actorUserId: userId,
@@ -261,7 +249,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               return uploaded.value.documentId;
             },
             refs: () => [expect.stringMatching(/^ahead:/)],
-            markdown: "# Upload\n\n[Ahead](manuscript://future.md)\n",
+            markdown: "# Upload\n\n[Ahead](manuscript://future)\n",
           },
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
@@ -269,12 +257,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               // against the old state and admitted after merges into the blocks the save kept.
               door: `a save and a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
               act: async () => {
-                const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}.md`;
-                const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c.md)")))
+                const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}`;
+                const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c)")))
                   .documentId;
                 const edit = await writerEdit(id);
                 if (when === "before") afterNextBind = edit;
-                await ok(port.write(uri, "Original.\n\n[T](c.md)\n\nAppend.", actor));
+                await ok(port.write(uri, "Original.\n\n[T](c)\n\nAppend.", actor));
                 if (when === "after") await edit();
                 return id;
               },
@@ -282,13 +270,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               markdown:
                 when === "after"
                   ? "Concurrent.\n\nT\n\nAppend.\n"
-                  : "Original.\n\n[T](c.md)\n\nAppend.\n",
+                  : "Original.\n\n[T](c)\n\nAppend.\n",
             })),
           ),
           {
             door: "a save in a thread is the overwrite agent-edit certifies: prose it kept keeps its roots",
             act: async () => {
-              const uri = "manuscript://certified.md";
+              const uri = "manuscript://certified";
               const id = (
                 await ok(
                   port.createTrackedDocument(uri, "First para.\n\nSecond para here.\n\nThird."),
@@ -323,7 +311,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             (["before", "after"] as const).map((when) => ({
               door: `a save inserting above a kept paragraph keeps its items, anchors, and an edit to it admitted ${when} the save${"threadId" in actor.origin ? " (in a thread)" : ""}`,
               act: async () => {
-                const uri = `manuscript://kept-middle-${when}-${"threadId" in actor.origin}.md`;
+                const uri = `manuscript://kept-middle-${when}-${"threadId" in actor.origin}`;
                 const id = (
                   await ok(port.createTrackedDocument(uri, "Alpha.\n\nBravo.\n\nCharlie."))
                 ).documentId;
@@ -362,26 +350,20 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             door: "a write bound for one holder never lands on the document that replaced it",
             act: async () => {
               const first = (
-                await ok(
-                  port.createTrackedDocument("manuscript://occupant.md", "First.\n\n[A](a.md)"),
-                )
+                await ok(port.createTrackedDocument("manuscript://occupant", "First.\n\n[A](a)"))
               ).documentId;
               afterNextBind = async () => {
-                await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
-                await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
+                await ok(port.move("manuscript://occupant", "manuscript://first-moved"));
+                await ok(port.createTrackedDocument("manuscript://occupant", "Second."));
               };
-              const saved = await port.write(
-                "manuscript://occupant.md",
-                "First.\n\nAppend.",
-                writer,
-              );
+              const saved = await port.write("manuscript://occupant", "First.\n\nAppend.", writer);
               expect(saved).toMatchObject({ ok: false, error: { code: "stale_target" } });
-              expect(await read("manuscript://first-moved.md")).toBe("First.\n\n[A](a.md)\n");
-              expect(await read("manuscript://occupant.md")).toBe("Second.\n");
+              expect(await read("manuscript://first-moved")).toBe("First.\n\n[A](a)\n");
+              expect(await read("manuscript://occupant")).toBe("Second.\n");
               return first;
             },
             refs: () => [expect.stringMatching(/^ahead:/)],
-            markdown: "First.\n\n[A](a.md)\n",
+            markdown: "First.\n\n[A](a)\n",
           },
           {
             door: "a new code file is created with its content, as code",
@@ -415,14 +397,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           }
         }
         expect(failures).toEqual([]);
-        expect(await registeredAddress(soon)).toBe(`manuscript://soon.md in ${projectId}`);
+        expect(await registeredAddress(soon)).toBe(`manuscript://soon in ${projectId}`);
 
         // A door that forgot to hoist fails at once instead of waiting on its own locks.
         await expect(
           runInDrizzleTransaction(db, () =>
             bindMarkdown({
               holder: { documentId: holder as never },
-              markdown: "[N](new.md)",
+              markdown: "[N](new)",
             }),
           ),
         ).rejects.toBeInstanceOf(LinkBindingInsideTransactionError);

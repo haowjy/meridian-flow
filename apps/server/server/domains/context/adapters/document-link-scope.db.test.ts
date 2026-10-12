@@ -142,7 +142,7 @@ if (!RUN) {
         id: docId,
         contextSourceId: SOURCE,
         name,
-        extension: "md",
+        extension: "",
         ...extra,
       });
       await db.insert(documents).values([
@@ -165,7 +165,7 @@ if (!RUN) {
           hidden: true,
           deletedAt: new Date(),
         }),
-        { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
+        { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "" },
         {
           id: RETIRED_IMAGE,
           contextSourceId: RETIRED_SOURCE,
@@ -193,7 +193,7 @@ if (!RUN) {
           contextSourceId: SOURCE,
           parentFolderId: null,
           name: nodeId === DRAFTED ? "drafted" : "staged",
-          extension: "md",
+          extension: "",
         })),
       );
       await db.insert(linkAheadRefs).values([
@@ -201,7 +201,7 @@ if (!RUN) {
           aheadId: SETTLED_AHEAD,
           projectId: PROJECT as never,
           scheme: "manuscript",
-          path: "notes.md",
+          path: "notes",
           settledDocumentId: NOTES as never,
           settledAt: new Date(),
         },
@@ -209,10 +209,45 @@ if (!RUN) {
           aheadId: OPEN_AHEAD,
           projectId: PROJECT as never,
           scheme: "manuscript",
-          path: "later.md",
+          path: "later",
         },
       ]);
     }
+    it("preloads extension-omitted dotted names independently of other addresses", async () => {
+      await db
+        .update(documents)
+        .set({ name: "config.json", extension: "toml", fileType: "text" })
+        .where(eq(documents.id, TARGET));
+      for (const addresses of [
+        ["manuscript://part1/config.json"],
+        ["manuscript://part1/config.json", "manuscript://part1/config.json.toml"],
+      ]) {
+        await scopes.within({ documentId: HOLDER }, async () => {
+          await scopes.prepare({ holders: [{ documentId: HOLDER, view: LIVE }], addresses });
+          expect(
+            scopes
+              .holder({ documentId: HOLDER, view: LIVE })
+              .documentFor("manuscript://part1/config.json")?.documentId,
+          ).toBe(TARGET);
+        });
+      }
+    });
+    it("spells a preloaded historical ahead href canonically", async () => {
+      const href = "manuscript://book.md/Chapter 15.md?view=1#scene";
+      const stored = [[`ahead:${OPEN_AHEAD}`, href]] as const;
+      await scopes.within({ documentId: HOLDER }, async () => {
+        await scopes.prepare({
+          holders: [{ documentId: HOLDER, view: LIVE }],
+          docs: [holderDoc(stored)],
+        });
+        expect(
+          scopes.holder({ documentId: HOLDER, view: LIVE }).spellLink({ ref: stored[0][0], href }),
+        ).toEqual({
+          href: "../book.md/Chapter 15?view=1#scene",
+          address: "manuscript://book.md/Chapter 15",
+        });
+      });
+    });
     // The resolve route's answers run over the composed app, as the route handler wires it.
     const runtimes = useComposedRuntimes(() => db);
     beforeEach(seed);
@@ -223,12 +258,12 @@ if (!RUN) {
 
     it("answers ids, settlements and addresses in one prepare, spelling only readable targets in the project", async () => {
       const stored = [
-        [`doc:${TARGET}`, "manuscript://stored.md"],
-        [`doc:${DELETED}`, "manuscript://stored.md"],
-        [`doc:${FOREIGN}`, "manuscript://stored.md"],
-        [`doc:${SECRET}`, "manuscript://stored.md"],
-        [`ahead:${SETTLED_AHEAD}`, "manuscript://notes.md"],
-        [`ahead:${OPEN_AHEAD}`, "manuscript://later.md"],
+        [`doc:${TARGET}`, "manuscript://stored"],
+        [`doc:${DELETED}`, "manuscript://stored"],
+        [`doc:${FOREIGN}`, "manuscript://stored"],
+        [`doc:${SECRET}`, "manuscript://stored"],
+        [`ahead:${SETTLED_AHEAD}`, "manuscript://notes"],
+        [`ahead:${OPEN_AHEAD}`, "manuscript://later"],
       ] as const;
       await scopes.within({ documentId: HOLDER }, async () => {
         await scopes.prepare({
@@ -246,30 +281,29 @@ if (!RUN) {
           ],
           addresses: [
             "manuscript://part1/target",
+            "manuscript://part1/target.md.md",
             "manuscript://part1/map.png",
             "manuscript://part1/nowhere.png",
           ],
         });
         const scope = scopes.holder({ documentId: HOLDER, view: LIVE });
-        const spell = (ref: string) =>
-          scope.spellLink({ ref, href: "manuscript://stored.md" }).href;
-        expect.soft(scope.holder.uri).toBe("manuscript://part1/holder.md");
-        expect.soft(spell(`doc:${TARGET}`), "live target, relative").toBe("target.md");
-        expect.soft(spell(`doc:${DELETED}`), "deleted").toBe("manuscript://stored.md");
-        expect.soft(spell(`doc:${FOREIGN}`), "other project").toBe("manuscript://stored.md");
-        expect.soft(spell(`doc:${SECRET}`), "unreadable").toBe("manuscript://stored.md");
-        expect
-          .soft(scope.resolve({ ref: `doc:${SECRET}`, href: "x.md" }))
-          .toEqual({ kind: "gone" });
-        expect.soft(spell(`ahead:${SETTLED_AHEAD}`), "settled ahead").toBe("../notes.md");
+        const spell = (ref: string) => scope.spellLink({ ref, href: "manuscript://stored" }).href;
+        expect.soft(scope.holder.uri).toBe("manuscript://part1/holder");
+        expect.soft(spell(`doc:${TARGET}`), "live target, relative").toBe("target");
+        expect.soft(spell(`doc:${DELETED}`), "deleted").toBe("manuscript://stored");
+        expect.soft(spell(`doc:${FOREIGN}`), "other project").toBe("manuscript://stored");
+        expect.soft(spell(`doc:${SECRET}`), "unreadable").toBe("manuscript://stored");
+        expect.soft(scope.resolve({ ref: `doc:${SECRET}`, href: "x" })).toEqual({ kind: "gone" });
+        expect.soft(spell(`ahead:${SETTLED_AHEAD}`), "settled ahead").toBe("../notes");
         expect
           .soft(
-            scope.spellLink({ ref: `ahead:${OPEN_AHEAD}`, href: "manuscript://later.md" }).href,
+            scope.spellLink({ ref: `ahead:${OPEN_AHEAD}`, href: "manuscript://later" }).href,
             "unsettled ahead keeps its address",
           )
-          .toBe("../later.md");
-        expect.soft(scope.isLive({ ref: `doc:${TARGET}`, href: "x.md" })).toBe(true);
+          .toBe("../later");
+        expect.soft(scope.isLive({ ref: `doc:${TARGET}`, href: "x" })).toBe(true);
         expect.soft(scope.documentFor("manuscript://part1/target")?.documentId).toBe(TARGET);
+        expect.soft(scope.documentFor("manuscript://part1/target.md.md")?.documentId).toBe(TARGET);
         expect
           .soft(scope.spellSource({ src: `asset:${MAP}`, ref: null }).href)
           .toBe("part1/map.png");
@@ -366,7 +400,7 @@ if (!RUN) {
         await port.registerAhead([
           {
             ref: `ahead:${id(90)}`,
-            address: "manuscript://part1/new.md",
+            address: "manuscript://part1/new",
             holderProjectId: port.scopeFor(HOLDER, undefined).holder.projectId,
             view: LIVE,
           },
@@ -382,11 +416,11 @@ if (!RUN) {
         await s.work("Beacon", "draft"),
         await s.work("Cove", "draft"),
       ];
-      const chapter = await s.seedLive("chapter.md");
-      await s.seedLive("notes.md");
+      const chapter = await s.seedLive("chapter");
+      await s.seedLive("notes");
       // Atlas's draft made Kael first; Beacon's draft joined it at a place of its own.
-      const kael = await s.seedHidden(atlas, "lore/kael.md");
-      await s.seedHidden(beacon, "places/kael.md", { join: kael });
+      const kael = await s.seedHidden(atlas, "lore/kael");
+      await s.seedHidden(beacon, "places/kael", { join: kael });
       const [atlasDraft, beaconDraft] = [await s.draftOf(atlas), await s.draftOf(beacon)];
       await s.draftOf(cove);
 
@@ -394,26 +428,26 @@ if (!RUN) {
         const { answer } = await s.linkAnswer({
           view,
           ref: `doc:${kael}`,
-          href: "manuscript://stale.md",
-          baseUri: "manuscript://chapter.md",
+          href: "manuscript://stale",
+          baseUri: "manuscript://chapter",
         });
         return answer.state === "document"
           ? [answer.inDraft, answer.draft?.draftId, answer.document.uri]
           : answer.state;
       };
-      const atAtlas = [true, atlasDraft.id, "manuscript://lore/kael.md"];
+      const atAtlas = [true, atlasDraft.id, "manuscript://lore/kael"];
       expect.soft(await named("live"), "live: the oldest draft, its path").toEqual(atAtlas);
       expect.soft(await named(cove), "a draft not using it: the oldest").toEqual(atAtlas);
       expect.soft(await named(atlas), "its own oldest draft").toEqual(atAtlas);
       expect
         .soft(await named(beacon), "the reader's own draft, where it has it")
-        .toEqual([true, beaconDraft.id, "manuscript://places/kael.md"]);
+        .toEqual([true, beaconDraft.id, "manuscript://places/kael"]);
 
       // One ref, three meanings: live, in Atlas's draft, and bound in the chapter.
-      const liveShip = await s.seedLive("ship.md");
-      const draftShip = await s.seedHidden(atlas, "drafts/ship.md");
-      const boundShip = await s.seedLive("bound.md");
-      const ahead = await s.seedAhead("ship.md", { settledTo: liveShip });
+      const liveShip = await s.seedLive("ship");
+      const draftShip = await s.seedHidden(atlas, "drafts/ship");
+      const boundShip = await s.seedLive("bound");
+      const ahead = await s.seedAhead("ship", { settledTo: liveShip });
       await s.seedDraftSettlement(atlas, ahead, draftShip);
       await s.seedHolderBinding(ahead, chapter, boundShip);
       const read = async (
@@ -424,7 +458,7 @@ if (!RUN) {
         const { answer, holderUri } = await s.linkAnswer({
           view,
           ref: `ahead:${ahead}`,
-          href: "manuscript://ship.md",
+          href: "manuscript://ship",
           baseUri,
           ...(holderDocumentId ? { holderDocumentId } : {}),
         });
@@ -437,8 +471,8 @@ if (!RUN) {
           ...(holderUri ? { holderUri } : {}),
         };
       };
-      const CHAPTER = "manuscript://chapter.md";
-      const NOTES = "manuscript://notes.md";
+      const CHAPTER = "manuscript://chapter";
+      const NOTES = "manuscript://notes";
       expect
         .soft(await read(atlas, CHAPTER), "the holder's binding first")
         .toEqual({ id: boundShip, bound: true });
@@ -455,7 +489,7 @@ if (!RUN) {
       expect.soft(await read(beacon, NOTES), "another draft: live").toEqual({ id: liveShip });
 
       // Atlas's draft also made a chapter.md: the base names two documents in its view.
-      await s.seedHidden(atlas, "chapter.md");
+      await s.seedHidden(atlas, "chapter");
       expect
         .soft(await read(atlas, CHAPTER), "ambiguous holder: no binding, and it says so")
         .toEqual({ id: draftShip, unresolved: true });
@@ -464,23 +498,23 @@ if (!RUN) {
         .toEqual({ id: boundShip, bound: true });
       // A stale base: the id still pins the holder, and the answer names where it is now.
       expect
-        .soft(await read("live", "manuscript://old-chapter.md", chapter), "moved holder")
+        .soft(await read("live", "manuscript://old-chapter", chapter), "moved holder")
         .toEqual({ id: boundShip, bound: true, holderUri: CHAPTER });
       expect
-        .soft(await read("live", "manuscript://old-chapter.md"), "stale base, no id")
+        .soft(await read("live", "manuscript://old-chapter"), "stale base, no id")
         .toEqual({ id: liveShip, unresolved: true });
 
       // Another account's document is no holder here: knowing its id names nothing, so
       // neither its location nor its bindings reach this reader.
       const stranger = await draftTreeScenario(db);
-      const foreign = await stranger.seedLive("unannounced-private-book-title.md");
+      const foreign = await stranger.seedLive("unannounced-private-book-title");
       await s.seedHolderBinding(ahead, foreign, boundShip);
       expect
         .soft(await read("live", null, foreign), "another account's holder, by id")
         .toEqual({ id: liveShip, unresolved: true });
       expect
         .soft(
-          await read(atlas, "manuscript://unannounced-private-book-title.md", foreign),
+          await read(atlas, "manuscript://unannounced-private-book-title", foreign),
           "by id and by its own address",
         )
         .toEqual({ id: draftShip, unresolved: true });
@@ -490,7 +524,7 @@ if (!RUN) {
       const spellTarget = () =>
         scopes
           .holder({ documentId: HOLDER, view: LIVE })
-          .spellLink({ ref: `doc:${TARGET}`, href: "x.md" }).href;
+          .spellLink({ ref: `doc:${TARGET}`, href: "x" }).href;
       const rename = (name: string) =>
         db.update(documents).set({ name }).where(eq(documents.id, TARGET));
       let inherited: Promise<string> | undefined;
@@ -503,12 +537,12 @@ if (!RUN) {
         await rename("moved");
         // A nested door for the same project joins the open snapshot: no reload.
         expect(await scopes.within({ documentId: HOLDER }, async () => spellTarget())).toBe(
-          "target.md",
+          "target",
         );
         // One whose project can't be found has nothing of its own: it keeps the enclosing one.
         expect
           .soft(await scopes.within({ threadId: UNKNOWN_THREAD }, async () => spellTarget()))
-          .toBe("target.md");
+          .toBe("target");
         // A door read in a thread never joins one read in none: it loads its own.
         expect
           .soft(
@@ -520,7 +554,7 @@ if (!RUN) {
               return spellTarget();
             }),
           )
-          .toBe("moved.md");
+          .toBe("moved");
         // Work scheduled here outlives the operation and must not read its settled snapshot.
         inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>
           scopes.within({ documentId: HOLDER }, async () => {
@@ -540,7 +574,7 @@ if (!RUN) {
           }
         });
       });
-      expect(await inherited).toBe("moved.md");
+      expect(await inherited).toBe("moved");
       expect(await stray).toContain("outside a document link scope");
 
       await expect(

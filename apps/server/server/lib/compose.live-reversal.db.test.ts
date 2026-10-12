@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       turnId: "00000000-0000-4000-8000-000000000c07",
     };
     const DOC_ID = "00000000-0000-4000-8000-000000000c08";
-    const CHAPTER = "manuscript://chapter.md";
+    const CHAPTER = "manuscript://chapter";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
@@ -71,7 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(schema.threads).values({

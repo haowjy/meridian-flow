@@ -49,7 +49,7 @@ const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
 const DRAFT_ID = crypto.randomUUID();
 const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
-const TARGET_URI = "user://target.md";
+const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
 
@@ -73,7 +73,7 @@ vi.mock("./file-access.js", async (importOriginal) => {
 
 const fact = (n: number): SpelledLinkFact => ({
   ref: `doc:${String(n).padStart(8, "0")}-0000-4000-8000-000000000000`,
-  address: `user://target-${n}.md`,
+  address: `user://target-${n}`,
 });
 
 /**
@@ -84,7 +84,7 @@ function success(
   command: "read" | "insert",
   links: SpelledLinkFact[],
   view: LinkView = { kind: "live" },
-  holderUri = "user://source.md",
+  holderUri = "user://source",
 ): WriteOutcome {
   return {
     status: "success",
@@ -170,7 +170,7 @@ async function harness(
         content: options.search?.entries ?? searchEntries,
         revision: "r1",
         links: options.search?.links ?? searchLinks,
-        holder: { uri: `user://${names[documentId]}.md`, view: { kind: "live" } },
+        holder: { uri: `user://${names[documentId]}`, view: { kind: "live" } },
       },
     }),
     refreshDocumentProjection: async () => {},
@@ -208,7 +208,7 @@ async function harness(
       id,
       folderId: null,
       name,
-      extension: "md",
+      extension: "",
       markdown: "needle",
       filetype: "markdown",
     });
@@ -260,7 +260,7 @@ const reference = (documentId: string, name: string) => ({
   type: "reference" as const,
   text: `@${name}`,
   documentId,
-  uri: `user://${name}.md`,
+  uri: `user://${name}`,
 });
 
 /**
@@ -376,9 +376,7 @@ const rows: Array<{
     name: "a read records what it rendered, in the view it was spelled in",
     async act(check) {
       const h = await harness();
-      const { threadId, results } = await runTurn(h, [
-        toolCall("read", { path: "user://source.md" }),
-      ]);
+      const { threadId, results } = await runTurn(h, [toolCall("read", { path: "user://source" })]);
       check(JSON.stringify(results), "read output carries no host facts").not.toMatch(HOST_FACTS);
       return {
         store: h.store,
@@ -394,9 +392,9 @@ const rows: Array<{
       const { threadId, results } = await runTurn(h, [
         toolCall("write", {
           command: "insert",
-          path: "user://target.md",
+          path: "user://target",
           after: "h0",
-          from: { path: "user://source.md" },
+          from: { path: "user://source" },
         }),
       ]);
       check(results, "the write succeeded").toEqual([
@@ -433,8 +431,8 @@ const rows: Array<{
       const filler = "filler ".repeat(100);
       const search = {
         entries: [
-          `h0|needle ${filler}[Secret](user://never-shown.md)`,
-          `h1|${"word ".repeat(22)}needle ${"word ".repeat(22)}[Cut through here](user://cut.md) ${filler}`,
+          `h0|needle ${filler}[Secret](user://never-shown)`,
+          `h1|${"word ".repeat(22)}needle ${"word ".repeat(22)}[Cut through here](user://cut) ${filler}`,
         ],
         links: [[fact(80)], [fact(81)]],
       };
@@ -444,9 +442,9 @@ const rows: Array<{
       const output = plain.results
         .map((result) => String((result as { output?: unknown }).output))
         .join("\n");
-      check(output, "the left-out link is not in the output").not.toContain("never-shown.md");
+      check(output, "the left-out link is not in the output").not.toContain("never-shown");
       check(output, "the window cuts into the second link").toContain("[Cut…");
-      check(output, "its destination is cut off").not.toContain("user://cut.md)");
+      check(output, "its destination is cut off").not.toContain("user://cut)");
       check(await shown(windowed.store, plain.threadId, SOURCE), "windowed").toEqual([]);
       const whole = await harness({ search });
       const verbose = await runTurn(whole, [
@@ -462,7 +460,7 @@ const rows: Array<{
   {
     name: "a staged echo and its settled receipt each keep the holder their own render spelled from",
     async act(check) {
-      const MOVED = "user://moved/target.md";
+      const MOVED = "user://moved/target";
       const h = await harness({
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
@@ -560,7 +558,7 @@ const rows: Array<{
             metadata: null,
           });
           const toolCallId = crypto.randomUUID();
-          const input = { command: "insert", path: TARGET_URI, content: "[a](b.md)" };
+          const input = { command: "insert", path: TARGET_URI, content: "[a](b)" };
           await repos.blocks.create({
             turnId: turn.id as TurnId,
             blockType: "tool_use",
@@ -574,7 +572,7 @@ const rows: Array<{
             content: {
               toolCallId,
               toolName: "write",
-              output: "status: success\n\n[a](user://target-1.md)",
+              output: "status: success\n\n[a](user://target-1)",
               isError: false,
               metadata: {
                 documentRevisions: [{ documentId: TARGET, uri: TARGET_URI, revision: "r" }],
@@ -586,7 +584,7 @@ const rows: Array<{
       check(
         results.map((result) => (result as { output?: unknown }).output),
         "the model got the history quoting the write",
-      ).toEqual([expect.stringContaining("target.md")]);
+      ).toEqual([expect.stringContaining("target")]);
       return { store: h.store, threadId, shown: { [TARGET]: [] } };
     },
   },
@@ -598,7 +596,7 @@ const rows: Array<{
       const controller = new AbortController();
       const { threadId, results } = await runTurn(
         h,
-        [toolCall("read", { path: "user://source.md" })],
+        [toolCall("read", { path: "user://source" })],
         {
           signal: controller.signal,
           pending: paused.pending,
@@ -616,9 +614,7 @@ const rows: Array<{
     async act(check) {
       const paused = pausedRead();
       const h = await harness({ read: paused.wait, readTimeoutMs: 20 });
-      const { threadId, results } = await runTurn(h, [
-        toolCall("read", { path: "user://source.md" }),
-      ]);
+      const { threadId, results } = await runTurn(h, [toolCall("read", { path: "user://source" })]);
       paused.release();
       await new Promise((resolve) => setTimeout(resolve, 0));
       check(
@@ -654,7 +650,7 @@ const rows: Array<{
               shown: [
                 {
                   documentId: SOURCE,
-                  holderUri: "user://source.md",
+                  holderUri: "user://source",
                   view: { kind: "live" },
                   links: [fact(93)],
                 },
@@ -716,12 +712,12 @@ const rows: Array<{
     name: "a later reference failing keeps the earlier reference's read from becoming evidence",
     async act(check) {
       const h = await harness();
-      const reader = failingAt(h, "user://target.md");
+      const reader = failingAt(h, "user://target");
       const run = await runTurn(h, [], {
         userBlocks: [reference(SOURCE, "source"), reference(TARGET, "target")],
         referenceReader: reader,
       });
-      check(reader.reads, "the first reference was read").toEqual(["user://source.md"]);
+      check(reader.reads, "the first reference was read").toEqual(["user://source"]);
       check(run.outcome.status, "the run failed").toBe("error");
       check(run.requests, "the model was never asked").toBe(0);
       check(JSON.stringify(run.referenceBlocks), "no read saved").not.toContain("success");
@@ -780,7 +776,7 @@ const rows: Array<{
     async act(check) {
       const paused = pausedRead();
       const h = await harness({ read: paused.wait });
-      const run = await runTurn(h, [toolCall("read", { path: "user://source.md" })], {
+      const run = await runTurn(h, [toolCall("read", { path: "user://source" })], {
         pending: paused.pending,
         during: async (rig) => {
           await rig.send(rig.thread.id, "Also this", {
@@ -808,8 +804,8 @@ const rows: Array<{
     async act(check) {
       const paused = pausedRead();
       const h = await harness({ read: paused.wait });
-      const reader = failingAt(h, "user://hidden.md");
-      const run = await runTurn(h, [toolCall("read", { path: "user://source.md" })], {
+      const reader = failingAt(h, "user://hidden");
+      const run = await runTurn(h, [toolCall("read", { path: "user://source" })], {
         pending: paused.pending,
         referenceReader: reader,
         during: async (rig) => {
@@ -819,7 +815,7 @@ const rows: Array<{
           paused.release();
         },
       });
-      check(reader.reads, "the first adopted reference was read").toEqual(["user://target.md"]);
+      check(reader.reads, "the first adopted reference was read").toEqual(["user://target"]);
       check(JSON.stringify(run.referenceBlocks), "no adopted read saved").not.toContain("success");
       return { store: h.store, threadId: run.threadId, shown: { [TARGET]: [] } };
     },

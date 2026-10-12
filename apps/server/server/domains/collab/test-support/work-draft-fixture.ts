@@ -90,7 +90,7 @@ export function createWorkDraftFixture(db: Database) {
       id: DOC_ID,
       contextSourceId: SOURCE_ID,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     });
     await db.insert(threads).values({

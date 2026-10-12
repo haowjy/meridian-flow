@@ -252,7 +252,7 @@ export const documents = pgTable(
         onDelete: "cascade",
       }),
     name: text("name").notNull(),
-    extension: text("extension").notNull().default("md"),
+    extension: text("extension").notNull().default(""),
     fileType: text("file_type").notNull().default("markdown"),
     description: text("description"),
     storageUrl: text("storage_url"),

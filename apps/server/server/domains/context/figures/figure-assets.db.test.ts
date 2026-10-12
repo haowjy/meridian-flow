@@ -84,7 +84,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: HOST_DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter-one",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
         mimeType: "text/markdown",
         sizeBytes: 23,

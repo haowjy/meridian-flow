@@ -9,7 +9,7 @@ import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 export type CreateFault =
   /** Opposite kind at the path, or a binary create where a document sits. */
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   /** The path names two or more nodes in the view. */
   | { code: "ambiguous"; ids: readonly string[] };
 
@@ -37,8 +37,8 @@ export type DraftCreateResult =
 
 /** What a live create at a path would find, holding nothing (§6.3 step 1). */
 export type LiveCreateCandidate =
-  /** A visible document or folder holds the path, or two nodes do. */
-  | { kind: "occupant" }
+  /** A visible document or folder holds the path (its kind when one does), or two nodes do. */
+  | { kind: "occupant"; occupantKind?: "file" | "folder" }
   /** A hidden text document a live create there would reveal, at its physical source. */
   | { kind: "candidate"; documentId: DocumentId; sourceId: ContextSourceId }
   | { kind: "none" };
