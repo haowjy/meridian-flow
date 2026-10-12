@@ -39,6 +39,7 @@ import {
   type RenameThreadRequest,
   type RenameThreadResponse,
   type ReplyRetryRequest,
+  type ReplyRetryResponse,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -122,7 +123,7 @@ export function retryReply(
   threadId: string,
   failedTurnId: string,
   request: ReplyRetryRequest,
-): Promise<Turn> {
+): Promise<ReplyRetryResponse> {
   return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
