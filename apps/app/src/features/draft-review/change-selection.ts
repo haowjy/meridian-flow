@@ -8,9 +8,12 @@ import type { ReviewChange } from "./review-changes";
 
 /** The selection naming these changes' classes and every operation they hold. */
 export function selectionOf(
-  changes: readonly Pick<ReviewChange, "classId" | "operationIds" | "keys">[],
+  changes: readonly Pick<ReviewChange, "classId" | "operationIds" | "keys" | "operations">[],
 ): ChangeSelection {
   return {
+    admissionTokens: changes.flatMap((change) =>
+      change.operations.slice(0, 1).map((op) => op.admissionToken),
+    ),
     classIds: changes.map((change) => change.classId),
     operationIds: changes.flatMap((change) => change.operationIds),
     keys: changes.flatMap((change) => change.keys),

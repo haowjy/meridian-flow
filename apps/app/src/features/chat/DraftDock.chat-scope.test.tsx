@@ -55,6 +55,7 @@ const draft = (id: string, actors: (typeof pacing)[]) => ({
 const op = (id: string, actor: typeof pacing | null, classId = `class-${id}`) => ({
   ...operation(id),
   closureClassId: classId,
+  admissionToken: classId,
   ...(actor
     ? { actorThreadId: actor.threadId, actorThreadTitle: actor.title }
     : { kind: "writer" as const }),

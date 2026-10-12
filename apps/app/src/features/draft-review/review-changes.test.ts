@@ -13,6 +13,7 @@ import { changeExcerpt, reviewChanges } from "./review-changes";
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
     closureClassId: `closure:${overrides.operationId}`,
+    admissionToken: `closure:${overrides.operationId}`,
     kind: "agent",
     classification: "addition",
     ...overrides,
@@ -101,6 +102,7 @@ describe("reviewChanges", () => {
     const agent = op({
       operationId: "61",
       closureClassId: "c",
+      admissionToken: "c",
       classification: "rewrite",
       beforeExcerpt: "his",
       afterExcerpt: "one withered frail",
@@ -109,6 +111,7 @@ describe("reviewChanges", () => {
       operationId: "writer:66",
       kind: "writer",
       closureClassId: "c",
+      admissionToken: "c",
       classification: "rewrite",
       beforeExcerpt: "his",
       afterExcerpt: "one withered frail",

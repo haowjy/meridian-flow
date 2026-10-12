@@ -60,6 +60,7 @@ export const listed = {
 export const operation = (id: string) => ({
   operationId: id,
   closureClassId: `class-${id}`,
+  admissionToken: `class-${id}`,
   kind: "agent" as const,
   classification: "addition" as const,
 });
@@ -85,6 +86,7 @@ export const draftA = { documentId: "document-a", draftId: "draft-a" };
 /** A selection of these changes (one class each). */
 export const change = (...ids: string[]) => ({
   classIds: ids.map((id) => `class-${id}`),
+  admissionTokens: ids.map((id) => `class-${id}`),
   operationIds: ids,
 });
 

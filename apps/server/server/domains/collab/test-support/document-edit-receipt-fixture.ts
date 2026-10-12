@@ -153,6 +153,7 @@ export async function reviewChange(
     userId: USER_ID as never,
     operationIds: [op.operationId],
     closureClassIds: [op.closureClassId],
+    admissionTokens: [op.admissionToken],
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };

@@ -3,7 +3,7 @@ import type { ParsedContextUri } from "@meridian/contracts/context-uri";
 
 import type { ReviewHunk, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
-import type { DraftReviewOperationInternal } from "./draft-review-types.js";
+import type { DraftReviewOperationWithEvidence } from "./draft-review-types.js";
 
 export type ReviewableDraft = {
   draftId: string;
@@ -25,7 +25,7 @@ export type DraftReviewPreview = {
   isNewDocument?: boolean;
   liveRevisionToken: string;
   draftRevisionToken: string;
-  operations: DraftReviewOperationInternal[];
+  operations: DraftReviewOperationWithEvidence[];
   hunks: ReviewHunk[];
 };
 

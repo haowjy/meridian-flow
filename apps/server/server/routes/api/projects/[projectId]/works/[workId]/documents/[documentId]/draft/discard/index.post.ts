@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
     userId: user.userId,
+    ...("admissionTokens" in body ? { admissionTokens: body.admissionTokens } : {}),
     ...("closureClassIds" in body ? { closureClassIds: body.closureClassIds } : {}),
     ...("operationIds" in body ? { operationIds: body.operationIds } : {}),
     ...("liveRevisionToken" in body ? { liveRevisionToken: body.liveRevisionToken } : {}),

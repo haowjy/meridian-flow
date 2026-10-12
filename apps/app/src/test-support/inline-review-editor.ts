@@ -94,6 +94,7 @@ export function operation(
   return {
     operationId,
     closureClassId,
+    admissionToken: closureClassId,
     kind,
     classification: "rewrite",
   };

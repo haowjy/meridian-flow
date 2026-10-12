@@ -54,8 +54,9 @@ joining a caller's older tree snapshot. Returned bytes and scopes are detached;
 the snapshot closes before rich-difference derivation.
 
 The draft token hashes this observation, including both link views and history
-statuses. Apply fences that token; Discard fences the displayed closure class
-IDs instead, so independent draft typing cannot invalidate its selected members.
+statuses. Apply fences that token; Discard fences the displayed class IDs and
+closed-row/rich-effect admission evidence instead, so independent draft typing
+cannot invalidate its selected class.
 Selection also compares the cut with the branch and review rows supplied
 by the existing admission protocol; a mismatch refuses Apply as stale and
 retries Discard through its snapshot-CAS owner. Admission's
@@ -479,18 +480,22 @@ removal belongs to the row that actually removed it.
 
 Apply and Discard share one operation-to-closure resolver, run inside their
 branch critical section and again on each snapshot-CAS retry. Per-change Discard now
-requires the displayed live revision and exact `closureClassIds`; missing
-admission evidence, a changed live revision, or changed class membership returns
+requires the displayed live revision, stable `closureClassIds`, and server-vended
+`admissionTokens` for each class's complete closed rows and rich replay effect; missing
+admission evidence, a changed live revision, or changed class evidence returns
 `stale` without modifying the draft. The draft revision is still carried as the
 displayed observation, but unrelated journal admissions do not veto Discard.
 Discard resolves operations to current classes and compares their complete
-membership tokens before selecting journal rows. Apply requires all class members
+admission tokens before selecting journal rows. Row fingerprints preserve
+identical bytes and immutable metadata through re-journaling; all closed rows,
+including invisible deletions, contribute with multiplicity. Apply requires all class members
 and unchanged live/draft revision tokens.
 Whole-document Discard remains unfenced.
 
 ### Review read efficiency
 
-Review classes are opaque `closure:v1:` SHA-256 membership tokens, not encoded
+Review classes have opaque stable `closure:v1:` SHA-256 identities, not admission
+evidence or encoded
 operation lists. One typed graph joins visible operation and journal-row nodes;
 physical rows always join their operation, while logical source rows join only
 when supplied in the journal cut. Dependency closure decodes each row once and indexes ranges
@@ -518,6 +523,9 @@ no restoration and creates no copy. Selective Apply publishes only its class's
 rows. The re-fork owns the generation change; an empty selective Discard does
 not invoke another empty settlement. Existing generation/handoff and unsent
 writer carry recovery own the editor transition.
+
+A staged write is refused only on retired-generation or inverse evidence; text
+that merely disappeared merges like any peer's edit.
 
 Responses replay staged segment rows onto the current generation under the
 existing branch lock, then check integration and the generation residual.

@@ -17,6 +17,7 @@ describe("Discard request selection", () => {
     expect(parseDraftDiscardSelection({})).toEqual({ status: "ready", command: {} });
     expect(() => parseDraftDiscardSelection({ liveRevisionToken: "live" })).toThrow();
     expect(() => parseDraftDiscardSelection({ closureClassIds: ["class"] })).toThrow();
+    expect(() => parseDraftDiscardSelection({ admissionTokens: ["token"] })).toThrow();
   });
   it("refuses missing selective admission evidence as stale", () => {
     expect(parseDraftDiscardSelection({ operationIds: ["1"] })).toEqual({ status: "stale" });
@@ -25,12 +26,14 @@ describe("Discard request selection", () => {
         operationIds: ["1"],
         liveRevisionToken: "live",
         draftRevisionToken: "draft",
+        closureClassIds: ["class"],
       }),
     ).toEqual({ status: "stale" });
   });
   it("keeps the complete typed selective command", () => {
     const command = {
       closureClassIds: ["class"],
+      admissionTokens: ["class"],
       operationIds: ["1"],
       liveRevisionToken: "live",
       draftRevisionToken: "draft",

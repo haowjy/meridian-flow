@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Preserve a fresh same-reply peer's writes when an older peer's post-Discard retirement runs late.
+- Refuse selective Discard when the clicked class's closed rows or rich effect changed, even when its stable review identity did not. Keep independent typing admissible and preserve admission evidence through queued clicks and retries.
 
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
