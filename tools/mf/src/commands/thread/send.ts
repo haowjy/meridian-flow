@@ -12,7 +12,7 @@ import {
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
 import { blockPlainText, type Turn } from "@meridian/contracts/threads";
-import { imageCapable, serializeMessageDoc } from "@meridian/thread-client";
+import { buildMessageDoc, imageCapable, serializeMessageDoc } from "@meridian/thread-client";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -110,14 +110,7 @@ async function resolveSkills(session: Session, threadId: string, slugs: string[]
 export async function admitMessage(session: Session, input: Omit<SendInput, "timeoutMs" | "full">) {
   const skills = await resolveSkills(session, input.threadId, input.skills ?? []);
   const references = await resolveReferences(session, input.threadId, input.refs ?? []);
-  const message = serializeMessageDoc({
-    type: "doc",
-    content: [
-      ...skills.map((skill) => ({ type: "composerSkill", attrs: skill })),
-      { type: "paragraph", content: [{ type: "text", text: input.text }] },
-      ...references.map((reference) => ({ type: "composerReference", attrs: { reference } })),
-    ],
-  });
+  const message = serializeMessageDoc(buildMessageDoc({ skills, text: input.text, references }));
   const mockScriptId =
     input.mock === undefined
       ? null

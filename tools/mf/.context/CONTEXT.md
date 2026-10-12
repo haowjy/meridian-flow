@@ -67,8 +67,9 @@ admission answer with one app-route lookup (`submissionId`); a failed lookup
 or pending admission is 6 `admission_unknown`. Tool results distinguish staged
 `tool.completed` from committed `tool.settled` in both output modes.
 
-Message admission builds skill nodes, a prose paragraph, then reference nodes
-and passes that document to `serializeMessageDoc`. Reference labels and image
+Message admission calls `buildMessageDoc` for one paragraph containing inline
+skills, prose and references, with authored newlines represented by `hardBreak`
+(as in the composer), then passes it to `serializeMessageDoc`. Reference labels and image
 capability come from the address route's catalog entry. This exercises the app's
 serializer, not the TipTap editor or its submission lifecycle.
 
