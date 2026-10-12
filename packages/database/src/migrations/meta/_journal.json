@@ -285,14 +285,14 @@
     {
       "idx": 40,
       "version": "7",
-      "when": 1791766247139,
+      "when": 1791767480690,
       "tag": "0040_d62_chat_write_mode",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1791766265864,
+      "when": 1791767499233,
       "tag": "0041_d62_chat_write_mode_online",
       "breakpoints": true
     }
