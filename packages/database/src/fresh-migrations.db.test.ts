@@ -107,6 +107,7 @@ if (!enabled || !databaseUrl) {
           ORDER BY name
         `;
         expect(functions.map((row) => row.name)).toEqual([
+          "capture_document_checkpoint_range",
           "complete_turn_trail_work",
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",
