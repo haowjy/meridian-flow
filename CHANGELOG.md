@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Planned import links reject personal-project targets and draft-only documents; import binding requires a live view.
+
 - Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
 
 - Server imports can fill an untouched placeholder by identity, or prepend text without replacing existing edits.

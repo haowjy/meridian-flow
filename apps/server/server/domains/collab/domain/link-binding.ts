@@ -249,7 +249,12 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       if (!input.targets?.has(index)) return assigned.attrs[index];
       const parsed = parseLinkRef(`doc:${target ?? ""}`);
       const ref = parsed?.kind === "doc" ? documentRef(parsed.documentId) : null;
-      if (!ref || scope.resolve({ ref, href: occurrence.attrs.href }).kind !== "document") {
+      const resolved = ref ? scope.resolve({ ref, href: occurrence.attrs.href }) : null;
+      if (
+        resolved?.kind !== "document" ||
+        resolved.document.projectId !== scope.holder.projectId ||
+        resolved.document.presence !== "live"
+      ) {
         invalidTargets.push({ occurrence: index, documentId: target ?? ("" as DocumentId) });
         return { ...occurrence.attrs, ref: null, href: "" };
       }
@@ -270,6 +275,8 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     async bindMarkdown(input) {
       if (deps.inTransaction()) throw new LinkBindingInsideTransactionError();
       if (planned && input.against) throw new Error("Import binding is fresh only");
+      if (planned && input.view && input.view.kind !== "live")
+        throw new Error("Import binding requires a live view");
       if (!planned && "targets" in input)
         throw new Error("Planned targets require the import binder");
       const key =
