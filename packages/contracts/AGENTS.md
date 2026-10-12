@@ -83,11 +83,11 @@ runtime shapes, and observability records.
   enqueue or drops that queued item from the tray.
 - Run identity (which execution reserved a turn, which turn delivered a
   message, when an execution ended) has one reader, `protocol/run-boundary.ts`,
-  over `Turn.executionId`/`reservedForUserTurnIds`/`delivery`, the snapshot's
-  `liveState.openExecutionId` and the `meridian.messages.delivered` and
-  `meridian.execution.ended` customs. Every fact is write-once: consumers merge
-  stream and snapshot by union, and never infer them from transcript ancestry
-  (`threads/reply-ancestry.ts` stays only until the app's follow rule replaces it).
+  over `Turn.executionId`/`reservedForUserTurnIds`/`delivery`/`position`, the
+  snapshot's `liveState.openExecutionId` and the `meridian.messages.delivered`
+  and `meridian.execution.ended` customs. Every fact is write-once: consumers
+  merge stream and snapshot by union, order an execution's turns by `position`,
+  and never infer them from arrival order or transcript ancestry.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - `protocol/document-filename.ts` is the input codec for document basenames. Prose
   stores empty extension and markdown filetype; registered non-prose suffixes
