@@ -51,6 +51,16 @@ export function EditorReviewAddressOwner({
     if (inline) {
       restoring.current = null;
       const group = review.groupForDocument(inline.documentId);
+      // Inline state may lag a warm destination change by one render. Never
+      // relabel its provenance or repair over an explicitly different request.
+      if (
+        (requestedDraftId && requestedDraftId !== inline.draftId) ||
+        group?.draft.draftId !== inline.draftId ||
+        (ownedReview.current && ownedReview.current.workId !== review.controller.workId)
+      ) {
+        review.controller.exitInlineReview();
+        return;
+      }
       const match = group ? addressNames(inline.documentId, group.contextLocation) : "no";
       if (activeScreen !== "context" || !activeScheme || match === "no") {
         review.controller.exitInlineReview();
