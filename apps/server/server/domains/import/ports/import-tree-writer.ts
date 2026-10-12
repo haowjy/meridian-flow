@@ -1,5 +1,7 @@
 /** Identity-based context writes; methods join the repository's ambient transaction. */
+import type { StoredDocumentProperties } from "@meridian/contracts";
 import type { BoundWrite } from "../../collab/index.js";
+import type { ImportLinkCandidate } from "../domain/link-index.js";
 import type { ImportEntry, ImportRecord } from "./import-repository.js";
 export interface ImportParent {
   sourceId: string;
@@ -9,17 +11,28 @@ export interface ImportParent {
 }
 export class ParentMovedError extends Error {}
 export interface ImportTreeWriter {
+  existingLinks(): Promise<ImportLinkCandidate[]>;
+  setProperties(
+    id: string,
+    properties: StoredDocumentProperties | null,
+    aliases: string[],
+  ): Promise<void>;
   preview(uri: string): Promise<ImportParent["children"]>;
   destination(uri: string): Promise<{ sourceId: string; folderId: string | null }>;
   /** Resolve, lock the current source, reread. Throw ParentMovedError to retry a fresh transaction. */
   parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
   lockDocument(id: string): Promise<boolean>;
   create(parent: ImportParent, nodes: ImportEntry[]): Promise<void>;
-  bind(entry: ImportEntry, text: string): Promise<BoundWrite | null>;
+  bind(
+    entry: ImportEntry,
+    text: string,
+    targets?: ReadonlyMap<number, string>,
+  ): Promise<BoundWrite | null>;
   aheadTargets(
     bound: BoundWrite,
     holderUri: string,
     entries: readonly ImportEntry[],
+    targets?: ReadonlyMap<number, string>,
   ): { targetId: string; ref: string }[];
   settleAhead(ref: string, documentId: string): Promise<{ documentId: string } | null>;
   fill(

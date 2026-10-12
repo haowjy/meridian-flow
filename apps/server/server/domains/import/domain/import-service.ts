@@ -12,9 +12,11 @@ import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
+import { readExportMarker } from "./export-marker.js";
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
+import { prepareImportedNote } from "./prepare-note.js";
 
 export function createImportService(deps: {
   repository: ImportRepository;
@@ -105,7 +107,7 @@ export function createImportService(deps: {
             rootId: root.rootId,
             kind: root.kind,
             name: root.name,
-            id: node?.id ?? "",
+            id: node?.id ?? null,
             uri: node
               ? ((await tree.currentUri(node.id, root.kind === "folder" ? "folder" : "file")) ??
                 node.uri)
@@ -154,10 +156,15 @@ export function createImportService(deps: {
           await repo.setState(record.id, "ready");
           return false;
         }
-        const parent = await tree.parent(locked, first.parentId);
+        const parent = await tree.parent(
+          first.area && !first.parentId
+            ? { ...locked, ...(await tree.destination(`${first.area}://`)) }
+            : locked,
+          first.parentId,
+        );
         // One parent per chunk makes lock ordering stable even after cross-area moves.
         const chunk = pending
-          .filter((entry) => entry.parentId === first.parentId)
+          .filter((entry) => entry.parentId === first.parentId && entry.area === first.area)
           .slice(0, IMPORT_LIMITS.chunkSize);
         if (parent)
           parent.children.push(
@@ -167,6 +174,7 @@ export function createImportService(deps: {
                   entry.prepared &&
                   !entry.created &&
                   entry.parentId === first.parentId &&
+                  entry.area === first.area &&
                   entry.state === "planned",
               )
               .map((entry) => ({
@@ -316,8 +324,9 @@ export function createImportService(deps: {
     finish: (id: string, projectId: string) => finish(id, projectId),
     sweep,
     async plan(projectId: string, userId: string, raw: unknown) {
-      const manifest = validateManifest(raw),
-        fingerprint = manifestFingerprint(manifest);
+      const manifest = validateManifest(raw);
+      if (readExportMarker(manifest)) manifest.sort = false;
+      const fingerprint = manifestFingerprint(manifest);
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
@@ -327,13 +336,14 @@ export function createImportService(deps: {
           destination.folderId,
           await tree.preview(manifest.destination.folderUri),
         );
+        const existingLinks = await tree.existingLinks();
         await repo.transaction(() =>
           repo.insert(
             {
               id: manifest.importId,
               projectId,
               userId,
-              manifest,
+              manifest: { ...manifest, existingLinks },
               fingerprint,
               ...destination,
               state: "planning",
@@ -394,13 +404,33 @@ export function createImportService(deps: {
           );
         const text =
           entry.kind === "docx" ? await convertDocx(bytes) : Buffer.from(bytes).toString("utf8");
-        const bound = entry.kind === "binary" ? null : await tree.bind(entry, text);
+        const entries = await repo.entries(id);
+        const { converted, settings, root } = await prepareImportedNote(
+          tree,
+          record,
+          entry,
+          entries,
+          text,
+        );
+        const targets = converted?.targets ?? new Map<number, string>();
+        // Nonexistent binaries/code have ahead identities until arrival; retain their planned
+        // occurrence-to-id relation separately, never look them up again by an address.
+        const liveTargets = new Map<number, string>();
+        for (const [occurrence, targetId] of targets) {
+          const planned = entries.find((item) => item.id === targetId);
+          if (!planned || planned.created) liveTargets.set(occurrence, targetId);
+        }
+        const bound =
+          entry.kind === "binary"
+            ? null
+            : await tree.bind(entry, converted?.markdown ?? text, liveTargets);
         const ahead = bound?.aheadRefs.length
           ? tree
               .aheadTargets(
                 bound,
                 (await tree.currentUri(entry.id, "file")) ?? entry.uri ?? "",
-                await repo.entries(id),
+                entries,
+                targets,
               )
               .sort((a, b) => (a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0))
           : [];
@@ -424,7 +454,12 @@ export function createImportService(deps: {
           const fenced = await repo.fence(id, projectId);
           if (fenced?.state !== "ready") return;
           const parent = ["binary", "code"].includes(entry.kind)
-            ? await tree.parent(record, entry.parentId)
+            ? await tree.parent(
+                entry.area && !entry.parentId
+                  ? { ...record, ...(await tree.destination(`${entry.area}://`)) }
+                  : record,
+                entry.parentId,
+              )
             : null;
           const liveNote =
             entry.kind === "note" || entry.kind === "docx"
@@ -451,7 +486,16 @@ export function createImportService(deps: {
               });
               return;
             }
-            const findings = [...current.findings];
+            if (converted)
+              await tree.setProperties(entry.id, converted.properties, converted.aliases);
+            const findings = [...current.findings, ...(converted?.findings ?? [])];
+            if (settings.unreadable)
+              findings.push({ code: "settings_unreadable", params: { name: root?.name ?? "" } });
+            for (const invalid of bound.invalidTargets)
+              findings.push({
+                code: "link_target_unavailable",
+                params: { documentId: invalid.documentId },
+              });
             for (const ref of ahead) {
               const target = await repo.lockEntry(ref.targetId);
               if (target.state === "landed") {

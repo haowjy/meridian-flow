@@ -5,6 +5,8 @@
 ### Added
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+- Obsidian notes import as Meridian documents: frontmatter stored verbatim as properties with derived aliases, wikilinks, embeds and internal Markdown links bound to selected or existing documents by id, and kept-literal syntax reported.
+- Importing a Meridian export folder routes its Manuscript, Knowledge Base and Unfiled folders to their area roots, skips Works and turns the sort off.
 
 ### Removed
 - The old corpus import service and Knowledge Base batch-import route.

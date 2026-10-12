@@ -55,6 +55,8 @@ export type ImportUnreadableReason =
   | "symlink"
   | "folder_unreadable";
 export interface ImportFindingParams {
+  properties_unreadable: Record<string, never>;
+  link_target_unavailable: { documentId: string };
   hidden_notes: { count: number };
   link_to_existing: { text: string; path: string };
   link_via_alias: { text: string; path: string };
@@ -119,7 +121,8 @@ export interface ImportReport extends ImportSummary {
     rootId: number;
     kind: "folder" | "file";
     name: string;
-    id: string;
+    /** Null for a routed export selection: its project wrapper is not created. */
+    id: string | null;
     uri: string | null;
   }[];
   entries: ImportEntryReport[];

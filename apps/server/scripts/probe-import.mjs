@@ -10,7 +10,10 @@ import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
 const [projectId, folderUri, ...args] = process.argv.slice(2);
 const loose = args.includes("--files"),
   replay = args.includes("--replay"),
-  paths = args.filter((value) => value !== "--files" && value !== "--replay");
+  reverse = args.includes("--reverse"),
+  paths = args.filter(
+    (value) => value !== "--files" && value !== "--replay" && value !== "--reverse",
+  );
 if (!projectId || !folderUri || !paths.length)
   throw new Error(
     "Usage: pnpm exec tsx apps/server/scripts/probe-import.mjs PROJECT URI PATH... [--files]",
@@ -102,7 +105,7 @@ try {
     ]);
   console.log(JSON.stringify({ phase: "plan", ms: performance.now() - start, report: plan }));
   const landingStart = performance.now();
-  for (const entry of plan.entries) {
+  for (const entry of reverse ? [...plan.entries].reverse() : plan.entries) {
     if (
       entry.state !== "planned" &&
       entry.state !== "failed" &&

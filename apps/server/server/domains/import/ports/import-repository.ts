@@ -5,12 +5,13 @@ import type {
   ImportManifest,
   ImportState,
 } from "@meridian/contracts";
+import type { ImportLinkCandidate } from "../domain/link-index.js";
 import type { PlannedNode } from "../domain/plan.js";
 export interface ImportRecord {
   id: string;
   projectId: string;
   userId: string;
-  manifest: ImportManifest;
+  manifest: ImportManifest & { existingLinks?: ImportLinkCandidate[] };
   fingerprint: string;
   sourceId: string;
   folderId: string | null;

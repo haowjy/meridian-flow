@@ -93,6 +93,50 @@ describe("import planning", () => {
     ).toBe("Lore.md (2)");
     expect(codePointOrder("\uE000", "😀")).toBeLessThan(0);
   });
+  it("routes a marked whole export, omits its wrapper/area directories and reports Works", () => {
+    const value = manifest();
+    value.roots[0].meridianExport = JSON.stringify({
+      formatVersion: 1,
+      areas: { manuscript: "Manuscript", kb: "Knowledge Base", unfiled: "Unfiled" },
+      works: true,
+    });
+    value.folders = [
+      { rootId: 1, path: "Manuscript" },
+      { rootId: 1, path: "Works/No Work" },
+    ];
+    value.entries = [
+      "Manuscript/Chapter.md",
+      "Knowledge Base/Lore/Sects.md",
+      "Works/No Work/Scratch/Note.md",
+    ].map((path, entryId) => ({ path, entryId, rootId: 1, size: 0, sha256: "a".repeat(64) }));
+    const planned = planSelection(value, randomUUID, null);
+    expect(planned.find((node) => node.path === "Manuscript/Chapter.md")).toMatchObject({
+      area: "manuscript",
+      parentId: null,
+    });
+    expect(planned.find((node) => node.path === "Knowledge Base/Lore")).toMatchObject({
+      area: "kb",
+      parentId: null,
+    });
+    expect(planned.find((node) => node.path.startsWith("Works/"))).toMatchObject({
+      state: "skipped",
+      reason: "export_works",
+    });
+    expect(planned.filter((node) => node.kind === "folder").map((node) => node.path)).toEqual([
+      "Knowledge Base/Lore",
+    ]);
+    value.roots[0].meridianExport = '{"formatVersion":2}';
+    expect(() => planSelection(value, randomUUID, null)).toThrow("Invalid Meridian export marker");
+  });
+  it("resume identity includes routing settings and aliases rather than trusting a new reader", () => {
+    const original = manifest();
+    const changed = structuredClone(original);
+    changed.roots[0].appJson = '{"newFileLocation":"current"}';
+    expect(manifestFingerprint(original)).not.toBe(manifestFingerprint(changed));
+    changed.roots[0].appJson = undefined;
+    changed.entries[0].frontmatter = "aliases: [Different]\n";
+    expect(manifestFingerprint(original)).not.toBe(manifestFingerprint(changed));
+  });
   it("classifies binary sniffing, DOCX, prose and code without conversion", () => {
     expect(classify("scan.txt", Buffer.from("%PDF-1.5"))).toMatchObject({
       kind: "binary",
