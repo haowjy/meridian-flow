@@ -5,6 +5,7 @@ import {
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { InterruptRespondInput, ThreadTransport } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -20,7 +21,6 @@ import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
-import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
 type AppendUserMessageFn = typeof appendUserMessage;

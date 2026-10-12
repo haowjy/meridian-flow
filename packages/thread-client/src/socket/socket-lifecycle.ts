@@ -1,9 +1,12 @@
 /** Manages WebSocket reconnects and current-generation callbacks. */
 
-import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
-import type { ConnectivityHintsPort } from "./connectivity-hints";
-import type { ConnectionState } from "./ThreadTransport";
-import { notifyThreadFrame, notifyThreadSocketClose, notifyThreadSocketOpen } from "./wire-tap";
+import type {
+  ConnectivityHintsPort,
+  SocketClose,
+  SocketLike,
+  ThreadSocketObserver,
+} from "./socket-ports";
+import type { ConnectionState } from "./thread-transport";
 import {
   computePersistentReconnectDelayMs,
   computeReconnectDelayMs,
@@ -16,8 +19,9 @@ import {
 } from "./ws-thread-socket-utils";
 
 export type SocketLifecycleOptions = {
-  connectivityHints?: ConnectivityHintsPort;
-  webSocketFactory?: (url: string) => WebSocket;
+  connectivity?: ConnectivityHintsPort;
+  webSocketFactory: (url: string) => SocketLike;
+  observer?: ThreadSocketObserver;
 };
 
 /**
@@ -34,7 +38,7 @@ export type SocketLifecycleConsumer = {
   /** Inbound frame (string control or binary). */
   onMessage: (data: unknown) => void;
   /** Socket closed for a non-terminal reason; reconnect is being scheduled. */
-  onClose?: (event: CloseEvent) => void;
+  onClose?: (event: SocketClose) => void;
   /** Transient socket "error" event (distinct from a close). */
   onSocketError?: () => void;
   /** Publish a connection state to the consumer's registry/listeners. */
@@ -44,23 +48,25 @@ export type SocketLifecycleConsumer = {
 };
 
 export class SocketLifecycleController {
-  private readonly webSocketFactory: (url: string) => WebSocket;
+  private readonly webSocketFactory: (url: string) => SocketLike;
+  private readonly observer?: ThreadSocketObserver;
   private readonly consumer: SocketLifecycleConsumer;
 
   private readonly connectivityHints?: ConnectivityHintsPort;
   private stopHints: (() => void) | null = null;
 
-  private socket: WebSocket | null = null;
+  private socket: SocketLike | null = null;
   private socketGeneration = 0;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setTimeout> | null = null;
   private connectionState: ConnectionState = { kind: "disconnected" };
 
-  constructor(consumer: SocketLifecycleConsumer, options: SocketLifecycleOptions = {}) {
+  constructor(consumer: SocketLifecycleConsumer, options: SocketLifecycleOptions) {
     this.consumer = consumer;
-    this.connectivityHints = options.connectivityHints;
-    this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
+    this.observer = options.observer;
+    this.connectivityHints = options.connectivity;
+    this.webSocketFactory = options.webSocketFactory;
   }
 
   get state(): ConnectionState {
@@ -72,14 +78,11 @@ export class SocketLifecycleController {
   }
 
   isSocketOpen(): boolean {
-    return !!this.socket && this.socket.readyState === WebSocket.OPEN;
+    return !!this.socket && this.socket.readyState === 1;
   }
 
   isSocketLive(): boolean {
-    return (
-      !!this.socket &&
-      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
-    );
+    return !!this.socket && (this.socket.readyState === 1 || this.socket.readyState === 0);
   }
 
   /** Reset backoff to the aggressive phase (e.g. after a successful sync). */
@@ -127,15 +130,13 @@ export class SocketLifecycleController {
   }
 
   /** Write one frame to the current socket. */
-  send(data: string | ArrayBufferLike | ArrayBufferView): boolean {
+  send(data: string): boolean {
     if (!this.isSocketOpen()) return false;
     const socket = this.socket;
     if (!socket) return false;
-    if (DEBUG_FEATURE_ALLOWED && typeof data === "string") {
-      notifyThreadFrame("client_to_server", data, this.socketGeneration);
-    }
+    this.observer?.onStringFrame("client_to_server", data, this.socketGeneration);
     try {
-      socket.send(data as Parameters<WebSocket["send"]>[0]);
+      socket.send(data);
       return true;
     } catch {
       return false;
@@ -185,16 +186,16 @@ export class SocketLifecycleController {
 
     socket.addEventListener("open", () => {
       if (!this.isCurrentSocket(generation, socket)) return;
-      if (DEBUG_FEATURE_ALLOWED) notifyThreadSocketOpen(generation);
+      this.observer?.onSocketOpen(generation);
       this.resetPingTimer();
       this.consumer.onOpen();
     });
 
     socket.addEventListener("message", (event) => {
       if (!this.isCurrentSocket(generation, socket)) return;
-      const data = (event as MessageEvent).data;
-      if (DEBUG_FEATURE_ALLOWED && typeof data === "string") {
-        notifyThreadFrame("server_to_client", data, generation);
+      const data = event.data;
+      if (typeof data === "string") {
+        this.observer?.onStringFrame("server_to_client", data, generation);
       }
       this.resetPingTimer();
       this.consumer.onMessage(data);
@@ -206,12 +207,9 @@ export class SocketLifecycleController {
     });
 
     socket.addEventListener("close", (event) => {
-      if (DEBUG_FEATURE_ALLOWED) {
-        const closeEvent = event as CloseEvent;
-        notifyThreadSocketClose(generation, closeEvent.code, closeEvent.wasClean);
-      }
+      this.observer?.onSocketClose(generation, event.code, event.wasClean);
       if (!this.isCurrentSocket(generation, socket)) return;
-      this.handleSocketClose(event as CloseEvent);
+      this.handleSocketClose(event);
     });
   }
 
@@ -222,11 +220,11 @@ export class SocketLifecycleController {
     socket.close(4000, reason);
     // Native close may await a handshake that an offline network cannot finish.
     if (this.isCurrentSocket(generation, socket)) {
-      this.handleSocketClose({ code: 4000, reason, wasClean: false } as CloseEvent);
+      this.handleSocketClose({ code: 4000, reason, wasClean: false });
     }
   }
 
-  private handleSocketClose(event: CloseEvent): void {
+  private handleSocketClose(event: SocketClose): void {
     this.socket = null;
     this.clearPingTimer();
     this.consumer.onClose?.(event);
@@ -289,7 +287,7 @@ export class SocketLifecycleController {
     this.pingTimer = null;
   }
 
-  private isCurrentSocket(generation: number, socket: WebSocket): boolean {
+  private isCurrentSocket(generation: number, socket: SocketLike): boolean {
     return this.socketGeneration === generation && this.socket === socket;
   }
 }

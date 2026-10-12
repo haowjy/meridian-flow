@@ -2,17 +2,16 @@
  * dispatch-ws-server-message — routes a parsed `WsServerMessage` to the right
  * transport callback (sequenced event, gap, connected, error).
  *
- * Pure dispatcher injected with the transport's dependencies, so `WsThreadTransport`
+ * Pure dispatcher injected with the transport's dependencies, so `ThreadSocketClient`
  * stays focused on socket lifecycle. Owns only the message→callback mapping.
  */
 import type { AGUIEvent, MeridianError, WsServerMessage } from "@meridian/contracts/protocol";
-
-import { MeridianApiError } from "@/client/api/meridian-error";
 
 import type { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type WsServerMessageDispatchDeps = {
   subscriptions: WsThreadSubscriptionRegistry;
+  toError: (error: MeridianError) => Error;
   dispatchSequencedEvent: (
     threadId: string,
     seq: string,
@@ -92,7 +91,7 @@ export function dispatchWsServerMessage(
     }
 
     case "error": {
-      const error = new MeridianApiError(message.error);
+      const error = deps.toError(message.error);
       if (isNonFatalInterruptResponseError(message)) {
         if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
         return;

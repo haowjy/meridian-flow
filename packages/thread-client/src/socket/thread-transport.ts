@@ -8,6 +8,8 @@ import type {
   WsGapCause,
 } from "@meridian/contracts/protocol";
 
+import type { SocketClose } from "./socket-ports";
+
 /** Transport connection state surfaced to active subscribers. */
 export type ConnectionState =
   | { kind: "disconnected" }
@@ -47,7 +49,7 @@ export interface ThreadTransportHandlers {
   onLiveState?: (state: ThreadLiveState) => void;
   onGap?: (event: ThreadGapEvent) => void;
   onConnectionState?: (state: ConnectionState) => void;
-  onClose?: (event: CloseEvent) => void;
+  onClose?: (event: SocketClose) => void;
   onError?: (err: Error) => void;
 }
 
