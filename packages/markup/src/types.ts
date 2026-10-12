@@ -110,7 +110,22 @@ export interface MarkupCodec {
   /** Pure syntax: every link `ref` is null and every href is as written. */
   parse(content: string): ParsedContent;
   parseWithSpans(content: string): ParsedContentWithSpans;
+  parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
   serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
+}
+
+/** Original source offsets, never stored on document nodes. */
+export interface SourceRange {
+  from: number;
+  to: number;
+}
+export interface PresentationSourceRun {
+  kind: "text" | "link";
+  at: { block: number; path: number[]; count: number; offset?: number };
+  source: SourceRange | null;
+}
+export interface ParsedContentWithSourceMap extends ParsedContent {
+  sourceMap: PresentationSourceRun[];
 }
