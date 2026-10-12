@@ -41,6 +41,12 @@ extract its modules with `git show` into a scratch directory outside the
 checkout, or point a scratch test config at them; never substitute files in the
 checkout, even briefly. Check `git status` before reporting, and never report a
 change you made as pre-existing.
+
+Drive the browser through a named session (`agent-browser --session <name>`) and
+close only that session with `agent-browser --session <name> close`. Never pass
+`--all` to `close`: it closes every agent-browser session on the machine,
+whatever `--session` says, including other teams' probes.
+
 ## Document intake
 
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
