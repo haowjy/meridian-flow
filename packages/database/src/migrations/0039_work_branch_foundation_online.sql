@@ -1,7 +1,7 @@
 -- migration: no-transaction
--- Online half of 0037_work_branch_foundation: build the new indexes beside the old ones, validate
--- 0037's constraints, retire the old indexes once their replacements are valid, then drop the
--- columns 0037 moved off. Every statement is re-runnable.
+-- Online half of 0038_work_branch_foundation: build the new indexes beside the old ones, validate
+-- 0038's constraints, retire the old indexes once their replacements are valid, then drop the
+-- columns 0038 moved off. Every statement is re-runnable.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_fts" ON "document_markdown_projections" USING gin (to_tsvector('simple', "markdown"));
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_trgm" ON "document_markdown_projections" USING gin ("markdown" gin_trgm_ops);
@@ -123,26 +123,26 @@ DROP INDEX CONCURRENTLY IF EXISTS "document_branches_deleted_by_work_idx";
 SET lock_timeout = '2s';
 --> statement-breakpoint
 ALTER TABLE "documents"
-  DROP COLUMN IF EXISTS "kind", -- migration-lint: skip DROP_COLUMN (0037 deleted the manifest rows; every remaining row is content)
-  DROP COLUMN IF EXISTS "markdown_projection"; -- migration-lint: skip DROP_COLUMN (0037 copied it into document_markdown_projections)
+  DROP COLUMN IF EXISTS "kind", -- migration-lint: skip DROP_COLUMN (0038 deleted the manifest rows; every remaining row is content)
+  DROP COLUMN IF EXISTS "markdown_projection"; -- migration-lint: skip DROP_COLUMN (0038 copied it into document_markdown_projections)
 --> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox"
   DROP COLUMN IF EXISTS "settled_join_version", -- migration-lint: skip DROP_COLUMN (retired: the completion transaction owns the join fence)
-  DROP COLUMN IF EXISTS "state", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "claim_token", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "claim_epoch", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "claim_kind", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "claimed_at", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "lease_expires_at", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "available_at", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "attempt_count", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "last_error_code", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "last_error", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "blocked_at", -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
-  DROP COLUMN IF EXISTS "completed_at"; -- migration-lint: skip DROP_COLUMN (0037 copied it into its batch row)
+  DROP COLUMN IF EXISTS "state", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "claim_token", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "claim_epoch", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "claim_kind", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "claimed_at", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "lease_expires_at", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "available_at", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "attempt_count", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "last_error_code", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "last_error", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "blocked_at", -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
+  DROP COLUMN IF EXISTS "completed_at"; -- migration-lint: skip DROP_COLUMN (0038 copied it into its batch row)
 --> statement-breakpoint
 ALTER TABLE "document_branches"
-  DROP COLUMN IF EXISTS "work_id", -- migration-lint: skip DROP_COLUMN (0037 keyed every branch by its Work's draft)
-  DROP COLUMN IF EXISTS "deleted_by_work_id"; -- migration-lint: skip DROP_COLUMN (0037 reopened the branches a Work delete closed)
+  DROP COLUMN IF EXISTS "work_id", -- migration-lint: skip DROP_COLUMN (0038 keyed every branch by its Work's draft)
+  DROP COLUMN IF EXISTS "deleted_by_work_id"; -- migration-lint: skip DROP_COLUMN (0038 reopened the branches a Work delete closed)
 --> statement-breakpoint
 RESET lock_timeout;

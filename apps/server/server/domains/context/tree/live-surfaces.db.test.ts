@@ -729,19 +729,20 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         actorUserId: s.userId,
         owner: { kind: "work", projectId: s.projectId, workId: s.ascension.id },
         filename: "upload.md",
+        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",
         byteDigest: "a".repeat(64),
         fingerprint: "reader-matrix",
         fileType: "markdown",
       });
       expect(reserved.kind === "reserved" ? reserved.reservation.finalPath : reserved.kind).toBe(
-        "upload.md",
+        "upload",
       );
     });
 
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {
       const s = await bareSubject();
-      const hidden = await s.scenario.model(s.ascension).create("chapter-1.md", "Drafted.");
+      const hidden = await s.scenario.model(s.ascension).create("Chapter 1.md", "Drafted.");
       // The scenario's project stands in for the personal one the world seeded for user://.
       await db
         .update(projects)

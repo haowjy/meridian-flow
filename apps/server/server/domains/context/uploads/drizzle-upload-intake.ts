@@ -1,10 +1,11 @@
 /** Drizzle lifecycle adapter for authoritative upload intake reservations. */
-import type { Filetype, UploadOwner } from "@meridian/contracts/protocol";
+import { type Filetype, renderFilename, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, uploadIntakes, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { allocateFilename } from "../context/paths.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import type {
   ReserveUploadResult,
@@ -13,19 +14,6 @@ import type {
 } from "./upload-intake.js";
 
 type IntakeRow = typeof uploadIntakes.$inferSelect;
-
-function renderName(filename: string): { name: string; extension: string } {
-  const dot = filename.lastIndexOf(".");
-  return dot > 0
-    ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1).toLowerCase() }
-    : { name: filename, extension: "" };
-}
-
-function suffixed(filename: string, suffix: number): string {
-  if (suffix === 1) return filename;
-  const { name, extension } = renderName(filename);
-  return `${name} (${suffix})${extension ? `.${extension}` : ""}`;
-}
 
 async function lockIntakeKey(db: Database, projectId: string, intakeId: string): Promise<void> {
   await currentDrizzleDb(db).execute(
@@ -53,6 +41,7 @@ function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
     intakeId: row.intakeId,
     documentId: row.documentId,
     fingerprint: row.fingerprint,
+    filename: row.filename,
     finalPath: row.finalPath,
     objectKey: row.objectKey,
     canonicalUri: row.canonicalUri,
@@ -196,16 +185,14 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
               ),
             ),
         ]);
+        // The intake reservation index currently folds case, even though document keys do not.
         const used = new Set([
-          ...documentNames.map((row) =>
-            `${row.name}${row.extension ? `.${row.extension}` : ""}`.toLocaleLowerCase(),
-          ),
-          ...reservedNames.map((row) => row.path.toLocaleLowerCase()),
+          ...documentNames.map((row) => renderFilename(row.name, row.extension).toLowerCase()),
+          ...reservedNames.map((row) => row.path.toLowerCase()),
         ]);
-        let suffix = 1;
-        let finalPath = suffixed(input.filename, suffix);
-        while (used.has(finalPath.toLocaleLowerCase()))
-          finalPath = suffixed(input.filename, ++suffix);
+        const finalPath = await allocateFilename(input.documentFilename, (path) =>
+          used.has(path.toLowerCase()),
+        );
         const documentId = crypto.randomUUID();
         const workAuthority = owner.workSlug ? `@${owner.workSlug}` : "@";
         const canonicalUri = `uploads://${workAuthority}/${finalPath}`;

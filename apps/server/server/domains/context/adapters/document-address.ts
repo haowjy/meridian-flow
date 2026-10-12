@@ -6,7 +6,7 @@
  * where a document lives now treats `deleted` as "no address".
  *
  */
-import { type DocumentId, hasFileExtension, type ProjectId } from "@meridian/contracts";
+import { type DocumentId, isAheadFilename, type ProjectId } from "@meridian/contracts";
 import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -94,10 +94,10 @@ export async function resolveCanonicalAddress(
     throw new UnresolvableAddressError(input.address, `Address is not canonical: ${input.address}`);
   }
   const { scheme, authority, path } = parsed.value;
-  if (!hasFileExtension(path.split("/").at(-1) ?? "")) {
+  if (!isAheadFilename(path.split("/").at(-1) ?? "")) {
     throw new UnresolvableAddressError(
       input.address,
-      `Address needs a file extension: ${input.address}`,
+      `Address needs a canonical document name: ${input.address}`,
     );
   }
   if (authority.kind === "contextual" && !isProjectScopedScheme(scheme)) {

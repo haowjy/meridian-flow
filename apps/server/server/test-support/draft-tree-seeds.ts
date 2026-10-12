@@ -8,6 +8,7 @@
  * the other project sources, or `user://` for the account's personal source (in its
  * personal project, shared by every world of the account).
  */
+
 import { randomUUID } from "node:crypto";
 import type {
   ContextSourceId,
@@ -18,6 +19,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -106,11 +108,11 @@ export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } 
   return { scheme: (match?.[1] ?? "manuscript") as ScenarioSource, rel: match?.[2] ?? path };
 }
 
+/** A seeded row's stored parts: the name codec's canonical name, as every create stores it. */
 function splitFilename(filename: string) {
-  const dot = filename.lastIndexOf(".");
-  return dot <= 0
-    ? { name: filename, extension: "" }
-    : { name: filename.slice(0, dot), extension: filename.slice(dot + 1) };
+  const parsed = parseDocumentFilename(filename);
+  if (!parsed.ok) throw new Error(`Seed name ${filename}: ${parsed.error.message}`);
+  return { name: parsed.value.name, extension: parsed.value.extension };
 }
 
 /** The account's personal project and its `user://` source, made once per account. */

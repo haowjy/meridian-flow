@@ -9,6 +9,7 @@
  * tree row's own inline name field, so a rename here is the one the Files list
  * makes.
  */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -21,6 +22,7 @@ import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, type TabOwner, tabContextOwner } from "@/client/stores";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
+import type { ContextEntrySibling } from "../context/context-entry-name";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
@@ -28,7 +30,7 @@ import { useProjectMenuSource } from "../context/use-catalog-menu-source";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { PaneTitle } from "../PaneTitle";
 import { titleChipClass } from "../shell/title-chip";
-import { catalogSiblingNames } from "../work/work-files-model";
+import { catalogSiblings } from "../work/work-files-model";
 import type { DockDocument } from "./dock-view-store";
 import { useDockBrowseScratch } from "./use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
@@ -114,7 +116,7 @@ export function DockTitleMenu({ projectId, tab }: { projectId: string; tab: Cont
         scheme={locatedTab.scheme}
         owner={locatedTab}
         file={current}
-        siblingNames={catalogSiblingNames(catalog, current)}
+        siblings={catalogSiblings(catalog, current)}
         onDone={() => setRenaming(false)}
       />
     );
@@ -146,14 +148,14 @@ function DockDocumentRename({
   scheme,
   owner,
   file,
-  siblingNames,
+  siblings,
   onDone,
 }: {
   projectId: string;
   scheme: ProjectContextTreeScheme;
   owner: TabOwner;
   file: CatalogFile;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({
@@ -164,7 +166,7 @@ function DockDocumentRename({
     path: file.path,
     currentName: file.name,
     repairName: file.namespaceRepairName,
-    siblingNames,
+    siblings,
     kind: "file",
     onDone,
   });

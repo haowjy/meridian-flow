@@ -19,14 +19,14 @@ export async function putDocument(
 ): Promise<{ uri: string; documentId: string; replaced: boolean }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work);
   const create = () =>
-    session.request<{ status: string; documentId?: string }>(
+    session.request<{ status: "created"; documentId: string; uri: string }>(
       "POST",
       apiProjectContextCreatePath(input.projectId, target.scheme, { workId: target.workId }),
       { type: "file", path: target.path, content: input.content },
     );
   try {
     const created = await create();
-    return { uri: target.uri, documentId: String(created.documentId), replaced: false };
+    return { uri: created.uri, documentId: created.documentId, replaced: false };
   } catch (error) {
     const conflict =
       error instanceof CliError &&
@@ -39,7 +39,7 @@ export async function putDocument(
     }
     await deleteDocument(session, input.projectId, target);
     const created = await create();
-    return { uri: target.uri, documentId: String(created.documentId), replaced: true };
+    return { uri: created.uri, documentId: created.documentId, replaced: true };
   }
 }
 
@@ -54,8 +54,8 @@ export const docPutCommand: CommandSpec = {
     overwrite: { type: "boolean", description: "Replace an existing document" },
   },
   examples: [
-    `./mf doc put manuscript://chapter-1.md --text "# Chapter 1"`,
-    "./mf doc put kb://characters/lin.md --text @notes/lin.md --overwrite",
+    `./mf doc put "manuscript://Chapter 1" --text "# Chapter 1"`,
+    "./mf doc put kb://characters/Lin --text @notes/lin.md --overwrite",
   ],
   async run(ctx) {
     const raw = stringOption(ctx, "text");

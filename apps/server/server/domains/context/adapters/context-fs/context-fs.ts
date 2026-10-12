@@ -9,8 +9,12 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   classifyFiletype,
   type Filetype,
+  filenameForBinary,
   filetypeForKnownPath,
   filetypeForPath,
+  folderDocumentName,
+  type ParsedDocumentFilename,
+  parseDocumentFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -31,7 +35,7 @@ import { countWords, createDocumentCreationAggregate } from "../../../collab/ind
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
-import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import { joinPath, renderFilename, splitPath } from "../../context/paths.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
@@ -43,6 +47,7 @@ import type {
   AdapterFileRef,
   AdapterMoveResult,
   AdapterSearchHit,
+  ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
   ContextTreeAdapter,
   SchemeCapabilities,
@@ -80,6 +85,19 @@ import {
 } from "./create-placement.js";
 import { LiveCreate, type LiveCreatePlan } from "./live-create.js";
 import { matchDocument } from "./match.js";
+
+/**
+ * A document path's leaf through the name codec: its folders and canonical parts, null for
+ * the source root, or the `invalid_name` fault a leaf that can't name a document is.
+ */
+function parseDocumentPath(
+  path: string,
+): Result<(ParsedDocumentFilename & { dir: string[] }) | null, AdapterFault> {
+  const { dir, filename } = splitPath(path);
+  if (!filename) return Ok(null);
+  const parsed = parseDocumentFilename(filename);
+  return parsed.ok ? Ok({ dir, ...parsed.value }) : Err(parsed.error);
+}
 
 export interface ContextFSDeps {
   /** Search spells its source's chapters from one snapshot; each read prepares its own. */
@@ -124,9 +142,11 @@ function trackedSchemaForPersistedFiletype(
 function moveFiletypeTransition(
   source: Extract<ContextLocationToken, { kind: "file" }>,
   destinationPath: string,
+  parsedFiletype?: Filetype | null,
 ): Result<Filetype | null, AdapterFault> {
   if (source.filetype === null) {
-    const knownDestinationFiletype = filetypeForKnownPath(destinationPath);
+    const knownDestinationFiletype =
+      parsedFiletype === undefined ? filetypeForKnownPath(destinationPath) : parsedFiletype;
     if (knownDestinationFiletype === null) return Ok(null);
     const destination = classifyFiletype(knownDestinationFiletype);
     if (destination.kind !== "tracked") return Ok(null);
@@ -138,7 +158,7 @@ function moveFiletypeTransition(
 
   const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
   if (!sourceSchema.ok) return sourceSchema;
-  const destinationFiletype = filetypeForPath(destinationPath);
+  const destinationFiletype = parsedFiletype ?? filetypeForPath(destinationPath);
   const destination = classifyFiletype(destinationFiletype);
   if (destination.kind !== "tracked") {
     return Err({
@@ -218,7 +238,10 @@ export class ContextFS implements ContextSchemeAdapter {
                 workSlug: error.workSlug ?? null,
               }
             : error instanceof ContextEntryConflictError
-              ? { code: "conflict" }
+              ? {
+                  code: "conflict",
+                  ...(error.occupantKind ? { occupantKind: error.occupantKind } : {}),
+                }
               : undefined,
     });
     this.readView = deps.threadView;
@@ -230,14 +253,7 @@ export class ContextFS implements ContextSchemeAdapter {
       commandExecutor: this.commandExecutor,
       projectId: deps.holder.projectId,
       holderUri: (path) => this.holderUri(path),
-      findDocument: async (path) => {
-        const { dir, filename } = splitPath(path);
-        if (!filename) return null;
-        const folderId = await this.findFolderId(LIVE_TREE, dir);
-        if (folderId === MISSING) return null;
-        const { name, extension } = parseFilename(filename);
-        return this.store.findDocument(LIVE_TREE, folderId, name, extension);
-      },
+      findDocument: (path) => this.findDocumentAt(LIVE_TREE, path),
     });
     this.liveCreate = new LiveCreate({
       store: deps.store,
@@ -296,22 +312,24 @@ export class ContextFS implements ContextSchemeAdapter {
     return parentId;
   }
 
-  /** The document at `path` in `view`, or null. */
+  /** The document at `path` in `view` under its canonical name, or null. */
   private async findDocumentAt(view: TreeView, path: string): Promise<ContextDocument | null> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) return null;
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok || !parsed.value) return null;
+    const { dir, name, extension } = parsed.value;
     const folderId = await this.findFolderId(view, dir);
     if (folderId === MISSING) return null;
-    const { name, extension } = parseFilename(filename);
     return this.store.findDocument(view, folderId, name, extension);
   }
 
   async stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>> {
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok) return parsed;
     const doc = await this.findDocumentAt(await this.readTreeView(), path);
-    if (!doc) return Ok(null);
+    if (!doc || !parsed.value) return Ok(null);
 
     const base = {
-      path,
+      path: joinPath(parsed.value.dir.join("/"), renderFilename(doc.name, doc.extension)),
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
@@ -345,6 +363,8 @@ export class ContextFS implements ContextSchemeAdapter {
   async read(
     path: string,
   ): Promise<Result<{ content: string; documentId?: string } | null, AdapterFault>> {
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok) return parsed;
     const doc = await this.findDocumentAt(await this.readTreeView(), path);
     if (!doc) return Ok(null);
     if (doc.fileType !== null) {
@@ -382,7 +402,12 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private holderUri(path: string): string {
-    return canonicalContextUri(this.scheme, path, this.holder.authority);
+    const { dir, filename } = splitPath(path);
+    const parsed = parseDocumentFilename(filename);
+    const canonicalPath = parsed.ok
+      ? joinPath(dir.join("/"), renderFilename(parsed.value.name, parsed.value.extension))
+      : path;
+    return canonicalContextUri(this.scheme, canonicalPath, this.holder.authority);
   }
 
   private async overwriteInTransaction(
@@ -528,19 +553,27 @@ export class ContextFS implements ContextSchemeAdapter {
 
     const folderSegments = path.split("/").filter(Boolean);
     const folderId = await this.store.ensureFolderPath(folderSegments);
+    let lastNumber = 0;
     for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
+      // Live names only: a hidden node never takes a live name (F11).
       const documents = await this.store.listDocuments(LIVE_TREE, folderId);
-      const maxNumber = documents.reduce((max, document) => {
-        const match = UNTITLED_NAME_PATTERN.exec(document.name);
+      const folders = await this.store.listFolders(LIVE_TREE, folderId);
+      const occupied = [
+        ...documents.map((document) => renderFilename(document.name, document.extension)),
+        ...folders.map((folder) => folderDocumentName(folder.name)),
+      ];
+      const maxNumber = occupied.reduce((max, name) => {
+        const match = UNTITLED_NAME_PATTERN.exec(name);
         if (!match) return max;
         const suffix = Number(match[1]);
         return Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER
           ? Math.max(max, suffix)
           : max;
-      }, 0);
-      const name = `Untitled ${maxNumber + 1}`;
+      }, lastNumber);
+      lastNumber = maxNumber + 1;
+      const name = `Untitled ${lastNumber}`;
       const created = await this.liveCreate.atomically(
-        { folderId, name, extension: "md", filetype: "markdown" },
+        { folderId, name, extension: "", filetype: "markdown" },
         plan,
         { provisionalName: true, options: { origin: options.origin } },
       );
@@ -565,7 +598,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   ensureTrackedDocument(
     path: string,
-    options?: ContextWriteOptions,
+    options?: ContextEnsureTrackedOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     return this.placement.ensureTracked(path, options);
   }
@@ -800,7 +833,10 @@ export class ContextFS implements ContextSchemeAdapter {
       case "stale_target":
         return { code: "stale_target" };
       case "conflict":
-        return { code: "conflict" };
+        return {
+          code: "conflict",
+          ...(error.occupantKind ? { occupantKind: error.occupantKind } : {}),
+        };
       case "invalid_operation":
       case "not_found":
         return { code: "invalid_operation" };
@@ -822,7 +858,11 @@ export class ContextFS implements ContextSchemeAdapter {
       // The mover found the source through its own adapter's inspectMovable,
       // which filters by that source's view in this transaction.
       const source = prepared.source;
-      const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
+      const destinationFiletype = moveFiletypeTransition(
+        source,
+        prepared.destinationPath,
+        "destinationFiletype" in prepared ? prepared.destinationFiletype : undefined,
+      );
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
         source,

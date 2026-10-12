@@ -1,7 +1,7 @@
 /**
  * Durable unresolved chat-submission journal.
  *
- * One record per `(accountId, submissionId)`. It stores only the local intent
+ * One record per `(accountId, recordId)`. It stores only the local intent
  * needed to re-issue an idempotent lookup/replay and rebuild one user row: it
  * is not a thread replica and never holds assistant turns. Composer submissions
  * retain their structured snapshot only until ownership returns to authoring or
@@ -16,9 +16,10 @@ import {
   type ComposerDraftSnapshot,
   parseRestorableComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { submissionLockName } from "./lock";
 
-export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 1;
-export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v1:";
+export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 2;
+export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v2:";
 
 export type ChatSubmissionStorage = {
   getItem(key: string): string | null;
@@ -28,40 +29,29 @@ export type ChatSubmissionStorage = {
   key(index: number): string | null;
 };
 
-type ChatSubmissionBase = {
+export type ChatSubmission = {
+  recordId: string;
   submissionId: string;
   threadId: string;
   projectId: string | null;
   createdAt: string;
   text: string;
-  /** With `references`, the exact message payload the composer submitted. */
   blocks: UserMessageBlock[];
   references: SubmittedReference[];
   activatedSkillSlugs: string[];
-};
-
-export type ExistingThreadChatSubmission = ChatSubmissionBase & {
-  kind: "existing-thread";
   state?: "rejected";
-  /** Structured authoring ownership while admission is unresolved. Absent for non-composer sends. */
   draft?: ComposerDraftSnapshot;
+  creation?: {
+    title: string;
+    workId: string | null;
+    agentSelection: AgentSelection;
+    agentName: string;
+    agentSlug: string;
+  };
 };
 
-/** Project Home first send. Mirrors the `persistCreation` inputs. */
-export type FirstSendChatSubmission = ChatSubmissionBase & {
-  kind: "first-send";
-  projectId: string;
-  title: string;
-  workId: string | null;
-  agentSelection: AgentSelection;
-  agentName: string;
-  agentSlug: string;
-};
-
-export type ChatSubmission = ExistingThreadChatSubmission | FirstSendChatSubmission;
-
-export function chatSubmissionStorageKey(accountId: string, submissionId: string): string {
-  return `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:${submissionId}`;
+export function chatSubmissionStorageKey(accountId: string, recordId: string): string {
+  return `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:${recordId}`;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -80,10 +70,11 @@ function isAgentSelection(value: unknown): value is AgentSelection {
   );
 }
 
-function parseCommon(
-  value: Record<string, unknown>,
-): (ChatSubmissionBase & { kind: string }) | null {
+function parseSubmission(value: unknown): ChatSubmission | null {
+  if (!isObject(value)) return null;
   if (
+    typeof value.recordId !== "string" ||
+    !value.recordId ||
     typeof value.submissionId !== "string" ||
     !value.submissionId ||
     typeof value.threadId !== "string" ||
@@ -95,12 +86,25 @@ function parseCommon(
     !value.blocks.every(isObject) ||
     !Array.isArray(value.references) ||
     !value.references.every(isObject) ||
-    !isStringArray(value.activatedSkillSlugs)
-  ) {
+    !isStringArray(value.activatedSkillSlugs) ||
+    (value.state !== undefined && value.state !== "rejected")
+  )
     return null;
-  }
+  const creation = value.creation;
+  if (
+    creation !== undefined &&
+    (!isObject(creation) ||
+      typeof value.projectId !== "string" ||
+      typeof creation.title !== "string" ||
+      (creation.workId !== null && typeof creation.workId !== "string") ||
+      !isAgentSelection(creation.agentSelection) ||
+      typeof creation.agentName !== "string" ||
+      typeof creation.agentSlug !== "string")
+  )
+    return null;
+  const draft = parseRestorableComposerDraft(value.draft);
   return {
-    kind: value.kind as string,
+    recordId: value.recordId,
     submissionId: value.submissionId,
     threadId: value.threadId,
     projectId: value.projectId,
@@ -109,52 +113,108 @@ function parseCommon(
     blocks: value.blocks as UserMessageBlock[],
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
+    ...(value.state === "rejected" ? { state: "rejected" } : {}),
+    ...(draft ? { draft } : {}),
+    ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
   };
 }
 
-function parseSubmission(parsed: unknown): ChatSubmission | null {
-  if (!isObject(parsed)) return null;
-  const common = parseCommon(parsed);
-  if (!common) return null;
-  if (common.kind === "existing-thread") {
-    if (parsed.state !== undefined && parsed.state !== "rejected") return null;
-    const draft = parseRestorableComposerDraft(parsed.draft);
-    return {
-      ...common,
-      kind: "existing-thread",
-      ...(parsed.state === "rejected" ? { state: "rejected" } : {}),
-      ...(draft ? { draft } : {}),
-    };
-  }
-  if (common.kind === "first-send") {
-    if (
-      typeof common.projectId !== "string" ||
-      typeof parsed.title !== "string" ||
-      (parsed.workId !== null && typeof parsed.workId !== "string") ||
-      !isAgentSelection(parsed.agentSelection) ||
-      typeof parsed.agentName !== "string" ||
-      typeof parsed.agentSlug !== "string"
-    ) {
-      return null;
+/** Remove after the first production deploy shipping v2 has been live for a release. */
+function rewriteV1ChatSubmissions(
+  storage: ChatSubmissionStorage,
+  accountId: string,
+  completed: () => void,
+): void {
+  const prefix = `meridian:chat-submissions:v1:${accountId}:`;
+  try {
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    for (const key of keys) {
+      if (!key?.startsWith(prefix)) continue;
+      const old = browserRecord(
+        () => storage,
+        { key, version: 1, accountId },
+        (value) => {
+          if (!isObject(value) || !["first-send", "existing-thread"].includes(String(value.kind)))
+            return undefined;
+          return (
+            parseSubmission({
+              ...value,
+              recordId: value.submissionId,
+              creation:
+                value.kind === "first-send"
+                  ? {
+                      title: value.title,
+                      workId: value.workId,
+                      agentSelection: value.agentSelection,
+                      agentName: value.agentName,
+                      agentSlug: value.agentSlug,
+                    }
+                  : undefined,
+            }) ?? undefined
+          );
+        },
+      );
+      const entry = old.read();
+      if (!entry) continue;
+      const migrate = () => {
+        // Re-read under the same thread lock as every drive/remint/retire.
+        const current = old.read();
+        if (!current) return;
+        const target = browserRecord(
+          () => storage,
+          {
+            key: chatSubmissionStorageKey(accountId, current.recordId),
+            version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+            accountId,
+          },
+          (value) => parseSubmission(value) ?? undefined,
+        );
+        // Until deletion succeeds, the v2 copy is deliberately invisible to commands.
+        if (target.read() || target.write(current)) old.write(undefined);
+        completed();
+      };
+      if (typeof navigator !== "undefined" && navigator.locks) {
+        void navigator.locks
+          .request(submissionLockName(accountId, entry.threadId), migrate)
+          .catch(reportError);
+      } else migrate();
     }
-    return {
-      ...common,
-      kind: "first-send",
-      projectId: common.projectId,
-      title: parsed.title,
-      workId: parsed.workId,
-      agentSelection: parsed.agentSelection,
-      agentName: parsed.agentName,
-      agentSlug: parsed.agentSlug,
-    };
+  } catch {
+    /* Preserve v1 when storage is unavailable. */
   }
-  return null;
 }
 
 export class DeviceChatSubmissionJournal {
   private state: { accountId: string } | null = null;
   /** Session fence: bumped on every account bind. Not a durable revision. */
   private bindEpoch = 0;
+  private lastKnown: ChatSubmission[] = [];
+  private readonly listeners = new Set<() => void>();
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  notifyStorageChange(key: string | null): void {
+    if (
+      key === null ||
+      key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`) ||
+      key.startsWith(`meridian:chat-submissions:v1:${this.accountId}:`)
+    ) {
+      this.notify();
+    }
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  }
 
   constructor(private readonly storage: ChatSubmissionStorage) {}
 
@@ -172,9 +232,19 @@ export class DeviceChatSubmissionJournal {
     // Per-account storage keys mean another account's records are never read
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
+    this.lastKnown = [];
+    rewriteV1ChatSubmissions(this.storage, accountId, () => {
+      if (this.accountId === accountId) this.notify();
+    });
+    this.notify();
   }
 
   entries(): ChatSubmission[] {
+    return this.snapshot() ?? this.lastKnown;
+  }
+
+  /** Null means unavailable, never an authoritative empty journal. */
+  snapshot(): ChatSubmission[] | null {
     const accountId = this.state?.accountId;
     if (!accountId) return [];
     const prefix = `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:`;
@@ -183,25 +253,28 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
-        const parsed = this.recordFor(accountId, key).read();
+        if (this.hasLegacy(accountId, key.slice(prefix.length))) continue;
+        let failed = false;
+        const parsed = this.recordFor(accountId, key, () => {
+          failed = true;
+        }).read();
+        if (failed) return null;
         if (parsed) found.push(parsed);
       }
     } catch {
-      return [];
+      return null;
     }
+    this.lastKnown = found;
     return found;
   }
 
-  forThread(threadId: string): ChatSubmission[] {
-    return this.entries().filter((entry) => entry.threadId === threadId);
-  }
-
-  get(submissionId: string): ChatSubmission | null {
+  get(recordId: string): ChatSubmission | null {
     const accountId = this.state?.accountId;
     if (!accountId) return null;
     try {
+      if (this.hasLegacy(accountId, recordId)) return null;
       return (
-        this.recordFor(accountId, chatSubmissionStorageKey(accountId, submissionId)).read() ?? null
+        this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).read() ?? null
       );
     } catch {
       return null;
@@ -210,16 +283,29 @@ export class DeviceChatSubmissionJournal {
 
   record(accountId: string, entry: ChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
-    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.submissionId)).write(
-      entry,
-    );
+    try {
+      if (this.hasLegacy(accountId, entry.recordId)) return false;
+    } catch {
+      return false;
+    }
+    const written = this.recordFor(
+      accountId,
+      chatSubmissionStorageKey(accountId, entry.recordId),
+    ).write(entry);
+    if (written) this.notify();
+    return written;
   }
 
-  private recordFor(accountId: string, key: string) {
+  private hasLegacy(accountId: string, recordId: string): boolean {
+    return this.storage.getItem(`meridian:chat-submissions:v1:${accountId}:${recordId}`) !== null;
+  }
+
+  private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
     return browserRecord(
       () => this.storage,
       { key, version: CHAT_SUBMISSIONS_SCHEMA_VERSION, accountId },
       (value) => parseSubmission(value) ?? undefined,
+      onError,
     );
   }
 
@@ -228,11 +314,18 @@ export class DeviceChatSubmissionJournal {
    * A→B→A return: a live send that completes after the account re-bound must
    * not delete the entry the new session still needs to reconcile.
    */
-  retire(accountId: string, submissionId: string, expectedEpoch?: number): boolean {
+  retire(accountId: string, recordId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
+    try {
+      if (this.hasLegacy(accountId, recordId)) return false;
+    } catch {
+      return false;
+    }
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
-    return this.recordFor(accountId, chatSubmissionStorageKey(accountId, submissionId)).write(
+    const retired = this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
       undefined,
     );
+    if (retired) this.notify();
+    return retired;
   }
 }

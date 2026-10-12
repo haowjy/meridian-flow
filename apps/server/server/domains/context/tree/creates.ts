@@ -76,12 +76,13 @@ export async function createInDraft(
   const occupant = await tree.resolvePath(view, {
     contextSourceId: input.contextSourceId,
     path: filePath(input.dir, input.name, input.extension),
+    as: "document",
   });
   if (occupant.kind === "ambiguous") return Err(ambiguous(occupant.nodes));
   if (occupant.kind === "found") {
-    if (occupant.node.kind === "folder") return Err({ code: "conflict" });
+    if (occupant.node.kind === "folder") return Err({ code: "conflict", occupantKind: "folder" });
     const binary = isStorageBackedDocument(occupant.node.document);
-    if (input.node.kind === "binary") return Err({ code: "conflict" });
+    if (input.node.kind === "binary") return Err({ code: "conflict", occupantKind: "file" });
     return Ok({ kind: "existing", documentId: occupant.node.document.id, binary });
   }
 
@@ -94,7 +95,9 @@ export async function createInDraft(
   });
   if (walk.kind === "occupied") {
     return Err(
-      walk.occupant.kind === "ambiguous" ? ambiguous(walk.occupant.nodes) : { code: "conflict" },
+      walk.occupant.kind === "ambiguous"
+        ? ambiguous(walk.occupant.nodes)
+        : { code: "conflict", occupantKind: "file" },
     );
   }
   if (walk.kind !== "walked") throw new Error("A draft's folder walk fills every gap");
@@ -183,8 +186,15 @@ export async function findLiveCreateCandidate(
 ): Promise<LiveCreateCandidate> {
   const tree = createTreeReader(db);
   const path = filePath(at.dir, at.name, at.extension);
-  const occupant = await tree.resolvePath(LIVE_TREE, { contextSourceId: at.contextSourceId, path });
-  if (occupant.kind !== "not_found") return { kind: "occupant" };
+  const occupant = await tree.resolvePath(LIVE_TREE, {
+    contextSourceId: at.contextSourceId,
+    path,
+    as: "document",
+  });
+  if (occupant.kind === "found") {
+    return { kind: "occupant", occupantKind: occupant.node.kind === "folder" ? "folder" : "file" };
+  }
+  if (occupant.kind === "ambiguous") return { kind: "occupant" };
   // The folder a live create lands in, without making anything: a visible folder, else a
   // hidden folder `ensureLiveFolderPath` would reveal.
   const walk = await walkFolders(db, LIVE_TREE, at.contextSourceId, at.dir, (gap) =>

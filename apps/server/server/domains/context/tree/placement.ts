@@ -63,7 +63,12 @@ export async function walkFolders(
   let gapped = false;
   for (const name of dir) {
     if (!gapped) {
-      const found = await tree.childAt(view, { contextSourceId, parentId, filename: name });
+      const found = await tree.childAt(view, {
+        contextSourceId,
+        parentId,
+        filename: name,
+        as: "folder",
+      });
       if (found.kind === "found" && found.node.kind === "folder") {
         parentId = found.node.id;
         continue;
@@ -176,6 +181,7 @@ export async function place(
         contextSourceId: target.at.contextSourceId,
         parentId,
         filename,
+        as: target.node.kind,
       }),
       target.node,
     );
@@ -287,7 +293,12 @@ async function placeAncestors(
       parentId = row.id;
       continue;
     }
-    const holder = await tree.childAt(LIVE_TREE, { contextSourceId, parentId, filename: row.name });
+    const holder = await tree.childAt(LIVE_TREE, {
+      contextSourceId,
+      parentId,
+      filename: row.name,
+      as: "folder",
+    });
     if (holder.kind === "found" && holder.node.kind === "folder") {
       // One folder per path (decision 10): a hidden one folds into the visible holder; a
       // deleted one stays deleted and the walk continues under the holder.

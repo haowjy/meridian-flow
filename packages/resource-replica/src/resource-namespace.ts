@@ -140,7 +140,7 @@ function requestFor(
       destinationScheme: destination.scheme,
       destinationFolderPath: normalizedPath(destination.folderPath),
       ...owners.body,
-      ...(destination.name !== source.name ? { newName: destination.name } : {}),
+      newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
     },
   };
 }

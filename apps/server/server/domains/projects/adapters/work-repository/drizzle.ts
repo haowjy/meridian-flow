@@ -18,7 +18,11 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
-import type { LineageScratchLifecycle } from "../../../context/index.js";
+import {
+  ContextEntryConflictError,
+  guardWorkContextRestore,
+  type LineageScratchLifecycle,
+} from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
@@ -359,6 +363,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           // any row reappears (contract §9.3). Individually deleted rows stay deleted.
           const arriving = deps.arrivals ? await workCascadedDocumentIds(id) : [];
           if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
+          await guardWorkContextRestore(db, id);
           const restoredAt = now();
           const [row] = await currentDrizzleDb(db)
             .update(works)
@@ -383,6 +388,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {
+        if (cause instanceof ContextEntryConflictError)
+          throw new WorkRestoreConflictError("content");
         const constraint = workUniqueConstraint(cause);
         if (constraint === "works_project_name_active") {
           throw new WorkRestoreConflictError("name");

@@ -102,14 +102,9 @@ export function CreationComposer({
         ref={composerRef}
         variant={variant}
         autoFocus={autoFocus}
-        onSubmit={async (envelope) => ({
-          kind:
-            choicesReady && context && (await creation.submit(envelope, context))
-              ? "accepted"
-              : "rejected",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async (envelope) =>
+          Boolean(choicesReady && context && creation.submit(envelope, context))
+        }
         onDraftChange={creation.draft.updateDraft}
         referenceCatalog={references}
         availableSkills={availableSkills.skills}

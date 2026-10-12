@@ -17,7 +17,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { documentFileName, folderDisplayName } from "./document-display-name";
+import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   copySourcePath,
@@ -117,8 +117,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     expand: "submitted-content",
   },
   // The destination rides the row's document door, so the verb names the source
-  // and the direction: a whole-document copy reads "Copied a.md to", a block
-  // copy "Copied from a.md into". The model's `from` stays the only input read.
+  // and the direction: a whole-document copy reads "Copied a to", a block
+  // copy "Copied from a into". The model's `from` stays the only input read.
   copy: {
     Icon: Copy,
     phrases: copyTenses,
@@ -262,7 +262,7 @@ function documentTenses(
 ): ToolActivityVocabulary {
   const file = documentTarget(toolInputObject(tool));
   if (!file) return tenses(`${activeVerb}…`, completeVerb);
-  const name = documentFileName(file);
+  const name = documentDisplayName(file);
   return {
     active: { verb: activeVerb, parameter: `${name}…` },
     complete: { verb: completeVerb, parameter: name },
@@ -275,12 +275,12 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
   const sourcePath = copySourcePath(input);
   const destination = documentTarget(input);
   if (!sourcePath) return documentTenses(tool, t`Copying`, t`Copied`);
-  const source = documentFileName(sourcePath);
+  const source = documentDisplayName(sourcePath);
   const wholeDocument = stringInput(input, "command") === "copy";
   const active = wholeDocument ? t`Copying ${source} to` : t`Copying from ${source} into`;
   const complete = wholeDocument ? t`Copied ${source} to` : t`Copied from ${source} into`;
   if (!destination) return tenses(`${active}…`, complete);
-  const name = documentFileName(destination);
+  const name = documentDisplayName(destination);
   return {
     active: { verb: active, parameter: `${name}…` },
     complete: { verb: complete, parameter: name },

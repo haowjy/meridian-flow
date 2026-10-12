@@ -40,6 +40,9 @@ Local-dev-only utilities. Not loaded by the application runtime.
   - **Missing data** means a new server route behind the debug gate
     (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
     `pnpm dev` opens by default.
+  - Document commands parse the final path segment with the contracts name codec;
+    `doc put` reports the canonical URI returned by creation. Seed scenario names
+    use writer spelling, not slugs or prose suffixes.
   - **Imports:** `cli/` may import `@meridian/contracts` (wire types, schemas,
     path helpers) so it cannot drift from the API, and no other package. A group
     that needs more (e.g. a live Yjs editor peer needing prosemirror-schema,

@@ -1,0 +1,3 @@
+# TODO
+
+- Remove `rewriteV1ChatSubmissions` after the first production deploy shipping v2 has been live for a release.
