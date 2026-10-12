@@ -118,3 +118,61 @@ test.describe("project shell selection", () => {
     }
   });
 });
+
+test("unavailable document masks only its body and navigation opens another document", async ({
+  page,
+}) => {
+  test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
+  await login(page);
+  const db = openE2eDb(DATABASE_URL ?? "");
+  let fixture: ProjectFixture | undefined;
+  try {
+    fixture = await seedProjectFixture(db, page.request, {
+      userId: await findTestUserId(db),
+      titlePrefix: "Unavailable document shell",
+    });
+    // This direct-SQL fixture predates No Work; the Editor requires its locked row.
+    await db`INSERT INTO works (project_id, created_by_user_id, name, slug, is_no_work)
+      VALUES (${fixture.projectId}, ${await findTestUserId(db)}, 'No Work', NULL, true)`;
+    await page.goto(`/p/${fixture.projectId}/editor/kb/alpha`);
+    await expect(page.getByText("Seed context.", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await page.goto(`/p/${fixture.projectId}/editor/kb/missing.md`);
+    const message = page.getByText("This destination is unavailable.");
+    await expect(message).toBeVisible({ timeout: 30_000 });
+    const phone = ["phone-touch", "phone-boundary"].includes(test.info().project.name);
+    const pane = phone
+      ? page.locator("main.main-pane")
+      : page.locator('[data-project-surface="context-viewer"]');
+    await expect(pane.getByText("This destination is unavailable.")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Breadcrumb" }).getByText("missing.md"),
+    ).toBeVisible();
+    if (phone) {
+      await page.getByRole("button", { name: "Open chat", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.getByRole("button", { name: "Close chat", exact: true }).click();
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    } else {
+      await expect(page.getByRole("tab", { name: "alpha", exact: true })).toBeVisible();
+      const expand = page.getByRole("button", { name: /^Expand sidebar/ });
+      if (await expand.isVisible()) await expand.click();
+    }
+    const nav = page.getByRole("navigation", { name: "Workspace navigation" });
+    await expect(nav).toBeVisible();
+    const messageBox = await message.boundingBox();
+    const navBox = await nav.boundingBox();
+    if (!phone && messageBox && navBox)
+      expect(messageBox.x).toBeGreaterThanOrEqual(navBox.x + navBox.width);
+    const alpha = nav.getByText("alpha", { exact: true });
+    if (!(await alpha.isVisible()))
+      await nav.getByRole("button", { name: "Knowledge Base", exact: true }).click();
+    await alpha.click();
+    await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha$`));
+    await expect(message).not.toBeVisible();
+    await expect(page.getByText("Seed context.", { exact: true })).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+      db.end(),
+    );
+  }
+});

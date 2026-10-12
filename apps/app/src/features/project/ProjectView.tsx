@@ -101,6 +101,7 @@ import {
   useChatNavigation,
   useDockReveal,
 } from "./routing/chat-navigation";
+import { EditorRouteChrome } from "./routing/EditorRouteChrome";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
@@ -108,7 +109,7 @@ import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
-import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
+import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
@@ -575,7 +576,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
-  const layout = useProjectLayout(props.activeScreen, proseFocus.collapsedSlots);
+  // A blocked address has no review prose to enlarge; keep navigation available.
+  const layout = useProjectLayout(
+    props.activeScreen,
+    props.routeIssues?.editor || props.routeIssues?.main ? [] : proseFocus.collapsedSlots,
+  );
 
   const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
     useProjectSurfacePrefsActions();
@@ -655,7 +660,23 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       children: (
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
-          issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
+          issue={
+            props.routeIssues?.main ??
+            (props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined)
+          }
+          chrome={
+            <EditorRouteChrome
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              onShowRecents={() => void props.routeCommands.showEditorRecents({ replace: false })}
+              scheme={props.activeContextScheme}
+              path={props.activeContextPath}
+              onShowFiles={props.onExitContextScheme}
+              onShowFolder={props.onSelectContextFolder}
+              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+            />
+          }
           onRetry={props.onRetryEditorRoute}
           retainWhileLoading={editorPresentation.retainWhileLoading}
           recovery={
@@ -699,6 +720,13 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
           issue={chatPlacement === "center" ? props.routeIssues?.main : undefined}
+          chrome={
+            <PaneHeader
+              title={t`Chat`}
+              left={surfaceToggle("threads", t`Expand sidebar`)}
+              right={surfaceToggle("context-rail", t`Expand context`)}
+            />
+          }
         >
           <div
             className="flex min-h-0 flex-1 flex-col"
@@ -774,6 +802,13 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             <ProjectRouteBoundary
               issue={props.routeIssues?.main}
               destinationKey={props.routeLocationKey}
+              chrome={
+                <PaneHeader
+                  title={t`Work`}
+                  left={surfaceToggle("threads", t`Expand sidebar`)}
+                  right={surfaceToggle("chat", t`Expand chat`)}
+                />
+              }
             >
               {renderDesktopPane(props, surfaceToggle)}
             </ProjectRouteBoundary>
