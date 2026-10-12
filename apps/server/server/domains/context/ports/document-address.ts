@@ -2,6 +2,8 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
+import type { TreeView } from "../tree/tree-view.js";
+
 export type DocumentAddressInput = {
   projectId: ProjectId;
   userId: string;
@@ -9,6 +11,7 @@ export type DocumentAddressInput = {
   workId: string | null;
   rootThreadId?: string | null;
   path: string;
+  view?: TreeView;
 };
 
 export interface DocumentAddressStore {

@@ -15,6 +15,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
+import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
@@ -68,6 +69,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = Array.isArray(sources) ? sources : [sources];
       if (rows.length) await db.insert(contextSources).values(rows);
     }
+
+    it("resolves a hidden created document only in its own draft address view", async () => {
+      const db = database.current;
+      const scenario = await draftTreeScenario(db);
+      const work = await scenario.work("Review", "draft");
+      const rival = await scenario.work("Rival", "draft");
+      const documentId = await scenario.seedHidden(work, "chapters/one");
+      const resolver = createDocumentAddressResolver({
+        locations: createDrizzleDocumentAddressStore(db),
+        availability: createDrizzleProjectContextAvailability(db),
+      });
+      const input = {
+        projectId: scenario.project.id,
+        userId: scenario.project.userId,
+        scheme: "manuscript" as const,
+        workId: null,
+        path: "/chapters/one",
+      };
+      await expect(resolver.resolve(input)).resolves.toEqual({ kind: "unavailable" });
+      await expect(
+        resolver.resolve({
+          ...input,
+          view: { kind: "draft", draftId: (await scenario.draftOf(work)).id },
+        }),
+      ).resolves.toMatchObject({ kind: "current", document: { documentId } });
+      await expect(
+        resolver.resolve({
+          ...input,
+          view: { kind: "draft", draftId: (await scenario.draftOf(rival)).id },
+        }),
+      ).resolves.toEqual({ kind: "unavailable" });
+    });
 
     it("publishes only live manuscript rows while leaving other project sources unchanged", async () => {
       const db = database.current;
