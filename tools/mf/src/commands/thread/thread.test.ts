@@ -1,4 +1,6 @@
 /** `thread` commands end to end against the fake stack: refs, send-and-wait outcomes, events, view. */
+
+import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import {
@@ -87,42 +89,47 @@ describe("thread", () => {
     ]);
   });
 
-  it("admits the composer's skill, prose, Markdown reference and image blocks", async () => {
+  it("admits a composer-shaped multiline message with a skill and multiple references", async () => {
+    const reference = {
+      documentId: DOCUMENT_ID,
+      uri: "kb://cover.png",
+      label: "Cover",
+      imageCapable: true,
+    };
+    const expected = serializeMessageDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "composerSkill",
+              attrs: { slug: "revise", name: "Revise", description: "Revise prose" },
+            },
+            { type: "text", text: "Compare" },
+            { type: "hardBreak" },
+            { type: "text", text: "this" },
+            { type: "composerReference", attrs: { reference } },
+            { type: "composerReference", attrs: { reference } },
+          ],
+        },
+      ],
+    });
     const result = await mf([
       "thread",
       "send",
       THREAD_ID,
-      "Compare this",
+      "Compare\nthis",
       "--skill",
       "revise",
+      "--ref",
+      "kb://cover.png",
       "--ref",
       "kb://cover.png",
       "--json",
     ]);
     expect(result.code).toBe(EXIT.ok);
-    expect(stack.messageBodies.at(-1)).toEqual({
-      submissionId: expect.any(String),
-      text: "/reviseCompare this\n[Cover](kb://cover.png)",
-      blocks: [
-        {
-          type: "skill",
-          text: "/revise",
-          slug: "revise",
-          name: "Revise",
-          description: "Revise prose",
-        },
-        { type: "text", text: "Compare this\n" },
-        {
-          type: "reference",
-          text: "[Cover](kb://cover.png)",
-          documentId: DOCUMENT_ID,
-          uri: "kb://cover.png",
-        },
-        { type: "image", documentId: DOCUMENT_ID, uri: "kb://cover.png" },
-      ],
-      references: [{ documentId: DOCUMENT_ID, uri: "kb://cover.png", purpose: "reference" }],
-      activatedSkillSlugs: ["revise"],
-    });
+    expect(stack.messageBodies.at(-1)).toEqual({ submissionId: expect.any(String), ...expected });
   });
 
   it("prints gaps and finishes events only after replay and live state", async () => {

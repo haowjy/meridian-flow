@@ -35,7 +35,14 @@ export type MessageReferenceNode = {
 };
 export type MessageTextNode = { type: "text"; text: string };
 export type MessageHardBreakNode = { type: "hardBreak" };
-export type MessageParagraphNode = { type: "paragraph"; content?: readonly MessageDoc[] };
+export type MessageInlineNode =
+  | MessageSkillNode
+  | MessageReferenceNode
+  | MessageTextNode
+  | MessageHardBreakNode;
+export type MessageParagraphNode = { type: "paragraph"; content?: readonly MessageInlineNode[] };
+/** Composer-valid construction boundary; serializer input also accepts editor JSON. */
+export type BuiltMessageDoc = { type: "doc"; content: readonly MessageParagraphNode[] };
 
 export type SerializedMessage = {
   text: string;

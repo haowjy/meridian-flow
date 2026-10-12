@@ -1,4 +1,6 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
+
+export { buildMessageDoc } from "./message/build";
 export {
   imageCapable,
   referenceOccurrence,
@@ -7,8 +9,10 @@ export {
 } from "./message/occurrences";
 export { serializeMessageDoc } from "./message/serialize";
 export type {
+  BuiltMessageDoc,
   MessageDoc,
   MessageHardBreakNode,
+  MessageInlineNode,
   MessageParagraphNode,
   MessageReference,
   MessageReferenceNode,
