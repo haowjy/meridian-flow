@@ -174,6 +174,7 @@ export type ProjectViewProps = {
   reviewDraftId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
+  reviewAddressAdmission?: "pending" | "admitted" | "unavailable" | "failed";
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -522,6 +523,7 @@ function HydratedReviewControllers({
     <>
       <EditorReviewAddressOwner
         review={editorReview}
+        reviewAddressAdmission={props.reviewAddressAdmission ?? "pending"}
         requestedDraftId={props.reviewDraftId}
         activeScreen={props.activeScreen}
         activeScheme={props.activeContextScheme}

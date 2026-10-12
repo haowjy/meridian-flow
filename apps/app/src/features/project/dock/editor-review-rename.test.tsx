@@ -43,6 +43,7 @@ describe("review restoration after a rename", () => {
       <EditorReviewHandoffProvider projectId="project-1" openContextRoute={navigate}>
         <DraftReviewBoundary value={review}>
           <EditorReviewAddressOwner
+            reviewAddressAdmission="admitted"
             review={review}
             requestedDraftId={draftId}
             activeScreen="context"
