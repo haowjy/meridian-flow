@@ -64,16 +64,18 @@ export function useCreateEntryForm({
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
       if (kind === "file" && usesResourceDocumentCreate(path)) {
+        const destinationParent = await resources.findParentAtLocation(projectId, {
+          scheme,
+          path: parent,
+          name: "",
+          workId: null,
+        });
+        if (!destinationParent) throw new Error(t`Couldn't create this file.`);
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
         try {
           await resources.setLocation(projectId, reservation.key, {
-            parent: await resources.parentAtLocation(projectId, {
-              scheme,
-              path: parent,
-              name: "",
-              workId: null,
-            }),
+            parent: destinationParent,
             name: trimmed,
           });
         } finally {

@@ -74,28 +74,29 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        // A link is an address-create command, not a picked existing folder.
-        // Create its named parent explicitly; moves never manufacture folder paths.
-        if (target.folderPath) {
-          const result = await createContextEntry(projectId, target.scheme, {
+        const location = {
+          scheme: target.scheme,
+          path: target.folderPath ? `/${target.folderPath}` : "",
+          name: "",
+          workId: null,
+        } as const;
+        let parent = await resources.findParentAtLocation(projectId, location);
+        // A link may explicitly create missing address parents. Existing parents
+        // are captured locally; moves never manufacture folders from paths.
+        if (!parent && target.folderPath) {
+          await createContextEntry(projectId, target.scheme, {
             type: "folder",
             path: target.folderPath,
           });
-          if (result.status !== "created" && result.status !== "conflict")
-            throw new Error("Cannot create link parent");
           await resources.acquireCatalogAfter(
             projectId,
             target.scheme === "user"
               ? { kind: "user", userId: resources.accountId }
               : { kind: "project", projectId },
           );
+          parent = await resources.findParentAtLocation(projectId, location);
         }
-        const parent = await resources.parentAtLocation(projectId, {
-          scheme: target.scheme,
-          path: target.folderPath ? `/${target.folderPath}` : "",
-          name: "",
-          workId: null,
-        });
+        if (!parent) throw new Error("Destination folder is unavailable");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
