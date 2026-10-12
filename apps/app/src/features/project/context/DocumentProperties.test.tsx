@@ -32,15 +32,24 @@ const tab = {
 
 const chapter: Dto = {
   entries: [
-    { key: "aliases", value: ["Gate Opening", "First Chapter"] },
-    { key: "tags", value: ["chapter"] },
-    { key: "status", value: "revised" },
-    { key: "draft", value: true },
-    { key: "notes", value: null },
-    { key: "sources", value: [{ book: "Ashfall", page: 12 }] },
+    {
+      key: "aliases",
+      value: ["Gate Opening", "First Chapter"],
+      source: "[Gate Opening, First Chapter]",
+    },
+    { key: "tags", value: ["chapter"], source: "[chapter]" },
+    { key: "status", value: "revised", source: null },
+    { key: "draft", value: true, source: null },
+    { key: "notes", value: null, source: null },
+    {
+      key: "sources",
+      value: [{ "a: b": "x", note: "abc #def", sci: "1e3" }],
+      source: '- "a: b": x # quoted key\n  note: "abc #def"\n  sci: "1e3"',
+    },
   ],
   aliases: ["Gate Opening", "First Chapter"],
   unreadable: false,
+  truncated: false,
   text: "aliases: [Gate Opening, First Chapter]\n",
 };
 
@@ -106,7 +115,10 @@ it("opens to chips, Yes, Empty and block YAML, with nothing to edit", async () =
     ]);
     expect(values[3]?.textContent).toBe("Yes");
     expect(values[4]?.textContent).toBe("Empty");
-    expect(values[5]?.querySelector("pre")?.textContent).toBe("- book: Ashfall\n  page: 12");
+    // Nested values are the writer's own text, not a re-printing of the parsed value.
+    expect(values[5]?.querySelector("pre")?.textContent).toBe(
+      '- "a: b": x # quoted key\n  note: "abc #def"\n  sci: "1e3"',
+    );
     expect(region?.querySelector("input, textarea, button, [contenteditable]")).toBeNull();
   });
 });
@@ -132,6 +144,7 @@ it("shows unreadable YAML as written, with a plain note", async () => {
     entries: [],
     aliases: [],
     unreadable: true,
+    truncated: false,
     text: "title: [unclosed\n",
   });
   await show(async (root) => {
@@ -144,11 +157,28 @@ it("shows unreadable YAML as written, with a plain note", async () => {
   });
 });
 
+it("says when properties are too large to show in full, and shows their start", async () => {
+  fetchProperties.mockResolvedValue({
+    entries: [],
+    aliases: [],
+    unreadable: true,
+    truncated: true,
+    text: "title: start\n",
+  });
+  await show(async (root) => {
+    expect(toggle()?.textContent).toBe("PropertiesToo large to show");
+    await act(async () => toggle()?.click());
+    expect(root.textContent).toContain("These properties are too large to show in full.");
+    expect(root.querySelector("pre")?.textContent).toBe("title: start\n");
+  });
+});
+
 it("shows nothing for frontmatter with no keys", async () => {
   fetchProperties.mockResolvedValue({
     entries: [],
     aliases: [],
     unreadable: false,
+    truncated: false,
     text: "# note\n",
   });
   await show(async (root) => {

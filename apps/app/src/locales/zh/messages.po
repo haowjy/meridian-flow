@@ -3921,6 +3921,10 @@ msgid "These preferences stay on this device to suit your screen."
 msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
 
 #: src/features/project/context/DocumentProperties.tsx
+msgid "These properties are too large to show in full. The start is shown as written."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
 msgid "These properties couldn't be read, so they're shown as written."
 msgstr ""
 
@@ -4227,6 +4231,10 @@ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens before"
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Too large to show"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx

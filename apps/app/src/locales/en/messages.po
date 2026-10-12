@@ -3921,6 +3921,10 @@ msgid "These preferences stay on this device to suit your screen."
 msgstr "These preferences stay on this device to suit your screen."
 
 #: src/features/project/context/DocumentProperties.tsx
+msgid "These properties are too large to show in full. The start is shown as written."
+msgstr "These properties are too large to show in full. The start is shown as written."
+
+#: src/features/project/context/DocumentProperties.tsx
 msgid "These properties couldn't be read, so they're shown as written."
 msgstr "These properties couldn't be read, so they're shown as written."
 
@@ -4228,6 +4232,10 @@ msgstr "Tokens after"
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens before"
 msgstr "Tokens before"
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Too large to show"
+msgstr "Too large to show"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."

@@ -1,12 +1,12 @@
 /**
  * DocumentPropertyValue — one property's value, as the writer wrote it: words
- * and numbers plain, lists as chips, Yes and No for flags, and a YAML block
- * for maps and lists of maps. Display only.
+ * and numbers plain, lists as chips, Yes and No for flags, and the writer's own
+ * YAML text for maps and lists of maps. Display only.
  */
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/threads";
 
-import { isChipList, isEmptyValue, toYamlBlock } from "./properties-yaml";
+import { isChipList, isEmptyValue } from "./property-shapes";
 
 export function YamlBlock({ text }: { text: string }) {
   return (
@@ -20,7 +20,14 @@ function Flag({ value }: { value: boolean }) {
   return value ? <Trans>Yes</Trans> : <Trans>No</Trans>;
 }
 
-export function DocumentPropertyValue({ value }: { value: JsonValue }) {
+export function DocumentPropertyValue({
+  value,
+  source,
+}: {
+  value: JsonValue;
+  /** The text the writer wrote for a list or map value. */
+  source: string | null;
+}) {
   if (isEmptyValue(value)) {
     return (
       <span className="text-ink-muted">
@@ -44,7 +51,7 @@ export function DocumentPropertyValue({ value }: { value: JsonValue }) {
     );
   }
   if (typeof value === "boolean") return <Flag value={value} />;
-  if (typeof value === "object") return <YamlBlock text={toYamlBlock(value)} />;
+  if (typeof value === "object") return source === null ? null : <YamlBlock text={source} />;
   // Numbers and dates are shown as written: a year is not "2,025".
   return <span className="whitespace-pre-wrap break-words">{String(value)}</span>;
 }

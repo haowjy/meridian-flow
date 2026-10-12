@@ -24,13 +24,17 @@ export function readStoredDocumentProperties(metadata: unknown): StoredDocumentP
 
 /**
  * What the properties endpoint returns: the stored YAML parsed server-side, in
- * source order. When the YAML cannot be read, `entries` and `aliases` are empty
- * and the writer is shown `text` as written.
+ * source order. Each entry's `source` is the text the writer wrote for a list
+ * or map value, so nested values are shown as written rather than re-printed.
+ * When the YAML cannot be read, `entries` and `aliases` are empty and the writer
+ * is shown `text` as written. When it was too large to parse, `truncated` is
+ * set and `text` is only its first part.
  */
 export type DocumentProperties = {
-  entries: Array<{ key: string; value: JsonValue }>;
+  entries: Array<{ key: string; value: JsonValue; source: string | null }>;
   aliases: string[];
   unreadable: boolean;
+  truncated: boolean;
   text: string;
 };
 

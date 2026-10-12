@@ -113,7 +113,7 @@ function CollapsedSummary({
   if (properties.unreadable) {
     return (
       <span className="ml-3 min-w-0 truncate text-caption text-ink-muted">
-        <Trans>Couldn't be read</Trans>
+        {properties.truncated ? <Trans>Too large to show</Trans> : <Trans>Couldn't be read</Trans>}
       </span>
     );
   }
@@ -140,7 +140,13 @@ function PropertiesBody({
     return (
       <div className="flex flex-col gap-2 pt-1">
         <p className="text-caption text-ink-muted">
-          <Trans>These properties couldn't be read, so they're shown as written.</Trans>
+          {properties.truncated ? (
+            <Trans>
+              These properties are too large to show in full. The start is shown as written.
+            </Trans>
+          ) : (
+            <Trans>These properties couldn't be read, so they're shown as written.</Trans>
+          )}
         </p>
         <YamlBlock text={properties.text} />
       </div>
@@ -168,7 +174,7 @@ function PropertyPair({ entry }: { entry: DocumentPropertiesDto["entries"][numbe
         {entry.key}
       </dt>
       <dd className="min-w-0 text-foreground text-sm">
-        <DocumentPropertyValue value={entry.value} />
+        <DocumentPropertyValue value={entry.value} source={entry.source} />
       </dd>
     </>
   );

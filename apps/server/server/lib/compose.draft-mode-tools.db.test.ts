@@ -275,6 +275,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const script = await startWithChapter("Writer live content.");
       const { call } = await script.begin();
 
+      // v1: the model never sees properties; it only copies them along.
+      for (const seen of [
+        await call("read", { path: CHAPTER }),
+        await call("ls", { path: "manuscript://" }),
+        await call("search", { pattern: "revised" }),
+      ]) {
+        expect(text(seen)).not.toContain("status: revised");
+        expect(text(seen)).not.toContain("kept as written");
+      }
+
       const copied = await call("write", {
         command: "copy",
         from: { path: CHAPTER },
