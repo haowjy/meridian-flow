@@ -1,3 +1,4 @@
+import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -307,7 +308,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   );
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
-  const state = { failJournalInsertAt: null as number | null };
+  const state = {
+    failJournalInsertAt: null as number | null,
+    failCheckpoint: false,
+    checkpointObservedDurability: false,
+  };
   function injectSecondJournalFailure(): void {
     if (++journalInsertCount === state.failJournalInsertAt) {
       throw new Error(
@@ -586,22 +591,35 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     }),
     links,
   );
-  const noLiveDependents = async () => ({
-    hasDependents: false,
-    blockingActorTypes: [] as Array<"agent" | "human" | "unknown">,
-    checkedUntilSeq: 0,
+  const turnInverse = createDrizzleTurnInverseService({
+    db,
+    journal: persistence.journal,
+    branches: branchStore,
+    coordinator: liveCoordinator,
+    branchCoordinator,
+    criticalSections: branchCriticalSections,
+    resolveDocumentUri,
+    refreshDocument: (documentId) => projections.refresh({ documentId }),
+    flushLivePull: branchPulls.flushLivePull,
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: persistence.journal,
-    liveReversal: { checkDependentLaterLiveRows: noLiveDependents },
-    resolveDocumentUri,
+    rollback: turnInverse,
     branches: createResponseBranchFinalization({
       branches: branchStore,
-      branchCoordinator,
-      branchJournal: durableBranchJournalReadStore,
-      branchReview,
+      branchCoordinator: {
+        async checkpointBranch(branchId) {
+          if (state.failCheckpoint) {
+            const rows = await db
+              .select()
+              .from(schema.branchWriteJournal)
+              .where(eq(schema.branchWriteJournal.source, "agent"));
+            state.checkpointObservedDurability = rows.length > 0 && !isInDrizzleTransaction();
+            throw new Error("injected post-root-commit checkpoint failure");
+          }
+          return branchCoordinator.checkpointBranch(branchId);
+        },
+      },
     }),
     projections,
     notices: createPostDurabilityNoticeService({
@@ -609,22 +627,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentUriResolver: resolveDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
-    deferUntilCommit: deferUntilDrizzleCommit,
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     fileAccess: createAllowAllFileAccess(),
     atomic: (operation) => runInDrizzleTransaction(db, operation),
-    live: {
-      reversalStore: persistence.journal,
-      agentEdit: runtime.liveUtilityCore,
-      resolveDocumentUri,
-      checkDependentLaterLiveRows: noLiveDependents,
-      refreshDocumentProjection: projections.refresh,
-    },
-    branchReview,
-    branchJournal: durableBranchJournalReadStore,
-    branches: branchStore,
+    live: { refreshDocumentProjection: projections.refresh },
+    turnInverse,
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
@@ -660,6 +669,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const collab = {
     agentEdit: () => agentEdit,
     reverseTurn: turnReversal.reverseTurn,
+    getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
@@ -1804,6 +1814,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   return {
+    set failCheckpoint(value: boolean) {
+      state.failCheckpoint = value;
+    },
+    get checkpointObservedDurability() {
+      return state.checkpointObservedDurability;
+    },
     get failSecondJournalInsert() {
       return state.failJournalInsertAt === 2;
     },

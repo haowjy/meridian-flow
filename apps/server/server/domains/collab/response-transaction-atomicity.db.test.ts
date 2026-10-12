@@ -48,6 +48,30 @@ describe("change trail (postgres)", () => {
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));
 
+  it.each([
+    false,
+    true,
+  ])("a post-root checkpoint failure cannot reopen committed response (mixed=%s)", async (liveBeta) => {
+    const harness = createHarness(db);
+    const responseId = "00000000-0000-4000-8000-000000000832";
+    await harness.seedAndStage(responseId, { liveBeta });
+    harness.failCheckpoint = true;
+    await expect(harness.commit(responseId)).resolves.toMatchObject({ status: "committed" });
+    expect(harness.checkpointObservedDurability).toBe(true);
+    expect(harness.responseEvents(responseId)).toContainEqual(
+      expect.objectContaining({ transition: "closed" }),
+    );
+    expect(harness.stagedUpdates(responseId)).toEqual([[], []]);
+    const draftText = await harness.workDraftMarkdown();
+    expect(draftText).toContainEqual(expect.stringContaining("Agent alpha."));
+    if (liveBeta) expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
+    else expect(draftText).toContainEqual(expect.stringContaining("Agent beta."));
+    expect(
+      await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
+    ).toEqual([]);
+    expect(await harness.responseJournalRows()).not.toEqual([]);
+  });
+
   it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
     const harness = createHarness(db);
     await harness.seedAndStage("retry-response");
@@ -488,7 +512,7 @@ describe("change trail (postgres)", () => {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       }),
-    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+    ).resolves.toMatchObject({ status: "expired" });
     await expect(
       fixture.collab.draftReview.list({
         projectId: PROJECT_ID as never,

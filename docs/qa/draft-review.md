@@ -556,3 +556,53 @@ work evidence. It uses real Yjs and a cold encoding for every cold round, no
 caches and no timing assertion. Do not count it as browser or live-app evidence.
 
 [undo-perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/undo-step1-fix7-evidence/long-history-perf.ts
+
+## Receipt card inverses (Draft mode)
+
+Use only your own stack. Start `MODEL_PROVIDER=mock pnpm dev`, discover routes
+with `pnpm portless:list`, and use `./mf` for fixtures and API actions. Do not
+reuse another worktree's project, database, thread or browser session.
+
+1. Create a Work and thread. Set its write mode to `draft`. Seed two manuscript
+   documents using `./mf doc put`: `Seed.` and `Alpha Beta.`. Use a scripted
+   mock read/write/text reply for each fixture, not free-form generated prose:
+   insert `Added once.` in the first; replace `Beta` with `Gamma` in the second.
+2. Each card says **Edited 1 document**, including in Draft mode. Its pending
+   document row remains visible beside any settled excerpts. Read the turn's
+   live-lineage endpoint to resolve its receipt state.
+3. For each turn, POST its context/reverse endpoint with
+   `{"scope":"turn","target":"<turn UUID>","direction":"undo"}`, then
+   `redo`, `undo`, `redo`. Require `acceptedParts: 1` and no skips on every
+   action. Draft reads alternate exactly between the seeded and edited text;
+   live reads remain seeded until Apply. There must be one addition, not two.
+4. Apply that document's draft via
+   `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
+   with `{"draftId":"<branch ID>"}`. Read via `./mf doc read <URI> --json`.
+   Assert the entire `content` value, including terminal newlines:
+   insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
+5. For named partial skips, script a turn inserting `One addition.` and
+   `Two addition.` into separate documents seeded `One seed.` / `Two seed.`.
+   Discard the second document's draft. Its card still offers Undo, names
+   `Two addition.` as **discarded**, and says **1 part stayed**. Undo must
+   accept only the first part. Discard the first draft too: the card says
+   **Can't undo**, with the named reasons. Never call skipped parts “changes”.
+6. Capture Undo, Redo, partial-skip and Can't undo cards at desktop and 390px
+   widths using `page.screenshot()`. Open the receipt disclosure. Check text
+   wrapping, reachable buttons and page errors. Hold the reverse request:
+   **Undoing…** / **Redoing…** appears immediately. A refusal remains on that
+   card, without a success screen or a global toast.
+
+The durable PostgreSQL matrix adds split placement, overlapping parts in one
+view, branch-keyed restoration holds and release, typing inside restored text,
+selective Discard of an inverse, staged-response dependency drops, per-response
+rollback and checkpoint failure after root commit. Run it with:
+
+```bash
+DB_TEST_WORKERS=1 pnpm test:db -- \
+  apps/server/server/domains/collab/turn-inverse.db.test.ts \
+  apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts
+```
+
+A checkpoint failure is post-commit maintenance, not a failed response: the
+save still returns committed, its durable text remains, and it creates no
+rollback inverse. Verify both draft-only and mixed live/draft responses.

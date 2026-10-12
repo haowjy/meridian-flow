@@ -1,12 +1,15 @@
-/** Compares visible document effects, independent of Yjs history and review coverage. */
+/** Compares prose and managed manifest membership, independent of CRDT history. */
 import { isDeepStrictEqual } from "node:util";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export function documentEffectsEqual(live: Y.Doc, draft: Y.Doc): boolean {
-  return isDeepStrictEqual(
-    visibleContent(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
-    visibleContent(draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+  return (
+    isDeepStrictEqual(live.getMap("documents").toJSON(), draft.getMap("documents").toJSON()) &&
+    isDeepStrictEqual(
+      visibleContent(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+      visibleContent(draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+    )
   );
 }
 

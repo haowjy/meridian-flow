@@ -638,7 +638,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
       await archiveWork(WORK_ID);
       await expect(reverse("redo")).resolves.toMatchObject(refused);
-      expect(await journalStatuses()).toEqual(["discarded"]);
+      expect(await journalStatuses()).toEqual(["active"]);
     });
 
     async function journalStatuses() {

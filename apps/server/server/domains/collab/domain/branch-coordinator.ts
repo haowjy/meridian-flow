@@ -41,10 +41,12 @@ export type BranchSnapshot = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector?: Uint8Array | null;
+  liveCut?: Uint8Array | null;
   schemaVersion: CollabSchemaVersion;
 };
 
 export type PersistBranchInput = {
+  liveCut?: Uint8Array;
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
@@ -335,10 +337,11 @@ export function createBranchCoordinator(input: {
     journals?: readonly AppendBranchJournalInput[],
     publishUpdate?: Uint8Array,
     kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (!journals?.length && bytesEqual(state, snapshot.state)) return;
+    if (!journals?.length && bytesEqual(state, snapshot.state) && !upstream) return;
     const mutation = {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
@@ -347,6 +350,9 @@ export function createBranchCoordinator(input: {
       state,
       stateVector,
       ...(journals ? { journals } : {}),
+      ...(upstream && snapshot.kind === "work_draft"
+        ? { liveCut: Y.encodeStateAsUpdate(upstream) }
+        : {}),
     };
     // Replication creates no reviewable edit. Its CAS must not reacquire the
     // Work lifecycle lock a reader may already hold in another transaction.
@@ -448,7 +454,7 @@ export function createBranchCoordinator(input: {
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
-          await persist(snapshot, doc, undefined, updateToPublish?.(result), kind);
+          await persist(snapshot, doc, undefined, updateToPublish?.(result), kind, upstream);
           return result;
         });
       } catch (cause) {

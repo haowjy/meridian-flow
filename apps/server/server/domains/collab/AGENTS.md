@@ -78,6 +78,15 @@ independently of journal compaction. Apply moves placement at completed admissio
 to the authored live row, not the reconcile row; Discard and empty-draft reset
 make discarded and retired placements terminal. Per-change Discard re-forks from
 live and surviving journal rows with their immutable edit/part identity; it
-creates no inverse edit or restoration copy. These tables have no
-product read policies yet: existing reversal tables and readers remain authoritative
-until the later undo-stack migration steps.
+creates no inverse edit or restoration copy. Card Undo/Redo and failed-response rollback use these immutable parts and the
+forward inverse primitive. The card's control is a dry run of that same policy,
+Redo first; one action lands in one view per document. Pending inverses in a
+draft hold root identities against inverses elsewhere. Their writes use ordinary
+journal rows, never status reversal or row replacement. Only inverse policies
+acquire the outer transition lock. Model `write undo/redo` still uses the old
+engine until the next migration step.
+
+`hasEffect` compares a draft to its durable `liveCut` (the last pulled live state).
+Pending lists and Work notifications read this flag or `blocking`; journal row
+count alone is not visible effect. A skip marks a holding draft blocking so its
+Apply/Discard remains reachable even when its prose equals live.

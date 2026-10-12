@@ -1,6 +1,5 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -39,6 +38,7 @@ import type {
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
+import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
@@ -363,6 +363,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             inArray(documentBranches.workId, workIds),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
+            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
             sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
               or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
           ),
@@ -404,6 +405,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             eq(documentBranches.workId, workId),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
+            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
           ),
         )
         .orderBy(asc(documentBranches.id), asc(branchWriteJournal.id));
@@ -539,6 +541,11 @@ async function commitPreparedDiscard(
         ),
       );
   }
+  await refreshDraftEffect(db, input.branch.branchId, undefined, true);
+  await db
+    .update(documentBranches)
+    .set({ blocking: false })
+    .where(eq(documentBranches.id, input.branch.branchId));
 }
 
 async function commitPreparedRedo(

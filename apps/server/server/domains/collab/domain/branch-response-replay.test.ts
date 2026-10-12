@@ -52,16 +52,28 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
   ];
   const current = cloneYDoc(live);
   try {
-    const kept = reconcileStagedBranchWrites(current, helper, rows, [retired]);
+    const kept = reconcileStagedBranchWrites(
+      current,
+      helper,
+      rows,
+      [retired],
+      Y.encodeStateAsUpdate(draft),
+    );
     expect(kept.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
     expect(current.getText("chapter").toString()).toBe("red Zblue green");
     const forged = cloneYDoc(helper);
     const untouched = cloneYDoc(live);
     try {
       forged.getText("unrecorded").insert(0, "unexplained");
-      expect(() => reconcileStagedBranchWrites(untouched, forged, rows, [retired])).toThrow(
-        "unexplained generation residual",
-      );
+      expect(() =>
+        reconcileStagedBranchWrites(
+          untouched,
+          forged,
+          rows,
+          [retired],
+          Y.encodeStateAsUpdate(draft),
+        ),
+      ).toThrow("unexplained generation residual");
     } finally {
       forged.destroy();
       untouched.destroy();

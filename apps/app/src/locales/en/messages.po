@@ -101,6 +101,11 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: (actionSkips ?? receipt?.skips ?? []).length
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{0, plural, one {# part stayed} other {# parts stayed}}"
+msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
+
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
@@ -3138,6 +3143,7 @@ msgid "Redo is no longer available because the manuscript changed."
 msgstr "Redo is no longer available because the manuscript changed."
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redoing…"
 msgstr "Redoing…"
 
@@ -4027,8 +4033,8 @@ msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "This change is too old to undo."
-msgstr "This change is too old to undo."
+#~ msgid "This change is too old to undo."
+#~ msgstr "This change is too old to undo."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change no longer matches the chapter text, so it can't be reversed."
@@ -4410,6 +4416,7 @@ msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undoing…"
 msgstr "Undoing…"
 

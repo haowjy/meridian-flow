@@ -133,7 +133,7 @@ function AssistantTurnComponent({
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
     enabled: !isLive && !standIn,
   });
-  const liveLineageDocuments = useMemo(
+  const editedDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
   );
@@ -173,11 +173,11 @@ function AssistantTurnComponent({
           </div>
         ) : null}
 
-        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+        {hasTurnEditsReceiptContent(editedDocuments, changeTrail, workReceipts) ? (
           <TurnEditsReceipt
             threadId={resolvedThreadId}
             turn={turn}
-            documents={liveLineageDocuments}
+            documents={editedDocuments}
             receipt={liveLineage.receipt}
             workReceipts={workReceipts}
             changeTrail={changeTrail}

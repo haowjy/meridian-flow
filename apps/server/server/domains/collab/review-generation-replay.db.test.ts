@@ -129,7 +129,7 @@ it.each([
         actorUserId: USER_ID,
       }),
     ).toMatchObject({ admitted: true });
-    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(restoration ? 0 : 1);
     const reopened = await f.collab.draftReview.preview(request);
     if (reopened.status !== "active") throw new Error("missing reopened review");
     // Undo restores already-applied AI text: its certified alias creates no visible diff.

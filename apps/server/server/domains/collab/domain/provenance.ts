@@ -1065,3 +1065,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function blocked(message: string): ProvenanceMaterializationError {
   return new ProvenanceMaterializationError(message);
 }
+
+/** Server-computed restorations carry the source's already-normalized prose roots. */
+export function appendInverseRestorationFacts(
+  doc: Y.Doc,
+  aliases: readonly {
+    source: { client: number; clock: number };
+    target: { client: number; clock: number };
+    len: number;
+  }[],
+): void {
+  const assignments = readTargetFacts(doc);
+  const prose = allStringRanges(doc);
+  const targets: ProvenanceTargetFactV1[] = [];
+  for (const alias of aliases) {
+    for (let offset = 0; offset < alias.len; offset++) {
+      const target = {
+        clientID: alias.target.client,
+        clock: alias.target.clock + offset,
+        length: 1,
+      };
+      if (!prose.covers(target)) continue;
+      const source = {
+        clientID: alias.source.client,
+        clock: alias.source.clock + offset,
+        length: 1,
+      };
+      targets.push({ version: 1, target, root: resolvedRootUnits(assignments, source)[0] });
+    }
+  }
+  appendProvenanceFacts(doc, { targets });
+}
