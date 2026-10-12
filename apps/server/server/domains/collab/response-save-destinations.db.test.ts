@@ -184,8 +184,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(schema.documents).values([
-        { id: KB_ID, contextSourceId: KB_SOURCE_ID, name: "lore", extension: "md" },
-        { id: SCRATCH_ID, contextSourceId: SCRATCH_SOURCE_ID, name: "notes", extension: "md" },
+        { id: KB_ID, contextSourceId: KB_SOURCE_ID, name: "lore", extension: "" },
+        { id: SCRATCH_ID, contextSourceId: SCRATCH_SOURCE_ID, name: "notes", extension: "" },
       ]);
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_ID,
@@ -517,7 +517,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: CHAPTER_ID,
         contextSourceId: MANUSCRIPT_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
       });
       const reply = async (sequence: number) => {
         const id = `00000000-0000-4000-8000-000000000a${30 + sequence}`;
@@ -734,7 +734,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: SCRATCH_B_ID,
         contextSourceId: SCRATCH_B_SOURCE_ID,
         name: "notes",
-        extension: "md",
+        extension: "",
       });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_B_ID,

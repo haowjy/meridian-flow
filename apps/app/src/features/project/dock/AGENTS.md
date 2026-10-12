@@ -6,6 +6,8 @@ A single editable document can cover that occupant on Work or Chat; it uses
 The dock owns no session, room, capture or review controller. Review lists live
 in the composer, identity row, phone sheet and Work page, not a Changes view.
 
+The dock header uses `DockDocumentIdentity` for its navigable path and painted review controls; the body passes `identity: null` to avoid repeating the filename. Renaming and moving belong to file lists.
+
 ## Contracts
 
 - Keep the primary body mounted at the same tree depth across center/dock

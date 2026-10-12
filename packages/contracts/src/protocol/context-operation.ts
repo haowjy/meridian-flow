@@ -7,9 +7,11 @@ import type {
 
 export type ContextError =
   | { code: "operation_mismatch"; uri: string }
+  | { code: "invalid_name"; uri: string; message: string }
   | { code: "not_found"; uri: string }
+  | { code: "destination_missing"; uri: string }
   | { code: "permission_denied"; uri: string }
-  | { code: "conflict"; uri: string }
+  | { code: "conflict"; uri: string; occupantKind?: "file" | "folder" }
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
@@ -33,6 +35,7 @@ export interface ContextMoveResult {
   linkUpdate?: { links: number; documents: number };
   /** Scheme-relative path durably committed by the tree mutation. */
   destinationPath: string;
+  destinationUri?: string;
 }
 
 export type ContextOperationCommand =
@@ -41,6 +44,7 @@ export type ContextOperationCommand =
       sourceUri: string;
       destinationUri: string;
       expected: MoveContextEntryRequest["expected"];
+      destinationParent?: MoveContextEntryRequest["destinationParent"];
     }
   | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] };
 
@@ -56,6 +60,8 @@ export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =
 export type ContextOperationReceipt = {
   [K in ContextOperationCommand["kind"]]: {
     operationId: string;
+    /** Server namespace watermark captured with this immutable command outcome. */
+    observationVersion: string;
     command: Extract<ContextOperationCommand, { kind: K }>;
     result: ContextOperationResult<K>;
   };

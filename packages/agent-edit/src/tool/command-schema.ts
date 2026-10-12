@@ -84,7 +84,10 @@ export const DocumentVersionSchema = z
   );
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 
-const SOURCE_PATH = z.string().min(1);
+export const DOCUMENT_NAMES_DESCRIPTION =
+  "Documents are named without an extension (`Chapter 13`); code and data files keep theirs (`outline.json`).";
+
+const SOURCE_PATH = z.string().min(1).describe(DOCUMENT_NAMES_DESCRIPTION);
 
 /**
  * `from`, the source of a block copy (D23) or a document copy (D24, D49): one
@@ -263,7 +266,8 @@ const READ_TARGET = {
     .string()
     .min(1)
     .describe(
-      "Document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` for one section.",
+      "Document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` for one section. " +
+        DOCUMENT_NAMES_DESCRIPTION,
     ),
   version: DocumentVersionSchema.optional(),
 };
@@ -272,7 +276,8 @@ const WRITE_TARGET = {
     .string()
     .min(1)
     .describe(
-      "The document this command creates or changes: a path or context URI, optionally with `#heading-slug` for one section.",
+      "The document this command creates or changes: a path or context URI, optionally with `#heading-slug` for one section. " +
+        DOCUMENT_NAMES_DESCRIPTION,
     ),
 };
 

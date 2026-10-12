@@ -5,9 +5,13 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
+import { renderFilename } from "@meridian/contracts/protocol";
 import { Clock } from "lucide-react";
+import { useMemo } from "react";
+import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
+import { useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
 import { DockHeader } from "../dock/DockHeader";
@@ -26,6 +30,11 @@ export type ContextSidebarProps = {
 };
 
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
+  const { snapshot } = useAccountResourceProjection(projectId ?? "");
+  const identities = useMemo(
+    () => recentDocumentIdentityIndex(projectId ?? "", snapshot),
+    [projectId, snapshot],
+  );
   const recent = useThreadRecentDocuments(threadId);
   const openDocument = useOpenChatDocument(projectId ?? undefined);
   const openRecent = async (documentId: string) => {
@@ -53,14 +62,17 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               ) : (
                 <ul>
                   {recent.documents?.map((document) => {
-                    // The tree lists whole file names; the rail names files the same way.
-                    const fileName = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
+                    // The tree lists stored names (a prose document has no extension); the rail names files the same way.
+                    const identity = identities.get(document.documentId);
+                    if (identity === null) return null;
+                    const fileName =
+                      identity?.name ?? renderFilename(document.name, document.extension);
                     return (
                       <li key={document.documentId}>
                         <RailFileRow
                           icon={fileKindIcon(fileName)}
                           name={fileName}
-                          title={fileName}
+                          title={identity?.path ?? fileName}
                           onOpen={() => void openRecent(document.documentId)}
                         />
                       </li>

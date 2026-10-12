@@ -1,6 +1,6 @@
 {
-  "id": "2debb80b-5666-48ad-af44-f84fcca3aedd",
-  "prevId": "b7615a07-e9e1-4e1c-a38a-a680ec114faf",
+  "id": "cc5ca193-71ee-4b7d-911c-61f2c19df676",
+  "prevId": "680406af-4023-46e1-b41b-9af8eee32b40",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4551,7 +4551,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'md'"
+          "default": "''"
         },
         "file_type": {
           "name": "file_type",
@@ -5963,6 +5963,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "namespace_generation": {
+          "name": "namespace_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -6321,348 +6328,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.document_edit_parts": {
-      "name": "document_edit_parts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "edit_id": {
-          "name": "edit_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ordinal": {
-          "name": "ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "update": {
-          "name": "update",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effect": {
-          "name": "effect",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "targets": {
-          "name": "targets",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "frontier": {
-          "name": "frontier",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "aliases": {
-          "name": "aliases",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "origin": {
-          "name": "origin",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "placement": {
-          "name": "placement",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "document_edit_parts_edit_ordinal": {
-          "name": "document_edit_parts_edit_ordinal",
-          "columns": [
-            {
-              "expression": "edit_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "ordinal",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edit_parts_pending_idx": {
-          "name": "document_edit_parts_pending_idx",
-          "columns": [
-            {
-              "expression": "(\"placement\"->>'branchId')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "(\"placement\"->>'generation')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_edit_parts\".\"placement\"->>'kind' = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_edit_parts_edit_id_document_edits_id_fk": {
-          "name": "document_edit_parts_edit_id_document_edits_id_fk",
-          "tableFrom": "document_edit_parts",
-          "tableTo": "document_edits",
-          "columnsFrom": [
-            "edit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_edit_parts_ordinal_valid": {
-          "name": "document_edit_parts_ordinal_valid",
-          "value": "\"document_edit_parts\".\"ordinal\" >= 0"
-        },
-        "document_edit_parts_origin_valid": {
-          "name": "document_edit_parts_origin_valid",
-          "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
-        },
-        "document_edit_parts_placement_valid": {
-          "name": "document_edit_parts_placement_valid",
-          "value": "\"document_edit_parts\".\"placement\"->>'kind' IN ('pending','live','discarded','retired')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.document_edits": {
-      "name": "document_edits",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "response_id": {
-          "name": "response_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor": {
-          "name": "actor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "w_id": {
-          "name": "w_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action_id": {
-          "name": "action_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consumes": {
-          "name": "consumes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_edits_document_idx": {
-          "name": "document_edits_document_idx",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edits_turn_idx": {
-          "name": "document_edits_turn_idx",
-          "columns": [
-            {
-              "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edits_action_idx": {
-          "name": "document_edits_action_idx",
-          "columns": [
-            {
-              "expression": "action_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_edits_document_id_documents_id_fk": {
-          "name": "document_edits_document_id_documents_id_fk",
-          "tableFrom": "document_edits",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_edits_thread_id_threads_id_fk": {
-          "name": "document_edits_thread_id_threads_id_fk",
-          "tableFrom": "document_edits",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_edits_turn_id_turns_id_fk": {
-          "name": "document_edits_turn_id_turns_id_fk",
-          "tableFrom": "document_edits",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_edits_actor_user_id_users_id_fk": {
-          "name": "document_edits_actor_user_id_users_id_fk",
-          "tableFrom": "document_edits",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_edits_actor_valid": {
-          "name": "document_edits_actor_valid",
-          "value": "\"document_edits\".\"actor\" IN ('agent','human','system')"
-        },
-        "document_edits_kind_valid": {
-          "name": "document_edits_kind_valid",
-          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert','rollback')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.project_user_preferences": {
@@ -8242,12 +7907,6 @@
         "w_id": {
           "name": "w_id",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_call_id": {
-          "name": "tool_call_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -9948,18 +9607,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "edit_id": {
-          "name": "edit_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "edit_part_ordinal": {
-          "name": "edit_part_ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "origin_type": {
           "name": "origin_type",
           "type": "text",
@@ -10072,19 +9719,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_yjs_updates_edit_id_document_edits_id_fk": {
-          "name": "document_yjs_updates_edit_id_document_edits_id_fk",
-          "tableFrom": "document_yjs_updates",
-          "tableTo": "document_edits",
-          "columnsFrom": [
-            "edit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "document_yjs_updates_actor_user_id_users_id_fk": {
@@ -10658,6 +10292,16 @@
   "sequences": {
     "public.context_availability_generation_seq": {
       "name": "context_availability_generation_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    },
+    "public.context_namespace_observation_version_seq": {
+      "name": "context_namespace_observation_version_seq",
       "schema": "public",
       "increment": "1",
       "startWith": "1",

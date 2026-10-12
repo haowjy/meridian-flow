@@ -12,8 +12,11 @@
 
 import { createContext, useCallback, useContext } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-
+import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+import { useChatNavigation } from "../routing/chat-navigation";
+import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
+import { commitDockDocument } from "./use-dock-placement";
 
 /** Containers choose launch placement once; list launches outside the dock remain Editor commands. */
 export const ReviewLaunchContext = createContext<((target: AiDraftLaunchTarget) => void) | null>(
@@ -51,4 +54,23 @@ export function useAiDraftLauncher() {
   );
 
   return { openAiDraft, openReviewFile };
+}
+
+export function useDockReviewLauncher(projectId: string, document: DockDocument) {
+  const { revealDock } = useChatNavigation();
+  // Q1: every review control inside this container uses this one launch adapter.
+  const launch = useCallback(
+    (target: AiDraftLaunchTarget) => {
+      const store = useDockDocumentStore.getState();
+      const claim = store.claim();
+      const tab = contextTabFromDraftGroup(target);
+      if (tab)
+        commitDockDocument(projectId, document.screen, tab, revealDock, claim, {
+          workId: target.workId,
+          draftId: target.draftId,
+        });
+    },
+    [projectId, document.screen, revealDock],
+  );
+  return launch;
 }

@@ -107,7 +107,7 @@ export function createStaticDocumentLinks(
       }
       // A row an address load found is known by id too, as the server remembers it.
       for (const entry of catalog.documents) {
-        if (loaded.addresses.has(entry.uri) || loaded.addresses.has(stemOf(entry.uri)))
+        if ([...loaded.addresses].some((uri) => matchDocumentPath([entry], uri, (doc) => doc.uri)))
           loaded.ids.add(entry.documentId);
       }
     },
@@ -117,13 +117,6 @@ export function createStaticDocumentLinks(
     },
     revision: (doc, scope) => staticRevision(doc, scope, catalog),
   };
-}
-
-/** The URI without its filename's extension: the key an extension-omitted address matches. */
-function stemOf(uri: string): string {
-  const slash = uri.lastIndexOf("/");
-  const dot = uri.lastIndexOf(".");
-  return dot > slash + 1 ? uri.slice(0, dot) : uri;
 }
 
 function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | null): HolderCatalog {

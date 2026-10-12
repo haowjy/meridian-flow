@@ -1,4 +1,5 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import {
   contextOwner,
   type ProjectContextTreeScheme,
@@ -311,7 +312,7 @@ export function ContextViewerSurfaceController({
         projectId,
         tab,
         resourceProjection.records,
-        resourceProjection.folders,
+        resourceProjection.placement,
       );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
@@ -369,7 +370,7 @@ export function ContextViewerSurfaceController({
     projectId,
     reconcileResourceTab,
     resourceProjection.records,
-    resourceProjection.folders,
+    resourceProjection.placement,
     routeWorkId,
     selectedDocumentId,
     tabs,
@@ -482,7 +483,7 @@ function settleWriterClose(
   );
 }
 
-/** Full basename ("chapter-1.md") — matches the name a settled tab displays. */
+/** The stored name ("Chapter 1") — matches the name a settled tab displays. */
 function contextRouteFileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
+  return documentTitleFromUri(path) ?? path.slice(path.lastIndexOf("/") + 1);
 }

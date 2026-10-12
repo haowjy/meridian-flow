@@ -11,7 +11,7 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
-import { type TreeActions, TreeChildren, TreeEnvProvider, type TreeView } from "./ContextTreeRows";
+import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
   EDITOR_CONTEXT_SCHEMES,
@@ -156,16 +156,13 @@ function SchemeSection({
       const segments = path.split("/").filter(Boolean);
       if (segments.length === 0) return;
       setExpandedEntryIds((current) => {
-        let next = current;
+        const next = { ...current };
         let ancestor = "";
         for (const segment of segments) {
           ancestor += `/${segment}`;
           const entry = catalog.findPath(ancestor);
-          if (entry?.kind !== "dir" || current[entry.entryId] === true) continue;
-          if (next === current) next = { ...current };
-          next[entry.entryId] = true;
+          if (entry?.kind === "dir") next[entry.entryId] = true;
         }
-        // Unchanged expansion keeps its identity, so revealing an open path re-renders nothing.
         return next;
       });
     },
@@ -208,55 +205,51 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
-  // Rows read commands through one stable object; the latest props are read at call time.
-  const latest = useRef({
-    onSelectFile,
-    requestCreate,
-    requestDelete: deleteConfirm.requestDelete,
-    onCreateDone,
-    creating,
-  });
-  latest.current = {
-    onSelectFile,
-    requestCreate,
-    requestDelete: deleteConfirm.requestDelete,
-    onCreateDone,
-    creating,
-  };
-  const actions = useMemo<TreeActions>(
-    () => ({
-      projectId,
-      workId: editorWorkId,
-      scheme,
-      onSelectFile: (target, file) => latest.current.onSelectFile(target, file),
-      onRequestCreate: (kind, parentPath) => latest.current.requestCreate(kind, parentPath),
-      onRequestDelete: (target) => latest.current.requestDelete(target),
-      onCreateDone: () => latest.current.onCreateDone(),
-      onCreatedFilePath: setPendingOpenPath,
-      toggleEntry: (entryId) => {
-        if (latest.current.creating) latest.current.onCreateDone();
-        toggleEntry(entryId);
-      },
-    }),
-    [projectId, editorWorkId, scheme, toggleEntry],
-  );
-  const creatingKind = creating?.kind;
-  const creatingParent = creating?.parentPath;
-  const view = useMemo<TreeView | null>(
+  const deleteConfirm = useDeleteConfirmation({ projectId });
+  const env = useMemo<TreeEnv | null>(
     () =>
       catalog
-        ? {
-            activePath: activeLocationPath,
-            creating:
-              creatingKind !== undefined && creatingParent !== undefined
-                ? { kind: creatingKind, parentPath: creatingParent }
-                : null,
-            isExpanded,
+        ? ({
+            projectId,
+            owner: { workId: editorWorkId },
+            scheme,
+            capabilities: [
+              "rename",
+              "move",
+              ...(scheme !== "uploads" ? (["delete"] as const) : []),
+            ],
+            activeScheme,
+            activePath,
+            creation: schemeAllowsCreation(scheme)
+              ? {
+                  creating,
+                  request: requestCreate,
+                  done: onCreateDone,
+                  createdFile: setPendingOpenPath,
+                }
+              : undefined,
+            onSelectFile,
+            onRequestDelete: deleteConfirm.requestDelete,
             catalog,
-          }
+            isExpanded,
+            toggleEntry,
+          } satisfies TreeEnv)
         : null,
-    [activeLocationPath, creatingKind, creatingParent, isExpanded, catalog],
+    [
+      projectId,
+      editorWorkId,
+      scheme,
+      activeScheme,
+      activePath,
+      creating,
+      onSelectFile,
+      requestCreate,
+      deleteConfirm.requestDelete,
+      onCreateDone,
+      isExpanded,
+      toggleEntry,
+      catalog,
+    ],
   );
 
   const handleExpandedChange = (next: boolean) => {
@@ -292,8 +285,8 @@ function SchemeSection({
   return (
     <section>
       {header}
-      {expanded && catalog && view ? (
-        <TreeEnvProvider actions={actions} view={view}>
+      {expanded && catalog && env ? (
+        <TreeEnvProvider value={env}>
           <div>
             <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
             {/* "No context files yet." is a claim about the tree, so it waits

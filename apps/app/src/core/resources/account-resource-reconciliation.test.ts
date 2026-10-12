@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 /** Account reconciliation continues without a mounted project/catalog consumer. */
 import "fake-indexeddb/auto";
-import { markResourceCreateEligible, reserveResourceDocument } from "@meridian/resource-replica";
+import {
+  createResourcePlacement,
+  markResourceCreateEligible,
+  reserveResourceDocument,
+} from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/http-client";
@@ -26,8 +30,8 @@ vi.mock("@/client/api/projects-api", () => ({
     status: "created",
     documentId: request.documentId,
     scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
+    path: "/Untitled",
+    name: "Untitled",
   }),
 }));
 
@@ -84,7 +88,7 @@ it("reconciles a newly committed intent with no UI subscribers", async () => {
     expect(stopHints).toHaveBeenCalledTimes(1);
     await runtime.finishClose();
     await writer.finishClose();
-    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    await Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     vi.unstubAllGlobals();
   }
 });
@@ -133,11 +137,8 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     release = () => content.release();
     databaseName = content.session.persistenceName ?? undefined;
     await replica.setLocation("project", reservation.key, {
-      scheme: "scratch",
-      folderPath: "",
-      name: "scene.md",
-      workId: "work",
-      workSlug: "serial",
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "serial" } },
+      name: "scene",
     });
     // File first, type second, refuse third. The content owner is a real local Yjs session.
     content.session.document.getText("prose").insert(0, "The dragon survives.");
@@ -159,16 +160,22 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     const catalog = projectCatalogView(
       "project",
       "unfiled",
-      accessibleResourceCatalogView("project", { kind: "project", projectId: "project" }, record),
+      accessibleResourceCatalogView(
+        "project",
+        { kind: "project", projectId: "project" },
+        record,
+        createResourcePlacement("project", [], []),
+      ),
+      createResourcePlacement("project", [], []),
       [record],
     );
     expect(catalog.children(catalog.root.entryId)).toMatchObject([
       {
         kind: "file",
-        name: "Untitled.md",
+        name: "Untitled",
         provisionalName: false,
         namespaceFailure: "set-location",
-        namespaceRepairName: "scene.md",
+        namespaceRepairName: "scene",
       },
     ]);
   } finally {
@@ -176,7 +183,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     await replica.finishClose();
     await runtime.finishClose();
     await writer.finishClose();
-    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    await Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     if (databaseName) await Dexie.delete(databaseName);
     await Dexie.delete(`meridian:document-session-authority:${encodeURIComponent(accountId)}`);
     vi.unstubAllGlobals();

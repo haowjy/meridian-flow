@@ -1,23 +1,30 @@
-/** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
+/**
+ * DocumentIdentityBar — where an open document lives: its path, which navigates,
+ * and the chips about it (Choose a home for a document in Unfiled, device-only, a
+ * refused move, a review). The Editor shows it as a band above the page; a
+ * document beside the chat shows it in the dock header (`variant="header"`).
+ */
+import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
+import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
+import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { useAccountResourceProjection } from "./account-feature-context";
-import { schemeIcon, schemeLabel } from "./context-schemes";
-import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
+import { schemeLabel } from "./context-schemes";
+import { DocumentPath } from "./DocumentPath";
+import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
-import { type TabLocation, tabLocation } from "./identity-location";
-import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
+import { tabLocation } from "./identity-location";
+import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
@@ -32,13 +39,15 @@ export type DocumentIdentityBarProps = {
   tab: ContextTab;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
+  /** A band above the page (the Editor), or the content of the dock's header row. */
+  variant?: "band" | "header";
+  onCloseDraftOnly?: () => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
-  onCloseDraftOnly?: () => void;
 };
 
 export function DocumentIdentityBar({
@@ -46,6 +55,7 @@ export function DocumentIdentityBar({
   editorWorkId,
   tab,
   readOnly = false,
+  variant = "band",
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
@@ -53,26 +63,27 @@ export function DocumentIdentityBar({
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const noteOperationId = useRenameOperation(tab.documentId);
+  const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {
+    kind: "file",
+    id: tab.documentId,
+  });
   const commitIdentity = useIdentityCommit({
     projectId,
     tab,
     editorWorkId: editorWorkId,
     onCommitted,
   });
-  // Only a rename made here shows the note here; the tree shows its own. The rename
-  // re-resolves the tab and remounts this bar, so the operation outlives it.
+  // The note follows the resource handle, so list moves and identity remints show here too.
+  // A placement made here re-resolves the tab and remounts this bar, so the
+  // operation is remembered outside it.
   const commit: typeof commitIdentity = async (target) => {
     const outcome = await commitIdentity(target);
-    if (outcome.status === "committed" && outcome.operationId)
-      rememberRenameOperation(tab.documentId, outcome.operationId);
+    if (outcome.status === "committed" && outcome.operationId) remember(outcome.operationId);
     return outcome;
   };
 
-  // A queued placement that failed after this document materialized reopens
-  // the field with the writer's name restored and the failure's recovery
-  // note — the receipt must never be dropped silently.
-  const { records } = useAccountResourceProjection(projectId);
+  // Only provisional placement can be repaired here; homed refusals stay in lists.
+  const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.resourceHandle
       ? resource.handle === tab.resourceHandle
@@ -80,37 +91,48 @@ export function DocumentIdentityBar({
   );
   const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
   const identityFailure =
-    repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
+    location.provisional && repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
       ? ({ kind: "error", name: repair.name } as const)
       : null;
+  const repairMove = resource?.resource.canonical
+    ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
+    : undefined;
+  const failedFolder = repairMove
+    ? repairMove.parent.kind === "root"
+      ? schemeLabel(repairMove.parent.scheme)
+      : t`that folder`
+    : null;
+  const passiveFailure = failedFolder
+    ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
+    : t`Couldn't rename. Use Rename in the file list to try again.`;
   const failureAt =
     repair?.kind === "set-location"
       ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
       : undefined;
-  useRepairOnFreshFailure(identityFailure ? failureAt : undefined, () => setFieldOpen(true));
+  useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
+    setFieldOpen(true),
+  );
 
-  // The chip always opens the one inline field when moving the document is
-  // legal. Uploads aren't writing material, so those show no chip.
-  // While the document is under a painted review, its controls and Draft chip
-  // live in this row (the review header is gone), and Rename moves into the
-  // chip's menu. Before the body paints the live row is held as it was.
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
   const reviewDraftId =
     review?.documentId === tab.documentId && review.shown ? review.draftId : null;
   const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
-  const canMove = !readOnly && location.scheme !== "uploads";
-  const showChip = canMove && !reviewDraftId;
+  // A document in Unfiled, untitled or named, is invited to choose a home. Once it
+  // has one, renaming and moving belong to the lists. Uploads aren't writing material.
+  const showChip =
+    !reviewDraftId && !readOnly && location.provisional && location.scheme !== "uploads";
+  const placementOpen = fieldOpen && showChip;
 
   return (
     <div
       className={cn(
-        "@container shrink-0",
-        // Under review the row takes the reviewing tab's tone (ContextTabBar), so the
-        // tab and its row read as one draft surface.
-        // The rule is an inset shadow so it adds no height: the toolbar never shifts.
-        reviewDraftId && "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
+        "@container min-w-0",
+        variant === "header" ? "flex-1" : "shrink-0",
+        reviewDraftId &&
+          variant === "band" &&
+          "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
       )}
     >
       {/* Fixed-height band, full pane width. The bar is navigation chrome
@@ -121,11 +143,11 @@ export function DocumentIdentityBar({
           the suggestion-popover rows it sits beside. */}
       <div
         className={cn(
-          "flex items-center gap-1 px-4 font-mono text-ink-subtle text-sm",
-          IDENTITY_BAR_BAND_CLASS,
+          "flex items-center gap-1 font-mono text-ink-subtle text-sm",
+          variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
         )}
       >
-        {fieldOpen && !readOnly ? (
+        {placementOpen ? (
           <IdentityPlacementField
             projectId={projectId}
             editorWorkId={editorWorkId}
@@ -143,15 +165,19 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <>
-            <IdentityPath location={location} reviewing={reviewDraftId !== null} />
-            <LinkUpdateNote
-              projectId={projectId}
-              subject={{ kind: "file", id: tab.documentId }}
-              operationId={noteOperationId}
-              className="ml-3 font-sans text-ink-muted"
-            />
-          </>
+          <DocumentPath
+            projectId={projectId}
+            tab={tab}
+            location={location}
+            trailing={
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "file", id: tab.documentId }}
+                operationId={noteOperationId}
+                className="ml-3 font-sans text-ink-muted"
+              />
+            }
+          />
         )}
         {reviewDraftId ? (
           <DraftReviewBand
@@ -159,32 +185,32 @@ export function DocumentIdentityBar({
             draftId={reviewDraftId}
             onOpenDraft={openDraft}
             onCloseDraftOnly={onCloseDraftOnly}
-            onRename={canMove ? () => setFieldOpen(true) : undefined}
           />
-        ) : (
-          <>
-            <DraftReviewChip documentId={tab.documentId} />
-            <span className="min-w-1 flex-1" />
-          </>
-        )}
-        {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
-        {repair?.kind === "set-location" && !fieldOpen ? (
-          <button
-            type="button"
-            className="focus-ring flex min-w-0 items-center rounded-md"
-            onClick={() => {
-              setDismissedRepairId(null);
-              setFieldOpen(true);
-            }}
-          >
-            <NamespaceFailureMark failure="set-location" labelled />
-          </button>
         ) : null}
+        {/* The path fills the row; the placement field needs the same push. */}
+        {placementOpen ? <span className="min-w-1 flex-1" /> : null}
+        {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
+        {repair?.kind === "set-location" && !placementOpen ? (
+          location.provisional && !readOnly ? (
+            <button
+              type="button"
+              className="focus-ring flex min-w-0 items-center rounded-md"
+              onClick={() => {
+                setDismissedRepairId(null);
+                setFieldOpen(true);
+              }}
+            >
+              <NamespaceFailureMark failure="set-location" labelled />
+            </button>
+          ) : (
+            <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+          )
+        ) : null}
+        {!reviewDraftId ? <DraftReviewChip documentId={tab.documentId} /> : null}
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
-          location={location}
-          show={showChip && !fieldOpen}
+          show={showChip && !placementOpen}
           onChooseHome={() => {
             setFieldOpen(true);
           }}
@@ -201,86 +227,15 @@ export function DocumentIdentityBar({
   );
 }
 
-/**
- * The breadcrumb. Folders fold into one `…` once the row is narrow; under
- * review the row carries more, so it folds earlier (first of the review row's
- * collapse steps, see `DraftReviewBand`). The file name always keeps its
- * place and is the last thing to truncate.
- */
-function IdentityPath({ location, reviewing }: { location: TabLocation; reviewing: boolean }) {
-  const SchemeIcon = schemeIcon(location.scheme);
-  const separator = (
-    <span aria-hidden className="shrink-0 opacity-60">
-      ›
-    </span>
-  );
-  const lastFolderIndex = location.folders.length;
-  const fold = reviewing ? FOLD.review : FOLD.rest;
-  const segments = (
-    <>
-      <span data-seg="0" className="flex shrink-0 items-center gap-1">
-        <SchemeIcon aria-hidden className="size-3 shrink-0" />
-        <span className={fold.hideScheme}>{schemeLabel(location.scheme)}</span>
-      </span>
-      {location.folders.length > 0 ? (
-        <>
-          {separator}
-          <span className={cn("flex min-w-0 items-center gap-1", fold.hideFolders)}>
-            {location.folders.length > 1 ? (
-              <>
-                <span aria-hidden data-seg="1">
-                  …
-                </span>
-                {separator}
-              </>
-            ) : null}
-            <span data-seg={lastFolderIndex} className="truncate">
-              {location.folders[location.folders.length - 1]}
-            </span>
-          </span>
-          <span aria-hidden data-seg="1" className={cn("hidden", fold.showEllipsis)}>
-            …
-          </span>
-        </>
-      ) : null}
-      {separator}
-      <span
-        data-seg="leaf"
-        className={cn("truncate text-ink-muted", location.provisional && "italic")}
-      >
-        {location.leaf}
-      </span>
-    </>
-  );
-  return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
-}
-
-/** Container widths at which folders fold into `…` (literal classes: Tailwind reads them at build). */
-const FOLD = {
-  rest: {
-    hideFolders: "@max-md:hidden",
-    showEllipsis: "@max-md:inline",
-    hideScheme: "@max-md:hidden",
-  },
-  // The scheme's name is the last thing to go before the file name: below 32rem it is its icon alone.
-  review: {
-    hideFolders: "@max-[48rem]:hidden",
-    showEllipsis: "@max-[48rem]:inline",
-    hideScheme: "@max-[32rem]:hidden",
-  },
-} as const;
-
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   tab,
-  location,
   show,
   onChooseHome,
 }: {
   projectId: string;
   tab: ContextTab;
-  location: TabLocation;
   show: boolean;
   onChooseHome: () => void;
 }) {
@@ -289,7 +244,7 @@ function IdentityChipSlot({
   return (
     <>
       {deviceOnly ? <DeviceOnlyChip /> : null}
-      {show ? <HomeChip provisional={location.provisional} onClick={onChooseHome} /> : null}
+      {show ? <ChooseHomeChip onClick={onChooseHome} /> : null}
     </>
   );
 }

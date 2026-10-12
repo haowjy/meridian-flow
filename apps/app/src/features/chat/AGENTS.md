@@ -28,11 +28,20 @@ Hosts share the tab-local owner, so a pane change before the debounce flushes
 still hydrates the latest words. Each mount captures its initial snapshot once.
 It uses the Composer snapshot seam, debounces sessionStorage writes, and flushes
 on pagehide/unmount. Transfer to the submission journal clears it synchronously
-before dispatch/navigation. `settleChatSubmission` transfers a rejection
-back to the tab-local owner before journal retirement, including after pane
-unmount. It never overwrites later authoring. Acceptance (including failed-row
-Retry) clears only the unchanged submitted snapshot. Lifecycle transfers publish
-a new editor mount; ordinary typing never does. Edit only focuses that editor.
+at Send. `client/chat-submissions/owner.ts` owns writer rows, command orchestration and the
+shared account/thread presentation snapshot. Every mounted pane subscribes to the
+same row model; pending belongs only to a live session/submission attempt. `useChatSubmissions` only binds cancellation,
+external wakes and keyed announcements to that owner; first sends and later sends share
+that lifecycle. A refusal stays on its row across reload; ambiguity belongs to
+this tab. The binding announces only a new failed transition, keyed by the stable
+record id (account-qualified), never a restored rejection. Retry, successful Edit,
+acceptance and unmount clear only that record's alert. Retry looks up before posting. Edit fences first, prepends the rejected
+structured document before newer writing and saves a stable record-id receipt with
+the draft, then retires the journal record. A received transfer shows no old Send
+commands, and reload finishes retirement without prepending again.
+Never-created chat Edit returns all its messages and unsent writing to New chat
+in the same pane. Lifecycle transfers publish a new editor mount; typing does
+not. `useThreadRunResume` only attaches snapshot-based active runs.
 Pending upload bytes do not persist. Successfully uploaded reference atoms do.
 
 ## Mental model

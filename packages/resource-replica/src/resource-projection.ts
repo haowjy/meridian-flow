@@ -2,8 +2,10 @@
 import { namespaceRepairDestination } from "./namespace-journal-policy";
 import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
 import {
-  ownerOf,
+  type DestinationParentLookup,
+  destinationLocation,
   type ResourceCatalogCheckpoint,
+  type ResourceDestination,
   type ResourceLocation,
   type ResourceRecord,
 } from "./resource-records";
@@ -26,27 +28,34 @@ export function resourceForDocumentIdentity(
 export function projectResourceNeedsRepair(
   projectId: string,
   record: ResourceRecord,
-): { intentId: string; kind: "set-location" | "delete"; name: string } | null {
+): {
+  intentId: string;
+  kind: "set-location" | "delete";
+  name: string;
+  destination?: ResourceDestination;
+} | null {
   const failed = record.intents.find(
     (intent) => intent.projectId === projectId && intent.state === "needs-repair",
   );
   if (!failed || failed.desired.kind === "create" || failed.desired.kind === "set-folder-location")
     return null;
+  const destination =
+    failed.desired.kind === "set-location"
+      ? (namespaceRepairDestination(record.intents, failed) ?? failed.desired.destination)
+      : undefined;
   return {
     intentId: failed.intentId,
     kind: failed.desired.kind,
-    name:
-      failed.desired.kind === "set-location"
-        ? (namespaceRepairDestination(record.intents, failed)?.name ??
-          failed.desired.destination.name)
-        : (record.resource.canonical?.name ?? "document"),
+    ...(destination ? { destination } : {}),
+    name: destination?.name ?? record.resource.canonical?.name ?? "document",
   };
 }
 
-/** Writer-facing location, including durable local intentions not yet reflected by a catalog. */
+/** Resource-owned placement policy. UI consumers use ResourcePlacement to include ancestor changes. */
 export function projectResourceLocation(
   projectId: string,
   record: ResourceRecord,
+  lookup: DestinationParentLookup = () => null,
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -59,15 +68,10 @@ export function projectResourceLocation(
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
   if (placement?.kind === "set-location") {
-    const folder = placement.destination.folderPath.split("/").filter(Boolean).join("/");
-    return {
-      scheme: placement.destination.scheme,
-      path: `/${[folder, placement.destination.name].filter(Boolean).join("/")}`,
-      name: placement.destination.name,
-      ...ownerOf(placement.destination),
-      provisional: false,
-    };
+    const location = destinationLocation(placement.destination, lookup);
+    if (location) return { ...location, provisional: false };
   }
+
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;

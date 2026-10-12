@@ -86,7 +86,7 @@ describe("Drizzle manifest persistence", () => {
       id: contentDocumentId,
       contextSourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     });
     return { projectId, contextSourceId, contentDocumentId };

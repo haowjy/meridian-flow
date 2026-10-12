@@ -4,7 +4,9 @@
  * tree mutation is exposed only through an optional atomic capability.
  * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
+
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
+import type { ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
@@ -26,6 +28,11 @@ import type {
   ContextTreeDeleteCommand,
   PreparedContextMove,
 } from "./context-tree-mutation-store.js";
+
+/** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
+export type ContextEnsureTrackedOptions = ContextWriteOptions & {
+  parsedFilename?: ParsedDocumentFilename;
+};
 
 /** What a scheme adapter supports. Checked by the router before dispatch. */
 export type SchemeCapabilities = ContextSchemeCapabilities;
@@ -51,9 +58,11 @@ export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {
  * Not-found on read is modelled as `Ok(null)`, not a fault.
  */
 export type AdapterFault =
+  | { code: "invalid_name"; message: string }
   | { code: "not_found" }
+  | { code: "destination_missing" }
   | { code: "permission_denied" }
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string }
@@ -139,12 +148,12 @@ export interface ContextSchemeAdapter {
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   createBoundDocument(
     path: string,
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
   locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(
@@ -153,7 +162,7 @@ export interface ContextSchemeAdapter {
   ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
-    options?: ContextWriteOptions,
+    options?: ContextEnsureTrackedOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
   writeBinary(
     path: string,

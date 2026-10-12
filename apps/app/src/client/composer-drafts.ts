@@ -1,17 +1,21 @@
-/** Tab-local owner shared by authoring panes and admission settlement. */
+/** Tab-local authoring owner for pane continuity, journal hand-off and Edit. */
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   parseRestorableComposerDraft,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { browserRecord, type StorageSource } from "./storage/browser-record";
+import { browserRecord, isRecord, type StorageSource } from "./storage/browser-record";
 
 export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
+type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & { received?: string[] };
+
 export class ComposerSessionDraft {
   readonly key: string;
-  private readonly record: ReturnType<typeof browserRecord<ComposerDraftSnapshot>>;
+  private readonly record: ReturnType<typeof browserRecord<StoredComposerDraft>>;
   private current: ComposerDraftSnapshot | null;
+  private received = new Set<string>();
+  hasReceived = (recordId: string) => this.received.has(recordId);
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private version = 0;
@@ -28,36 +32,26 @@ export class ComposerSessionDraft {
     for (const listener of this.listeners) listener();
   }
 
-  /** Transfer rejection ownership before the journal is retired. Never replace later authoring. */
-  restoreRejected(snapshot: ComposerDraftSnapshot): boolean {
-    const text = this.current && serializeComposerDraft(this.current.doc).text;
-    if (text) {
-      this.flush();
-      return false;
-    }
-    this.current = snapshot;
-    this.dirty = true;
-    this.publish();
-    this.flush();
-    return !this.dirty;
-  }
-
-  /** Writer-directed Edit prepends the rejected document without flattening reference atoms. */
-  editRejected(snapshot: ComposerDraftSnapshot): boolean {
-    const later = this.current;
-    const edited =
-      later && serializeComposerDraft(later.doc).text
-        ? {
-            ...snapshot,
-            revision: Math.max(snapshot.revision, later.revision) + 1,
-            doc: {
-              type: "doc",
-              content: [...(snapshot.doc.content ?? []), ...(later.doc.content ?? [])],
-            },
-            ownedUploads: [...snapshot.ownedUploads, ...later.ownedUploads],
-          }
-        : snapshot;
-    if (!this.record.write(edited)) return false;
+  /** One ordered transfer for a rejected cohort, followed by this destination's newer writing. */
+  prependSnapshots(snapshots: ComposerDraftSnapshot[], recordIds: string[] = []): boolean {
+    const pending = snapshots.filter(
+      (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
+    );
+    if (!pending.length) return true;
+    snapshots = pending;
+    const first = snapshots[0];
+    if (!first) return false;
+    const all = [...snapshots];
+    if (this.current && serializeComposerDraft(this.current.doc).text) all.push(this.current);
+    const edited = {
+      ...first,
+      revision: Math.max(...all.map((snapshot) => snapshot.revision)) + 1,
+      doc: { type: "doc", content: all.flatMap((snapshot) => snapshot.doc.content ?? []) },
+      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
+    };
+    const received = new Set([...this.received, ...recordIds]);
+    if (!this.record.write({ ...edited, received: [...received] })) return false;
+    this.received = received;
     this.current = edited;
     this.dirty = false;
     this.publish();
@@ -68,15 +62,6 @@ export class ComposerSessionDraft {
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
     if (this.matches(snapshot)) this.handoff();
   };
-
-  /** Every authoring update after journal hand-off is newer, even with identical words/revision. */
-  acceptSubmitted(): boolean {
-    if (!this.current) {
-      this.handoff();
-      this.publish();
-    } else this.flush();
-    return !this.dirty;
-  }
 
   private matches(snapshot: ComposerDraftSnapshot): boolean {
     // Selection movement is not editing. Normalize both sides so storage parsing
@@ -90,12 +75,21 @@ export class ComposerSessionDraft {
 
   constructor(accountId: string, scope: ComposerDraftScope, storage: StorageSource = "session") {
     this.key = `meridian:composer-draft:v1:${JSON.stringify([accountId, scope.kind, scope.id])}`;
-    this.record = browserRecord(
+    this.record = browserRecord<StoredComposerDraft>(
       storage,
       { key: this.key, version: 1, accountId, scope: JSON.stringify([scope.kind, scope.id]) },
-      (value) => parseRestorableComposerDraft(value) ?? undefined,
+      (value) => {
+        if (!isRecord(value)) return undefined;
+        const received = value.received === undefined ? [] : value.received;
+        if (!Array.isArray(received) || !received.every((id) => typeof id === "string"))
+          return undefined;
+        const draft = value.doc === null ? null : parseRestorableComposerDraft(value);
+        return value.doc !== null && !draft ? undefined : { ...(draft ?? { doc: null }), received };
+      },
     );
-    this.current = this.record.read() ?? null;
+    const saved = this.record.read();
+    this.current = saved ? parseRestorableComposerDraft(saved) : null;
+    this.received = new Set(saved?.received);
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -125,8 +119,10 @@ export class ComposerSessionDraft {
     const draft = this.current && parseRestorableComposerDraft(this.current);
     const saved =
       !draft || !serializeComposerDraft(draft.doc).text
-        ? this.record.write(undefined)
-        : this.record.write(draft);
+        ? this.record.write(
+            this.received.size ? { doc: null, received: [...this.received] } : undefined,
+          )
+        : this.record.write({ ...draft, received: [...this.received] });
     if (saved) this.dirty = false;
   };
 }

@@ -1,8 +1,12 @@
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
+import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createContextEntry as createClientContextEntry } from "../../../../app/src/client/api/projects-api.js";
 import {
   createTestDocumentLinkScopes,
   testLinkDeps,
@@ -167,7 +171,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              workRepo: {} as never,
+              workRepo: createDrizzleProjectWorkRepository({
+                db,
+                lineageScratch: createDrizzleLineageScratchLifecycle(db),
+                fileAccessChanges: createLocalFileAccessChanges(),
+                projectionMutation: createTestWorkProjectionMutation(db),
+              }),
               contextPorts,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),
@@ -208,6 +217,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
     });
 
+    it.each([
+      { occupant: "folder", existing: "outline.json", type: "file", path: "outline.json" },
+      { occupant: "file", existing: "Taken", type: "folder", path: "Taken.md" },
+    ] as const)("carries a server-discovered $occupant conflict through the create HTTP client", async ({
+      occupant,
+      existing,
+      type,
+      path,
+    }) => {
+      const { contextPorts } = createFixture();
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body: { type: occupant, path: existing },
+      });
+      const body = { type, path };
+      // No sibling snapshot is supplied: the route, not the app, discovers the clash.
+      const result = await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "manuscript",
+        body,
+      });
+      expect(result).toMatchObject({ status: "conflict", occupantKind: occupant });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify(result), {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            }),
+        ),
+      );
+      try {
+        await expect(createClientContextEntry(PROJECT_ID, "manuscript", body)).resolves.toEqual(
+          result,
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
       const { contextPorts } = createFixture();
       const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
@@ -217,19 +271,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           scheme: "manuscript",
           workId: null,
-          body: parseCreateContextEntryBody({ type: "file", path: "/race.md", content }),
+          body: parseCreateContextEntryBody({ type: "file", path: "/race", content }),
         });
 
       const results = await Promise.all([create("alpha"), create("beta")]);
       expect(results.map((result) => result.status).sort()).toEqual(["conflict", "created"]);
       const winner = results.find((result) => result.status === "created");
-      const read = await port.read("manuscript://race.md");
+      const read = await port.read("manuscript://race");
       expect(read).toEqual({
         ok: true,
         value: {
           content: winner === results[0] ? "alpha\n" : "beta\n",
           documentId: winner?.documentId,
-          uri: "manuscript://race.md",
+          uri: "manuscript://race",
         },
       });
     });
@@ -251,14 +305,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return result.documentId;
       };
 
-      const kbDocumentId = await create(port, "kb", "/kb.md");
+      const kbDocumentId = await create(port, "kb", "/kb");
       await collab.drainHocuspocusPersistence();
       const kbMembership = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
       expect(kbMembership.members).toContain(kbDocumentId);
 
-      const userDocumentId = await create(port, "user", "/user.md");
+      const userDocumentId = await create(port, "user", "/user");
       await collab.drainHocuspocusPersistence();
       const personalProject = (await db.select().from(schema.projects)).find(
         (project) => project.isPersonal,
@@ -270,7 +324,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(userMembership.members).toContain(userDocumentId);
 
       await expect(
-        port.delete("user://user.md", {
+        port.delete("user://user", {
           expected: { kind: "file", documentId: userDocumentId },
         }),
       ).resolves.toMatchObject({
@@ -325,7 +379,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               userId: USER_ID,
               scheme: "scratch",
               workId: WORK_ID,
-              body: parseCreateContextEntryBody({ type: "file", path: "/notes.md", content: "x" }),
+              body: parseCreateContextEntryBody({ type: "file", path: "/notes", content: "x" }),
             }),
         );
 
@@ -403,7 +457,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "legacy-notes",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
 
@@ -439,7 +493,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: scratchDocumentId,
         contextSourceId: workSourceId,
         name: "retained-id",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db

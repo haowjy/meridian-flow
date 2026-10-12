@@ -58,6 +58,7 @@ function availableResolution(resolvedUri = uri) {
     generation: "1",
     authority: { kind: "work" as const, projectId, workId: "no-work", workSlug: null },
     entry: {
+      observationVersion: "1",
       kind: "file" as const,
       entryId: documentId,
       uri: resolvedUri,

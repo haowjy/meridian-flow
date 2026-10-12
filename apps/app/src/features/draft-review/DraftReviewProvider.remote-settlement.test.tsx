@@ -78,9 +78,6 @@ let discard: ReturnType<typeof vi.spyOn>;
 vi.mock("@/client/query/useContextCatalog", () => ({
   contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
   useContextCatalogView: () => ({ catalog: null }),
-  projectCatalogView: (_project: string, _scheme: string, view: { documents: string[] }) => ({
-    findDocument: (documentId: string) => (view.documents.includes(documentId) ? {} : null),
-  }),
 }));
 describe("DraftReviewProvider remote settlement", () => {
   beforeEach(() => {
@@ -115,8 +112,10 @@ describe("DraftReviewProvider remote settlement", () => {
     useContextTabsStore.getState().openTab("project-a", tab);
     fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
     // An observation joined from before the Apply would say the document is absent.
-    resources.acquireCatalog.mockResolvedValue({ documents: [] });
-    resources.acquireCatalogAfter.mockResolvedValue({ documents: ["document-a"] });
+    resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
+    resources.acquireCatalogAfter.mockResolvedValue({
+      entries: new Map([["document-a", { kind: "file" }]]),
+    });
   });
 
   afterEach(() => {
@@ -144,7 +143,10 @@ describe("DraftReviewProvider remote settlement", () => {
     resources.acquireCatalogAfter.mockImplementation(
       () =>
         new Promise((resolve) => {
-          finishCatalog = () => resolve({ documents: mode === "apply" ? ["document-a"] : [] });
+          finishCatalog = () =>
+            resolve({
+              entries: new Map(mode === "apply" ? [["document-a", { kind: "file" }]] : []),
+            });
         }),
     );
     const claim = useDockDocumentStore.getState().claim();
@@ -185,13 +187,15 @@ describe("DraftReviewProvider remote settlement", () => {
               <>
                 <DocumentPaneChrome
                   projectId="project-a"
-                  editorWorkId="work-a"
                   tab={dock.tab}
                   archivedWork={null}
-                  identityReadOnly={false}
                   onCloseTab={() => undefined}
-                  onCommitted={() => undefined}
-                  onOpenExisting={() => undefined}
+                  identity={{
+                    editorWorkId: "work-a",
+                    readOnly: false,
+                    onCommitted: () => undefined,
+                    onOpenExisting: () => undefined,
+                  }}
                 />
                 <ContextDocumentHost projectId="project-a" container="dock" tab={dock.tab} active />
               </>

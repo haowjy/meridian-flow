@@ -1,12 +1,32 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { areaNode, buildMenuTree, foldersIn, type MenuArea } from "./menu-tree";
+import { shownFolders } from "./DocumentPath";
+import {
+  areaNode,
+  buildMenuTree,
+  crumbTrailFor,
+  foldersIn,
+  isFolderWithin,
+  type MenuArea,
+  menuEntryFor,
+} from "./menu-tree";
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
 
 /** A catalog with just what the tree reads: children, ids, files and path lookup. */
 function catalog(root: string, entries: Entry[]): CatalogContextView {
-  const byId = new Map(entries.map((entry) => [entry.entryId, entry]));
+  const byId = new Map(
+    entries.map((entry) => [
+      entry.entryId,
+      {
+        observationVersion: "1",
+        ...entry,
+        kind: entry.kind === "dir" ? "folder" : "file",
+        path: entry.path.split("/").filter(Boolean),
+        sourceId: root,
+      },
+    ]),
+  );
   return {
     root: { entryId: root },
     normalized: { entries: byId },
@@ -85,5 +105,81 @@ describe("a document menu's tree", () => {
     const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier], rooted: false });
     expect(tree.children(null).map((node) => node.name)).toEqual(["Earlier notes"]);
     expect(tree.children("earlier:area:scratch").map((node) => node.name)).toEqual(["n.md"]);
+  });
+});
+
+describe("folder picker boundaries", () => {
+  it("does not confuse equal paths across areas in one shared catalog snapshot", () => {
+    const m = catalog("m", [
+      { entryId: "m-act", kind: "dir", name: "Act", path: "/Act", parent: "m" },
+    ]);
+    const k = catalog("k", [
+      { entryId: "k-act", kind: "dir", name: "Act", path: "/Act", parent: "k" },
+      { entryId: "note", kind: "file", name: "note.md", path: "/Act/note.md", parent: "k-act" },
+    ]);
+    const entries = new Map([...m.normalized.entries, ...k.normalized.entries]);
+    m.normalized = { ...m.normalized, entries };
+    k.normalized = { ...k.normalized, entries };
+    const tree = buildMenuTree({
+      heading: "",
+      areas: [
+        area("m", "Manuscript", { catalog: m }),
+        area("k", "Knowledge Base", { scheme: "kb", catalog: k }),
+      ],
+      rooted: true,
+    });
+    expect(menuEntryFor(m, "k-act")).toBeNull();
+    expect(menuEntryFor(k, "k-act")?.entryId).toBe("k-act");
+    expect(tree.children("k-act").map((node) => node.name)).toEqual(["note.md"]);
+  });
+
+  it("rejects self and descendants without rejecting similarly prefixed siblings or parents", () => {
+    expect(isFolderWithin("/Act", "/Act")).toBe(true);
+    expect(isFolderWithin("/Act/Scene", "/Act")).toBe(true);
+    expect(isFolderWithin("/Act Two", "/Act")).toBe(false);
+    expect(isFolderWithin("/", "/Act")).toBe(false);
+  });
+});
+
+describe("crumb opening trails", () => {
+  const nested = area("area:manuscript", "Manuscript", {
+    catalog: catalog("m", [
+      { entryId: "book", kind: "dir", name: "Book", path: "/Book", parent: "m" },
+      { entryId: "part", kind: "dir", name: "Part", path: "/Book/Part", parent: "book" },
+      { entryId: "act", kind: "dir", name: "Act", path: "/Book/Part/Act", parent: "part" },
+      { entryId: "ch", kind: "file", name: "ch.md", path: "/Book/Part/Act/ch.md", parent: "act" },
+    ]),
+  });
+  const path = "/Book/Part/Act/ch.md";
+  const ids = (source: MenuArea, depth: number) =>
+    crumbTrailFor(source, path, depth).map((n) => n.id);
+
+  it("opens a listed area among areas and an unlisted area inside itself", () => {
+    expect(ids(nested, 0)).toEqual([]);
+    expect(ids({ ...nested, listed: false, scheme: "uploads" }, 0)).toEqual(["area:manuscript"]);
+    expect(ids({ ...nested, listed: false, scheme: "scratch" }, 0)).toEqual(["area:manuscript"]);
+    expect(crumbTrailFor(null, path, 0)).toEqual([]);
+  });
+
+  it("opens every folder in its parent and the filename in its folder", () => {
+    expect(ids(nested, 1)).toEqual(["area:manuscript"]);
+    expect(ids(nested, 2)).toEqual(["area:manuscript", "book"]);
+    expect(ids(nested, 3)).toEqual(["area:manuscript", "book", "part"]);
+    expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
+    expect(crumbTrailFor(manuscript, "/root.md", 1).map((n) => n.id)).toEqual(["area:manuscript"]);
+  });
+
+  it.each([
+    ["all", [0, 1, 2], null],
+    ["last", [2], ["area:manuscript", "book"]],
+    ["none", [], ["area:manuscript", "book", "part"]],
+    ["icon", [], ["area:manuscript", "book", "part"]],
+  ] as const)("%s opens ellipsis where its last hidden folder sits", (fit, shown, trail) => {
+    const visible = shownFolders(3, fit);
+    expect(visible).toEqual(shown);
+    const hiddenCount = 3 - visible.length;
+    expect(hiddenCount ? ids(nested, hiddenCount) : null).toEqual(trail);
+    expect(shownFolders(0, fit)).toEqual([]);
+    expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
   });
 });

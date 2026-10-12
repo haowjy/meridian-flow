@@ -1,6 +1,6 @@
 {
-  "id": "98148a05-8a48-415f-9b44-779f56ef98ee",
-  "prevId": "f126f9be-35be-4d7b-9b59-f7a1b73bb4e8",
+  "id": "71f3af3f-c829-41dc-8f58-5308920d24d1",
+  "prevId": "6dbcf4d4-f51f-4e16-9be6-f1143cb24392",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4551,7 +4551,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'md'"
+          "default": "''"
         },
         "file_type": {
           "name": "file_type",
@@ -5963,6 +5963,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "namespace_generation": {
+          "name": "namespace_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -6500,6 +6507,12 @@
         },
         "response_id": {
           "name": "response_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "edit_scope_id": {
+          "name": "edit_scope_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -7593,24 +7606,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
         "created_seq": {
           "name": "created_seq",
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
-        },
-        "undo_update_seq": {
-          "name": "undo_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -7618,49 +7618,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversed_by": {
-          "name": "reversed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "agent_edit_mutations_document_thread_write_id": {
-          "name": "agent_edit_mutations_document_thread_write_id",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "write_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"agent_edit_mutations\".\"status\" = 'active'",
-          "concurrently": false
-        },
         "agent_edit_mutations_document_thread_w_id": {
           "name": "agent_edit_mutations_document_thread_w_id",
           "columns": [
@@ -7684,33 +7644,6 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "agent_edit_mutations_thread_status": {
-          "name": "agent_edit_mutations_thread_status",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "with": {},
           "method": "btree",
           "concurrently": false
@@ -7821,12 +7754,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "agent_edit_mutations_status_valid": {
-          "name": "agent_edit_mutations_status_valid",
-          "value": "\"agent_edit_mutations\".\"status\" IN ('active', 'reversed')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_edit_wid_counters": {
@@ -9693,331 +9621,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.document_yjs_reversal_ops": {
-      "name": "document_yjs_reversal_ops",
-      "schema": "",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "update_seq": {
-          "name": "update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "handle": {
-          "name": "handle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "direction": {
-          "name": "direction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "document_yjs_reversal_ops_document_thread_handle": {
-          "name": "document_yjs_reversal_ops_document_thread_handle",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "handle",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "document_yjs_reversal_ops_document_id_documents_id_fk": {
-          "name": "document_yjs_reversal_ops_document_id_documents_id_fk",
-          "tableFrom": "document_yjs_reversal_ops",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "tableTo": "documents",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "document_yjs_reversal_ops_thread_id_threads_id_fk": {
-          "name": "document_yjs_reversal_ops_thread_id_threads_id_fk",
-          "tableFrom": "document_yjs_reversal_ops",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "tableTo": "threads",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk": {
-          "name": "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk",
-          "columns": [
-            "document_id",
-            "thread_id",
-            "update_seq",
-            "handle"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_yjs_reversal_ops_direction_valid": {
-          "name": "document_yjs_reversal_ops_direction_valid",
-          "value": "\"document_yjs_reversal_ops\".\"direction\" IN ('undo', 'redo')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.document_yjs_reversals": {
-      "name": "document_yjs_reversals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "authoring_response_id": {
-          "name": "authoring_response_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "write_id": {
-          "name": "write_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "undo_update_seq": {
-          "name": "undo_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "redo_update_seq": {
-          "name": "redo_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversed_by_user_id": {
-          "name": "reversed_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_yjs_reversals_document_thread_write": {
-          "name": "document_yjs_reversals_document_thread_write",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "write_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "document_yjs_reversals_document_thread": {
-          "name": "document_yjs_reversals_document_thread",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "document_yjs_reversals_document_id_documents_id_fk": {
-          "name": "document_yjs_reversals_document_id_documents_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "tableTo": "documents",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "document_yjs_reversals_thread_id_threads_id_fk": {
-          "name": "document_yjs_reversals_thread_id_threads_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "tableTo": "threads",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "document_yjs_reversals_turn_id_turns_id_fk": {
-          "name": "document_yjs_reversals_turn_id_turns_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "columnsFrom": [
-            "turn_id"
-          ],
-          "tableTo": "turns",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "document_yjs_reversals_authoring_response_id_model_responses_id_fk": {
-          "name": "document_yjs_reversals_authoring_response_id_model_responses_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "columnsFrom": [
-            "authoring_response_id"
-          ],
-          "tableTo": "model_responses",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "document_yjs_reversals_reversed_by_user_id_users_id_fk": {
-          "name": "document_yjs_reversals_reversed_by_user_id_users_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "columnsFrom": [
-            "reversed_by_user_id"
-          ],
-          "tableTo": "users",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_yjs_reversals_status_valid": {
-          "name": "document_yjs_reversals_status_valid",
-          "value": "\"document_yjs_reversals\".\"status\" IN ('active', 'reversed', 'redone', 'reconciled', 'expired')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.document_yjs_updates": {
       "name": "document_yjs_updates",
       "schema": "",
@@ -10097,18 +9700,6 @@
         },
         "authoring_response_id": {
           "name": "authoring_response_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversal_actor_type": {
-          "name": "reversal_actor_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversal_actor_user_id": {
-          "name": "reversal_actor_user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -10242,19 +9833,6 @@
           ],
           "onUpdate": "no action",
           "onDelete": "restrict"
-        },
-        "document_yjs_updates_reversal_actor_user_id_users_id_fk": {
-          "name": "document_yjs_updates_reversal_actor_user_id_users_id_fk",
-          "tableFrom": "document_yjs_updates",
-          "columnsFrom": [
-            "reversal_actor_user_id"
-          ],
-          "tableTo": "users",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -10603,6 +10181,16 @@
   "sequences": {
     "public.context_availability_generation_seq": {
       "name": "context_availability_generation_seq",
+      "increment": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "startWith": "1",
+      "cache": "1",
+      "cycle": false,
+      "schema": "public"
+    },
+    "public.context_namespace_observation_version_seq": {
+      "name": "context_namespace_observation_version_seq",
       "increment": "1",
       "minValue": "1",
       "maxValue": "9223372036854775807",

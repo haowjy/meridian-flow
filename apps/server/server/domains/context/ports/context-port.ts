@@ -78,6 +78,7 @@ export interface ContextEnsureTrackedDocumentResult {
 }
 
 export interface ContextCreateTrackedDocumentResult {
+  uri: string;
   documentId: string;
 }
 
@@ -230,6 +231,8 @@ export type WriteProvenance =
   | { type: "system" };
 
 export interface ContextWriteOptions {
+  /** Extension inherited by an extensionless copy destination. */
+  sourceExtension?: string;
   origin?: WriteProvenance;
   /** Stable identity reserved by an authoritative aggregate before content creation. */
   documentId?: string;
@@ -243,6 +246,9 @@ export interface ContextWriteOptions {
 }
 
 export interface ContextLocationOptions extends ContextWriteOptions {
+  destinationParent?: MoveContextEntryRequest["destinationParent"];
+  /** Reconfirm the resolved destination's edit authority under its namespace locks. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
 }

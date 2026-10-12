@@ -1,5 +1,9 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 import type { DocumentFileType } from "@meridian/contracts/protocol";
+import {
+  parseDocumentFilename,
+  renderFilename as renderDocumentFilename,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -19,7 +23,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
+import { splitPath } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -279,16 +283,26 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   private async findDocumentAtPath(
     sourceId: string,
     path: string,
-  ): Promise<{ id: string; updatedAt: string; filetype: string | null } | null> {
+  ): Promise<{
+    id: string;
+    updatedAt: string;
+    filetype: string | null;
+    name: string;
+    extension: string;
+  } | null> {
     const { dir, filename } = splitPath(normalizeTreePath(path));
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === undefined) return null;
-    const { name, extension } = parseFilename(filename);
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return null;
+    const { name, extension } = parsed.value;
     const [row] = await currentDrizzleDb(this.db)
       .select({
         id: documents.id,
         updatedAt: sql<string>`${documents.updatedAt}::text`,
+        name: documents.name,
+        extension: documents.extension,
         storedType: documents.fileType,
         storageUrl: documents.storageUrl,
       })
@@ -309,6 +323,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       row.storageUrl !== null || BINARY_FILE_TYPES.has(row.storedType as DocumentFileType);
     return {
       id: row.id,
+      name: row.name,
+      extension: row.extension,
       updatedAt: row.updatedAt,
       filetype: isStorageBacked ? null : row.storedType,
     };
@@ -330,7 +346,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         kind: "file",
         nodeId: doc.id,
         sourceId,
-        path: normalized,
+        path: [...splitPath(normalized).dir, renderDocumentFilename(doc.name, doc.extension)].join(
+          "/",
+        ),
         filetype: doc.filetype,
       };
     }
@@ -380,10 +398,19 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "stale_target" });
       }
 
+      if (
+        input.destinationParentToken &&
+        !sameLocation(
+          await this.inspect(input.destinationSourceId, input.destinationParentToken.path),
+          input.destinationParentToken,
+        )
+      )
+        return Err({ code: "destination_missing" });
+
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "invalid_operation" });
+        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
         if (!input.overwrite || input.source.kind === "directory") {
           return Err({ code: "conflict" });
@@ -417,10 +444,25 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         ),
         ...(targetToken?.kind === "file" ? [targetToken.nodeId as DocumentId] : []),
       ]);
-      const destParentId = await this.ensureFolderPath(
-        input.destinationSourceId,
-        treePathSegments(targetParentPath),
-      );
+      const destParentId =
+        input.destinationParentToken && !input.destinationCreateFolders?.length
+          ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
+            ? null
+            : input.destinationParentToken.nodeId
+          : await this.ensureFolderPath(
+              input.destinationSourceId,
+              treePathSegments(targetParentPath),
+            );
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          input.destinationSourceId,
+          destParentId,
+          targetBasename,
+          input.source.kind === "file" ? "file" : "folder",
+        )
+      )
+        rollback("conflict");
       const now = new Date();
 
       if (input.source.kind === "file") {
@@ -441,7 +483,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
         }
 
-        const { name, extension } = parseFilename(targetBasename);
+        const parsed = parseDocumentFilename(targetBasename);
+        if (!parsed.ok) return Err({ code: "invalid_operation" });
+        const { name, extension } = parsed.value;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
         await this.runBeforeDestructiveWrite();
         const moved = await currentDrizzleDb(this.db)

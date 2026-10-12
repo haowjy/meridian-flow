@@ -236,14 +236,13 @@ separate ETL, not universal schema migrations.
 ### Merging parallel migration lanes
 
 For generated migrations, when two branches add at the same ordinal, **regenerate the
-incoming branch's migration from the merged schema; never renumber, rename, or
-hand-edit its identity.** Reapply the online-safety SQL edits after regeneration.
-Never touch a migration already present on the target branch
-(or on `main`).
+unmerged lane's migration from the merged schema; never renumber, rename, or
+hand-edit its identity.** Preserve frozen `main`/`staging` history regardless of
+which branch receives the merge. Reapply online-safety SQL edits after regeneration.
 
-1. Keep the target branch's migrations, snapshots, and journal entries as
-   they are.
-2. Delete the incoming branch's colliding `.sql`, its `meta/NNNN_snapshot.json`,
+1. Keep the frozen base branch's migrations, snapshots, and journal entries
+   unchanged.
+2. Delete the unmerged lane's colliding `.sql`, its `meta/NNNN_snapshot.json`,
    and its `_journal.json` entry.
 3. Resolve `src/schema/` so it holds both sides. A constraint or enum both
    branches rewrote must carry the union of their values.
@@ -257,8 +256,11 @@ Never touch a migration already present on the target branch
 6. Read the target's highest ordinal from its journal rather than trusting a
    brief: the base may have gained several migrations, and the regenerated one
    lands after all of them.
-7. This checkout's dev database applied the old ordinal; `db:migrate` now refuses
-   it as out of order. Run `pnpm db:reset` from this checkout only.
+7. A lane database that applied the replaced identity cannot migrate onto the
+   regenerated history. Its owner must separately authorize a reset before
+   syncing that checkout (`pnpm db:reset` destroys local data). This does not
+   prevent merging or probing with disposable databases. Never reset or migrate
+   another checkout's database as part of the merge.
 
 Why: two lanes that each recreate the same CHECK constraint can each list only
 their own value. Renumbering one by hand keeps that SQL, so whichever runs last

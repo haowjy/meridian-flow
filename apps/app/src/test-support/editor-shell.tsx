@@ -1,5 +1,6 @@
 /** Explicit neutral shell seams for real EditorView tests; room and paint policy stay with the caller. */
 
+import { createResourcePlacement } from "@meridian/resource-replica";
 import { vi } from "vitest";
 import * as catalog from "@/client/query/useContextCatalog";
 import * as threads from "@/client/query/useProjectThreads";
@@ -49,9 +50,13 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
     vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(null),
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
-    vi
-      .spyOn(account, "useAccountResourceProjection")
-      .mockReturnValue({ snapshot: null, folders: [], records: [], error: null }),
+    vi.spyOn(account, "useAccountResourceProjection").mockReturnValue({
+      snapshot: null,
+      folders: [],
+      records: [],
+      placement: createResourcePlacement("project", [], []),
+      error: null,
+    }),
     vi
       .spyOn(links, "useLinkableDocuments")
       .mockReturnValue({ documents: [], revision: "", complete: false }),

@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       turnId: "00000000-0000-4000-8000-000000000e06",
     };
     const DOC_ID = "00000000-0000-4000-8000-000000000e07";
-    const CHAPTER = "manuscript://chapter.md";
+    const CHAPTER = "manuscript://chapter";
     // Copies create documents, which repair the project catalog after commit:
     // that background work needs real commits, so this suite doesn't roll back.
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -71,7 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(schema.threads).values({
@@ -139,14 +139,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted.result).toMatchObject({ destination: "draft" });
       const lore = await call("write", {
         command: "create",
-        path: "kb://lore.md",
+        path: "kb://lore",
         content: "Drafted lore needle.",
       });
       expect(lore.result).toMatchObject({ destination: "draft" });
       // Scratch is live in every Work (D9).
       const notes = await call("write", {
         command: "create",
-        path: "scratch://notes.md",
+        path: "scratch://notes",
         content: "Scratch needle notes.",
       });
       expect(notes.result).toMatchObject({ destination: "live" });
@@ -171,10 +171,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(stale.isError).toBe(true);
 
       const loreHits = await call("search", { pattern: "lore needle" });
-      expect(text(loreHits)).toContain("kb://lore.md");
+      expect(text(loreHits)).toContain("kb://lore");
       const listedLive = await call("ls", { path: "kb://", version: "live" });
       expect(text(listedLive)).toMatch(/^kb:\/\//);
-      expect(text(listedLive)).not.toContain("lore.md");
+      expect(text(listedLive)).not.toContain("lore");
     });
 
     // D40: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
@@ -203,11 +203,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(destination.output).toContain("Writer live content.");
       const notes = await call("write", {
         command: "create",
-        path: "scratch://notes.md",
+        path: "scratch://notes",
         content: "Notes.",
       });
       expect(notes.isError).toBeFalsy();
-      const noDraft = await call("read", { path: "scratch://notes.md", version: "draft" });
+      const noDraft = await call("read", { path: "scratch://notes", version: "draft" });
       expect(noDraft.result).toMatchObject({ read: { version: "live" } });
     });
 
@@ -223,8 +223,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch @rewrite to auto-apply.';
 
       for (const args of [
-        { command: "create", path: "manuscript://new.md", content: "Never lands." },
-        { command: "copy", from: { path: CHAPTER }, path: "manuscript://copy.md" },
+        { command: "create", path: "manuscript://new", content: "Never lands." },
+        { command: "copy", from: { path: CHAPTER }, path: "manuscript://copy" },
       ]) {
         const refused = await call("write", args);
         expect(refused.isError).toBe(true);
@@ -243,14 +243,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await script.begin();
       const bySection = await first.call("write", {
         command: "copy",
-        from: { path: `${CHAPTER}#the-midnight-duel` },
-        path: "scratch://duel.md",
+        from: { path: `${CHAPTER}.md#the-midnight-duel` },
+        path: "scratch://duel",
       });
       expect(bySection.isError).toBeFalsy();
+      expect(text(bySection)).toContain(`${CHAPTER}#the-midnight-duel`);
+      expect(text(bySection)).not.toContain(".md");
       await first.save();
 
       const { call: next } = await script.begin();
-      const duel = text(await next("read", { path: "scratch://duel.md" }));
+      const duel = text(await next("read", { path: "scratch://duel" }));
       expect(duel).toContain("Steel rang.");
       expect(duel).not.toContain("Dawn.");
       expect(duel).not.toContain("Quiet.");
@@ -267,7 +269,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const copied = await call("write", {
         command: "copy",
         from: { path: CHAPTER },
-        path: "manuscript://rolled-back.md",
+        path: "manuscript://rolled-back",
       });
       expect(copied.isError).toBeFalsy();
       const documentId = (copied.metadata as { documentId?: unknown } | undefined)?.documentId;

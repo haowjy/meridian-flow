@@ -1,7 +1,7 @@
 /** Derives and transports one explicit writer request for a document's final identity. */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
@@ -76,9 +76,11 @@ export function deriveIdentityCommitPlan(
   editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
+  // Compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
+  const stored = storedFilename(target.name, tab.kind === "new" ? undefined : location.leaf);
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
-    name: target.name.trim(),
+    name: stored.ok ? stored.name : target.name.trim(),
   };
   if (tab.kind === "new") return { kind: "queue", desired };
 
@@ -124,11 +126,24 @@ export function useIdentityCommit({
       const destination = plan.desired.destination;
       const authority = destinationOwner(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
+      const parent =
+        destination.parent ??
+        (!destination.folderPath.split("/").filter(Boolean).length
+          ? { kind: "root" as const, scheme: destination.scheme, owner: authority }
+          : tab.kind !== "new" &&
+              destination.scheme === tab.scheme &&
+              destination.folderPath === tabLocation(tab).parentPath
+            ? await resources.parentForEntry(projectId, tab.documentId)
+            : await resources.findParentAtLocation(projectId, {
+                scheme: destination.scheme,
+                path: destination.folderPath,
+                name: "",
+                ...authority,
+              }));
+      if (!parent) throw new Error("Destination folder is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
-        scheme: destination.scheme,
-        folderPath: destination.folderPath,
-        name: plan.desired.name,
-        ...authority,
+        parent,
+        name: target.name.trim(),
       });
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(

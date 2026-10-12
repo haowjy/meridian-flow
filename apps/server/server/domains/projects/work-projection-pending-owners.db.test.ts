@@ -73,7 +73,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(documentBranches).values({
