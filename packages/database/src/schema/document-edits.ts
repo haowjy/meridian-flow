@@ -1,5 +1,12 @@
 // Immutable document edit receipts, independent of compactable transport journals.
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  EditOrigin,
+  EditPlacement,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -23,12 +30,8 @@ type Alias = {
   target: { client: number; clock: number };
   len: number;
 };
-export type EditPlacement =
-  | { kind: "pending"; branchId: string; generation: number; rowId: number }
-  | { kind: "live"; seq: number }
-  | { kind: "discarded" }
-  | { kind: "retired" };
-export type EditOrigin = Extract<EditPlacement, { kind: "pending" | "live" }>;
+
+export type { EditOrigin, EditPlacement } from "@meridian/contracts";
 export const documentEdits = pgTable(
   "document_edits",
   {
