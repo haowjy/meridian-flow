@@ -2,15 +2,13 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentYjsCheckpoints, documentYjsUpdates } from "@meridian/database";
-import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
-import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import { materializeCheckpoint } from "./checkpoint-materialization.js";
-import { findDocumentAuthorityHead } from "./drizzle-document-authority-head.js";
 
-type JournalDb = Pick<Database, "select" | "transaction" | "execute">;
+type JournalDb = Pick<Database, "select" | "execute">;
 const asDocumentId = (id: string) => id as DocumentId;
 
 export async function captureDrizzleCheckpoint(
@@ -18,69 +16,20 @@ export async function captureDrizzleCheckpoint(
   docId: string,
   captured: CheckpointAuthority,
 ): Promise<CapturedCheckpointCut | null> {
-  // Roll back the read-only savepoint deliberately: PostgreSQL releases locks
-  // acquired since it, even when this adapter joins an ambient transaction.
-  // Returning normally from a nested transaction would retain those locks.
-  const readDb = currentDrizzleDb(db as Database) as JournalDb;
-  const holder: {
-    snapshot: {
-      authority: CheckpointAuthority;
-      baseId: number | null;
-      floor: number;
-      ceiling: number;
-    } | null;
-  } = { snapshot: null };
-  const release = new Error("Release checkpoint snapshot lock");
-  try {
-    await readDb.transaction(async (tx) => {
-      await lockDocumentMutation(tx, docId);
-      const current = await findDocumentAuthorityHead(tx, docId);
-      if (
-        !current ||
-        current.authorityId !== captured.authorityId ||
-        current.generation !== captured.generation
-      )
-        return;
-      const [base] = await tx
-        .select({ id: documentYjsCheckpoints.id, upToSeq: documentYjsCheckpoints.upToSeq })
-        .from(documentYjsCheckpoints)
-        .where(
-          and(
-            eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
-            eq(documentYjsCheckpoints.authorityId, current.authorityId),
-            eq(documentYjsCheckpoints.authorityGeneration, current.generation),
-          ),
-        )
-        .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-        .limit(1);
-      const [last] = await tx
-        .select({ seq: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(
-          and(
-            eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-            eq(documentYjsUpdates.authorityId, current.authorityId),
-            eq(documentYjsUpdates.authorityGeneration, current.generation),
-          ),
-        )
-        // Admission order is allocated under this same document lock. Use
-        // its generation-qualified index, not a scan through retired rows.
-        .orderBy(desc(documentYjsUpdates.admissionSequence), desc(documentYjsUpdates.batchOrdinal))
-        .limit(1);
-      holder.snapshot = {
-        authority: current,
-        baseId: base?.id ?? null,
-        floor: base?.upToSeq ?? 0,
-        ceiling: Math.max(base?.upToSeq ?? 0, last?.seq ?? 0),
-      };
-      throw release;
-    });
-  } catch (cause) {
-    if (cause !== release) throw cause;
-  }
-  const selected = holder.snapshot;
-  if (!selected) return null;
-  const authority = Object.freeze({ ...selected.authority });
+  const authority = Object.freeze({ ...captured });
+  const [reference] = await currentDrizzleDb(db as Database).execute<{
+    base_id: string | number | null;
+    floor_seq: string | number;
+    ceiling_seq: string | number;
+  }>(sql`select * from capture_document_checkpoint_range(
+    ${docId}::text, ${authority.authorityId}::uuid, ${authority.generation}::bigint
+  )`);
+  if (!reference) return null;
+  const selected = {
+    baseId: reference.base_id === null ? null : Number(reference.base_id),
+    floor: Number(reference.floor_seq),
+    ceiling: Number(reference.ceiling_seq),
+  };
   let state: Promise<Uint8Array> | undefined;
   const materialize = async () => {
     const readDb = currentDrizzleDb(db as Database) as JournalDb;
