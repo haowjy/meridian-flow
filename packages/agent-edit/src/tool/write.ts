@@ -48,7 +48,10 @@ export interface WriteTool {
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
   prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
-  invalidateThread(docId: string, threadId: string): Promise<void>;
+  /** Drop exactly one thread/document pair, including staged writes. */
+  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
+  /** Evict one thread's runtimes without revoking its response buffers. */
+  evictThread(threadId: string): Promise<void>;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -236,9 +239,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     hasResponseDocument: responseCommitter.hasResponseDocument,
     prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
-    async invalidateThread(docId, threadId) {
+    async invalidateThreadDocument(docId, threadId) {
+      if (!docId || !threadId)
+        throw new Error("invalidateThreadDocument names one document and one thread");
       responseCommitter.dropForThread(docId, threadId);
       await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+    },
+    async evictThread(threadId) {
+      if (!threadId) throw new Error("evictThread names one thread");
+      await runtimeStore.evictThreadRuntimes(null, threadId);
     },
   };
 }

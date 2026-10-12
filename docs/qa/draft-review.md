@@ -837,3 +837,17 @@ alongside the inverse action/hold/rollback matrices; performance counts alone
 do not prove the next scratch step sees its own writes.
 
 [model-inspection-probe]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/r2-inspect-evidence/build-probe.cjs
+
+## Whole Discard isolation across Works
+
+In two draft-mode Works, create drafts of the same manuscript chapter. Stage an
+independent edit to that chapter in each chat while their replies are still open.
+Discard the chapter draft in Work A (repeat through Work **Discard all changes**).
+Work B's reply must finish and its edit must appear in B's draft, not in live.
+A's staged chapter edit must not reappear; a later edit in A starts from the reset
+draft. A reply's staged edits to other documents must still finish.
+
+The repeatable service-seam check is
+`DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
+It also checks that retirement waits for transaction commit and closes only A's
+peer room. This is DB integration evidence, not a browser or live-runtime probe.
