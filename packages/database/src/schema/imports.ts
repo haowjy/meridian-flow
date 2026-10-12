@@ -12,20 +12,25 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { projects } from "./content";
-export const imports = pgTable("imports", {
-  id: uuid("id").primaryKey(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull(),
-  manifest: jsonb("manifest").notNull(),
-  fingerprint: text("fingerprint").notNull(),
-  sourceId: uuid("source_id").notNull(),
-  folderId: uuid("folder_id"),
-  state: text("state").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
-});
+export const imports = pgTable(
+  "imports",
+  {
+    id: uuid("id").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(),
+    manifest: jsonb("manifest").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    folderId: uuid("folder_id"),
+    state: text("state").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  },
+  // Open-import polls filter by project and order newest first; project deletes follow the FK.
+  (table) => [index("imports_project_created").on(table.projectId, table.createdAt)],
+);
 export const importEntries = pgTable(
   "import_entries",
   {
