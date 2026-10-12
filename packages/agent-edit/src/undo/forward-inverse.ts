@@ -1,5 +1,16 @@
-// Forward inverse receipts and cold lineage tracing. Private Yjs layout pinned to 13.6.31.
+// Forward inverse receipts, cold lineage tracing, classification and admission.
 import * as Y from "yjs";
+import {
+  allItems,
+  ancestorItems,
+  changedRedone,
+  executeUndo,
+  findItem,
+  hydrateRedone,
+  itemIsInFragment,
+  itemIsVisible,
+  snapshotRedone,
+} from "../yjs-mutation.js";
 import { shouldDeleteUndoItem } from "./delete-filter.js";
 
 export interface EditRange {
@@ -83,32 +94,9 @@ function ranges(keys: Iterable<Key>): EditRange[] {
   }
   return out;
 }
-function allItems(doc: Y.Doc): Y.Item[] {
-  return [...doc.store.clients.values()].flat().filter((s): s is Y.Item => s instanceof Y.Item);
-}
-function find(doc: Y.Doc, k: Key): Y.Item | undefined {
-  const id = parse(k),
-    structs = doc.store.clients.get(id.client);
-  if (!structs) return;
-  if (id.clock >= (structs.at(-1)?.id.clock ?? 0) + (structs.at(-1)?.length ?? 0)) return;
-  const struct = structs[Y.findIndexSS(structs, id.clock)];
-  return struct instanceof Y.Item ? struct : undefined;
-}
-function inFragment(doc: Y.Doc, item: Y.Item): boolean {
-  let parent = item.parent;
-  while (parent instanceof Y.AbstractType && parent._item) parent = parent._item.parent;
-  return parent === doc.getXmlFragment(ROOT);
-}
-function visible(doc: Y.Doc, k: Key): boolean {
-  const item = find(doc, k);
-  if (!item || item.deleted) return false;
-  let parent = item.parent;
-  while (parent instanceof Y.AbstractType && parent._item) {
-    if (parent._item.deleted) return false;
-    parent = parent._item.parent;
-  }
-  return true;
-}
+const find = (doc: Y.Doc, k: Key) => findItem(doc, parse(k)) ?? undefined;
+const inFragment = (doc: Y.Doc, item: Y.Item) => itemIsInFragment(doc, item, ROOT);
+const visible = (doc: Y.Doc, k: Key) => itemIsVisible(doc, parse(k));
 function rawEffect(update: Uint8Array): EditEffect {
   const decoded = Y.decodeUpdate(update);
   return {
@@ -232,19 +220,16 @@ class Lineage {
     );
   }
   hydrate(): void {
-    this.doc.transact((tr) => {
-      for (const source of this.forward.keys()) {
-        const candidates = this.descendants(source)
-          .slice(1)
-          .filter((k) => !!find(this.doc, k));
-        const target = candidates.find((k) => visible(this.doc, k)) ?? candidates.at(-1);
-        if (!target || !find(this.doc, source)) continue;
-        const sourceId = parse(source);
-        const it = Y.getItemCleanStart(tr, sourceId);
-        Y.getItemCleanEnd(tr, this.doc.store, sourceId);
-        it.redone = parse(target);
-      }
-    });
+    const pairs: { source: Y.ID; target: Y.ID }[] = [];
+    for (const source of this.forward.keys()) {
+      const candidates = this.descendants(source)
+        .slice(1)
+        .filter((k) => !!find(this.doc, k));
+      const target = candidates.find((k) => visible(this.doc, k)) ?? candidates.at(-1);
+      if (target && find(this.doc, source))
+        pairs.push({ source: parse(source), target: parse(target) });
+    }
+    hydrateRedone(this.doc, pairs);
   }
 }
 
@@ -263,21 +248,16 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     const members = new Set(originals.flatMap((k) => index.descendants(index.root(k))));
     const effective = originals.map((k) => index.effective(k));
     for (const k of effective) {
-      let parent = find(index.doc, k)?.parent;
-      while (parent instanceof Y.AbstractType && parent._item) {
-        const ancestor = key(parent._item.id);
+      const item = find(index.doc, k);
+      for (const ancestorItem of item ? ancestorItems(item) : []) {
+        const ancestor = key(ancestorItem.id);
         if (!visible(index.doc, index.effective(ancestor)) && !members.has(ancestor))
           return changed("inaccessible ancestor");
-        parent = parent._item.parent;
       }
     }
     for (const item of allItems(index.doc)) {
       if (!inFragment(index.doc, item) || !visible(index.doc, key(item.id))) continue;
-      const refs = [
-        item.origin,
-        item.rightOrigin,
-        item.parent instanceof Y.AbstractType ? item.parent._item?.id : null,
-      ]
+      const refs = [item.origin, item.rightOrigin, ancestorItems(item)[0]?.id ?? null]
         .filter((id): id is Y.ID => !!id)
         .map(key);
       if (!refs.some((k) => members.has(k))) continue;
@@ -330,14 +310,10 @@ function deleteSet(keys: Iterable<Key>): ReturnType<typeof Y.createDeleteSet> {
   return ds;
 }
 function captureAliases(doc: Y.Doc, before: Map<Key, Key | undefined>): EditAlias[] {
-  const pairs: { source: Key; target: Key }[] = [];
-  for (const it of allItems(doc))
-    if (it.redone && before.get(key(it.id)) !== key(it.redone))
-      for (let n = 0; n < it.length; n++)
-        pairs.push({
-          source: key({ client: it.id.client, clock: it.id.clock + n }),
-          target: key({ client: it.redone.client, clock: it.redone.clock + n }),
-        });
+  const pairs = changedRedone(doc, before).map(({ source, target }) => ({
+    source: key(source),
+    target: key(target),
+  }));
   const out: EditAlias[] = [];
   for (const { source, target } of pairs) {
     const s = parse(source),
@@ -443,31 +419,19 @@ export function computeInverse(
         meta: new Map(),
       };
       const frontier = captureEditFrontier(scratch),
-        snapshot = new Map(
-          allItems(scratch).map((it) => [key(it.id), it.redone ? key(it.redone) : undefined]),
-        );
+        snapshot = snapshotRedone(scratch);
       const client = action.allocateClient(scratch);
       if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
       const before = new Y.Doc({ gc: false });
       Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
-      const updates: Uint8Array[] = [],
-        collect = (u: Uint8Array) => updates.push(u);
-      const manager = new Y.UndoManager(scratch.getXmlFragment(ROOT), {
-        trackedOrigins: new Set(),
-        ignoreRemoteMapChanges: true,
-        deleteFilter: (it) => shouldDeleteUndoItem(it, stack),
-      });
-      scratch.clientID = client;
-      manager.undoStack.push(stack);
-      scratch.on("update", collect);
+      let updates: Uint8Array[];
       try {
-        manager.undo();
+        updates = executeUndo(scratch, ROOT, client, stack, (item) =>
+          shouldDeleteUndoItem(item, stack),
+        );
       } catch (error) {
         before.destroy();
         throw error;
-      } finally {
-        scratch.off("update", collect);
-        manager.destroy();
       }
       try {
         if (!updates.length) continue;
