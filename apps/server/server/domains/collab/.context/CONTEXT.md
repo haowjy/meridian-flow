@@ -51,9 +51,11 @@ The draft token hashes this observation, including both link views and history
 statuses. Selection also compares it with the branch and review rows supplied
 by the existing admission protocol; a mismatch refuses as stale. Admission's
 current authority and live revision fences remain unchanged. Corrupt preview
-reads refuse without resetting any state. Repair is an explicit coordinator
-command (`resetFromDoc`), followed by thread-core invalidation, never a preview
-side effect.
+reads return a typed `corrupt` refusal without resetting any state. The review
+error surface offers the addressed whole **Discard draft** command. Its existing
+fenced reset from live does not decode the old branch, and also recovers corrupt
+branches with no pending rows. Healthy rowless branches remain unchanged.
+Thread cores are invalidated after Discard, never as a preview side effect.
 
 ## One save per reply
 
@@ -462,11 +464,8 @@ same connected components without pairwise row comparison. Block alignment
 peels matching ID prefixes and unambiguous suffixes before allocating an LCS
 matrix, retaining its duplicate-ID tie rule.
 
-Standalone live review reads capture revision, checkpoint and journal rows
-under the mutation lock, then replay into an owned private Y.Doc after commit.
-Command reads joined to an ambient transaction retain the caller's lock and
-revision fence. Callers destroy the returned document; no encoded snapshot
-round trip is needed. Draft lists bulk-resolve document paths with one document
+Preview and selection use the [review authority cut](#review-authority-cut).
+Draft lists bulk-resolve document paths with one document
 query and one shared folder graph, and expose persisted branch update times.
 
 ### Selective Discard and response replay

@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { observeReviewSnapshot } from "../../test-support/review-cut-boundaries.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   ALPHA_ID,
@@ -20,6 +21,7 @@ import {
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import {
+  BETA_ID,
   PROJECT_ID,
   THREAD_ID,
   TURN_ID,
@@ -30,7 +32,6 @@ import {
   everyRowMembership,
 } from "./test-support/document-link-scopes.js";
 import { commitBranchEdit, fencedRequest } from "./test-support/draft-review-requests.js";
-import { observeReviewSnapshot } from "./test-support/review-cut-boundaries.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetSettlementFixture(db));
@@ -61,6 +62,53 @@ async function setup(
 }
 
 describe("per-change Apply (postgres)", () => {
+  it("whole Discard recovers only the addressed corrupt draft, including a rowless branch", async () => {
+    const { fixture, branch, command } = await setup("Alpha live.", "corrupt-recovery");
+    await stageText(fixture, branch.branchId, 0, " Proposal", "agent");
+    await writeMarkdown(fixture.collab, {
+      documentId: BETA_ID,
+      markdown: "Healthy live.",
+      origin: { type: "user", actorUserId: USER_ID },
+      threadId: THREAD_ID,
+    });
+    const healthy = await fixture.liveCoordinator.withDocument(BETA_ID, (liveDoc) =>
+      fixture.branchStore.resolveWorkDraftBranchForWork({
+        documentId: BETA_ID,
+        workId: WORK_ID,
+        liveDoc,
+      }),
+    );
+    healthy.doc.destroy();
+    await stageText(fixture, healthy.branchId, 0, " Healthy proposal", "agent");
+    const healthyCommand = { ...command, documentId: BETA_ID, draftId: healthy.branchId };
+    const healthyBefore = await fixture.collab.draftReview.preview(healthyCommand);
+    for (const rowless of [false, true]) {
+      await db
+        .update(schema.documentBranches)
+        .set({ state: Buffer.from([255]) })
+        .where(eq(schema.documentBranches.id, branch.branchId));
+      expect(await fixture.collab.draftReview.preview(command)).toMatchObject({
+        status: "corrupt",
+        draftId: branch.branchId,
+      });
+      expect(await fixture.collab.draftReview.discardWorkDraft(command)).toMatchObject({
+        status: "discarded",
+      });
+      expect(await fixture.collab.draftReview.preview(command)).toMatchObject({
+        status: "active",
+        operations: [],
+      });
+      expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha live.\n");
+      expect(await fixture.collab.draftReview.preview(healthyCommand)).toEqual(healthyBefore);
+      if (!rowless)
+        expect(
+          (await fixture.collab.draftReview.list({ workId: WORK_ID })).map(
+            (draft) => draft.draftId,
+          ),
+        ).not.toContain(branch.branchId);
+    }
+  });
+
   it("lists writing chats by their latest pending row, excluding writer and threadless rows", async () => {
     const { fixture, branch } = await setup(
       "Alpha base.\n\nBeta base.\n\nGamma base.",

@@ -8,6 +8,7 @@ import type { LinkView } from "@meridian/contracts";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
+  DraftPreviewRefusal,
 } from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
@@ -309,7 +310,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string }>;
+  }): Promise<({ status: "active" } & DraftReviewPreview) | DraftPreviewRefusal>;
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;

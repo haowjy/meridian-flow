@@ -55,7 +55,7 @@ export function createDrizzleReviewCut(input: {
           throw new BranchCorruptError({
             branchId: branch.branchId,
             documentId: branch.documentId,
-            threadId: "" as never,
+            generation: branch.generation,
             cause,
           });
         }
