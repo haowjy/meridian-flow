@@ -350,18 +350,34 @@ export async function handleContextMoveRequest(
 ): Promise<MoveContextEntryResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
-  async function resolveLocator(locator: ContextMoveLocator): Promise<ResolvedContextMoveLocator> {
+  async function resolveLocator(
+    locator: ContextMoveLocator,
+    destination = false,
+  ): Promise<ResolvedContextMoveLocator> {
+    const destinationMissing = () =>
+      contextErrorToHttp({
+        code: "destination_missing",
+        uri: `${locator.scheme}://${locator.path}`,
+      });
     if (locator.scope === "project") return locator;
     if (locator.scope === "lineage") {
       const lineage = await deps.contextPorts.lineages.byId(input.projectId, locator.rootThreadId);
-      if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+      if (!lineage) {
+        if (destination && move.destinationParent) destinationMissing();
+        throw createError({ statusCode: 404, message: "Chat not found" });
+      }
       return { ...locator, authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef } };
     }
     const authority =
       locator.scope === "none"
         ? await deps.workAuthorityResolver.noWork(input.projectId)
         : await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
-    if (!authority) throwContextWorkUnavailableHttpError("work_missing");
+    if (!authority) {
+      // The immutable destination authority may have retired since preparation.
+      // It is move repair, not a missing source or permission to recreate its path.
+      if (destination && move.destinationParent) destinationMissing();
+      throwContextWorkUnavailableHttpError("work_missing");
+    }
     return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
   }
   const resolvedMove: ResolvedContextMove = {
@@ -369,7 +385,7 @@ export async function handleContextMoveRequest(
     expected: move.expected,
     destinationParent: move.destinationParent,
     source: await resolveLocator(move.source),
-    destination: await resolveLocator(move.destination),
+    destination: await resolveLocator(move.destination, true),
     ...(move.name ? { name: move.name } : {}),
   };
   const workIds = new Set(
