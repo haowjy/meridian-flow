@@ -600,9 +600,18 @@ rollback and checkpoint failure after root commit. Run it with:
 ```bash
 DB_TEST_WORKERS=1 pnpm test:db -- \
   apps/server/server/domains/collab/turn-inverse.db.test.ts \
+  apps/server/server/domains/collab/response-rollback.db.test.ts \
   apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts
 ```
 
 A checkpoint failure is post-commit maintenance, not a failed response: the
 save still returns committed, its durable text remains, and it creates no
 rollback inverse. Verify both draft-only and mixed live/draft responses.
+
+For retained dev documents, do not reset the local database. Cold-load a pre-v2
+snapshot with the old provenance array, edit it, and certify a restored range.
+The old facts stay unread; new facts live in the target-keyed v2 map. Two
+fact-carrying writes in separate paragraphs must produce two review classes,
+and replaying either class alone must leave the other paragraph unchanged.
+Every inverse row must own its metadata client and have no map-entry anchors
+into another inverse row.
