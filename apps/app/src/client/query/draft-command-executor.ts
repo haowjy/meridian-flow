@@ -43,7 +43,6 @@ import {
   selectionKeys,
 } from "./draft-command-record";
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
-import { previewWithoutKeys } from "./draft-projection";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { draftPreviewQueryOptions } from "./useDraftPreview";
@@ -298,17 +297,6 @@ async function execute(
       );
       // Keep the claim while reads settle; then prune their result and fence older reads.
       await refreshDraft();
-      const hidden = new Set(selectionKeys(command.selection));
-      if (claimIsLive(claim))
-        queryClient.setQueryData<DraftPreviewResponse>(
-          projectQueryKeys.workDraftPreview(
-            draft.projectId,
-            draft.workId,
-            draft.documentId,
-            draft.draftId,
-          ),
-          (preview) => (preview ? previewWithoutKeys(preview, hidden) : preview),
-        );
       confirmChangeCommand(claim, command.selection, mode);
       return confirmed
         ? { kind: "change-settled", mode }

@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   beginChangeCommand,
   changeCommandState,
-  confirmChangeCommand,
   currentChangeCommandRecords,
   failChangeCommand,
   intentKeys,
@@ -60,9 +59,6 @@ function preview(): DraftPreviewResponse {
   };
 }
 
-const operationIds = (p: DraftPreviewResponse) =>
-  p.status === "active" ? p.operations.map((o) => o.operationId) : [];
-
 describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
@@ -108,24 +104,6 @@ describe("change command record", () => {
         previewWithoutKeys(preview(), new Set(["row:1", "row:2", "row:3"])),
       );
       expect(changeCommandState(currentChangeCommandRecords(), draft, both)).toBeNull();
-    });
-
-    it("hides every operation of the selection while its claim is held, and a confirmation fences reads", async () => {
-      beginChangeCommand(draft, both, "apply", 1);
-      expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
-        "row:1",
-        "row:2",
-        "row:3",
-      ]);
-      releaseDraftCommand(draft);
-      let finish!: (value: DraftPreviewResponse) => void;
-      const read = readPreviewAfterChangeCommands(
-        draft,
-        () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
-      );
-      confirmChangeCommand(draft, both, "apply");
-      finish(preview());
-      expect(operationIds(await read)).toEqual([]);
     });
   });
 

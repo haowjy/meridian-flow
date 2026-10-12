@@ -28,7 +28,7 @@ import {
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
 import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
-import { useWorkDraftCommands } from "./useWorkDraftCommands";
+import { useWorkDraftCommands, type WorkDraftCommands } from "./useWorkDraftCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
@@ -66,6 +66,7 @@ export type DraftReviewController = {
   /**
    * Any draft command or batch in this Work, shared across every surface.
    */
+  commandChange: WorkDraftCommands["commandChange"];
   isDisposing: boolean;
   /**
    * Every Apply and Discard control disables on this: a disposition is in
@@ -326,6 +327,7 @@ export function useDraftReviewController({
       reviewRoomError: inlineReview?.roomError ?? false,
       isApplying,
       canApplyReviewedDraft,
+      commandChange: commands.commandChange,
       isDisposing,
       dispositionLocked,
       changesLocked,

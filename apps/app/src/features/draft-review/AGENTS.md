@@ -26,10 +26,10 @@ It is the single local contract reference; this file maps ownership.
 | Remote draft-only settlement | `DraftOnlySettlement.tsx` |
 | Cross-container promotion/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
 | Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
-| Change grouping and attribution | `review-changes.ts`, `change-attribution.ts` |
+| Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
 | Claim-to-review completion projection | `useReviewCommandCompletion.ts` |
 | Shared focus reconciliation | `useReconcileReviewFocus.ts` |
-| Open-review and unopened-file list models | `useReviewChanges.ts`, `useDraftChanges.ts` |
+| Open-review and unopened-file list models | `useReviewChanges.ts`, `useDraftView.ts` |
 | Layout-independent header model | `useReviewHeader.ts` |
 | Listed-file launch adapter | `features/project/dock/useAiDraftLauncher.ts` (`openReviewFile`) |
 | Refusal/failure wording | `ReviewMessageText.tsx` |

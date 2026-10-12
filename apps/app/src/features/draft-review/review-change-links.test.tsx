@@ -35,7 +35,7 @@ function change(overrides: Partial<ReviewChange> = {}): ReviewChange {
     keys: ["agent"],
     anchorOperationId: "1",
     markKeys: ["1"],
-    actionable: true,
+    target: { kind: "operations", selection: { classIds: ["c1"], operationIds: ["1"] } },
     tone: "ai",
     includesWriterEdits: false,
     merged: false,

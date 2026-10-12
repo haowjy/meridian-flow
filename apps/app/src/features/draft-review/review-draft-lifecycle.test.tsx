@@ -354,9 +354,9 @@ it("a missing preview sends no selection and does not stop later files in the ba
     await settleReact(() => expect([viewA().status, viewC().status]).toEqual(["ready", "ready"]));
     await act(async () => {
       const outcomes = await p().chatRunner.applyBatch([
-        { draft: draftA, selection: change("2") },
-        { draft: draftB, selection: change("3") },
-        { draft: draftC, selection: change("3") },
+        { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
+        { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
+        { draft: draftC, target: { kind: "operations" as const, selection: change("3") } },
       ]);
       expect(outcomes.map(({ outcome }) => outcome.kind)).toEqual([
         "change-settled",

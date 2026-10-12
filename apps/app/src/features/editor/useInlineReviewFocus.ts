@@ -10,13 +10,10 @@
  * The companion to `useInlineReviewSync`, which pushes the server model. Only
  * the review editor mounts it; the plugin state is the guard.
  */
-import { operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
-import {
-  getInlineReviewPluginState,
-  isUnattributedHunkKey,
-} from "@/core/editor/extensions/inline-review";
+import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
+import { inlineReviewFocusIntent } from "@/core/editor/extensions/inline-review/DraftInlineReviewExtension";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
@@ -57,39 +54,21 @@ export function useInlineReviewFocus({
   // moves the mark's change without moving the mark.
   useEffect(() => {
     if (!live || !reviewing) return;
-    let reportedOperationId: string | null = null;
-    let reportedModel: unknown = null;
-    const onTransaction = () => {
-      const state = getInlineReviewPluginState(live.state);
-      const operationId = state?.activeOperationId ?? null;
-      const model = state?.model ?? null;
-      if (operationId === reportedOperationId && model === reportedModel) return;
-      reportedOperationId = operationId;
-      reportedModel = model;
+    const onTransaction = ({
+      transaction,
+    }: {
+      transaction: Parameters<typeof inlineReviewFocusIntent>[0];
+    }) => {
+      const operationId = inlineReviewFocusIntent(transaction);
       if (!operationId) return;
-      // An unclassified hunk has no operation: its key is also its change's id.
-      const classId = isUnattributedHunkKey(operationId)
-        ? operationId
-        : model?.operations.find((operation) => operation.operationId === operationId)
-            ?.closureClassId;
-      if (!classId) return;
-      const operations = isUnattributedHunkKey(operationId)
-        ? []
-        : (model?.operations ?? []).filter((operation) => operation.closureClassId === classId);
-      reportFocusedChange(
-        { documentId, draftId },
-        {
-          classId,
-          operationIds: operations.map((operation) => operation.operationId),
-          keys: operations.map(operationKey),
-        },
-      );
+      const change = view.items.find(({ change }) => change.markKeys.includes(operationId))?.change;
+      if (change) reportFocusedChange({ documentId, draftId }, change);
     };
     live.on("transaction", onTransaction);
     return () => {
       live.off("transaction", onTransaction);
     };
-  }, [live, reviewing, documentId, draftId, reportFocusedChange]);
+  }, [live, reviewing, documentId, draftId, reportFocusedChange, view.items]);
 
   // Changes that arrive while the writer reviews pulse once.
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);

@@ -12,14 +12,12 @@
  * its reason.
  */
 import { useCallback, useMemo, useRef } from "react";
-import type { DraftCommandOutcome } from "@/client/query/draft-command-executor";
 
 import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
 import { type ActivePreview, previewWithoutKeys } from "@/client/query/draft-projection";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
-import { selectionOf } from "./change-selection";
 import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
-import { adoptsGeneration, type DraftReviewSelection } from "./draft-review-session";
+import { adoptsGeneration } from "./draft-review-session";
 import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 
@@ -178,18 +176,11 @@ export function useReviewChanges(
   );
 
   const run = useCallback(
-    async (
-      change: ReviewChange,
-      command: (
-        review: DraftReviewSelection,
-        selection: ReturnType<typeof selectionOf>,
-      ) => Promise<DraftCommandOutcome>,
-      instant: boolean,
-    ) => {
+    async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
       // Apply draft and Discard draft handle what has no per-change commands.
-      if (!change.actionable || !review) return;
+      if (change.target.kind === "display" || !review) return;
       settleFocus(change, instant);
-      const outcome = await command(review, selectionOf([change]));
+      const outcome = await controller.commandChange(mode, review, change.target);
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
       // writer may have opened another while it was in flight.
@@ -197,22 +188,10 @@ export function useReviewChanges(
         controller.focusReviewChange(review, change, { scroll: true });
       }
     },
-    [controller.focusReviewChange, review, settleFocus],
+    [controller.commandChange, controller.focusReviewChange, review, settleFocus],
   );
-  const apply = useCallback(
-    async (change: ReviewChange) => {
-      if (change.wholeDraft && review) await controller.apply(review.documentId, review.draftId);
-      else await run(change, controller.applyChanges, false);
-    },
-    [controller.apply, controller.applyChanges, review, run],
-  );
-  const discard = useCallback(
-    async (change: ReviewChange) => {
-      if (change.wholeDraft && review) await controller.discard(review.documentId, review.draftId);
-      else await run(change, controller.discardChanges, true);
-    },
-    [controller.discard, controller.discardChanges, review, run],
-  );
+  const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
+  const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
 
   const completion = inline?.completion;
   const completing = completion?.phase === "pending" ? completion.mode : null;

@@ -1,0 +1,8 @@
+/** Display identity for a hunk without an owning operation; never a command target. */
+const UNATTRIBUTED_PREFIX = "unattributed:";
+export function unattributedHunkKey(hunkId: string): string {
+  return `${UNATTRIBUTED_PREFIX}${hunkId}`;
+}
+export function isUnattributedHunkKey(key: string): boolean {
+  return key.startsWith(UNATTRIBUTED_PREFIX);
+}

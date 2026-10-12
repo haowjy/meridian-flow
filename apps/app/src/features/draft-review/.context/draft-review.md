@@ -28,7 +28,8 @@ Branch lifecycle status is not review evidence. The server's
 and the mode-switch apply plan. The client projection does not authorize
 Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
 
-`reviewChangesOfPreview` shares `reviewChanges` grouping by server
+`draftView` owns the discriminated action target (operations, draft or display) and
+`reviewChangesOfPreview` exposes its shared `reviewChanges` grouping by server
 `closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
 operations in the class, never a representative. Only new documents become one whole-draft item, with all
 mark keys and attribution retained. Its Apply/Discard use existing whole-draft
@@ -72,8 +73,7 @@ Settlement order is explicit:
    immediately, preserving a newer generation. Catalog/list/preview refresh
    continues in the background; navigation and promotion do not decide success.
 3. Whole Discard awaits refresh. Confirmed or `gone` selections retain their
-   claim through awaited list/preview refresh, prune settled operations and
-   confirm with read fences. Other selection answers refresh before failure.
+   claim through awaited list/preview refresh, confirm settled keys as intents without editing raw previews. Other selection answers refresh before failure.
 4. Failure is recorded on the addressed draft or selection, and the executor
    releases the claim in `finally`. No command answer survives as a claim after
    release; the open review can retain a closed completion independently.
@@ -353,3 +353,11 @@ Apply publishes that manifest as well as content.
 [handoff]: https://github.com/haowjy/meridian-flow/issues/731
 [admission]: https://github.com/haowjy/meridian-flow/issues/738
 [loss]: https://github.com/haowjy/meridian-flow/issues/739
+
+Raw preview observations remain immutable. Confirmed selection keys stay in the
+account-scoped intent journal so cached and held observations cannot resurrect a
+settled change. They leave with the account epoch, not with a cache rewrite.
+Inline input emits an addressed focus intent through the domain change index;
+programmatic plugin emphasis is output only. The scope focus reconciler remains
+necessary for chained regrouping (a later class can share only an intermediate
+member with the originally focused class).

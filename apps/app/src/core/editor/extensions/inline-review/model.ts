@@ -17,21 +17,12 @@ import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
 
-const UNATTRIBUTED_PREFIX = "unattributed:";
+import { unattributedHunkKey } from "@/features/draft-review/review-mark-key";
 
-/**
- * The key a hunk with no owning operation is painted, focused and scrolled to
- * by. Operations are how every other mark is found (`data-review-operations`),
- * and an unclassified hunk has none, so the model gives it this stand-in. It is
- * a client-side name only: it never reaches the server and no command takes it.
- */
-export function unattributedHunkKey(hunkId: string): string {
-  return `${UNATTRIBUTED_PREFIX}${hunkId}`;
-}
-
-export function isUnattributedHunkKey(key: string): boolean {
-  return key.startsWith(UNATTRIBUTED_PREFIX);
-}
+export {
+  isUnattributedHunkKey,
+  unattributedHunkKey,
+} from "@/features/draft-review/review-mark-key";
 
 /**
  * A per-operation piece of an inserted hunk. Every inserted character is
