@@ -225,3 +225,22 @@ server cannot lower the durable version.
 
 Physical close delivery, request parsing, and Hocuspocus hook termination
 belong to the [server transport boundary](../../../lib/.context/CONTEXT.md).
+
+## By-identity landing
+
+`fillEmptyDocument(documentId, bound)` and `prependBlocks(documentId, bound)`
+join the caller's transaction through `DocumentLandingJournal`. They prepare a
+private Y.Doc from a durable cut under the document mutation advisory lock, the
+same lock socket journal admissions take. Fill returns null after any admission
+since the seed, using the head's monotonic counter rather than retained update
+rows or the holder's address. An empty fill still consumes an admission.
+Prepend inserts before existing blocks in one Yjs transaction without replacing
+existing nodes or refs; code documents prepend text within their single block.
+Recovery/publication and the write hook run only after the ambient commit.
+
+`createImportLinkBinder` vends a separate `ImportLinkBinder` capability with
+`targets: ReadonlyMap<occurrenceIndex, DocumentId>`. The ordinary binder has no
+such input and rejects it at runtime. Overrides validate through the prepared
+project/viewer's identity catalog, never the written address. Invalid targets
+are reported and store an empty destination with no ref (no address fallback).
+`BoundWrite.aheadRefs` lists freshly minted refs by original occurrence index.

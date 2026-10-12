@@ -639,6 +639,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit: () => agentEdit,
     reverseTurn: turnReversal.reverseTurn,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
+    prependBlocks: runtime.markdownDocuments.prependBlocks,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
     ...drafts,

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Server imports can fill an untouched placeholder by identity, or prepend text without replacing existing edits.
+
 - Server import writes can bind note links to planned identities, reporting invalid targets and minted ahead links.
 
 - Server ahead links can settle to a planned document identity without changing an existing settlement.

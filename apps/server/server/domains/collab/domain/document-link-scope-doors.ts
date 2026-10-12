@@ -30,6 +30,10 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
+    fillEmptyDocument: (documentId, content) =>
+      scopes.within(by(documentId), () => engine.fillEmptyDocument(documentId, content)),
+    prependBlocks: (documentId, content) =>
+      scopes.within(by(documentId), () => engine.prependBlocks(documentId, content)),
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>

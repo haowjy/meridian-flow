@@ -257,6 +257,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const runtime = createAgentEditRuntime({
+    landingJournal: persistence.journal,
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
@@ -549,6 +550,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
+      prependBlocks: runtime.markdownDocuments.prependBlocks,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },
