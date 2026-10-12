@@ -269,12 +269,16 @@ describe("ImportCoordinator.stop while files are still being read", () => {
       },
       destination,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // An immediate digest leaves only promise continuations after the read, so one
+    // macrotask turn runs everything the released read would ever do.
+    const digest = vi.spyOn(crypto.subtle, "digest").mockResolvedValue(new ArrayBuffer(32));
 
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
     release();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
+    expect(digest).toHaveBeenCalled();
+    digest.mockRestore();
     expect(server.calls.plan).toBe(0);
     const state = coordinator.store(importId).getSnapshot();
     expect(state.local?.phase.kind).toBe("idle");
@@ -335,7 +339,9 @@ describe("ImportCoordinator.retry", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sends.every((send) => send.signal.aborted)).toBe(true);
     const sent = sends.length;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Aborted sends reject synchronously and back off only for 429, so whatever
+    // Stop sets off is promise continuations, all run before the next macrotask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sends.length).toBe(sent);
     coordinator.dispose();
   });
