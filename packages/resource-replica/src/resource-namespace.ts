@@ -261,6 +261,10 @@ export function namespaceOutcomeMatches(
         rootThreadId: attempt.request.body.sourceRootThreadId,
         rootThreadRef: attempt.request.sourceRootThreadRef,
       }) &&
+      sameDestinationParent(
+        receipt.command.destinationParent,
+        attempt.request.body.destinationParent,
+      ) &&
       destination.value.scheme === attempt.request.body.destinationScheme &&
       destination.value.path === destinationPath &&
       authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
@@ -273,6 +277,16 @@ export function namespaceOutcomeMatches(
     );
   }
   return false;
+}
+
+function sameDestinationParent(
+  left: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
+  right: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
+): boolean {
+  if (!left || !right) return left === right;
+  if (left.kind === "folder" || right.kind === "folder")
+    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
+  return left.scheme === right.scheme && sameOwner(left.owner, right.owner);
 }
 
 function authorityMatches(
