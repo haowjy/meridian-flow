@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Restoring a checkpoint never makes an edited import placeholder eligible for replacement again.
+
 - Planned import links reject personal-project targets and draft-only documents; import binding requires a live view.
 
 - Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
