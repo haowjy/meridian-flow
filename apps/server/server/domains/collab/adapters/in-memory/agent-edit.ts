@@ -13,12 +13,13 @@ import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
-import { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
+import type { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
 import { bindDocumentAuthority } from "../../domain/document-handle.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
+import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState } from "../document-loader.js";
 
 export type InMemoryCheckpointRecord = {
@@ -60,20 +61,28 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
 
   async captureCheckpoint(docId: string, authority: CheckpointAuthority) {
     if (authority.authorityId !== docId || authority.generation !== 1n) return null;
-    // Capture synchronously: no writer or checkpoint can interleave this fold.
+    // Copy synchronously so later writers cannot change this captured range.
     const entry = this.debugEntry(docId);
-    const base = entry?.checkpoint ?? null;
-    return CapturedCheckpointCut.fromJournal(
-      docId,
-      authority,
-      base,
-      (entry?.updates ?? []).filter((row) => row.seq > (base?.upToSeq ?? 0)),
-    );
+    const base = entry?.checkpoint;
+    const updates = (entry?.updates ?? []).filter((row) => row.seq > (base?.upToSeq ?? 0));
+    const bytes = base?.state.slice() ?? null;
+    const suffix = updates.map((row) => row.update.slice());
+    let state: Promise<Uint8Array> | undefined;
+    return Object.freeze({
+      documentId: docId,
+      authority: Object.freeze({ ...authority }),
+      upToSeq: updates.at(-1)?.seq ?? base?.upToSeq ?? 0,
+      async materializeState() {
+        state ??= materializeCheckpoint(bytes, suffix);
+        return (await state).slice();
+      },
+    }) as CapturedCheckpointCut;
   }
 
   async createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string> {
-    const record = this.checkpointRecord(cut.documentId, cut.state, reason);
-    await super.checkpoint(cut.documentId, cut.state, cut.upToSeq);
+    const state = await cut.materializeState();
+    const record = this.checkpointRecord(cut.documentId, state, reason);
+    await super.checkpoint(cut.documentId, state, cut.upToSeq);
     this.checkpoints.push(record);
     return record.id;
   }

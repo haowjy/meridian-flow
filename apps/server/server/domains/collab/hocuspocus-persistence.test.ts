@@ -5,9 +5,9 @@ import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
+import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
-import { CapturedCheckpointCut } from "./domain/checkpoint-cut.js";
 import {
   bindDocumentAuthority,
   documentAuthority,
@@ -34,7 +34,7 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     });
     const journal = fakeJournal();
     journal.read = async () => ({
-      authority: { authorityId: "test-authority", generation },
+      authority: { authorityId: DOCUMENT_ID, generation },
       checkpoint: Y.encodeStateAsUpdate(new Y.Doc()),
       updates: [],
     });
@@ -172,11 +172,15 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
     expect(fixture.journal.storeCheckpoint).toHaveBeenCalledTimes(2);
     expect(fixture.journal.captureCheckpoint).toHaveBeenCalledTimes(2);
     expect(fixture.journal.captureCheckpoint).toHaveBeenLastCalledWith(DOCUMENT_ID, {
-      authorityId: "test-authority",
+      authorityId: DOCUMENT_ID,
       generation: 1n,
     });
     expect(fixture.journal.storeCheckpoint).toHaveBeenLastCalledWith(
-      expect.any(CapturedCheckpointCut),
+      expect.objectContaining({
+        documentId: DOCUMENT_ID,
+        authority: { authorityId: DOCUMENT_ID, generation: 1n },
+        upToSeq: 0,
+      }),
     );
   });
 });
@@ -383,14 +387,14 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       DOCUMENT_ID,
       insertion,
       expect.anything(),
-      { authorityId: "test-authority", generation: 1n },
+      { authorityId: DOCUMENT_ID, generation: 1n },
     );
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       2,
       DOCUMENT_ID,
       deletion,
       expect.anything(),
-      { authorityId: "test-authority", generation: 1n },
+      { authorityId: DOCUMENT_ID, generation: 1n },
     );
     expect(onLiveUpdatePersisted).toHaveBeenCalledTimes(2);
   });
@@ -731,7 +735,7 @@ function fakeJournal(): CheckpointJournal {
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
     captureCheckpoint: vi.fn(async (docId, authority) =>
-      CapturedCheckpointCut.fromJournal(docId, authority, null, []),
+      createInMemoryJournal().captureCheckpoint(docId, authority),
     ),
     storeCheckpoint: vi.fn(async () => undefined),
     compact: vi.fn(async () => ({ updatesFolded: 0, reversalsExpired: 0 })),
@@ -740,6 +744,6 @@ function fakeJournal(): CheckpointJournal {
 
 function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0], generation = 1n): Y.Doc {
   const doc = new Y.Doc(options);
-  bindDocumentAuthority(doc, { authorityId: "test-authority" as never, generation });
+  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID, generation });
   return doc;
 }
