@@ -30,8 +30,9 @@ rest; only the open browsing body acquires catalogs, and its initial trail
 is set once that source resolves. The identity row measures its rendered content
 through one priority ladder shared by Editor and dock: hide parent crumbs,
 collapse labels to icons, hide the stepper count, then collapse Apply to its
-icon. The leaf keeps 64px. Phone/coarse-pointer controls have invisible 44px
-hit boxes without increasing the band height. Renaming and
+icon. The leaf keeps 64px. Phone/coarse-pointer hit boxes extend only
+vertically to 44px, without increasing the band height; horizontally each
+control owns exactly its visible box (see [CONTEXT.md](CONTEXT.md)). Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit decision.
 

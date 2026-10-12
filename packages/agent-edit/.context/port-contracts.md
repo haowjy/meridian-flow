@@ -37,7 +37,8 @@ Every content exposure goes through prepare: scoped reads borrow disposable
 replicas; commands stage through committer-owned call leases. Effective reads
 prepare before taking a branch-read lock. No raw helper or staged-byte reader is
 public. Ordinary live replicas are dispatched at the same gate. Each response lease
-captures response/document/epoch; Whole Discard revokes the document epoch, including
+captures response/document/epoch, bound to its peer; Whole Discard's retirement revokes
+that peer's document epoch (never a replacement peer's), including
 leases issued before its first staged write. Replay acceptance and stage publication
 validate it. Equivalent replay results retain view identity, so concurrent unchanged
 reads do not cause triangular retries; real content/cut changes still retry.
