@@ -1,7 +1,17 @@
 /** Selection from a drop: walks what `captureDrop` took inside the drop event. */
 import type { DroppedItems } from "@/lib/dropped-items";
 import { isImportableName, isOmittedPath, normalizeName } from "./path-rules";
-import { readSideFile, type SelectedRoot, type Selection, unreadableReason } from "./selection";
+import {
+  browserHidesDotEntries,
+  holdSettings,
+  noteHiddenSettings,
+  type ReaderOptions,
+  readSideFile,
+  type SelectedRoot,
+  type Selection,
+  textOf,
+  unreadableReason,
+} from "./selection";
 
 type Walk = {
   root: SelectedRoot;
@@ -14,8 +24,12 @@ const FILE_BATCH = 24;
 
 export async function readDropped(
   items: DroppedItems,
-  options: { signal?: AbortSignal; onProgress?: (count: number, name: string) => void } = {},
+  options: ReaderOptions & {
+    signal?: AbortSignal;
+    onProgress?: (count: number, name: string) => void;
+  } = {},
 ): Promise<Selection> {
+  const hidesDotEntries = options.hidesDotEntries ?? browserHidesDotEntries();
   const selection: Selection = { roots: [], leftOut: [] };
   const seen = { count: 0 };
   const report = options.onProgress ?? (() => {});
@@ -58,6 +72,7 @@ export async function readDropped(
       const directory = source as FileSystemDirectoryEntry;
       await readSettings(directory, root);
       await walkDirectory(directory, "", walk);
+      noteHiddenSettings(root, hidesDotEntries);
     } catch {
       selection.leftOut.push({ name, kind: "folder" });
       continue;
@@ -73,10 +88,10 @@ export async function readDropped(
 
 async function readSettings(directory: FileSystemDirectoryEntry, root: SelectedRoot) {
   const marker = await childFile(directory, "meridian-export.json");
-  if (marker) root.meridianExport = await readSideFile(marker);
+  if (marker) root.meridianExport = textOf(await readSideFile(marker));
   const settings = await childDirectory(directory, ".obsidian");
   const appJson = settings ? await childFile(settings, "app.json") : null;
-  if (appJson) root.appJson = await readSideFile(appJson);
+  if (appJson) holdSettings(root, await readSideFile(appJson));
 }
 
 async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, walk: Walk) {

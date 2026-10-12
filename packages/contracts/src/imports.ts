@@ -8,6 +8,8 @@ export interface ImportManifest {
     kind: "folder" | "file";
     name: string;
     appJson?: string;
+    /** Why a folder root carries no `appJson` although it may have settings. */
+    appJsonUnread?: ImportSettingsUnread;
     meridianExport?: string;
   }[];
   folders: { rootId: number; path: string }[];
@@ -22,6 +24,13 @@ export interface ImportManifest {
     frontmatter?: string;
   }[];
 }
+/**
+ * Why the browser sent no Obsidian settings: it hides dot-folders (Safari), the
+ * read failed, or the file is over the side-file limit.
+ */
+export type ImportSettingsUnread = "unavailable" | "unreadable" | "too_large";
+/** Why an import used default Obsidian settings: unread, or sent but not valid JSON. */
+export type ImportSettingsProblem = ImportSettingsUnread | "malformed";
 export type ImportState = "planning" | "ready" | "finished";
 export type ImportEntryState =
   | "planned"
@@ -68,7 +77,7 @@ export interface ImportFindingParams {
   embed_to_link: { name: string };
   image_size_dropped: { name: string; size: string };
   kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
-  settings_unreadable: { name: string };
+  settings_unreadable: { name: string; reason: ImportSettingsProblem };
   name_clash: { original: string };
   folder_note: Record<string, never>;
   binary_extension: { original: string; type: string };

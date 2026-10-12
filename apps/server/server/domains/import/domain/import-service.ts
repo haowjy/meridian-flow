@@ -606,8 +606,11 @@ export function createImportService(deps: {
             if (converted)
               await tree.setProperties(entry.id, converted.properties, converted.aliases);
             const findings = [...current.findings, ...(converted?.findings ?? [])];
-            if (settings.unreadable)
-              findings.push({ code: "settings_unreadable", params: { name: root?.name ?? "" } });
+            if (settings.problem)
+              findings.push({
+                code: "settings_unreadable",
+                params: { name: root?.name ?? "", reason: settings.problem },
+              });
             const occurrences = bound.invalidTargets.length
               ? walkLinkOccurrences(bound.blocks)
               : [];

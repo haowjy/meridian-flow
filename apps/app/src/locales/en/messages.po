@@ -541,6 +541,18 @@ msgid "{name} wasn't in the original selection."
 msgstr "{name} wasn't in the original selection."
 
 #: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings are too large to read, so links and pictures were matched without them."
+msgstr "{name}'s Obsidian settings are too large to read, so links and pictures were matched without them."
+
+#: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings couldn't be read, so links and pictures were matched without them."
+msgstr "{name}'s Obsidian settings couldn't be read, so links and pictures were matched without them."
+
+#: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings weren't used."
+msgstr "{name}'s Obsidian settings weren't used."
+
+#: src/features/import/finding-copy.ts
 msgid "{original} is a {type}."
 msgstr "{original} is a {type}."
 
@@ -3019,6 +3031,10 @@ msgstr "Merged cells stay where they are."
 msgid "Merging works on a rectangle of cells."
 msgstr "Merging works on a rectangle of cells."
 
+#: src/features/import/finding-copy.ts
+msgid "Meridian couldn't make sense of {name}'s Obsidian settings, so links and pictures were matched without them."
+msgstr "Meridian couldn't make sense of {name}'s Obsidian settings, so links and pictures were matched without them."
+
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
@@ -5493,8 +5509,12 @@ msgid "Your answer may not have reached the agent."
 msgstr "Your answer may not have reached the agent."
 
 #: src/features/import/finding-copy.ts
-msgid "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
-msgstr "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
+#~ msgid "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
+#~ msgstr "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
+
+#: src/features/import/finding-copy.ts
+msgid "Your browser doesn't share hidden folders, so if {name} has Obsidian settings, links and pictures were matched without them."
+msgstr "Your browser doesn't share hidden folders, so if {name} has Obsidian settings, links and pictures were matched without them."
 
 #. placeholder {0}: result.fileName
 #: src/features/export/ExportProjectDialog.tsx

@@ -1,5 +1,5 @@
 /** Pure selection-first Obsidian resolution and the shared project fallback ranking. */
-import type { ImportManifest } from "@meridian/contracts";
+import type { ImportManifest, ImportSettingsProblem } from "@meridian/contracts";
 import {
   type Located,
   locate,
@@ -42,32 +42,36 @@ export function normalizedPath(value: string): string {
   if (parts.length) parts[parts.length - 1] = storedName(parts.at(-1) ?? "");
   return parts.join("/");
 }
-export function obsidianSettings(root: ImportManifest["roots"][number] | undefined) {
-  if (!root?.appJson)
-    return {
-      attachmentFolderPath: "",
-      newFileLocation: "root",
-      newFileFolderPath: "",
-      unreadable: false,
-    };
+/**
+ * A folder root's Obsidian settings, or the defaults with why: the browser sent
+ * none it could read (`appJsonUnread`), or what it sent is not a JSON object.
+ */
+export function obsidianSettings(root: ImportManifest["roots"][number] | undefined): {
+  attachmentFolderPath: string;
+  newFileLocation: string;
+  newFileFolderPath: string;
+  problem: ImportSettingsProblem | null;
+} {
+  const defaults = { attachmentFolderPath: "", newFileLocation: "root", newFileFolderPath: "" };
+  if (root?.appJson === undefined) return { ...defaults, problem: root?.appJsonUnread ?? null };
+  let value: unknown;
   try {
-    const value = JSON.parse(root.appJson);
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("settings");
-    return {
-      attachmentFolderPath:
-        typeof value.attachmentFolderPath === "string" ? value.attachmentFolderPath : "",
-      newFileLocation: typeof value.newFileLocation === "string" ? value.newFileLocation : "root",
-      newFileFolderPath: typeof value.newFileFolderPath === "string" ? value.newFileFolderPath : "",
-      unreadable: false,
-    };
+    value = JSON.parse(root.appJson);
   } catch {
-    return {
-      attachmentFolderPath: "",
-      newFileLocation: "root",
-      newFileFolderPath: "",
-      unreadable: true,
-    };
+    return { ...defaults, problem: "malformed" };
   }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return { ...defaults, problem: "malformed" };
+  const read = (key: string, fallback: string) => {
+    const field = (value as Record<string, unknown>)[key];
+    return typeof field === "string" ? field : fallback;
+  };
+  return {
+    attachmentFolderPath: read("attachmentFolderPath", ""),
+    newFileLocation: read("newFileLocation", "root"),
+    newFileFolderPath: read("newFileFolderPath", ""),
+    problem: null,
+  };
 }
 export interface ImportLinkMatch {
   target: ImportLinkCandidate;

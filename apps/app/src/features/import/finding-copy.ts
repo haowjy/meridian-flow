@@ -1,7 +1,12 @@
 /** Findings and skip lines as sentences, grouped as the report shows them. Codes in, words out. */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
-import type { ImportEntryReason, ImportFinding, ImportSkipReason } from "@meridian/contracts";
+import type {
+  ImportEntryReason,
+  ImportFinding,
+  ImportFindingParams,
+  ImportSkipReason,
+} from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 
 export type FindingGroup =
@@ -139,10 +144,8 @@ export function findingSentence(finding: ImportFinding): string {
       const size = str(params.size);
       return t`${name} lost its size setting (${size}).`;
     }
-    case "settings_unreadable": {
-      const name = str(params.name);
-      return t`Your browser didn't share ${name}'s hidden Obsidian settings, so links and pictures were matched without them.`;
-    }
+    case "settings_unreadable":
+      return settingsSentence(finding.params);
     case "name_clash": {
       const original = str(params.original);
       return t`${original} was taken.`;
@@ -164,6 +167,22 @@ export function findingSentence(finding: ImportFinding): string {
       return keptAsTextSentence(params);
     default:
       return unhandled(finding, t`Worth a look.`);
+  }
+}
+
+/** Why a folder's Obsidian settings went unused; each reason says only what is known. */
+function settingsSentence({ name, reason }: ImportFindingParams["settings_unreadable"]): string {
+  switch (reason) {
+    case "unavailable":
+      return t`Your browser doesn't share hidden folders, so if ${name} has Obsidian settings, links and pictures were matched without them.`;
+    case "unreadable":
+      return t`${name}'s Obsidian settings couldn't be read, so links and pictures were matched without them.`;
+    case "too_large":
+      return t`${name}'s Obsidian settings are too large to read, so links and pictures were matched without them.`;
+    case "malformed":
+      return t`Meridian couldn't make sense of ${name}'s Obsidian settings, so links and pictures were matched without them.`;
+    default:
+      return unhandled(reason, t`${name}'s Obsidian settings weren't used.`);
   }
 }
 

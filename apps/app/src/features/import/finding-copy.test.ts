@@ -40,4 +40,14 @@ describe("finding copy", () => {
     expect(findingGroup("properties_unreadable")).toBe("other");
     expect(findingGroup("folder_note")).toBe("renamed");
   });
+
+  it("says truthfully why a folder's Obsidian settings were not used", () => {
+    const sentence = (reason: "unavailable" | "unreadable" | "too_large" | "malformed") =>
+      findingSentence({ code: "settings_unreadable", params: { name: "vault", reason } });
+    const all = (["unavailable", "unreadable", "too_large", "malformed"] as const).map(sentence);
+    expect(new Set(all).size).toBe(4);
+    expect(sentence("unavailable")).toContain("browser");
+    for (const read of all.slice(1)) expect(read).not.toContain("browser");
+    expect(sentence("malformed")).toContain("vault");
+  });
 });

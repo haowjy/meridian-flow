@@ -8,7 +8,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { parseDocumentProperties } from "../../context/document-properties.js";
 import { MAX_PROPERTIES_TEXT_LENGTH } from "../../context/frontmatter.js";
-import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
+import { createLinkIndex, type ImportLinkCandidate, obsidianSettings } from "./link-index.js";
 import { convertObsidianNote } from "./obsidian-note.js";
 
 const root = new URL("../__fixtures__/obsidian-vault/", import.meta.url).pathname;
@@ -253,5 +253,26 @@ describe("Obsidian conversion", () => {
     const result = convert("[[Sects]]", source, [source], existing);
     expect(result.targets.get(0)).toBe("Sects.md");
     expect(result.findings.map((finding) => finding.code)).not.toContain("link_ambiguous");
+  });
+});
+
+describe("a folder's Obsidian settings", () => {
+  const root = (fields: object) => ({
+    rootId: 0,
+    kind: "folder" as const,
+    name: "vault",
+    ...fields,
+  });
+
+  it("keeps why the browser sent none apart from settings that are not JSON", () => {
+    expect(obsidianSettings(root({})).problem).toBeNull();
+    expect(obsidianSettings(root({ appJson: '{"newFileLocation":"current"}' }))).toMatchObject({
+      newFileLocation: "current",
+      problem: null,
+    });
+    expect(obsidianSettings(root({ appJson: "{not json" })).problem).toBe("malformed");
+    expect(obsidianSettings(root({ appJson: "[1]" })).problem).toBe("malformed");
+    for (const unread of ["unavailable", "unreadable", "too_large"] as const)
+      expect(obsidianSettings(root({ appJsonUnread: unread })).problem).toBe(unread);
   });
 });

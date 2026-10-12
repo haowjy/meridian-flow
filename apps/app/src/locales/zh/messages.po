@@ -541,6 +541,18 @@ msgid "{name} wasn't in the original selection."
 msgstr ""
 
 #: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings are too large to read, so links and pictures were matched without them."
+msgstr ""
+
+#: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings couldn't be read, so links and pictures were matched without them."
+msgstr ""
+
+#: src/features/import/finding-copy.ts
+msgid "{name}'s Obsidian settings weren't used."
+msgstr ""
+
+#: src/features/import/finding-copy.ts
 msgid "{original} is a {type}."
 msgstr ""
 
@@ -3019,6 +3031,10 @@ msgstr ""
 msgid "Merging works on a rectangle of cells."
 msgstr ""
 
+#: src/features/import/finding-copy.ts
+msgid "Meridian couldn't make sense of {name}'s Obsidian settings, so links and pictures were matched without them."
+msgstr ""
+
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr ""
@@ -5493,7 +5509,11 @@ msgid "Your answer may not have reached the agent."
 msgstr ""
 
 #: src/features/import/finding-copy.ts
-msgid "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
+#~ msgid "Your browser didn't share {name}'s hidden Obsidian settings, so links and pictures were matched without them."
+#~ msgstr ""
+
+#: src/features/import/finding-copy.ts
+msgid "Your browser doesn't share hidden folders, so if {name} has Obsidian settings, links and pictures were matched without them."
 msgstr ""
 
 #. placeholder {0}: result.fileName

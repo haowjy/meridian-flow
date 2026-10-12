@@ -79,6 +79,7 @@ const root = z
       .string()
       .max(1024 * 1024)
       .optional(),
+    appJsonUnread: z.enum(["unavailable", "unreadable", "too_large"]).optional(),
     meridianExport: z
       .string()
       .max(1024 * 1024)
@@ -194,9 +195,11 @@ export function validateManifest(raw: unknown): ImportManifest {
   for (const folder of value.folders)
     if (roots.get(folder.rootId)?.kind !== "folder") refuse("invalid_file_root");
   for (const root of value.roots) {
+    if (root.appJson !== undefined && root.appJsonUnread !== undefined) refuse("manifest_invalid");
     if (
       root.kind === "file" &&
       (root.appJson !== undefined ||
+        root.appJsonUnread !== undefined ||
         root.meridianExport !== undefined ||
         value.entries.filter((entry) => entry.rootId === root.rootId).length +
           (value.unreadable ?? []).filter((entry) => entry.rootId === root.rootId).length !==
@@ -227,6 +230,7 @@ export function manifestFingerprint(manifest: ImportManifest): string {
         root.kind,
         root.name,
         root.appJson ?? null,
+        root.appJsonUnread ?? null,
         root.meridianExport ?? null,
         manifest.entries
           .filter((entry) => entry.rootId === root.rootId)

@@ -91,7 +91,10 @@ describe("buildReportModel", () => {
   });
 
   it("shows one Obsidian settings line per folder however many notes carry it", () => {
-    const finding: ImportFinding = { code: "settings_unreadable", params: { name: "vault" } };
+    const finding: ImportFinding = {
+      code: "settings_unreadable",
+      params: { name: "vault", reason: "unavailable" },
+    };
     const model = buildReportModel(
       stateOf([entry(0, { findings: [finding] }), entry(1, { findings: [finding] })]),
     );
