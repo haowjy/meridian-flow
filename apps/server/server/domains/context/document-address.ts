@@ -11,7 +11,7 @@ export function createDocumentAddressResolver(deps: {
       const candidate = await deps.locations.candidate(input);
       if (!candidate) return { kind: "unavailable" };
       const result = await deps.availability.lookup(
-        { projectId: input.projectId, documentIds: [candidate.documentId] },
+        { projectId: input.projectId, documentIds: [candidate.documentId], view: input.view },
         { userId: input.userId },
       );
       const document = result.resolutions[0];
