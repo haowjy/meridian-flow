@@ -43,8 +43,9 @@ immediate writes use the journal kind returned by submission to restore or recov
 ## Forward inverse primitive (parallel, not policy)
 
 `undo/forward-inverse.ts` owns receipt normalization, per-part classification,
-restoration lineage hydration, server UndoManager execution, and admission.
-Its Yjs-private layout is pinned to 13.6.31. `computeInverse` returns one edit
+restoration lineage, and admission. The browser-safe `yjs-mutation.ts` owns
+retained-struct lookup, visibility, splitting, redone hydration/capture and
+low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
 per target edit, with transaction-delta parts and aliases; the host persists
 those edits under one action ID. Normalization is per edit, never per action.
 This primitive does not route commands, choose destinations, or replace the
