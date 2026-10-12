@@ -1,5 +1,6 @@
 /** Export contract: a portable, frozen vault whose Markdown links resolve to ZIP entries. */
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { type CatalogDocument, documentRef } from "@meridian/contracts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -9,7 +10,6 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
-import { createProcessExportTickets } from "../adapters/process-export-tickets.js";
 import type { ExportDocument } from "../ports/export-snapshot.js";
 import { buildExportLayout } from "./export-layout.js";
 import { createProjectExport } from "./project-export.js";
@@ -130,8 +130,8 @@ function fixture() {
   bytes.set([137, 80, 78, 71, 255]);
   const reads: string[] = [];
   let unavailable = false;
+  const denied = new Set<string>();
   const service = createProjectExport({
-    tickets: createProcessExportTickets(),
     pendingDrafts: {
       async count() {
         return 3;
@@ -148,7 +148,9 @@ function fixture() {
     },
     files: {
       async listAccess(_principal, ids) {
-        return new Map(ids.map((id) => [id, { level: "read" } as never]));
+        return new Map(
+          ids.filter((id) => !denied.has(id)).map((id) => [id, { level: "read" } as never]),
+        );
       },
     },
     documents: {
@@ -205,6 +207,7 @@ function fixture() {
   });
   return {
     service,
+    denied,
     docs,
     blocks,
     bytes,
@@ -236,34 +239,67 @@ function checkRelativeLinks(files: Record<string, Uint8Array>) {
   }
 }
 describe("project exports", () => {
-  it("prepares counted, owner-bound one-shot downloads without losing their frozen paths", async () => {
-    const { service, docs, failReads } = fixture();
-    const started = await service.start("project", "account", "Serial", {
-      scratch: false,
-      uploads: false,
+  it("reauthorizes deleted documents and Work parts at every download without held state", async () => {
+    const { service, denied, docs } = fixture();
+    const options = { scratch: true, uploads: true };
+    // A prior preview cannot carry readable grants into a later GET.
+    await service.preview("project", "account", options);
+    denied.add(uuid("image"));
+    for (const doc of docs.filter((doc) => doc.workId === "one")) denied.add(doc.id);
+    const files = await entries(await service.download("project", "account", "Serial", options));
+    expect(files["Serial/Knowledge Base/map.png"]).toBeUndefined();
+    expect(Object.keys(files).some((path) => path.startsWith("Serial/Works/Work/"))).toBe(false);
+    expect(files["Serial/Works/work/Scratch/note.md"]).toBeDefined();
+    expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(3);
+    checkRelativeLinks(files);
+    // Another instance needs only the same ports, never an issued ticket.
+    const other = fixture();
+    expect(
+      Object.keys(
+        await entries(await other.service.download("project", "account", "Serial", options)),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+  it("has no module-held export state or ticket boundary and counts the bytes it streams", async () => {
+    const source = readFileSync(new URL("./project-export.ts", import.meta.url), "utf8");
+    expect(source.slice(0, source.indexOf("export function createProjectExport"))).not.toMatch(
+      /new Map|setTimeout|randomUUID/,
+    );
+    expect(existsSync(new URL("../ports/export-tickets.ts", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../adapters/process-export-tickets.ts", import.meta.url))).toBe(
+      false,
+    );
+    const { service, blocks } = fixture();
+    const options = { scratch: false, uploads: false };
+    expect((await service.preview("project", "account", options)).outsideLinks).toEqual({
+      count: 2,
+      byArea: { scratch: 1, uploads: 1, user: 0, deleted: 0 },
     });
-    expect(started.fileName).toBe("Serial.zip");
-    expect(started.outsideLinks.count).toBe(2);
-    expect(started.outsideLinks.areas.sort()).toEqual(["scratch", "uploads"]);
-    expect(started.pendingDrafts).toBe(3);
-    const token =
-      new URL(started.downloadUrl, "https://meridian.test").searchParams.get("export") ?? "";
-    expect(service.download(token, "project", "another-account")).toBeNull();
-    const lore = docs.find((doc) => doc.id === uuid("lore"));
-    if (!lore) throw new Error("Fixture lore missing");
-    lore.uri = "user://Moved";
-    const ticket = service.download(token, "project", "account");
-    if (!ticket) throw new Error("Prepared download missing");
-    checkRelativeLinks(await entries(ticket.stream()));
-    expect(service.download(token, "project", "account")).toBeNull();
-    failReads();
-    await expect(
-      service.start("project", "account", "Serial", { scratch: false, uploads: false }),
-    ).rejects.toThrow("Document could not be read for export");
+    blocks.push(
+      schema.node(
+        "paragraph",
+        null,
+        schema.text("Another", [
+          schema.marks.link!.create({
+            href: "scratch://@one/note",
+            ref: documentRef(uuid("scratch1")),
+          }),
+        ]),
+      ),
+    );
+    const files = await entries(await service.download("project", "account", "Serial", options));
+    const text = strFromU8(files["Serial/Manuscript/Chapter.md"]!);
+    const outside = walkLinkOccurrences(
+      ordinary.parse(splitObsidianFrontmatter(text).body).blocks,
+    ).filter((link) => /^(scratch|uploads):/.test(link.attrs.href));
+    expect(outside).toHaveLength(3);
+    expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(
+      outside.length,
+    );
   });
   it("downloads lossless frontmatter and export-only literals without introducing links", async () => {
     const { service, blocks } = fixture();
-    const snapshot = await service.prepare("project", "account", {
+    const snapshot = await service.createScope("project", "account", {
       scratch: false,
       uploads: false,
     });
@@ -284,7 +320,7 @@ describe("project exports", () => {
   });
   it("streams default and optional vaults with binary integrity and all relative links resolving", async () => {
     const { service, bytes } = fixture();
-    const defaults = await service.prepare("project", "account", {
+    const defaults = await service.createScope("project", "account", {
       scratch: false,
       uploads: false,
     });
@@ -297,7 +333,7 @@ describe("project exports", () => {
     );
     expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(2);
     checkRelativeLinks(files);
-    const full = await service.prepare("project", "account", { scratch: true, uploads: true });
+    const full = await service.createScope("project", "account", { scratch: true, uploads: true });
     const all = await entries(full.stream("Serial"));
     for (const path of [
       "Work/Scratch/note.md",
@@ -314,7 +350,10 @@ describe("project exports", () => {
   });
   it("keeps frozen identities and paths when a target moves during streaming", async () => {
     const { service, docs, reads } = fixture();
-    const snapshot = await service.prepare("project", "account", { scratch: true, uploads: true });
+    const snapshot = await service.createScope("project", "account", {
+      scratch: true,
+      uploads: true,
+    });
     const stream = snapshot.stream("Serial");
     const iterator = stream[Symbol.asyncIterator]();
     const first = await iterator.next();

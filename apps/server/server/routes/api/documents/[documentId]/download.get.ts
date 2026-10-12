@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     "read",
   );
   const projectId = grant.facts.projectId;
-  const snapshot = await app.projectExport.prepare(projectId, user.userId, {
+  const snapshot = await app.projectExport.createScope(projectId, user.userId, {
     scratch: false,
     uploads: false,
   });

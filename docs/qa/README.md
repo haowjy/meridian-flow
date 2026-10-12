@@ -73,13 +73,15 @@ Two harness races have produced false defects. Rule them out first.
    `./mf api GET /api/documents/<id>/download --output /tmp/chapter.md`.
    Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
    escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
-3. Start with `./mf api POST /api/projects/<id>/exports --data
-   '{"scratch":false,"uploads":false}' --json`. Check `outsideLinks` and
-   `pendingDrafts`, then download the returned `downloadUrl` with `--output`.
-   Repeat with both options true. The owner-bound URL is one-shot and expires
-   in ten minutes; prepare again after a restart or failed download. Use `unzip -l` and unzip into a
-   temporary folder. Default exports omit Works; opt-in exports group files
-   by Work and No Work Scratch by lineage chat. Compare image SHA-256.
+3. Preview with `./mf api GET '/api/projects/<id>/export/preview?scratch=0&uploads=0'
+   --json`. Check outside-link and pending-draft counts. Download directly with
+   `./mf api GET '/api/projects/<id>/export.zip?scratch=0&uploads=0' --output /tmp/project.zip`.
+   Repeat with both options 1. Each GET independently reauthorizes files and
+   Works; delete a disposable document or Work after preview and confirm it is
+   absent from the download. No ticket, expiry or server affinity exists.
+   Use `unzip -l` and extract to a temporary folder. Default exports omit Works;
+   opt-in exports group by Work and No Work Scratch by lineage chat. Compare
+   image SHA-256. The marker counts actual ZIP content, not the preview.
 4. The scripted relative-link check is in
    `apps/server/server/domains/export/domain/project-export.test.ts`. It
    verifies default and opt-in vaults and an in-flight move. The default
@@ -87,8 +89,9 @@ Two harness races have produced false defects. Rule them out first.
    actual entries. Open the exported project folder in Obsidian for visual
    review (not part of the automated check).
 5. In the project title menu, choose Export project. Both switches begin off.
-   Export first shows Preparing, or an inline failure with Retry. A successful
-   start follows the returned URL and shows outside-link and unapplied-draft
-   counts. The browser downloads without a whole-ZIP Blob; the dialog does not
-   claim that a download completed. Stop only
+   A quiet preview loads beneath the switches, updates after a debounce and
+   hides zero counts. Preview failures offer Retry without blocking Export.
+   Export follows the native GET with the chosen options and closes the dialog.
+   Browser owns progress and failures; the app never buffers a ZIP or claims
+   download completion. Stop only
    this stack with `pnpm dev --stop`.

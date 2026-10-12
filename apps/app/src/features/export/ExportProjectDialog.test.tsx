@@ -1,161 +1,139 @@
 // @vitest-environment jsdom
-/** The start handoff shows honest preparation/failure, then counts without buffering a ZIP. */
+/** Preview races cannot change the options sent to a native download. */
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ExportProjectDialog } from "./ExportProjectDialog";
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  notifyManager.setScheduler((callback) => setTimeout(callback, 0));
+  vi.unstubAllGlobals();
 });
-it("retries a failed start and follows its download only after the counted response", async () => {
+it("debounces preview options, hides stale counts and downloads directly before closing", async () => {
   const i18n = setupI18n({ locale: "en", messages: {} });
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  notifyManager.setScheduler(queueMicrotask);
-  let answer: (response: Response) => void = () => {
-    throw new Error("No request in flight");
-  };
+  const replies: ((response: Response) => void)[] = [];
   const fetch = vi.fn(
-    () =>
-      new Promise<Response>((resolve) => {
-        answer = resolve;
-      }),
+    (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Promise<Response>((resolve) => replies.push(resolve)),
   );
   vi.stubGlobal("fetch", fetch);
+  const close = vi.fn();
+  const downloads: string[] = [];
   await withReactRoot(
     <I18nProvider i18n={i18n}>
-      <QueryClientProvider client={client}>
-        <ExportProjectDialog
-          accountSignal={new AbortController().signal}
-          projectId="project"
-          project="Ashfall"
-          onClose={() => {}}
-        />
-      </QueryClientProvider>
+      <ExportProjectDialog
+        accountSignal={new AbortController().signal}
+        projectId="project"
+        project="Ashfall"
+        onClose={close}
+      />
     </I18nProvider>,
     async () => {
-      const click = async (label: string) => {
-        const button = [...document.querySelectorAll("button")].find(
-          (button) => button.textContent === label,
-        );
-        if (!button) throw new Error(`Missing ${label}`);
-        await act(async () => button.click());
-      };
-      const downloads: string[] = [];
       vi.spyOn(window.HTMLAnchorElement.prototype, "click").mockImplementation(function (
         this: HTMLAnchorElement,
       ) {
         downloads.push(this.href);
       });
-      const switches = [...document.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
-      expect(switches).toHaveLength(2);
-      expect(switches.map((input) => input.getAttribute("aria-checked"))).toEqual([
-        "false",
-        "false",
-      ]);
-      await click("Export");
-      expect(document.body.textContent).toContain("Preparing…");
-      expect(switches.every((input) => input.disabled)).toBe(true);
-      expect(downloads).toEqual([]);
+      const wait = async () => {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        });
+      };
+      await wait();
+      expect(fetch.mock.calls[0]?.[0]).toBe(
+        "/api/projects/project/export/preview?scratch=0&uploads=0",
+      );
       await act(async () => {
-        answer(new Response('{"message":"unavailable"}', { status: 503 }));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-      expect(document.body.textContent).toContain("Couldn't start the export.");
-      expect(switches.every((input) => !input.disabled)).toBe(true);
-      await click("Retry");
-      await act(async () => {
-        answer(
+        replies[0]!(
           Response.json({
-            downloadUrl: "/api/projects/project/export.zip?export=ticket",
-            fileName: "Ashfall.zip",
-            outsideLinks: { count: 12, areas: ["uploads", "scratch"] },
+            outsideLinks: { count: 2, byArea: { scratch: 1, uploads: 1, user: 0, deleted: 0 } },
             pendingDrafts: 3,
           }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 0));
       });
+      expect(document.body.textContent).toContain(
+        "2 links point to Scratch or Uploads, which won't be included.",
+      );
+      expect(document.body.textContent).toContain(
+        "3 drafts the AI hasn't applied won't be included.",
+      );
+      const switches = [...document.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
+      await act(async () => {
+        switches[0]!.click();
+        switches[1]!.click();
+      });
+      expect(document.body.textContent).not.toContain("2 links point");
+      await wait();
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch.mock.calls[1]?.[0]).toBe(
+        "/api/projects/project/export/preview?scratch=1&uploads=1",
+      );
+      await act(async () => {
+        replies[1]!(
+          Response.json({
+            outsideLinks: { count: 0, byArea: { scratch: 0, uploads: 0, user: 0, deleted: 0 } },
+            pendingDrafts: 0,
+          }),
+        );
+      });
+      expect(document.querySelector('[role="status"]')?.textContent).toBe("");
+      const button = [...document.querySelectorAll("button")].find(
+        (node) => node.textContent === "Export",
+      );
+      await act(async () => button!.click());
       expect(downloads).toEqual([
-        "https://app.meridian.test/api/projects/project/export.zip?export=ticket",
+        "https://app.meridian.test/api/projects/project/export.zip?scratch=1&uploads=1",
       ]);
-      expect(document.body.textContent).toContain(
-        "12 links point to Scratch or Uploads, which aren't included.",
-      );
-      expect(document.body.textContent).toContain(
-        "3 drafts the AI hasn't applied aren't included.",
-      );
-      expect(document.querySelector('[role="status"]')).not.toBeNull();
-      expect(document.querySelector('[role="switch"]')).toBeNull();
-      expect(fetch.mock.calls[0]).toEqual([
-        "/api/projects/project/exports",
-        expect.objectContaining({ body: '{"scratch":false,"uploads":false}' }),
-      ]);
+      expect(close).toHaveBeenCalledOnce();
     },
     { drainMacrotask: true },
   );
-  client.clear();
 });
-
-it("does not download or show a late response from a retired account epoch", async () => {
+it("ignores a late preview from a retired account and cannot download for it", async () => {
   const account = new AbortController();
   const i18n = setupI18n({ locale: "en", messages: {} });
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  notifyManager.setScheduler(queueMicrotask);
-  let answer: (response: Response) => void = () => {
-    throw new Error("No request in flight");
-  };
+  let reply: (response: Response) => void = () => {};
   vi.stubGlobal(
     "fetch",
     () =>
       new Promise<Response>((resolve) => {
-        answer = resolve;
+        reply = resolve;
       }),
   );
   await withReactRoot(
     <I18nProvider i18n={i18n}>
-      <QueryClientProvider client={client}>
-        <ExportProjectDialog
-          accountSignal={account.signal}
-          projectId="project"
-          project="Ashfall"
-          onClose={() => {}}
-        />
-      </QueryClientProvider>
+      <ExportProjectDialog
+        accountSignal={account.signal}
+        projectId="project"
+        project="Ashfall"
+        onClose={() => {}}
+      />
     </I18nProvider>,
     async () => {
-      const downloads: string[] = [];
-      vi.spyOn(window.HTMLAnchorElement.prototype, "click").mockImplementation(function (
-        this: HTMLAnchorElement,
-      ) {
-        downloads.push(this.href);
+      const download = vi
+        .spyOn(window.HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
       });
-      const button = [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Export",
-      );
-      if (!button) throw new Error("Export button missing");
-      await act(async () => button.click());
       await act(async () => {
         account.abort();
-        answer(
+        reply(
           Response.json({
-            downloadUrl: "/retired-export",
-            fileName: "Private.zip",
-            outsideLinks: { count: 1, areas: ["user"] },
+            outsideLinks: { count: 12, byArea: { scratch: 0, uploads: 0, user: 12, deleted: 0 } },
             pendingDrafts: 3,
           }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(downloads).toEqual([]);
-      expect(document.body.textContent).not.toContain("Private.zip");
-      expect(document.body.textContent).not.toContain("Your browser is downloading");
+      expect(document.body.textContent).not.toContain("12 links");
+      const button = [...document.querySelectorAll("button")].find(
+        (node) => node.textContent === "Export",
+      );
+      await act(async () => button!.click());
+      expect(download).not.toHaveBeenCalled();
     },
     { drainMacrotask: true },
   );
-  client.clear();
 });

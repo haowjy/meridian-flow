@@ -16,9 +16,14 @@ files move while it streams.
 - The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
   `works`, and the count of internal link occurrences excluded from the vault.
 
-Project export starts through POST `/api/projects/:id/exports`. Preparation
-counts outside links and unapplied Work drafts, then issues a ten-minute,
-one-shot owner-bound download ticket. The ticket keeps the frozen inventory,
-not rendered project bytes. The process adapter is ephemeral: a restart or
-expired ticket requires a new start request. Download progress and mid-stream
-failures belong to the browser; preparation failures belong in the dialog.
+Project export is one session-authenticated GET `/api/projects/:id/export.zip`
+with `scratch=0|1&uploads=0|1`. Every request rechecks document/Work file policy,
+freezes the paths, and streams. There is no ticket, prepared state or process
+lifetime dependency. Marker counts come from the streamed serialization pass.
+GET `/api/projects/:id/export/preview` returns advisory current-state outside-link
+and unapplied-draft counts. It runs the same `ExportLinkScope` pass the ZIP
+uses over current collab content rather than `document_links`: those rows are a
+lagging certified-cut hint, omit ref-less internal hrefs, and would need a second
+outside-link classifier (settlements, ahead paths, contextual hrefs) that could
+drift from the export. Preview and download can differ when content changes. Browser owns download progress/failure; preview errors
+belong in the dialog and do not prevent Export.

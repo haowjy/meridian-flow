@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import {
   type DocumentId,
   type ExportOutsideArea,
-  type ProjectExportStart,
+  type ProjectExportPreview,
   parseContextUri,
   readStoredDocumentProperties,
   type UserId,
@@ -15,7 +15,6 @@ import { exportFilename } from "../../context/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ExportSnapshotStore } from "../ports/export-snapshot.js";
-import type { ExportTickets } from "../ports/export-tickets.js";
 import { buildExportLayout, type ExportOptions, portableName } from "./export-layout.js";
 
 export class ExportReadError extends Error {
@@ -30,13 +29,12 @@ export class ExportReadError extends Error {
 
 export function createProjectExport(deps: {
   snapshot: ExportSnapshotStore;
-  tickets: ExportTickets;
   pendingDrafts: { count(projectId: string): Promise<number> };
   documents: Pick<CollabDomain, "readForExport" | "resolveManifestMembership">;
   files: Pick<FileAccess, "listAccess">;
   objects: Pick<ObjectStorePort, "get">;
 }) {
-  async function prepare(projectId: string, accountId: string, options: ExportOptions) {
+  async function createScope(projectId: string, accountId: string, options: ExportOptions) {
     const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
     const membership = new Set(
       (await deps.documents.resolveManifestMembership({ projectId })).members,
@@ -62,10 +60,10 @@ export function createProjectExport(deps: {
       mimeType: string;
       filename: string;
       excludedLinks: number;
-      outsideAreas: ExportOutsideArea[];
+      outsideCounts: Record<ExportOutsideArea, number>;
     }> {
       let excludedLinks = 0;
-      const outsideAreas = new Set<ExportOutsideArea>();
+      const outsideCounts = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
       const document = byId.get(documentId);
       if (!document) throw new ExportReadError("not_found", "Document is not available for export");
       const filename =
@@ -80,7 +78,7 @@ export function createProjectExport(deps: {
             result.error.code === "not_found" ? "not_found" : "storage_unavailable",
             result.error.message,
           );
-        return { ...result.value, filename, excludedLinks, outsideAreas: [] };
+        return { ...result.value, filename, excludedLinks, outsideCounts };
       }
       const result = await deps.documents.readForExport(
         documentId,
@@ -97,11 +95,11 @@ export function createProjectExport(deps: {
               excludedLinks++;
               const parsed = address ? parseContextUri(address) : null;
               const scheme = parsed?.ok ? parsed.value.scheme : null;
-              outsideAreas.add(
+              outsideCounts[
                 scheme === "scratch" || scheme === "uploads" || scheme === "user"
                   ? scheme
-                  : "deleted",
-              );
+                  : "deleted"
+              ]++;
             },
           ),
       );
@@ -115,7 +113,7 @@ export function createProjectExport(deps: {
       return {
         filename,
         excludedLinks,
-        outsideAreas: [...outsideAreas],
+        outsideCounts,
         bytes: new TextEncoder().encode(frontmatter + result.value),
         mimeType: "text/markdown; charset=utf-8",
       };
@@ -177,46 +175,40 @@ export function createProjectExport(deps: {
     }
     async function summarize() {
       let count = 0;
-      const areas = new Set<ExportOutsideArea>();
+      const byArea = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
       for (const id of paths.keys()) {
         if (byId.get(id)?.storageUrl) continue;
         const file = await read(id);
         count += file.excludedLinks;
-        for (const area of file.outsideAreas) areas.add(area);
+        for (const area of Object.keys(byArea) as ExportOutsideArea[])
+          byArea[area] += file.outsideCounts[area];
       }
-      return { count, areas: [...areas] };
+      return { count, byArea };
     }
     return { paths, read, stream, summarize };
   }
   return {
-    prepare,
-    async start(
+    createScope,
+    async preview(
+      projectId: string,
+      accountId: string,
+      options: ExportOptions,
+    ): Promise<ProjectExportPreview> {
+      const scope = await createScope(projectId, accountId, options);
+      const [outsideLinks, pendingDrafts] = await Promise.all([
+        scope.summarize(),
+        deps.pendingDrafts.count(projectId),
+      ]);
+      return { outsideLinks, pendingDrafts };
+    },
+    async download(
       projectId: string,
       accountId: string,
       projectName: string,
       options: ExportOptions,
-    ): Promise<ProjectExportStart> {
-      const prepared = await prepare(projectId, accountId, options);
-      const [outsideLinks, pendingDrafts] = await Promise.all([
-        prepared.summarize(),
-        deps.pendingDrafts.count(projectId),
-      ]);
-      const fileName = `${projectName}.zip`;
-      const id = deps.tickets.issue({
-        projectId,
-        accountId,
-        fileName,
-        stream: () => prepared.stream(projectName),
-      });
-      return {
-        downloadUrl: `/api/projects/${encodeURIComponent(projectId)}/export.zip?export=${id}`,
-        fileName,
-        outsideLinks,
-        pendingDrafts,
-      };
-    },
-    download(id: string, projectId: string, accountId: string) {
-      return deps.tickets.take(id, projectId, accountId);
+    ) {
+      const scope = await createScope(projectId, accountId, options);
+      return scope.stream(projectName);
     },
   };
 }

@@ -1,13 +1,24 @@
-/** Counted export preparation, followed by a native streamed browser download. */
-import type { ProjectExportOptions, ProjectExportStart } from "@meridian/contracts";
+/** Current-state preview and stateless native browser export downloads. */
+import type { ProjectExportOptions, ProjectExportPreview } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-import { postJson } from "./http-client";
-export function startProjectExport(
+import { getJson } from "./http-client";
+export function projectExportUrl(
   projectId: string,
   options: ProjectExportOptions,
-  signal?: AbortSignal,
+  preview = false,
 ) {
-  return postJson<ProjectExportStart>(`${apiProjectPath(projectId)}/exports`, options, { signal });
+  const query = new URLSearchParams({
+    scratch: options.scratch ? "1" : "0",
+    uploads: options.uploads ? "1" : "0",
+  });
+  return `${apiProjectPath(projectId)}/${preview ? "export/preview" : "export.zip"}?${query}`;
+}
+export function previewProjectExport(
+  projectId: string,
+  options: ProjectExportOptions,
+  signal: AbortSignal,
+) {
+  return getJson<ProjectExportPreview>(projectExportUrl(projectId, options, true), { signal });
 }
 export function downloadProjectExport(url: string) {
   const anchor = document.createElement("a");

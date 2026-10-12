@@ -18,6 +18,6 @@ export * from "./jsonb";
 export type {
   ExportOutsideArea,
   ProjectExportOptions,
-  ProjectExportStart,
+  ProjectExportPreview,
 } from "./project-export.js";
 export * from "./usage";

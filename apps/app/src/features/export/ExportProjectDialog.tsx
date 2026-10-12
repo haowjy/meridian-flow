@@ -1,12 +1,14 @@
-/** Prepare an export with visible failure/summary; the browser owns download progress. */
+/** Preview selected exclusions before starting a native, stateless browser download. */
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { ExportOutsideArea } from "@meridian/contracts";
-import { useMutation } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import type { ExportOutsideArea, ProjectExportPreview } from "@meridian/contracts";
 import { useEffect, useId, useRef, useState } from "react";
-import { downloadProjectExport, startProjectExport } from "@/client/api/project-export-api";
+import {
+  downloadProjectExport,
+  previewProjectExport,
+  projectExportUrl,
+} from "@/client/api/project-export-api";
 import { announce } from "@/client/stores/thread-store/announcements";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -37,42 +39,40 @@ export function ExportProjectDialog({
   const [scratch, setScratch] = useState(false);
   const [uploads, setUploads] = useState(false);
   const firstSwitch = useRef<HTMLButtonElement>(null);
-  const alive = useRef(true);
-  const request = useRef<AbortController | null>(null);
+  const [result, setResult] = useState<ProjectExportPreview>();
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    alive.current = true;
+    const request = new AbortController();
+    const signal = AbortSignal.any([request.signal, accountSignal]);
+    setResult(undefined);
+    setFailed(false);
+    setLoading(true);
+    const timer = setTimeout(() => {
+      void previewProjectExport(projectId, { scratch, uploads }, signal).then(
+        (preview) => {
+          if (signal.aborted) return;
+          setResult(preview);
+          setLoading(false);
+        },
+        () => {
+          if (signal.aborted) return;
+          setFailed(true);
+          setLoading(false);
+        },
+      );
+    }, 250);
     return () => {
-      alive.current = false;
-      request.current?.abort();
+      clearTimeout(timer);
+      request.abort();
     };
-  }, []);
-  const close = () => {
-    alive.current = false;
-    request.current?.abort();
-    onClose();
-  };
-  const mutation = useMutation({
-    mutationFn: (variables: { scratch: boolean; uploads: boolean; signal: AbortSignal }) =>
-      startProjectExport(
-        projectId,
-        { scratch: variables.scratch, uploads: variables.uploads },
-        variables.signal,
-      ),
-    onSuccess(result, variables) {
-      if (!alive.current || variables.signal.aborted) return;
-      downloadProjectExport(result.downloadUrl);
-      announce(t`Exporting ${project}.`);
-    },
-  });
+  }, [projectId, scratch, uploads, accountSignal, retry]);
   const start = () => {
-    if (mutation.isPending) return;
-    request.current?.abort();
-    request.current = new AbortController();
-    mutation.mutate({
-      scratch,
-      uploads,
-      signal: AbortSignal.any([request.current.signal, accountSignal]),
-    });
+    if (accountSignal.aborted) return;
+    downloadProjectExport(projectExportUrl(projectId, { scratch, uploads }));
+    announce(t`Exporting ${project}.`);
+    onClose();
   };
   const labels: Record<ExportOutsideArea, string> = {
     scratch: t`Scratch`,
@@ -80,11 +80,10 @@ export function ExportProjectDialog({
     user: t`your User files`,
     deleted: t`documents that were deleted`,
   };
-  const result = mutation.variables?.signal.aborted ? undefined : mutation.data;
   const where = result
     ? new Intl.ListFormat(i18n.locale, { type: "disjunction" }).format(
         (["scratch", "uploads", "user", "deleted"] as const)
-          .filter((area) => result.outsideLinks.areas.includes(area))
+          .filter((area) => result.outsideLinks.byArea[area] > 0)
           .map((area) => labels[area]),
       )
     : "";
@@ -92,7 +91,7 @@ export function ExportProjectDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) onClose();
       }}
     >
       <DialogContent
@@ -106,104 +105,85 @@ export function ExportProjectDialog({
           <DialogTitle>
             <Trans>Export {project}</Trans>
           </DialogTitle>
-          {result ? (
-            <div role="status" className="space-y-4">
-              <DialogDescription>
-                <Trans>Your browser is downloading {result.fileName}.</Trans>
-              </DialogDescription>
-              <div className="space-y-3 text-sm">
+          <DialogDescription>
+            <Trans>
+              A ZIP of Markdown files and folders that Obsidian can open. Includes Manuscript,
+              Knowledge Base and Unfiled.
+            </Trans>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <label htmlFor={`${id}-scratch`} className="flex items-center justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium">
+                <Trans>Include Scratch</Trans>
+              </span>
+              <span className="block text-caption text-ink-muted">
+                <Trans>Notes the AI kept, grouped by Work.</Trans>
+              </span>
+            </span>
+            <Switch
+              id={`${id}-scratch`}
+              ref={firstSwitch}
+              checked={scratch}
+              onCheckedChange={setScratch}
+            />
+          </label>
+          <label htmlFor={`${id}-uploads`} className="flex items-center justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium">
+                <Trans>Include Uploads</Trans>
+              </span>
+              <span className="block text-caption text-ink-muted">
+                <Trans>Files attached in chat, grouped by Work.</Trans>
+              </span>
+            </span>
+            <Switch id={`${id}-uploads`} checked={uploads} onCheckedChange={setUploads} />
+          </label>
+          <div role="status" aria-live="polite" className="space-y-3 text-sm text-ink-muted">
+            {loading ? (
+              <p className="text-caption">
+                <Trans>Checking links…</Trans>
+              </p>
+            ) : null}
+            {result && !accountSignal.aborted ? (
+              <>
                 {result.outsideLinks.count > 0 ? (
                   <p>
                     {plural(result.outsideLinks.count, {
-                      one: `# link points to ${where}, which isn't included.`,
-                      other: `# links point to ${where}, which aren't included.`,
+                      one: `# link points to ${where}, which won't be included.`,
+                      other: `# links point to ${where}, which won't be included.`,
                     })}{" "}
-                    <Trans>They stay as Meridian links and won't open in Obsidian.</Trans>
+                    <Trans>They'll stay as Meridian links and won't open in Obsidian.</Trans>
                   </p>
                 ) : null}
                 {result.pendingDrafts > 0 ? (
                   <p>
                     {plural(result.pendingDrafts, {
-                      one: "# draft the AI hasn't applied isn't included.",
-                      other: "# drafts the AI hasn't applied aren't included.",
+                      one: "# draft the AI hasn't applied won't be included.",
+                      other: "# drafts the AI hasn't applied won't be included.",
                     })}
                   </p>
                 ) : null}
-              </div>
-            </div>
-          ) : (
-            <DialogDescription>
-              <Trans>
-                A ZIP of Markdown files and folders that Obsidian can open. Includes Manuscript,
-                Knowledge Base and Unfiled.
-              </Trans>
-            </DialogDescription>
-          )}
-        </DialogHeader>
-        {result ? null : (
-          <div className="space-y-4">
-            <label htmlFor={`${id}-scratch`} className="flex items-center justify-between gap-4">
-              <span>
-                <span className="block text-sm font-medium">
-                  <Trans>Include Scratch</Trans>
-                </span>
-                <span className="block text-caption text-ink-muted">
-                  <Trans>Notes the AI kept, grouped by Work.</Trans>
-                </span>
-              </span>
-              <Switch
-                id={`${id}-scratch`}
-                ref={firstSwitch}
-                checked={scratch}
-                onCheckedChange={setScratch}
-                disabled={mutation.isPending}
-              />
-            </label>
-            <label htmlFor={`${id}-uploads`} className="flex items-center justify-between gap-4">
-              <span>
-                <span className="block text-sm font-medium">
-                  <Trans>Include Uploads</Trans>
-                </span>
-                <span className="block text-caption text-ink-muted">
-                  <Trans>Files attached in chat, grouped by Work.</Trans>
-                </span>
-              </span>
-              <Switch
-                id={`${id}-uploads`}
-                checked={uploads}
-                onCheckedChange={setUploads}
-                disabled={mutation.isPending}
-              />
-            </label>
-            {mutation.isError ? (
-              <InlineErrorRow message={t`Couldn't start the export.`} onRetry={start} />
+              </>
             ) : null}
           </div>
-        )}
+          {failed ? (
+            <InlineErrorRow
+              message={t`Couldn't load the preview.`}
+              onRetry={() => setRetry((value) => value + 1)}
+            />
+          ) : null}
+        </div>
         <DialogFooter>
-          {result ? (
-            <Button onClick={close}>
-              <Trans>Done</Trans>
+          <DialogClose asChild>
+            <Button variant="outline">
+              <Trans>Cancel</Trans>
             </Button>
-          ) : (
-            <>
-              <DialogClose asChild>
-                <Button variant="outline">
-                  <Trans>Cancel</Trans>
-                </Button>
-              </DialogClose>
-              <Button disabled={mutation.isPending} onClick={start}>
-                {mutation.isPending ? (
-                  <>
-                    <Loader2 aria-hidden className="size-4 animate-spin" />
-                    <Trans>Preparing…</Trans>
-                  </>
-                ) : (
-                  <Trans>Export</Trans>
-                )}
-              </Button>
-            </>
-          )}
+          </DialogClose>
+          <Button onClick={start}>
+            <Trans>Export</Trans>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

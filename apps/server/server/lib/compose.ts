@@ -1,5 +1,4 @@
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
-import { createProcessExportTickets } from "../domains/export/adapters/process-export-tickets.js";
 import {
   createProjectExport,
   type ProjectExport,
@@ -1097,7 +1096,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
-      tickets: createProcessExportTickets(),
       pendingDrafts: {
         async count(projectId) {
           const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
@@ -1451,7 +1449,6 @@ export function createInMemoryAppServices(): AppServices {
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
     projectExport: createProjectExport({
-      tickets: createProcessExportTickets(),
       pendingDrafts: {
         async count() {
           return 0;

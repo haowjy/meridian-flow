@@ -103,12 +103,22 @@ msgstr "{0, plural, other {# 次调用}}"
 
 #. placeholder {0}: result.pendingDrafts
 #: src/features/export/ExportProjectDialog.tsx
-msgid "{0, plural, one {# draft the AI hasn't applied isn't included.} other {# drafts the AI hasn't applied aren't included.}}"
+#~ msgid "{0, plural, one {# draft the AI hasn't applied isn't included.} other {# drafts the AI hasn't applied aren't included.}}"
+#~ msgstr ""
+
+#. placeholder {0}: result.pendingDrafts
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 msgstr ""
 
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
-msgid "{0, plural, one {# link points to {where}, which isn't included.} other {# links point to {where}, which aren't included.}}"
+#~ msgid "{0, plural, one {# link points to {where}, which isn't included.} other {# links point to {where}, which aren't included.}}"
+#~ msgstr ""
+
+#. placeholder {0}: result.outsideLinks.count
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
 msgstr ""
 
 #. placeholder {0}: editedDocuments.size
@@ -834,9 +844,17 @@ msgstr ""
 msgid "Checked Work"
 msgstr ""
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Checking links…"
+msgstr ""
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Checking preview…"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
@@ -1269,6 +1287,10 @@ msgstr ""
 msgid "Couldn't load the conversation this fork continues."
 msgstr ""
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Couldn't load the preview."
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -1424,8 +1446,8 @@ msgid "Couldn't start a new brief. Try again."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "Couldn't start the export."
-msgstr ""
+#~ msgid "Couldn't start the export."
+#~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
 msgid "Couldn't start the retry."
@@ -1714,8 +1736,8 @@ msgid "Doesn't exist yet"
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "Done"
-msgstr ""
+#~ msgid "Done"
+#~ msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
@@ -2991,8 +3013,8 @@ msgid "Preferences"
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "Preparing…"
-msgstr ""
+#~ msgid "Preparing…"
+#~ msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
@@ -3977,7 +3999,11 @@ msgid "These preferences stay on this device to suit your screen."
 msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "They stay as Meridian links and won't open in Obsidian."
+#~ msgid "They stay as Meridian links and won't open in Obsidian."
+#~ msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "They'll stay as Meridian links and won't open in Obsidian."
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
@@ -4634,8 +4660,8 @@ msgstr ""
 
 #. placeholder {0}: result.fileName
 #: src/features/export/ExportProjectDialog.tsx
-msgid "Your browser is downloading {0}."
-msgstr ""
+#~ msgid "Your browser is downloading {0}."
+#~ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

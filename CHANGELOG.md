@@ -4,11 +4,13 @@
 
 ### Added
 
-- Prepare counted project exports with visible failures and unapplied-draft summaries, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
+- Preview outside links and unapplied drafts before exporting, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
 
 
 ### Fixed
+
+- Project ZIP downloads reauthorize current documents and Works on each request without process-local tickets; their marker counts describe the streamed content.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
 
