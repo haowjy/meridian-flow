@@ -294,7 +294,9 @@ and waits for the restore.
 
 An ahead ref settles on the first live document at its exact address, by
 compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
-it. Arrival hooks, each once against the operation's final tree:
+it. A row with `awaited_document_id` (an import's unlanded file) settles only to
+that document until `releaseAwaiting` clears it; registration and arrivals skip
+it for every other document. Arrival hooks, each once against the operation's final tree:
 
 | Arrival | Where | Locks already held |
 |---|---|---|

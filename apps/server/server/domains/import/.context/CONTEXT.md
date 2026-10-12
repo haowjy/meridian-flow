@@ -32,8 +32,8 @@ batches of 500.
 The isolated binder binds prose by existing placeholder id. Link-free code
 can bind to its planned id before its row exists; Context admits that bound
 write only when creation uses exactly that id. Recorded ahead refs and binary
-receipts serialize on the target entry row. Settlement is compare-and-set;
-captured addresses are findings, never reassigned.
+receipts serialize on the target entry row. Settlement is compare-and-set by
+ref id.
 
 ## Obsidian conversion
 
@@ -56,9 +56,12 @@ identity or destination. The readable Markdown is never reparsed for binding.
 
 Binaries and code have no row until they land. The binder receives them as
 pending ids: one already live binds to itself, otherwise it mints an ahead ref
-registered as awaiting identity, which the registry never settles to a
-document already at that address. The target's landing settles it by id. A
-competitor that arrives first and captures it is reported as picture_elsewhere.
+whose registry row persists the awaited id (`awaited_document_id`). No other
+document settles that row, whether it was at the address before registration
+or arrives after; only the target's landing settles it, by id, so a file at
+the address only makes the target count up. Finish (or Stop here) releases
+rows awaiting files that never landed; from then on they are ordinary ahead
+refs and settle at once to a document already at their address.
 
 A single selected folder with a valid meridian-export.json routes Manuscript/,
 Knowledge Base/ and Unfiled/ to their area roots; planning chunks group by

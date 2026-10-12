@@ -150,9 +150,10 @@ export function createContextImportTreeWriter(deps: {
     },
     async settleAhead(ref, documentId) {
       const parsed = parseLinkRef(ref);
-      return parsed?.kind === "ahead"
-        ? deps.ahead.settleRef(parsed.aheadId, documentId as never)
-        : null;
+      if (parsed?.kind === "ahead") await deps.ahead.settleRef(parsed.aheadId, documentId as never);
+    },
+    async releaseAhead(documentIds) {
+      await deps.ahead.releaseAwaiting(documentIds as never);
     },
     async fill(entry, bound, prepend) {
       if (!(await deps.locations.currentUri(entry.id, "file"))) return "deleted";

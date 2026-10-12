@@ -2,6 +2,8 @@
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
  * arrives at the exact address (or at registration, if one is already there).
+ * A row awaiting a planned identity is settled only by that document until it
+ * is released, and then behaves like any other row.
  */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
@@ -15,7 +17,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -72,7 +74,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           resolved.push({
             aheadId,
             address: await resolveCanonicalAddress(this.db, registration),
-            awaitsIdentity: registration.awaitsIdentity === true,
+            awaitedDocumentId: registration.awaitedDocumentId ?? null,
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
@@ -86,8 +88,9 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         await tx
           .insert(linkAheadRefs)
           .values(
-            resolved.map(({ aheadId, address }) => ({
+            resolved.map(({ aheadId, address, awaitedDocumentId }) => ({
               aheadId,
+              awaitedDocumentId,
               projectId: address.projectId,
               scheme: address.scheme,
               workId: address.workId,
@@ -112,8 +115,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           }
         }
 
-        for (const { aheadId, address, awaitsIdentity } of resolved) {
-          if (awaitsIdentity) continue;
+        for (const { aheadId, address } of resolved) {
           const documentId = await this.liveDocumentAt(address);
           if (documentId) await this.settle(address, documentId, aheadId);
         }
@@ -127,7 +129,13 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     const rows = await tx
       .update(linkAheadRefs)
       .set({ settledDocumentId: documentId, settledAt: new Date() })
-      .where(and(eq(linkAheadRefs.aheadId, aheadId), isNull(linkAheadRefs.settledDocumentId)))
+      .where(
+        and(
+          eq(linkAheadRefs.aheadId, aheadId),
+          isNull(linkAheadRefs.settledDocumentId),
+          settlableBy(documentId),
+        ),
+      )
       .returning({ documentId: linkAheadRefs.settledDocumentId });
     if (rows.length > 0) return { settled: true, documentId };
     const [existing] = await tx
@@ -146,13 +154,42 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       // Every arrival calls this; the manifest read is paid only when a ref waits here.
       if (
         address &&
-        (await this.hasUnsettled(address)) &&
+        (await this.hasUnsettled(address, documentId)) &&
         (await this.isLive(address, documentId))
       ) {
         settled += await this.settle(address, documentId);
       }
     }
     return settled;
+  }
+
+  async releaseAwaiting(documentIds: readonly DocumentId[]): Promise<number> {
+    if (documentIds.length === 0) return 0;
+    const released = await currentDrizzleDb(this.db)
+      .update(linkAheadRefs)
+      .set({ awaitedDocumentId: null })
+      .where(
+        and(
+          inArray(linkAheadRefs.awaitedDocumentId, [...new Set(documentIds)]),
+          isNull(linkAheadRefs.settledDocumentId),
+        ),
+      )
+      .returning();
+    for (const row of released) {
+      // As registration would: a document already at the address settles the ref now.
+      const address: Address = {
+        projectId: row.projectId,
+        userId: "",
+        scheme: row.scheme as ContextUriScheme,
+        workId: row.workId,
+        lockWorkId: row.workId,
+        rootThreadId: row.rootThreadId,
+        path: row.path,
+      };
+      const documentId = await this.liveDocumentAt(address);
+      if (documentId) await this.settle(address, documentId, row.aheadId);
+    }
+    return released.length;
   }
 
   async registerUnregistered(
@@ -225,11 +262,17 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return documentId && (await this.isLive(address, documentId)) ? documentId : null;
   }
 
-  private async hasUnsettled(address: Address): Promise<boolean> {
+  private async hasUnsettled(address: Address, documentId: string): Promise<boolean> {
     const [row] = await currentDrizzleDb(this.db)
       .select({ id: linkAheadRefs.aheadId })
       .from(linkAheadRefs)
-      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .where(
+        and(
+          this.atAddress(address),
+          isNull(linkAheadRefs.settledDocumentId),
+          settlableBy(documentId),
+        ),
+      )
       .limit(1);
     return Boolean(row);
   }
@@ -259,12 +302,21 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         and(
           this.atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
+          settlableBy(documentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
       )
       .returning({ id: linkAheadRefs.aheadId });
     return rows.length;
   }
+}
+
+/** A row awaiting a planned identity is that document's alone. */
+function settlableBy(documentId: string) {
+  return or(
+    isNull(linkAheadRefs.awaitedDocumentId),
+    eq(linkAheadRefs.awaitedDocumentId, documentId as DocumentId),
+  );
 }
 
 export function createDrizzleLinkAheadRegistry(

@@ -291,7 +291,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       shown: [],
     });
     const invalidTargets: { occurrence: number; documentId: DocumentId }[] = [];
-    const pendingMints: AheadMint[] = [];
+    const pendingMints: (AheadMint & { awaitedDocumentId: DocumentId })[] = [];
     const attrs = occurrences.map((occurrence, index) => {
       const target = input.targets?.get(index);
       if (!input.targets?.has(index)) return assigned.attrs[index];
@@ -315,6 +315,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
               ref: fresh.ref,
               address: fresh.address,
               holderProjectId: scope.holder.projectId,
+              awaitedDocumentId: target as DocumentId,
             });
             return { ...occurrence.attrs, ref: fresh.ref, href: fresh.href };
           }
@@ -331,7 +332,10 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     if (minted.length + awaiting.length > 0)
       await deps.registrar.register([
         ...aheadRegistrations(minted),
-        ...aheadRegistrations(awaiting).map((row) => ({ ...row, awaitsIdentity: true })),
+        ...awaiting.map(({ awaitedDocumentId, ...mint }) => ({
+          ...aheadRegistrations([mint])[0],
+          awaitedDocumentId,
+        })),
       ]);
     const mintedRefs = new Set<string>([...minted, ...awaiting].map(({ ref }) => ref));
     const aheadRefs = attrs.flatMap((attrs, occurrence) =>

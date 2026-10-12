@@ -8,10 +8,10 @@ export type AheadRegistration = {
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
   /**
-   * The ref awaits a planned identity (an import's unlanded file), settled by `settleRef`:
-   * a document already at the address is someone else's and never settles it.
+   * The planned identity (an import's unlanded file) the ref awaits, persisted: only that
+   * document settles it, by `settleRef` or its own arrival, until `releaseAwaiting`.
    */
-  awaitsIdentity?: boolean;
+  awaitedDocumentId?: DocumentId;
 };
 
 /** Which holders' index rows a registration recovery reads. */
@@ -40,19 +40,30 @@ export interface LinkAheadRegistry {
   /**
    * Independent root transaction. Takes the targets' namespace keys sorted (no Work or holder
    * lock), inserts idempotently by id (re-registering an id for another address throws), then
-   * settles any row whose address already holds a live document, unless it awaits an identity.
+   * settles any row whose address already holds a live document that is not excluded by an
+   * awaited identity.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   /**
-   * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
-   * lock; skips deleted documents and draft-only membership. Returns rows settled.
+   * Settle by identity, never address; joins the caller transaction. A ref awaiting another
+   * identity is not settled. Missing refs return null.
    */
-  /** Settle by identity, never address; joins the caller transaction. Missing refs return null. */
   settleRef(
     aheadId: string,
     documentId: DocumentId,
   ): Promise<{ settled: boolean; documentId: DocumentId } | null>;
+  /**
+   * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
+   * lock; skips deleted documents, draft-only membership and refs awaiting another identity.
+   * Returns rows settled.
+   */
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
+  /**
+   * The awaited identities will never land: their refs become ordinary ahead refs, settled at
+   * once to a live document already at their address, as registration would. Joins the caller
+   * transaction. Returns rows released.
+   */
+  releaseAwaiting(documentIds: readonly DocumentId[]): Promise<number>;
   /**
    * Client-minted refs (contract §11.3): registers one page of ahead ids the link index holds
    * with no registry row, each independently, in scope (everywhere when absent). Logs and skips

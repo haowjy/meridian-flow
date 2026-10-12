@@ -292,6 +292,15 @@ export function createImportService(deps: {
       await repo.updateEntries(
         unfinished.map((entry) => ({ id: entry.id, patch: { state: "not_imported" } })),
       );
+      // Links bound to a file that never landed stop waiting for it.
+      await tree.releaseAhead(
+        entries
+          .filter(
+            (entry) =>
+              (entry.kind === "binary" || entry.kind === "code") && entry.state !== "landed",
+          )
+          .map((entry) => entry.id),
+      );
       await repo.setState(id, "finished");
     });
     await sweepFinished(id);
@@ -602,14 +611,8 @@ export function createImportService(deps: {
               });
             for (const ref of ahead) {
               const target = await repo.lockEntry(ref.targetId);
-              if (target.state === "landed") {
-                const settled = await tree.settleAhead(ref.ref, target.id);
-                if (settled && settled.documentId !== target.id)
-                  findings.push({
-                    code: "picture_elsewhere",
-                    params: { name: target.name, holderId: entry.id },
-                  });
-              } else
+              if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
+              else
                 await repo.updateEntry(target.id, {
                   pendingRefs: [...target.pendingRefs, { holderId: entry.id, ref: ref.ref }],
                 });
@@ -630,18 +633,9 @@ export function createImportService(deps: {
           } else {
             const allocated = allocate({ ...current, storageUrl }, parent);
             await tree.land(parent, allocated, bound, bytes);
-            for (const pending of current.pendingRefs) {
-              const settled = await tree.settleAhead(pending.ref, entry.id);
-              if (settled && settled.documentId !== entry.id)
-                allocated.findings.push({
-                  code: "picture_elsewhere",
-                  params: {
-                    name: allocated.name,
-                    holderId: pending.holderId,
-                    holderUri: (await tree.currentUri(pending.holderId, "file")) ?? undefined,
-                  },
-                });
-            }
+            // Each ref awaits this id alone, so settling it cannot lose to another file.
+            for (const pending of current.pendingRefs)
+              await tree.settleAhead(pending.ref, entry.id);
             await repo.updateEntry(entry.id, {
               ...allocated,
               state: "landed",

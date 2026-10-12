@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLinkRef } from "@meridian/contracts";
-import { documentLinks } from "@meridian/database/schema";
+import { documentLinks, linkAheadRefs } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
@@ -312,40 +312,60 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     }
     expect((await holder).state).toBe("landed");
     expect((await ok(context().read("kb://vault/Chapter"))).content).toContain("images/map.png");
-    expect(
-      (await service.report(plan.importId, projectId)).entries
-        .flatMap((entry) => entry.findings)
-        .filter((finding) => finding.code === "picture_elsewhere"),
-    ).toEqual([]);
   });
-  it("reports a figure captured by another file and still lands the planned binary id counted up", async () => {
+  it("a file arriving at the planned picture address after the holder never captures its figure", async () => {
     const selection = imageSelection(),
       service = createImportService(ports());
     const plan = await service.plan(projectId, userId, selection.manifest);
     await service.land(projectId, plan.importId, 0, selection.bytes[0]);
-    await ok(
-      context().writeBinary("kb://vault/attachments/map.png", {
-        fileType: "image",
-        storageUrl: "other",
-        mimeType: "image/png",
-        sizeBytes: 1,
-        origin: { type: "human", userId },
-      }),
-    );
+    await competitorAtPlannedPicture();
     const result = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
     expect(result.state).toBe("landed");
     expect(result.uri).toBe("kb://vault/attachments/map (2).png");
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({
-        code: "picture_elsewhere",
-        params: expect.objectContaining({
-          holderId: plan.entries.find((entry) => entry.entryId === 0)?.documentId,
-        }),
+    expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
+      "attachments/map (2).png",
+    );
+  });
+  it("a document arriving at a planned code file's address after the holder never captures its link", async () => {
+    const selection = loose({ "Holder.md": "[[tool.py]]", "tool.py": "print('imported')" }),
+      service = createImportService(ports());
+    const plan = await service.plan(projectId, userId, selection.manifest);
+    expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
+      "landed",
+    );
+    await ok(
+      context().createTrackedDocument("kb://tool.py", "print('other')", {
+        origin: { type: "human", userId },
       }),
     );
-    expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
-      "attachments/map.png",
+    const code = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
+    expect(code.uri).toBe("kb://tool (2).py");
+    expect((await ok(context().read("kb://Holder"))).content).toContain("tool (2).py");
+  });
+  it("Finish releases a link awaiting a file that was never imported to its address's occupant", async () => {
+    const selection = imageSelection(),
+      service = createImportService(ports());
+    const plan = await service.plan(projectId, userId, selection.manifest);
+    await service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    await competitorAtPlannedPicture();
+    const holderId = plan.entries.find((entry) => entry.entryId === 0)?.documentId ?? "";
+    const { links } = await resolveStoredRefs("kb://vault/Chapter", holderId);
+    const aheadId = parseLinkRef(links[0]?.ref ?? "");
+    if (aheadId?.kind !== "ahead") throw new Error("expected an ahead ref");
+    const settled = async () =>
+      (
+        await db
+          .select({ id: linkAheadRefs.settledDocumentId })
+          .from(linkAheadRefs)
+          .where(eq(linkAheadRefs.aheadId, aheadId.aheadId))
+      )[0]?.id ?? null;
+    expect(await settled()).toBeNull();
+    await service.finish(plan.importId, projectId);
+    const competitor = (await projectDocuments()).find(
+      (row) => row.id !== holderId && row.name === "map",
     );
+    expect(competitor).toBeDefined();
+    expect(await settled()).toBe(competitor?.id);
   });
   async function competitorAtPlannedPicture() {
     await ok(
@@ -371,9 +391,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
       "kb://vault/attachments/map (2).png",
     );
-    expect(
-      (await service.report(plan.importId, projectId)).entries.flatMap((entry) => entry.findings),
-    ).not.toContainEqual(expect.objectContaining({ code: "picture_elsewhere" }));
   });
   it("a picture landing between the holder's snapshot and its binding binds by id", async () => {
     const selection = imageSelection(),

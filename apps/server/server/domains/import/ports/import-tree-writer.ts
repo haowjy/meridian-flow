@@ -38,7 +38,10 @@ export interface ImportTreeWriter {
     entries: readonly ImportEntry[],
     targets?: ReadonlyMap<number, string>,
   ): { targetId: string; ref: string }[];
-  settleAhead(ref: string, documentId: string): Promise<{ documentId: string } | null>;
+  /** Settle a ref awaiting this planned file to it, by ref id. */
+  settleAhead(ref: string, documentId: string): Promise<void>;
+  /** These planned files will never land: links awaiting them become ordinary ahead links. */
+  releaseAhead(documentIds: readonly string[]): Promise<void>;
   fill(
     entry: ImportEntry,
     bound: BoundWrite,

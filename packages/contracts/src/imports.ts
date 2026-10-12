@@ -67,7 +67,6 @@ export interface ImportFindingParams {
   note_embed_to_link: { name: string };
   embed_to_link: { name: string };
   image_size_dropped: { name: string; size: string };
-  picture_elsewhere: { name: string; holderId?: string; holderUri?: string };
   kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
   settings_unreadable: { name: string };
   name_clash: { original: string };

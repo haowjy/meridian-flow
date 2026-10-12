@@ -1359,6 +1359,7 @@ export function createInMemoryAppServices(): AppServices {
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
     settleRef: async () => unsupported(),
+    releaseAwaiting: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };
 
