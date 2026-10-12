@@ -21,7 +21,11 @@ import {
   WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
-import { createBoundConversation } from "../domains/threads/index.js";
+import {
+  createBoundConversation,
+  threadAvailabilityCode,
+  throwThreadDeleted,
+} from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
 import { InvalidWorkAttachmentError, resolveWorkMembership } from "./work-attachment.js";
 
@@ -73,7 +77,6 @@ export async function createThreadForProject(
   args: CreateThreadForProjectArgs,
 ): Promise<Thread> {
   const eventSink = deps.eventSink;
-  await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
   const existingById = async (): Promise<Thread | null> => {
     const existing = args.id ? await deps.threads.lockByIdIncludingDeleted(args.id) : null;
@@ -82,15 +85,18 @@ export async function createThreadForProject(
     return thread;
   };
 
-  const ownedExisting = (existing: Thread): Thread => {
-    if (existing.userId !== args.userId) throw new ThreadCreationNotFoundError();
+  const ownedExisting = async (existing: Thread): Promise<Thread> => {
+    const project = await deps.projects.findById(existing.projectId);
+    const code = threadAvailabilityCode(existing, project, args.userId);
+    if (code === "thread_not_found") throw new ThreadCreationNotFoundError();
+    if (code === "thread_deleted") throwThreadDeleted(args.userId);
     if (existing.projectId !== args.projectId) throw new ThreadCreationConflictError();
-    if (existing.deletedAt) throw new ThreadCreationConflictError();
     return existing;
   };
 
   const existing = await existingById();
   if (existing) return ownedExisting(existing);
+  await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
   let resolvedWorkId!: string;
   let thread: Thread;
   try {

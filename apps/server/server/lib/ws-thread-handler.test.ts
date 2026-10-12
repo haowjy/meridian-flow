@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
+import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
@@ -104,4 +105,58 @@ it("preserves typed errors in catchup and live envelopes", async () => {
   expect(frames.at(-1)).toMatchObject({ catchup: [{ seq: "1000", error }] });
   deliverEntry({ ...entry, seq: 2000n });
   expect(frames.at(-1)).toMatchObject({ type: "event", seq: "2000", error });
+});
+
+// HTTP availability proofs never become attested WebSocket disappearance proofs.
+it.each([
+  "thread_not_found",
+  "thread_deleted",
+])("keeps %s subscribe and interrupt.respond refusals as identical unattested not_found frames", async (code) => {
+  const frames: WsServerMessage[] = [];
+  const app = {
+    eventSink: createNoopEventSink(),
+    threadRuntime: {
+      requireOwnedThread: async () =>
+        throwHttpInterrupt(
+          {
+            code,
+            message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
+            retryable: false,
+            source: "system",
+            details: { authenticatedUserId: USER_ID },
+          },
+          404,
+        ),
+    },
+  } as unknown as AppServices;
+  const session = createThreadWebSocketSession({
+    request: new Request("https://app.localhost/api/threads/ws"),
+    context: { app, userId: USER_ID, traceId: "concealment-test" },
+    send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
+    close() {},
+  });
+  session.open();
+  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }));
+  await session.onMessage(
+    JSON.stringify({
+      type: "interrupt.respond",
+      threadId: THREAD_ID,
+      turnId: "00000000-0000-4000-8000-000000000902",
+      interruptId: "ask-1",
+      value: "yes",
+    }),
+  );
+  const expected = {
+    type: "error",
+    threadId: THREAD_ID,
+    kind: "error",
+    error: {
+      code: "not_found",
+      message: "Thread not found",
+      retryable: false,
+      source: "system",
+    },
+  };
+  expect(frames.filter((frame) => frame.type === "error")).toEqual([expected, expected]);
+  session.onClose();
 });

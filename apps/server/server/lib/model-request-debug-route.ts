@@ -12,7 +12,6 @@ import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface ModelRequestDebugRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;
-  projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
 }
 
@@ -112,7 +111,7 @@ export async function handleGetModelRequestDebugRecords(
   }
 
   const thread = await requireThreadOwner(
-    { threads: deps.repos.threads, projects: deps.projectRepo },
+    { threads: deps.repos.threads },
     input.threadId,
     input.userId,
   );

@@ -56,3 +56,29 @@ Remove every interception, close only the owned browser session, and stop only
 this worktree's stack with `pnpm dev --stop`. Never describe a synthetic browser
 403 as a real server rejection or a held-before-dispatch POST as a lost response
 after a server commit.
+
+## Deleted-chat server proof
+
+Use an owned dev stack and a disposable chat. This checks HTTP availability,
+not the later client move/navigation policy.
+
+1. `./mf thread create --title "Deletion proof" --json`; save the id and project id.
+2. `./mf api DELETE /api/threads/<id>`. With the same identity,
+   `./mf api GET /api/threads/<id>/snapshot` must return HTTP 404 with
+   `error.code = thread_deleted` and `error.details.authenticatedUserId`.
+3. Repeat against GET and DELETE `/api/threads/<id>/admissions/<submissionId>`
+   and POST `/api/threads/<id>/messages` (any JSON body). Each owner gate must
+   return the same attested deletion code before reading/admitting anything.
+4. Repeat creation with that id and valid Agent selection through both
+   POST `/api/threads` and POST `/api/projects/<projectId>/threads`. Both must
+   return attested `thread_deleted`, not resurrect the chat.
+5. If a second dev account is available, authenticate it in a separate CLI
+   cookie jar and compare that chat's snapshot refusal with a random missing
+   UUID's refusal. The serialized envelopes must match byte-for-byte:
+   `thread_not_found`, attested to the second account, no deletion disclosure.
+6. Restore the disposable chat with POST `/api/threads/<id>/restore`, or leave
+   it in trash. Do not change another worktree's identity or stack.
+
+The DB gate contract also covers deleted parent projects, Work-cascade markers,
+purges, and disagreeing creator/project-owner rows. Run it with
+`pnpm test:db -- thread-deletion-proof`.

@@ -15,7 +15,6 @@ type AvailabilityRouteServices = {
   works: AppServices["workRepo"];
   workAuthorityResolver: AppServices["workAuthorityResolver"];
   documentSync: AppServices["documentSync"];
-  projects: AppServices["projectRepo"];
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
 };
@@ -29,7 +28,6 @@ function selectAvailabilityRouteServices(app: AppServices): AvailabilityRouteSer
     works: app.workRepo,
     workAuthorityResolver: app.workAuthorityResolver,
     documentSync: app.documentSync,
-    projects: app.projectRepo,
     blocks: app.threadRepos.blocks,
     turns: app.threadRepos.turns,
   };
@@ -41,11 +39,7 @@ export default defineEventHandler(async (event) => {
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const { uri, target } = getQuery(event);
   if (typeof target === "string" && target.length > 0) {
-    await requireThreadOwner(
-      { threads: services.threads, projects: services.projects },
-      threadId,
-      user.userId,
-    );
+    await requireThreadOwner({ threads: services.threads }, threadId, user.userId);
     return getWorkReceiptReversalAvailability(
       {
         blocks: services.blocks,
