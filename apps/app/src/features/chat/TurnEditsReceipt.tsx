@@ -74,6 +74,7 @@ export function TurnEditsReceipt({
   const [expanded, setExpanded] = useState(false);
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
+  const [draftOutcome, setDraftOutcome] = useState(false);
   const [actionSkips, setActionSkips] = useState<
     import("@meridian/contracts/protocol").TurnInverseSkip[] | null
   >(null);
@@ -146,6 +147,13 @@ export function TurnEditsReceipt({
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
       setActionSkips(outcome.skips ?? []);
+      const undoneInDraft =
+        direction === "undo" &&
+        outcome.documents.some(
+          (document) => document.status === "reversed" && document.destination?.kind === "draft",
+        );
+      setDraftOutcome(undoneInDraft);
+      if (undoneInDraft) setExpanded(true);
       const restored = successfulWorkReversals(outcome);
       const status =
         outcome.status === "partial" && outcome.acceptedParts
@@ -250,6 +258,15 @@ export function TurnEditsReceipt({
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
+          {draftOutcome ? (
+            <p
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+              data-turn-draft-outcome
+              role="status"
+            >
+              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
+            </p>
+          ) : null}
           {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
             <div
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
