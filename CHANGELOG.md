@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Open each composer-strip document’s review from its name, without a duplicate summary Review button.
+
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.

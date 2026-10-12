@@ -242,7 +242,12 @@ and inspect the surfaces.
    change, not Lore pass's separate shield change or Chapter B. Summary and
    controls share one line without notes. Counts appear once previews arrive,
    except narrow docks hide the count to keep the filename readable.
-2. Choose Review. PASS: the Editor opens on the shared change, while its marks,
+2. Click the single-document strip’s document name (Tab and Enter also work).
+   PASS: the name opens review without toggling expansion, and there is no
+   summary Review button. A failed review launch keeps that name available to
+   retry; its error replaces the count, not the review door. The chevron and remaining summary area still toggle
+   expansion. On phone, the name has a 44px touch target and commands remain
+   visible without hover. The Editor opens on the shared change, while its marks,
    stepper and document list still show the whole document's changes. The shared
    focused bar names both chats (overflow names are in +N); each name opens that chat beside the review at its own
    producing turn (the chat sheet on the phone), without changing destination.
@@ -252,7 +257,8 @@ and inspect the surfaces.
    and repeat with Discard: the shared change leaves both strips, live keeps
    `sword`, and Lore pass's separate changes remain. No command navigates.
 4. Open Lore pass before disposition. PASS: the strip shows Chapter A and B;
-   expanding groups this chat’s changes under one-line file headers. Each
+   expanding groups this chat’s changes under one-line file headers. Each file
+   name opens its own review, never an arbitrary first document. Each
    change uses the shared Work row with its own Apply/Discard. Single-file
    strips also expand. Discard asks "Discard this
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
