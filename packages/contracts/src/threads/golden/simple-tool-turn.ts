@@ -9,16 +9,16 @@ import { goldenAssistantTurn } from "./turn-fixture.js";
 export const GOLDEN_TOOL_CALL_ID = "call_golden_tool_1";
 export const GOLDEN_TOOL_ASSISTANT_TURN_ID = "turn_golden_asst_tool";
 
-const assistantTurn = goldenAssistantTurn(GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID);
+const assistantTurn = goldenAssistantTurn(
+  GOLDEN_TOOL_ASSISTANT_TURN_ID,
+  GOLDEN_THREAD_ID,
+  "streaming",
+  [GOLDEN_USER_TURN_ID],
+);
 
 /** Tool call start/args → executing activity → result → complete. */
 export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
-  {
-    type: "turn.created",
-    turn: assistantTurn,
-    answersUserTurnIds: [GOLDEN_USER_TURN_ID],
-    continuesRunId: null,
-  },
+  { type: "turn.created", turn: assistantTurn },
   {
     type: "stream.delta",
     kind: "tool_call",
@@ -41,6 +41,8 @@ export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
   },
   {
     type: "turn.completed",
-    turn: goldenAssistantTurn(GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID, "complete"),
+    turn: goldenAssistantTurn(GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID, "complete", [
+      GOLDEN_USER_TURN_ID,
+    ]),
   },
 ];
