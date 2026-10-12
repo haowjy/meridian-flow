@@ -597,6 +597,37 @@ DB_TEST_WORKERS=1 pnpm test:db -- \
   apps/server/server/domains/collab/adapters/drizzle-document-edits.db.test.ts
 ```
 
+### Ordinary concurrent response replay
+
+Use the real-Yjs replay regressions for deterministic scheduling (no app stack
+or database required):
+
+```bash
+taskset -c 0-7 pnpm exec vitest run \
+  apps/server/server/domains/collab/domain/branch-response-replay.test.ts
+```
+
+- Two chats plan on `Alpha Beta.`. Commit A's `Beta → Gamma`, then replay B's
+  staged `Beta → Delta`. Both replacement insertions remain, exactly as direct
+  Yjs integration orders them. B is not refused or described as discarded.
+- Stage `Beta → Delta`, then have the writer delete `Beta` normally before
+  response save. The draft becomes `Alpha Delta.`. Repeat with retained
+  generation-history evidence: a tombstone from ordinary deletion is not a
+  physically retired identity.
+- Discard still drops the whole touching write and its dependents while keeping
+  independent writes. Undo still drops a staged write into undone text. Their
+  notices and failed receipts identify Discard or the inverse, respectively.
+
+The existing durable card-Undo protection uses the public response host:
+
+```bash
+DB_TEST_WORKERS=1 pnpm test:db -- \
+  apps/server/server/domains/collab/inverse-placement.db.test.ts
+```
+
+These checks are automated replay and database evidence, not live-app or
+browser verification.
+
 ### Long-history inverse measurements (on demand)
 
 The package test retains one 200-edit, 4,000-word correctness round. The 15-round

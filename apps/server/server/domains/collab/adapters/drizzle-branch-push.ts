@@ -5,6 +5,8 @@ import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
   documentBranches,
+  documentEditParts,
+  documentEdits,
   pushLineage,
   works,
 } from "@meridian/database/schema";
@@ -122,11 +124,24 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
       }
       const rows = await currentDrizzleDb(db)
-        .select()
+        .select({
+          row: branchWriteJournal,
+          editKind: documentEdits.kind,
+        })
         .from(branchWriteJournal)
+        .leftJoin(
+          documentEditParts,
+          sql`
+          ${documentEditParts.origin}->>'kind' = 'pending'
+          and ${documentEditParts.origin}->>'branchId' = ${branchWriteJournal.branchId}::text
+          and ${documentEditParts.origin}->>'generation' = ${branchWriteJournal.generation}::text
+          and ${documentEditParts.origin}->>'rowId' = ${branchWriteJournal.id}::text
+        `,
+        )
+        .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
         .where(and(...conditions))
         .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
+      return rows.map(({ row, editKind }) => ({ ...mapJournalRow(row), editKind }));
     },
 
     async listPushLineageForTurn(input) {

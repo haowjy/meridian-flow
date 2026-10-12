@@ -58,6 +58,7 @@ export type {
   DocumentCoordinator,
   DocumentLockOptions,
   StagedHelperCut,
+  StagedWriteRejectionReason,
   StagedWriteReplayResult,
 } from "./ports/document-coordinator.js";
 export {

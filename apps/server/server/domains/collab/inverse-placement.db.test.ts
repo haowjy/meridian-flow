@@ -307,6 +307,7 @@ it("card Undo during an open response drops writes into undone text and keeps an
       { ...context, responseIdentity: { providerResponseId: second, editScopeId: second } },
     );
     expect(missing.status).toBe("not_found");
+    expect(missing.result.message).toContain("an inverse removed the text it edited");
     expect(missing.result.message).toContain('"Gamma" → "Gild"');
     expect(missing.result.message).toContain('"Gild" → "Bronze"');
     await harness.commit(second);
