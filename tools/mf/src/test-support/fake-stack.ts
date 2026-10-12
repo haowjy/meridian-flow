@@ -132,6 +132,7 @@ function createFake() {
   }[] = [];
   const sockets = new Set<WebSocket>();
   let socketCount = 0;
+  let snapshotReads = 0;
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
   const messageBodies: unknown[] = [];
@@ -539,6 +540,7 @@ function createFake() {
       return send(202, accepted);
     }
     if (route === `GET /api/threads/${THREAD_ID}/snapshot`) {
+      snapshotReads += 1;
       if (snapshotPolicy.delayMs)
         await new Promise((resolve) => setTimeout(resolve, snapshotPolicy.delayMs));
       return sendEnveloped(200, {
@@ -678,6 +680,7 @@ function createFake() {
     turns,
     publish,
     socketCount: () => socketCount,
+    snapshotReads: () => snapshotReads,
   };
 }
 

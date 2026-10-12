@@ -64,9 +64,18 @@ reply answered its message. `tail --until-idle` reads an initial snapshot and
 returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
 confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
 (no awake lease), and no writer-provenance message in `liveState.pending.items`.
-Otherwise it keeps following from the last seq under the same deadline.
-On a deadline, send and
-until-idle tail read a final snapshot and report `stillRunning`, pending writer
+One command-scoped subscription and event mapper remain alive through every
+confirmation. Checkpoints drain queued events, await the snapshot, then consume
+frames received during the request before confirming again. The result's
+`turns` lists the initially running turn and every stream-named turn, with
+snapshot statuses. Missing/non-terminal turns are 6 `unconfirmed`; otherwise
+any error is failed, any cancellation is cancelled, and all complete is complete.
+Already idle with no wait has an empty list. Snapshot requests are capped at the
+remaining deadline. A tail timeout uses the last snapshot with
+`snapshotStale: true`, or `snapshotUnavailable: true` if none succeeded,
+rather than extending the deadline for another HTTP request.
+On a deadline, send reads a final snapshot; until-idle tail reports its last
+bounded snapshot as described above. Results report `stillRunning`, pending writer
 messages (`owed`), and `next`; they never cancel. The pending projection is
 mandatory. Before reporting complete, send checks that the admitted user turn id
 is absent from `liveState.pending.items` (writer admission uses that same id for

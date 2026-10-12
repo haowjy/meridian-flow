@@ -60,7 +60,9 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
   const running = result.stillRunning as { turnId: string; status: string } | null | undefined;
   out.note(
     running && result.outcome === "timeout"
-      ? `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
+      ? result.snapshotStale
+        ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
+        : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
       : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   for (const next of result.next ?? []) out.note(next);

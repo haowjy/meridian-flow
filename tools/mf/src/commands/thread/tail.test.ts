@@ -154,3 +154,82 @@ it("caps a slow initial snapshot at the remaining command deadline", async () =>
     await stack.close();
   }
 });
+
+it.each([
+  "tool",
+  "text",
+] as const)("preserves %s presentation across a checkpoint on one socket", async (kind) => {
+  const stack = await startFakeStack();
+  try {
+    const turn = {
+      id: "A",
+      role: "assistant" as const,
+      status: "streaming",
+      error: null,
+      text: "",
+    };
+    stack.turns.push(turn);
+    const tail = stack.mf([
+      "thread",
+      "tail",
+      THREAD_ID,
+      "--until-idle",
+      "--timeout",
+      "1s",
+      "--json",
+    ]);
+    while (!stack.socketCount()) await new Promise((resolve) => setTimeout(resolve, 1));
+    const publish = (event: unknown) => stack.publish(event as AGUIEvent);
+    publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: "A" });
+    if (kind === "tool") {
+      publish({ type: "TOOL_CALL_START", toolCallId: "write-1", toolCallName: "doc_write" });
+      publish({ type: "TOOL_CALL_ARGS", toolCallId: "write-1", delta: '{"uri":"kb://notes.md"}' });
+      publish({
+        type: "TOOL_CALL_RESULT",
+        toolCallId: "write-1",
+        messageId: "staged",
+        content: "staged",
+      });
+    } else {
+      publish({ type: "TEXT_MESSAGE_START", messageId: "A::0", role: "assistant" });
+      publish({ type: "TEXT_MESSAGE_CONTENT", messageId: "A::0", delta: "Hello " });
+    }
+    publish({ type: "CUSTOM", name: "meridian.inbox.changed", value: { items: [] } });
+    while (stack.snapshotReads() < 2) await new Promise((resolve) => setTimeout(resolve, 1));
+    if (kind === "tool")
+      publish({
+        type: "TOOL_CALL_RESULT",
+        toolCallId: "write-1",
+        messageId: "committed",
+        content: "committed",
+      });
+    else {
+      publish({ type: "TEXT_MESSAGE_CONTENT", messageId: "A::0", delta: "there" });
+      publish({ type: "TEXT_MESSAGE_END", messageId: "A::0" });
+    }
+    turn.status = "complete";
+    publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: "A" });
+    const result = await tail;
+    expect(result.code).toBe(0);
+    const records = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    if (kind === "tool")
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          type: "tool.settled",
+          name: "doc_write",
+          args: '{"uri":"kb://notes.md"}',
+          result: "committed",
+        }),
+      );
+    else
+      expect(records.find((record) => record.type === "message.completed")).toMatchObject({
+        text: "Hello there",
+      });
+    expect(stack.socketCount()).toBe(1);
+  } finally {
+    await stack.close();
+  }
+});

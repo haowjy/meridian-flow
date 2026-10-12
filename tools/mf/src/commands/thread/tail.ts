@@ -63,31 +63,41 @@ export const threadTailCommand: CommandSpec = {
       if (initial?.liveState.runningTurnId) turnIds.add(initial.liveState.runningTurnId);
       if (untilIdle && initial && isIdle(initial.liveState))
         return finishResult(ctx.out, tailResult(threadId, initial, new Set()));
-      for (;;) {
-        const result = await followThread({
-          session,
-          drainCheckpoint: untilIdle,
-          threadId,
-          lastSeq: since,
-          deadlineAt,
-          out: ctx.out,
-          full: flag(ctx, "full"),
-          textStream: "out",
-          shouldStop: (event) =>
+      const result = await followThread({
+        session,
+        threadId,
+        lastSeq: since,
+        deadlineAt,
+        out: ctx.out,
+        full: flag(ctx, "full"),
+        textStream: "out",
+        shouldStop: (event) => {
+          if ("turnId" in event) turnIds.add(event.turnId);
+          return (
             untilIdle &&
             (event.type === "turn.finished" ||
               event.type === "turn.failed" ||
               (event.type === "event" &&
-                ["meridian.thread.status", "meridian.inbox.changed"].includes(event.name))),
-          ...(untilIdle ? { shouldStopState: isIdle } : {}),
-        });
-        since = result.lastSeq;
-        if (!untilIdle) return undefined;
-        for (const id of result.turnIds) turnIds.add(id);
-        const snapshot = await readSnapshot();
-        if (!isIdle(snapshot.liveState)) continue;
-        return finishResult(ctx.out, tailResult(threadId, snapshot, turnIds));
-      }
+                ["meridian.thread.status", "meridian.inbox.changed"].includes(event.name)))
+          );
+        },
+        ...(untilIdle
+          ? {
+              shouldStopState(state) {
+                if (state.runningTurnId) turnIds.add(state.runningTurnId);
+                return isIdle(state);
+              },
+              async confirmStop(observed: readonly string[]) {
+                for (const id of observed) turnIds.add(id);
+                return isIdle((await readSnapshot()).liveState);
+              },
+            }
+          : {}),
+      });
+      if (!untilIdle) return undefined;
+      for (const id of result.turnIds) turnIds.add(id);
+      if (!lastSnapshot) throw new Error("Tail finished without a confirming snapshot");
+      return finishResult(ctx.out, tailResult(threadId, lastSnapshot, turnIds));
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
@@ -105,7 +115,12 @@ export const threadTailCommand: CommandSpec = {
               threadId,
               turns: [...turnIds],
               ...(activity ? { ...activity, snapshotStale: true } : { snapshotUnavailable: true }),
-              next: [`./mf thread tail ${threadId} --until-idle`],
+              next: [
+                ...(activity?.stillRunning
+                  ? [`./mf thread cancel ${threadId} --turn ${activity.stillRunning.turnId}`]
+                  : []),
+                `./mf thread tail ${threadId} --until-idle`,
+              ],
             },
           ),
         );
