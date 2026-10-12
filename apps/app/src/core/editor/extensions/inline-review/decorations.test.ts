@@ -532,6 +532,19 @@ describe("clicking a removal", () => {
     expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
   });
 
+  it("does nothing for the original of a change being discarded", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    editor.commands.setTextSelection(2);
+    setModel(editor, { ...foldedModel(editor), restoring: new Set(["a1"]) });
+    const [removal] = removals(editor);
+    // Plain prose now: shown whole (no fold to open), and a click neither focuses its change nor moves the caret.
+    expect(removal?.querySelector("button")).toBeNull();
+    removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 5 }));
+    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(false);
+    expect(editor.state.selection.from).toBe(2);
+  });
+
   it("keeps keyboard focus on the fold after Enter rebuilds it", async () => {
     const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
     document.body.append(editor.view.dom.parentElement as HTMLElement);

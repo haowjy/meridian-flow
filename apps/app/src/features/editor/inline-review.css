@@ -128,22 +128,6 @@
   margin-top: 0.9em;
 }
 
-/* The removal, plain: same words in the manuscript's own typography. */
-.meridian-editor .ProseMirror span.meridian-review-removal.meridian-review-restored {
-  margin-inline-end: 0;
-  color: inherit;
-  cursor: default;
-}
-
-.meridian-editor .ProseMirror .meridian-review-restored .meridian-review-removal-text {
-  color: inherit;
-  background: none;
-  border-radius: 0;
-  box-shadow: none;
-  text-decoration: none;
-  padding-inline-end: 0;
-}
-
 .meridian-editor
   .ProseMirror
   .meridian-review-removal.meridian-review-emphasized
@@ -307,4 +291,40 @@
     .meridian-review-removal-text {
     animation: none;
   }
+}
+
+/* The original of a change being discarded is manuscript prose until the next
+   generation replaces it: no removal colour, tint, strike, ring, pulse, fold or
+   pointer. Last in the file so it beats the removal, emphasis and arrival rules
+   above it; those classes stay on the markup, which is what lets a refused
+   Discard show the removal again. */
+.meridian-editor .ProseMirror .meridian-review-removal.meridian-review-restored {
+  color: inherit;
+  animation: none;
+}
+
+.meridian-editor
+  .ProseMirror
+  span.meridian-review-removal.meridian-review-restored:not(.meridian-review-removal-block) {
+  margin-inline-end: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-restored
+  .meridian-review-removal-text {
+  color: inherit;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  text-decoration: none;
+  padding-inline-end: 0;
+  animation: none;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-restored
+  .meridian-review-removal-toggle {
+  display: none;
 }

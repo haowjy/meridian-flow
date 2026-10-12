@@ -27,6 +27,12 @@ export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
 export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-unattributed";
 /** On a removal whose change is being discarded: drawn as the plain prose it is about to become (the markup under it stays, so a withdrawn Discard can show it struck again). */
 export const RESTORED_CLASS = "meridian-review-restored";
+/**
+ * On a block removal: how many top-level blocks of the document it stands for.
+ * Said by the widget, not counted from its children (a fold has none, an open one
+ * also holds a button), so what reads a captured page counts its blocks right.
+ */
+export const REMOVED_BLOCKS_ATTR = "data-review-removed-blocks";
 
 /** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
 export interface RemovalSegment {
@@ -208,6 +214,7 @@ export function createRemovalElement(
   root.setAttribute("contenteditable", "false");
   root.setAttribute(options.hunkAttr, plan.hunkIds.join(" "));
   root.setAttribute(options.operationAttr, plan.operationIds.join(" "));
+  if (plan.block) root.setAttribute(REMOVED_BLOCKS_ATTR, String(plan.paragraphs.length));
 
   if (collapsible) {
     const toggle = doc.createElement("button");
@@ -246,6 +253,8 @@ export function createRemovalElement(
   // between press and release would swallow the click.
   root.addEventListener("mousedown", (event) => event.preventDefault());
   root.addEventListener("click", (event) => {
+    // The original of a change being discarded is prose now: it activates nothing.
+    if (plan.restored) return;
     const [operationId] = plan.operationIds;
     if (!operationId) return;
     const onToggle =

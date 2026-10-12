@@ -33,9 +33,11 @@ import {
   type ReviewTone,
 } from "./model";
 import {
+  BAR_SLOT_CLASS,
   createBarSlotElement,
   createRemovalElement,
   planRemovals,
+  REMOVAL_BLOCK_CLASS,
   REMOVAL_CLASS,
   RESTORED_CLASS,
   type RemovalHandlers,
@@ -497,4 +499,9 @@ export const inlineReviewClassNames = {
   emphasized: EMPHASIS_CLASS,
   arrived: ARRIVED_CLASS,
   block: BLOCK_CLASS,
+  restoring: RESTORING_CLASS,
+  restored: RESTORED_CLASS,
+  removal: REMOVAL_CLASS,
+  removalBlock: REMOVAL_BLOCK_CLASS,
+  barSlot: BAR_SLOT_CLASS,
 } as const;
