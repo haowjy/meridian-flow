@@ -66,6 +66,7 @@ export function subscribeThread(transport: ThreadTransport, threadId: string, af
   );
   return {
     unsubscribe,
+    hasQueued: () => queue.length > 0,
     reject: (error: Error) => push({ type: "error", error }),
     async next(deadlineAt: number): Promise<SubscriptionItem> {
       if (Date.now() >= deadlineAt)

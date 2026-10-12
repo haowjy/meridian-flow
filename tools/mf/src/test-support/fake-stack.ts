@@ -131,6 +131,7 @@ function createFake() {
     enqueuedAt: string;
   }[] = [];
   const sockets = new Set<WebSocket>();
+  let socketCount = 0;
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
   const messageBodies: unknown[] = [];
@@ -143,7 +144,7 @@ function createFake() {
   const interruptPolicy = {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
-  const snapshotPolicy = { running: true, releaseDelayMs: 0 };
+  const snapshotPolicy = { running: true, releaseDelayMs: 0, delayMs: 0 };
   let leaseReleasePending = false;
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
@@ -538,6 +539,8 @@ function createFake() {
       return send(202, accepted);
     }
     if (route === `GET /api/threads/${THREAD_ID}/snapshot`) {
+      if (snapshotPolicy.delayMs)
+        await new Promise((resolve) => setTimeout(resolve, snapshotPolicy.delayMs));
       return sendEnveloped(200, {
         threadId: THREAD_ID,
         thread: threadDto(),
@@ -577,6 +580,7 @@ function createFake() {
         ws.close(4401, "auth_failed");
         return;
       }
+      socketCount += 1;
       sockets.add(ws);
       ws.on("close", () => sockets.delete(ws));
       ws.send(
@@ -671,6 +675,9 @@ function createFake() {
     admissionPolicy,
     interruptPolicy,
     snapshotPolicy,
+    turns,
+    publish,
+    socketCount: () => socketCount,
   };
 }
 
