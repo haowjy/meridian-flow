@@ -292,11 +292,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(next)).toBeGreaterThan(BigInt(first));
     });
 
-    it("publishes namespace evidence before deferred availability, without letting old repair regress it", async () => {
+    it("advances availability without a namespace version and rolls back a failed namespace publication", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const before = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      const reserved = await availability.reserve({ projectIds: [PROJECT], userIds: [] });
       const readHead = async () =>
         (
           await currentDrizzleDb(db)
@@ -304,34 +302,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .from(contextAvailabilityHeads)
             .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
         )[0];
-      expect(await readHead()).toMatchObject({
-        generation: BigInt(before),
-        namespaceGeneration: expect.any(BigInt),
-      });
-      const reservedHead = await readHead();
-      expect(reservedHead?.namespaceGeneration).toBeGreaterThan(0n);
-      const newer = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      expect((await readHead())?.namespaceGeneration).toBe(reservedHead?.namespaceGeneration);
       await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
-      const newerHead = await readHead();
-      expect(newerHead?.namespaceGeneration).toBeGreaterThan(
-        reservedHead?.namespaceGeneration ?? 0n,
-      );
-      expect(BigInt(newer)).toBeGreaterThanOrEqual(BigInt(reserved));
-      await availability.publishReserved({
-        projectIds: [PROJECT],
-        userIds: [],
-        generation: reserved,
-      });
+      const published = await readHead();
+      expect(published?.namespaceGeneration).toBeGreaterThan(0n);
+      const advanced = await availability.advance({ projectIds: [PROJECT], userIds: [] });
       expect(await readHead()).toMatchObject({
-        generation: BigInt(newer),
-        namespaceGeneration: expect.any(BigInt),
+        generation: BigInt(advanced),
+        namespaceGeneration: published?.namespaceGeneration,
       });
-      expect((await readHead())?.namespaceGeneration).toBe(newerHead?.namespaceGeneration);
       const captured = await readHead();
       await expect(
         runInDrizzleSavepoint(db, async () => {
-          await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+          await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
           throw new Error("namespace rollback");
         }),
       ).rejects.toThrow("namespace rollback");
