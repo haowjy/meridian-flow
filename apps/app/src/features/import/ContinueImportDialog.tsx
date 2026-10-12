@@ -5,7 +5,7 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +29,6 @@ import { fullyRead } from "./import-state";
 import { type BuiltManifest, buildManifest, bytesToHash } from "./manifest";
 import { namesSentence } from "./report-copy";
 import { PickZone, useSelectionPicker } from "./SelectionPicker";
-import type { Selection } from "./selection";
 import { useSelectionReader } from "./use-selection-reader";
 
 type Step =
@@ -77,7 +76,6 @@ export function ContinueImportDialog({
   useEffect(() => {
     if (!fullyRead(store.getSnapshot().report)) void store.refresh(true);
   }, [store]);
-  const checked = useRef<Selection | null>(null);
 
   // A new selection is checked as soon as it has been read.
   useEffect(() => {
@@ -86,7 +84,6 @@ export function ContinueImportDialog({
       return;
     }
     const selection = reader.state.selection;
-    checked.current = selection;
     const control = new AbortController();
     (async () => {
       try {

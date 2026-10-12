@@ -3,7 +3,6 @@ import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import type { ImportCounts } from "@meridian/contracts";
 import { type ImportDisplayState, processed } from "./display-state";
-import { refusalSentence } from "./reason-copy";
 
 export type StatusLines = {
   line1: string;
@@ -87,8 +86,4 @@ export function statusLines(input: {
       };
     }
   }
-}
-
-export function didntStartReason(code: string | null): string {
-  return refusalSentence(code);
 }

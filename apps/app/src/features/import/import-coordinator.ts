@@ -500,11 +500,6 @@ export class ImportCoordinator {
     };
   }
 
-  /** The newest open import by version, for finding a document's import. */
-  summaryOf(importId: string): ImportSummary | null {
-    return this.stores.get(importId)?.getSnapshot().report?.summary ?? null;
-  }
-
   isPreparingOrUploading(): boolean {
     for (const store of this.stores.values()) {
       const kind = store.getSnapshot().local?.phase.kind;

@@ -20,10 +20,6 @@ import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
 
 export const CLIENT_ROW_PREFIX = "import:";
 
-export function isClientRowId(entryId: string): boolean {
-  return entryId.startsWith(CLIENT_ROW_PREFIX);
-}
-
 /** The catalog path ("/Lore/Sects") of a context URI, or null when it is not one. */
 export function catalogPathOfUri(uri: string | null): string | null {
   if (!uri) return null;

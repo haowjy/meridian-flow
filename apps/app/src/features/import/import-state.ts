@@ -74,8 +74,6 @@ export type ImportState = {
   activitySeenAt: number | null;
 };
 
-export type EffectiveCounts = ImportCounts;
-
 /**
  * The server counts a file whose send failed here as still arriving. This tab
  * knows better: it failed. Reads (counts, rows) use these numbers.
