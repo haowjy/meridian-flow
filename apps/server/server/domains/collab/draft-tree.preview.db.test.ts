@@ -1,3 +1,5 @@
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { isDrafted } from "../file-policy/index.js";
 /** Draft review respects Work lifecycle while preserving pending items through restore. */
 
 import { documentBranches, drafts, works } from "@meridian/database/schema";
@@ -20,38 +22,35 @@ import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { deleteWorkTransition, restoreWork } from "../projects/index.js";
 
 describeDraftTreeDb("deleted-live review preview", (start, db) => {
-  it("projects review addresses for KB, User and Scratch creates and a KB edit", async () => {
-    const { s } = await start();
+  it("projects and previews creates and edits in every drafted source", async () => {
+    const { s, runtime } = await start();
     const work = await s.work("review-sources", "draft");
-    const existing = await s.writer.createDocument("kb://characters/Existing", "Live words.");
-    const created = await s.model(work).create("kb://characters/New", "New words.");
-    await s.model(work).edit("kb://characters/Existing", "Live words.", "Edited words.");
-    const user = await s.model(work).create("user://Review User", "User draft.");
-    const scratch = await s
-      .model(work)
-      .create("scratch://@review-sources/Review Note", "Scratch draft.");
-    const review = await s.review(work);
-    expect(review.drafts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          documentId: created,
-          contextLocation: { scheme: "kb", path: "/characters/New" },
-          isNewDocument: true,
-        }),
-        expect.objectContaining({
-          documentId: existing,
-          contextLocation: { scheme: "kb", path: "/characters/Existing" },
-        }),
-        expect.objectContaining({
-          documentId: user,
-          contextLocation: { scheme: "user", path: "/Review User" },
-        }),
-        expect.objectContaining({
-          documentId: scratch,
-          contextLocation: { scheme: "scratch", path: "/Review Note" },
-        }),
-      ]),
-    );
+    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDrafted)) {
+      const prefix = `${scheme}://`;
+      const existing = await s.writer.createDocument(`${prefix}Existing`, "Live words.");
+      const created = await s.model(work).create(`${prefix}New`, "New words.");
+      await s.model(work).edit(`${prefix}Existing`, "Live words.", "Edited words.");
+      const review = await s.review(work);
+      for (const [documentId, path, text, isNewDocument] of [
+        [created, "/New", "New words.", true],
+        [existing, "/Existing", "Edited words.", false],
+      ] as const) {
+        const row = review.drafts.find((draft) => draft.documentId === documentId);
+        expect(row).toMatchObject({ contextLocation: { scheme, path } });
+        expect(row?.isNewDocument === true).toBe(isNewDocument);
+        if (!row) throw new Error("Expected a review row");
+        const preview = await handleWorkDraftPreviewRequest(selectDraftRouteServices(runtime.app), {
+          projectId: s.project.id,
+          userId: s.project.userId,
+          workId: work.id,
+          documentId,
+          draftId: row.draftId,
+        });
+        expect(preview.status).toBe("active");
+        expect(preview.status === "active" && preview.isNewDocument === true).toBe(isNewDocument);
+        if (preview.status === "active") expect(preview.preview).toContain(text);
+      }
+    }
   });
 
   it("refuses a deleted Work's draft routes without provisioning, then restores its pending item", async () => {

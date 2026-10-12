@@ -1,3 +1,5 @@
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
 // @vitest-environment jsdom
 /** Cross-scope review commands retain identity until the matching Editor claims them. */
 
@@ -154,20 +156,25 @@ describe("Editor review handoff", () => {
     observedScopes = [];
   });
 
-  it("opens and claims a Knowledge Base review in its own scheme", async () => {
-    const target = {
-      ...draftA,
-      contextLocation: { scheme: "kb" as const, path: draftA.contextLocation.path },
-    };
-    await withHarness(async ({ navigate, enterA }) => {
-      await act(async () => {
-        await openReview?.(target);
-      });
-      expect(navigate.mock.calls[0]?.[0]).toMatchObject({ scheme: "kb" });
-      expect(navigate.mock.calls[0]?.[1]?.tab).toMatchObject({ scheme: "kb" });
-      await act(async () => showEditor?.(target));
-      expect(enterA).toHaveBeenCalledWith(target.documentId, target.draftId);
-    });
+  it("opens and claims creates and edits in every drafted source", async () => {
+    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDrafted)) {
+      for (const isNewDocument of [true, false]) {
+        const target = {
+          ...draftA,
+          contextLocation: { scheme, path: draftA.contextLocation.path },
+          isNewDocument,
+        };
+        await withHarness(async ({ navigate, enterA }) => {
+          await act(async () => {
+            await openReview?.(target);
+          });
+          expect(navigate.mock.calls[0]?.[0]).toMatchObject({ scheme });
+          expect(navigate.mock.calls[0]?.[1]?.tab).toMatchObject({ scheme });
+          await act(async () => showEditor?.(target));
+          expect(enterA).toHaveBeenCalledWith(target.documentId, target.draftId);
+        });
+      }
+    }
   });
 
   it("keeps Chat B and Editor A as sibling boundaries", async () => {

@@ -1,3 +1,5 @@
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
@@ -177,10 +179,15 @@ describe("gateLiveView", () => {
   const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
   const noTab = () => false;
 
-  it("keeps a hidden Knowledge Base document draft-only", () => {
-    expect(gateLiveView(resolved, "kb", manifest([]), ready(group(true)), noTab)).toMatchObject({
-      draftOnly: { draft: { draftId: "draft-id" } },
-    });
+  it("admits only hidden creates as draft-only in every drafted source", () => {
+    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDrafted)) {
+      expect(gateLiveView(resolved, scheme, manifest([]), ready(group(true)), noTab)).toMatchObject(
+        { draftOnly: { draft: { draftId: "draft-id" } } },
+      );
+      expect(
+        gateLiveView(resolved, scheme, manifest(["document-id"]), ready(group(false)), noTab),
+      ).toEqual({ outcome: "ready", result: resolved });
+    }
   });
 
   it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {

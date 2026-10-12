@@ -230,7 +230,7 @@ export function mergeLocalResourceState(
 /**
  * The server resolves every tree node, including a new document that only a
  * pending draft proposes and one whose draft was discarded. The live manifest
- * lists what can open live. A manuscript document missing from it has no live
+ * lists what can open live. A document missing from it has no live
  * view: its pending new-document draft opens as review, and with no such draft
  * the address is unavailable. Never a blank live editor.
  *
