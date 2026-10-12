@@ -182,8 +182,6 @@ export type PreparedDiscardCommit = {
   journalRows: BranchJournalRow[];
   state: Uint8Array;
   stateVector: Uint8Array;
-  replacementUpdateData?: Uint8Array;
-  replacementUpdateDataByJournalId?: ReadonlyMap<number, Uint8Array>;
   reviewedByUserId?: UserId;
 };
 

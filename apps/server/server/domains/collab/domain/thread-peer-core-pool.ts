@@ -130,7 +130,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
           viewFor,
         }),
         journal: createBranchAgentEditJournal({
-          threadId,
           liveJournal: input.journal,
           pendingJournalEntries,
         }),

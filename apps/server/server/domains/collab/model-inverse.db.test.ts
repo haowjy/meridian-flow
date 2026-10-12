@@ -6,17 +6,21 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createAllowAllFileAccess } from "../file-policy/index.js";
+import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
+import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
   ALPHA_ID,
   closeDatabase,
   createTestDatabase,
+  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -24,6 +28,130 @@ const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 describe("model document stack", () => {
+  it("authorizes live model revert through card Undo and Redo, without treating stack actions as card targets", async () => {
+    const { harness, view, context, responseId } = await fixture();
+    try {
+      const resolveDocumentUri = async (documentId: string) =>
+        documentId === ALPHA_ID ? "manuscript/alpha.md" : null;
+      const lineage = createTurnLiveLineageReadModel({
+        store: createDrizzleTurnLiveLineageStore(db),
+        resolveDocumentUri,
+      });
+      const card = createTurnReversalService({
+        turnInverse: { reverseTurn: view.collab.reverseTurn },
+        resolveDocumentUri,
+        listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
+        fileAccess: createAllowAllFileAccess(),
+        threadContext: { requireThreadOwner: async () => ({ projectId: PROJECT_ID }) },
+      });
+      const liveContext = { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) };
+      const core = view.collab.agentEdit();
+      await core.read(
+        { file: "alpha.md", documentId: ALPHA_ID },
+        { ...liveContext, responseIdentity: undefined },
+      );
+      expect(
+        await core.write(
+          {
+            command: "replace",
+            documentId: ALPHA_ID,
+            file: "alpha.md",
+            find: "Beta",
+            content: "Gamma",
+            tool_use_id: "original-live",
+          },
+          liveContext,
+        ),
+      ).toMatchObject({ status: "success" });
+      await view.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      let position = 2;
+      const command = async (kind: "undo" | "redo" | "revert") => {
+        const turnId = randomUUID();
+        const responseId = randomUUID();
+        await db.insert(schema.turns).values({
+          id: turnId,
+          threadId: THREAD_ID,
+          parentTurnId: TURN_ID,
+          position: position++,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.modelResponses).values({
+          id: responseId,
+          turnId,
+          sequence: 1,
+          provider: "mock",
+          model: "mock",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        expect(
+          await core.write(
+            {
+              ...(kind === "revert" ? { command: kind, edit: "w1" } : { command: kind }),
+              documentId: ALPHA_ID,
+              file: "alpha.md",
+              tool_use_id: `model-${kind}`,
+            },
+            {
+              ...liveContext,
+              turnId,
+              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            },
+          ),
+        ).toMatchObject({ status: "success" });
+        return turnId;
+      };
+      // Stack actions change the original edit's state, but are not new card targets.
+      for (const kind of ["undo", "redo"] as const) {
+        const turnId = await command(kind);
+        const text = await harness.liveMarkdown(ALPHA_ID);
+        expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toBeNull();
+        for (const direction of ["undo", "redo"] as const) {
+          expect(
+            await card.reverseThreadContext({
+              threadId: THREAD_ID,
+              turnId,
+              direction,
+              userId: USER_ID,
+            }),
+          ).toMatchObject({ status: direction === "undo" ? "nothing_to_undo" : "nothing_to_redo" });
+        }
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(text);
+      }
+      const turnId = await command("revert");
+      expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toMatchObject({
+        control: "undo",
+      });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(
+        await card.reverseThreadContext({
+          threadId: THREAD_ID,
+          turnId,
+          direction: "undo",
+          userId: USER_ID,
+        }),
+      ).toMatchObject({ status: "reversed" });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
+      expect(
+        await card.reverseThreadContext({
+          threadId: THREAD_ID,
+          turnId,
+          direction: "redo",
+          userId: USER_ID,
+        }),
+      ).toMatchObject({ status: "reversed" });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
   it.each([
     "stepwise",
     "count",

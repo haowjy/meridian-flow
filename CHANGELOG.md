@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restore card Undo and Redo for live model reverts by discovering authorization targets from immutable edits. Finish deleting obsolete reversal state and no-op notices.
+
 - Remove the old reconstruction-based reversal engine. Card Undo/Redo, model inverses and failed-response rollback use immutable forward edits; retire the unused document-scoped reversal API.
 
 - Queue review actions per chapter so slow chapters do not block others, preserving exact change membership through reforks and one confirmed stale retry.
