@@ -44,10 +44,6 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
     delta: " world",
   },
   {
-    type: EventType.TEXT_MESSAGE_END,
-    messageId: `${GOLDEN_ASSISTANT_TURN_ID}::0`,
-  },
-  {
     type: EventType.CUSTOM,
     name: MESSAGES_DELIVERED_EVENT,
     value: {
@@ -55,6 +51,10 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
       executionId: GOLDEN_EXECUTION_ID,
       userTurnIds: [GOLDEN_USER_TURN_ID],
     },
+  },
+  {
+    type: EventType.TEXT_MESSAGE_END,
+    messageId: `${GOLDEN_ASSISTANT_TURN_ID}::0`,
   },
   {
     type: EventType.RUN_FINISHED,

@@ -143,7 +143,7 @@ export function createWriterTurnProducer(deps: {
               threadId,
               submissionId: input.admission.submissionId,
               userTurnId: settledUserTurnId,
-              assistantTurnId: joinedReplyId,
+              steersTurnId: joinedReplyId,
               resumeAfterSeq,
               snapshotFloorNextSeq,
             };

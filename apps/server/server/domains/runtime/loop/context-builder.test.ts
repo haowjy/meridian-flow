@@ -64,6 +64,9 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
     createdAt: "2026-01-01T00:00:00.000Z",
     completedAt: "2026-01-01T00:00:00.000Z",
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
     siblingIds: [],
     responses: [],
   };

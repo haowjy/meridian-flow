@@ -295,7 +295,7 @@ export function defaultSendResponse(
   return {
     threadId: "thread_1",
     userTurnId: "turn-user",
-    assistantTurnId: "turn_1",
+    steersTurnId: "turn_1",
     resumeAfterSeq: "42",
     snapshotFloorNextSeq: "43",
     status: "accepted",

@@ -71,8 +71,10 @@ afterEach(async () => {
 describe("useReplyRetry", () => {
   it("takes the server's reply from the response, then yields to the snapshot by id", async () => {
     api.retryReply.mockImplementation(
-      async (_thread: string, _failed: string, { id }: { id: string }) =>
-        turn(id, "assistant", "pending", 3),
+      async (_thread: string, _failed: string, { id }: { id: string }) => ({
+        executionId: "execution-r",
+        turn: turn(id, "assistant", "pending", 3),
+      }),
     );
     await act(async () => latest.retry(failed));
     const id = latest.standIns[0]?.id ?? "";
@@ -88,8 +90,8 @@ describe("useReplyRetry", () => {
   it("drops a promised reply when its compaction is stopped without creating it", async () => {
     api.retryReply.mockImplementation(
       async (_thread: string, _failed: string, { id }: { id: string }) => ({
-        ...turn(id, "assistant", "pending", 4),
-        prevTurnId: "c",
+        executionId: "execution-r",
+        turn: { ...turn(id, "assistant", "pending", 4), prevTurnId: "c" },
       }),
     );
     await act(async () => latest.retry(failed));

@@ -76,7 +76,6 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import { userTurnsAnsweredBy } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -539,15 +538,11 @@ async function runDrainTurn(
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );
-      // A Retry re-answers the user turns its failed reply answered: the reply
-      // the leaf reaches past trailing switch turns.
-      let retryAnswers: string[] = [];
-      if (input.replyTurnId) {
-        let failed: Turn | undefined = previousTurn ?? undefined;
-        while (failed && failed.role !== "assistant")
-          failed = failed.prevTurnId ? turnById.get(failed.prevTurnId) : undefined;
-        retryAnswers = failed ? userTurnsAnsweredBy(failed, turnById) : [];
-      }
+      // A Retry is reserved for its failed reply's messages. Those inbox rows
+      // were acknowledged by the failure, so the execution carries them itself.
+      const retryReservedFor = input.retryOf
+        ? (turnById.get(input.retryOf)?.reservedForUserTurnIds ?? [])
+        : [];
       const knownTurnIds = new Set([
         ...inheritedTurns.map((turn) => turn.id as TurnId),
         ...priorTurns.map((turn) => turn.id as TurnId),
@@ -642,6 +637,15 @@ async function runDrainTurn(
           position: nextTurnPosition(
             imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
           ),
+          identity: {
+            executionId: input.lease.executionId,
+            reservedForUserTurnIds: [
+              ...new Set([...retryReservedFor, ...selection.outstanding.map(({ id }) => id)]),
+            ],
+            ...(input.retryOf && input.replyTurnId
+              ? { retry: { of: input.retryOf, replyTurnId: input.replyTurnId } }
+              : {}),
+          },
         },
         preflight?.compaction ?? { kind: "generate" },
       );
@@ -653,6 +657,9 @@ async function runDrainTurn(
           trigger: "manual",
           controlMessageId: control.id,
           ...(control.body.instructions ? { instructions: control.body.instructions } : {}),
+          ...(input.retryOf && input.replyTurnId
+            ? { retryOf: input.retryOf, retryReplyId: input.replyTurnId }
+            : {}),
         };
       }
       const value = {
@@ -668,6 +675,8 @@ async function runDrainTurn(
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
+        // A start-time compaction hands the Retry's list on to the first assistant.
+        carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
       };
       const events = [
         ...(skillBody
@@ -678,15 +687,7 @@ async function runDrainTurn(
           : []),
         ...plan.events,
         ...(preflight?.events ?? []),
-        {
-          type: "turn.created" as const,
-          turn: reservedTurn,
-          answersUserTurnIds: [
-            ...retryAnswers,
-            ...selection.outstanding.map(({ id }) => id).filter((id) => !retryAnswers.includes(id)),
-          ],
-          continuesRunId: null,
-        },
+        { type: "turn.created" as const, turn: reservedTurn },
       ];
       return {
         value,
@@ -776,6 +777,7 @@ async function runDrainTurn(
         initialContext: preflight?.assembled,
         initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
+        carriedReservedFor: setup.carriedReservedFor,
         treeBudget:
           input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
@@ -891,6 +893,7 @@ async function persistModelResponse(input: {
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
     input.inboxAckIds,
+    currentTurn.id as TurnId,
     () =>
       persistAndAppendEvents(deps, runInput.threadId, async () => {
         const responseId = crypto.randomUUID();
@@ -1592,6 +1595,7 @@ async function executeLoop({
   initialContext,
   initialCompaction,
   initialExecutionAdmitted,
+  carriedReservedFor: initialCarriedReservedFor,
   treeBudget,
   skillBodies,
 }: {
@@ -1605,6 +1609,7 @@ async function executeLoop({
   initialContext: AssembledNextTurnContext | undefined;
   initialCompaction: CompactionDecision;
   initialExecutionAdmitted: boolean;
+  carriedReservedFor: readonly string[];
   treeBudget: TreeBudget;
   skillBodies: ReturnType<typeof createSkillBodyPreparation>;
 }): Promise<Turn> {
@@ -1625,17 +1630,15 @@ async function executeLoop({
         level: "warn",
         source: "runtime.run-lease",
         name: "lease.publish_failed",
-        correlation: { threadId: input.threadId, runId: lease.runId },
+        correlation: { threadId: input.threadId, runId: lease.executionId },
         payload: unknownToEventPayload(error),
       });
     }
   }
 
   let currentTurn: Turn = reservedTurn;
-  // The reply a same-lease successor continues: the latest assistant this
-  // lease reserved, kept across a compaction placeholder.
-  let latestReplyTurnId: TurnId | undefined =
-    reservedTurn.role === "assistant" ? (reservedTurn.id as TurnId) : undefined;
+  // Carried until the execution reserves its first assistant.
+  let carriedReservedFor = initialCarriedReservedFor;
   const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
   let preferredSuccessorTurnId =
     requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
@@ -1688,7 +1691,9 @@ async function executeLoop({
       lease: input.lease,
       currentTurn: currentTurn,
       ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
-      ...(latestReplyTurnId ? { continuesRunId: latestReplyTurnId } : {}),
+      ...(carriedReservedFor.length > 0
+        ? { carriedReservedForUserTurnIds: carriedReservedFor }
+        : {}),
       current: { kind: "assistant" },
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
@@ -1838,7 +1843,7 @@ async function executeLoop({
       const next = result.next;
       allTurns.push(next);
       currentTurn = next;
-      if (next.role === "assistant") latestReplyTurnId = next.id as TurnId;
+      if (next.role === "assistant") carriedReservedFor = [];
       endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,

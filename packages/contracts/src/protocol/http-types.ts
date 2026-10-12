@@ -456,9 +456,9 @@ export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
  * An accepted Retry: 201 when this request started it, 200 on a replay. The
  * execution is what a client follows until `meridian.execution.ended`; it may end
  * on a cancelled compaction without ever reserving the new reply. `turn` is the
- * new reply when this request id names it, else null (a replay matched by
- * `metadata.retryOf` before the reply was reserved). `executionId` is null only
- * for a reply reserved before run identity.
+ * new reply when this request id names it, else null (a replay matched by the
+ * request's first reserved turn, `metadata.retryReplyId`, before the reply was
+ * reserved). `executionId` is null only for a reply reserved before run identity.
  */
 export type ReplyRetryResponse = {
   executionId: string | null;

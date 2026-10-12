@@ -15,6 +15,7 @@ import {
   NoPendingWakeError,
   type PreparedLoop,
   type PreparedRun,
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   type RunLoopInput,
   type RunOutcome,
@@ -44,7 +45,10 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
+  delivery: Pick<
+    RuntimeDelivery,
+    "settleStaleExecution" | "releaseExecution" | "refreshPending" | "selectPending"
+  >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
   headSeq(threadId: ThreadId): Promise<bigint>;
@@ -109,7 +113,9 @@ export function createRunSessions(deps: {
       let wakeAfterRelease = false;
       try {
         if (lease) {
-          await authority.release(lease);
+          // Ends the execution when its turns are terminal, else abandons it to
+          // the next claim holder's settlement; either way the claim unlocks.
+          await deps.delivery.releaseExecution(lease);
           claimReleased = true;
           wakeAfterRelease =
             preparedRun || setupMayWake || ("replyTurnId" in input && !!input.replyTurnId);
@@ -134,7 +140,9 @@ export function createRunSessions(deps: {
       }
     }
     try {
-      lease = await authority.startExecution(threadId, crypto.randomUUID());
+      lease = await authority.startExecution(threadId, crypto.randomUUID(), () =>
+        deps.delivery.settleStaleExecution(threadId),
+      );
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
@@ -160,7 +168,6 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
-      await deps.delivery.repairOrphanedTurns(lease);
       if (
         "expectedLeafTurnId" in input &&
         input.expectedLeafTurnId &&
@@ -215,7 +222,7 @@ export function createRunSessions(deps: {
         return outcome;
       }
       return {
-        runId: lease.runId,
+        executionId: lease.executionId,
         userTurnId: loop.userTurnId,
         executionTurnId: loop.currentTurn.id,
         resumeAfterSeq,
@@ -261,13 +268,33 @@ export function createRunSessions(deps: {
   }
   return {
     prepare,
+    /**
+     * Retry a latest failed reply under the client-minted `replyTurnId`. A
+     * replay is answered from durable facts: the reply by id, else the first
+     * turn that request's execution reserved (`metadata.retryReplyId`), which
+     * may be a start-time compaction. While the claim is held by an execution
+     * that has reserved nothing, a replay can't tell whose it is:
+     * `retry_pending`.
+     */
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
-      const existing = await deps.repos.turns.findById(input.replyTurnId);
-      if (existing) {
-        if (existing.threadId !== input.threadId || existing.role !== "assistant")
-          throw new ReplyRetryUnavailableError(input.threadId);
-        return { created: false as const, turn: existing };
-      }
+      const accepted = async () => {
+        const existing = await deps.repos.turns.findById(input.replyTurnId);
+        if (existing) {
+          if (existing.threadId !== input.threadId || existing.role !== "assistant")
+            throw new ReplyRetryUnavailableError(input.threadId);
+          return { created: false as const, turn: existing, executionId: existing.executionId };
+        }
+        // Matched by request id: another tab's Retry of the same reply is not this one.
+        const retrying = await deps.repos.turns.findRetryReservation(
+          input.threadId,
+          input.replyTurnId,
+        );
+        return retrying
+          ? { created: false as const, turn: null, executionId: retrying.executionId }
+          : null;
+      };
+      const replay = await accepted();
+      if (replay) return replay;
 
       const [failedTurn, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
@@ -275,9 +302,15 @@ export function createRunSessions(deps: {
         authority.read(input.threadId),
       ]);
       if (shutdown.started) throw new RuntimeShuttingDownError(input.threadId);
+      if (running.has(input.threadId) || runState.kind === "awake") {
+        if ((await authority.readOpenExecutionId(input.threadId)) === null)
+          throw new ReplyRetryPendingError(input.threadId);
+        // The holder reserved: it is this request's only if it recorded its id.
+        const raced = await accepted();
+        if (raced) return raced;
+        throw new ReplyRetryUnavailableError(input.threadId);
+      }
       if (
-        running.has(input.threadId) ||
-        runState.kind === "awake" ||
         !failedTurn ||
         failedTurn.threadId !== input.threadId ||
         failedTurn.role !== "assistant" ||
@@ -292,6 +325,7 @@ export function createRunSessions(deps: {
           threadId: input.threadId,
           drain: true,
           replyTurnId: input.replyTurnId,
+          retryOf: input.failedTurnId,
           expectedLeafTurnId: latestTurn.id,
         });
         const persisted = await deps.repos.turns.findById(input.replyTurnId);
@@ -310,17 +344,18 @@ export function createRunSessions(deps: {
             origin: "assistant",
             status: "pending",
             writeMode: thread?.aiWriteMode,
+            executionId: run.executionId,
           });
         backgroundTasks.track(run.execute(), "detached reply retry");
-        return { created: true as const, turn };
+        return { created: true as const, turn, executionId: run.executionId };
       } catch (error) {
-        const raced = await deps.repos.turns.findById(input.replyTurnId);
-        if (raced?.threadId === input.threadId && raced.role === "assistant") {
-          return { created: false as const, turn: raced };
-        }
-        if (error instanceof TurnStartConflictError || error instanceof NoPendingWakeError) {
+        const raced = await accepted();
+        if (raced) return raced;
+        // Another holder took the claim before its lease row was visible.
+        if (error instanceof TurnStartConflictError)
+          throw new ReplyRetryPendingError(input.threadId);
+        if (error instanceof NoPendingWakeError)
           throw new ReplyRetryUnavailableError(input.threadId);
-        }
         throw error;
       }
     },

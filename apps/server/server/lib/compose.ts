@@ -926,6 +926,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     inbox: delivery,
     retireOrphanedReply: delivery.retireOrphanedReply,
     clearOrphanedTurn: delivery.clearOrphanedTurn,
+    settleStaleExecution: delivery.settleStaleExecution,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: runClaim,
@@ -1429,6 +1430,9 @@ export function createInMemoryAppServices(): AppServices {
         return new Map();
       },
       async readRunningTurnId() {
+        return null;
+      },
+      async readOpenExecutionId() {
         return null;
       },
       async readPending() {

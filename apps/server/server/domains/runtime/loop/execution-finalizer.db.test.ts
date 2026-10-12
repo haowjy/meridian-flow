@@ -288,7 +288,7 @@ else
         expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
         {
           expect(splitState).toMatchObject({
-            run: run.runId,
+            run: run.executionId,
             report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
             pending: {

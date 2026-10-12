@@ -2,14 +2,17 @@
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
-import { EventType } from "@meridian/contracts/protocol";
 import {
-  type OrchestratorEvent,
-  SIMPLE_TEXT_TURN_AGUI,
-  SIMPLE_TEXT_TURN_ORCHESTRATOR,
-} from "@meridian/contracts/threads";
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+} from "@meridian/contracts/protocol";
+import { SIMPLE_TEXT_TURN_AGUI, SIMPLE_TEXT_TURN_ORCHESTRATOR } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { createOrchestratorEventProjector } from "./orchestrator-event-projector.js";
+import {
+  createOrchestratorEventProjector,
+  projectOrchestratorEvents,
+} from "./orchestrator-event-projector.js";
 
 describe("tool results", () => {
   it("sends the typed result beside the model's text", () => {
@@ -82,39 +85,73 @@ describe("historical card replacement", () => {
   });
 });
 
-describe("run start", () => {
-  it("names the reply's write mode and the user turns it answers", () => {
-    const projector = createOrchestratorEventProjector();
-    const [start] = projector.project(SIMPLE_TEXT_TURN_ORCHESTRATOR[0] as OrchestratorEvent);
-    expect(start).toEqual(SIMPLE_TEXT_TURN_AGUI[0]);
+describe("run identity", () => {
+  it("projects the golden send: start, delivery, finish, execution end", () => {
+    expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
   });
-});
 
-describe("same-lease successor", () => {
-  it("marks a split's finish continued and names the reply the successor continues", () => {
+  it("names each split reply's execution and reservation, and ends the execution once", () => {
     const projector = createOrchestratorEventProjector();
-    const turn = (id: string) =>
-      ({ id, threadId: "thread-1", role: "assistant", blocks: [], writeMode: "direct" }) as never;
-    projector.project({ type: "turn.created", turn: turn("a"), answersUserTurnIds: ["m1"] });
-    const finish = projector.project({ type: "turn.completed", turn: turn("a"), continued: true });
-    const start = projector.project({
-      type: "turn.created",
-      turn: turn("b"),
-      answersUserTurnIds: ["m2"],
-      continuesRunId: "a",
+    const turn = (id: string, reservedForUserTurnIds: string[]) =>
+      ({
+        id,
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: "direct",
+        executionId: "e1",
+        reservedForUserTurnIds,
+      }) as never;
+    projector.project({ type: "turn.created", turn: turn("a", ["m1"]) });
+    const finish = projector.project({ type: "turn.completed", turn: turn("a", ["m1"]) });
+    const start = projector.project({ type: "turn.created", turn: turn("b", ["m2"]) });
+    const delivered = projector.project({
+      type: "messages.delivered",
+      byTurnId: "b",
+      executionId: "e1",
+      userTurnIds: ["m2"],
     });
+    const ended = projector.project({ type: "execution.ended", executionId: "e1" });
 
-    expect(finish.find((event) => event.type === EventType.RUN_FINISHED)).toMatchObject({
+    expect(finish.find((event) => event.type === EventType.RUN_FINISHED)).toEqual({
+      type: EventType.RUN_FINISHED,
+      threadId: "thread-1",
       runId: "a",
-      rawEvent: { continued: true },
     });
     expect(start).toEqual([
       {
         type: EventType.RUN_STARTED,
         threadId: "thread-1",
         runId: "b",
-        rawEvent: { writeMode: "direct", answersUserTurnIds: ["m2"], continuesRunId: "a" },
+        rawEvent: { writeMode: "direct", executionId: "e1", reservedForUserTurnIds: ["m2"] },
       },
     ]);
+    expect(delivered).toEqual([
+      {
+        type: EventType.CUSTOM,
+        name: MESSAGES_DELIVERED_EVENT,
+        value: { byTurnId: "b", executionId: "e1", userTurnIds: ["m2"] },
+      },
+    ]);
+    expect(ended).toEqual([
+      { type: EventType.CUSTOM, name: EXECUTION_ENDED_EVENT, value: { executionId: "e1" } },
+    ]);
+  });
+
+  it("reads a reply journaled before run identity as unknown", () => {
+    const projector = createOrchestratorEventProjector();
+    const [start] = projector.project({
+      type: "turn.created",
+      turn: {
+        id: "old",
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: null,
+      } as never,
+    });
+    expect(start).toMatchObject({
+      rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [] },
+    });
   });
 });

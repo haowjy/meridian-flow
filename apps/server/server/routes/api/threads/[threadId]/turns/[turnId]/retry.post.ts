@@ -1,13 +1,23 @@
-/** POST /api/threads/:threadId/turns/:turnId/retry: retry a latest failed reply. */
-import { replyRetryRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
+/**
+ * POST /api/threads/:threadId/turns/:turnId/retry: retry a latest failed reply.
+ * Answers the Retry's execution (201 started, 200 replay); `retry_pending`
+ * (503) asks the client to repeat the same request id.
+ */
+import {
+  type ReplyRetryResponse,
+  replyRetryRequestSchema,
+  serializeTransport,
+} from "@meridian/contracts/protocol";
 import {
   createError,
   defineEventHandler,
   getRouterParam,
   readBody,
+  setResponseHeader,
   setResponseStatus,
 } from "nitro/h3";
 import {
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   RuntimeShuttingDownError,
 } from "../../../../../../domains/runtime/index.js";
@@ -28,8 +38,15 @@ export default defineEventHandler(async (event) => {
       replyTurnId: parsed.data.id,
     });
     setResponseStatus(event, result.created ? 201 : 200);
-    return serializeTransport(result.turn);
+    return serializeTransport({
+      executionId: result.executionId,
+      turn: result.turn,
+    } satisfies ReplyRetryResponse);
   } catch (error) {
+    if (error instanceof ReplyRetryPendingError) {
+      setResponseHeader(event, "Retry-After", "1");
+      throw createError({ statusCode: 503, message: error.code });
+    }
     if (error instanceof ReplyRetryUnavailableError)
       throw createError({ statusCode: 409, message: error.code });
     if (error instanceof RuntimeShuttingDownError)

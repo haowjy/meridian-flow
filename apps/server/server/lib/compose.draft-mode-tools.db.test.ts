@@ -257,6 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const lease = await runtime.ports.runClaim.startExecution(
           THREAD.threadId as never,
           crypto.randomUUID() as never,
+          async () => {},
         );
         if (!lease) throw new Error("Expected the reply's run claim");
         const reply = await script.begin();

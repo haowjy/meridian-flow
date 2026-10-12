@@ -93,6 +93,7 @@ export {
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
+  ExecutionId,
   HeldRunClaim,
   InboxMessage,
   InboxReader,
@@ -100,7 +101,6 @@ export type {
   MessageBody,
   MessageDraft,
   RunClaim,
-  RunId,
   RunStarter,
   ThreadPhase,
   ThreadStatus,
@@ -127,6 +127,7 @@ export {
   isDrainRun,
   NoPendingWakeError,
   type PreparedRun,
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   type RunOutcome,
   type RunTurnInput,

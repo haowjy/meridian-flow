@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
+import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -46,7 +46,12 @@ export interface DeliveryStore extends InboxReader {
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  ack(threadId: ThreadId, ids: string[]): Promise<void>;
+  /**
+   * Marks rows delivered once (rows already delivered are untouched). A message
+   * row records `byTurnId` as its deliverer. Returns the message rows this call
+   * delivered, in `seq` order.
+   */
+  ack(threadId: ThreadId, ids: string[], byTurnId?: TurnId | null): Promise<string[]>;
 }
 
 export interface DeliveryLeaseStore {
@@ -66,6 +71,12 @@ export interface DeliveryLeaseStore {
     expectedIds: readonly string[],
   ): Promise<boolean>;
   lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
+  /**
+   * The thread's lease row regardless of holder and expiry, locked. Called only
+   * under a newly acquired claim, which proves its holder is gone.
+   */
+  lockStaleExecution(threadId: ThreadId): Promise<{ executionId: string } | null>;
+  deleteStaleExecution(threadId: ThreadId, executionId: string): Promise<boolean>;
 }
 
 const PREPARATION_ATTEMPTS = 3;
@@ -77,7 +88,10 @@ export function createDeliveryAdapter(
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
-    runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution" | "holder">;
+    runClaim: Pick<
+      RunClaim,
+      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder"
+    >;
     publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
     workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
@@ -101,6 +115,40 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
+  /** The turn current when an execution acknowledges messages, and its execution. */
+  type Deliverer = { turnId: TurnId; executionId: string | null };
+  const deliveredBy = (lease: Lease, turnId: TurnId): Deliverer => ({
+    turnId,
+    executionId: lease.executionId,
+  });
+  /**
+   * The one acknowledgement path. Message rows this call actually delivers
+   * record their deliverer and are journaled once as `messages.delivered`, in
+   * the transaction that delivers them. Controls and notices record nothing.
+   */
+  const ack = async (threadId: ThreadId, ids: readonly string[], by: Deliverer | null = null) => {
+    if (ids.length === 0) return;
+    const delivered = await inbox.ack(threadId, [...ids], by?.turnId ?? null);
+    if (delivered.length === 0) return;
+    await deps.eventWriter.appendEvent(threadId, {
+      type: "messages.delivered",
+      byTurnId: by?.turnId ?? null,
+      executionId: by?.executionId ?? null,
+      userTurnIds: delivered,
+    });
+  };
+  const executionEnded = (threadId: ThreadId, executionId: string) =>
+    deps.eventWriter.appendEvent(threadId, { type: "execution.ended", executionId });
+  /**
+   * Ends an execution in the transaction that wrote its last terminal turn:
+   * deletes the lease row and journals `execution.ended` when some turn carries
+   * the execution (an execution that reserved nothing is never observable).
+   */
+  async function endExecution(lease: Lease) {
+    if (!(await deps.runClaim.release(lease))) return;
+    if ((await deps.repos.turns.listByExecution(lease.threadId, lease.executionId)).length > 0)
+      await executionEnded(lease.threadId, lease.executionId);
+  }
   const clearOrphanedTurn = async (threadId: ThreadId, turnId: TurnId) => {
     const receipt = await leaseStore.lockThreadReceipt(threadId);
     if (!receipt || receipt.turnId !== turnId) return null;
@@ -112,7 +160,8 @@ export function createDeliveryAdapter(
   const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
     const ids = await clearOrphanedTurn(threadId, turnId);
     if (!ids) return;
-    await inbox.ack(threadId, ids);
+    const orphan = await deps.repos.turns.findById(turnId);
+    await ack(threadId, ids, { turnId, executionId: orphan?.executionId ?? null });
     await appendPending(threadId);
   };
   const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
@@ -129,6 +178,81 @@ export function createDeliveryAdapter(
       { ...deps, retireOrphanedReply, clearOrphanedTurn: clearOrphanedTurnForRepair },
       { threadId },
     );
+  /**
+   * The child-report repair for what the primary scan leaves alone (a
+   * subagent's assistant), run while a stale row still holds its receipt: fail
+   * the turn as the report repair does, so its report finalizes and its
+   * messages retire. The claim proves every unsettled turn is an orphan,
+   * including one an older lease bound without recording its execution.
+   */
+  async function repairStaleExecutionTurns(threadId: ThreadId) {
+    const reports: SavedExecutionReport[] = [];
+    for (const turn of await deps.repos.turns.listUnsettledForThread(threadId)) {
+      if (isTerminalTurnStatus(turn.status)) continue;
+      if (turn.role !== "assistant" && turn.role !== "compaction") continue;
+      const completion = await finalizeExecution(deps, {
+        threadId,
+        turnId: turn.id as TurnId,
+        ...(turn.role === "compaction" ? { reportContent: "empty" as const } : {}),
+        cause: {
+          kind: "failed",
+          reason: "orphaned",
+          error: "Child execution stopped before terminal completion",
+        },
+      });
+      if (turn.role === "assistant") await retireOrphanedReply(threadId, turn.id as TurnId);
+      else await clearOrphanedTurnForRepair(threadId, turn.id as TurnId);
+      if (completion.report) reports.push(completion.report);
+    }
+    return reports;
+  }
+  /**
+   * Call holding a newly acquired claim. Repairs may commit separately: a crash
+   * between them loses nothing, because the end is decided from turns that
+   * carry the execution's id, never from the row's receipt arrays (repair
+   * clears those). The end append and the row delete are one transaction.
+   */
+  async function settleStaleExecution(threadId: ThreadId) {
+    const reports = await threadLock.withThreadLock(threadId, async () => {
+      const repaired = await repairOrphans(threadId);
+      const stale = await leaseStore.lockStaleExecution(threadId);
+      if (stale) repaired.push(...(await repairStaleExecutionTurns(threadId)));
+      return repaired;
+    });
+    await deps.publishFinalizedReports(reports);
+    await threadLock.withThreadLock(threadId, async () => {
+      const stale = await leaseStore.lockStaleExecution(threadId);
+      if (!stale) return;
+      const turns = await deps.repos.turns.listByExecution(threadId, stale.executionId);
+      if (turns.some((turn) => !isTerminalTurnStatus(turn.status)))
+        throw new Error("A stale execution still has unsettled turns after repair");
+      if (turns.length > 0) await executionEnded(threadId, stale.executionId);
+      await leaseStore.deleteStaleExecution(threadId, stale.executionId);
+      await appendPending(threadId);
+    });
+  }
+  async function releaseExecution(lease: Lease): Promise<"released" | "ended" | "abandoned"> {
+    let outcome: "released" | "ended" | "abandoned";
+    try {
+      outcome = await threadLock.withThreadLock(lease.threadId, async () => {
+        if (!(await leaseStore.lockReceipt(lease))) {
+          // A close already ended it; only the physical claim may remain.
+          await deps.runClaim.release(lease);
+          return "released" as const;
+        }
+        const turns = await deps.repos.turns.listByExecution(lease.threadId, lease.executionId);
+        if (turns.some((turn) => !isTerminalTurnStatus(turn.status))) return "abandoned" as const;
+        await endExecution(lease);
+        await appendPending(lease.threadId);
+        return "ended" as const;
+      });
+    } catch (error) {
+      await deps.runClaim.abandon(lease);
+      throw error;
+    }
+    if (outcome === "abandoned") await deps.runClaim.abandon(lease);
+    return outcome;
+  }
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
     pendingBatch: InboxMessage[];
@@ -309,17 +433,16 @@ export function createDeliveryAdapter(
       result: undefined,
       events: plan.events,
     }));
-    await inbox.ack(threadId, work.ids);
+    await ack(threadId, work.ids);
     await appendPending(threadId);
   }
   async function materializeIdle(threadId: ThreadId) {
-    await deps.runClaim.withExclusiveThread(threadId, () =>
-      threadLock.withThreadLock(threadId, async () => {
-        const reports = await repairOrphans(threadId);
-        schedulePostCommit(() => deps.publishFinalizedReports(reports));
+    await deps.runClaim.withExclusiveThread(threadId, async () => {
+      await settleStaleExecution(threadId);
+      await threadLock.withThreadLock(threadId, async () => {
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
-      }),
-    );
+      });
+    });
     return (await inbox.selectPending(threadId)).some(
       (message) => message.body.kind === "work_context_refresh",
     )
@@ -334,14 +457,13 @@ export function createDeliveryAdapter(
    */
   async function applyDueSwitches(threadId: ThreadId) {
     const ran = await deps.runClaim.withExclusiveThread(threadId, async () => {
+      await settleStaleExecution(threadId);
       while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId))) {}
       return true;
     });
     return ran === true;
   }
   async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
-    const reports = await repairOrphans(threadId);
-    schedulePostCommit(() => deps.publishFinalizedReports(reports));
     const selected = next(await inbox.selectPending(threadId), "run_start");
     if (selected.kind !== "switch") return false;
     const thread = await deps.repos.threads.findById(threadId);
@@ -370,7 +492,7 @@ export function createDeliveryAdapter(
         ],
       };
     });
-    await inbox.ack(threadId, [control.id]);
+    await ack(threadId, [control.id]);
     await appendPending(threadId);
     return true;
   }
@@ -587,9 +709,9 @@ export function createDeliveryAdapter(
           }),
           { afterEvents: () => recordShown(currentTurn.id) },
         );
-        await inbox.ack(threadId, drain.ackIds);
+        await ack(threadId, drain.ackIds, deliveredBy(lease, currentTurn.id as TurnId));
         drain.ackIds = [];
-        await deps.runClaim.release(lease);
+        await endExecution(lease);
         next = completed;
       } else {
         const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
@@ -605,6 +727,15 @@ export function createDeliveryAdapter(
             ),
             prevTurnId: leaf,
             writeMode: currentTurn.writeMode,
+            identity: {
+              executionId: lease.executionId,
+              reservedForUserTurnIds: [
+                ...new Set([
+                  ...(input.carriedReservedForUserTurnIds ?? []),
+                  ...adoption.selection.outstanding.map(({ id }) => id),
+                ]),
+              ],
+            },
           },
           compaction,
         );
@@ -618,18 +749,10 @@ export function createDeliveryAdapter(
             result: undefined,
             events: [
               ...(input.current.kind === "assistant"
-                ? [{ type: "turn.completed" as const, turn: completedTurn, continued: true }]
+                ? [{ type: "turn.completed" as const, turn: completedTurn }]
                 : []),
               ...events,
-              {
-                type: "turn.created" as const,
-                turn: next,
-                answersUserTurnIds: adoption.selection.outstanding.map(({ id }) => id),
-                continuesRunId:
-                  input.current.kind === "assistant"
-                    ? currentTurn.id
-                    : (input.continuesRunId ?? null),
-              },
+              { type: "turn.created" as const, turn: next },
             ],
           }),
           {
@@ -649,7 +772,7 @@ export function createDeliveryAdapter(
       });
     }
 
-    await inbox.ack(threadId, work.ids);
+    await ack(threadId, work.ids);
     if (
       !split &&
       batch.length > 0 &&
@@ -673,7 +796,7 @@ export function createDeliveryAdapter(
         },
       });
       next = completion.turn;
-      await inbox.ack(threadId, drain.ackIds);
+      await ack(threadId, drain.ackIds, deliveredBy(lease, next.id as TurnId));
     }
     if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
       await appendPending(threadId);
@@ -729,7 +852,7 @@ export function createDeliveryAdapter(
       prepared.preparedCurrent,
       prepared.currentFailure,
     );
-    await deps.runClaim.release(input.lease);
+    await endExecution(input.lease);
     await appendPending(input.lease.threadId);
     return {
       drain,
@@ -789,13 +912,10 @@ export function createDeliveryAdapter(
     return false;
   }
 
-  async function acknowledgeFailedReply(
-    threadId: ThreadId,
-    turn: Turn,
-    messageIds: readonly string[],
-  ) {
+  /** A failed or cancelled assistant delivers its messages: they are never taken on again. */
+  async function acknowledgeFailedReply(lease: Lease, turn: Turn, messageIds: readonly string[]) {
     if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await inbox.ack(threadId, [...messageIds]);
+      await ack(lease.threadId, messageIds, deliveredBy(lease, turn.id as TurnId));
   }
 
   return {
@@ -812,7 +932,7 @@ export function createDeliveryAdapter(
       },
       async enqueueSettled(draft, cancelledIds) {
         const message = await inbox.enqueue(draft);
-        await inbox.ack(draft.threadId, [...cancelledIds, message.id]);
+        await ack(draft.threadId, [...cancelledIds, message.id]);
         await appendPending(draft.threadId);
       },
       selectPending: inbox.selectPending,
@@ -826,7 +946,7 @@ export function createDeliveryAdapter(
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlIds) => {
-        await inbox.ack(id, [...controlIds]);
+        await ack(id, controlIds);
         await appendPending(id);
       },
       hasCompletedReply: hasCompletedReplyInLineage,
@@ -860,12 +980,8 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
     clearOrphanedTurn: (threadId, turnId) =>
       threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
-    repairOrphanedTurns: async (lease) => {
-      const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        repairOrphans(lease.threadId),
-      );
-      await deps.publishFinalizedReports(reports);
-    },
+    settleStaleExecution,
+    releaseExecution,
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {
@@ -876,8 +992,9 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () =>
         operation({
           materializePrefix: () => materializePrefix(threadId),
+          // No reserved turn delivers these (a child run aborted before its reservation).
           async acknowledge(ids) {
-            await inbox.ack(threadId, [...ids]);
+            await ack(threadId, ids);
             await appendPending(threadId);
           },
           enqueue(draft) {
@@ -901,8 +1018,8 @@ export function createDeliveryAdapter(
         commit: async (_selection, work, prepared) => {
           if (!prepared) return null;
           await prepared.persist?.();
-          await inbox.ack(lease.threadId, work.ids);
-          await inbox.ack(lease.threadId, prepared.completedControlIds ?? []);
+          await ack(lease.threadId, work.ids);
+          await ack(lease.threadId, prepared.completedControlIds ?? []);
           await leaseStore.bindTurn(
             lease,
             prepared.turnId,
@@ -918,13 +1035,13 @@ export function createDeliveryAdapter(
       if (!result) throw new NoPendingWakeError(lease.threadId);
       return result.value;
     },
-    ackWithResponse: (lease, ids, persist) =>
+    ackWithResponse: (lease, ids, byTurnId, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
         const result = await persist();
         if (ids.length > 0) {
           if (!(await leaseStore.clearReceipt(lease, ids)))
             throw new Error("Cannot ack after losing live run lease");
-          await inbox.ack(lease.threadId, ids);
+          await ack(lease.threadId, ids, deliveredBy(lease, byTurnId));
           await appendPending(lease.threadId);
         }
         return result;
@@ -958,8 +1075,8 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause,
         });
-        await acknowledgeFailedReply(threadId, completion.turn, receipt?.ids ?? []);
-        await deps.runClaim.release(input.lease);
+        await acknowledgeFailedReply(input.lease, completion.turn, receipt?.ids ?? []);
+        await endExecution(input.lease);
         await appendPending(threadId);
         return { kind: "completed" as const, completion };
       });
@@ -975,8 +1092,8 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause: terminalCause(receipt),
         });
-        await acknowledgeFailedReply(threadId, result.turn, receipt?.ids ?? []);
-        await deps.runClaim.release(input.lease);
+        await acknowledgeFailedReply(input.lease, result.turn, receipt?.ids ?? []);
+        await endExecution(input.lease);
         await appendPending(threadId);
         return result;
       });

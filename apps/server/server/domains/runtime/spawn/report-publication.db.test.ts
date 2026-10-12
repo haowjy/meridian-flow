@@ -41,14 +41,13 @@ else
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-    const { createTestDrizzleDelivery } = await import(
+    const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { finalizeExecution } = await import("../loop/execution-finalizer.js");
     const { createReportPublisher } = await import("./report-publisher.js");
     const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
     const { invocationCardProps } = await import("./spawn-output.js");
-    const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
     const { readThreadReport } = await import("./read-thread-report.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -257,7 +256,7 @@ else
         payload,
       });
       const authority = createDrizzleRunClaim(db, { holderId: "json-roundtrip-repair" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -501,7 +500,7 @@ else
 
     it("does not infer orphan death from a missing lease while the physical claim is held", async () => {
       const authority = createDrizzleRunClaim(db, { holderId: "repair-test" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -510,13 +509,15 @@ else
         publisher,
         eventSink,
       });
-      const held = await authority.startExecution(ids.child, crypto.randomUUID());
+      const held = await authority.startExecution(ids.child, crypto.randomUUID(), async () => {});
       if (!held) throw new Error("failed to acquire test claim");
       await db
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.child));
-      expect(await repair.sweep(1)).toBe(1);
+      // The unsettled turn and the expired lease are both candidates; neither is
+      // settled while the claim is held.
+      expect(await repair.sweep(1)).toBe(2);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.outcome,
       ).toBeNull();
@@ -546,7 +547,7 @@ else
       });
       await db.insert(schema.threadRunLeases).values({
         threadId: ids.child,
-        runId: "dead-child-run",
+        executionId: "dead-child-run",
         turnId: ids.execution,
         boundTurnIds: [ids.execution],
         adoptedMessageIds: [adopted.id],
@@ -555,7 +556,7 @@ else
         expiresAt: new Date(0),
       });
       const authority = createDrizzleRunClaim(db, { holderId: "child-crash-repair" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox,
         repos,
         eventWriter,
@@ -582,9 +583,14 @@ else
         },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
-      expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
-        { threadId: ids.child, turnId: null, boundTurnIds: [], adoptedMessageIds: [] },
-      ]);
+      // The repair lane settles the expired row too: a lease from before run
+      // identity, which no turn carries, is deleted with no end journaled.
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      expect(
+        (await journalEventsByThread(db, ids.child)).filter(
+          (event) => event.eventType === "execution.ended",
+        ),
+      ).toEqual([]);
       expect(
         (await journalEventsByThread(db, ids.caller)).filter(
           (event) => event.eventType === "agent.run_completed",
@@ -635,7 +641,7 @@ else
         });
       }
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-scan" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -685,13 +691,13 @@ else
         status: "pending",
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-live-run" });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), async () => {});
       if (!lease) throw new Error("failed to acquire run claim");
       await db
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.root));
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -751,9 +757,10 @@ else
         sequence: 0,
         content: "Arrived after compaction started.",
       });
-      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID(), () =>
+        runDelivery.settleStaleExecution(ids.root),
+      );
       if (!lease) throw new Error("failed to acquire run claim");
-      await runDelivery.repairOrphanedTurns(lease);
       expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
       const repaired = await repos.turns.findById(c.id);
       expect(repaired?.status).toBe("error");
@@ -787,7 +794,7 @@ else
         { id: message.id, role: "user", status: "complete" },
         { id: assistantId, role: "assistant", status: "streaming" },
       ]);
-      await runDelivery.ackWithResponse(lease, [message.id], async () => true);
+      await runDelivery.ackWithResponse(lease, [message.id], assistantId, async () => true);
       await runDelivery.close({
         lease,
         turnId: assistantId,
@@ -817,7 +824,7 @@ else
         cardBlockId: null,
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-report-walk" });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -883,7 +890,7 @@ else
         source: "empty",
         summary: "",
       });
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
@@ -940,9 +947,10 @@ else
         origin: "writer",
         status: "complete",
       });
-      const lease = await authority.startExecution(ids.child, crypto.randomUUID());
+      const lease = await authority.startExecution(ids.child, crypto.randomUUID(), () =>
+        runDelivery.settleStaleExecution(ids.child),
+      );
       if (!lease) throw new Error("failed to acquire child run claim");
-      await runDelivery.repairOrphanedTurns(lease);
       const repaired = await repos.turns.findById(c.id);
       expect(repaired).toMatchObject({
         status: "error",

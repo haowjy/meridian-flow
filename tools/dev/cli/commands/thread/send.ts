@@ -11,7 +11,7 @@ import {
   type ThreadSnapshotResponse,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import { blockPlainText, replyReaching, type Turn } from "@meridian/contracts/threads";
+import { blockPlainText, type Turn } from "@meridian/contracts/threads";
 import { CliError, EXIT, type ExitCode, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -28,6 +28,7 @@ import type { Session } from "../../core/session";
 import { resolveDocumentId, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
+import { replyReaching } from "./reply-reaching";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { followThread } from "./stream";
 
@@ -199,14 +200,17 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
-  // The admission's named reply is only where to start: the message joined its
-  // lease, so its same-lease successors answer it. With none named, the reply
-  // whose start names this user turn is ours. Never the next start in the
+  // The admission's steered reply is only where to start: the message joined its
+  // execution, so that execution's successors answer it. With none named, the
+  // reply reserved for this user turn is ours. Never the next start in the
   // stream: the early cursor replays others', and another client's can follow.
-  let ourTurn: string | null = admitted.assistantTurnId;
+  // Not a redesign (#768): it keeps the old successor/finish shape on execution facts.
+  let ourTurn: string | null = admitted.steersTurnId;
+  let ourExecution: string | null = null;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
-  // Our reply finished `continued`: its successor's start is still due.
+  // Our reply finished; until its execution ends, the next start is its successor
+  // (one claim per thread: another execution can start only after that end).
   let continuing = false;
   let recover = false;
   const isOurs = (turnId: string) => ourTurn === turnId;
@@ -223,23 +227,28 @@ async function followToOutcome(
         textStream: "err",
         shouldStop(event: CliEvent) {
           if (event.type === "turn.started") {
-            const answers = event.answersUserTurnIds.includes(admitted.userTurnId);
-            const successor = ourTurn !== null && event.continuesRunId === ourTurn;
+            const answers = event.reservedForUserTurnIds.includes(admitted.userTurnId);
+            const successor =
+              continuing ||
+              (ourExecution !== null &&
+                event.executionId === ourExecution &&
+                event.turnId !== ourTurn);
             if (answers || successor) {
               ourTurn = event.turnId;
+              ourExecution = event.executionId;
               continuing = false;
-              return false;
             }
-            // One run claim per thread: another start after a continued
-            // finish means that lease ended without its successor.
-            if (!continuing) return false;
-            recover = true;
-            return true;
+            return false;
           }
           if (event.type === "turn.finished") {
             if (!isOurs(event.turnId)) return false;
-            continuing = event.continued;
-            return !event.continued;
+            continuing = true;
+            return false;
+          }
+          if (event.type === "execution.ended") {
+            if (!continuing || (ourExecution !== null && event.executionId !== ourExecution))
+              return false;
+            return true;
           }
           if (event.type === "turn.failed") {
             recover = ourTurn !== null;
@@ -370,7 +379,7 @@ export const threadSendCommand: CommandSpec = {
           threadId,
           submissionId,
           userTurnId: admitted.userTurnId,
-          assistantTurnId: admitted.assistantTurnId,
+          steersTurnId: admitted.steersTurnId,
           resumeAfterSeq: admitted.resumeAfterSeq,
           // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
           mockScriptId,
