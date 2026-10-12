@@ -584,7 +584,7 @@ export async function createProductionAppPorts(input: {
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
-          { threads: threadRepos.threads, projects: projectRepo },
+          { threads: threadRepos.threads },
           input.threadId,
           input.userId as never,
         );

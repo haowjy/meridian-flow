@@ -41,6 +41,7 @@ import {
   type CreateUntitledContextDocumentResult,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
+  type DocumentAddressRequestOptions,
   type DocumentAddressResult,
   type LineageInfo,
   type ListProjectsResponse,
@@ -186,7 +187,7 @@ export async function getProjectDocumentAddress(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: ProjectContextRequestOptions,
+  opts?: DocumentAddressRequestOptions,
   init?: RequestInitOptions,
 ): Promise<DocumentAddressResult> {
   return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {

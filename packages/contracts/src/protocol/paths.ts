@@ -8,6 +8,16 @@ import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from 
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
+/** Review URLs name a per-document branch, never the whole draft tree id. */
+export type DocumentAddressReviewSelector = {
+  workId: string;
+  draftBranchId: string;
+  documentId?: string;
+};
+export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
+  review?: DocumentAddressReviewSelector;
+};
+
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
   query: URLSearchParams,
@@ -51,10 +61,15 @@ export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: ProjectContextRequestOptions,
+  opts?: DocumentAddressRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
+  if (opts?.review) {
+    query.set("reviewWorkId", opts.review.workId);
+    query.set("draftBranchId", opts.review.draftBranchId);
+    if (opts.review.documentId) query.set("documentId", opts.review.documentId);
+  }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 

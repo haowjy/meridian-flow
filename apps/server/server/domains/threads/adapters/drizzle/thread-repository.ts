@@ -236,7 +236,8 @@ export function createDrizzleThreadRepository(
       if (row) return { thread: mapThread({ ...row, workId: thread.workId }), created: true };
       const existing = await this.findByIdIncludingDeleted(input.id);
       if (!existing) throw new Error("Derived thread ID conflict disappeared");
-      return { thread: existing, created: false };
+      const { project: _project, ...existingThread } = existing;
+      return { thread: existingThread, created: false };
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const [row] = await currentDrizzleDb(db)
@@ -278,11 +279,21 @@ export function createDrizzleThreadRepository(
         .select({
           ...threadColumns,
           workId: schema.threadWorks.workId,
+          project: { userId: schema.projects.userId, deletedAt: schema.projects.deletedAt },
         })
         .from(schema.threads)
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(eq(schema.threads.id, id));
-      return row ? mapThread(row) : null;
+      return row
+        ? {
+            ...mapThread(row),
+            project: {
+              userId: row.project.userId,
+              deletedAt: row.project.deletedAt?.toISOString() ?? null,
+            },
+          }
+        : null;
     },
     async findLiveByProjectRef(projectId: ProjectId, ref: string) {
       const [row] = await currentDrizzleDb(db)

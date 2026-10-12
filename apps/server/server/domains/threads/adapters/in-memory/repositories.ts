@@ -174,7 +174,7 @@ function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
 }
 
 interface ProjectVisibilityRepository {
-  findById(id: string): Promise<{ deletedAt: string | null } | null>;
+  findById(id: string): Promise<{ userId: string; deletedAt: string | null } | null>;
 }
 
 interface WorkProjectionRepository {
@@ -317,7 +317,9 @@ export function createInMemoryRepositories(
     },
     async findByIdIncludingDeleted(id) {
       const thread = threads.get(id);
-      return thread ? projectThread(thread) : null;
+      if (!thread) return null;
+      const project = (await options.projects?.findById(thread.projectId)) ?? null;
+      return { ...projectThread(thread), project };
     },
     async findLiveByProjectRef(projectId, ref) {
       const thread = [...threads.values()].find(

@@ -488,8 +488,24 @@ contract shapes.
   and is not unique. Chat URLs use the client-minted thread `id`, not `ref`.
   Refs are model-facing (tool currency) and dev-facing (`./mf`, the by-ref
   route); they are not meant for writers.
-  Create-or-get matches ownership only. A same-user same-project retry of a
-  deleted thread conflicts; persist must not resurrect the tombstone.
+  Root create-or-get classifies an existing id before gating the requested live
+  project. A fully owned deleted thread or deleted parent project returns
+  attested HTTP 404 `thread_deleted`, never resurrecting the tombstone.
+  A deleted parent project adds `details.projectDeleted: true`; a new id in an
+  owned deleted project instead receives attested `project_deleted`.
+  Foreign ids retain the creation route's concealed not-found answer.
+- **HTTP availability proof:** `threadAvailabilityCode` checks both the thread
+  creator and project owner before deletion. Both owner gates use it: snapshot
+  and other repository reads use `findByIdIncludingDeleted` (joined parent
+  ownership/deletion state); runtime admission, lookup and retire join the same
+  unfiltered rows. Fully owned soft-deleted rows return `thread_deleted`;
+  missing, purged or foreign rows return `thread_not_found`. Both carry the
+  authenticated internal user id. `thread_deleted` adds `projectDeleted: true`
+  only for a deleted parent project, never for a Work cascade in a live project.
+  Live-only `findById` remains unchanged.
+  WebSocket subscribe and interrupt replies still conceal both as unattested
+  `not_found` frames. Trash commands retain their separate serialized lifecycle
+  policy so restore and idempotent Delete can act on tombstones.
 - **Work membership mutation is serialized.** Additions and rebinds follow the
   mutation lock order above: the primary is read under the
   thread lock, then current and target Works lock together. This prevents

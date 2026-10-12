@@ -135,7 +135,8 @@ function rewriteV1ChatSubmissions(
   storage: ChatSubmissionStorage,
   accountId: string,
   completed: () => void,
-): void {
+): Promise<void> {
+  const pending: Promise<unknown>[] = [];
   const prefix = `meridian:chat-submissions:v1:${accountId}:`;
   try {
     const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
@@ -192,14 +193,17 @@ function rewriteV1ChatSubmissions(
         completed();
       };
       if (typeof navigator !== "undefined" && navigator.locks) {
-        void navigator.locks
-          .request(submissionLockName(accountId, entry.threadId), migrate)
-          .catch(reportError);
+        pending.push(
+          navigator.locks
+            .request(submissionLockName(accountId, entry.threadId), migrate)
+            .catch(reportError),
+        );
       } else migrate();
     }
   } catch {
     /* Preserve v1 when storage is unavailable. */
   }
+  return Promise.all(pending).then(() => undefined);
 }
 
 export class DeviceChatSubmissionJournal {
@@ -244,17 +248,18 @@ export class DeviceChatSubmissionJournal {
     return this.bindEpoch;
   }
 
-  setUser(accountId: string): void {
-    if (this.state?.accountId === accountId) return;
+  setUser(accountId: string): Promise<void> {
+    if (this.state?.accountId === accountId) return Promise.resolve();
     this.bindEpoch += 1;
     // Per-account storage keys mean another account's records are never read
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
-    rewriteV1ChatSubmissions(this.storage, accountId, () => {
+    const ready = rewriteV1ChatSubmissions(this.storage, accountId, () => {
       if (this.accountId === accountId) this.notify();
     });
     this.notify();
+    return ready;
   }
 
   entries(): ChatSubmission[] {

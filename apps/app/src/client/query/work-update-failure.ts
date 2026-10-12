@@ -6,8 +6,13 @@
  */
 import { t } from "@lingui/core/macro";
 import { isMeridianApiError } from "@/client/api/http-client";
+import { deletedDestinationCopy } from "@/client/api/meridian-error";
 
 export function workUpdateFailure(cause: unknown, fallback: string): string {
+  const deleted = isMeridianApiError(cause)
+    ? deletedDestinationCopy(cause.code, cause.details)
+    : null;
+  if (deleted) return deleted;
   switch (isMeridianApiError(cause) ? cause.code : null) {
     case "work_archived":
       return t`This Work is archived. Unarchive it to edit.`;

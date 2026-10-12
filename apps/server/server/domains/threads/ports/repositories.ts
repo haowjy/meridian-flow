@@ -5,6 +5,7 @@
  */
 
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import type { Project } from "@meridian/contracts/projects";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type {
   ProjectId,
@@ -270,8 +271,10 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
-  /** Reads a thread even when it or its project is soft-deleted, for inherited history. */
-  findByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
+  /** Reads the thread and parent ownership/deletion state without live filters. */
+  findByIdIncludingDeleted(
+    id: ThreadId,
+  ): Promise<(Thread & { project: Pick<Project, "userId" | "deletedAt"> | null }) | null>;
   /** Exact live handle lookup by server-assigned `cN`/`pN` ref; caller must authorize the project. */
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */

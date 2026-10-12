@@ -31,7 +31,7 @@ import { splitHiddenContents } from "../../tree/folder-normalization.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { bumpLocationVersions } from "../../tree/node-locations.js";
 import { movedDocumentIds, moveNodes } from "../../tree/node-moves.js";
-import { createTreeReader, LIVE_TREE } from "../../tree/tree-view.js";
+import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
   lockContextSources,
@@ -142,8 +142,12 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return result;
   }
 
-  /** The live node at `path`: a hidden node is never moved or deleted live. */
-  async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {
+  /** Reads the selected tree; mutation callers default to live and cannot touch hidden nodes. */
+  async inspect(
+    sourceId: string,
+    path: string,
+    view: TreeView = LIVE_TREE,
+  ): Promise<ContextLocationToken | null> {
     const normalized = normalizeTreePath(path);
     if (!normalized) {
       return {
@@ -159,7 +163,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     const asDocument =
       documentPath === null
         ? null
-        : await tree.resolvePath(LIVE_TREE, {
+        : await tree.resolvePath(view, {
             contextSourceId: sourceId as ContextSourceId,
             path: documentPath,
           });
@@ -176,7 +180,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     const found =
       documentPath === normalized && asDocument
         ? asDocument
-        : await tree.resolvePath(LIVE_TREE, {
+        : await tree.resolvePath(view, {
             contextSourceId: sourceId as ContextSourceId,
             path: normalized,
           });

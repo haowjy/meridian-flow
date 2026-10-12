@@ -171,13 +171,11 @@ it("draws a refused recording as the failure card and clears it once a send is r
     [...(alert?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label")),
   ).toEqual(["Dismiss"]);
   expect(editorElement()?.textContent).toBe("Keep these words");
-  // Inside the composer frame, above the words, and the editor is the same node afterwards.
+  // Above the box, outside its frame, and the editor is the same node afterwards.
   const frame = host.querySelector("[data-composer]");
   const editorBefore = editorElement();
-  expect(alert && frame?.contains(alert)).toBe(true);
-  expect(alert?.compareDocumentPosition(editorBefore as Node)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
+  expect(alert && frame?.contains(alert)).toBe(false);
+  expect(alert?.compareDocumentPosition(frame as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
   onSubmit.mockResolvedValueOnce(true);
   await pressEnter();

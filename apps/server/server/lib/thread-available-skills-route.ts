@@ -7,7 +7,6 @@ import type { ThreadRepositories } from "./compose.js";
 
 export interface ThreadAvailableSkillsRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;
-  projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   agentRevisions: Pick<AgentRevisionStore, "listInstallations" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }
@@ -17,7 +16,7 @@ export async function handleGetThreadAvailableSkills(
   input: { threadId: string; userId: string },
 ): Promise<ThreadAvailableSkillsResponse> {
   const thread = await requireThreadOwner(
-    { threads: deps.repos.threads, projects: deps.projectRepo },
+    { threads: deps.repos.threads },
     input.threadId,
     input.userId,
   );
