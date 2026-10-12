@@ -110,7 +110,10 @@ inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-repl
   graph split. Response persistence, inbox acknowledgement, and receipt
   clearing share one transaction. Successful and failed terminal replies
   acknowledge their receipt; cancellation acknowledges the receipt, not a
-  later pending claim. The joined projection exposes `waiting` for an
+  later pending claim. A path that writes the run's last terminal turn also
+  releases its lease in that transaction; orphan recovery never retires a
+  receipt whose selector names a terminal turn
+  ([recovery](recovery.md#settling-a-stale-lease)). The joined projection exposes `waiting` for an
   unadopted row behind a live bound run and `awaiting_run` for adopted rows or
   no bound live run. Generic `ThreadPendingInbox` projects every provenance;
   the app's `queuedWriterTurnIds` keeps writer rows in `waiting` so only those
