@@ -54,8 +54,12 @@ into a cancel or the shutdown failure.
   save.
 - **Compaction placeholder** (automatic or manual). It completes through its
   own preparation and completion callbacks, so it keeps its real outcome, and
-  the claim is released with no successor. Its receipt stays unacknowledged:
+  the execution ends with no successor. Its receipt stays unacknowledged:
   the messages wait for the next run.
+
+Either way the execution ends (`execution.ended`) with the waiting messages
+undelivered; the next execution is reserved for them and delivers them
+([run identity](delivery.md#run-identity)).
 
 The release wake then applies S, and a new run adopts the waiting messages and
 chains its reply after the switch turn. A writer message sent while a switch is

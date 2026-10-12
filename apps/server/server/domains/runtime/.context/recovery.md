@@ -17,7 +17,9 @@ metadata and history read line, then publish a status refresh.
 
 Run repair holds the destination thread lock and run claim. Expired lease rows
 alone do not prove death. Once the session claim proves the prior owner is gone,
-the replacement lease retains the dead reply's turn and adopted-message IDs.
+`settleStaleExecution` repairs while the stale row still holds the dead reply's
+turn and adopted-message IDs, then ends that execution and deletes the row
+before any new lease is inserted ([run identity](delivery.md#run-identity)).
 Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
