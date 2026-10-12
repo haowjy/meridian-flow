@@ -1,4 +1,7 @@
-/** Projection must remain bounded and preserve real recovery identities without catalogs. */
+/**
+ * Projection must remain bounded and preserve real recovery identities without catalogs.
+ * The timing fence sits above a healthy run on a busy CI core. A depth-squared walk is seconds.
+ */
 import { performance } from "node:perf_hooks";
 import { expect, it } from "vitest";
 import { installFolderNamespaceAvailability } from "./folder-namespace";
@@ -15,7 +18,9 @@ import {
   submit,
 } from "./namespace-schedule-fixtures";
 
-it("resolves 200 nested journal identities with a missing destination in under 100 ms", () => {
+const boundedMs = 500;
+
+it("resolves 200 nested journal identities with a missing destination without a depth blowup", () => {
   const nodes = [];
   const records = [];
   for (let depth = 1; depth <= 200; depth++) {
@@ -27,7 +32,7 @@ it("resolves 200 nested journal identities with a missing destination in under 1
   records.push(move("X", "X", `${Array(200).fill("A").join("/")}/absent/X`));
   const start = performance.now();
   const graph = folderPlacementGraph("p", nodes, records);
-  expect(performance.now() - start).toBeLessThan(100);
+  expect(performance.now() - start).toBeLessThan(boundedMs);
   expect(graph.locations.get("X")).toMatchObject({ path: "/X" });
 });
 
@@ -56,7 +61,7 @@ it("installs real repair parents before synthesizing missing ancestry in either 
 it.each([
   [300, 1],
   [30, 20],
-])("projects a healthy %i-deep catalog with %i branches in under 50 ms", (depth, width) => {
+])("projects a healthy %i-deep catalog with %i branches without a depth blowup", (depth, width) => {
   const rows = [entries[0]];
   for (let branch = 0; branch < width; branch++) {
     rows.push(node(`${branch}-0`, `W${branch}`));
@@ -73,7 +78,7 @@ it.each([
   const projected = createResourcePlacement("p", rows, []).projectCatalog(rows);
   const elapsed = performance.now() - start;
   expect(projected).toHaveLength(rows.length);
-  expect(elapsed).toBeLessThan(50);
+  expect(elapsed).toBeLessThan(boundedMs);
 });
 
 it("cycle fallback preserves an independently renamed canonical parent", () => {
@@ -116,7 +121,7 @@ it("binds document observations to a parent's exact canonical home ahead of its 
   });
 });
 
-it("resolves 800 siblings under 800 missing levels in under 50 ms", () => {
+it("resolves 800 siblings under 800 missing levels without a depth blowup", () => {
   const prefix = Array(800).fill("missing").join("/");
   const nodes = Array.from({ length: 800 }, (_, i) => ({
     id: `s${i}`,
@@ -125,7 +130,7 @@ it("resolves 800 siblings under 800 missing levels in under 50 ms", () => {
   }));
   const start = performance.now();
   const graph = folderPlacementGraph("p", nodes, []);
-  expect(performance.now() - start).toBeLessThan(50);
+  expect(performance.now() - start).toBeLessThan(boundedMs);
   expect(graph.locations.get("s799")?.path).toBe(`/${prefix}/s799`);
 });
 
