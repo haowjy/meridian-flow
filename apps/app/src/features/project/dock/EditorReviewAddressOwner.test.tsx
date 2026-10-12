@@ -108,6 +108,75 @@ describe("EditorReviewAddressOwner", () => {
     setInline = null;
   });
 
+  it("preserves and restores the destination when an old draft-only review exits", async () => {
+    const targetB: AiDraftLaunchTarget = {
+      ...draft,
+      documentId: "document-b",
+      draftId: "draft-b",
+      contextLocation: { scheme: "kb", path: "/characters/B" },
+      isNewDocument: true,
+    };
+    const write = vi.fn();
+    const navigate = vi.fn(async () => ({ kind: "applied" as const }));
+    let switchTo!: (target: AiDraftLaunchTarget) => void;
+    let enter!: (target: AiDraftLaunchTarget) => void;
+    let exit!: () => void;
+    function WarmSwitch() {
+      const [target, setTarget] = useState(draft);
+      const [inline, setSelection] = useState<{ documentId: string; draftId: string } | null>(null);
+      switchTo = setTarget;
+      enter = (next) => setSelection({ documentId: next.documentId, draftId: next.draftId });
+      exit = () => setSelection(null);
+      const groups = [draft, targetB].map((next) => ({
+        ...next,
+        draft: { ...next, status: "active", isNewDocument: true },
+      }));
+      const review = {
+        controller: { workId: draft.workId, inlineReview: inline, exitInlineReview: exit },
+        drafts: { status: "ready" },
+        groups,
+        groupForDocument: (id: string) => groups.find((group) => group.documentId === id),
+      } as unknown as DraftReviewContextValue;
+      return (
+        <EditorReviewHandoffProvider projectId="project-1" openContextRoute={navigate}>
+          <EditorReviewAddressOwner
+            review={review}
+            requestedDraftId={target.draftId}
+            activeScreen="context"
+            activeScheme={target.contextLocation.scheme}
+            activePath={target.contextLocation.path}
+            activeDocumentId={target.documentId}
+            onSetDraftId={write}
+          />
+        </EditorReviewHandoffProvider>
+      );
+    }
+    await withReactRoot(<WarmSwitch />, async () => {
+      await act(async () => enter(draft));
+      navigate.mockClear();
+      await act(async () => switchTo(targetB));
+      expect(write).not.toHaveBeenCalledWith(null);
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheme: "kb",
+          documentId: targetB.documentId,
+        }),
+        expect.objectContaining({ draftId: targetB.draftId }),
+      );
+      await act(async () => enter(targetB));
+      navigate.mockClear();
+      await act(async () => switchTo(draft));
+      expect(write).not.toHaveBeenCalledWith(null);
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheme: "manuscript",
+          documentId: draft.documentId,
+        }),
+        expect.objectContaining({ draftId: draft.draftId }),
+      );
+    });
+  });
+
   it("exits inline review when the address resolves to another document at the same path", async () => {
     const exit = vi.fn();
     await withReactRoot(
