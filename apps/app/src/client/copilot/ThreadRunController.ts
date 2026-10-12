@@ -33,8 +33,10 @@ import {
   pendingInboxFromEvent,
 } from "@/features/chat/pending-inbox";
 import {
+  EMPTY_RUN_FACTS,
   INITIAL_RUN_FOLLOW,
   isBound,
+  type RunFacts,
   type RunFollow,
   type RunFollowInput,
   type RunFollowView,
@@ -446,6 +448,11 @@ export class ThreadRunController {
   observePending(threadId: string, pending: ThreadPendingInbox, seq: string): void {
     if (this.disposed || this.accountSignal.aborted) return;
     this.mergePending(this.followFor(threadId), pending, seq);
+  }
+
+  /** The run identity facts this controller has merged for a thread (stream and snapshots). */
+  runFacts(threadId: string): RunFacts {
+    return this.follows.get(threadId)?.rule.facts ?? EMPTY_RUN_FACTS;
   }
 
   /** The composer's view of this thread's follow; stable per state for `useSyncExternalStore`. */
