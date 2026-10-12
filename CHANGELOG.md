@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- Chat keeps literal fence delimiters in code, waits for list-contained diagram fences to close, and reuses settled blocks in replies with checkboxes.
+
 - Chat reference identity no longer spans separate authored links with the same destination.
 
 - Unaligned table headers now line up with their cells in chat and the Editor. Explicit column alignment is unchanged.
