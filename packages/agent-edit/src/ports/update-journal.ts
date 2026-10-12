@@ -106,7 +106,7 @@ export interface JournalReadOptions {
   until?: number;
 }
 
-/** Ordered Yjs update log: append/read/checkpoint/compact only. */
+/** Ordered Yjs update log; checkpoint production belongs to the host. */
 export interface UpdateJournal {
   append(
     docId: string,
@@ -126,7 +126,6 @@ export interface UpdateJournal {
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Durable attributed base used when reporting destructive effects. */
   readAttribution?(docId: string): Promise<JournalSnapshot>;
-  checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
   compact(docId: string, before: Date): Promise<CompactionResult>;
   /** Optional host authority for exact destructive-report provenance. */
   materializeDestructiveProvenance?(input: {

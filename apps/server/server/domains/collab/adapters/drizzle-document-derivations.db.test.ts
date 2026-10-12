@@ -101,23 +101,94 @@ describe("durable document derivations", () => {
       seq: 0,
     });
   }
+  async function checkpointCut() {
+    const cut = await persistence.journal.captureCheckpoint(
+      documentId,
+      await ensureAndReadDocumentAuthorityHead(db, documentId),
+    );
+    if (!cut) throw new Error("Current authority did not produce a checkpoint cut");
+    return cut;
+  }
   async function projection() {
     const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
     return row?.markdownProjection;
   }
 
+  it.each([
+    "room",
+    "explicit",
+  ] as const)("%s checkpoints preserve an admitted writer row before the room applies it", async (path) => {
+    const room = new Y.Doc({ gc: false });
+    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    const transport = createHocuspocusPersistenceService({
+      journal: persistence.journal,
+      hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
+      metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
+      emitAgentEditInvariantViolation: () => {},
+    });
+    const client = new Y.Doc({ gc: false });
+    client.getText("prose").insert(0, "Words typed just before reload");
+    const update = Y.encodeStateAsUpdate(client);
+    let apply!: () => void;
+    const held = new Promise<void>((resolve) => {
+      apply = resolve;
+    });
+    // The awaited beforeSync admission has committed, but Hocuspocus has
+    // not yet run readUpdate. Hold that exact window without timing sleeps.
+    await transport.admitLiveWriterUpdate({
+      documentId: documentId as never,
+      document: room,
+      expectedGeneration: documentAuthority(room).generation,
+      update,
+      origin: { type: "user", userId: userId as never },
+    });
+    const writer = held.then(() => Y.applyUpdate(room, update));
+    try {
+      expect(room.getText("prose").toString()).toBe("");
+      if (path === "room") {
+        await transport.storeHocuspocusDocument(documentId, room);
+        await transport.drainHocuspocusPersistence();
+      } else {
+        const checkpoints = createCheckpointService({
+          coordinator: {
+            withDocument: async (_id, operation) => operation(room),
+            recover: async () => {},
+          },
+          store: persistence.store,
+          journal: persistence.journal,
+          markdownDocuments: {
+            restoreFromYDoc: async () => {
+              throw new Error("Not used");
+            },
+          },
+        });
+        const result = await runInDrizzleTransaction(db, () =>
+          checkpoints.checkpoint(documentId, "reload"),
+        );
+        expect(result.ok).toBe(true);
+      }
+      const cold = new Y.Doc({ gc: false });
+      try {
+        const state = await transport.loadHocuspocusDocument(documentId, cold);
+        if (state) Y.applyUpdate(cold, state);
+        expect(cold.getText("prose").toString()).toBe("Words typed just before reload");
+      } finally {
+        cold.destroy();
+      }
+    } finally {
+      apply();
+      await writer;
+      room.destroy();
+      client.destroy();
+    }
+  });
+
   it("refuses writer and agent bytes checked before a restore while queued on the mutation lock", async () => {
     const room = new Y.Doc({ gc: false });
-    const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await append(room, "Before");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const authority = await ensureAndReadDocumentAuthorityHead(db, documentId);
-    const checkpointId = await persistence.store.createCheckpoint(
-      documentId,
-      Y.encodeStateAsUpdate(room),
-      "saved",
-      beforeSeq,
-      authority,
-    );
+    const checkpointId = await persistence.store.createCheckpoint(await checkpointCut(), "saved");
     if (!checkpointId) throw new Error("Missing checkpoint");
     await append(room, "After");
     bindDocumentAuthority(room, authority);
@@ -125,7 +196,6 @@ describe("durable document derivations", () => {
     const transport = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => hp as never,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
       emitAgentEditInvariantViolation: () => {},
     });
@@ -341,12 +411,12 @@ describe("durable document derivations", () => {
 
   it("reconstructs only the restored generation, even with retained retired updates and a later retired checkpoint", async () => {
     const doc = new Y.Doc({ gc: false });
-    const original = await append(doc, "Original ");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), original);
+    await append(doc, "Original ");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     await persistence.journal.compact(documentId, new Date(Date.now() + 1000));
     doc.getText("prose").delete(0, doc.getText("prose").length);
     const admission = await append(doc, "Before typing.");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), admission);
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [checkpoint] = await db
       .select()
       .from(documentYjsCheckpoints)
@@ -390,7 +460,7 @@ describe("durable document derivations", () => {
   it("drops room and explicit checkpoints queued behind a generation replacement", async () => {
     const room = new Y.Doc({ gc: false });
     const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [saved] = await db
       .select()
       .from(documentYjsCheckpoints)
@@ -401,7 +471,6 @@ describe("durable document derivations", () => {
     const hp = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => null,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
     });
@@ -411,7 +480,7 @@ describe("durable document derivations", () => {
         recover: async () => {},
       },
       store: persistence.store,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      journal: persistence.journal,
       markdownDocuments: {
         restoreFromYDoc: async () => {
           throw new Error("Not used");
@@ -477,8 +546,8 @@ describe("durable document derivations", () => {
 
   it("never stamps an acquired old handle with the generation restored before capture", async () => {
     const room = new Y.Doc({ gc: false });
-    const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await append(room, "Before");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [saved] = await persistence.store.listCheckpoints(documentId);
     if (!saved) throw new Error("Missing checkpoint");
     await append(room, " After");
@@ -506,7 +575,7 @@ describe("durable document derivations", () => {
           }),
       },
       store: persistence.store,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      journal: persistence.journal,
       markdownDocuments: {
         restoreFromYDoc: async () => {
           throw new Error("Not used");

@@ -76,7 +76,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleJournal: createUngrantedJournal } = await import("../drizzle-journal.js");
+    const { createDrizzleJournal: createUngrantedJournal, createServerDocumentLifecycle } =
+      await import("../drizzle-journal.js");
     const { grantedJournal } = await import("../../../../test-support/file-grants.js");
     // These cases drive the journal seam directly, as a granted tool call does.
     const createDrizzleJournal = (...args: Parameters<typeof createUngrantedJournal>) =>
@@ -213,7 +214,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reconstructs undo from a compacted checkpoint plus retained updates", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.\n\nBeta shield.", LIVE_CLIENT_ID);
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+      await createServerDocumentLifecycle(db, journal).seedInitialDocument(
+        DOC_ID,
+        Y.encodeStateAsUpdate(liveDoc),
+      );
 
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
       const core = createAgentEditCore({
@@ -279,7 +283,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("cold redo targets the latest reversed same-turn subset through Drizzle", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+      await createServerDocumentLifecycle(db, journal).seedInitialDocument(
+        DOC_ID,
+        Y.encodeStateAsUpdate(liveDoc),
+      );
 
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
       const core = createAgentEditCore({
@@ -355,7 +362,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("rehydrates redo from reversal records after live doc recovery", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+      await createServerDocumentLifecycle(db, journal).seedInitialDocument(
+        DOC_ID,
+        Y.encodeStateAsUpdate(liveDoc),
+      );
 
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
       const core = createAgentEditCore({

@@ -1,4 +1,5 @@
 /** In-memory agent-edit adapters for tests and the in-memory app graph. */
+
 import {
   type DocumentCoordinator,
   type DocumentLifecycle,
@@ -12,7 +13,12 @@ import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
+import { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
 import { bindDocumentAuthority } from "../../domain/document-handle.js";
+import type {
+  CheckpointAuthority,
+  CheckpointJournal,
+} from "../../domain/ports/checkpoint-authority.js";
 import { loadDocumentState } from "../document-loader.js";
 
 export type InMemoryCheckpointRecord = {
@@ -23,14 +29,10 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = UpdateJournal &
+export type InMemoryJournal = CheckpointJournal &
   ReversalStore & {
-    createCheckpoint(
-      docId: string,
-      state: Uint8Array,
-      reason: string,
-      upToSeq: number,
-    ): Promise<string>;
+    createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string>;
+    seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean>;
     getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
     listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
     latestUpdate(docId: string): Promise<PersistedUpdate | null>;
@@ -56,16 +58,31 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
 
-  async createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-  ): Promise<string> {
-    const record = this.checkpointRecord(docId, state, reason);
-    await super.checkpoint(docId, state, upToSeq);
+  async captureCheckpoint(docId: string, authority: CheckpointAuthority) {
+    if (authority.authorityId !== docId || authority.generation !== 1n) return null;
+    // Capture synchronously: no writer or checkpoint can interleave this fold.
+    const entry = this.debugEntry(docId);
+    const base = entry?.checkpoint ?? null;
+    return CapturedCheckpointCut.fromJournal(
+      docId,
+      authority,
+      base,
+      (entry?.updates ?? []).filter((row) => row.seq > (base?.upToSeq ?? 0)),
+    );
+  }
+
+  async createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string> {
+    const record = this.checkpointRecord(cut.documentId, cut.state, reason);
+    await super.checkpoint(cut.documentId, cut.state, cut.upToSeq);
     this.checkpoints.push(record);
     return record.id;
+  }
+
+  async seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean> {
+    const snapshot = await this.read(docId);
+    if (snapshot.checkpoint || snapshot.updates.length) return false;
+    await super.checkpoint(docId, state, 0);
+    return true;
   }
 
   async getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null> {
@@ -88,8 +105,8 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     return Math.max(0, (this.debugEntry(docId)?.nextSeq ?? 1) - 1);
   }
 
-  override async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
-    await this.createCheckpoint(docId, state, "checkpoint", upToSeq);
+  async storeCheckpoint(cut: CapturedCheckpointCut): Promise<void> {
+    await this.createCheckpoint(cut, "checkpoint");
   }
 
   override async compact(docId: string, before: Date) {

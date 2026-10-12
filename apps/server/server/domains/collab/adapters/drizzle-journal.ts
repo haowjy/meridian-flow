@@ -50,6 +50,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -88,13 +89,7 @@ export type FacadeCheckpointRecord = {
 };
 
 export type CollabFacadeStore = {
-  createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-    authority: CheckpointAuthority,
-  ): Promise<string | null>;
+  createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string | null>;
   getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
@@ -1251,12 +1246,41 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       )(docId, { fromCheckpoint: false });
     },
 
-    async checkpoint(docId, state, upToSeq, authority) {
-      // Unbound seed/conformance producers have no loaded handle. Handle-backed
-      // callers always supply their immutable binding; validation is under lock.
-      const captured =
-        authority ??
-        (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db as Database), docId));
+    async captureCheckpoint(docId, captured) {
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        const current = await findDocumentAuthorityHead(txDb, docId);
+        if (
+          !current ||
+          current.authorityId !== captured.authorityId ||
+          current.generation !== captured.generation
+        )
+          return null;
+        const base = await latestCheckpoint(txDb, docId, current);
+        const rows = await txDb
+          .select()
+          .from(documentYjsUpdates)
+          .where(
+            and(
+              eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+              eq(documentYjsUpdates.authorityId, current.authorityId),
+              eq(documentYjsUpdates.authorityGeneration, current.generation),
+              gt(documentYjsUpdates.id, base?.upToSeq ?? 0),
+            ),
+          )
+          .orderBy(asc(documentYjsUpdates.id));
+        return CapturedCheckpointCut.fromJournal(
+          docId,
+          current,
+          base ? { state: toBytes(base.state), upToSeq: base.upToSeq } : null,
+          rows.map((row) => mapUpdate(row)),
+        );
+      });
+    },
+
+    async storeCheckpoint(cut) {
+      const { documentId: docId, authority: captured, upToSeq } = cut;
       await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
@@ -1268,18 +1292,9 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         )
           return;
         const existing = await latestCheckpoint(txDb, docId, captured);
-        // A checkpoint names a durable journal cut. A later snapshot at the same
-        // cut cannot contain legitimate extra state because admission is journal-first.
-        // Keeping the first snapshot prevents a stale warm room from replacing an
-        // initialize-only seed with an empty checkpoint at sequence zero.
         if (existing && existing.upToSeq >= upToSeq) return;
-        // upToSeq must be ≤ the updates reflected in state; replaying extra
-        // updates is idempotent, but skipping one loses durable document data.
-        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
+        await insertCheckpoint(txDb, docId, cut.state, upToSeq, "checkpoint", captured);
         if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          // ensureDocument's empty cut only bootstraps a room before its first
-          // journal admission. Once a real cut is stored it has no restore value;
-          // retaining it turns one cold open into two apparent checkpoints.
           await txDb
             .delete(documentYjsCheckpoints)
             .where(eq(documentYjsCheckpoints.id, existing.id));
@@ -1587,16 +1602,23 @@ export function createServerDocumentLifecycle(
       await upsertHead(lifecycleDb, docId);
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
-      const emptyDoc = createCollabYDoc({ gc: false });
-      await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc), 0);
+      await runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        const authority = await ensureAndReadDocumentAuthorityHead(txDb, docId);
+        const cut = await createDrizzleJournal(txDb).captureCheckpoint(docId, authority);
+        if (cut) await createDrizzleJournal(txDb).storeCheckpoint(cut);
+      });
     },
   };
 }
 
 export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore {
   return {
-    async createCheckpoint(docId, state, reason, upToSeq, captured) {
-      return db.transaction(async (tx) => {
+    async createCheckpoint(cut, reason) {
+      const { documentId: docId, authority: captured, upToSeq } = cut;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
         const current = await findDocumentAuthorityHead(tx, docId);
         if (
@@ -1608,7 +1630,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
         const checkpointId = await insertCheckpoint(
           tx as JournalDb,
           docId,
-          state,
+          cut.state,
           upToSeq,
           reason,
           captured,

@@ -6,7 +6,8 @@
 The persistence seam is split by concern:
 
 - `UpdateJournal` is the ordered Yjs update log: append, `appendBatch`, live-load
-  `read`, checkpoint, and compact.
+  `read`, and compact. Checkpoint production belongs to the host, whose
+  captured-cut port binds bytes to guaranteed durable coverage.
 - `ReversalStore` owns reversal state: write ordinal reservation,
   active/reversed write metadata queries, `readForReconstruction(docId)`,
   per-handle `mutationsForWrite` and the batch `mutationsForWrites` (one query for

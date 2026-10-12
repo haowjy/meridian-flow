@@ -167,7 +167,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchCoordinator: createBranchCoordinator({ store: branchStore }),
         hocuspocus: () => null,
         metaForOrigin: () => ({ origin: "system", seq: 0 }),
-        latestUpdateSeq: async () => 0,
         emitAgentEditInvariantViolation: () => undefined,
       });
     }
