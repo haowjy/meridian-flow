@@ -80,11 +80,18 @@ Settlement order is explicit:
 
 **Per-change clicks queue.** `runDraftSelection` accepts every distinct Apply or
 Discard click at once: it hides the change (the queue entry in the record store,
-which also holds the caller's promise and the account epoch it was admitted in),
+which also holds the caller's execution context, promise and account epoch),
 and `drainClicks` sends the draft's clicks one at a time. Each is found again in
 the draft as it is when its turn comes (a fresh preview read for every click after
-the first, new tokens) by its keys, sent as that generation's rows, and is `gone`
-when nothing there holds it. An account change answers every unsent click
+the first, new tokens) by the immutable stable member set accepted at the click.
+Current complete raw classes must have exactly those members and remain
+actionable; a joined, missing or incomplete member refuses rather than changing
+the command. Only the row names and cut tokens may change. An explicit `stale`
+answer refreshes the cut and retries once, under the same drain and live claim,
+only for identical actionable members. A second stale answer, changed membership,
+permission failure or transport ambiguity restores/refuses without another retry.
+The drain supplies no caller authority: each intent carries its own query client
+and thread invalidation context. An account change answers every unsent click
 `blocked`, and the loop checks its click is still queued right after the read, so
 nothing is sent or published for a dead account. Rows disable only for a
 whole-draft command on that same draft or an archived Work (`changesLocked`), never for
@@ -100,6 +107,12 @@ outlive a generation (queued clicks, held failures, hidden sets, the focus, the
 `operationKey` (in `@meridian/contracts/drafts`: the part key; `row:<id>` for a row that records no edit part, which
 therefore only matches itself). Text excerpts are display, never identity.
 
+**Presentation data and interactions.** `useOpenReviewChanges.ts` owns the
+retained projected open-review data (changes, failures, status and completion).
+`useReviewChanges` adds focus, stepping and commands; `useDraftView` borrows only
+that presentation data for the same painted draft, paired with its own caller
+capability. Listed views never construct the interactive open-review model.
+
 **One projection.** `draft-projection.ts` is the only place intents are applied to
 an observation: `projectDraft(observed, intentKeys)` gives the list/count preview,
 the manuscript's inline preview (Discards in flight still drawn) and the
@@ -111,10 +124,11 @@ projection.
 the account epoch (`resetDraftCommandRecords` advances it). Answers, failures,
 confirmations, cache edits and release after an await go through the claim and
 land only while it is the draft's live pending claim. Batch submission pins its
-creation-bound Work and account epoch, then submits each target to the same
-draft-local intent queue. No Work lease, reservation or hide-only batch queue
+creation-bound Work and account epoch, synchronously admits all targets into
+their draft-local queues, then aggregates their promises. No Work lease, reservation or hide-only batch queue
 exists. Refusals do not stop independent targets; account revocation stops the
-next submission. Offline clicks refuse without replaying on reconnect.
+next actual send (already-sent requests cannot be rolled back). Offline clicks
+refuse without replaying on reconnect.
 
 ## Records, failures and freshness fences
 

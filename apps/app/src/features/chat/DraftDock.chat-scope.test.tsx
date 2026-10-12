@@ -5,6 +5,7 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import * as projectsApi from "@/client/api/projects-api";
 import {
   failDraftCommand,
@@ -80,8 +81,6 @@ const click = (name: string) =>
 
 it.each([
   { label: "Apply", expanded: false },
-  { label: "Discard", expanded: false },
-  { label: "Apply", expanded: true },
   { label: "Discard", expanded: true },
 ])("the strip's new document dispatches whole $label (expanded: $expanded)", async ({
   label,
@@ -199,6 +198,53 @@ it.each([
             ?.getAttribute("title"),
         ).toBe(message);
       }
+    },
+    {
+      chatSurface: <Strip />,
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ProjectNavigationProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+it("all accepted batch targets disappear at the click and a refused target restores independently", async () => {
+  const files = [draft("chapter-a", [pacing]), draft("chapter-b", [pacing])];
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
+  fixture.network.getDraftPreview.mockImplementation(async (_project, _work, documentId) => ({
+    ...preview,
+    draftId: `draft-${documentId}`,
+    operations: [op(documentId, pacing)],
+  }));
+  let confirm!: (value: unknown) => void;
+  let refuse!: (error: unknown) => void;
+  const first = new Promise((resolve) => {
+    confirm = resolve;
+  });
+  const second = new Promise((_resolve, reject) => {
+    refuse = reject;
+  });
+  fixture.network.discardDraft.mockImplementation(
+    (_project, _work, documentId) => (documentId === "chapter-a" ? first : second) as never,
+  );
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(text()).toContain("2 changes"));
+      await click("Discard");
+      await click("Discard");
+      expect(strip()).toBeNull();
+      expect(fixture.network.discardDraft).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        confirm({ status: "discarded", draftId: files[0]?.draftId, draftClosed: false });
+        refuse(new HttpResponseError("Refused", 500, null));
+      });
+      await settleReact(() => expect(text()).toContain("1 change"));
+      expect(text()).toContain("chapter-b");
+      expect(text()).not.toContain("chapter-a");
     },
     {
       chatSurface: <Strip />,

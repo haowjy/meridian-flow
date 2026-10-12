@@ -494,7 +494,13 @@ type QueuedSelection = {
   epoch: number;
   settle: (outcome: DraftCommandOutcome) => void;
 } & (
-  | ({ target: "selection" } & ChangeSelection)
+  | ({
+      target: "selection";
+      send: (
+        click: ChangeSelection & { change: QueuedChange },
+        afterAnother: boolean,
+      ) => Promise<DraftCommandOutcome>;
+    } & ChangeSelection)
   | { target: "all"; send: () => Promise<DraftCommandOutcome>; reject: (error: unknown) => void }
 );
 type QueuedSelections = Readonly<Record<number, QueuedSelection>>;
@@ -544,16 +550,48 @@ export function beginChangeCommand(
   return claim;
 }
 
-/** Queued selections hide immediately; each retires when its claim starts or the batch ends. */
+/** A proved same-member retry keeps its claim but addresses the newly observed generation. */
+export function rebaseChangeCommand(
+  claim: DraftClaim,
+  selection: ChangeSelection,
+  generation: number,
+  completesDraft: boolean,
+): void {
+  if (!claimIsLive(claim)) return;
+  updateDraftRecord(draftCommandKey(claim.draft), (prior) => {
+    if (prior.claim?.phase !== "pending" || prior.claim.command.target !== "selection")
+      return prior;
+    return {
+      ...prior,
+      claim: {
+        phase: "pending",
+        token: claim.token,
+        command: {
+          target: "selection",
+          mode: prior.claim.command.mode,
+          ...selection,
+          draftGeneration: generation,
+          ...(completesDraft ? { completesDraft: true } : {}),
+        },
+      },
+    };
+  });
+}
+
+/** Queued selections hide immediately; each retains its caller's execution context and retires with its claim. */
 export function queueChangeSelection(
   draft: DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
   settle: (outcome: DraftCommandOutcome) => void,
+  send: Extract<QueuedSelection, { target: "selection" }>["send"],
 ): QueuedChange {
   const id = nextQueued++;
   const entry: QueuedSelection = {
-    ...selection,
+    classIds: [...selection.classIds],
+    operationIds: [...selection.operationIds],
+    keys: [...selectionKeys(selection)],
+    send,
     target: "selection",
     prefix: draftCommandKey(draft),
     mode,

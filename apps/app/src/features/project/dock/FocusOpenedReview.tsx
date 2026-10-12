@@ -14,7 +14,7 @@
 import { useEffect, useRef } from "react";
 
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { useOpenReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 
 export type ReviewFocusRequest = {
   /** The launch that made it; a newer launch replaces the request. */

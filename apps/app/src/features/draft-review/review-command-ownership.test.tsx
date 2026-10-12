@@ -135,8 +135,14 @@ it.each([
   const discardAnswer = deferredReviewAnswer<ReturnType<typeof discarded>>();
   const endpoint =
     mode === "apply" ? fixture.network.applyDraftChanges : fixture.network.discardDraft;
-  if (mode === "apply") fixture.network.applyDraftChanges.mockReturnValueOnce(applyAnswer.promise);
-  else fixture.network.discardDraft.mockReturnValueOnce(discardAnswer.promise);
+  if (mode === "apply")
+    fixture.network.applyDraftChanges
+      .mockReturnValueOnce(applyAnswer.promise)
+      .mockResolvedValue({ ...applied(false, "3"), draftId: "draft-b" });
+  else
+    fixture.network.discardDraft
+      .mockReturnValueOnce(discardAnswer.promise)
+      .mockResolvedValue({ ...discarded(false), draftId: "draft-b" });
   await fixture.render(async (p) => {
     await settleReact(() => expect(p().chat.files).toHaveLength(2));
     if (presentedFirst) await open(p);
@@ -154,15 +160,8 @@ it.each([
         },
       ]);
     });
-    expect(endpoint).toHaveBeenCalledTimes(1);
+    expect(endpoint).toHaveBeenCalledTimes(2);
     await p().moveChatToWork(workC);
-    if (mode === "apply")
-      fixture.network.applyDraftChanges.mockResolvedValue({
-        ...applied(false, "3"),
-        draftId: "draft-b",
-      });
-    else
-      fixture.network.discardDraft.mockResolvedValue({ ...discarded(false), draftId: "draft-b" });
     await act(async () => {
       if (mode === "apply") applyAnswer.resolve(applied(false));
       else discardAnswer.resolve(discarded(false));

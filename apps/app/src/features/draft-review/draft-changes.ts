@@ -1,11 +1,4 @@
-/**
- * draft-changes — the model every change list renders from, whichever draft it
- * lists. `DraftChangesView` is what `DocumentChangeRows` needs: the status of
- * the draft's preview, its changes in document order with what failed on each,
- * and the commands that act on them. The open review's model
- * (`useReviewChanges`) adds focus, stepping and completion; any other draft's
- * (`useDraftView`) adds nothing. Both derive their items the same way here.
- */
+/** Shared change presentation data and failures. Open and listed bindings add their own command authority; only the open review adds focus and stepping. */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
 
@@ -27,17 +20,13 @@ export type ReviewChangeItem = {
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
 };
 
-export type DraftChangesView = {
+/** Presentation data can be shared without focus or command authority. */
+export type DraftChangesData = {
   documentId: string | null;
   draftId: string | null;
   /** `error`: the draft's preview could not be read. Never read it as "no changes". */
   status: "idle" | "loading" | "error" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
-  /** The change the manuscript is focused on, when this draft is the open review; else null. */
-  focused: ReviewChange | null;
-
-  /** Every Apply and Discard disables on this. */
-  locked: boolean;
   /**
    * The draft is still open, but its read lists no change and no command of
    * ours is hiding one. This is not evidence of terminal settlement.
@@ -46,6 +35,13 @@ export type DraftChangesView = {
   unlisted: boolean;
   /** Read the preview again; present when `status` is `error`. */
   retry?: () => void;
+};
+
+export type DraftChangesView = DraftChangesData & {
+  /** Focus belongs only to the open review interaction binding. */
+  focused: ReviewChange | null;
+  /** Every Apply and Discard disables on this. */
+  locked: boolean;
   apply: (change: ReviewChange) => Promise<void>;
   discard: (change: ReviewChange) => Promise<void>;
 };

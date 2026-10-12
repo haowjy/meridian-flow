@@ -29,7 +29,8 @@ It is the single local contract reference; this file maps ownership.
 | Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
 | Claim-to-review completion projection | `useReviewCommandCompletion.ts` |
 | Shared focus reconciliation | `useReconcileReviewFocus.ts` |
-| Open-review and unopened-file list models | `useReviewChanges.ts`, `useDraftView.ts` |
+| Retained projected presentation data | `useOpenReviewChanges.ts`, `draft-changes.ts` |
+| Open-review and unopened-file interaction bindings | `useReviewChanges.ts`, `useDraftView.ts` |
 | Layout-independent header model | `useReviewHeader.ts` |
 | Listed-file launch adapter | `features/project/dock/useAiDraftLauncher.ts` (`openReviewFile`) |
 | Refusal/failure wording | `ReviewMessageText.tsx` |
@@ -52,6 +53,10 @@ Paths outside this directory are relative to `apps/app/src`.
   delivery survives leaving review; the room owner has no paint receipt.
 - Focus readers are pure. Reconcile once per scope, and address focus requests to
   their intended review rather than the last rendered selection.
+- Accepted per-change commands keep an immutable stable member set. Reforks may
+  rename rows but never enlarge or shrink that set; incomplete classes refuse.
+  Explicit stale answers get one fresh-cut retry only for identical actionable
+  members. Transport ambiguity and permission failures never retry.
 - Per-change commands send every operation of the class and the viewed revision
   tokens. Whole-draft commands settle the current server branch, not a preview.
 - Only new documents are one whole-draft
