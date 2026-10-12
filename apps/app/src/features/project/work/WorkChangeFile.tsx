@@ -57,24 +57,28 @@ export function WorkChangeFile({
   return (
     <>
       <div className="flex min-w-0 items-center">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={t`Changes in ${name}`}
-          onClick={() => setExpanded((open) => !open)}
-          className={cn(
-            "focus-ring grid shrink-0 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-dropdown-hover motion-reduce:transition-none",
-            touch ? "size-11" : "size-8",
-          )}
-        >
-          <ChevronRight
-            aria-hidden
+        {wholeDocument ? (
+          <span aria-hidden className={cn("shrink-0", touch ? "size-11" : "size-8")} />
+        ) : (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={t`Changes in ${name}`}
+            onClick={() => setExpanded((open) => !open)}
             className={cn(
-              "size-4 transition-transform motion-reduce:transition-none",
-              expanded && "rotate-90",
+              "focus-ring grid shrink-0 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-dropdown-hover motion-reduce:transition-none",
+              touch ? "size-11" : "size-8",
             )}
-          />
-        </button>
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "size-4 transition-transform motion-reduce:transition-none",
+                expanded && "rotate-90",
+              )}
+            />
+          </button>
+        )}
         {wholeDocument ? (
           <div className="min-w-0 flex-1">
             <FileChanges view={view} touch={touch} onSelect={review} documentName={name} />
