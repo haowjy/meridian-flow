@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- Words typed just before a document reloads are never lost. Checkpoint capture no longer replays document history while holding the writer admission lock.
+- Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
