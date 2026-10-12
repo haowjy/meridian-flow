@@ -46,6 +46,18 @@ export type DraftChangesView = DraftChangesData & {
   discard: (change: ReviewChange) => Promise<void>;
 };
 
+/** A ready new document is the file itself, not a header followed by a second named row. */
+export function isWholeDocumentChange(
+  view: Pick<DraftChangesData, "status" | "items" | "unlisted">,
+): boolean {
+  return (
+    view.status === "ready" &&
+    !view.unlisted &&
+    view.items.length === 1 &&
+    view.items[0]?.change.target.kind === "draft"
+  );
+}
+
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
 export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;

@@ -3591,10 +3591,6 @@ msgid "Returned from the billing portal."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Review"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewChip.tsx
 #~ msgid "Review draft"
 #~ msgstr ""

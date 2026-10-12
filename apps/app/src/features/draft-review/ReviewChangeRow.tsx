@@ -26,6 +26,8 @@ export type ReviewChangeRowProps = {
   onDiscard: () => void;
   touch?: boolean;
   showAttribution?: boolean;
+  wholeDocument?: boolean;
+  documentName?: string;
 };
 
 export function ReviewChangeRow({
@@ -41,8 +43,12 @@ export function ReviewChangeRow({
   onDiscard,
   touch = false,
   showAttribution = false,
+  wholeDocument = false,
+  documentName,
 }: ReviewChangeRowProps) {
-  const { added, removed } = changeExcerpt(change);
+  const { added, removed } = documentName
+    ? { added: documentName, removed: null }
+    : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
   const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
@@ -65,9 +71,11 @@ export function ReviewChangeRow({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {/* The dot sits outside the excerpt button so an author wrapped under
             the excerpt lines up with the excerpt text, not with the dot. */}
-        <span className={cn("flex items-center", firstLine)}>
-          <ChangeDot change={change} />
-        </span>
+        {wholeDocument ? null : (
+          <span className={cn("flex items-center", firstLine)}>
+            <ChangeDot change={change} />
+          </span>
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-x-2">
           <button
             type="button"
