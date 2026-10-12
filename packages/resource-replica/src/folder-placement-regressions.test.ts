@@ -113,3 +113,43 @@ it("binds document observations to a parent's exact canonical home ahead of its 
     name: "doc.md",
   });
 });
+
+it("resolves 800 siblings under 800 missing levels in under 50 ms", () => {
+  const prefix = Array(800).fill("missing").join("/");
+  const nodes = Array.from({ length: 800 }, (_, i) => ({
+    id: `s${i}`,
+    canonical: loc(`${prefix}/s${i}`),
+    parent: { kind: "folder" as const, folderId: "missing-parent" },
+  }));
+  const start = performance.now();
+  const graph = folderPlacementGraph("p", nodes, []);
+  expect(performance.now() - start).toBeLessThan(50);
+  expect(graph.locations.get("s799")?.path).toBe(`/${prefix}/s799`);
+});
+
+it("retains exact-ID parent provenance after A is renamed and its old home is reused", () => {
+  // Validated rename receipt followed by newer exact-ID evidence of the later move.
+  const queued = outcome(submit(move("F", "A", "B")), true);
+  const refreshed = installFolderNamespaceAvailability(
+    queued,
+    queued.canonicalRefresh!.operationId,
+    {
+      kind: "available",
+      location: loc("A/B"),
+      parent: { kind: "folder", folderId: "new-A" },
+    },
+  )!.next;
+  const stale = createResourcePlacement("p", [entries[0], node("F", "A")], [refreshed]);
+  expect(stale.folderLocation("F")?.path).toBe("/A/B");
+  const catalog = [entries[0], node("F", "A"), node("new-A", "A")];
+  const placement = createResourcePlacement("p", catalog, [refreshed]);
+  expect(placement.folderLocation("F")?.path).toBe("/A/B");
+  expect(placement.parentForFolder("F")).toEqual({ kind: "folder", folderId: "new-A" });
+});
+
+it("roots a two-folder canonical cycle at each member's absolute observation", () => {
+  const catalog = [entries[0], node("A", "old/A", "B"), node("B", "new/B", "A")];
+  const placement = createResourcePlacement("p", catalog, []);
+  expect(placement.folderLocation("A")?.path).toBe("/old/A");
+  expect(placement.folderLocation("B")?.path).toBe("/new/B");
+});
