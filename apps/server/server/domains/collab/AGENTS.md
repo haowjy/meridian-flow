@@ -73,7 +73,10 @@ Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 ## Immutable edit capture (parallel migration)
 
 `adapters/drizzle-document-edits.ts` captures model and journaled writer writes
-inside their existing mutation transactions and locks. Parts retain delta bytes
+inside their existing mutation transactions and locks. Each logical model edit
+reserves one ordinal before staging; capture receives that same ordinal for its
+immutable row, so results, receipts and journal parts name the same edit. Response
+and turn grouping do not allocate or merge handles. Parts retain delta bytes
 independently of journal compaction. Apply moves placement at completed admission
 to the authored live row, not the reconcile row; Discard and empty-draft reset
 make discarded and retired placements terminal. Per-change Discard re-forks from

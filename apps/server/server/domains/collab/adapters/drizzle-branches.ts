@@ -1339,6 +1339,7 @@ async function captureBranchEdits(
         : {};
     await recordDocumentEdit(db, {
       documentId: branch.documentId,
+      wId: journal.wId ?? undefined,
       threadId: journal.threadId,
       turnId: journal.turnId as import("@meridian/contracts").TurnId | null | undefined,
       responseId:

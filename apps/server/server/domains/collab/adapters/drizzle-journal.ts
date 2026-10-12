@@ -947,7 +947,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           });
         }
 
-        await captureLiveEdits(txDb, receiptStates, entries, updateRows);
         const mutationValues: Array<{
           index: number;
           seq: number;
@@ -987,6 +986,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             docId: entry.docId,
           });
         }
+
+        const ordinals = new Map(mutationValues.map((value) => [value.index, value.wId]));
+        await captureLiveEdits(
+          txDb,
+          receiptStates,
+          entries.map((entry, index) => ({
+            ...entry,
+            ...(entry.mutation
+              ? { mutation: { ...entry.mutation, wId: ordinals.get(index) } }
+              : {}),
+          })),
+          updateRows,
+        );
 
         if (mutationValues.length > 0) {
           await txDb.insert(agentEditMutations).values(
@@ -1761,6 +1773,7 @@ async function captureLiveEdits(
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
           responseId: asModelResponseId(mutation.authoringResponseId),
           actor: mutation.actorKind,
+          wId: mutation.wId,
           actorUserId: mutation.userId ? asUserId(mutation.userId) : undefined,
           receipts: captureEditParts(doc, receipts).map((p, i) => ({
             ...p,
