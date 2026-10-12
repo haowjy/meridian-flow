@@ -23,6 +23,7 @@ can do about it.
   `•`, `—` or `|`, none says manifest, entry, plan, sniff or digest.
 - **No ZIP reader, no `fflate`.** A ZIP is a file. Names the server would refuse
   (`:`, `?`, `*`) are left out and reported as unreadable instead of failing the
-  whole import.
+  whole import: the manifest's `unreadable` paths keep their source names, which
+  the server reports and never allocates.
 - The drop dispatcher is `features/project/context/tree-drop/`; this feature only
   supplies the `files` route's reader (`read-dropped.ts`).

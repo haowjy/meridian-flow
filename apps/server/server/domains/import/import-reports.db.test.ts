@@ -91,6 +91,24 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       folderId,
     });
   });
+  it("lands the rest of a folder whose refused names are reported as unreadable", async () => {
+    const service = createImportService(ports());
+    const book = loose({ "Fine.md": "Fine" });
+    book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
+    book.manifest.entries[0].path = "Fine.md";
+    book.manifest.unreadable = [{ rootId: 0, path: "Who?.md", reason: "unreadable" }];
+    const plan = await service.plan(projectId, userId, book.manifest);
+    expect(plan.counts).toMatchObject({ arriving: 1, skipped: 1 });
+    expect(plan.entries.find((entry) => entry.entryId < 0)).toMatchObject({
+      filename: "Who?.md",
+      state: "skipped",
+      reason: "unreadable",
+      exists: false,
+    });
+    expect(await service.land(projectId, plan.importId, 0, book.bytes[0])).toMatchObject({
+      state: "landed",
+    });
+  });
   it("incremental reports publish moves and deletes of landed documents", async () => {
     const selection = loose({ "A.md": "hello" }),
       service = createImportService(ports()),

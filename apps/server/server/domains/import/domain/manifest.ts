@@ -47,14 +47,29 @@ const name = z
     "Invalid name",
   );
 // Bounds run before segment validation so a deep path is never split and walked.
-const path = z.string().superRefine((value, context) => {
-  if (Buffer.byteLength(value) > IMPORT_LIMITS.pathBytes)
-    context.addIssue({ code: "custom", params: { refusal: "path_too_long" }, fatal: true });
-  else if (value.split("/", IMPORT_LIMITS.pathDepth + 1).length > IMPORT_LIMITS.pathDepth)
-    context.addIssue({ code: "custom", params: { refusal: "path_too_deep" }, fatal: true });
-  else if (value !== "" && !value.split("/").every((segment) => name.safeParse(segment).success))
-    context.addIssue({ code: "custom", message: "Invalid relative path" });
-});
+const boundedPath = (segmentOk: (segment: string) => boolean) =>
+  z.string().superRefine((value, context) => {
+    if (Buffer.byteLength(value) > IMPORT_LIMITS.pathBytes)
+      context.addIssue({ code: "custom", params: { refusal: "path_too_long" }, fatal: true });
+    else if (value.split("/", IMPORT_LIMITS.pathDepth + 1).length > IMPORT_LIMITS.pathDepth)
+      context.addIssue({ code: "custom", params: { refusal: "path_too_deep" }, fatal: true });
+    else if (value !== "" && !value.split("/").every(segmentOk))
+      context.addIssue({ code: "custom", message: "Invalid relative path" });
+  });
+const path = boundedPath((segment) => name.safeParse(segment).success);
+/**
+ * An unreadable item is only reported, never named in the tree, so it keeps its
+ * source name even when Meridian would refuse it (`Who?.md`). It must still be a
+ * plain relative path: no empty, `.` or `..` segment and no control character.
+ */
+const sourcePath = boundedPath(
+  (segment) =>
+    segment.trim() !== "" &&
+    segment !== "." &&
+    segment !== ".." &&
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
+    !/[\u0000-\u001f]/.test(segment),
+);
 const root = z
   .object({
     rootId: z.number().int().nonnegative(),
@@ -86,7 +101,7 @@ const schema = z
         z
           .object({
             rootId: z.number().int().nonnegative(),
-            path,
+            path: sourcePath,
             reason: z
               .enum([
                 "unreadable",
