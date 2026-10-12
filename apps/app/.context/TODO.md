@@ -53,3 +53,7 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   documents, `phase5.spec.ts` fails on
   `document_yjs_updates_authoring_response_id_model_responses_id_f` during setup.
   Reconcile reset ordering with the current document/response FK graph.
+
+## Large trees
+
+- **A 2,000-document import keeps the tab two-thirds busy while it lands.** The resource replica re-projects every record on each change (`useObservedResourceProjection`, `useContextCatalogViews`) and every tree row re-renders on each catalog update; the rows are not virtualized. Batch or throttle the projection while an import lands and virtualize the tree. Measurements and profile: the P4 work item's `evidence/p4/perf-2000.md`. `features/project/context/ContextTreePanel.tsx`, `client/query/useContextCatalog.ts`.

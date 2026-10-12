@@ -12,7 +12,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FilePlus, FolderPlus, Plus } from "lucide-react";
+import { FilePlus, FolderInput, FolderPlus, Plus } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -27,9 +27,11 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 export type MobileCreateEntryMenuProps = {
   /** Triggered when the user selects "New file" or "New folder". */
   onSelect: (kind: ContextCreateKind) => void;
+  /** Present where the area takes imports: opens the import dialog on this folder. */
+  onImport?: () => void;
 };
 
-export function MobileCreateEntryMenu({ onSelect }: MobileCreateEntryMenuProps) {
+export function MobileCreateEntryMenu({ onSelect, onImport }: MobileCreateEntryMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -56,6 +58,12 @@ export function MobileCreateEntryMenu({ onSelect }: MobileCreateEntryMenuProps) 
           <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New folder</Trans>
         </DropdownMenuItem>
+        {onImport ? (
+          <DropdownMenuItem className="cursor-pointer" onSelect={onImport}>
+            <FolderInput className="size-4 text-muted-foreground" aria-hidden />
+            <Trans>Import…</Trans>
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

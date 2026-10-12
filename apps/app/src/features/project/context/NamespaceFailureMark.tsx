@@ -6,16 +6,19 @@
 import { t } from "@lingui/core/macro";
 import { TriangleAlert } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
+import { failureSentence } from "@/features/import/reason-copy";
 
 type NamespaceFailure = NonNullable<
   CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
 >;
 
 function namespaceFailureMessage(
-  failure: NamespaceFailure,
+  failure: NamespaceFailure | "import",
   folder: boolean,
   move: boolean,
+  reason?: string | null,
 ): string {
+  if (failure === "import") return t`Couldn't import this file. ${failureSentence(reason)}`;
   if (failure === "delete")
     return folder
       ? t`Couldn't delete this folder. Try again.`
@@ -32,8 +35,11 @@ export function NamespaceFailureMark({
   move = false,
   labelled,
   message: customMessage,
+  reason,
 }: {
-  failure: NamespaceFailure;
+  /** `import`: the row's file did not arrive; `reason` is the server's code for why. */
+  failure: NamespaceFailure | "import";
+  reason?: string | null;
   /** The failed row is a folder, not a document. */
   folder?: boolean;
   /** The refused destination changed its parent or area, not only its name. */
@@ -43,7 +49,7 @@ export function NamespaceFailureMark({
   /** A surface may explain where its passive status can be retried. */
   message?: string;
 }) {
-  const message = customMessage ?? namespaceFailureMessage(failure, folder, move);
+  const message = customMessage ?? namespaceFailureMessage(failure, folder, move, reason);
   if (labelled)
     return (
       <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">

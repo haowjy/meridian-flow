@@ -76,3 +76,23 @@ describe("manifest bounds", () => {
     expect(refusal(raw)).toMatchObject({ status: 400, code: "duplicate_entry_id" });
   });
 });
+
+describe("unreadable paths", () => {
+  it("reports a file Meridian cannot name instead of refusing the whole selection", () => {
+    const raw = {
+      ...vault([note(0, "Fine.md")]),
+      unreadable: [
+        { rootId: 0, path: "Who?.md", reason: "unreadable" },
+        { rootId: 0, path: "Notes: old/Draft.md", reason: "unreadable" },
+      ],
+    };
+    expect(validateManifest(raw).unreadable).toHaveLength(2);
+  });
+
+  it("still refuses an unreadable path no file system could hold", () => {
+    for (const path of ["Bad\u0000Name.md", "Book//Ch.md", "Book/", "../Ch.md"])
+      expect(
+        refusal({ ...vault([note(0, "Fine.md")]), unreadable: [{ rootId: 0, path }] }),
+      ).toMatchObject({ status: 400, code: "manifest_invalid" });
+  });
+});

@@ -87,7 +87,10 @@ correctness gate.
 
 Reasons and findings are the typed codes/params in contracts/imports. Raw
 failures go to server observability only. Unreadable selections are skipped,
-with the reader's code in reasonParams. They never acquire a document row.
+with the reader's code in reasonParams. They never acquire a document row, so
+their paths keep the source names (a name Meridian refuses, like `Who?.md`, is
+reported rather than refusing the selection); only bounds, empty, dot and
+control-character segments are checked.
 
 Reports first observe created entries' live address and presence and publish
 any drift as ordinary entry changes, so every report field comes from one
@@ -109,8 +112,9 @@ summary and entries; since returns only changed file entries, not the roots.
 
 Both long multipart receives and owned landing attempts pulse every 30 seconds.
 An expired attempt cannot renew a replacement's lease. Open summaries list
-unfinished imports and undismissed finished reports; dismissal is finished-only
-and never deletes documents. Version values are decimal strings.
+unfinished imports and undismissed finished reports; each names its
+destination folder by id (null at an area root), which survives a rename where
+the URI does not. Dismissal is finished-only and never deletes documents. Version values are decimal strings.
 
 Catalog pending-flag clearing uses Context's exact-file reconciliation. It
 reserves publication ordering without changing namespace observations for

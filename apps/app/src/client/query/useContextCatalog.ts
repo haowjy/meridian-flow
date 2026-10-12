@@ -276,6 +276,7 @@ export function projectCatalogFile(
     uri: entry.uri,
     provisionalName: entry.provisionalName,
     hasProperties: entry.hasProperties,
+    importPending: entry.importPending,
   };
   if (entry.editable) {
     return {

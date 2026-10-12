@@ -17,6 +17,15 @@
 @theme {
   --container-chat-column: 48rem;
   --container-project-screen: 60rem;
+  --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
+  @keyframes progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(333%);
+    }
+  }
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */

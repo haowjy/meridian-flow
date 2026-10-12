@@ -1,7 +1,11 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  contextOwner,
+  isProjectContextTreeScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
@@ -23,6 +27,7 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working-set";
+import { type ImportRoute, ImportRouteProvider } from "@/features/import/import-route";
 import { originalBrowserSearch } from "@/router-search";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
@@ -544,6 +549,21 @@ function ReadableProjectDestination({
     const result = await go(next, options);
     if (result.kind === "failed") throw result.error;
   };
+  const importRoute: ImportRoute = {
+    activeImportId: destination.kind === "import" ? destination.importId : null,
+    openReport: (importId) =>
+      void go(
+        {
+          ...toDestination({ kind: "import", importId }),
+          work: workSelectionFor({ kind: "editor" }, workId ?? undefined, noWorkId),
+        },
+        { replace: false },
+      ),
+    closeReport: () => void showScreenDestination("context"),
+    showFolder: (scheme, path) => {
+      if (isProjectContextTreeScheme(scheme)) void browse(scheme, path);
+    },
+  };
   const routeCommands: ProjectRouteCommands = {
     openWork: (target, options) =>
       goLegacy(toDestination({ kind: "work", workId: target.workId }), options),
@@ -669,102 +689,104 @@ function ReadableProjectDestination({
     );
 
   return (
-    <ProjectNavigationProvider
-      screen={activeScreen}
-      openContextRoute={openContext}
-      screenCommands={{
-        showEditor: (options) => showScreenDestination("context", options),
-        showWork: () => showScreenDestination("work"),
-      }}
-      isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
-      captureNavigation={captureNavigation}
-      isCurrentContextRoute={isCurrentContextRoute}
-      registerLeaveGuard={navigation?.registerGuard}
-    >
-      <ChatNavigationProvider value={chat}>
-        <ProjectDocumentNavigationProvider
-          projectId={projectId}
-          captureNavigation={captureNavigation}
-        >
-          {documentDestination && !localDocumentId ? (
-            <ProjectAddressDocument
-              projectId={projectId}
-              href={location.href}
-              entryKey={location.state.__TSR_key ?? ""}
-              address={address}
-              // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-              result={documentResult}
-              localFile={reconciledDocumentAddress.localFile}
-              draftOnlyId={draftOnly?.draft.draftId}
-              workId={workId}
-              noWorkId={noWorkId}
-              navigation={navigation}
-              onAdmission={setAdmission}
-            />
-          ) : null}
-          <ProjectView
-            project={project}
+    <ImportRouteProvider value={importRoute}>
+      <ProjectNavigationProvider
+        screen={activeScreen}
+        openContextRoute={openContext}
+        screenCommands={{
+          showEditor: (options) => showScreenDestination("context", options),
+          showWork: () => showScreenDestination("work"),
+        }}
+        isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
+        captureNavigation={captureNavigation}
+        isCurrentContextRoute={isCurrentContextRoute}
+        registerLeaveGuard={navigation?.registerGuard}
+      >
+        <ChatNavigationProvider value={chat}>
+          <ProjectDocumentNavigationProvider
             projectId={projectId}
-            activeScreen={activeScreen}
-            chatDisplay={chat.display}
-            entryHydration={entryHydration}
-            addressOwnsDocumentAdmission
-            routeWork={routeWork}
-            rememberedWork={rememberedWork}
-            editorRouteWork={editorWork}
-            routeLocationKey={location.state.__TSR_key ?? location.href}
-            routeIssues={{
-              main: failedDestination ? "error" : mainIssue,
-              editor: failedDestination ? "error" : editorIssue,
-            }}
-            onRetryEditorRoute={retryEditorAddress}
-            onDisplayedSelection={reportSelection}
-            routeCommands={routeCommands}
-            contextRemovalRoute={{
-              transition: (_id, target, prepared) => closeDestination(target, prepared),
-              readSearch: () => search,
-              updateSearch: (_id, update) => {
-                const next = update(search);
-                if (projectSearchEquals(next, search)) return;
-                if (next.scheme && next.path !== undefined)
-                  void openContext(
-                    {
-                      scheme: next.scheme,
-                      path: next.path,
-                      workId: next.work,
-                      rootThreadId: next.chat,
-                    },
-                    {
-                      replace: true,
-                      // The coordinator relocates the document the address names,
-                      // or falls back to another. Either way the review follows
-                      // the address until EditorReviewAddressOwner, which knows
-                      // the document's identity, decides it no longer applies.
-                      draftId: address.draftId,
-                    },
-                  );
-                else if (next.screen === "work")
-                  void go(toDestination({ kind: "works" }), { replace: true });
-                else if (next.screen === "context")
-                  void go(toDestination({ kind: "editor" }), { replace: true });
-              },
-            }}
-            activeLocalDocumentId={editorDocument.localDocumentId}
-            activeContextScheme={editorDocument.activeContextScheme}
-            activeContextFolder={search.folder ?? null}
-            activeContextPath={editorDocument.activeContextPath}
-            activeContextChat={editorDocument.activeContextChat}
-            reviewDraftId={address.draftId}
-            reviewAddressDocumentId={addressDocumentId}
-            onSelectScreen={selectScreen}
-            onSelectContextScheme={(scheme) => browse(scheme)}
-            onExitContextScheme={() => browse(null)}
-            onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
-            onOpenContextTarget={openContext}
-            onSetEditorReviewDraftId={setEditorReviewDraftId}
-          />
-        </ProjectDocumentNavigationProvider>
-      </ChatNavigationProvider>
-    </ProjectNavigationProvider>
+            captureNavigation={captureNavigation}
+          >
+            {documentDestination && !localDocumentId ? (
+              <ProjectAddressDocument
+                projectId={projectId}
+                href={location.href}
+                entryKey={location.state.__TSR_key ?? ""}
+                address={address}
+                // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
+                result={documentResult}
+                localFile={reconciledDocumentAddress.localFile}
+                draftOnlyId={draftOnly?.draft.draftId}
+                workId={workId}
+                noWorkId={noWorkId}
+                navigation={navigation}
+                onAdmission={setAdmission}
+              />
+            ) : null}
+            <ProjectView
+              project={project}
+              projectId={projectId}
+              activeScreen={activeScreen}
+              chatDisplay={chat.display}
+              entryHydration={entryHydration}
+              addressOwnsDocumentAdmission
+              routeWork={routeWork}
+              rememberedWork={rememberedWork}
+              editorRouteWork={editorWork}
+              routeLocationKey={location.state.__TSR_key ?? location.href}
+              routeIssues={{
+                main: failedDestination ? "error" : mainIssue,
+                editor: failedDestination ? "error" : editorIssue,
+              }}
+              onRetryEditorRoute={retryEditorAddress}
+              onDisplayedSelection={reportSelection}
+              routeCommands={routeCommands}
+              contextRemovalRoute={{
+                transition: (_id, target, prepared) => closeDestination(target, prepared),
+                readSearch: () => search,
+                updateSearch: (_id, update) => {
+                  const next = update(search);
+                  if (projectSearchEquals(next, search)) return;
+                  if (next.scheme && next.path !== undefined)
+                    void openContext(
+                      {
+                        scheme: next.scheme,
+                        path: next.path,
+                        workId: next.work,
+                        rootThreadId: next.chat,
+                      },
+                      {
+                        replace: true,
+                        // The coordinator relocates the document the address names,
+                        // or falls back to another. Either way the review follows
+                        // the address until EditorReviewAddressOwner, which knows
+                        // the document's identity, decides it no longer applies.
+                        draftId: address.draftId,
+                      },
+                    );
+                  else if (next.screen === "work")
+                    void go(toDestination({ kind: "works" }), { replace: true });
+                  else if (next.screen === "context")
+                    void go(toDestination({ kind: "editor" }), { replace: true });
+                },
+              }}
+              activeLocalDocumentId={editorDocument.localDocumentId}
+              activeContextScheme={editorDocument.activeContextScheme}
+              activeContextFolder={search.folder ?? null}
+              activeContextPath={editorDocument.activeContextPath}
+              activeContextChat={editorDocument.activeContextChat}
+              reviewDraftId={address.draftId}
+              reviewAddressDocumentId={addressDocumentId}
+              onSelectScreen={selectScreen}
+              onSelectContextScheme={(scheme) => browse(scheme)}
+              onExitContextScheme={() => browse(null)}
+              onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
+              onOpenContextTarget={openContext}
+              onSetEditorReviewDraftId={setEditorReviewDraftId}
+            />
+          </ProjectDocumentNavigationProvider>
+        </ChatNavigationProvider>
+      </ProjectNavigationProvider>
+    </ImportRouteProvider>
   );
 }

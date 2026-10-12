@@ -70,6 +70,45 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     expect(await service.listOpen(projectId)).toEqual([]);
     expect(await projectDocuments()).toHaveLength(2);
   });
+  it("open summaries name the destination folder by id, which outlives its path", async () => {
+    const service = createImportService(ports());
+    const book = loose({ "Seed.md": "Seed" });
+    book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
+    book.manifest.entries[0].path = "Seed.md";
+    const first = await service.plan(projectId, userId, book.manifest);
+    const folderId = first.roots[0].id;
+    expect(folderId).toEqual(expect.any(String));
+    const into = loose({ "Chapter.md": "Chapter" });
+    into.manifest.destination.folderUri = "kb://Book/";
+    const second = await service.plan(projectId, userId, into.manifest);
+    await ok(context().move("kb://Book/", "kb://Renamed/"));
+
+    const open = await service.listOpen(projectId);
+    const destinations = new Map(open.map((summary) => [summary.importId, summary.destination]));
+    expect(destinations.get(first.importId)).toEqual({ folderUri: "kb://", folderId: null });
+    expect(destinations.get(second.importId)).toEqual({
+      folderUri: "kb://Book/",
+      folderId,
+    });
+  });
+  it("lands the rest of a folder whose refused names are reported as unreadable", async () => {
+    const service = createImportService(ports());
+    const book = loose({ "Fine.md": "Fine" });
+    book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
+    book.manifest.entries[0].path = "Fine.md";
+    book.manifest.unreadable = [{ rootId: 0, path: "Who?.md", reason: "unreadable" }];
+    const plan = await service.plan(projectId, userId, book.manifest);
+    expect(plan.counts).toMatchObject({ arriving: 1, skipped: 1 });
+    expect(plan.entries.find((entry) => entry.entryId < 0)).toMatchObject({
+      filename: "Who?.md",
+      state: "skipped",
+      reason: "unreadable",
+      exists: false,
+    });
+    expect(await service.land(projectId, plan.importId, 0, book.bytes[0])).toMatchObject({
+      state: "landed",
+    });
+  });
   it("incremental reports publish moves and deletes of landed documents", async () => {
     const selection = loose({ "A.md": "hello" }),
       service = createImportService(ports()),

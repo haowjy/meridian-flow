@@ -8,7 +8,8 @@
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
 - Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
-- Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+- Coded findings, incremental report versions, open-import summaries naming the destination folder by id, dismissal and unreadable-file reporting (including names Meridian cannot use).
+- Import a folder or files into Manuscript, Knowledge Base or Unfiled from the area headers, folder menus, the phone's `+` menu, or by dropping them on the tree. New rows arrive in the tree at once with a status row, a report page holds failures, Retry, Continue import and Stop here, and a document whose text has not arrived says so above its page.
 - Obsidian notes import as Meridian documents: frontmatter stored verbatim as properties with derived aliases, wikilinks, embeds and internal Markdown links bound to selected or existing documents by id, and kept-literal syntax reported.
 - Exports keep Obsidian callouts (`> [!note]`) and footnotes (`[^1]`, `[^1]:`) unescaped, so an exported vault renders them in Obsidian again.
 - Importing a Meridian export folder routes its Manuscript, Knowledge Base and Unfiled folders to their area roots and skips Works.
