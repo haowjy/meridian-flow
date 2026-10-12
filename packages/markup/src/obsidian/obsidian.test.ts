@@ -87,6 +87,17 @@ describe("fixture vault", () => {
 });
 
 describe("syntax boundaries", () => {
+  it("preserves literal table continuations in comments while normalizing real tables", () => {
+    const comment = "%%\n| a |\n| - |\n| first\\\nsecond |\n%%";
+    const real = "| a |\n| - |\n| first\\\nsecond |";
+    const { source, findings } = scanObsidian(comment + "\n\n" + real + "\n\n[[A]]");
+    const found = findings.find((finding) => finding.kind === "comment");
+    expect(source.slice(found?.from, found?.to)).toBe(comment);
+    expect(source).toContain("first<br/>second");
+    const link = findings.find((finding) => finding.kind === "wikilink");
+    expect(source.slice(link?.from, link?.to)).toBe("[[A]]");
+  });
+
   it.each([
     "%% secret %%",
     "<!-- secret -->",

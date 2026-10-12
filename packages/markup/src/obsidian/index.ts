@@ -130,10 +130,17 @@ function discoverComments(source: string, excluded: readonly ObsidianRange[]): C
 export function scanObsidian(sourceText: string, options: ObsidianScanOptions = {}): ObsidianScan {
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const rawFrontmatter = splitObsidianFrontmatter(sourceText).frontmatter;
-  const prefix = rawFrontmatter ? sourceText.slice(0, rawFrontmatter.to) : "";
-  const source = options.preprocessed
-    ? sourceText
-    : prefix + normalizeGfmTableHardBreaks(sourceText.slice(prefix.length));
+  const protectedRanges: ObsidianRange[] = rawFrontmatter ? [rawFrontmatter] : [];
+  protectedRanges.push(...discoverComments(sourceText, protectedRanges));
+  let cursor = 0;
+  let normalized = "";
+  for (const span of protectedRanges) {
+    normalized += normalizeGfmTableHardBreaks(sourceText.slice(cursor, span.from));
+    normalized += sourceText.slice(span.from, span.to);
+    cursor = span.to;
+  }
+  normalized += normalizeGfmTableHardBreaks(sourceText.slice(cursor));
+  const source = options.preprocessed ? sourceText : normalized;
   const frontmatter = splitObsidianFrontmatter(source).frontmatter;
   const findings: ObsidianFinding[] = frontmatter ? [frontmatter] : [];
   const hidden: ObsidianRange[] = frontmatter ? [frontmatter] : [];
