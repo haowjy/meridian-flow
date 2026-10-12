@@ -114,8 +114,8 @@ action ID and chooses its policy and destination. Model stack commands, writer
 card actions and failed-response rollback all use this primitive. Journal history
 is never marked reversed, and no historical UndoManager is rebuilt.
 
-`ThreadOriginRegistry` supplies stable transaction origins for forward-write
-attribution and same-actor filtering. Model handles are reserved through
+Forward-write attribution comes from explicit actor context and immutable receipts,
+not transaction-origin identity. Model handles are reserved through
 `UpdateJournal.reserveWriteOrdinal` before staging; immutable receipts retain
 those ordinals independently of transport compaction. Certified aliases are the
 only persisted restoration correspondence, never text or length guesses.

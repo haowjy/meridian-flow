@@ -6,10 +6,6 @@ import type {
 import { InMemoryAgentEditJournal } from "../../test-support/in-memory-agent-edit.js";
 
 export class MemoryJournal extends InMemoryAgentEditJournal {
-  constructor(readonly _expandEditParts = false) {
-    super();
-  }
-
   private readonly batches: string[][] = [];
   private readonly batchEntries: JournalBatchAppendEntry[][] = [];
   private nextAppendBatchFailure: unknown;

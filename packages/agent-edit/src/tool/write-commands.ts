@@ -13,7 +13,6 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
-import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
@@ -64,7 +63,6 @@ export function createWriteCommands(deps: {
     | "links"
     | "onLinkSpliceFallback"
   >;
-  threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
   renderer: DocumentRenderer;
@@ -75,7 +73,6 @@ export function createWriteCommands(deps: {
 }) {
   const {
     options,
-    threadOrigins,
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
@@ -416,7 +413,7 @@ export function createWriteCommands(deps: {
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(docId, session.threadId);
+    const origin = "agent-write";
     const semanticEditIr = "ir" in plan ? plan.ir : undefined;
     const restore = () => {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);

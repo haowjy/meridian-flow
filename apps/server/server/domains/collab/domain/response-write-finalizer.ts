@@ -65,14 +65,6 @@ export function createResponseWriteFinalizer(input: {
               }
               const drafted = new Set(saved.draftedDocumentIds);
               for (const document of saved.documents) {
-                if (document.lateSweep) {
-                  await input.notices.recordLateSweep({
-                    threadId: ctx.threadId,
-                    responseId: responseIdentity.providerResponseId,
-                    documentId: document.documentId,
-                    lateSweep: document.lateSweep,
-                  });
-                }
                 try {
                   if (drafted.has(document.documentId)) {
                     await input.branches.checkpointThreadPeer(
