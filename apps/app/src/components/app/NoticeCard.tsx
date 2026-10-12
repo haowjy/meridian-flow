@@ -28,8 +28,8 @@ export type NoticeCardProps = {
    */
   announce?: boolean;
   /**
-   * A note the writer may leave as it is. Adds a small X ("Dismiss") at the end of
-   * the row; the caller removes the card. Its touch target grows on coarse pointers
+   * A note the writer may leave as it is. Adds a small X ("Dismiss") at the far end
+   * of the row; the caller removes the card. Its touch target grows on coarse pointers
    * without making the row taller.
    */
   onDismiss?: () => void;
@@ -67,13 +67,15 @@ export function NoticeCard({
             "flex items-center",
             inline
               ? "flex-nowrap gap-x-[var(--chat-space-inline)] whitespace-nowrap"
-              : "flex-wrap gap-x-[var(--chat-space-block)] gap-y-1",
+              : // The description grid starts its items; the row spans it so the X reaches the end.
+                "w-full flex-wrap gap-x-[var(--chat-space-block)] gap-y-1",
           )}
         >
           {children}
           {onDismiss ? (
             <IconButton
-              className="shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:size-11"
+              // At the row's end even when the card is wider than its sentence.
+              className="ml-auto shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:size-11"
               aria-label={t`Dismiss`}
               onClick={onDismiss}
             >
