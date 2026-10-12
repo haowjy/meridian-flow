@@ -9,6 +9,12 @@
 ### Removed
 - The old corpus import service and Knowledge Base batch-import route.
 
+### Fixed
+- Concurrent import resumes no longer deadlock at the ready transition.
+- Import reports publish moves and deletes of imported documents as versioned changes, so incremental reports never miss them.
+- Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
+- Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
+
 
 ### Added
 - Resumable folder/file import manifests, identity planning and durable receipt storage.

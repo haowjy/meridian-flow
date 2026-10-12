@@ -1,7 +1,9 @@
 # Import protocol
 
 The imports row is the transaction fence. Plan chunks and landing commits take
-its shared row lock; Finish takes its exclusive lock. Namespace locks precede
+its shared row lock; ready admission and Finish take its exclusive lock. Ready
+admission is its own transaction that rechecks planning and preparation; a
+shared fence is never upgraded, since two resumes would deadlock. Namespace locks precede
 entry-row locks. A parent that changes source during lock acquisition retries
 in a new transaction. The parent capability belongs to Context, not this domain.
 
@@ -19,9 +21,13 @@ edited placeholder fails once; the next upload prepends imported blocks while
 preserving the writer's nodes. Deletion wins over arrival.
 
 Binary object keys are deterministic (imports/<importId>/<entryId>).
-Unreceipted puts are overwritten on retry. The periodic object sweep deletes
-terminal entries' keys only after outstanding leases expire, including late
-puts that finish after Stop here.
+Unreceipted puts are overwritten on retry. Sweep candidates are claimed
+binaries that ended deleted or not imported, after their lease expires. Each is
+swept once after the lease and once after a one-hour late-put grace; a late put
+that records its receipt clears the marker so the next sweep reclaims it.
+Finish sweeps only its own import after commit, and a cleanup failure goes to
+observability, never to the Finish response. The periodic sweep runs in
+batches of 500.
 
 The isolated binder binds prose by existing placeholder id. Link-free code
 can bind to its planned id before its row exists; Context admits that bound
@@ -49,6 +55,18 @@ correctness gate.
 Reasons and findings are the typed codes/params in contracts/imports. Raw
 failures go to server observability only. Unreadable selections are skipped,
 with the reader's code in reasonParams. They never acquire a document row.
+
+Reports first observe created entries' live address and presence and publish
+any drift as ordinary entry changes, so every report field comes from one
+versioned cut and since never misses a move or delete. Rows a landing commit
+holds are skipped (SKIP LOCKED) and compared again next time. Addresses come
+from Context's canonical batch loaders, never a scalar ancestry walk.
+
+Intake is bounded before work: paths at 4,096 bytes and 64 segments, entries
+plus synthesized folders at 20,000 nodes, manifest bodies at 32 MiB, file
+requests at 50 MiB plus framing (refused while streaming), at most 200 parts,
+four concurrent receives per import (import_busy) and four concurrent landings
+per request. Every refusal is an ImportRefusalCode with bounded numeric params.
 
 The imports row cannot also be the progress counter: shared landing fences
 would deadlock on lock upgrades. import_progress sequences publication in a
