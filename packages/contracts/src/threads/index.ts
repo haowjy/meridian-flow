@@ -230,6 +230,8 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
+  | "messages.delivered" // PRODUCED NOW — inbox ack of message rows, with the delivering turn
+  | "execution.ended" // PRODUCED NOW — one run-lease hold ended after its turns went terminal
   | "interrupt.created"
   | "interrupt.resolved"
   | "interrupt.expired"
@@ -352,6 +354,9 @@ export type TurnUsage = {
   responseCount: number;
 };
 
+/** A delivered message's acknowledgement; write-once. */
+export type TurnDelivery = { byTurnId: string | null };
+
 /** JSON-natural turn with nested blocks for snapshots and UI. */
 export interface Turn {
   id: string;
@@ -366,6 +371,23 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
+  /**
+   * The execution (one run-lease hold) that reserved this turn. Null on turns no
+   * execution reserves (user, switch, notice, handoff seed) and on turns
+   * reserved before run identity.
+   */
+  executionId: string | null;
+  /**
+   * The messages (= user turn ids) this turn was reserved to handle; a Retry
+   * carries its failed reply's. A binding and Stop hint, never proof of delivery.
+   */
+  reservedForUserTurnIds: string[];
+  /**
+   * On a user turn whose inbox message was delivered: the delivering turn, or
+   * null when unknown (delivered before run identity, or by no reserved turn).
+   * Null while undelivered and on every other turn.
+   */
+  delivery: TurnDelivery | null;
   /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: PromptBakeId | null;
   compactionModel?: string | null;

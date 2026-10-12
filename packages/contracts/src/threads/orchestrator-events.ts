@@ -71,14 +71,7 @@ export type WorkContextChangedEvent = {
 
 export type OrchestratorEvent =
   | WorkContextChangedEvent
-  | {
-      type: "turn.created";
-      turn: Turn;
-      /** On a reply reservation: the outstanding message ids (= user turn ids) it answers. */
-      answersUserTurnIds?: string[];
-      /** On a same-lease successor: the reply it continues. */
-      continuesRunId?: string | null;
-    }
+  | { type: "turn.created"; turn: Turn }
   | {
       type: "stream.delta";
       kind: "text" | "reasoning" | "tool_call";
@@ -227,11 +220,22 @@ export type OrchestratorEvent =
       /** Normalized settled cutoff retained by the fork. */
       originTurnId: string;
     }
+  | { type: "turn.completed"; turn: Turn }
   | {
-      type: "turn.completed";
-      turn: Turn;
-      /** The completion is a same-lease split: a successor reply continues this one. */
-      continued?: boolean;
+      /**
+       * Message rows this ack actually delivered (`delivered_at` was null). The
+       * execution id is persisted here because the projector cannot read turns.
+       */
+      type: "messages.delivered";
+      /** The acknowledging turn; null when none was reserved (a child run aborted before it). */
+      byTurnId: string | null;
+      executionId: string | null;
+      userTurnIds: string[];
+    }
+  | {
+      /** Written once, after every turn the execution reserved is terminal. */
+      type: "execution.ended";
+      executionId: string;
     }
   | { type: "turn.cancelled"; turn: Turn }
   | {
