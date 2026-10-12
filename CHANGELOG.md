@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Obsidian scanning reports highlights that surround wikilinks.
+
 - Obsidian scanning preserves literal table continuations inside comments.
 
 - Obsidian comments no longer hide following prose or leak links when their contents include code fences.

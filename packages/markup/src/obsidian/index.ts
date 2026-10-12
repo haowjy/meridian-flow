@@ -169,6 +169,7 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
     }
   });
 
+  const opaque = [...blocked];
   const accept = (from: number, to: number) =>
     !escaped(source, from) && !overlaps({ from, to }, blocked);
   for (const match of source.matchAll(/\\\[\\?\[/g)) {
@@ -229,7 +230,9 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
   for (const match of source.matchAll(/==([^=\r\n]+)==/g)) {
     const from = match.index;
     const to = from + match[0].length;
-    if (accept(from, to)) findings.push({ kind: "highlight", from, to, text: match[1] ?? "" });
+    const insideTarget = blocked.some((span) => from >= span.from && to <= span.to);
+    if (!escaped(source, from) && !overlaps({ from, to }, opaque) && !insideTarget)
+      findings.push({ kind: "highlight", from, to, text: match[1] ?? "" });
   }
   for (const match of source.matchAll(/(^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
     const from = match.index + (match[1]?.length ?? 0);
