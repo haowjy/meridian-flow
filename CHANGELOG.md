@@ -6,6 +6,26 @@
 
 - Preview outside links and unapplied drafts before exporting, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
+- Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
+- Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+
+### Removed
+- The old corpus import service and Knowledge Base batch-import route.
+
+### Fixed
+- Concurrent import resumes no longer deadlock at the ready transition.
+- Import reports publish moves and deletes of imported documents as versioned changes, so incremental reports never miss them.
+- Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
+- Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
+
+
+### Added
+- Resumable folder/file import manifests, identity planning and durable receipt storage.
+
+
+### Changed
+- Share upload/import classification and filename decoding; preserve case-only upload names and reject multiple upload file parts.
+- Define the verbatim YAML document-properties storage contract.
 
 
 ### Fixed

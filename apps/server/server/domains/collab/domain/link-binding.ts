@@ -131,6 +131,8 @@ export interface LinkBinderDeps {
 
 /** Identity overrides are a separate capability, never on the model/editor binder. */
 export interface ImportLinkBinder {
+  /** Link-free code may be bound to its planned identity before its row exists. */
+  bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
   bindMarkdown(
     input: Omit<BindMarkdownInput, "against"> & {
       targets?: ReadonlyMap<number, DocumentId>;
@@ -147,7 +149,27 @@ export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "coordinator" | "model">
 
 /** Only the import tree writer composes this capability; ordinary CollabDomain does not expose it. */
 export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBinder {
-  return binderFor(deps, true);
+  return {
+    ...binderFor(deps, true),
+    bindPlannedCode(documentId, filetype, text) {
+      const classification = classifyFiletype(filetype);
+      if (classification.kind !== "tracked" || classification.schemaType !== "code")
+        throw new Error("Planned code binding requires a code filetype");
+      const block = deps.schema.nodes.code_block.create(
+        { language: filetype },
+        text ? deps.schema.text(text) : undefined,
+      );
+      return {
+        holder: { kind: "document", documentId },
+        fresh: true,
+        blocks: [block],
+        markdown: text,
+        schemaType: "code",
+        aheadRefs: [],
+        invalidTargets: [],
+      } as unknown as BoundWrite;
+    },
+  };
 }
 
 function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false): LinkBinder {

@@ -40,6 +40,7 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type {
   ContextCatalog,
+  ContextCatalogFileMutationPort,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
@@ -197,6 +198,7 @@ async function buildScopeEntries(
   db: CatalogDb,
   scope: CatalogScope,
   manifestMembership?: ManifestMembershipResolver,
+  documentIds?: readonly string[],
 ): Promise<CatalogEntry[]> {
   if (scope.kind !== "user") {
     const [activeProject] = await db
@@ -260,6 +262,7 @@ async function buildScopeEntries(
             and(
               inArray(documents.contextSourceId, sourceIds),
               eq(documents.kind, "content"),
+              documentIds ? inArray(documents.id, [...documentIds]) : undefined,
               isNull(documents.deletedAt),
             ),
           );
@@ -420,6 +423,7 @@ export function createDrizzleContextCatalog(
   } = {},
 ): ContextCatalog &
   ContextCatalogMutationPort &
+  ContextCatalogFileMutationPort &
   ProjectCatalogLifecyclePort &
   ProjectDocumentCatalogRefreshPort &
   WorkAuthorityCatalogMutationPort {
@@ -537,6 +541,7 @@ export function createDrizzleContextCatalog(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
     commitId = randomUUID(),
+    documentIds?: readonly string[],
   ) {
     await runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db) as Database;
@@ -550,11 +555,19 @@ export function createDrizzleContextCatalog(
         .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
         .limit(1);
       if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-      const authoritative = await buildScopeEntries(tx, scope, options.manifestMembership);
+      const built = await buildScopeEntries(tx, scope, options.manifestMembership, documentIds);
+      const authoritative = documentIds
+        ? built.filter((entry) => entry.kind === "file" && documentIds.includes(entry.entryId))
+        : built;
       const existing = await tx
         .select()
         .from(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
+        .where(
+          and(
+            eq(contextCatalogEntries.scopeKey, head.scopeKey),
+            documentIds ? inArray(contextCatalogEntries.entryId, [...documentIds]) : undefined,
+          ),
+        );
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
       // Deduplicate complete observations below: equal payloads with newer namespace
       // versions still publish, including moves back before deferred repair catches up.
@@ -592,7 +605,12 @@ export function createDrizzleContextCatalog(
       const revision = head.headRevision + 1;
       await tx
         .delete(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
+        .where(
+          and(
+            eq(contextCatalogEntries.scopeKey, head.scopeKey),
+            documentIds ? inArray(contextCatalogEntries.entryId, [...documentIds]) : undefined,
+          ),
+        );
       if (authoritative.length > 0) {
         await tx.insert(contextCatalogEntries).values(
           authoritative.map((entry) => ({
@@ -748,6 +766,27 @@ export function createDrizzleContextCatalog(
           : "uri" in candidate && candidate.uri === input.uri,
       );
       return { entry: entry ?? null, headRevision: snapshot.headRevision };
+    },
+    async refreshFiles(documentIds) {
+      if (!documentIds.length) return;
+      await runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db) as Database;
+        const rows = await tx
+          .select({ sourceId: documents.contextSourceId })
+          .from(documents)
+          .where(inArray(documents.id, [...documentIds]));
+        const scopes = new Map<string, CatalogScope>();
+        for (const sourceId of new Set(rows.map((row) => row.sourceId))) {
+          for (const scope of await sourceScopes(tx, sourceId))
+            scopes.set(catalogScopeKey(scope), scope);
+        }
+        // Metadata/content changed, not location or membership. Serialize catalog
+        // publication, but do not advance every sibling's namespace observation.
+        await availabilityMutations.reserve();
+        const commitId = randomUUID();
+        for (const [_, scope] of [...scopes].sort(([a], [b]) => a.localeCompare(b)))
+          await refreshScope(scope, [], commitId, documentIds);
+      });
     },
     async refreshSources(sourceIds, invalidatedRootIds = []) {
       const tx = currentDrizzleDb(db) as Database;

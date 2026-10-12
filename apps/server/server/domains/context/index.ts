@@ -12,6 +12,7 @@ export {
   type LinkScopeMembership,
 } from "./adapters/document-link-scope.js";
 export { createDrizzleContextBulkCreation } from "./adapters/drizzle-context-bulk-creation.js";
+export { createDrizzleContextImportLocations } from "./adapters/drizzle-import-locations.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -43,7 +44,6 @@ export {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
 } from "./context-source-provisioning.js";
-export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
@@ -63,6 +63,7 @@ export type {
 } from "./ports/context-bulk-creation.js";
 export type {
   ContextCatalog,
+  ContextCatalogFileMutationPort,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
@@ -75,6 +76,11 @@ export type {
   CreateDocumentInput,
 } from "./ports/context-document-store.js";
 export { ContextEntryConflictError } from "./ports/context-document-store.js";
+export {
+  ContextImportDestinationError,
+  type ContextImportLocations,
+  ContextImportParentMovedError,
+} from "./ports/context-import-locations.js";
 export type {
   BinaryFileEntry,
   BinaryFileRef,

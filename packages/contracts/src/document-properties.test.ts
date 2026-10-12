@@ -1,20 +1,26 @@
-/** Lossless frontmatter accepts only the shared stored shape, not arbitrary metadata. */
+/** Stored properties accept exactly the shared YAML envelope, not arbitrary metadata. */
 import { expect, it } from "vitest";
 import { readStoredDocumentProperties } from "./document-properties.js";
 
-it("returns the stored YAML object unchanged and rejects nonexact shapes", () => {
-  const properties = { format: "yaml" as const, text: "# formatting\naliases: [Gate]\n" };
+it.each([
+  { format: "yaml" as const, text: "aliases: [Gate]\n" },
+  { format: "yaml" as const, text: "# formatting\naliases: [Gate]\n" },
+  { format: "yaml" as const, text: "" },
+])("returns the exact valid stored envelope unchanged %#", (properties) => {
   expect(readStoredDocumentProperties({ properties })).toBe(properties);
-  for (const metadata of [
-    null,
-    [],
-    {},
-    { properties: [] },
-    { properties: { format: "json", text: "{}" } },
-    { properties: { format: "yaml", text: 1 } },
-    { properties: { ...properties, extra: true } },
-    { properties: Object.assign(Object.create(properties), { one: 1, two: 2 }) },
-  ]) {
-    expect(readStoredDocumentProperties(metadata)).toBeNull();
-  }
+});
+
+it.each([
+  null,
+  undefined,
+  [],
+  {},
+  { properties: null },
+  { properties: [] },
+  { properties: { format: "yaml", text: 1 } },
+  { properties: { format: "json", text: "{}" } },
+  { properties: { format: "yaml", text: "", extra: true } },
+  { properties: Object.assign(Object.create({ format: "yaml", text: "" }), { a: 1, b: 2 }) },
+])("rejects invalid metadata %#", (metadata) => {
+  expect(readStoredDocumentProperties(metadata)).toBeNull();
 });

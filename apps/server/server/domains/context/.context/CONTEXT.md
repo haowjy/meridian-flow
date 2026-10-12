@@ -195,8 +195,8 @@ router resolves to exact project-scoped Work authority before dispatch.
   and resolves Work qualifiers through project Work authority; it has no separate
   candidate loader or resolution cache. Personal scope comes from authenticated
   route identity, never from the URI.
-- **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
-  `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
+- **Selection import** lives in `domains/import/`. Context supplies identity-based
+  parent lookup, bulk creation and bound writes; no corpus intake remains.
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
   vocabulary, routing, and work-scope membership gating for work-scoped schemes.
 - **Result promotion** prepares exact resolved/no-Work URI identity before an
@@ -393,7 +393,8 @@ currently available to the request owner in the requested project.
   reserves folder names and desired document names before numbering; already-
   canonical source names win, then source filename order determines allocation.
   Response items remain in input order. Identity-bound uploads accept one file
-  per request; only corpus intake accepts multi-file and relative-path batches.
+  per request; selection import accepts manifest-relative paths and multipart
+  entry-number batches through its separate domain.
 - File output uses `exportFilename`: prose gains `.md` from persisted `fileType`;
   all other documents retain their stored filename. Download headers encode
   Unicode names, and binary document downloads serve bytes with that filename.
@@ -580,10 +581,22 @@ receives the existing document id; a missing registry row returns null.
 `ContextBulkCreation.create` creates one planning chunk by source and stable
 folder/document ids. Its Drizzle adapter shares the Context namespace lock,
 checks live same-source parents and acyclic folder input, inserts folder and
-placeholder identities in batches, initializes tracked seeds and membership,
+placeholder identities in batches, initializes tracked seeds and reconciles membership once for the complete chunk,
 settles arrivals, then refreshes the catalog once. It joins an ambient transaction;
 a collision rolls back the whole chunk. It neither reallocates nor replays ids:
 the caller owns allocation and planning receipts. The caller resolves a moved
 parent's current source before invoking this source-scoped door.
 Catalog file entries expose strict boolean `importPending`, true only for
 `metadata.importPending === true`.
+
+Import parent lookup is a Context capability (ContextImportLocations).
+It resolves folder identity, takes the current project-area namespace lock,
+rereads the parent and lists its live children in the ambient transaction.
+A source change retries the transaction; deleted ancestors suppress arrival.
+Upload reservations compare exact case, matching document namespace claims.
+
+Existing-file metadata changes can use ContextCatalogFileMutationPort.refreshFiles.
+It rebuilds only the selected file entries from authority, preserving unrelated
+catalog cache rows and publishing one ordered commit. Metadata alone does not
+advance namespace observations. Snapshot reads still build the authoritative
+full tree; incremental consumers receive the bounded commit.

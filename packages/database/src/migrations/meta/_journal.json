@@ -281,6 +281,27 @@
       "when": 1791774682076,
       "tag": "0039_backfill_namespace_observation_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791779757074,
+      "tag": "0040_secret_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791787863992,
+      "tag": "0041_import_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791787866523,
+      "tag": "0042_import_indexes",
+      "breakpoints": true
     }
   ]
 }

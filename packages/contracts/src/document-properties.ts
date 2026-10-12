@@ -1,4 +1,4 @@
-/** Lossless stored document frontmatter shared by import and export. */
+/** Lossless stored document frontmatter (verbatim YAML) shared by import and export. */
 export type StoredDocumentProperties = { format: "yaml"; text: string };
 
 export function readStoredDocumentProperties(metadata: unknown): StoredDocumentProperties | null {

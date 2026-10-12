@@ -1,0 +1,82 @@
+/** Durable import state and transaction/fence ownership. */
+import type {
+  ImportCounts,
+  ImportEntryState,
+  ImportManifest,
+  ImportState,
+} from "@meridian/contracts";
+import type { PlannedNode } from "../domain/plan.js";
+export interface ImportRecord {
+  id: string;
+  projectId: string;
+  userId: string;
+  manifest: ImportManifest;
+  fingerprint: string;
+  sourceId: string;
+  folderId: string | null;
+  state: ImportState;
+  createdAt?: Date;
+  dismissedAt?: Date | null;
+}
+export interface ImportEntry extends Omit<PlannedNode, "state"> {
+  state: ImportEntryState;
+  created: boolean;
+  prepared: boolean;
+  prependOnRetry: boolean;
+  /** Last observed presence of the created document or folder at `uri`. */
+  exists: boolean;
+  pendingRefs: { holderId: string; ref: string }[];
+  order: number;
+  version: string;
+  attemptId: string | null;
+  leaseUntil: Date | null;
+  storageUrl: string | null;
+  uri: string | null;
+  objectSweptAt: Date | null;
+}
+export interface ImportRepository {
+  transaction<T>(run: () => Promise<T>): Promise<T>;
+  insert(record: ImportRecord, nodes: PlannedNode[]): Promise<void>;
+  read(id: string, projectId: string): Promise<ImportRecord | null>;
+  fence(id: string, projectId: string, exclusive?: boolean): Promise<ImportRecord | null>;
+  entries(id: string): Promise<ImportEntry[]>;
+  snapshot(
+    id: string,
+    projectId: string,
+    since?: string,
+  ): Promise<{
+    record: ImportRecord;
+    entries: ImportEntry[];
+    counts: ImportCounts;
+    lastActivityAt: string;
+    version: string;
+  } | null>;
+  listOpen(
+    projectId: string,
+  ): Promise<
+    { record: ImportRecord; counts: ImportCounts; lastActivityAt: string; version: string }[]
+  >;
+  touch(id: string): Promise<void>;
+  dismiss(id: string): Promise<void>;
+  fileEntry(importId: string, entryId: number): Promise<ImportEntry | null>;
+  hasUnfinished(importId: string): Promise<boolean>;
+  /** Whether any planned entry still awaits its planning chunk. */
+  hasUnprepared(importId: string): Promise<boolean>;
+  lockEntry(id: string): Promise<ImportEntry>;
+  /** Row locks in ordinal order; skipLocked leaves rows another commit is publishing. */
+  lockEntries(ids: readonly string[], options?: { skipLocked?: boolean }): Promise<ImportEntry[]>;
+  /** The first unprepared parent's planned, uncreated entries: still pending, and reserved names. */
+  nextPlanningGroup(
+    importId: string,
+  ): Promise<{ parentId: string | null; pending: ImportEntry[]; reserved: ImportEntry[] } | null>;
+  /** Patch rows the caller already holds locked (or fences out by Finish's exclusive lock). */
+  updateEntry(id: string, patch: Partial<ImportEntry>): Promise<void>;
+  updateEntries(patches: readonly { id: string; patch: Partial<ImportEntry> }[]): Promise<void>;
+  setState(id: string, state: ImportState): Promise<void>;
+  /** Terminal claimed binaries whose object may still exist, oldest lease first. */
+  sweepCandidates(
+    now: Date,
+    scope: { importId?: string; limit: number; graceMs: number },
+  ): Promise<{ id: string; importId: string; entryId: number }[]>;
+  markSwept(ids: readonly string[], at: Date | null): Promise<void>;
+}

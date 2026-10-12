@@ -14,7 +14,11 @@ import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export type RequestOptions = { timeoutMs?: number; maxResponseBytes?: number };
+export type RequestOptions = {
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+  rawBody?: { bytes: Uint8Array; contentType: string };
+};
 
 export interface Session {
   readonly serverUrl: string;
@@ -38,7 +42,7 @@ export function rawRequest(input: {
   url: string;
   method: HttpMethod;
   headers?: Record<string, string>;
-  body?: string;
+  body?: string | Uint8Array;
   ca?: string[];
   timeoutMs: number;
   maxResponseBytes: number;
@@ -159,8 +163,15 @@ export function createSession(input: {
       const response = await rawRequest({
         url: new URL(requestPath, input.serverUrl).toString(),
         method,
-        headers: input.cookie ? { cookie: input.cookie } : {},
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        headers: {
+          ...(input.cookie ? { cookie: input.cookie } : {}),
+          ...(options?.rawBody ? { "content-type": options.rawBody.contentType } : {}),
+        },
+        ...(options?.rawBody
+          ? { body: options.rawBody.bytes }
+          : body !== undefined
+            ? { body: JSON.stringify(body) }
+            : {}),
         ca: input.ca,
         timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
