@@ -152,7 +152,6 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
       expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
       await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
-      await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
       await click("Filter files");
       expect(button("Changes in Filtered chapter")).toBeUndefined();
       await act(async () =>
@@ -170,7 +169,6 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
           ["project-a", "work-c", "document-c", { draftId: "draft-c" }],
         ]),
       );
-      await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
       expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
       expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
         ["1"],

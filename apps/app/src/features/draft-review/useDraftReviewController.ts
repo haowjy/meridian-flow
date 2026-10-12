@@ -12,7 +12,6 @@ import {
 } from "@/client/query/draft-command-executor";
 import {
   clearDraftReviewLaunchFailure,
-  draftCommandPendingIn,
   pendingDraftCommand,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -28,7 +27,7 @@ import {
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
 import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
-import { useWorkDraftCommands } from "./useWorkDraftCommands";
+import { useWorkDraftCommands, type WorkDraftCommands } from "./useWorkDraftCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
@@ -63,9 +62,9 @@ export type DraftReviewController = {
   reviewRoomError: boolean;
   isApplying: boolean;
   canApplyReviewedDraft: boolean;
-  /**
-   * Any draft command or batch in this Work, shared across every surface.
-   */
+  /** Dispatch the normalized target through this review's Work authority. */
+  commandChange: WorkDraftCommands["commandChange"];
+  /** A command on this presented draft only. */
   isDisposing: boolean;
   /**
    * Every Apply and Discard control disables on this: a disposition is in
@@ -75,7 +74,7 @@ export type DraftReviewController = {
   dispositionLocked: boolean;
   /**
    * A change's own Apply and Discard disable on this alone: a command on the
-   * whole draft or a batch is in flight, or the Work is frozen. Clicks during
+   * whole presented draft is in flight, or the Work is frozen. Clicks during
    * another change's command are accepted and queued.
    */
   changesLocked: boolean;
@@ -171,9 +170,9 @@ export function useDraftReviewController({
     ? pendingDraftCommand(commandRecords, { projectId, workId, ...inlineReview })
     : null;
   const isApplying = activeCommand?.target === "all" && activeCommand.mode === "apply";
-  const isDisposing = draftCommandPendingIn(commandRecords, { projectId, workId });
-  const dispositionLocked = commands.dispositionLocked;
-  const changesLocked = commands.changesLocked;
+  const isDisposing = activeCommand !== null;
+  const dispositionLocked = commands.dispositionLocked || isDisposing;
+  const changesLocked = commands.changesLocked || activeCommand?.target === "all";
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
@@ -326,6 +325,7 @@ export function useDraftReviewController({
       reviewRoomError: inlineReview?.roomError ?? false,
       isApplying,
       canApplyReviewedDraft,
+      commandChange: commands.commandChange,
       isDisposing,
       dispositionLocked,
       changesLocked,
@@ -351,6 +351,7 @@ export function useDraftReviewController({
       disposeDrafts,
     }),
     [
+      commands.commandChange,
       projectId,
       workId,
       threadId,

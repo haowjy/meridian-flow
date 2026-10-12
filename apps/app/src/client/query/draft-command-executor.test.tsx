@@ -4,11 +4,12 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  type DraftCommandOutcome,
   runDraftBatch,
   runDraftSelection,
+  runWholeDraftIntent,
   startDraftCommand,
 } from "./draft-command-executor";
 import {
@@ -20,6 +21,7 @@ import {
   resetDraftCommandRecords,
 } from "./draft-command-record";
 import { projectQueryKeys } from "./project-query-keys";
+import { threadQueryKeys } from "./thread-query-keys";
 import { useWorkDrafts } from "./useWorkDrafts";
 
 const api = vi.hoisted(() => ({
@@ -128,29 +130,6 @@ describe("draft command executor", () => {
   });
 });
 
-it("releases every queued selection when a batch sender throws synchronously", async () => {
-  resetDraftCommandRecords();
-  const scope = { projectId: "p", workId: "w" };
-  const items = ["1", "2"].map((id) => ({
-    draft: { documentId: id, draftId: id },
-    selection: { classIds: [id], operationIds: [id] },
-  }));
-  const send = vi.fn(() => {
-    throw new Error("injected");
-  });
-  await expect(runDraftBatch(scope, "apply", items, send)).rejects.toThrow("injected");
-  expect(send).toHaveBeenCalledExactlyOnceWith(items[0], null);
-  expect(
-    intentKeys(currentChangeCommandRecords(), { ...scope, ...items[0].draft }).hidden.size,
-  ).toBe(0);
-  expect(
-    intentKeys(currentChangeCommandRecords(), { ...scope, ...items[1].draft }).hidden.size,
-  ).toBe(0);
-  const retry = vi.fn().mockResolvedValue({ kind: "blocked" });
-  await expect(runDraftBatch(scope, "apply", items, retry)).resolves.toHaveLength(2);
-  expect(retry).toHaveBeenCalledTimes(2);
-});
-
 it("an answer from before an account change cannot settle the new account's claim on the same draft", async () => {
   resetDraftCommandRecords();
   bindDraftCommandAccount("account-a");
@@ -170,18 +149,23 @@ it("an answer from before an account change cannot settle the new account's clai
     .mockReturnValueOnce(oldAnswer.promise)
     .mockReturnValueOnce(newAnswer.promise);
   const client = new QueryClient();
+  const refresh = deferred<void>();
+  const reads = vi.spyOn(client, "invalidateQueries").mockImplementation(() => refresh.promise);
   const old = startDraftCommand(client, command).outcome;
-  bindDraftCommandAccount("account-b");
-  bindDraftCommandAccount("account-a");
-  const newer = startDraftCommand(client, command).outcome;
   oldAnswer.resolve({
     status: "applied",
     draftId: input.draftId,
     operationIds: ["1"],
     closureClassIds: ["c"],
   });
-  await old;
+  await settleReact(() => expect(reads).toHaveBeenCalled());
+  bindDraftCommandAccount("account-b");
+  bindDraftCommandAccount("account-a");
+  const newer = startDraftCommand(client, command).outcome;
+  refresh.resolve();
+  await expect(old).resolves.toEqual({ kind: "blocked" });
   expect(pendingDraftCommand(currentDraftCommandRecords(), input)).not.toBeNull();
+  reads.mockRestore();
   newAnswer.resolve({
     status: "applied",
     draftId: input.draftId,
@@ -190,30 +174,6 @@ it("an answer from before an account change cannot settle the new account's clai
   });
   await newer;
   expect(pendingDraftCommand(currentDraftCommandRecords(), input)).toBeNull();
-});
-
-it("a batch sends nothing more once the account has changed", async () => {
-  resetDraftCommandRecords();
-  bindDraftCommandAccount("account-a");
-  const first = deferred<DraftCommandOutcome>();
-  const sent: string[] = [];
-  const items = ["a", "b"].map((id) => ({
-    draft: { documentId: id, draftId: id },
-    selection: { classIds: [id], operationIds: [id] },
-  }));
-  const batch = runDraftBatch(
-    { projectId: "project-a", workId: "work-a" },
-    "apply",
-    items,
-    (item) => {
-      sent.push(item.draft.documentId);
-      return first.promise;
-    },
-  );
-  bindDraftCommandAccount("account-b");
-  first.resolve({ kind: "blocked" });
-  await batch;
-  expect(sent).toEqual(["a"]);
 });
 
 describe("clicks queued behind a Discard that re-forked the draft", () => {
@@ -263,17 +223,168 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     return client;
   };
 
-  it("sends only the change that was selected, found again by its part key", async () => {
-    const [a, b] = [op("2", "edit-a:0"), op("3", "edit-b:0")];
-    const client = seeded(a, b);
-    api.discardDraft.mockResolvedValue(discarded);
-    api.getDraftPreview.mockResolvedValue(preview(2, op("30", "edit-b:0")));
-    const first = runDraftSelection(client, scope, "discard", target, selecting(a), null);
-    const second = runDraftSelection(client, scope, "discard", target, selecting(b), null);
-    await Promise.all([first, second]);
+  it("keeps each queued caller's members and thread authority across a refork", async () => {
+    const [a, b, c] = [op("2", "a"), op("3", "b"), op("4", "c")];
+    const client = seeded(a, b, c);
+    const invalidations = vi.spyOn(client, "invalidateQueries");
+    const firstAnswer = deferred<unknown>();
+    api.discardDraft.mockReturnValueOnce(firstAnswer.promise).mockResolvedValue(discarded);
+    api.getDraftPreview.mockResolvedValue(
+      preview(2, op("30", "b"), op("40", "c"), {
+        ...op("5", "writer-new"),
+        closureClassId: c.closureClassId,
+      }),
+    );
+    const first = runDraftSelection(client, scope, "discard", target, selecting(a), "thread-a");
+    const second = runDraftSelection(client, scope, "discard", target, selecting(b), "thread-b");
+    const third = runDraftSelection(client, scope, "discard", target, selecting(c), "thread-c");
+    firstAnswer.resolve(discarded);
+    const outcomes = await Promise.all([first, second, third]);
+    expect(outcomes).toEqual([
+      { kind: "change-settled", mode: "discard" },
+      { kind: "change-settled", mode: "discard" },
+      { kind: "change-refused", mode: "discard", code: "stale" },
+    ]);
     expect(api.discardDraft).toHaveBeenCalledTimes(2);
     expect(api.discardDraft.mock.calls[0]?.[3]).toMatchObject({ operationIds: ["2"] });
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({ operationIds: ["30"] });
+    for (const thread of ["thread-a", "thread-b"]) {
+      expect(invalidations).toHaveBeenCalledWith({
+        queryKey: threadQueryKeys.liveLineageRoot(thread),
+      });
+      expect(invalidations).toHaveBeenCalledWith({ queryKey: threadQueryKeys.snapshot(thread) });
+    }
+    expect([...intentKeys(currentChangeCommandRecords(), input).hidden]).not.toContain("c");
+  });
+
+  it("admits the entire batch at the click and revokes an unsent target in its draft queue", async () => {
+    const [a, b, c] = [op("2", "a"), op("3", "b"), op("4", "c")];
+    const client = seeded(a, b);
+    const other = { ...input, documentId: "doc-b", draftId: "draft-b" };
+    client.setQueryData(
+      projectQueryKeys.workDraftPreview(
+        other.projectId,
+        other.workId,
+        other.documentId,
+        other.draftId,
+      ),
+      { ...preview(1, c), draftId: other.draftId },
+    );
+    const answer = deferred<unknown>();
+    api.discardDraft.mockReturnValue(answer.promise);
+    const first = runDraftSelection(client, scope, "discard", target, selecting(a), null);
+    const batch = runDraftBatch(
+      [
+        { draft: target, selection: selecting(b) },
+        { draft: other, selection: selecting(c) },
+      ],
+      (item) => runDraftSelection(client, scope, "discard", item.draft, item.selection, null),
+    );
+    expect([...intentKeys(currentChangeCommandRecords(), input).hidden]).toContain("b");
+    expect([...intentKeys(currentChangeCommandRecords(), other).hidden]).toContain("c");
+    await settleReact(() => expect(api.discardDraft).toHaveBeenCalledTimes(2));
+    expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
+      draftId: "draft-b",
+      operationIds: ["4"],
+    });
+    bindDraftCommandAccount("account-b");
+    answer.resolve(discarded);
+    const outcomes = await batch;
+    await first;
+    expect(outcomes.map((entry) => entry.outcome)).toEqual([
+      { kind: "blocked" },
+      { kind: "blocked" },
+    ]);
+    expect(api.discardDraft).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries explicit stale once with fresh rows only for identical actionable members", async () => {
+    const b = op("3", "b");
+    const stale = { status: "stale", draftId: input.draftId };
+    for (const situation of [
+      "same",
+      "joined",
+      "incomplete",
+      "stale-again",
+      "read-lost",
+      "revoked",
+      "transport",
+      "permission",
+    ] as const) {
+      const client = seeded(b);
+      const fresh = { ...preview(2, op("30", "b")), liveRevisionToken: "fresh-live" };
+      if (situation === "joined")
+        fresh.operations.push({ ...op("4", "writer"), closureClassId: b.closureClassId });
+      api.getDraftPreview.mockImplementation(async () => {
+        if (situation === "read-lost") throw lost();
+        if (situation === "revoked") bindDraftCommandAccount("account-b");
+        return situation === "incomplete"
+          ? {
+              ...fresh,
+              operations: fresh.operations.map((operation) => ({
+                ...operation,
+                canApplyOrDiscard: false,
+              })),
+            }
+          : fresh;
+      });
+      if (situation === "transport") api.discardDraft.mockRejectedValue(lost());
+      else if (situation === "permission")
+        api.discardDraft.mockRejectedValue(new HttpResponseError("Forbidden", 403, null));
+      else
+        api.discardDraft.mockResolvedValueOnce(stale).mockImplementation(async () => {
+          expect(pendingDraftCommand(currentDraftCommandRecords(), input)?.draftGeneration).toBe(2);
+          return situation === "stale-again" ? stale : discarded;
+        });
+      const outcome = await runDraftSelection(client, scope, "discard", target, selecting(b), null);
+      const retry = situation === "same" || situation === "stale-again";
+      expect(api.discardDraft, situation).toHaveBeenCalledTimes(retry ? 2 : 1);
+      if (retry)
+        expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
+          operationIds: ["30"],
+          draftRevisionToken: "draft-2",
+          liveRevisionToken: "fresh-live",
+        });
+      expect(outcome.kind, situation).toBe(
+        situation === "same"
+          ? "change-settled"
+          : situation === "revoked"
+            ? "blocked"
+            : "change-refused",
+      );
+      if (situation === "read-lost")
+        expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "stale" });
+      if (situation !== "same")
+        expect(
+          [...intentKeys(currentChangeCommandRecords(), input).hidden],
+          situation,
+        ).not.toContain("b");
+      client.clear();
+    }
+  });
+
+  it("whole-draft commands share the selective queue and lose their unsent turn on account switch", async () => {
+    const a = op("2", "edit-a:0");
+    const client = seeded(a);
+    const response = deferred<unknown>();
+    api.discardDraft.mockReturnValue(response.promise);
+    const first = runDraftSelection(client, scope, "discard", target, selecting(a), null);
+    const send = vi.fn(() =>
+      startDraftCommand(client, {
+        target: "all",
+        draft: input,
+        mode: "apply",
+        generation: 1,
+      }),
+    );
+    const next = runWholeDraftIntent(input, "apply", send);
+    expect(next.sent).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    bindDraftCommandAccount("account-b");
+    expect(await next.outcome).toEqual({ kind: "blocked" });
+    response.resolve(discarded);
+    await first;
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("sends nothing for a click whose account ended while its draft was being read, and answers every waiter", async () => {

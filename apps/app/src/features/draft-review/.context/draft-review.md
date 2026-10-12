@@ -28,7 +28,8 @@ Branch lifecycle status is not review evidence. The server's
 and the mode-switch apply plan. The client projection does not authorize
 Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
 
-`reviewChangesOfPreview` shares `reviewChanges` grouping by server
+`draftView` owns the discriminated action target (operations, draft or display) and
+`reviewChangesOfPreview` exposes its shared `reviewChanges` grouping by server
 `closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
 operations in the class, never a representative. Only new documents become one whole-draft item, with all
 mark keys and attribution retained. Its Apply/Discard use existing whole-draft
@@ -72,22 +73,28 @@ Settlement order is explicit:
    immediately, preserving a newer generation. Catalog/list/preview refresh
    continues in the background; navigation and promotion do not decide success.
 3. Whole Discard awaits refresh. Confirmed or `gone` selections retain their
-   claim through awaited list/preview refresh, prune settled operations and
-   confirm with read fences. Other selection answers refresh before failure.
+   claim through awaited list/preview refresh, confirm settled keys as intents without editing raw previews. Other selection answers refresh before failure.
 4. Failure is recorded on the addressed draft or selection, and the executor
    releases the claim in `finally`. No command answer survives as a claim after
    release; the open review can retain a closed completion independently.
 
 **Per-change clicks queue.** `runDraftSelection` accepts every distinct Apply or
 Discard click at once: it hides the change (the queue entry in the record store,
-which also holds the caller's promise and the account epoch it was admitted in),
+which also holds the caller's execution context, promise and account epoch),
 and `drainClicks` sends the draft's clicks one at a time. Each is found again in
 the draft as it is when its turn comes (a fresh preview read for every click after
-the first, new tokens) by its keys, sent as that generation's rows, and is `gone`
-when nothing there holds it. An account change answers every unsent click
+the first, new tokens) by the immutable stable member set accepted at the click.
+Current complete raw classes must have exactly those members and remain
+actionable; a joined, missing or incomplete member refuses rather than changing
+the command. Only the row names and cut tokens may change. An explicit `stale`
+answer refreshes the cut and retries once, under the same drain and live claim,
+only for identical actionable members. A second stale answer, changed membership,
+permission failure or transport ambiguity restores/refuses without another retry.
+The drain supplies no caller authority: each intent carries its own query client
+and thread invalidation context. An account change answers every unsent click
 `blocked`, and the loop checks its click is still queued right after the read, so
 nothing is sent or published for a dead account. Rows disable only for a
-whole-draft command, a batch or an archived Work (`changesLocked`), never for
+whole-draft command on that same draft or an archived Work (`changesLocked`), never for
 another change's command.
 
 **Identity across re-forks.** A selective Discard re-forks the draft, so every
@@ -100,6 +107,12 @@ outlive a generation (queued clicks, held failures, hidden sets, the focus, the
 `operationKey` (in `@meridian/contracts/drafts`: the part key; `row:<id>` for a row that records no edit part, which
 therefore only matches itself). Text excerpts are display, never identity.
 
+**Presentation data and interactions.** `useOpenReviewChanges.ts` owns the
+retained projected open-review data (changes, failures, status and completion).
+`useReviewChanges` adds focus, stepping and commands; `useDraftView` borrows only
+that presentation data for the same painted draft, paired with its own caller
+capability. Listed views never construct the interactive open-review model.
+
 **One projection.** `draft-projection.ts` is the only place intents are applied to
 an observation: `projectDraft(observed, intentKeys)` gives the list/count preview,
 the manuscript's inline preview (Discards in flight still drawn) and the
@@ -110,17 +123,12 @@ projection.
 **Claims are capabilities.** `beginDraftCommand` returns a `DraftClaim` bound to
 the account epoch (`resetDraftCommandRecords` advances it). Answers, failures,
 confirmations, cache edits and release after an await go through the claim and
-land only while it is the draft's live pending claim. A batch holds its
-whole-draft claims up front, passes each to its send, and stops sending after
-an account change. Confirmations keep the generation they confirmed
-(`readDraftsAfterCommands` keeps a newer proposal).
-
-`runDraftBatch` pins its starting Work, holds that Work's shared busy lease
-through request gaps, and attempts independent drafts serially after refusals.
-Whole batches preclaim targets; selection batches queue visibility until each
-claim begins. Queues hide changes but block no command. Offline batches refuse
-all files in one admission turn, without optimistic queue visibility or a later
-reconnect admitting an unsent file.
+land only while it is the draft's live pending claim. Batch submission pins its
+creation-bound Work and account epoch, synchronously admits all targets into
+their draft-local queues, then aggregates their promises. No Work lease, reservation or hide-only batch queue
+exists. Refusals do not stop independent targets; account revocation stops the
+next actual send (already-sent requests cannot be rolled back). Offline clicks
+refuse without replaying on reconnect.
 
 ## Records, failures and freshness fences
 
@@ -133,11 +141,12 @@ Queued, pending and confirmed selections are hidden by the shared preview
 projection; failures restore them with their reason. Matching uses shared class
 or operation keys, newest overlap wins. Discards among them are `restoring`:
 `useDraftPreview` hands the editor those changes still in its model (`inline`),
-so the manuscript draws their original text from the click. `readPreviewAfterChangeCommands` fences
-reads begun before selection confirmation; `readDraftsAfterCommands` fences list
-reads begun before whole Apply confirmation. A later read is authoritative,
-since a new proposal can reuse the draft ID. Confirmation records retire once
-older reads drain. `previewWithoutOperations` never hides an unowned hunk.
+so the manuscript draws their original text from the click. Preview reads stay
+raw. Confirmed selection keys remain account-scoped intents, since older
+observations can still be cached or held by the painted review.
+`readDraftsAfterCommands` retains the existing generation-aware list fence for
+whole Apply. Its confirmations retire once older list reads drain.
+`previewWithoutKeys` never hides an unowned hunk.
 
 Failure classification uses error type/status, never message text:
 
@@ -224,7 +233,7 @@ The reducer owns shown generation R and completion K:
 | X | The Work's list omits the draft, or a preview says `gone` / 404 | An absence addressed below R is ignored. With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
 | S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
-| B | Whole-draft batch | Its pending and closed actions carry R at batch start |
+| B | Whole-draft batch | Each target carries R from its own draft-local admission |
 
 Re-entering G' sets R to G', adopts only that generation's claim completion,
 clears focus and room, and shows marks. The room owner acquires again. R never
@@ -353,3 +362,11 @@ Apply publishes that manifest as well as content.
 [handoff]: https://github.com/haowjy/meridian-flow/issues/731
 [admission]: https://github.com/haowjy/meridian-flow/issues/738
 [loss]: https://github.com/haowjy/meridian-flow/issues/739
+
+Raw preview observations remain immutable. Confirmed selection keys stay in the
+account-scoped intent journal so cached and held observations cannot resurrect a
+settled change. They leave with the account epoch, not with a cache rewrite.
+Inline input emits an addressed focus intent through the domain change index;
+programmatic plugin emphasis is output only. The scope focus reconciler remains
+necessary for chained regrouping (a later class can share only an intermediate
+member with the originally focused class).

@@ -3,7 +3,11 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
-import { draftCommandPendingIn, useDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  currentDraftCommandRecords,
+  pendingDraftCommand,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
@@ -46,15 +50,16 @@ function WorkSettlement({
   const resources = useOptionalAccountResourceReplica();
   const drafts = useWorkDrafts(projectId, workId);
   const records = useDraftCommandRecords();
-  const disposing = draftCommandPendingIn(records, { projectId, workId });
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
   // that now exists was applied, otherwise the draft was discarded.
   useEffect(() => {
-    if (!resources || !projectId || !workId || disposing) return;
+    if (!resources || !projectId || !workId) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
-      draft.workId === workId && !activeDrafts.some((row) => row.draftId === draft.draftId);
+      draft.workId === workId &&
+      !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
+      !activeDrafts.some((row) => row.draftId === draft.draftId);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
@@ -87,7 +92,7 @@ function WorkSettlement({
     return () => attempt.abort();
   }, [
     lifecycle,
-    disposing,
+    records,
     membership,
     drafts.drafts,
     drafts.status,

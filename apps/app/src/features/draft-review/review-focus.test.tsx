@@ -148,7 +148,8 @@ describe("focus through real review commands", () => {
     const refused = deferredReviewAnswer<{ status: "stale"; draftId: string }>();
     fixture.network.applyDraftChanges
       .mockReturnValueOnce(accepted.promise)
-      .mockReturnValueOnce(refused.promise);
+      .mockReturnValueOnce(refused.promise)
+      .mockResolvedValue({ status: "stale", draftId: "draft-a" });
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
       await act(async () => probe().header.view.focus(probe().header.view.items[1].change));
