@@ -132,13 +132,15 @@ export function httpError(method: string, requestPath: string, response: RawResp
     return new CliError("unavailable", summary, {
       hint: "Dev login did not authenticate. Check WORKOS_DEV_AUTOLOGIN and the dev login credentials.",
       details,
+      httpStatus: response.status,
     });
   }
-  if (response.status === 404) return new CliError("not_found", summary, { details });
+  if (response.status === 404)
+    return new CliError("not_found", summary, { details, httpStatus: response.status });
   if (response.status === 400 || response.status === 422) {
-    return new CliError("usage", summary, { details });
+    return new CliError("usage", summary, { details, httpStatus: response.status });
   }
-  return new CliError("http_error", summary, { details });
+  return new CliError("http_error", summary, { details, httpStatus: response.status });
 }
 
 export function createSession(input: {

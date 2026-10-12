@@ -126,21 +126,32 @@ export const seedCommand: CommandSpec = {
           full: false,
         });
         messages.push(outcome);
-        exitCode = exitForOutcome(outcome);
-        if (exitCode !== EXIT.ok) break;
+        exitCode = Math.max(exitCode, exitForOutcome(outcome)) as ExitCode;
       }
     }
 
-    ctx.out.result({ projectId, docs, threadId, messages }, (value) =>
-      [
-        `project ${value.projectId}`,
-        ...value.docs.map((doc) => `doc ${doc.uri} ${doc.documentId}`),
-        ...(value.threadId ? [`thread ${value.threadId}`] : []),
-        ...value.messages.map(
-          (message) =>
-            `message turn ${message.turnId ?? "?"} ${message.status}${message.error ? `: ${message.error}` : ""}`,
-        ),
-      ].join("\n"),
+    const worst = messages.find((message) => exitForOutcome(message) === exitCode);
+    ctx.out.result(
+      {
+        type: "result",
+        command: "seed",
+        outcome: worst?.outcome ?? "complete",
+        reason: worst?.reason ?? null,
+        projectId,
+        docs,
+        threadId,
+        messages,
+      },
+      (value) =>
+        [
+          `project ${value.projectId}`,
+          ...value.docs.map((doc) => `doc ${doc.uri} ${doc.documentId}`),
+          ...(value.threadId ? [`thread ${value.threadId}`] : []),
+          ...value.messages.map(
+            (message) =>
+              `message turn ${message.turnId ?? "?"} ${message.status}${message.error ? `: ${message.error}` : ""}`,
+          ),
+        ].join("\n"),
     );
     return exitCode;
   },

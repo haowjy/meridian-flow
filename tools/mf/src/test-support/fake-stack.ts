@@ -136,6 +136,15 @@ function createFake() {
   const messageBodies: unknown[] = [];
   const resumeCursors: string[] = [];
   const socketPolicy = { replayFloor: "0", closeCode: null as number | null };
+  const admissionPolicy = {
+    loseAnswer: false,
+    lookup: "accepted" as "accepted" | "rejected" | "not-seen" | "pending" | "failed",
+  };
+  const interruptPolicy = {
+    response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
+  };
+  const snapshotPolicy = { pending: true, running: true };
+  const admissions = new Map<string, unknown>();
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
 
@@ -176,7 +185,33 @@ function createFake() {
         } as AGUIEvent);
         return;
       }
+      if (text.includes("cancelled")) {
+        assistant.status = "cancelled";
+        publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
+        return;
+      }
       if (text.includes("hang")) return;
+      if (text.includes("write tool")) {
+        publish({
+          type: "TOOL_CALL_START",
+          toolCallId: "write-1",
+          toolCallName: "doc_write",
+        } as AGUIEvent);
+        publish({ type: "TOOL_CALL_ARGS", toolCallId: "write-1", delta: "{}" } as AGUIEvent);
+        publish({ type: "TOOL_CALL_END", toolCallId: "write-1" } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_RESULT",
+          toolCallId: "write-1",
+          messageId: "write-result",
+          content: "staged",
+        } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_RESULT",
+          toolCallId: "write-1",
+          messageId: "write-result",
+          content: "committed",
+        } as AGUIEvent);
+      }
       if (text.includes("delegate")) {
         const activity = (value: unknown) =>
           publish({ type: "CUSTOM", name: "meridian.subagent.activity", value } as AGUIEvent);
@@ -253,6 +288,16 @@ function createFake() {
     if (req.headers.cookie !== COOKIE) return send(401, { message: "unauthenticated" });
     const url = new URL(req.url ?? "/", "http://fake");
     const route = `${req.method} ${url.pathname}`;
+    if (req.method === "GET" && url.pathname.includes("/admissions/")) {
+      const submissionId = url.pathname.split("/").at(-1) ?? "";
+      if (admissionPolicy.lookup === "failed") return send(503, { message: "lookup down" });
+      return send(
+        200,
+        admissionPolicy.lookup === "accepted"
+          ? admissions.get(submissionId)
+          : { kind: admissionPolicy.lookup, submissionId, code: "refused" },
+      );
+    }
     if (route === "GET /api/threads") return sendEnveloped(200, { threads: [threadDto()] });
     if (route === "POST /api/projects/bootstrap-default")
       return send(201, { projectId: PROJECT_ID });
@@ -315,7 +360,11 @@ function createFake() {
       return sendEnveloped(201, threadDto());
     }
     if (route === `POST /api/threads/${THREAD_ID}/messages`) {
-      const body = (await readBody(req)) as { text: string; blocks: { text?: string }[] };
+      const body = (await readBody(req)) as {
+        submissionId: string;
+        text: string;
+        blocks: { text?: string }[];
+      };
       messageBodies.push(body);
       const concatenated = body.blocks.map((block) => block.text ?? "").join("");
       if (concatenated !== body.text) return send(400, { message: "text must equal blocks" });
@@ -389,21 +438,38 @@ function createFake() {
         });
       }
       runScenario(body.text);
-      return send(202, {
+      const accepted = {
         threadId: THREAD_ID,
+        submissionId: body.submissionId,
         userTurnId: `turn-u${runCounter}`,
         assistantTurnId: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,
         status: "accepted",
-      });
+      };
+      admissions.set(body.submissionId, { ...accepted, kind: "accepted" });
+      if (admissionPolicy.loseAnswer) {
+        req.socket.destroy();
+        return;
+      }
+      return send(202, accepted);
     }
     if (route === `GET /api/threads/${THREAD_ID}/snapshot`) {
       return sendEnveloped(200, {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
-        liveState: liveState(String(journal.length), pendingItems),
+        liveState: {
+          ...liveState(String(journal.length), pendingItems),
+          ...(!snapshotPolicy.pending ? { pending: undefined } : {}),
+          runningTurnId: !snapshotPolicy.running
+            ? null
+            : (turns
+                .slice()
+                .reverse()
+                .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ??
+              null),
+        },
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
@@ -444,7 +510,36 @@ function createFake() {
           type: string;
           lastSeq?: string;
           subscriptions?: { threadId: string; lastSeq: string }[];
+          interruptId?: string;
+          turnId?: string;
         };
+        if (message.type === "interrupt.respond") {
+          if (interruptPolicy.response === "rejected")
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                kind: "error",
+                threadId: THREAD_ID,
+                error: {
+                  code: "interrupt_not_pending",
+                  message: "response rejected",
+                  retryable: false,
+                  source: "system",
+                },
+              }),
+            );
+          else if (interruptPolicy.response !== "unconfirmed")
+            publish({
+              type: "CUSTOM",
+              name: "meridian.interrupt",
+              value: {
+                turnId: message.turnId,
+                interruptId:
+                  interruptPolicy.response === "other" ? "other-id" : message.interruptId,
+                state: "resolved",
+              },
+            } as AGUIEvent);
+        }
         const cursors =
           message.type === "resume"
             ? (message.subscriptions ?? [])
@@ -482,7 +577,17 @@ function createFake() {
     });
   });
 
-  return { server, mockScripts, removedMockScripts, messageBodies, resumeCursors, socketPolicy };
+  return {
+    server,
+    mockScripts,
+    removedMockScripts,
+    messageBodies,
+    resumeCursors,
+    socketPolicy,
+    admissionPolicy,
+    interruptPolicy,
+    snapshotPolicy,
+  };
 }
 
 export type FakeStack = ReturnType<typeof createFake> & {

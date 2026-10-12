@@ -7,6 +7,7 @@ export const EXIT = {
   notFound: 3,
   unavailable: 4,
   cancelled: 5,
+  unproven: 6,
   interrupt: 8,
   timeout: 124,
 } as const;
@@ -22,7 +23,8 @@ export type CliErrorCode =
   | "cancelled"
   | "interrupt_pending"
   | "timeout"
-  | "protocol";
+  | "protocol"
+  | "unproven";
 
 const EXIT_BY_CODE: Record<CliErrorCode, ExitCode> = {
   usage: EXIT.usage,
@@ -34,19 +36,26 @@ const EXIT_BY_CODE: Record<CliErrorCode, ExitCode> = {
   interrupt_pending: EXIT.interrupt,
   timeout: EXIT.timeout,
   protocol: EXIT.failed,
+  unproven: EXIT.unproven,
 };
 
 export class CliError extends Error {
   readonly code: CliErrorCode;
   readonly hint: string | undefined;
   readonly details: unknown;
+  readonly httpStatus: number | undefined;
 
-  constructor(code: CliErrorCode, message: string, options?: { hint?: string; details?: unknown }) {
+  constructor(
+    code: CliErrorCode,
+    message: string,
+    options?: { hint?: string; details?: unknown; httpStatus?: number },
+  ) {
     super(message);
     this.name = "CliError";
     this.code = code;
     this.hint = options?.hint;
     this.details = options?.details;
+    this.httpStatus = options?.httpStatus;
   }
 
   get exitCode(): ExitCode {
