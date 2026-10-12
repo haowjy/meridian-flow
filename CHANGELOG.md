@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reject a first AI edit that resumes after its reply rolls back, without leaving an orphaned staged write.
+
 - Discard staged AI edits even after an earlier Discard evicts their core, preserving independent documents in the reply.
 
 - Revoke in-flight AI edits when their document is wholly discarded, while independent edits in the same reply still save.

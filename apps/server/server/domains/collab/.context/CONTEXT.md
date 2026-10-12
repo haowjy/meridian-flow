@@ -9,7 +9,9 @@ with a destination per document (below). Open response records own their pinned
 core participants independently of the resident-core cache. Invalidation visits
 the deduplicated resident and response-pinned owners; residency eviction never
 forgets an open reply. Idle-core protection derives from those response records,
-not a second active-response index. A `live` destination selects the
+not a second active-response index. First-write lookup, creation and enrollment
+are synchronous before cache maintenance yields, so response close reaches the
+owner and its existing lifecycle rejects resumed staging. A `live` destination selects the
 live core and creates no Work draft or thread-peer branch: Auto-apply,
 Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
 `draft` destination selects the thread-peer core; Draft on No Work owns a Work

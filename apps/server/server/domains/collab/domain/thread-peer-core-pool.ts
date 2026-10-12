@@ -276,7 +276,7 @@ export function createThreadPeerCorePool(input: {
     };
   }
 
-  async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
+  function lookupCore(threadId: string | undefined): AgentEditCore {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
     const existing = cores.get(id);
@@ -287,6 +287,11 @@ export function createThreadPeerCorePool(input: {
     }
     const core = input.createThreadCore(id, threadViewFor(id));
     cores.set(id, core);
+    return core;
+  }
+
+  async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
+    const core = lookupCore(threadId);
     await evictIdleCores();
     return core;
   }
@@ -344,7 +349,7 @@ export function createThreadPeerCorePool(input: {
   }
 
   function coreForDestination(destination: FileDestination, threadId: string | undefined) {
-    return destination.kind === "live" ? input.liveUtilityCore : coreFor(threadId);
+    return destination.kind === "live" ? input.liveUtilityCore : lookupCore(threadId);
   }
 
   /** Pulls this thread's peer before a drafted call so it sees the current Work draft. */
@@ -405,7 +410,8 @@ export function createThreadPeerCorePool(input: {
     const destination = liveVersion
       ? ({ kind: "live" } as const)
       : (pinned?.grant.destination ?? requested);
-    const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
+    const core = pinned?.core ?? coreForDestination(destination, context.threadId);
+    await evictIdleCores();
     const outcome = await core.read(
       command,
       await threadPeerContext(core, documentId, routedTo(context, destination)),
@@ -443,11 +449,14 @@ export function createThreadPeerCorePool(input: {
         return readRequired(command, seen, destination);
       }
     }
-    const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
+    const core = pinned?.core ?? coreForDestination(destination, context.threadId);
+    // Lookup and enrollment are synchronous: close must see the first owner
+    // before cache maintenance yields, so that owner's lifecycle rejects late staging.
     if (record) {
       record.participants.add(core);
       if (documentId && !pinned) record.documents.set(documentId, { core, grant });
     }
+    await evictIdleCores();
     const call = async () =>
       core.write(
         command,
