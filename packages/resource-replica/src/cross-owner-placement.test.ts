@@ -68,3 +68,32 @@ it("binds a descendant through a same-path cross-Work parent in either record or
       projectFolderCatalog("p", entries, records).find((e) => e.entryId === "X"),
     ).toMatchObject({ uri: "scratch://@beta/B/sub/X", parentId: "sub" });
 });
+
+it("marks a document pending when its parent changes owner without changing path", async () => {
+  const { createResourcePlacement } = await import("./folder-projection");
+  const record = {
+    resource: {
+      handle: "doc",
+      revision: 1,
+      identity: { documentId: "doc", revision: 1 },
+      content: { kind: "unacquired" as const },
+      classification: {
+        editable: true as const,
+        filetype: "markdown" as const,
+        schemaType: "document" as const,
+      },
+      canonical: loc("alpha", "B/doc.md"),
+      lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
+      aliases: {},
+      obligations: {},
+    },
+    intents: [],
+  };
+  const placement = createResourcePlacement(
+    "p",
+    [source("alpha"), source("beta"), node("B", "alpha", "B")],
+    [move("B", "alpha", "B", "beta", "B")],
+  );
+  expect(placement.resourceLocation(record)).toMatchObject({ path: "/B/doc.md", workId: "beta" });
+  expect(placement.resourcePlacementPending(record)).toBe(true);
+});
