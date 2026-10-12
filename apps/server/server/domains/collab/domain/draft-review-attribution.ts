@@ -211,7 +211,17 @@ export function indexDraftUpdates(input: {
           decoded.structs,
           contentRestorativeRow.deletedContent.segments,
         );
-        hasOwnEffect = false;
+        // Text restoration cannot transfer a novel format, attribute or node effect.
+        hasOwnEffect = restoredIntroduced.some(({ range, operationId: restoredOperationId }) => {
+          const item = findItem(replayDoc, range.client, range.clock);
+          return (
+            !restoredOperationId &&
+            item instanceof Y.Item &&
+            (item.content instanceof Y.ContentFormat ||
+              item.content instanceof Y.ContentType ||
+              item.parentSub !== null)
+          );
+        });
       }
 
       if (isPureRestorativeRow) {
@@ -354,6 +364,7 @@ function sortedUpdateIds<UpdateId extends number>(updateIds: ReadonlySet<UpdateI
   return [...updateIds].sort((left, right) => left - right);
 }
 
+// The model-undo engine emits uncertified text restorations that still need this fallback.
 function contentRestorativeUndoMatch(input: {
   beforeVisibility: readonly {
     range: ClockRange;
@@ -379,9 +390,7 @@ function contentRestorativeUndoMatch(input: {
     const deletedContent = input.deletedContentByOperationId.get(operationId);
     if (!deletedContent) continue;
     if (deletedContent.text === introducedText) {
-      // Browser UndoManager restores the same text as fresh structs without a
-      // durable redone backlink. If overlapping inverse rows ever match by
-      // content, the latest row is the one the user just undid.
+      // The latest overlapping inverse is the undo target.
       return { operationId, deletedContent };
     }
   }
@@ -659,6 +668,7 @@ function clearDeletedRange(
   }
 }
 
+// The model-undo engine emits uncertified tombstone restorations that still need this fallback.
 function findAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
   const index = ranges.findIndex((range) => range.length === length);
   if (index < 0) return null;
