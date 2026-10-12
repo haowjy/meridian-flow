@@ -4,10 +4,12 @@ Writer commands in the durable inbox: `/compact` and the chat's write-mode
 switch (`{ kind: "write_mode", mode }`). Handoff Stop and Retry act on handoff
 seeds, not inbox controls; see [handoff](handoff.md).
 
-Two terms keep one meaning here. A **reply** is one run of a chat, from run
-start until it releases the run claim; it can span several assistant turns,
-automatic compaction and interrupt waits. A **request boundary** is the point
-between two model requests inside a reply, where steers are adopted.
+Two terms keep one meaning here. An **execution** is one run of a chat, one
+hold of its run lease from run start until it releases the run claim
+([run identity](delivery.md#run-identity)); it can span several assistant
+turns, automatic compaction and interrupt waits. A **request boundary** is the
+point between two model requests inside an execution, where steers are adopted.
+"Reply" means only one assistant turn or the writer-facing grouping.
 
 ## Queue order
 
@@ -23,7 +25,7 @@ row with a higher seq) must be answered in S's mode, so:
 
 | Pending (seq order) | At a request boundary | At run start |
 | --- | --- | --- |
-| `S, M2` | yield: end the reply | apply S, then run M2 |
+| `S, M2` | yield: end the execution | apply S, then run M2 |
 | `M1, S` | adopt M1 | run M1, then apply S |
 | `M1, S, M2` | yield | apply S, then run M1 and M2 together |
 | `S` (with or without notices) | adopt as today | apply S |
@@ -34,13 +36,13 @@ With nothing behind it, S runs as the oldest control. Materialization
 non-command row into the graph in seq order and never yields.
 
 Withdrawing a queued command removes it without changing message eligibility.
-Messages that arrive while a command runs remain queued for the successor reply.
+Messages that arrive while a command runs remain queued for the successor execution.
 
 ## The yield
 
 A yield is a steer split that releases the claim instead of reserving the
 successor. The run checks `yieldsAtBoundary` before the next request's budget
-and iteration checks, so a reply out of credits still yields, and
+and iteration checks, so an execution out of credits still yields, and
 `splitAndContinue` and `close`'s `continueWith` check repeat the decision under
 the thread lock for a switch that lands later. Cancellation wins: `adopt`
 checks it under the lock first; the early yield rechecks the run's local signal
@@ -70,7 +72,7 @@ attempt, so a switch another tab commits first is always seen.
 ## Applying a switch
 
 `applyDueSwitches(threadId)` takes `RunClaim.withExclusiveThread`, so it is a
-no-op while a reply holds the chat; a reply's mode can't change under it. Each
+no-op while an execution holds the chat; an execution's mode can't change under it. Each
 due switch is one transaction under the thread lock: set `threads.ai_write_mode`
 and the Work's `default_ai_write_mode` (thread, then Work), append a complete
 `system` turn at the active leaf (`writeMode` = the new mode, metadata
@@ -86,13 +88,13 @@ reread reaches `applyDueSwitches`.
 The control route applies an idle chat's switch itself before answering. A
 short exclusive claim (idle materialization, a rebind) only delays it: the
 route retries for about 2 s while no run lease holds the chat, and stops at
-once when a reply holds it (the release wake applies it). A claim that outlasts
+once when an execution holds it (the release wake applies it). A claim that outlasts
 the retries turned them away, and a short claim that turned an attempt away
 wakes its chat on release (`loop/contended-claim-wake.ts`, wrapped around the
 run claim at composition), so the switch applies right after it releases. That
 tracking is process-local: only a claim held by another server process leaves
 the switch to the sweep. The route does not enqueue a wake of its own, but a
-contended claim's release wake, or a reply's, can apply the switch while the
+contended claim's release wake, or an execution's, can apply the switch while the
 attempts are still running. The answer stays consistent because of the
 thread lock, not because no wake runs: it reads the control's switch turn and
 queue row together under the lock that every apply takes, so an apply lands
@@ -100,7 +102,7 @@ wholly before or after it. A switch turn recording the control means applied,
 and a waiting row means queued.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
-no receipt, nothing undoable. Because the yield ends the reply, writes before
+no receipt, nothing undoable. Because the yield ends the execution, writes before
 and after a switch always belong to different turns and responses, so no edit
 or receipt spans a mode change. Keep both true.
 
@@ -144,6 +146,6 @@ Withdrawal acknowledges a command that has not started and returns
 switch turn), withdrawal returns `already_started`; it does not stop that run.
 Enqueue and withdrawal share the thread lock with command reservation.
 
-A failed manual C consumes its command. Messages that arrived while it ran remain queued for a later reply.
+A failed manual C consumes its command. Messages that arrived while it ran remain queued for a later execution.
 
 For the shared selection and release wake contract, see [delivery](delivery.md).

@@ -41,7 +41,7 @@ the draft, then retires the journal record. A received transfer shows no old Sen
 commands, and reload finishes retirement without prepending again.
 Never-created chat Edit returns all its messages and unsent writing to New chat
 in the same pane. Lifecycle transfers publish a new editor mount; typing does
-not. `useThreadRunResume` only attaches snapshot-based active runs.
+not.
 Pending upload bytes do not persist. Successfully uploaded reference atoms do.
 
 ## Mental model

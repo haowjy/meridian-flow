@@ -62,18 +62,18 @@ transcript ancestry or stream order.
 ## Command selection and release wake
 
 `loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. A
-**request boundary** is the point between two model requests inside one reply
-(one run); "reply" means the whole run. At a request boundary the selector
+**request boundary** is the point between two model requests inside one
+execution (one run; see [run identity](#run-identity)). At a request boundary the selector
 takes every non-command row, including rows and Work refresh notices after a
 queued command; commands never run beside a tool call or at turn close. At run
 start, every non-command row runs if any message is waiting; otherwise the
 oldest command runs alone. Messages never wait behind a command, except behind
-a queued write-mode switch: then a request boundary returns `yield` (the reply
+a queued write-mode switch: then a request boundary returns `yield` (the execution
 ends there with no successor) and run start returns `switch` (applied by
 `applyDueSwitches` outside any run). See [controls](controls.md) for the
 table, the yield and cancel-out. A notice-only queue does not start a run, but
 a Work refresh notice already waiting in the selected rows at a request
-boundary still closes that reply's batch. The selector returns at most one
+boundary still closes that execution's batch. The selector returns at most one
 command per run. Stop only ends the current turn; release then follows the
 same rule.
 
@@ -82,7 +82,7 @@ uses the same run-start selector as setup; `RunStarter.start` applies any due
 write-mode switch before it starts a drain. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
 not lost. A failed assistant acknowledges its adopted messages before release,
-so neither the reread nor the periodic sweep replays that reply. The wake has no
+so neither the reread nor the periodic sweep replays that execution. The wake has no
 failed-receipt exclusion: if the plain selector finds a queued command or other
 work, it starts it. An empty reread cannot spin. Real setup errors before
 adoption skip the reread as the hot-loop guard. A short exclusive claim (`hold`
