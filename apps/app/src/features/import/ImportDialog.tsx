@@ -86,9 +86,11 @@ export function ImportDialog({
           ) : null}
           {state.status === "ready" && summary ? (
             <>
-              <div className={cn("rounded-lg", picker.drag.over && "ring-1 ring-border-focus")}>
-                <SelectionCards summary={summary} />
-              </div>
+              {summary.roots.length > 0 ? (
+                <div className={cn("rounded-lg", picker.drag.over && "ring-1 ring-border-focus")}>
+                  <SelectionCards summary={summary} />
+                </div>
+              ) : null}
               <div className="flex justify-end">
                 <Button type="button" variant="ghost" size="sm" onClick={picker.chooseAgain}>
                   <Trans>Choose again</Trans>
