@@ -616,7 +616,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           ? async () => {
               const uri = await deps.resolveDestinationFolder?.(destinationParent.folderId);
               if (!uri) return Err({ code: "destination_missing", uri: destinationUri } as const);
-              const target = await resolveMutation(`${uri.replace(/\/$/, "")}/${name}`);
+              const target = await resolveMutation(
+                [uri.replace(/\/$/, ""), ...(destinationParent.createFolders ?? []), name].join(
+                  "/",
+                ),
+              );
               if (!target.ok)
                 return Err({ code: "destination_missing", uri: destinationUri } as const);
               const denied = moveCreationDenied(source.value, target.value);

@@ -43,6 +43,8 @@ interface PreparedContextMoveBase {
   /** Destination context_sources.id selected by URI routing. */
   destinationSourceId: string;
   destinationParentToken?: Extract<ContextLocationToken, { kind: "directory" }>;
+  /** Validated suffix below destinationParentToken, ensured inside the commit transaction. */
+  destinationCreateFolders?: string[];
   /** Final normalized target path after Unix mv basename/directory resolution. */
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
