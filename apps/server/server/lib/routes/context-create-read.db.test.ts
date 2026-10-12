@@ -1,3 +1,6 @@
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
+import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
@@ -167,7 +170,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              workRepo: {} as never,
+              workRepo: createDrizzleProjectWorkRepository({
+                db,
+                lineageScratch: createDrizzleLineageScratchLifecycle(db),
+                fileAccessChanges: createLocalFileAccessChanges(),
+                projectionMutation: createTestWorkProjectionMutation(db),
+              }),
               contextPorts,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),
