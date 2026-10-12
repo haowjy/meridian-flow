@@ -157,6 +157,7 @@ export type ResourceTabProjection =
       kind: "terminal";
       documentIds: readonly string[];
       generation: string;
+      deletionVersion: string | null;
     }
   | {
       kind: "projected";
@@ -181,6 +182,7 @@ export function projectResourceTab(
       kind: "terminal",
       documentIds: [...new Set([tab.documentId, record.resource.identity.documentId])],
       generation: record.resource.lifecycle.generation,
+      deletionVersion: record.resource.lifecycle.deletionVersion ?? null,
     };
   if (record.resource.content.kind === "unacquired") {
     const location = placement.resourceLocation(record);

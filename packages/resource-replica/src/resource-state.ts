@@ -1,5 +1,6 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -393,15 +394,37 @@ function supersededTerminal(record: ResourceRecord, generation: string): boolean
   );
 }
 
+/** The highest server version known to prove this deletion; null leaves the terminal versionless. */
+function terminalDeletionVersion(
+  record: ResourceRecord,
+  deletionVersion: string | null,
+): string | undefined {
+  const lifecycle = record.resource.lifecycle;
+  const versions = [
+    deletionVersion,
+    lifecycle.kind === "terminal" ? lifecycle.deletionVersion : undefined,
+  ].filter((version): version is string => typeof version === "string");
+  if (versions.length === 0) return undefined;
+  return versions.reduce((highest, version) =>
+    newerCanonicalObservation(version, highest) ? version : highest,
+  );
+}
+
+/**
+ * The editor's exact-ID terminal. `deletionVersion` is the namespace version of the exact-ID
+ * deletion evidence; the terminal holds it so stale catalog history can never revive it.
+ */
 export function publishResourceTerminal(input: {
   record: ResourceRecord;
   documentId: string;
   generation: string;
   transitionId: string;
   exactDatabaseName: string;
+  deletionVersion: string | null;
 }): ResourceWrite | null {
   assertAvailabilityGeneration(input.generation);
   const { record } = input;
+  const deletionVersion = terminalDeletionVersion(record, input.deletionVersion);
   if (supersededTerminal(record, input.generation)) return null;
   if (
     record.resource.identity.documentId !== input.documentId ||
@@ -432,6 +455,7 @@ export function publishResourceTerminal(input: {
             kind: "terminal",
             generation: input.generation,
             transitionId: input.transitionId,
+            ...(deletionVersion === undefined ? {} : { deletionVersion }),
           },
           obligations: {
             ...record.resource.obligations,
@@ -456,6 +480,7 @@ export function publishResourceTerminal(input: {
           kind: "terminal",
           generation: input.generation,
           transitionId: input.transitionId,
+          ...(deletionVersion === undefined ? {} : { deletionVersion }),
         },
         obligations: {
           cleanup: {

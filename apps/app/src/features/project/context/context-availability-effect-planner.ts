@@ -51,6 +51,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
     projectId: string;
     documentId: string;
     generation: string;
+    deletionVersion: string | null;
   }[];
 }>;
 
@@ -307,6 +308,7 @@ export function planContextAvailabilityBatch(
       projectId,
       documentId: id,
       generation: command.generation,
+      deletionVersion: command.kind === "terminal-remove" ? command.deletionVersion : null,
     });
   }
 

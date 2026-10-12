@@ -117,7 +117,16 @@ export type ResourceDescriptor = ResourceKey & {
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
-    | { kind: "terminal"; generation: string; transitionId: string };
+    | {
+        kind: "terminal";
+        generation: string;
+        transitionId: string;
+        /**
+         * Server namespace version that proved the deletion. Only a strictly newer observation
+         * of the document as present revives it; without one it never revives from a catalog.
+         */
+        deletionVersion?: string;
+      };
   aliases: Record<string, { introducedAtIdentityRevision: number }>;
   /** The terminal transition a newer server observation superseded; its late purge is stale. */
   revivedFrom?: { generation: string; transitionId: string };

@@ -17,14 +17,13 @@ export function validateResourceRecordUpdate(
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
     // Only a strictly newer server observation of the document as present supersedes deletion,
     // and never under an outstanding purge of the deleted lineage's content.
+    const deletionVersion = previous.resource.lifecycle.deletionVersion;
     const restored =
       resource.lifecycle.kind === "acknowledged" &&
       resource.canonical !== null &&
       resource.observationVersion !== undefined &&
-      newerCanonicalObservation(
-        resource.observationVersion,
-        previous.resource.observationVersion,
-      ) &&
+      deletionVersion !== undefined &&
+      newerCanonicalObservation(resource.observationVersion, deletionVersion) &&
       !previous.resource.obligations.cleanup &&
       resource.identity.documentId === previous.resource.identity.documentId &&
       resource.identity.revision === previous.resource.identity.revision &&
@@ -32,6 +31,12 @@ export function validateResourceRecordUpdate(
       resource.revivedFrom?.generation === previous.resource.lifecycle.generation &&
       resource.revivedFrom.transitionId === previous.resource.lifecycle.transitionId;
     if (!restored) throw new Error("Terminal resources revive only from newer server observations");
+  }
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind === "terminal") {
+    const held = previous.resource.lifecycle.deletionVersion;
+    const kept = resource.lifecycle.deletionVersion;
+    if (held !== undefined && (kept === undefined || newerCanonicalObservation(held, kept)))
+      throw new Error("A terminal resource cannot lose its deletion version");
   }
   const nextInitializationReserved =
     resource.content.kind === "exact" && resource.content.initialization === "reserved";

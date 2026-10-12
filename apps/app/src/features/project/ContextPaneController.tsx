@@ -321,6 +321,7 @@ export function ContextViewerSurfaceController({
             projectId,
             deletedDocumentIds: projection.documentIds,
             generation: projection.generation,
+            deletionVersion: projection.deletionVersion,
           })
           .catch((error: unknown) => reportError(error));
         continue;

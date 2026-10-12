@@ -22,6 +22,8 @@ export type ProjectDocumentAvailabilityCommand =
       projectId: string;
       documentId: string;
       generation: AvailabilityGeneration;
+      /** Namespace version that proved the deletion; the local terminal keeps it. */
+      deletionVersion: string | null;
       cause: "document-deleted";
     }
   | {
@@ -197,6 +199,7 @@ export class ProjectContextAvailabilityCoordinator {
     projectId: string;
     deletedDocumentIds: readonly string[];
     generation: AvailabilityGeneration;
+    deletionVersion: string | null;
   }): Promise<void> {
     const state = this.project(input.projectId);
     const generation = BigInt(input.generation);
@@ -213,6 +216,7 @@ export class ProjectContextAvailabilityCoordinator {
           projectId: input.projectId,
           documentId,
           generation: input.generation,
+          deletionVersion: input.deletionVersion,
           cause: "document-deleted" as const,
           commandId: commandId("terminal-remove", input.projectId, documentId, input.generation),
         },
@@ -476,6 +480,7 @@ export class ProjectContextAvailabilityCoordinator {
         projectId,
         documentId,
         generation: resolution.generation,
+        deletionVersion: resolution.observationVersion,
         cause: "document-deleted",
         commandId: commandId("terminal-remove", projectId, documentId, resolution.generation),
       };

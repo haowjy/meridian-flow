@@ -642,6 +642,7 @@ export class ContextRemovalCoordinator {
               effect.documentId,
               effect.generation,
               effect.commandId,
+              effect.deletionVersion,
             ) ?? Promise.resolve())
           : (this.sessions?.revokeAccess(
               effect.projectId,
@@ -1324,6 +1325,7 @@ function availabilitySessionEffect(
       projectId: command.projectId,
       documentId: command.documentId,
       generation: command.generation,
+      deletionVersion: command.kind === "terminal-remove" ? command.deletionVersion : null,
     },
   ];
 }
