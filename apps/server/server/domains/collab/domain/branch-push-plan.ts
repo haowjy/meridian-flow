@@ -10,6 +10,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import { documentDifference } from "./document-difference.js";
 export class BranchPushEffectVerificationError extends Error {
   constructor(
     readonly operation: string,
@@ -54,17 +55,18 @@ export function publicationBlockChanges(input: {
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
 }): PublicationBlockChange[] {
-  const before = blockTextMap(input.model, input.beforeDoc);
-  const after = blockTextMap(input.model, input.afterDoc);
-  const blockIds = new Set([...before.keys(), ...after.keys()]);
-  return [...blockIds]
-    .filter((blockId) => before.get(blockId) !== after.get(blockId))
-    .sort()
-    .map((blockId) => ({
-      blockId,
-      beforeText: before.get(blockId) ?? null,
-      afterText: after.get(blockId) ?? null,
-    }));
+  return documentDifference(input.beforeDoc, input.afterDoc, input.model)
+    .flatMap((entry) => {
+      if (entry.kind === "equal") return [];
+      return [
+        {
+          blockId: entry.kind === "delete" ? entry.live.id : entry.draft.id,
+          beforeText: entry.kind === "insert" ? null : entry.live.text,
+          afterText: entry.kind === "delete" ? null : entry.draft.text,
+        },
+      ];
+    })
+    .sort((a, b) => a.blockId.localeCompare(b.blockId));
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {

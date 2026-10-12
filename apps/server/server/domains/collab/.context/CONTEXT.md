@@ -369,9 +369,16 @@ document correlation and affected hunk count, never document content.
 
 `domain/draft-review-attribution.ts` owns replay, restoration aliases, range
 ownership and completeness. `domain/document-difference.ts` owns block alignment,
-identity-aware text gaps, clock ranges and anchors, without review authority.
-`domain/draft-review-hunks.ts` composes the raw difference with review attribution
-and restorative cancellation; publication consumes the raw difference directly.
+identity-aware text gaps and anchors, without review authority.
+`domain/document-content.ts` is the semantic equality oracle for review, publication
+and pending settlement: text, marks, node types, attributes and ordered children.
+Yjs history and attribute-object prototypes do not change content. Alignment uses
+canonical block identities, not scope-dependent display hash widths. Rich-only
+changes are whole-block hunks attributed through changed format/attribute clocks;
+unchanged prose is not an inserted or removed text effect. Their formatting facts
+are localized by the client, in the same row as text changes.
+`domain/draft-review-hunks.ts` composes the raw difference with review attribution; publication consumes the raw difference directly. Recreated identical blocks
+are equal at that shared semantic boundary, not hidden by a review-only cancellation rule.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
@@ -393,9 +400,11 @@ metadata enters cold attribution replay; the claims map itself remains untrusted
 
 No visible review operations is not permission to reset a draft. Empty settlement
 compares the visible ProseMirror tree (text deltas including marks, element types,
-attributes, and ordered children), ignoring Yjs identities/history. Unrepresented
-formatting remains pending for document-level Apply/Discard; cancelled history can
-still settle when its complete document effect equals live.
+attributes, and ordered children), ignoring Yjs identities/history. Review and publication use that same rich comparison. Cancelled history settles
+when its complete document effect equals live; incomplete attribution never makes
+a semantically changed draft empty. A semantically unchanged retype may recreate
+mark boundaries: replay carries that physical correspondence so a later formatting
+removal belongs to the row that actually removed it.
 
 ### Preview-scoped selective Discard
 

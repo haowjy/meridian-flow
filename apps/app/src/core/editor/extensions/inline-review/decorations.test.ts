@@ -179,7 +179,7 @@ describe("block insertions", () => {
     hunkId: string,
     operationIds: string[],
     flags: { unclassified?: boolean; mergeArtifact?: boolean } = {},
-  ): InlineReviewModel["hunks"][number] {
+  ): Extract<InlineReviewModel["hunks"][number], { kind: "block" }> {
     const start = posOf(editor, needle) - 1;
     const node = editor.state.doc.nodeAt(start);
     return {
@@ -193,20 +193,24 @@ describe("block insertions", () => {
     };
   }
 
-  it("paints an AI block green and a writer block gold", () => {
+  it("paints rich-only block changes without fake removals, preserving author tones", () => {
     const { editor } = createReviewEditor(["Before.", "Agent block.", "Writer block."]);
     setModel(
       editor,
       model(
         [operation("a1", "agent"), operation("w1", "writer")],
         [
-          blockInsertion(editor, "Agent block", "b1", ["a1"]),
+          {
+            ...blockInsertion(editor, "Agent block", "b1", ["a1"]),
+            deletedBlock: { type: "paragraph", display: "Agent block" },
+          },
           blockInsertion(editor, "Writer block", "b2", ["w1"]),
         ],
       ),
     );
     expect(marked(editor, "meridian-review-block.meridian-review-added")).toEqual(["Agent block."]);
     expect(marked(editor, "meridian-review-writer")).toEqual(["Writer block."]);
+    expect(editor.view.dom.querySelector(".meridian-review-removal")).toBeNull();
   });
 
   it("paints an unclassified block neutral, not as the AI's", () => {

@@ -16,9 +16,8 @@ import type {
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
 import {
-  alignBlocks,
-  describeBlocks,
   diffAlignedBlocks,
+  documentDifference,
   hunkDeletedRanges,
   hunkInsertedRanges,
 } from "./document-difference.js";
@@ -459,10 +458,7 @@ function draftOperationIdsByChangedBlock(input: {
 }): Map<string, string[]> {
   const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
   const rawHunks = diffAlignedBlocks(
-    alignBlocks(
-      describeBlocks(input.liveDoc, input.model),
-      describeBlocks(input.draftDoc, input.model),
-    ),
+    documentDifference(input.liveDoc, input.draftDoc, input.model),
     input.draftDoc,
   );
   const result = new Map<string, string[]>();
@@ -471,9 +467,12 @@ function draftOperationIdsByChangedBlock(input: {
       insertedRanges: hunkInsertedRanges(hunk),
       deletedRanges: hunkDeletedRanges(hunk),
     });
-    result.set(hunk.blockKey, [
-      ...new Set([...(result.get(hunk.blockKey) ?? []), ...owners.operationIds]),
-    ]);
+    const blockKeys = [
+      hunk.blockKey,
+      ...(hunk.kind === "block" && hunk.beforeBlockKey ? [hunk.beforeBlockKey] : []),
+    ];
+    for (const blockKey of blockKeys)
+      result.set(blockKey, [...new Set([...(result.get(blockKey) ?? []), ...owners.operationIds])]);
   }
   return result;
 }

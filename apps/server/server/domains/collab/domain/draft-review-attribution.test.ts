@@ -498,7 +498,7 @@ describe("draft review attribution", () => {
         toDocHandle(draft),
         alpha,
         codec.parse(
-          "- Placeholder outline beat one should be cut.\n- Placeholder outline beat two should be cut.",
+          "- Placeholder outline beat one should be cut.\n\n- Placeholder outline beat two should be cut.",
         ),
       ),
     );
