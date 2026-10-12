@@ -4,14 +4,15 @@ import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/cont
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
-import { and, eq, isNull } from "drizzle-orm";
-import { HTTPError } from "nitro/h3";
+import { and, eq } from "drizzle-orm";
 import { readThreadActivity } from "./domain/thread-activity.js";
+import { threadAvailabilityCode } from "./domain/thread-availability.js";
 import type {
   ExecutionReportRepository,
   ThreadRepository,
   ThreadStatusReader,
 } from "./ports/index.js";
+import { throwThreadDeleted, throwThreadNotFound } from "./thread-access.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -38,6 +39,9 @@ export function createThreadRuntimeService(deps: {
     const [thread] = await deps.db
       .select({
         id: threads.id,
+        userId: threads.createdByUserId,
+        deletedAt: threads.deletedAt,
+        project: { userId: projects.userId, deletedAt: projects.deletedAt },
         projectId: threads.projectId,
         workId: threadWorks.workId,
         activeLeafTurnId: threads.activeLeafTurnId,
@@ -49,18 +53,14 @@ export function createThreadRuntimeService(deps: {
         threadWorks,
         and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
       )
-      .where(
-        and(
-          eq(threads.id, threadId),
-          eq(projects.userId, userId),
-          isNull(threads.deletedAt),
-          isNull(projects.deletedAt),
-        ),
-      )
+      .where(eq(threads.id, threadId))
       .limit(1);
 
-    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-    return thread as OwnedThread;
+    const code = threadAvailabilityCode(thread, thread?.project, userId);
+    if (code === "thread_deleted") throwThreadDeleted(userId);
+    if (code === "thread_not_found" || !thread) throwThreadNotFound(userId);
+    const { userId: _userId, deletedAt: _deletedAt, project: _project, ...owned } = thread;
+    return owned;
   }
 
   async function liveState(threadId: ThreadId, userId: UserId): Promise<ThreadLiveState> {
