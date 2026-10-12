@@ -175,6 +175,19 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "cant_undo_applied" ||
+    status === "cant_undo_discarded" ||
+    status === "cant_undo_changed" ||
+    status === "cant_undo_held" ||
+    status === "cant_undo_elsewhere" ||
+    status === "cant_redo_applied" ||
+    status === "cant_redo_discarded" ||
+    status === "cant_redo_changed" ||
+    status === "cant_redo_held" ||
+    status === "cant_redo_elsewhere" ||
+    status === "cant_redo_users_undo" ||
+    status === "nothing_to_revert" ||
+    status === "work_archived" ||
     status === "read_required" ||
     status === "binary_file" ||
     status === "permission_denied" ||

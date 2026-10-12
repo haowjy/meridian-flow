@@ -13,7 +13,7 @@ const WORK_ID = "00000000-0000-4000-8000-0000000000aa" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
 describe("branch agent-edit journal appendBatch", () => {
-  it("single-flights grouped ordinal reservation for concurrent writes", async () => {
+  it("reserves independent ordinals for concurrent logical writes", async () => {
     const branchJournal = createBranchAgentEditJournal({
       threadId: THREAD_ID,
       liveJournal: createInMemoryJournal(),
@@ -21,10 +21,10 @@ describe("branch agent-edit journal appendBatch", () => {
 
     await expect(
       Promise.all([
-        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID, "response-1"),
-        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID, "response-1"),
+        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
+        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID),
       ]),
-    ).resolves.toEqual([1, 1]);
+    ).resolves.toEqual([1, 2]);
   });
   it("falls back to live reversal history after Apply advances to an empty branch generation", async () => {
     const liveJournal = createInMemoryJournal();

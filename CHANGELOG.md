@@ -5,6 +5,9 @@
 - Queue review actions per chapter so slow chapters do not block others, preserving exact change membership through reforks and one confirmed stale retry.
 
 - Keep the manuscript's place and restored original text through per-change Discard, with stable review identities and account-bound queued actions.
+- Give the model a per-document undo and redo stack, targeted revert, and paged immutable edit history, with current-destination admission and explicit refusals after writer actions.
+
+- Give each model edit one handle shared by its write result and immutable history, including independent writes in the same draft reply.
 
 - Use one atomic edit path for create, copy and replacement, retaining independent paragraph metadata and bounded copy receipts.
 

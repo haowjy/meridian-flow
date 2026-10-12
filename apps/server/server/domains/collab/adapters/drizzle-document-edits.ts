@@ -1,4 +1,4 @@
-// Receipt capture and placement writes; no product reader uses these tables until the policy migration.
+// Immutable edit capture and placement shared by writer inverses and the model stack.
 import {
   type CapturedPart,
   captureEditFrontier,
@@ -25,7 +25,10 @@ export interface ReceiptWrite {
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
   responseId?: string | null;
+  editScopeId?: string | null;
   actor: "agent" | "human" | "system";
+  /** Reserved once by the logical model edit; never allocated at capture. */
+  wId?: number;
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
@@ -34,20 +37,9 @@ export interface ReceiptWrite {
 }
 /** Caller holds the authoritative document/branch mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
-  const wId =
-    input.actor === "agent" && input.threadId
-      ? (
-          await db
-            .select({ next: sql<number>`coalesce(max(${documentEdits.wId}),0)::integer + 1` })
-            .from(documentEdits)
-            .where(
-              and(
-                eq(documentEdits.documentId, input.documentId),
-                eq(documentEdits.threadId, input.threadId),
-              ),
-            )
-        )[0].next
-      : null;
+  if (input.actor === "agent" && input.threadId && input.wId === undefined)
+    throw new Error("Model edit capture requires its reserved ordinal");
+  const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
     .values({
@@ -55,6 +47,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       threadId: input.threadId,
       turnId: input.turnId,
       responseId: input.responseId,
+      editScopeId: input.editScopeId,
       actor: input.actor,
       actorUserId: input.actorUserId,
       kind: input.kind ?? "write",

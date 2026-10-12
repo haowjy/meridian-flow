@@ -6,10 +6,12 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
+import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
+import { settledReceipt } from "./receipt.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
@@ -54,12 +56,13 @@ export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
   recover(docId: string): Promise<void>;
+  /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
-    responseId: string,
+    editScopeId: string,
     options?: import("./response-committer.js").ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
-    responseId: string,
+    editScopeId: string,
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
@@ -151,13 +154,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     threadOrigins,
   });
-  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
+  const documentEdits = createDocumentEditCommands({
+    options,
+    committer: responseCommitter,
+    runtimeStore,
+  });
+  const dispatch = createWriteDispatch({ commands, documentEdits });
 
   const read: ReadFunction = async (command, context = {}) => {
     const parsed = ReadCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand("read", parsed.error);
     return execute("read", parsed.data, context, (valid, session) =>
-      commands.read(valid, session, context),
+      valid.format === "edits"
+        ? documentEdits(valid, session, context)
+        : commands.read(valid, session, context),
     );
   };
 
@@ -207,7 +217,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           sessionId: session.id,
           threadId: session.threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
-          ...(context.responseId ? { responseId: context.responseId } : {}),
+          ...(context.responseIdentity?.editScopeId
+            ? { responseId: context.responseIdentity?.editScopeId }
+            : {}),
           ...(toolUseId ? { toolUseId } : {}),
         });
       } catch {
@@ -216,13 +228,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       result = writeError(cause);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
+    if (
+      commandName === "undo" ||
+      commandName === "redo" ||
+      commandName === "revert" ||
+      ("format" in validCommand && validCommand.format === "edits")
+    ) {
+      const receipt = settledReceipt(
+        { commandName, writeId: result.writeId ?? "", durableWriteId: result.settlementId ?? "" },
+        result.revision ?? null,
+        result,
+      );
+      outcome.result = { ...receipt.result, path: validCommand.file };
+    }
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
     return withNotices(outcome, context);
   }
 
   function withNotices(outcome: WriteOutcome, context: WriteContext): WriteOutcome {
-    const notices = context.responseId ? responseCommitter.drainNotices(context.responseId) : [];
+    const notices = context.responseIdentity?.editScopeId
+      ? responseCommitter.drainNotices(context.responseIdentity?.editScopeId)
+      : [];
     return notices.length
       ? {
           ...outcome,
@@ -278,12 +305,16 @@ function responseScopedStagedCacheStillValid(
   toolUseId: string | undefined,
   responseCommitter: import("./response-committer.js").ResponseCommitter,
 ): boolean {
-  if (!context.responseId || cached.status !== "success" || cached.phase !== "staged") {
+  if (
+    !context.responseIdentity?.editScopeId ||
+    cached.status !== "success" ||
+    cached.phase !== "staged"
+  ) {
     return true;
   }
   try {
     responseCommitter.assertCanStage({
-      responseId: context.responseId,
+      responseId: context.responseIdentity?.editScopeId,
       session,
       turnId: context.turnId,
       writeId: scopedToolUseId(context, toolUseId),

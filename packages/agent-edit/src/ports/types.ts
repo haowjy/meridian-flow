@@ -16,6 +16,8 @@ export interface UpdateMeta {
   actorTurnId?: string;
   /** Successful model response that authored an agent mutation or reversal. */
   authoringResponseId?: string;
+  /** Prepared scope used for save and rollback selection, never a provider FK. */
+  editScopeId?: string;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
   reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
@@ -70,6 +72,8 @@ export interface ReversalRecord {
   threadId: string;
   /** Successful model response that authored an agent reversal, when applicable. */
   authoringResponseId?: string;
+  /** Prepared scope used for save and rollback selection, never a provider FK. */
+  editScopeId?: string;
   /** Stable model-facing write handles reversed by the same undo update. */
   writeIds: string[];
   status: ReversalStatus;

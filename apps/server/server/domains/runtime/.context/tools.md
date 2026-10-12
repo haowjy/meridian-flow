@@ -93,7 +93,7 @@ policy-free.
   runtime and the app's interrupt card remain; re-enabling is that one line.
 - Documents have two tools (D1): `read({ path, in?, around?, format?,
   version? })` never changes a document, and every `write` command (`create`,
-  `copy`, `insert`, `replace`, `remove`, `undo`, `redo`) does. There is no
+  `copy`, `insert`, `replace`, `remove`, `undo`, `redo`, `revert`) does. There is no
   `diff` and no whole-document delete; old `write({ command: "read" })` rows
   render through the generic fallback and nothing accepts them as input.
   `version` (also on `search` and `ls`) defaults to the version this thread's
@@ -150,3 +150,8 @@ policy-free.
   remainder by subtracting the cache counters, and rejects a negative result
   instead of clamping it — a clamp silently prices cached turns as free.
   Billing owns ledger behavior in `domains/billing`.
+
+Model inverse commands use `write undo/redo {path, count?}` (default 1, maximum
+20, all or nothing) and `write revert {path, edit}`. `read {path, format:
+"edits", before?}` lists 20 own entries newest first, with state and command
+availability. It cannot select blocks or a version. Handles stay model-only.

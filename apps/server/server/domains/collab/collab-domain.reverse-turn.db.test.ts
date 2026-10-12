@@ -420,7 +420,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
       if (stagedCreate.status !== "success") {
@@ -439,15 +439,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            responseId,
+            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
 
-      await collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
 
       const rows = await db
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
@@ -488,14 +491,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            responseId: "response-reused-provider-tool-id-db-a",
+            responseIdentity: {
+              providerResponseId: "response-reused-provider-tool-id-db-a",
+              editScopeId: "response-reused-provider-tool-id-db-a",
+            },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-a", {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        {
+          providerResponseId: "response-reused-provider-tool-id-db-a",
+          editScopeId: "response-reused-provider-tool-id-db-a",
+        },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
 
       await expect(
         collab.agentEdit().write(
@@ -511,14 +523,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
-            responseId: "response-reused-provider-tool-id-db-b",
+            responseIdentity: {
+              providerResponseId: "response-reused-provider-tool-id-db-b",
+              editScopeId: "response-reused-provider-tool-id-db-b",
+            },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-b", {
-        threadId: THREAD_ID as never,
-        turnId: TURN_2_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        {
+          providerResponseId: "response-reused-provider-tool-id-db-b",
+          editScopeId: "response-reused-provider-tool-id-db-b",
+        },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_2_ID as never,
+        },
+      );
 
       const rows = await db
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })

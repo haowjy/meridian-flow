@@ -9,20 +9,17 @@ import type { ReversalSelection } from "../undo/reversal-plan.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { bytesEqual } from "../yjs-update.js";
 import type { ResponseCommitter } from "./response-committer.js";
-import { status, toOutcome } from "./response-format.js";
+import { toOutcome } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
-  RedoCommand,
   RedoResult,
   TurnRedoResult,
   TurnUndoResult,
-  UndoCommand,
   UndoResult,
-  WriteContext,
   WriteOutcome,
 } from "./types.js";
-import { parseFileAddress, writeError } from "./write-helpers.js";
+import { writeError } from "./write-helpers.js";
 import type { WriteReversal } from "./write-reversal.js";
 
 export interface ReverseInput {
@@ -63,7 +60,6 @@ export function createWriteReversalEndpoints(deps: {
     runTurnReversalEndpoint,
     reverse,
     invalidateThread,
-    undoOrRedo,
   };
 
   function runTurnReversalEndpoint(
@@ -96,50 +92,6 @@ export function createWriteReversalEndpoints(deps: {
 
   function reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     return runHostedReversal(input);
-  }
-
-  async function undoOrRedo(
-    command: UndoCommand | RedoCommand,
-    session: ActorSession,
-    direction: "undo" | "redo",
-    context: WriteContext,
-  ) {
-    const address = parseFileAddress(command);
-    if (!address.ok) return status("invalid_write", address.message);
-    if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
-      // Undo and redo reverse saved history. The host saves the reply before
-      // one (a save boundary), so a write staged in it here is a host bug.
-      throw new Error(
-        `Invariant violation: ${direction} ran in response ${context.responseId} with staged writes; save the reply first.`,
-      );
-    }
-    const selection = commandSelection(command);
-
-    const result = await writeReversal.run({
-      docId: address.documentId,
-      session,
-      commandName: command.command,
-      direction,
-      selection,
-      filePath: address.filePath,
-      actor:
-        context.actor?.kind === "human"
-          ? { type: "user", userId: context.actor.userId }
-          : {
-              type: "agent",
-              ...((context.actor?.kind === "agent" ? context.actor.responseId : context.responseId)
-                ? {
-                    responseId:
-                      context.actor?.kind === "agent"
-                        ? context.actor.responseId
-                        : context.responseId,
-                  }
-                : {}),
-            },
-      interactionContext: context.interactionContext,
-      linkView: context.linkView,
-    });
-    return result;
   }
 
   async function runHostedReversal(
@@ -206,13 +158,4 @@ export function createWriteReversalEndpoints(deps: {
     localSessions.set(id, session);
     return session;
   }
-}
-
-/** Maps a parsed command to its selection; the schema already enforced the selector rule. */
-export function commandSelection(command: UndoCommand | RedoCommand): ReversalSelection {
-  if (command.all === true) return { kind: "all" };
-  if (command.last !== undefined) return { kind: "last", count: command.last };
-  if (command.to === undefined) return { kind: "latest" };
-  if (command.since === undefined) return { kind: "single", to: command.to };
-  return { kind: "range", since: command.since, to: command.to };
 }

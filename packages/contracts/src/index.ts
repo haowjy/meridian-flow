@@ -12,4 +12,5 @@ export type { EditOrigin, EditPlacement } from "./edit-placement.js";
 export * from "./enums";
 export * from "./ids";
 export * from "./jsonb";
+export type { ModelResponseIdentity } from "./model-response-identity.js";
 export * from "./usage";

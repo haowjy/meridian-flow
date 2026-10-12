@@ -1,3 +1,4 @@
+import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
@@ -260,7 +261,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reversalNoticePort,
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
+  const modelDocumentEdits = createModelDocumentEdits({
+    service: () => turnInverse,
+    branches: branches,
+    coordinator: liveCoordinator,
+  });
   const runtime = createAgentEditRuntime({
+    documentEdits: modelDocumentEdits,
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
@@ -342,6 +349,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
+      documentEdits: modelDocumentEdits,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {

@@ -1,4 +1,5 @@
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
+import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -76,7 +77,7 @@ const { createDrizzleChangeTrailAggregateWriter } = await import(
 const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
-const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
+const { createFixtureBranchStore } = await import("./fixture-branch-store.js");
 const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
@@ -301,7 +302,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
   });
   const branchCriticalSections = createBranchCriticalSections();
-  const realBranchStore = createDrizzleBranchStore(
+  const realBranchStore = createFixtureBranchStore(
     db,
     {
       journal: persistence.journal,
@@ -536,7 +537,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     diagnostics: projectionDiagnostics,
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
+  const modelDocumentEdits = createModelDocumentEdits({
+    service: () => turnInverse,
+    branches: branchStore,
+    coordinator: liveCoordinator,
+  });
   const runtime = createAgentEditRuntime({
+    documentEdits: modelDocumentEdits,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
@@ -562,6 +569,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
+      documentEdits: modelDocumentEdits,
       fileAccess: createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
@@ -710,13 +718,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     // Establish thread peers first, then append a real concurrent work-draft row.
     // The following staged write must capture that row as a pending watermark.
     await collab
       .agentEdit()
-      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
+      .read(
+        { file: "alpha.md", documentId: ALPHA_ID },
+        { ...context, responseIdentity: undefined },
+      );
     if (options.liveBeta) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -734,7 +745,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       : context;
     await collab
       .agentEdit()
-      .read({ file: "beta.md", documentId: BETA_ID }, { ...betaContext, responseId: undefined });
+      .read(
+        { file: "beta.md", documentId: BETA_ID },
+        { ...betaContext, responseIdentity: undefined },
+      );
     for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID]) {
       const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
@@ -824,10 +838,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       createdDocument: false,
     };
-    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
+    await collab
+      .agentEdit()
+      .read({ file, documentId }, { ...context, responseIdentity: undefined });
     if (writerEditBeforeWrite) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -912,10 +928,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
-    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
+    await collab
+      .agentEdit()
+      .read({ file, documentId }, { ...context, responseIdentity: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before destructive push");
@@ -981,7 +999,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId: input.responseId,
+      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
     };
     await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -1055,11 +1073,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId: input.responseId,
+      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
     };
     await collab
       .agentEdit()
-      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
+      .read(
+        { file: "alpha.md", documentId: ALPHA_ID },
+        { ...context, responseIdentity: undefined },
+      );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
@@ -1188,7 +1209,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId: undefined,
+        responseIdentity: undefined,
       },
     );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -1246,7 +1267,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       },
     );
   }
@@ -1533,7 +1554,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId: input.responseId,
+        responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
       },
     );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -1555,7 +1576,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId: input.responseId,
+      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
     };
     await expect(
       collab.agentEdit().write(
@@ -1570,10 +1591,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      collab.finalizeResponseCommit(input.responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      }),
+      collab.finalizeResponseCommit(
+        { providerResponseId: input.responseId, editScopeId: input.responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
     return branch.branchId;
   }
@@ -1704,7 +1728,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       },
     );
     void branchId;
@@ -1947,7 +1971,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     markTurnError: () =>
       db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
     rollbackResponse: (responseId: string) =>
-      collab.finalizeResponseRollback(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+      collab.finalizeResponseRollback(
+        { providerResponseId: responseId, editScopeId: responseId },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
     addLiveDependency: () =>
       liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
         const block = model.getBlocks(toDocHandle(doc))[0];
@@ -2127,7 +2154,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
     },
     commit: (responseId: string) =>
-      collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+      collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
     afterCommitEffects: () => ({
       branchBroadcasts: [...branchBroadcasts].sort(),
       watermarkCommits: [...watermarkCommits].sort(),
