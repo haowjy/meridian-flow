@@ -6,8 +6,15 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
-import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
+import {
+  createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository,
+  createProjectRepositoryForTest,
+} from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -26,16 +33,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
-    const { createDrizzleProjectWorkAuthorityResolver } = await import(
-      "../../domains/projects/index.js"
-    );
+    const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
+      await import("../../domains/projects/index.js");
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
     const { createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
-    const { commitContextMove, parseContextMove } = await import("../context-move-route.js");
+    const { commitContextMove, parseContextMove, handleContextMoveRequest } = await import(
+      "../context-move-route.js"
+    );
     const moveContextEntry = async (input: {
       port: import("../../domains/context/index.js").ContextPort;
       userId: string;
@@ -201,7 +209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "human", userId: USER_ID },
       });
       expect(mkdir).toEqual({ ok: true, value: undefined });
-      return { projectId, workId, collab, port };
+      return { projectId, workId, collab, port, contextPorts };
     }
 
     async function promotedRow(projectId: string) {
@@ -708,6 +716,84 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.documents.id, DOCUMENT_ID));
       expect(document?.folderId).toBeNull();
       expect(document?.contextSourceId).not.toBe(parent.id);
+    });
+
+    it("repairs delayed delivery after the captured destination authority is retired", async () => {
+      const { projectId, workId, port, contextPorts } = await arrangeUntitled();
+      await expect(port.mkdir("scratch://@current-work/B")).resolves.toMatchObject({ ok: true });
+      const [parent] = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.folders.contextSourceId, schema.contextSources.id),
+        )
+        .where(and(eq(schema.contextSources.workId, workId), eq(schema.folders.name, "B")));
+      if (!parent) throw new Error("Missing parent");
+      const folderId = parent.id;
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://loose.md",
+          { expected: { kind: "file", nodeId: DOCUMENT_ID }, operationId: crypto.randomUUID() },
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      const body = {
+        operationId: crypto.randomUUID(),
+        path: "loose.md",
+        expected: { kind: "file", nodeId: DOCUMENT_ID },
+        destinationScheme: "scratch",
+        destinationFolderPath: "B",
+        destinationWorkId: workId,
+        destinationParent: { kind: "folder", folderId },
+      };
+      await expect(
+        port.commitWriterLocation("scratch://@current-work/B", "manuscript://Renamed", {
+          expected: { kind: "folder", nodeId: folderId },
+          operationId: crypto.randomUUID(),
+        }),
+      ).resolves.toMatchObject({ ok: true });
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.works.id, workId));
+      await expect(
+        handleContextMoveRequest(
+          {
+            fileAccess: createAllowAllFileAccess(),
+            projectRepo: createProjectRepositoryForTest({ db }),
+            workRepo: createDrizzleProjectWorkRepository({
+              db,
+              lineageScratch: createDrizzleLineageScratchLifecycle(db),
+              fileAccessChanges: createLocalFileAccessChanges(),
+              projectionMutation: createTestWorkProjectionMutation(db),
+            }),
+            contextPorts,
+            workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+          },
+          { projectId, userId: USER_ID, sourceScheme: "manuscript", body },
+        ),
+      ).rejects.toMatchObject({
+        status: 409,
+        data: {
+          __meridianInterruptEnvelope: { error: { code: "destination_missing", retryable: false } },
+        },
+      });
+      await expect(port.stat("manuscript://loose.md")).resolves.toMatchObject({ ok: true });
+      const [retained] = await db
+        .select({ name: schema.folders.name, sourceSlug: schema.contextSources.slug })
+        .from(schema.folders)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.folders.contextSourceId, schema.contextSources.id),
+        )
+        .where(eq(schema.folders.id, folderId));
+      expect(retained).toEqual({ name: "Renamed", sourceSlug: "manuscript" });
+      const [document] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.id, DOCUMENT_ID));
+      expect(document?.folderId).toBeNull();
     });
 
     it("delayed delivery follows the captured destination folder identity after its rename", async () => {

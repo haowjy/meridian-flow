@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Treat delivery into a retired destination authority as move repair rather than a missing Work.
 - Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
 
 ### Fixed

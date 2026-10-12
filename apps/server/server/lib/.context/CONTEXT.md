@@ -233,6 +233,9 @@ It passes that identity into the domain command and receipt, maps typed
 for successful location responses. Identity conflicts may name a renamed or
 relocated destination; URI-only conflicts still must match the requested home.
 Edit authority is rechecked on the resolved destination in the move transaction.
+If the immutable destination Work or lineage authority retired before intake,
+identity moves refuse as `destination_missing` (move repair), even when the
+folder has since relocated. Source authority errors retain their own meaning.
 
 The app's existing path-only producers have not yet been migrated to this
 contract. The replica identity-parent restructuring remains separate unfinished
