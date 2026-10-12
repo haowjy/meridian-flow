@@ -12,11 +12,13 @@
  * from the block anchor, then focus without scrolling.
  */
 
-import { operationKey } from "@meridian/contracts/drafts";
+import { getBlockItemId } from "@meridian/agent-edit";
+import { blockItemKey, operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import * as Y from "yjs";
 import {
+  BLOCK_ID_ATTR,
   getInlineReviewPluginState,
   inlineReviewClassNames,
   REMOVED_BLOCKS_ATTR,
@@ -78,34 +80,56 @@ function paneTop(pane: HTMLElement): number {
   return pane.getBoundingClientRect().top + pane.clientTop;
 }
 
-/** The block's index among those a successor will have: hidden-by-Discard blocks are not counted. */
-function stableIndex(editor: Editor, index: number): number {
-  let counted = 0;
-  let position = 0;
-  const { doc } = editor.state;
-  for (let i = 0; i < index && i < doc.childCount; i += 1) {
-    const dom = editor.view.nodeDOM(position);
-    if (!(dom instanceof HTMLElement && dom.classList.contains(RESTORING_CLASS))) counted += 1;
-    position += doc.child(i).nodeSize;
-  }
-  return counted;
+const classes = inlineReviewClassNames;
+/** Drawn by the review among the document's blocks without being one. */
+const WIDGETS = `.${classes.barSlot},.${classes.removal},.ProseMirror-gapcursor`;
+
+/** The elements an editor draws for its top-level blocks, in order, with its widgets left out. */
+function blockElements(prose: Element): HTMLElement[] {
+  return Array.from(prose.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && !child.matches(WIDGETS),
+  );
 }
 
-/** Position of the `block`th top-level block that is not hidden, counting as `stableIndex` does. */
-function blockPosition(editor: Editor, block: number): number | null {
+/**
+ * The editor's top-level blocks as a successor will count them: where each is, its
+ * element, and whether a Discard in flight hides it. One pass; the elements pair with
+ * the document by order, and by position (`nodeDOM`) only if the two do not agree in number.
+ */
+type BlockLayout = {
+  blocks: { position: number; element: HTMLElement | null; hidden: boolean }[];
+  /** For a block, how many blocks before it are shown: its index among those a successor will have. */
+  shownBefore: number[];
+  shown: number;
+};
+
+function blockLayout(editor: Editor): BlockLayout {
   const { doc } = editor.state;
-  let counted = 0;
+  const elements = blockElements(editor.view.dom);
+  const paired = elements.length === doc.childCount;
+  const blocks: BlockLayout["blocks"] = [];
+  const shownBefore: number[] = [];
+  let shown = 0;
   let position = 0;
-  for (let i = 0; i < doc.childCount; i += 1) {
-    const dom = editor.view.nodeDOM(position);
-    const hidden = dom instanceof HTMLElement && dom.classList.contains(RESTORING_CLASS);
-    if (!hidden) {
-      if (counted === block) return position;
-      counted += 1;
-    }
-    position += doc.child(i).nodeSize;
-  }
-  return null;
+  doc.forEach((node) => {
+    const element = paired
+      ? (elements[blocks.length] ?? null)
+      : ((editor.view.nodeDOM(position) as HTMLElement | null) ?? null);
+    const hidden = element?.classList.contains(RESTORING_CLASS) ?? false;
+    blocks.push({ position, element, hidden });
+    shownBefore.push(shown);
+    if (!hidden) shown += 1;
+    position += node.nodeSize;
+  });
+  return { blocks, shownBefore, shown };
+}
+
+/** Position of the `block`th block a successor shows. */
+function blockPosition(layout: BlockLayout, block: number): number | null {
+  return (
+    layout.blocks.find((entry, at) => !entry.hidden && layout.shownBefore[at] === block)
+      ?.position ?? null
+  );
 }
 
 function encode(runtime: RelativePositionRuntime | null, position: number): Uint8Array | null {
@@ -116,13 +140,14 @@ function encode(runtime: RelativePositionRuntime | null, position: number): Uint
 function pointAt(
   editor: Editor,
   runtime: RelativePositionRuntime | null,
+  layout: BlockLayout,
   position: number,
 ): PlacePoint {
   const $position = editor.state.doc.resolve(position);
   const index = $position.index(0);
   const start = $position.depth > 0 ? $position.before(1) : position;
   return {
-    block: stableIndex(editor, index),
+    block: layout.shownBefore[index] ?? layout.shown,
     offset: position - start,
     rel: encode(runtime, position),
   };
@@ -131,6 +156,7 @@ function pointAt(
 function resolvePoint(
   editor: Editor,
   runtime: RelativePositionRuntime | null,
+  layout: BlockLayout,
   point: PlacePoint,
 ): number | null {
   const size = editor.state.doc.content.size;
@@ -142,7 +168,7 @@ function resolvePoint(
       // A malformed or foreign anchor falls back to the block.
     }
   }
-  const start = blockPosition(editor, point.block);
+  const start = blockPosition(layout, point.block);
   if (start === null) return null;
   const node = editor.state.doc.nodeAt(start);
   return Math.min(start + Math.min(point.offset, Math.max(0, (node?.nodeSize ?? 1) - 1)), size);
@@ -159,28 +185,26 @@ export function captureReviewPlace(key: string, editor: Editor, focus: boolean):
   try {
     const runtime = relativePositionRuntimeFromState(editor.state);
     const top = paneTop(pane);
+    const layout = blockLayout(editor);
     let viewport: ReviewPlace["viewport"] = null;
-    let position = 0;
-    editor.state.doc.forEach((node, _offset, index) => {
-      const start = position;
-      position += node.nodeSize;
-      if (viewport) return;
-      const dom = editor.view.nodeDOM(start);
-      if (!(dom instanceof HTMLElement) || dom.classList.contains(RESTORING_CLASS)) return;
-      const rect = dom.getBoundingClientRect();
-      if (!rect.height || rect.bottom <= top) return;
+    for (const [index, { position, element, hidden }] of layout.blocks.entries()) {
+      if (!element || hidden) continue;
+      const rect = element.getBoundingClientRect();
+      if (!rect.height || rect.bottom <= top) continue;
       viewport = {
-        block: stableIndex(editor, index),
-        rel: node.nodeSize > 2 ? encode(runtime, start + 1) : null,
+        block: layout.shownBefore[index] ?? 0,
+        rel:
+          (editor.state.doc.child(index).nodeSize ?? 0) > 2 ? encode(runtime, position + 1) : null,
         offset: rect.top - top,
       };
-    });
+      break;
+    }
     const { anchor, head } = editor.state.selection;
     places.set(key, {
       viewport,
       caret: {
-        anchor: pointAt(editor, runtime, anchor),
-        head: pointAt(editor, runtime, head),
+        anchor: pointAt(editor, runtime, layout, anchor),
+        head: pointAt(editor, runtime, layout, head),
       },
       focus,
     });
@@ -230,9 +254,10 @@ export function restoreReviewPlace(
   places.delete(key);
   try {
     const runtime = relativePositionRuntimeFromState(editor.state);
+    const layout = blockLayout(editor);
     if (place.caret) {
-      const from = resolvePoint(editor, runtime, place.caret.anchor);
-      const to = resolvePoint(editor, runtime, place.caret.head);
+      const from = resolvePoint(editor, runtime, layout, place.caret.anchor);
+      const to = resolvePoint(editor, runtime, layout, place.caret.head);
       if (from !== null) {
         const { doc } = editor.state;
         const end = to ?? from;
@@ -248,10 +273,12 @@ export function restoreReviewPlace(
     const destination = place.navigateTo && operationOfChange(editor, place.navigateTo);
     if (destination) editor.commands.scrollInlineReviewOperationIntoView(destination);
     else if (coverView) {
-      const block = blockOfCoverView(editor, runtime, coverView);
-      if (block !== null)
-        restoreViewport(editor, pane, runtime, { block, offset: coverView.offset, rel: null });
-    } else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
+      restoreViewport(editor, pane, runtime, layout, {
+        block: blockOfCoverView(editor, runtime, layout, coverView),
+        offset: coverView.offset,
+        rel: null,
+      });
+    } else if (place.viewport) restoreViewport(editor, pane, runtime, layout, place.viewport);
     if (place.focus && editor.isEditable && focusIsFree()) editor.view.focus();
     // The live editor of a finished review is inert until the server answers: focus waits for it.
     else if (place.focus && !editor.isEditable)
@@ -263,44 +290,52 @@ export function restoreReviewPlace(
 }
 
 /**
- * Where a reader of a paint cover is: the first block they can see. A block of
- * the old review is named by its Yjs identity, stamped on the cover when it was
- * captured (`annotateCoverBlocks`), which the successor resolves whatever blocks
- * came or went around it. The original paragraphs of a discarded change are
- * blocks of the successor that the old review did not have: they are named by
- * the nearest block that was there and how many blocks away they are. `block`
- * counts the same view among the blocks, for a cover that held no identities.
+ * Where a reader of a paint cover is: the first block they can see, named by the
+ * block's own Yjs item (`blockItemKey`), never by what it says. A real block of
+ * the old review carries it from capture (`annotateCoverBlocks`). The original
+ * paragraph a Discard restores carries the live block it was, which the removal
+ * widget got from the server; the successor has that same item.
  */
 export type CoverView = {
-  /** A real block's serialized Yjs position, or null when the cover held none. */
-  anchor: string | null;
-  /** Blocks from that one to the first in view; negative when the view is before it. */
-  step: number;
-  /** The first in view, counted among the blocks the successor will have. */
+  /** The first block in view: its item. Null when nothing named it. */
+  id: string | null;
+  /**
+   * Approximate, for a block with no usable item: the nearest block that has one
+   * and the blocks between. A block inserted between them moves the answer.
+   */
+  near: { id: string; step: number } | null;
+  /** Approximate, for a cover with no items at all: the block counted among those a successor shows. */
   block: number;
   /** The first in view, its top edge below the pane's top edge, in pixels. */
   offset: number;
 };
 
-/** On a cover's copy of a top-level block: its Yjs identity, base64 of an encoded relative position. */
-const BLOCK_ANCHOR_ATTR = "data-review-block-anchor";
-
-const classes = inlineReviewClassNames;
-/** Drawn by the review among the document's blocks without being one. */
-const NOT_A_BLOCK = `.${classes.barSlot},.${classes.removal},.${classes.restoring},.ProseMirror-gapcursor`;
-
-function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
-
-function fromBase64(text: string): Uint8Array {
-  return Uint8Array.from(atob(text), (character) => character.charCodeAt(0));
+/**
+ * The Yjs item of each top-level block of an editor, in order, from one walk of
+ * its binding. Null when the binding and the document do not pair block for block
+ * (a block y-tiptap does not draw), in which case nothing is claimed.
+ */
+function blockKeys(editor: Editor, runtime: RelativePositionRuntime | null): string[] | null {
+  if (!runtime) return null;
+  const elements = runtime.yFragment.toArray();
+  const { doc } = editor.state;
+  if (elements.length !== doc.childCount) return null;
+  try {
+    return elements.map((element, index) => {
+      if (!(element instanceof Y.XmlElement) || element.nodeName !== doc.child(index).type.name)
+        throw new Error("The binding and the document do not pair.");
+      return blockItemKey(getBlockItemId(element));
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Stamp each real top-level block of the editors on `live` onto its copy in
- * `copy`, with the Yjs identity it has now. A cover is a copy of the DOM, which
- * knows no Yjs; the identity can only be read while the editor lives.
+ * `copy` with its Yjs item. A cover is a copy of the DOM, which knows no Yjs; the
+ * identity can only be read while the editor lives. One pass over blocks, elements
+ * and copies, whatever the length of the document.
  */
 export function annotateCoverBlocks(live: HTMLElement, copy: HTMLElement): void {
   const copies = copy.querySelectorAll<HTMLElement>(".ProseMirror");
@@ -309,29 +344,16 @@ export function annotateCoverBlocks(live: HTMLElement, copy: HTMLElement): void 
     const target = copies[index];
     if (!editor || editor.isDestroyed || !target || dom.closest('[data-paint-scope="inactive"]'))
       continue;
-    try {
-      const runtime = relativePositionRuntimeFromState(editor.state);
-      if (!runtime) continue;
-      const places = new Map(Array.from(dom.children).map((child, at) => [child, at]));
-      const targets = target.children;
-      let start = 0;
-      editor.state.doc.forEach((node) => {
-        const at = places.get(editor.view.nodeDOM(start) as Element);
-        // The start of the document has no item of its own to name; the first
-        // character does. A first block with none (an atom, an empty one) is counted instead.
-        const position = start === 0 ? (node.isTextblock ? 1 : null) : start;
-        const rel = position === null ? null : encode(runtime, position);
-        if (rel && at !== undefined) targets[at]?.setAttribute(BLOCK_ANCHOR_ATTR, toBase64(rel));
-        start += node.nodeSize;
-      });
-    } catch {
-      // A cover without identities is counted instead.
-    }
+    const keys = blockKeys(editor, relativePositionRuntimeFromState(editor.state));
+    const elements = blockElements(dom);
+    const stamped = blockElements(target);
+    if (!keys || elements.length !== keys.length || stamped.length !== keys.length) continue;
+    for (const [at, key] of keys.entries()) stamped[at]?.setAttribute(BLOCK_ID_ATTR, key);
   }
 }
 
 /** One block of the successor as the cover shows it: the cover's own block or an original it restores. */
-type Slot = { element: HTMLElement; anchor: string | null };
+type Slot = { element: HTMLElement; id: string | null; real: boolean };
 
 /** The blocks of a cover's editor, in order, as the successor will have them. */
 function coverSlots(prose: HTMLElement): Slot[] {
@@ -339,16 +361,19 @@ function coverSlots(prose: HTMLElement): Slot[] {
   for (const element of Array.from(prose.children)) {
     if (!(element instanceof HTMLElement)) continue;
     if (element.classList.contains(classes.restored)) {
-      // Said by the widget: its open form also holds a button, its folded form no paragraphs.
+      // The widget says how many blocks it stands for; its paragraphs say which.
       const count = Number(element.getAttribute(REMOVED_BLOCKS_ATTR)) || 0;
       const paragraphs = Array.from(element.children).filter((child) => child.tagName === "P");
-      for (let i = 0; i < count; i += 1)
+      for (let i = 0; i < count; i += 1) {
+        const paragraph = paragraphs.length === count ? (paragraphs[i] as HTMLElement) : null;
         slots.push({
-          element: (paragraphs.length === count ? paragraphs[i] : element) as HTMLElement,
-          anchor: null,
+          element: paragraph ?? element,
+          id: paragraph?.getAttribute(BLOCK_ID_ATTR) ?? null,
+          real: false,
         });
-    } else if (!element.matches(NOT_A_BLOCK)) {
-      slots.push({ element, anchor: element.getAttribute(BLOCK_ANCHOR_ATTR) });
+      }
+    } else if (!element.matches(`${WIDGETS},.${classes.restoring}`)) {
+      slots.push({ element, id: element.getAttribute(BLOCK_ID_ATTR), real: true });
     }
   }
   return slots;
@@ -364,46 +389,44 @@ export function readCoverView(cover: HTMLElement): CoverView | null {
     const rect = element.getBoundingClientRect();
     return rect.height > 0 && rect.bottom > top;
   });
-  if (block < 0) return null;
-  const offset = (slots[block]?.element.getBoundingClientRect().top ?? top) - top;
-  // The nearest block of the old review: itself, else the next (the originals
-  // it restores stand just before it), else the last before.
-  let from = slots.findIndex((slot, at) => at >= block && slot.anchor !== null);
-  for (let at = block - 1; from < 0 && at >= 0; at -= 1) if (slots[at]?.anchor) from = at;
+  const first = slots[block];
+  if (!first) return null;
+  // The nearest stamped real block: the next (the originals a Discard restores
+  // stand just before it), else the last before.
+  let from = slots.findIndex((slot, at) => at >= block && slot.real && slot.id !== null);
+  for (let at = block - 1; from < 0 && at >= 0; at -= 1)
+    if (slots[at]?.real && slots[at]?.id) from = at;
+  const named = from >= 0 ? slots[from]?.id : null;
   return {
-    anchor: from >= 0 ? (slots[from]?.anchor ?? null) : null,
-    step: from >= 0 ? block - from : 0,
+    id: first.id,
+    near: named ? { id: named, step: block - from } : null,
     block,
-    offset,
+    offset: first.element.getBoundingClientRect().top - top,
   };
 }
 
 /**
  * The successor's block (counted among those it shows) for what the cover's
- * reader saw: its identity resolved, then the steps from it; the counted block
- * when the identity is gone or was never stamped.
+ * reader saw. The block's own item is looked up in a table of the successor's
+ * items, built once: an item the successor does not have names nothing. Only
+ * then the approximate answers, in order: the nearest stamped block and the steps
+ * from it, the counted block.
  */
 function blockOfCoverView(
   editor: Editor,
   runtime: RelativePositionRuntime | null,
+  layout: BlockLayout,
   view: CoverView,
 ): number {
-  const { doc } = editor.state;
-  const shown = stableIndex(editor, doc.childCount);
-  if (shown === 0) return 0;
-  const clamp = (block: number) => Math.max(0, Math.min(block, shown - 1));
-  if (view.anchor && runtime) {
-    try {
-      const resolved = resolveRelativePosition(
-        runtime,
-        Y.decodeRelativePosition(fromBase64(view.anchor)),
-      );
-      if (resolved !== null)
-        return clamp(stableIndex(editor, doc.resolve(resolved).index(0)) + view.step);
-    } catch {
-      // A malformed or foreign anchor is counted instead.
-    }
-  }
+  const clamp = (block: number) => Math.max(0, Math.min(block, layout.shown - 1));
+  const keys = view.id || view.near ? blockKeys(editor, runtime) : null;
+  const table = new Map(keys?.map((key, at) => [key, at]));
+  const index = (id: string | undefined | null) => (id ? (table.get(id) ?? null) : null);
+  const exact = index(view.id);
+  if (exact !== null) return clamp(layout.shownBefore[exact] ?? 0);
+  const nearest = index(view.near?.id);
+  if (nearest !== null && view.near)
+    return clamp((layout.shownBefore[nearest] ?? 0) + view.near.step);
   return clamp(view.block);
 }
 
@@ -418,6 +441,7 @@ function restoreViewport(
   editor: Editor,
   pane: HTMLElement,
   runtime: RelativePositionRuntime | null,
+  layout: BlockLayout,
   viewport: NonNullable<ReviewPlace["viewport"]>,
 ): void {
   let position: number | null = null;
@@ -432,7 +456,7 @@ function restoreViewport(
       // Falls back to the block's place among the successor's blocks.
     }
   }
-  position ??= blockPosition(editor, viewport.block);
+  position ??= blockPosition(layout, viewport.block);
   if (position === null) return;
   const dom = editor.view.nodeDOM(position);
   if (!(dom instanceof HTMLElement)) return;

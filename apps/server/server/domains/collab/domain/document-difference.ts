@@ -1,11 +1,14 @@
 /** Computes identity-aware document differences, clock ranges and draft anchors. */
+
 import {
   type AgentEditModel,
   type BlockRef,
+  getBlockItemId,
   toDocHandle,
   unwrapBlock,
   wordHunks,
 } from "@meridian/agent-edit/integration";
+import { blockItemKey } from "@meridian/contracts/drafts";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
 import type { ClockRange } from "./draft-review-attribution.js";
@@ -65,9 +68,17 @@ type RawTextHunk = RawHunkBase & {
   deletedRanges: ClockRange[];
   insertedText: string;
   deletedText: string;
+  /** The live block this deletes whole (`blockItemKey`). */
+  deletedBlockId?: string;
 };
 
-export type RawBlockDisplay = { type: string; display: string; ranges: ClockRange[] };
+export type RawBlockDisplay = {
+  type: string;
+  display: string;
+  ranges: ClockRange[];
+  /** A live block's Yjs item (`blockItemKey`), when it is one. */
+  blockId?: string;
+};
 
 export type RawBlockHunk = RawHunkBase & {
   kind: "block";
@@ -270,6 +281,7 @@ function textDeleteHunk(
     deletedRanges: rangesForTextRange(live, 0, live.text.length),
     insertedText: "",
     deletedText: live.text,
+    ...liveBlockId(live, "deletedBlockId"),
     blockKey: live.id,
   };
 }
@@ -295,7 +307,11 @@ function blockDeleteHunk(
   return {
     kind: "block",
     anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
-    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
+    deletedBlock: {
+      ...deletedBlock,
+      ...liveBlockId(live, "blockId"),
+      ranges: wholeBlockRanges(live),
+    },
     blockKey: live.id,
     blockSlot: liveBlockSlot(alignment, blockIndex),
   };
@@ -308,7 +324,11 @@ function blockChangeHunk(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): Ra
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
     insertedBlock: { ...insertedBlock, ranges: wholeBlockRanges(draft) },
-    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
+    deletedBlock: {
+      ...deletedBlock,
+      ...liveBlockId(live, "blockId"),
+      ranges: wholeBlockRanges(live),
+    },
     blockKey: draft.id,
   };
 }
@@ -340,6 +360,18 @@ export function hunkDisplayText(hunk: RawHunk): { insertedText: string; deletedT
         insertedText: hunk.insertedBlock?.display ?? "",
         deletedText: hunk.deletedBlock?.display ?? "",
       };
+  }
+}
+
+/** The live block's Yjs item, which a draft re-forked from the live document keeps. */
+function liveBlockId<Key extends string>(live: BlockInfo, key: Key): { [K in Key]?: string } {
+  try {
+    return { [key]: blockItemKey(getBlockItemId(unwrapBlock(live.block))) } as {
+      [K in Key]?: string;
+    };
+  } catch {
+    // A block with no item of its own is restored by position, not identity.
+    return {};
   }
 }
 

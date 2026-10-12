@@ -6,6 +6,8 @@
  * items and gained the originals a Discard restores. Geometry is the browser's;
  * the real editors, Yjs binding and DOM walk are under test.
  */
+import { getBlockItemId } from "@meridian/agent-edit";
+import { blockItemKey } from "@meridian/contracts/drafts";
 import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
@@ -87,64 +89,73 @@ function layout(pane: HTMLElement, heights: number[], scrollTop: number) {
   }
 }
 
-function widget(paragraphs: string[], { open = true, folded = false } = {}) {
+/** The removal a cover draws for restored paragraphs: a button (hidden when restored), then one paragraph per block. */
+function widget(paragraphs: string[], ids: (string | null)[]) {
   const root = document.createElement("div");
   root.className = "meridian-review-removal meridian-review-removal-block meridian-review-restored";
   root.setAttribute("data-review-removed-blocks", String(paragraphs.length));
-  if (open || folded)
-    root.append(Object.assign(document.createElement("button"), { type: "button" }));
-  if (!folded)
-    for (const text of paragraphs)
-      root.append(Object.assign(document.createElement("p"), { textContent: text }));
+  root.append(Object.assign(document.createElement("button"), { type: "button" }));
+  for (const [index, text] of paragraphs.entries()) {
+    const element = Object.assign(document.createElement("p"), { textContent: text });
+    const id = ids[index];
+    if (id) element.setAttribute("data-review-block-id", id);
+    root.append(element);
+  }
   return root;
 }
 
+const keyOf = (doc: Y.Doc, index: number) =>
+  blockItemKey(
+    getBlockItemId(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(index) as Y.XmlElement),
+  );
+
 /**
- * The old review (blocks `before`, with `widgets` drawn among them) read at
- * `scrollTop`, and its successor: the same items plus `restored` paragraphs at
- * `at`. Returns the block the successor scrolls to, by the text at the pane's top.
+ * A Discard of a removal, as the draft's re-fork does it. LIVE holds `blocks`; the
+ * old draft deleted the `restored` ones (at `at`, as a widget in the cover); the
+ * successor is LIVE again, plus whatever `peers` inserted since. The reader of the
+ * cover is at `scrollTop`. Returns the text of the block the successor scrolls to,
+ * and the scroll.
  */
 function landing(options: {
-  before: string[];
-  widgetAt: number;
-  widgetElement: HTMLElement;
-  widgetBlocks: number;
-  restored: string[];
+  blocks: string[];
+  at: number;
+  restored: number;
   scrollTop: number;
+  /** Whether the removal's paragraphs name their live blocks (they do when the server gave them). */
+  named?: boolean;
+  /** Whether the cover's real blocks carry their items (they do when the binding lived at capture). */
   stamp?: boolean;
-  /** A block that arrived in the successor above everything (a peer's, the writer's unsent). */
-  peerAbove?: string;
-}): { text: string; offset: number } | null {
-  const old = new Y.Doc();
-  old.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, options.before.map(paragraph));
-  const live = mount(old);
-  const children = live.editor.view.dom.children;
-  children[options.widgetAt - 1]?.after(options.widgetElement);
-  const heights = Array.from(live.editor.view.dom.children).map((child) =>
-    child === options.widgetElement
-      ? BLOCK * options.widgetBlocks + (options.widgetElement.querySelector("button") ? 30 : 0)
-      : BLOCK,
+  /** Blocks that arrived in the successor, by the index they sit at there. */
+  peers?: { index: number; text: string }[];
+}): { text: string; scrolled: number } | null {
+  const liveDoc = new Y.Doc();
+  liveDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, options.blocks.map(paragraph));
+  const ids = Array.from({ length: options.restored }, (_, i) => keyOf(liveDoc, options.at + i));
+  const names = options.blocks.slice(options.at, options.at + options.restored);
+
+  const oldDoc = new Y.Doc();
+  Y.applyUpdate(oldDoc, Y.encodeStateAsUpdate(liveDoc));
+  oldDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).delete(options.at, options.restored);
+  const old = mount(oldDoc);
+  const removal = widget(names, options.named === false ? [] : ids);
+  old.editor.view.dom.children[options.at - 1]?.after(removal);
+  const heights = Array.from(old.editor.view.dom.children).map((child) =>
+    child === removal ? BLOCK * options.restored + 30 : BLOCK,
   );
+  const copyPane = old.pane.cloneNode(true) as HTMLElement;
+  if (options.stamp !== false) annotateCoverBlocks(old.pane, copyPane);
   const cover = document.createElement("div");
-  const copyPane = live.pane.cloneNode(true) as HTMLElement;
-  if (options.stamp !== false) annotateCoverBlocks(live.pane, copyPane);
-  else
-    for (const node of copyPane.querySelectorAll("[data-review-block-anchor]"))
-      node.removeAttribute("data-review-block-anchor");
   cover.append(copyPane);
   document.body.append(cover);
   layout(copyPane, heights, options.scrollTop);
   const view = readCoverView(cover);
   if (!view) return null;
 
-  const next = new Y.Doc();
-  Y.applyUpdate(next, Y.encodeStateAsUpdate(old));
-  next
-    .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
-    .insert(options.widgetAt, options.restored.map(paragraph));
-  if (options.peerAbove)
-    next.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph(options.peerAbove)]);
-  const successor = mount(next);
+  const nextDoc = new Y.Doc();
+  Y.applyUpdate(nextDoc, Y.encodeStateAsUpdate(liveDoc));
+  for (const peer of options.peers ?? [])
+    nextDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(peer.index, [paragraph(peer.text)]);
+  const successor = mount(nextDoc);
   let scrolled = 0;
   Object.defineProperty(successor.pane, "scrollTop", {
     get: () => scrolled,
@@ -152,20 +163,14 @@ function landing(options: {
       scrolled = value;
     },
   });
-  const texts = Array.from(
-    { length: next.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).length },
-    (_, i) => successor.editor.state.doc.child(i).textContent,
-  );
   const { doc } = successor.editor.state;
-  let position = 0;
-  const starts = texts.map((_, i) => {
-    const at = position;
-    position += doc.child(i).nodeSize;
-    return at;
+  const texts = Array.from({ length: doc.childCount }, (_, i) => doc.child(i).textContent);
+  const starts: number[] = [];
+  doc.forEach((_node, offset) => {
+    starts.push(offset);
   });
-  const placed = (pos: number) => starts.indexOf(pos);
   successor.editor.view.nodeDOM = ((pos: number) => {
-    const index = placed(pos);
+    const index = starts.indexOf(pos);
     if (index < 0) return null;
     const element = document.createElement("p");
     element.getBoundingClientRect = () =>
@@ -176,79 +181,96 @@ function landing(options: {
       }) as DOMRect;
     return element;
   }) as typeof successor.editor.view.nodeDOM;
-  captureReviewPlace("draft", live.editor, false);
+  captureReviewPlace("draft", old.editor, false);
   // The reader scrolled the cover, so the capsule's viewport is not the place: the cover's view is.
   restoreReviewPlace("draft", successor.editor, view);
-  const index = Math.round((scrolled + view.offset) / BLOCK);
-  return { text: texts[index] ?? "", offset: scrolled };
+  return { text: texts[Math.round((scrolled + view.offset) / BLOCK)] ?? "", scrolled };
 }
 
-it("restores below an expanded removal to the block the reader saw, not the one the button shifted it to", () => {
-  const found = landing({
-    before: ["Opening line.", "Yes.", "No."],
-    widgetAt: 1,
-    // An open fold: a toggle button, then the two original paragraphs.
-    widgetElement: widget(["The elder bowed.", "The hall fell silent."]),
-    widgetBlocks: 2,
-    restored: ["The elder bowed.", "The hall fell silent."],
-    // Cover: Opening 0..60, widget 60..210, Yes. 210..270. The reader's top edge is at "Yes.".
-    scrollTop: 210,
-  });
+// Cover: Opening 0..60, the removal 60..(60 + 60 per block + a 30px button), then the rest.
+const BLOCKS = ["Opening line.", "The elder bowed.", "The hall fell silent.", "Yes.", "No."];
+
+it("restores below an open removal to the block the reader saw, not the one its button shifted it to", () => {
+  const found = landing({ blocks: BLOCKS, at: 1, restored: 2, scrollTop: 210 });
   expect(found?.text).toBe("Yes.");
 });
 
 it("restores the first of two restored paragraphs that begin alike, not the second", () => {
   const same = "The same paragraph beginning that repeats beyond forty-eight characters: ";
   const found = landing({
-    before: ["Opening line.", "Yes."],
-    widgetAt: 1,
-    widgetElement: widget([`${same}FIRST`, `${same}SECOND`]),
-    widgetBlocks: 2,
-    restored: [`${same}FIRST`, `${same}SECOND`],
-    // The reader's top edge is at the widget's first paragraph (below its button).
+    blocks: ["Opening line.", `${same}FIRST`, `${same}SECOND`, "Yes."],
+    at: 1,
+    restored: 2,
+    // The reader's top edge is at the removal's first paragraph, below its button.
     scrollTop: 90,
   });
   expect(found?.text).toBe(`${same}FIRST`);
 });
 
-it("counts a folded removal as the blocks it stands for", () => {
+it("lands on the restored paragraph when a block arrived between it and its neighbour", () => {
+  // Cover: Opening, [Restored], Survivor, Tail. The successor has a block between Restored and Survivor.
+  const blocks = ["Opening", "Restored", "Survivor", "Tail"];
   const found = landing({
-    before: ["Opening line.", "Yes.", "No."],
-    widgetAt: 1,
-    widgetElement: widget(["one", "two", "three"], { folded: true }),
-    widgetBlocks: 1,
-    restored: ["one", "two", "three"],
-    // Cover: Opening 0..60, the fold 60..150 (button), Yes. 150..210.
-    scrollTop: 150,
+    blocks,
+    at: 1,
+    restored: 1,
+    scrollTop: 90,
+    peers: [{ index: 2, text: "Peer inserted between" }],
   });
-  expect(found?.text).toBe("Yes.");
+  expect(found?.text).toBe("Restored");
+});
+
+it("lands on the restored paragraph when blocks arrived above the group and inside it", () => {
+  const found = landing({
+    blocks: ["Opening", "Restored one", "Restored two", "Survivor"],
+    at: 1,
+    restored: 2,
+    // The reader is at the first restored paragraph (60, then the 30px button).
+    scrollTop: 90,
+    peers: [
+      { index: 0, text: "Typed meanwhile" },
+      { index: 3, text: "Peer between the restored" },
+    ],
+  });
+  expect(found?.text).toBe("Restored one");
 });
 
 it("tells repeated scene breaks apart by the item each one is", () => {
   const found = landing({
-    before: ["Opening line.", "* * *", "* * *", "* * *", "Last line."],
-    widgetAt: 1,
-    widgetElement: widget(["Restored one.", "Restored two."]),
-    widgetBlocks: 2,
-    restored: ["Restored one.", "Restored two."],
-    // Cover: Opening 0..60, widget 60..210 (button), breaks at 210, 270, 330. Top edge on the second.
+    blocks: [
+      "Opening line.",
+      "Restored one.",
+      "Restored two.",
+      "* * *",
+      "* * *",
+      "* * *",
+      "Last line.",
+    ],
+    at: 1,
+    restored: 2,
+    // Cover: Opening 0..60, removal 60..210, breaks at 210, 270, 330. Top edge on the second.
     scrollTop: 270,
-    // The writer's unsent line arrived above everything: the count is off by one, the identity is not.
-    peerAbove: "Typed meanwhile.",
+    // The writer's unsent line arrived above everything: a count would be off by one, the item is not.
+    peers: [{ index: 0, text: "Typed meanwhile." }],
   });
   // Block 5 of the successor (typed, Opening, two restored, first break, the second).
-  expect(found).toEqual({ text: "* * *", offset: 5 * BLOCK });
+  expect(found).toEqual({ text: "* * *", scrolled: 5 * BLOCK });
 });
 
-it("counts the view among the blocks when the cover holds no identities", () => {
+it("is approximate, and says so, when the removal does not name its blocks", () => {
+  // Nothing names the restored paragraphs: the nearest stamped block and the distance to it decide.
+  const found = landing({ blocks: BLOCKS, at: 1, restored: 2, scrollTop: 90, named: false });
+  expect(found?.text).toBe("The elder bowed.");
+});
+
+it("counts the view among the blocks when the cover holds no items at all", () => {
   const found = landing({
-    before: ["Opening line.", "Yes.", "No."],
-    widgetAt: 1,
-    widgetElement: widget(["The elder bowed.", "The hall fell silent."]),
-    widgetBlocks: 2,
-    restored: ["The elder bowed.", "The hall fell silent."],
+    blocks: BLOCKS,
+    at: 1,
+    restored: 2,
     scrollTop: 210,
     stamp: false,
+    named: false,
   });
   expect(found?.text).toBe("Yes.");
 });

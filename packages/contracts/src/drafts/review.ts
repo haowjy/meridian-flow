@@ -130,9 +130,21 @@ export type ReviewTextHunk = ReviewHunkBase & {
   insertedText?: string;
   deletedText?: string;
   deletedSpans?: ReviewDeletedSpan[];
+  /** Set when `deletedText` is a whole live block taken out: that block's `blockItemKey`. */
+  deletedBlockId?: string;
 };
 
-export type ReviewBlockDisplay = { type: string; display: string };
+/**
+ * A block as the review shows it. `blockId` (a `blockItemKey`) is set on a
+ * deleted block: the live block's own Yjs item, which the next generation of
+ * the draft still has when the deletion is discarded.
+ */
+export type ReviewBlockDisplay = { type: string; display: string; blockId?: string };
+
+/** The Yjs item identity of a top-level block, as the wire and the page's copies of it write it. */
+export function blockItemKey(id: { clientID: number; clock: number }): string {
+  return `${id.clientID}:${id.clock}`;
+}
 
 export type ReviewBlockHunk = ReviewHunkBase & {
   kind: "block";
