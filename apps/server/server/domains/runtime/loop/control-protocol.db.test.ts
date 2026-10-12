@@ -2042,7 +2042,14 @@ else
         expect(await leaseRow(rig.threadId)).toBeUndefined();
       });
 
-      it("answers a same-id replay that read the leaf after its own Retry reserved", async () => {
+      it.each([
+        { shuttingDown: false, otherRequest: "reply_retry_unavailable" },
+        // Shutdown stops new work; it never denies work already accepted.
+        { shuttingDown: true, otherRequest: "runtime_shutting_down" },
+      ])("answers a same-id replay that read the leaf after its own Retry reserved (shutdown: $shuttingDown)", async ({
+        shuttingDown,
+        otherRequest,
+      }) => {
         const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
         const rig = await manualFixture({ gateway });
         const failedTurnId = await failedReply(rig, "retry-replay-race");
@@ -2093,6 +2100,7 @@ else
         const accepted = await winner;
         await processDetachedWork.drain();
         expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+        if (shuttingDown) rig.deps.shutdown.started = true;
         latestReleased.open();
 
         expect(await replay).toMatchObject({
@@ -2103,7 +2111,7 @@ else
         // Another tab's request id is still refused.
         await expect(
           rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
-        ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+        ).rejects.toMatchObject({ code: otherRequest });
       });
 
       it("abandons an execution whose terminal write failed, and the next claim holder settles it first", async () => {
