@@ -74,7 +74,6 @@ export function indexDraftUpdates(input: {
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
   const deletedHistory: RangeLookup = new Map();
-  const nonTextDeletionEffects: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
   const insertedItems: Y.Item[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
@@ -270,14 +269,7 @@ export function indexDraftUpdates(input: {
           deletion.complete &&
           insertedAttribution.reduce((total, range) => total + range.length, 0) ===
             insertedRanges.reduce((total, range) => total + range.length, 0),
-        operationIds: [
-          ...new Set([
-            ...operationIdsForRanges({ insertedRanges, deletedRanges }),
-            ...insertedRanges.flatMap((range) =>
-              matchingOperationIds(nonTextDeletionEffects, range),
-            ),
-          ]),
-        ]
+        operationIds: [...new Set([...operationIdsForRanges({ insertedRanges, deletedRanges })])]
           .filter((id) => byOperationId.has(id))
           .sort(),
         insertedAttribution,
@@ -316,15 +308,6 @@ export function indexDraftUpdates(input: {
   };
 }
 
-function _isNonTextEffect(item: Y.Item | Y.GC | null): boolean {
-  return (
-    item instanceof Y.Item &&
-    (item.content instanceof Y.ContentFormat ||
-      item.content instanceof Y.ContentType ||
-      item.parentSub !== null)
-  );
-}
-
 function addPhysicalUpdateId(
   lookup: Map<string, Set<PhysicalSourceUpdateId>>,
   operationId: string,
@@ -337,36 +320,6 @@ function addPhysicalUpdateId(
 
 function sortedUpdateIds<UpdateId extends number>(updateIds: ReadonlySet<UpdateId>): UpdateId[] {
   return [...updateIds].sort((left, right) => left - right);
-}
-
-function _textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[] {
-  const segments: { text: string }[] = [];
-  let clock = range.clock;
-  const end = range.clock + range.length;
-  while (clock < end) {
-    const item = findItem(doc, range.client, clock);
-    if (!item) break;
-    const itemOffset = clock - item.id.clock;
-    const length = Math.min(end, item.id.clock + item.length) - clock;
-    const text = structText(item).slice(itemOffset, itemOffset + length);
-    if (text.length > 0) segments.push({ text });
-    clock += length;
-  }
-  return segments;
-}
-
-function structText(struct: Y.Item | Y.GC | Y.Skip | undefined): string {
-  return struct instanceof Y.Item ? itemText(struct) : "";
-}
-
-function itemText(item: Y.Item): string {
-  return item.content instanceof Y.ContentString
-    ? item.content.str
-    : item.content.getContent().filter(isString).join("");
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === "string";
 }
 
 function operationIdsForVisibleRange(

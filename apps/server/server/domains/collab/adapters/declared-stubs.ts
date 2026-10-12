@@ -28,7 +28,6 @@ export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThre
 
 export const SILENT_POST_DURABILITY_NOTICES: PostDurabilityNoticeService = {
   async recordAwarenessDegraded() {},
-  async recordLateSweep() {},
 };
 
 export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnostics = {
@@ -41,5 +40,4 @@ export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnosti
 export const SILENT_REVERSAL_NOTICE_DIAGNOSTICS: ReversalNoticeDiagnostics = {
   documentUriMissing() {},
   recordFailedAfterDurability() {},
-  degradedRecordFailedAfterDurability() {},
 };

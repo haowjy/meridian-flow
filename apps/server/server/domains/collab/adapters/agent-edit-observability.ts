@@ -216,23 +216,6 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
           threadId: input.threadId,
           documentIds: [...input.documentIds],
           ...(input.responseId ? { responseId: input.responseId } : {}),
-          ...(input.affectedBlockHashes
-            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
-            : {}),
-          cause: unknownToEventPayload(input.cause),
-        },
-      });
-    },
-    degradedRecordFailedAfterDurability(input) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.model_context_notices",
-        name: "degraded_record_failed_after_durability",
-        payload: {
-          threadId: input.threadId,
-          documentIds: [...input.documentIds],
-          ...(input.responseId ? { responseId: input.responseId } : {}),
           cause: unknownToEventPayload(input.cause),
         },
       });

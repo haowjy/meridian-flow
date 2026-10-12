@@ -824,19 +824,19 @@ to a warm room therefore heals on the next server touch, and a cold room
 simply replays it.
 </p>
 <details>
-<summary>Historical and reconstruction reads</summary>
+<summary>Bounded journal reads</summary>
 <p>
 <code>journal.read</code> takes optional <code>since</code> and <code>until</code>
 row bounds; with <code>until</code> it picks the newest checkpoint at or before
-that row so a historical read never sees later edits. No production caller
-passes <code>until</code> on this checkout. <code>readForReconstruction</code>
-(used by cold undo/redo and echo attribution) instead picks the newest
-checkpoint strictly below the earliest retained row, so it replays every
-retained row needed for immutable forward-part capture. Settlement rebuilds its historical
+that row so a historical read never sees later edits. The checkpoint also stays
+below <code>since</code> so inclusive retained rows are not hidden. Unbounded
+reads return the durable watermark even when compaction leaves no update rows.
+Inverse planning reads immutable edit parts, independently of journal compaction.
+Settlement rebuilds its historical
 "final pre-push" document from the outbox's own lock cut plus joined updates,
 never from the current room.
 </p>
-<p class="ref"><code>adapters/drizzle-journal.ts</code> <code>reconstructionCheckpoint</code>, <code>domain/branch-push-transition.ts</code> <code>materializeFinalPrePush</code></p>
+<p class="ref"><code>adapters/drizzle-journal.ts</code> <code>read</code>, <code>domain/branch-push-transition.ts</code> <code>materializeFinalPrePush</code></p>
 </details>
 
 <!-- ============================================================ -->
@@ -977,7 +977,7 @@ specific write paths, and some write paths do not refresh it at all.
   </tr>
   <tr>
     <td>Receipt Undo/Redo and failed-reply rollback</td>
-    <td>Refreshed after a successful reversal (deferred to commit when inside one). <span class="ref"><code>domain/turn-reversal.ts</code>, <code>domain/turn-reversal-service.ts</code></span></td>
+    <td>Refreshed after a successful reversal (deferred to commit when inside one). <span class="ref"><code>adapters/drizzle-turn-inverse.ts</code>, <code>domain/turn-reversal-service.ts</code></span></td>
   </tr>
   <tr>
     <td>Push completion (Apply or automatic)</td>
