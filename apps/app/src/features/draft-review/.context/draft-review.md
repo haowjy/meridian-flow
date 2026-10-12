@@ -16,7 +16,7 @@ A scope change hides the departed selection in render before layout clears it,
 so an old draft cannot attach to a new Work or account-query scope.
 
 `projectWorkDraftFiles` in `client/query/work-draft-files.ts` projects the
-server's reviewable list into catalog-labelled files. `useWorkDrafts` exposes
+server's reviewable list into catalog-labelled files after `projectDraftList` applies whole-Apply intents. `useWorkDrafts` exposes
 `files` and `fileForDocument`; raw `drafts` remain generation/command evidence.
 Live names and paths include optimistic renames; draft-only files keep their
 listed labels. `sortDraftFiles` orders by name, then path basename for unnamed
@@ -71,7 +71,7 @@ Settlement order is explicit:
 
 1. An `applied`/`discarded` answer publishes closing evidence on the claim
    before cache refresh. Selections also publish their addressed answer.
-2. Whole Apply confirms and removes the addressed pending list membership
+2. Whole Apply confirms and projects the addressed pending list membership away
    immediately, preserving a newer generation. Catalog/list/preview refresh
    continues in the background; navigation and promotion do not decide success.
 3. Whole Discard awaits refresh. Confirmed or `gone` selections retain their
@@ -146,8 +146,17 @@ or operation keys, newest overlap wins. Discards among them are `restoring`:
 so the manuscript draws their original text from the click. Preview reads stay
 raw. Confirmed selection keys remain account-scoped intents, since older
 observations can still be cached or held by the painted review.
-`readDraftsAfterCommands` retains the existing generation-aware list fence for
-whole Apply. Its confirmations retire once older list reads drain.
+Work list reads stay raw too. Whole Apply retains an account-scoped generation
+horizon beside the claim, rather than filtering the cache or a late read. The
+same whole-command disposition projects list membership and previews; proposals
+above that horizon reappear. Read-start clocks stay beside immutable observations.
+A read started after confirmation can present a same-generation next proposal;
+a read begun earlier stays masked, even after fresh reads land. Structural
+sharing never merges equal observations across a command clock. Retaining the
+intent replaces read-drain retirement, so held pre-command evidence stays masked.
+List/preview failure retirement still fences at request start. The room owner
+reads raw generations and projected proposal membership; local hiding never
+becomes server omission.
 `previewWithoutKeys` never hides an unowned hunk.
 
 Failure classification uses error type/status, never message text:

@@ -3,6 +3,14 @@
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ChangeCommandRecords,
+  currentChangeCommandRecords,
+  intentKeys,
+  useChangeCommandRecords,
+  wholeDraftDisposition,
+} from "@/client/query/draft-command-record";
+import { projectDraft, projectDraftList } from "@/client/query/draft-projection";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
@@ -45,6 +53,7 @@ export function useReviewRoomOwner({
   horizon.current = { key, queryClient, registry };
   const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
+  const records = useChangeCommandRecords();
   const [entryAnswered, setEntryAnswered] = useState<string | null>(null);
   const target = JSON.stringify([projectId, workId, documentId, draftId]);
   const writerScope = useRef({ target, queryClient, registry });
@@ -109,6 +118,7 @@ export function useReviewRoomOwner({
       draft,
       pendingWriterGeneration,
       kind.current.draftOnly,
+      { scope: { projectId, workId }, records },
     );
     for (const action of observations) {
       if (
@@ -132,6 +142,7 @@ export function useReviewRoomOwner({
     target,
     rows,
     preview,
+    records,
     draftOnly,
     promoted,
     pendingWriterGeneration,
@@ -177,16 +188,23 @@ export function useReviewRoomOwner({
       if (!current()) return;
       setEntryAnswered(target);
       if (answer.status === "corrupt") dispatch({ type: "roomFailed", documentId, draftId });
-      if (answer.status === "active")
+      if (answer.status === "active") {
+        const records = currentChangeCommandRecords();
+        const visible = projectDraft(
+          answer,
+          intentKeys(records, draft),
+          wholeDraftDisposition(records, draft, answer.draftGeneration, answer) !== null,
+        ).preview;
         dispatch({
           type: "generationObserved",
           documentId,
           draftId,
           draftGeneration: answer.draftGeneration,
-          proposal: reviewChangesOfPreview(answer).length > 0,
+          proposal: visible.status === "active" && reviewChangesOfPreview(visible).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
         });
+      }
     })().catch(() => {
       if (!current()) return;
       setEntryAnswered(target);
@@ -319,23 +337,41 @@ export function reviewRoomObservations(
   draft: { documentId: string; draftId: string },
   pendingWriterGeneration: number | null = null,
   draftOnly = false,
+  intents?: { scope: { projectId: string; workId: string }; records: ChangeCommandRecords },
 ): DraftReviewAction[] {
   const actions: DraftReviewAction[] = [];
   const row = rows?.find(
     (row) => row.draftId === draft.draftId && row.documentId === draft.documentId,
   );
+  const visibleRows =
+    intents && rows ? projectDraftList(rows, intents.scope, intents.records) : rows;
+  const visiblePreview =
+    intents && preview
+      ? projectDraft(
+          preview,
+          intentKeys(intents.records, { ...intents.scope, ...draft }),
+          wholeDraftDisposition(
+            intents.records,
+            { ...intents.scope, ...draft },
+            preview.draftGeneration,
+            preview,
+          ) !== null,
+        ).preview
+      : preview;
   if (row)
     actions.push({
       type: "generationObserved",
       ...draft,
       draftGeneration: row.draftGeneration,
-      proposal: true,
+      proposal: visibleRows?.includes(row) === true,
     });
   const evidence =
     preview?.status === "active"
       ? {
           draftGeneration: preview.draftGeneration,
-          proposal: reviewChangesOfPreview(preview).length > 0,
+          proposal:
+            visiblePreview?.status === "active" &&
+            reviewChangesOfPreview(visiblePreview).length > 0,
         }
       : null;
   if (evidence) actions.push({ type: "generationObserved", ...draft, ...evidence });

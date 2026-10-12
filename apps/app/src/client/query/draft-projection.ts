@@ -1,12 +1,13 @@
 /**
  * The one projection of a draft observation under the writer's intents. The
- * observation (a preview read) is never edited; what a list, a count, the
+ * observation (a list or preview read) is never edited; what a list, a count, the
  * manuscript's marks and a held paint show is this function of it and of the
  * intents (`intentKeys`), recomputed when either moves. Intents name changes by
  * `operationKey`, which survives a re-fork, so one projection serves every
- * generation of the draft.
+ * generation of the draft. Whole commands instead address a generation horizon.
  */
 import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
+import { type ChangeCommandRecords, wholeDraftDisposition } from "./draft-command-record";
 
 export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
@@ -86,4 +87,15 @@ export function projectDraft(
       restoring: idsNamedBy(observed, intents.restoring),
     },
   };
+}
+
+/** Work files are a projection too: no intent ever removes a cached server row. */
+export function projectDraftList<
+  T extends { documentId: string; draftId: string; draftGeneration?: number },
+>(observed: T[], scope: { projectId: string; workId: string }, records: ChangeCommandRecords): T[] {
+  return observed.filter(
+    (row) =>
+      wholeDraftDisposition(records, { ...scope, ...row }, row.draftGeneration, observed) !==
+      "apply",
+  );
 }

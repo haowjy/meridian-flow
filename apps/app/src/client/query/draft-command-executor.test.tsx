@@ -42,7 +42,9 @@ const input = {
 };
 const lost = () => new TypeError("Failed to fetch");
 const listing = (...draftIds: string[]) => ({
-  drafts: draftIds.map((draftId) => ({ draftId, documentId: "doc-a" }) as ThreadDraftListItem),
+  drafts: draftIds.map(
+    (draftId) => ({ draftId, documentId: "doc-a", draftGeneration: 1 }) as ThreadDraftListItem,
+  ),
 });
 
 function deferred<T>() {
@@ -63,7 +65,7 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let drafts: string[] = [];
   function Capture() {
-    drafts = (useWorkDrafts("project-a", "work-a").drafts ?? []).map((draft) => draft.draftId);
+    drafts = (useWorkDrafts("project-a", "work-a").data ?? []).map((draft) => draft.draftId);
     return null;
   }
   await withReactRoot(
@@ -126,6 +128,9 @@ describe("draft command executor", () => {
       });
       await act(async () => older.resolve(listing("draft-a")));
       await settleReact(() => expect(listed()).toEqual([]));
+      expect(queryClient.getQueryData(projectQueryKeys.workDrafts("project-a", "work-a"))).toEqual(
+        listing("draft-a").drafts,
+      );
     });
   });
 });
