@@ -724,11 +724,11 @@ without a row.
     initialize-only; a later attempt on a document with any admission or
     checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerDocumentLifecycle</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
   <li><strong>Room store.</strong> Hocuspocus <code>onStoreDocument</code>
-    snapshots the room and the latest row ID, then writes the checkpoint after
-    the caller's transaction commits (dropped on rollback or when the
-    generation was retired), one queued write per document, newest wins. A
+    queues the room's authority binding. After the caller's transaction commits,
+    the worker captures a durable cut and writes it (dropped on rollback or when
+    the generation was retired), one queued request per document, newest wins. A
     checkpoint at a cut no newer than the existing one is skipped.
-    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>adapters/drizzle-journal.ts</code> <code>checkpoint</code></span></li>
+    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>adapters/drizzle-journal.ts</code> <code>captureCheckpoint</code> and <code>storeCheckpoint</code></span></li>
   <li><strong>Explicit.</strong> <code>CollabDomain.checkpoint(documentId, reason)</code>.
     <span class="ref"><code>checkpoints.ts</code></span></li>
   <li><strong>Compaction.</strong> <code>journal.compact(docId, before)</code>
@@ -743,8 +743,13 @@ without a row.
 The rule for every checkpoint writer: it may under-claim but must never
 over-claim. A row at or below <code>up_to_seq</code> is never replayed again, so
 if the state lacked it the row is lost; a row above it replays harmlessly on
-top. That is why the writers read <code>up_to_seq</code> before encoding the
-state. <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
+top. Room and explicit writers use an opaque <code>CapturedCheckpointCut</code>:
+under the document mutation lock, <code>journal.captureCheckpoint</code> folds the
+current-generation checkpoint and complete committed suffix. Its bytes contain
+every folded row, including admissions Hocuspocus has not yet applied to the room.
+Unresolved Yjs dependencies refuse capture. Persistence accepts this inseparable
+cut and rechecks its generation, never a free state/watermark pair.
+<span class="ref"><code>domain/checkpoint-cut.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>captureCheckpoint</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
 </p>
 
 <figure aria-label="Read and reconstruct path">

@@ -199,7 +199,19 @@ checkpoint selection, earliest retained-update selection, and replay to that ide
 and generation. Sequence bounds do not authorize retired-generation history; only
 explicit checkpoint lookup/listing and restore expose historical checkpoints.
 
-The store captures checkpoint plus current-generation journal under the document
+Live checkpoints use `CapturedCheckpointCut`, never a free state/watermark pair.
+`journal.captureCheckpoint` holds the document mutation lock, validates the
+handle's authority binding, and folds the current-generation checkpoint and
+entire committed suffix. The cut owns immutable bytes and the last folded seq;
+unresolved Yjs structs or deletes refuse capture. Both the room worker and
+explicit checkpoint service pass this cut to persistence, which revalidates its
+generation under lock. Explicit capture and persistence join the caller's
+transaction, so persistence never waits on its own ambient capture lock through
+a second connection. A writer row committed before its room apply is therefore
+already in the checkpoint. Agent-edit's generic journal port does not expose
+checkpoint production; initialize-only seeds and compaction remain host-owned.
+
+The derivation store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be
 durable while Hocuspocus has not applied it. Certification retakes the mutation
 lock, checks generation and `next_admission_sequence`, and conditionally updates
