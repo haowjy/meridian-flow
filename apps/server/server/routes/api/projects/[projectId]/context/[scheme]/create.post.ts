@@ -1,3 +1,4 @@
+import type { CreateContextEntryResult } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
@@ -31,35 +32,31 @@ export async function createContextEntry(input: {
   /** Retained in the route-core test seam; authority, never an ID, owns URI serialization. */
   workId?: string | null;
   body: CreateContextEntryBody;
-}) {
+}): Promise<CreateContextEntryResult> {
   const uri = toUri(input.scheme, input.body.path, input.authority);
-  if (input.body.type === "folder") {
-    const result = await input.port.mkdir(uri, {
-      origin: { type: "human", userId: input.userId },
-    });
-    if (!result.ok) contextErrorToHttp(result.error);
-    return { status: "created" as const };
-  }
-
-  const result = await input.port.createTrackedDocument(uri, input.body.content ?? "", {
-    origin: { type: "human", userId: input.userId },
-  });
+  const options = { origin: { type: "human" as const, userId: input.userId } };
+  const result =
+    input.body.type === "folder"
+      ? await input.port.mkdir(uri, options)
+      : await input.port.createTrackedDocument(uri, input.body.content ?? "", options);
   if (!result.ok) {
-    if (result.error.code === "conflict") return { status: "conflict" as const, uri };
+    if (result.error.code === "conflict")
+      return {
+        status: "conflict",
+        uri: result.error.uri,
+        occupantKind: result.error.occupantKind,
+      };
     contextErrorToHttp(result.error);
   }
-  return { status: "created" as const, documentId: result.value.documentId };
+  return { status: "created", ...result.value };
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, authority, port } = await resolveContextRoute(event);
-  const result = await createContextEntry({
-    port,
-    userId,
-    scheme,
-    authority,
-    body: parseCreateContextEntryBody(await readBody(event)),
-  });
+  const { userId, scheme, authority, port, container, edit } = await resolveContextRoute(event);
+  const body = parseCreateContextEntryBody(await readBody(event));
+  const result = await edit([container], () =>
+    createContextEntry({ port, userId, scheme, authority, body }),
+  );
   if (result.status === "conflict") setResponseStatus(event, 409);
   return result;
 });

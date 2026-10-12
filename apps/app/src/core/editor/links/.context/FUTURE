@@ -1,0 +1,23 @@
+# Deferred, links
+
+- Pasting into the chat composer leaves `[[…]]` as text. If writers paste
+  Obsidian notes into chat, give the composer a paste catalog and mount
+  `WikilinkPasteExtension` there, spelling full URIs as chat links do
+  (`components/app/composer/`, `links/WikilinkPasteExtension.ts`).
+- Unfiled and Uploads documents are not candidates for a pasted `[[Name]]`
+  (`pasteTargets` in `features/editor/EditorView.tsx`). Decide whether an
+  Unfiled draft or an uploaded file should be linkable by name, and widen the
+  filter there if so.
+- `[[Name#Heading]]` pastes labeled `Name`; Obsidian shows `Name > Heading`.
+  Match Obsidian's label for heading and block links if writers expect it
+  (`scanWikilinks` in `links/wikilink-paste.ts`).
+- A pasted link keeps Obsidian's heading suffix as written (`Kael.md#The
+  Duel`). Unverified: whether following it scrolls to the heading named by
+  that text rather than a slug. Check, and make it do so if not
+  (`features/links/`, the follow and open path).
+- Every catalog revision starts a new resolution generation whose first read
+  of a server-only key (a gone `doc:` ref, an unsettled ahead ref) is pending,
+  which draws filled for one round trip before the dashed answer returns.
+  Settled ahead refs no longer do (the account's settlement memo). Read the previous
+  generation's answer while revalidating to remove the rest
+  (`link-resolution.ts` generations, `features/links/project-link-resolver.ts`).

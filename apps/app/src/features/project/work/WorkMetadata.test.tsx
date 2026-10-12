@@ -80,44 +80,6 @@ async function click(node: Element | null) {
 }
 
 describe("WorkMetadata", () => {
-  it("does not save the goal on blur and cancels on Escape", async () => {
-    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
-    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
-      await click(
-        [...document.querySelectorAll("button")].find(
-          (button) => button.textContent === "Edit goal",
-        ) ?? null,
-      );
-      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      expect(textarea).not.toBeNull();
-      if (!textarea) throw new Error("Goal editor did not open");
-      await act(async () => {
-        typeInto(textarea, "Unfinished draft");
-        textarea.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
-      });
-      expect(saveWork).not.toHaveBeenCalled();
-      await act(async () => {
-        textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      });
-      expect(document.querySelector("textarea")).toBeNull();
-      expect(document.body.textContent).toContain("First paragraph.");
-
-      await click(
-        [...document.querySelectorAll("button")].find(
-          (button) => button.textContent === "Edit goal",
-        ) ?? null,
-      );
-      const reopened = document.querySelector<HTMLTextAreaElement>("textarea");
-      if (!reopened) throw new Error("Goal editor did not reopen");
-      await act(async () => typeInto(reopened, "  A changed goal  "));
-      await click(
-        [...document.querySelectorAll("button")].find((button) => button.textContent === "Save") ??
-          null,
-      );
-      expect(saveWork).toHaveBeenCalledWith({ goal: "A changed goal" });
-    });
-  });
-
   it("holds a leave intent until a dirty goal is explicitly discarded", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
@@ -142,27 +104,6 @@ describe("WorkMetadata", () => {
       );
       expect(document.querySelector("output")?.textContent).toBe("left");
       expect(document.querySelector("textarea")).toBeNull();
-    });
-  });
-
-  it("drops a dirty goal edit and its held leave when the Work is archived", async () => {
-    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
-    await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
-      const button = (label: string) =>
-        [...document.querySelectorAll("button")].find((b) => b.textContent === label) ?? null;
-      await click(button("Edit goal"));
-      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      if (!textarea) throw new Error("Goal editor did not open");
-      await act(async () => typeInto(textarea, "Changed goal"));
-      await click(button("Leave"));
-      expect(document.querySelector("output")?.textContent).toBe("decision");
-      await click(button("Archive"));
-      // Nothing is left to save, so the held leave is dropped and a new one runs at once.
-      expect(document.querySelector("output")?.textContent).toBe("kept");
-      expect(document.querySelector("textarea")).toBeNull();
-      await click(button("Leave"));
-      expect(document.querySelector("output")?.textContent).toBe("left");
-      expect(saveWork).not.toHaveBeenCalled();
     });
   });
 

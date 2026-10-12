@@ -33,5 +33,5 @@ before mutating, or apply the complete plan to a clone and merge only success.
 Revisit when an adapter needs failure-prone execution after preflight; do not add
 a parallel transaction planner without that concrete producer.
 
-Owner seam: `src/apply/tiers.ts` planning/apply split and
+Owner seam: `src/apply/apply-edits.ts` planning/apply split and
 `src/tool/write-commands.ts` failure restoration.

@@ -20,12 +20,9 @@ Read before drafting:
 - Relevant prior scene/chapter context
 - Vocab/canon anchors that constrain terminology or facts
 
-Write the full beat before judging line polish. Let `/creative-writing-craft`
-govern immersion, rhythm, psychic distance, dialogue, and pacing
-(`resources/prose-writing.md` for sentence-level craft,
-`resources/scene-construction.md` for scene mechanics). Use `/llm-writing` only
-to catch unchosen defaults: generic phrases, explanatory smoothing, fake
-clarity, or vague language that avoids a sharper choice.
+Write the full beat before judging line polish. Then catch unchosen defaults:
+generic phrases, explanatory smoothing, fake clarity, or vague language that
+avoids a sharper choice.
 
 ## Revision
 

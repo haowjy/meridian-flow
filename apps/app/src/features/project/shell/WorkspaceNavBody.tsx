@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
+import { useRailSwitchFailed } from "../routing/document-switch-failure";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
 
 export type WorkspaceNavPresentation = "desktop" | "phone";
@@ -27,6 +28,8 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
+  /** The chat's Scratch section, pinned above the account row. */
+  scratch?: ReactNode;
 };
 
 export function WorkspaceNavBody({
@@ -34,8 +37,10 @@ export function WorkspaceNavBody({
   onSelectScreen,
   presentation,
   children,
+  scratch,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
+  const failed = useRailSwitchFailed();
 
   return (
     <>
@@ -47,22 +52,34 @@ export function WorkspaceNavBody({
         )}
       >
         {SCREENS.map((screen) => (
-          <ScreenNavItem
-            key={screen.key}
-            screen={screen}
-            active={screen.key === activeScreen}
-            presentation={presentation}
-            onClick={() => onSelectScreen(screen.key)}
-          />
+          <div key={screen.key}>
+            <ScreenNavItem
+              screen={screen}
+              active={screen.key === activeScreen}
+              presentation={presentation}
+              onClick={() => onSelectScreen(screen.key)}
+            />
+            {failed === screen.key && (
+              <p role="alert" className="px-2 py-1 text-xs text-destructive">
+                <Trans>This view couldn’t open.</Trans>
+              </p>
+            )}
+          </div>
         ))}
       </div>
 
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>{children}</div>
+
+      {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
+      {scratch}
 
       <div
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
         style={phone ? { paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" } : undefined}
       >
+        {/* The account sits between Scratch and the way out, so a near miss on
+            Scratch never leaves the project. */}
+        <AccountMenu />
         <Link
           to="/"
           className={cn(
@@ -73,7 +90,6 @@ export function WorkspaceNavBody({
           <ArrowLeft className="size-4 shrink-0" aria-hidden />
           <Trans>View projects</Trans>
         </Link>
-        <AccountMenu />
       </div>
     </>
   );
@@ -97,7 +113,7 @@ function ScreenNavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "focus-ring flex items-center gap-2.5 text-left text-sm transition-colors",
+        "focus-ring flex w-full items-center gap-2.5 text-left text-sm transition-colors",
         // Desktop rows share the footer's inset, rounded treatment; keep the
         // icon and label aligned with their original positions.
         presentation === "phone"

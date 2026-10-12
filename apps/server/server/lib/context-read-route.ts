@@ -13,6 +13,7 @@ import {
   contextPortForProjectBrowse,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
+import type { FileAccess } from "../domains/file-policy/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
 import {
   type ProjectRepository,
@@ -21,9 +22,11 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
-import { contextErrorToHttp } from "./context-error-http.js";
+import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
+import { documentTarget, requireFileGrant } from "./file-access-http.js";
 
 export interface ContextReadRouteDeps {
+  fileAccess: Pick<FileAccess, "authorize">;
   projectRepo: ProjectRepository;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
@@ -37,6 +40,7 @@ export interface ContextReadRouteInput {
   scheme: ProjectContextTreeScheme;
   rawPath: unknown;
   workId?: string | null;
+  rootThreadId?: string | null;
 }
 interface ResolvedReadPath {
   uri: string;
@@ -83,7 +87,10 @@ export function resolveContextReadPath(
               ? parsed.value.authority.kind === "none"
               : parsed.value.authority.kind === "work" &&
                 parsed.value.authority.workSlug === authority.workSlug
-            : parsed.value.authority.kind === "none";
+            : "kind" in authority && authority.kind === "lineage"
+              ? parsed.value.authority.kind === "lineage" &&
+                parsed.value.authority.rootThreadRef === authority.rootThreadRef
+              : parsed.value.authority.kind === "none";
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
@@ -114,15 +121,32 @@ export async function handleContextReadRequest(
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   let authority: CanonicalContextAuthority = { kind: "contextual" };
-  if (isWorkScopedBrowseScheme(input.scheme)) {
+  if (input.rootThreadId) {
+    if (input.workId || input.scheme !== "scratch")
+      throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
+    const lineage = await deps.contextPorts.lineages.byId(input.projectId, input.rootThreadId);
+    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+  } else if (isWorkScopedBrowseScheme(input.scheme)) {
     if (!input.workId) authority = { kind: "none" };
     else {
       const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
       if (!resolved) {
-        throw createError({ statusCode: 404, message: "Work not found" });
+        throwContextWorkUnavailableHttpError("work_missing");
       }
       authority = resolved;
     }
+  }
+  if (
+    input.scheme === "scratch" &&
+    !input.rootThreadId &&
+    !("workSlug" in authority && authority.workSlug !== null)
+  ) {
+    throw createError({
+      statusCode: 400,
+      message:
+        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@/c12/x.",
+    });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
   const port = await contextPortForProjectBrowse({
@@ -134,10 +158,19 @@ export async function handleContextReadRequest(
     projectId: input.projectId,
     userId: input.userId,
     workId: input.workId,
+    rootThreadId: input.rootThreadId,
   });
-  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
   const ref = await port.stat(path.uri);
   if (!ref.ok) contextErrorToHttp(ref.error);
+  if (ref.value.documentId) {
+    await requireFileGrant(
+      deps.fileAccess,
+      input.userId,
+      documentTarget(ref.value.documentId),
+      "read",
+    );
+  }
   if (ref.value.kind === "tracked") {
     const read = await port.read(path.uri);
     if (!read.ok) contextErrorToHttp(read.error);

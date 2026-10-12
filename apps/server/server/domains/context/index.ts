@@ -1,19 +1,26 @@
-export {
-  createDrizzleAssetPathResolver,
-  type MutableAssetPathResolver,
-} from "./adapters/asset-path-resolver.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
-export {
-  DrizzleContextDocumentStore,
-  updateDocumentProjectionById,
-} from "./adapters/context-fs/drizzle-store.js";
+export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
+export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
+export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+export {
+  createDrizzleDocumentLinkScopes,
+  type LinkScopeMembership,
+} from "./adapters/document-link-scope.js";
+export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
+export {
+  createDrizzleLineageScratchLifecycle,
+  type LineageScratchLifecycle,
+  lineageHasLiveMember,
+} from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
-export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
+export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
   parseContextUri,
@@ -38,6 +45,7 @@ export {
 export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
+export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
 export type {
   AdapterFault,
@@ -52,13 +60,16 @@ export type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
+  ProjectCatalogLifecyclePort,
+  ProjectDocumentCatalogRefreshPort,
 } from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,
   ContextFolder,
   CreateBinaryDocumentInput,
-  UpsertDocumentInput,
+  CreateDocumentInput,
 } from "./ports/context-document-store.js";
+export { ContextEntryConflictError } from "./ports/context-document-store.js";
 export type {
   BinaryFileEntry,
   BinaryFileRef,
@@ -68,6 +79,8 @@ export type {
   ContextError,
   ContextFileEntry,
   ContextListEntry,
+  ContextListing,
+  ContextListOptions,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -85,12 +98,19 @@ export type {
   WriteProvenance,
 } from "./ports/context-port.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
+export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
   DocumentLinkResolver,
   DocumentLinkTarget,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type { DocumentRevisions } from "./ports/document-revisions.js";
+export {
+  type AheadRegistration,
+  type LinkAheadRegistry,
+  RegistrationInsideTransactionError,
+} from "./ports/link-ahead-registry.js";
 export type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
@@ -117,6 +137,12 @@ export {
   type PromotionService,
 } from "./promotion/promotion-service.js";
 export type { ResultProvenance } from "./promotion/result-provenance.js";
+export {
+  type ScratchLineage,
+  type ScratchLineages,
+  type ScratchOwner,
+  scratchOwnerFor,
+} from "./scratch-owner.js";
 export {
   createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,

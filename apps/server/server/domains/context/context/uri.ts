@@ -20,9 +20,7 @@ export function parseContextUri(
   options: ParseContextUriOptions = {},
 ): Result<ParsedContextUri, ContextError> {
   const parsed = parseSharedContextUri(raw, options);
-  return parsed.ok
-    ? Ok(parsed.value)
-    : Err({ code: "invalid_uri", uri: parsed.error.uri, reason: parsed.error.reason });
+  return parsed.ok ? Ok(parsed.value) : Err({ code: "invalid_uri", ...parsed.error });
 }
 
 export function parseUnifiedContextUri(raw: string): Result<ParsedContextUri, ContextError> {

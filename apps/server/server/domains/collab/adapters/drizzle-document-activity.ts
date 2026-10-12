@@ -11,14 +11,6 @@ export function createDrizzleDocumentProjectionEffects(
   workProjection?: WorkProjectionMutation,
 ): DocumentProjectionEffects {
   return {
-    async updateProjection(input) {
-      const activeDb = currentDrizzleDb(db);
-      await activeDb
-        .update(documents)
-        .set({ markdownProjection: input.markdown, updatedAt: input.at })
-        .where(eq(documents.id, input.documentId));
-    },
-
     async touchDocumentActivity(input) {
       const activeDb = currentDrizzleDb(db);
       const [scope] = await activeDb
@@ -58,10 +50,6 @@ export function createDrizzleDocumentProjectionEffects(
 
     async applyPushCompletion(input) {
       const activeDb = currentDrizzleDb(db);
-      await activeDb
-        .update(documents)
-        .set({ markdownProjection: input.markdown, updatedAt: input.at })
-        .where(eq(documents.id, input.documentId));
       await activeDb
         .update(threadDocuments)
         .set({ lastTouchedAt: input.at })

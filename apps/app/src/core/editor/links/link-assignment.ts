@@ -1,0 +1,179 @@
+/**
+ * The ref a link the writer puts in a document is assigned: the document it
+ * names (`doc:`), an address nothing is at yet (`ahead:`), or none (an external
+ * or contextual link, kept as written).
+ *
+ * Every client producer that turns written text into a link comes through
+ * here (Ctrl+K and the link form, a Markdown or HTML paste, a rich paste from
+ * another project), and so does a pasted picture whose source is a manuscript
+ * address (`assignWrittenSource`). Both go through markup's `assignFreshLink`,
+ * the pass 3 agent-edit assigns with, so there is one answer to "which
+ * document did the writer mean". It is synchronous and reads only the editor's local document
+ * index: assignment never waits on the network. An internal address the index
+ * has no document at gets an ahead ref, which settles on whatever document
+ * arrives there first; an index that is incomplete or missing is therefore
+ * safe, since an ahead ref minted for an occupied address settles on its
+ * occupant.
+ *
+ * The `@` menu and `[[…]]` paste know their document's id already and write
+ * `doc:` directly; they never parse a path to find it.
+ */
+
+import {
+  type LinkRef,
+  matchDocumentPath,
+  parseContextUri,
+  storedLinkRef,
+} from "@meridian/contracts";
+import { assignFreshLink } from "@meridian/markup/links";
+import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
+
+/** One document the editor's local index knows, by id and current address. */
+export type LinkAssignmentDocument = { documentId: string; uri: string };
+
+/** The editor's local document index, as assignment reads it. */
+export type LinkAssignmentIndex = { readonly documents: readonly LinkAssignmentDocument[] };
+
+/** Everything an assignment is relative to: the holder's address, its project, its index. */
+export type LinkAssignmentScope = {
+  holderUri: string | null;
+  projectId: string | null;
+  index: LinkAssignmentIndex | null;
+};
+
+/** What a link mark stores: a ref beside the href it is spelled with. */
+export type AssignedLink = { ref: LinkRef | null; href: string };
+
+/**
+ * Assign one written href. Contextual and external links keep `ref: null`
+ * and the href as written. An internal one is spelled as its canonical
+ * absolute address (plus any `#`/`?` suffix) and gets the indexed document's
+ * ref, or a fresh ahead ref when the index has none there.
+ */
+export function assignWrittenHref(
+  href: string,
+  holderUri: string | null,
+  index: LinkAssignmentIndex | null,
+): AssignedLink {
+  const assigned = assignFreshLink({
+    href,
+    grammar: "link",
+    holderUri,
+    documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+  });
+  return assigned.kind === "literal"
+    ? { ref: null, href }
+    : { ref: assigned.ref, href: assigned.href };
+}
+
+/**
+ * Assign one written `image`/`figure` source, under the manuscript-root
+ * grammar (a bare source is a manuscript path). A source that is not a
+ * document address (a web URL, `data:`) keeps `ref: null` as written; the
+ * image paste door imports it.
+ */
+export function assignWrittenSource(src: string, index: LinkAssignmentIndex | null): AssignedLink {
+  const assigned = assignFreshLink({
+    href: src,
+    grammar: "source",
+    holderUri: null,
+    documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+  });
+  return assigned.kind === "literal"
+    ? { ref: null, href: src }
+    : { ref: assigned.ref, href: assigned.href };
+}
+
+/**
+ * The indexed document at an internal address, by the server's address rule
+ * (`matchDocumentPath`: the exact path, else the one path that differs only by
+ * an omitted extension). A contextual address means the scope's own Work,
+ * which is the only Work whose Scratch and Uploads the index holds.
+ */
+export function indexedDocumentAt<T extends LinkAssignmentDocument>(
+  documents: readonly T[],
+  uri: string,
+): T | null {
+  const requested = parseContextUri(uri);
+  if (!requested.ok) return null;
+  const { scheme, path, authority } = requested.value;
+  const candidates = documents.flatMap((document) => {
+    const candidate = parseContextUri(document.uri);
+    if (!candidate.ok || candidate.value.scheme !== scheme) return [];
+    if (
+      authority.kind !== "contextual" &&
+      JSON.stringify(candidate.value.authority) !== JSON.stringify(authority)
+    )
+      return [];
+    return [{ document, path: candidate.value.path }];
+  });
+  return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
+}
+
+/**
+ * A pasted slice with every ref-less link and picture assigned (the client's
+ * pass 3), each under its own grammar: a link mark's href against the holder
+ * (`assignWrittenHref`), an `image`/`figure` source from the manuscript root
+ * (`assignWrittenSource`). A link or picture that already carries a ref came
+ * from a same-project rich paste or a producer that knew its document, and
+ * keeps it; so does an `asset:` upload, which a same-project paste restores
+ * (`link-clipboard.ts`). Each distinct written address is assigned once per
+ * paste per grammar, so one address pasted twice shares an assignment.
+ *
+ * A node walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
+ * inline text at its top level, which the block walk does not visit, and an
+ * assignment is a function of the mark or picture alone, so runs need not be
+ * found.
+ */
+export function assignPastedSlice(slice: Slice, scope: LinkAssignmentScope): Slice {
+  const { holderUri, index } = scope;
+  const assignments = new Map<string, AssignedLink>();
+  const assigned = (grammar: "link" | "source", written: string): AssignedLink => {
+    const key = `${grammar}\u0000${written}`;
+    let assignment = assignments.get(key);
+    if (!assignment) {
+      assignment =
+        grammar === "link"
+          ? assignWrittenHref(written, holderUri, index)
+          : assignWrittenSource(written, index);
+      assignments.set(key, assignment);
+    }
+    return assignment;
+  };
+  let changed = false;
+  const assignMark = (mark: Mark): Mark => {
+    if (mark.type.name !== "link" || storedLinkRef(mark.attrs.ref) !== null) return mark;
+    const href = String(mark.attrs.href ?? "");
+    const assignment = assigned("link", href);
+    if (assignment.ref === null && assignment.href === href) return mark;
+    changed = true;
+    return mark.type.create({ ...mark.attrs, ...assignment });
+  };
+  const mapNode = (node: PMNode): PMNode => {
+    if (node.isText) return node.mark(node.marks.map(assignMark));
+    const marks = node.marks.map(assignMark);
+    if (node.type.name === "image" || node.type.name === "figure") {
+      const src = String(node.attrs.src ?? "");
+      if (!src || src.startsWith("asset:") || storedLinkRef(node.attrs.ref) !== null)
+        return node.mark(marks);
+      const assignment = assigned("source", src);
+      if (!assignment.ref) return node.mark(marks);
+      changed = true;
+      return node.type.create(
+        { ...node.attrs, src: assignment.href, ref: assignment.ref },
+        node.content,
+        marks,
+      );
+    }
+    const children: PMNode[] = [];
+    node.content.forEach((child) => {
+      children.push(mapNode(child));
+    });
+    return node.type.create(node.attrs, Fragment.fromArray(children), marks);
+  };
+  const nodes: PMNode[] = [];
+  slice.content.forEach((node) => {
+    nodes.push(mapNode(node));
+  });
+  return changed ? new Slice(Fragment.fromArray(nodes), slice.openStart, slice.openEnd) : slice;
+}

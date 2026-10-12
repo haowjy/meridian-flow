@@ -2,13 +2,6 @@
 
 ## Port interfaces
 
-### TurnDiffQuery (`src/ports/turn-diff-query.ts`)
-
-Read-only host seam for the current turn's folded, shell-state-aware change
-trail. Agent-edit renders prose windows and never reads collab tables or CRDT
-identities; shared-shell effects are flagged without attributing them to the
-turn.
-
 ### UpdateJournal / ReversalStore (`src/ports/update-journal.ts`)
 The persistence seam is split by concern:
 
@@ -64,7 +57,7 @@ atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Access to the coordinator-owned canonical Y.Doc, which may be a host branch
-rather than published live. `withDocument(docId, fn)` serializes callers through
+rather than live. `withDocument(docId, fn)` serializes callers through
 this port for the same docId. It does not by itself exclude mutations arriving
 through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
@@ -101,8 +94,37 @@ and multiline blocks as `hash|\nbody`.
 
 Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
 component registry types live in `@meridian/markup`. Codec factories require the
-host's ProseMirror `Schema` and its `AssetPathResolver`; agent-edit has no
-default Meridian schema and no project asset namespace of its own.
+host's ProseMirror `Schema`. `createAgentEditCodecFactory(markup)` parses
+purely; every command takes its codec once at entry (`tool/command-links.ts`
+`openCommandLinks`: `links.prepare` then `links.scopeFor`, then
+`codec.forScope(scope)`) and passes that scoped `AgentEditCodec` everywhere it
+serializes. agent-edit has
+no default Meridian schema and no project tree of its own.
+
+### DocumentLinksPort (`src/ports/document-links.ts`)
+The host's link scope: `prepare` (one batched load per synchronous block),
+`scopeFor(documentId, context)` (holder and view from the arguments),
+`registerAhead` (durable, outside any transaction) and `revision`. A host that
+routes between versions names the view on every command it routes
+(`WriteContext.linkView`, and the `linkView` argument of `undo`/`redo` and
+`ReverseInput`): reversals open their links in the view of the history they
+reverse. A reply's save prepares each document's before sides (`preOwnSnapshot`) with its
+runtime, since receipts spell links the reply removed.
+Markup's `createHolderLinkScope(holder, catalog)` applies the contracts'
+resolution and spelling rules over any `HolderCatalog` (the client resolves
+through the same rules over its own catalog), so hosts cannot disagree;
+`createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
+catalog. It loads keys on `prepare` the way the server's batched loader does
+and answers an unprepared id, settlement or address as a snapshot miss
+(recorded in `misses`), so tests catch a door that forgot to prepare; the
+server's in-memory composition passes `{ preloaded: true }`.
+Markup's `storedLinkKeys` (beside the Yjs walk `extractStoredLinks`) is what
+both adapters
+load for stored occurrences (docs and `stored` nodes such as copies) and for
+shown identities (an `asset:<id>` one loads its upload by id).
+After parse, `links/assign-refs.ts` applies the shipped image rule (a known
+manuscript path becomes `asset:<id>`) in pass 3 of ref assignment, to written
+sources nothing old or shown continued; copies are never assigned.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.
@@ -111,8 +133,8 @@ dependency leaks.
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
 objects. The seam carries block lookup/identity, visible-content CRDT lineage,
-text inspection, Tier 1/3
-mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement` and
+text inspection, plain-text (undo repair) and structural
+mutation verbs, a nonempty inline-run count for undo repair, adapter-owned `applyInlineReplacements` and
 same-type `applyBlockReplacement`, and batch projection/serialization
 (`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
 y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
@@ -150,13 +172,14 @@ intentionally share one model-facing reversal handle.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
-batch API. `src/perf.snapshot.bench.test.ts` is a baseline harness, not a
-regression gate (`*.bench.test.ts` is excluded from the normal vitest run).
+batch API.
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
-only. Optional — falls back to a local in-memory map when omitted.
+only. Each session tracks initialized document membership as a set, not retained
+state vectors; live sync and stale-document recovery remain runtime-store duties.
+Optional — falls back to a local in-memory map when omitted.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,

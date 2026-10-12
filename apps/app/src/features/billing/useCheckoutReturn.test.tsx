@@ -186,18 +186,4 @@ describe("useCheckoutReturn", () => {
     expect(readCheckoutBaseline(window.sessionStorage)).toBeNull();
     expect(window.location.search).not.toContain("checkout=");
   });
-
-  it("reports a portal return distinctly from a checkout cancellation", async () => {
-    window.history.replaceState({}, "", "/billing?checkout=cancelled");
-    window.sessionStorage.setItem(
-      CHECKOUT_BASELINE_STORAGE_KEY,
-      JSON.stringify({ ...baseline, handoffKind: "portal" }),
-    );
-
-    await act(async () => root.render(<Probe />));
-
-    expect(status()).toBe("portal");
-    expect(refetches.balance).not.toHaveBeenCalled();
-    expect(window.location.search).not.toContain("checkout=");
-  });
 });

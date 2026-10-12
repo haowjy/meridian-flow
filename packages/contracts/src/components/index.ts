@@ -32,6 +32,28 @@ export type ComponentBlockContent = {
   interrupt?: ComponentInterrupt;
 };
 
+/** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
+export type ThreadReferenceProps = {
+  threadId: string;
+  ref: string;
+  title: string | null;
+  agentName: string | null;
+  lastActivityAt: string;
+  text: string;
+};
+
+/** Writer-facing handoff card data, frozen when its seed is reserved. */
+export type HandoffBriefProps = {
+  state: "available" | "unavailable";
+  brief: string | null;
+  sourceThreadId: string;
+  sourceRef: string;
+  sourceTitle: string | null;
+  cutoffTurnId: string;
+  model: string | null;
+  modelText: string;
+};
+
 /** Identity and timing shared by every retained child invocation card. */
 type InvocationCardBase = {
   agentSlug: string;
@@ -41,6 +63,9 @@ type InvocationCardBase = {
   deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
   startedAt: string;
   title?: string;
+  fromThreadId?: ThreadId;
+  fromThreadRef?: string;
+  fromThreadTitle?: string | null;
 };
 
 /** Exact parent invocation identity retained on a child run's historical card. */
@@ -77,6 +102,9 @@ const invocationCardBaseSchema = z.strictObject({
   deliveryMode: z.enum(["direct", "background_notification"]),
   startedAt: z.string(),
   title: z.string().optional(),
+  fromThreadId: z.string().optional(),
+  fromThreadRef: z.string().optional(),
+  fromThreadTitle: z.string().nullable().optional(),
 });
 
 export const invocationCardPropsSchema = z.union([
@@ -145,8 +173,6 @@ export type AskUserChoiceProps = AskUserBaseProps & {
 
 export type AskUserFreeTextProps = AskUserBaseProps;
 
-export type AskUserComponentProps = AskUserChoiceProps | AskUserFreeTextProps;
-
 export type AskUserComponentContent =
   | (ComponentBlockContent & {
       kind: "choice";
@@ -176,53 +202,56 @@ export type AskUserToolInput = {
   timeoutMs?: number;
 };
 
-export type AskUserToolInputParseResult =
-  | { ok: true; value: AskUserToolInput }
-  | { ok: false; message: string };
-
-export const ASK_USER_TOOL_INPUT_SCHEMA = {
-  type: "object",
-  properties: {
-    question: {
-      type: "string",
-      description: "The question for the writer.",
-    },
-    kind: {
-      type: "string",
-      enum: ASK_USER_KIND_VALUES,
-      description: "choice shows options to pick from; free-text shows a text field.",
-    },
-    options: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          value: { type: "string" },
-          label: { type: "string" },
-        },
-        required: ["value", "label"],
-        additionalProperties: false,
-      },
-      description: "Required for choice. value is returned; label is shown.",
-    },
-    recommended: {
-      type: ["string", "null"],
-      description: "Value used if the question times out; null if none is safe.",
-    },
-    requiresHuman: {
-      type: "boolean",
-      default: false,
-      description: "Never resolve on timeout; wait for the writer.",
-    },
-    timeoutMs: {
-      type: "integer",
-      minimum: 1,
-      description: "Timeout in milliseconds; defaults to the project's.",
-    },
-  },
-  required: ["question", "kind"],
-  additionalProperties: false,
-} as const;
+/**
+ * The model's ask_user arguments: snake_case on the wire, the camelCase
+ * AskUserToolInput after parsing. A choice question needs at least one option.
+ */
+export const askUserToolInputSchema = z
+  .object({
+    question: z.string().min(1).describe("The question for the user."),
+    kind: z
+      .enum(ASK_USER_KIND_VALUES)
+      .describe("choice shows options to pick from; free-text shows a text field."),
+    options: z
+      .array(z.object({ value: z.string(), label: z.string() }).strict())
+      .describe("Required for choice. value is returned; label is shown.")
+      .optional(),
+    recommended: z
+      .string()
+      .nullable()
+      .describe("Value used if the question times out; null if none is safe.")
+      .optional(),
+    requires_human: z
+      .boolean()
+      .describe("Never resolve on timeout; wait for the user. Defaults to false.")
+      .optional(),
+    timeout_ms: z
+      .number()
+      .int()
+      .positive()
+      .describe("Timeout in milliseconds; defaults to the project's.")
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.kind === "choice" && !input.options?.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "choice needs at least one { value, label } option",
+      });
+    }
+  })
+  .transform(
+    (input): AskUserToolInput => ({
+      question: input.question,
+      kind: input.kind,
+      ...(input.options !== undefined ? { options: input.options } : {}),
+      recommended: input.recommended ?? null,
+      requiresHuman: input.requires_human ?? false,
+      ...(input.timeout_ms !== undefined ? { timeoutMs: input.timeout_ms } : {}),
+    }),
+  );
 
 export function isAskUserKind(value: unknown): value is AskUserKind {
   return ASK_USER_KIND_VALUES.includes(value as AskUserKind);
@@ -239,45 +268,6 @@ export function parseAskUserOptions(value: unknown): AskUserOption[] | null {
     options.push({ value: record.value, label: record.label });
   }
   return options;
-}
-
-export function parseAskUserToolInput(input: unknown): AskUserToolInputParseResult {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, message: "input must be an object" };
-  }
-
-  const args = input as Record<string, unknown>;
-  if (typeof args.question !== "string" || args.question.length === 0) {
-    return { ok: false, message: "question is required" };
-  }
-  if (!isAskUserKind(args.kind)) {
-    return { ok: false, message: "kind must be choice or free-text" };
-  }
-
-  const parsedOptions = args.options === undefined ? undefined : parseAskUserOptions(args.options);
-  if (args.kind === "choice" && (!parsedOptions || parsedOptions.length === 0)) {
-    return { ok: false, message: "options required for choice kind" };
-  }
-  if (args.options !== undefined && !parsedOptions) {
-    return { ok: false, message: "options must be an array of { value, label } strings" };
-  }
-
-  const timeoutMs =
-    typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs) && args.timeoutMs > 0
-      ? Math.floor(args.timeoutMs)
-      : undefined;
-
-  return {
-    ok: true,
-    value: {
-      question: args.question,
-      kind: args.kind,
-      options: parsedOptions ?? undefined,
-      recommended: typeof args.recommended === "string" ? args.recommended : null,
-      requiresHuman: args.requiresHuman === true,
-      timeoutMs,
-    },
-  };
 }
 
 export function buildAskUserComponentContent(

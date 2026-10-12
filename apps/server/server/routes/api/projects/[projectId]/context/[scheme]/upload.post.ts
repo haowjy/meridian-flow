@@ -6,6 +6,7 @@ import {
   readMultipartFormData,
   setResponseStatus,
 } from "nitro/h3";
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 import { resolveContextRoute } from "./_helpers.js";
 
 function field(parts: Awaited<ReturnType<typeof readMultipartFormData>>, name: string): string {
@@ -14,7 +15,8 @@ function field(parts: Awaited<ReturnType<typeof readMultipartFormData>>, name: s
 }
 
 export default defineEventHandler(async (event): Promise<UploadIntakeResult> => {
-  const { app, userId, projectId, scheme, workId } = await resolveContextRoute(event);
+  const { app, userId, projectId, scheme, workId, container, edit } =
+    await resolveContextRoute(event);
   if (scheme !== "uploads")
     throw createError({ statusCode: 400, message: "Upload intake requires uploads" });
   const parts = await readMultipartFormData(event);
@@ -30,18 +32,21 @@ export default defineEventHandler(async (event): Promise<UploadIntakeResult> => 
     ? { kind: "work" as const, projectId, workId }
     : await (async () => {
         const noWork = await app.workRepo.findNoWork(projectId);
-        if (!noWork) throw createError({ statusCode: 404, message: "Work not found" });
+        if (!noWork) throwContextWorkUnavailableHttpError("work_missing");
         return { kind: "work" as const, projectId, workId: noWork.id };
       })();
-  const result = await app.uploadIntake.intake({
-    intakeId,
-    actorUserId: userId,
-    owner,
-    filename: file.filename,
-    mimeType: file.type ?? "application/octet-stream",
-    byteDigest,
-    bytes: file.data,
-  });
+  const filename = file.filename;
+  const result = await edit([container], () =>
+    app.uploadIntake.intake({
+      intakeId,
+      actorUserId: userId,
+      owner,
+      filename,
+      mimeType: file.type ?? "application/octet-stream",
+      byteDigest,
+      bytes: file.data,
+    }),
+  );
   if (!result.ok) {
     if (result.error.code === "invalid_filename") {
       throw createError({ statusCode: 400, message: "invalid_filename", data: result.error });

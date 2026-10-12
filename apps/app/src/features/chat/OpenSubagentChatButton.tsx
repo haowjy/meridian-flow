@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { MessageSquareShare } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import { subagentMarkName } from "./subagent/display";
 
@@ -22,23 +22,20 @@ export function OpenSubagentChatButton({
   const name = subagentMarkName(agentName);
   const label = t`Open "${name}"`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          onClick={(event) => {
-            // Cards toggle on row clicks; opening the chat must not also toggle them.
-            event.stopPropagation();
-            openThread(threadId);
-            onOpened?.();
-          }}
-          className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <MessageSquareShare className="size-4" aria-hidden />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <IconButton
+      type="button"
+      size="sm"
+      tooltip={label}
+      onClick={(event) => {
+        // Cards toggle on row clicks; opening the chat must not also toggle them.
+        event.stopPropagation();
+        openThread(threadId);
+        onOpened?.();
+      }}
+      // The subagent row's height is set by this door.
+      className="size-7"
+    >
+      <MessageSquareShare aria-hidden />
+    </IconButton>
   );
 }

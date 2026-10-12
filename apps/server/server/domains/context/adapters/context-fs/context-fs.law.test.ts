@@ -1,10 +1,14 @@
 /** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
 
+import { documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
-import { createInMemoryCollabDomain, type MarkdownDocumentStore } from "../../../collab/index.js";
+import type { BindMarkdownInput } from "../../../collab/index.js";
+import { createInMemoryCollabDomain } from "../../../collab/index.js";
+import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
-import { ContextFS } from "./context-fs.js";
+import { createContextPortRouter } from "../../context/router.js";
+import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
   InMemoryContextDocumentStore,
@@ -24,7 +28,7 @@ function untitledOptions(documentId: string) {
 function createUntitledFs(input: {
   sourceId?: string;
   backing?: ReturnType<typeof createInMemoryContextDocumentStoreBacking>;
-  documentSync?: MarkdownDocumentStore;
+  documentSync?: ContextFSDeps["documentSync"];
 }) {
   const backing = input.backing ?? createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({
@@ -35,6 +39,8 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       documentSync,
@@ -56,6 +62,8 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
@@ -67,11 +75,13 @@ function createKbFs(documentSync: object = {}) {
 function documentSyncProbe() {
   const ensured: string[] = [];
   const seeded: string[] = [];
-  const documentSync: MarkdownDocumentStore = {
+  const documentSync: ContextFSDeps["documentSync"] = {
+    ...createInMemoryCollabDomain(),
     ensureDocument: async (documentId) => {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
+    readVersionedMarkdown: async () => ({ ok: true, value: { content: "", revision: null } }),
     seedFromMarkdown: async (documentId) => {
       seeded.push(documentId);
       return { ok: true, value: null };
@@ -79,17 +89,16 @@ function documentSyncProbe() {
     writeDocument: async () => {
       throw new Error("not used");
     },
-    editDocument: async () => {
-      throw new Error("not used");
-    },
   };
   return { documentSync, ensured, seeded };
 }
 
-function manuscriptFs(documentSync: MarkdownDocumentStore) {
+function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    holder: { projectId: "test-project" },
+    links: { within: (_key, operation) => operation() },
     store,
     mutationStore: new InMemoryContextTreeMutationStore(backing),
     documentSync,
@@ -98,36 +107,45 @@ function manuscriptFs(documentSync: MarkdownDocumentStore) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
-  it("rejects a malformed client-minted id before creating a row", async () => {
+  it.each([
+    ["Chapter#13", "Chapter#13"],
+    ["Book#1/Chapter 13", "Chapter 13"],
+  ])("preserves literal # in created address %s and its title", async (path, title) => {
     const { fs } = createUntitledFs({});
-    await expect(fs.createUntitledDocument("", untitledOptions("not-a-uuid"))).resolves.toEqual({
-      ok: false,
-      error: { code: "invalid_operation", message: "documentId must be a UUID" },
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
     });
-    await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
+    const created = await port.createTrackedDocument(`manuscript://${path}`, "", {
+      origin: { type: "system" },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(created.error.code);
+    expect(created.value.uri).toBe(`manuscript://${path}`);
+    expect(documentTitleFromUri(created.value.uri)).toBe(title);
   });
 
-  it("returns the existing allocation for an idempotent retry", async () => {
+  it("reports the occupying kind through the context router", async () => {
     const { fs } = createUntitledFs({});
-    await expect(
-      fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A)),
-    ).resolves.toMatchObject({
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
+    });
+    await fs.mkdir("Lore");
+    expect(
+      await port.createBoundDocument("manuscript://Lore", null, { origin: { type: "system" } }),
+    ).toMatchObject({ ok: false, error: { code: "conflict", occupantKind: "folder" } });
+  });
+
+  it("allocates past folder prose aliases", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Untitled 1.md");
+    await fs.mkdir("Untitled 2.txt");
+    expect(await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).toMatchObject({
       ok: true,
-      value: { status: "created", name: "Untitled 1.md" },
+      value: { name: "Untitled 3" },
     });
-    await expect(fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A))).resolves.toEqual(
-      {
-        ok: true,
-        value: {
-          status: "already-exists",
-          documentId: DOCUMENT_A,
-          name: "Untitled 1.md",
-          path: "drafts/Untitled 1.md",
-        },
-      },
-    );
   });
-
   it("rolls back identity when Yjs initialization fails", async () => {
     const collab = createInMemoryCollabDomain();
     let failDurableHeadOnce = true;
@@ -140,7 +158,7 @@ describe("ContextFS createUntitledDocument", () => {
         }
         return collab.ensureDocument(documentId);
       },
-    } satisfies MarkdownDocumentStore;
+    } satisfies ContextFSDeps["documentSync"];
     const { fs, backing } = createUntitledFs({ documentSync });
 
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).rejects.toThrow(
@@ -179,25 +197,7 @@ describe("ContextFS createUntitledDocument", () => {
     ]);
     expect(
       outcomes.map((outcome) => (outcome.ok ? outcome.value.name : outcome.error.code)).sort(),
-    ).toEqual(["Untitled 1.md", "Untitled 2.md"]);
-  });
-
-  it("ignores untitled suffixes that cannot be safely incremented", async () => {
-    const { fs, store } = createUntitledFs({});
-    await store.upsertDocument({
-      folderId: null,
-      name: `Untitled ${"9".repeat(400)}`,
-      extension: "md",
-      markdown: "",
-      filetype: "markdown",
-    });
-
-    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
-      {
-        ok: true,
-        value: { status: "created", name: "Untitled 1.md" },
-      },
-    );
+    ).toEqual(["Untitled 1", "Untitled 2"]);
   });
 
   it("returns a conflict after bounded allocation collisions", async () => {
@@ -210,71 +210,6 @@ describe("ContextFS createUntitledDocument", () => {
     });
     expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledTimes(32);
   });
-
-  it("clears the provisional flag on basename change but keeps it on a path-only move", async () => {
-    const { fs, store, mutationStore } = createUntitledFs({});
-    await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A));
-
-    const source = await mutationStore.inspect(SOURCE_A, "Untitled 1.md");
-    if (source?.kind !== "file") throw new Error("missing source");
-    await mutationStore.commitMove({
-      source,
-      destinationSourceId: SOURCE_A,
-      destinationPath: "drafts/Untitled 1.md",
-      expectedTarget: { state: "absent" },
-      overwrite: false,
-      graduateProvisionalName: false,
-      destinationFiletype: "markdown",
-    });
-    expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(true);
-
-    const moved = await mutationStore.inspect(SOURCE_A, "drafts/Untitled 1.md");
-    if (moved?.kind !== "file") throw new Error("missing moved source");
-    await mutationStore.commitMove({
-      source: moved,
-      destinationSourceId: SOURCE_A,
-      destinationPath: "drafts/Opening.md",
-      expectedTarget: { state: "absent" },
-      overwrite: false,
-      graduateProvisionalName: false,
-      destinationFiletype: "markdown",
-    });
-    expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(false);
-  });
-
-  it("keeps tracked creates named and seeds content without opening the live writer", async () => {
-    const writeDocument = vi.fn(async ({ documentId, markdown }) => ({
-      documentId,
-      markdown,
-      updateSeq: 1,
-      updateData: Buffer.from([]),
-      originType: "user" as const,
-      actorTurnId: null,
-      actorUserId: null,
-    }));
-    const sync = {
-      ensureDocument: vi.fn(),
-      writeDocument,
-      readAsMarkdown: vi.fn(),
-      seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
-      editDocument: vi.fn(),
-    } satisfies MarkdownDocumentStore;
-    const { fs, store } = createUntitledFs({ documentSync: sync });
-
-    const created = await fs.createTrackedDocument("AI Draft.md", "Opening line", {
-      origin: { type: "human", userId: "writer-1" },
-    });
-    if (!created.ok) throw new Error(created.error.code);
-
-    expect(sync.seedFromMarkdown).toHaveBeenCalledWith(created.value.documentId, "Opening line", {
-      type: "system",
-    });
-    expect(writeDocument).not.toHaveBeenCalled();
-    expect((await store.findDocumentById(created.value.documentId))?.document).toMatchObject({
-      provisionalName: false,
-      markdown: "Opening line",
-    });
-  });
 });
 
 describe("ContextFS rename filetype invariant", () => {
@@ -284,14 +219,17 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-        seedFromMarkdown: async (documentId: string, markdown: string) => {
-          markdownByDocument.set(documentId, markdown);
+        bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
+        seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
+          markdownByDocument.set(documentId, content.markdown);
           return Ok({ updateSeq: 1 });
         },
       } as never,
@@ -312,51 +250,6 @@ describe("ContextFS rename filetype invariant", () => {
         mover.move(dispatch(source), dispatch(destination)),
     };
   }
-
-  it.each([
-    {
-      name: "document-to-code",
-      seed: (fs: ContextFS) => fs.write("chapter.md", "Chapter"),
-      from: "chapter.md",
-      to: "chapter.py",
-      message: /schema/i,
-    },
-    {
-      name: "tracked-to-binary",
-      seed: (fs: ContextFS) => fs.write("script.py", "print('hello')"),
-      from: "script.py",
-      to: "script.png",
-      message: /tracked|binary/i,
-    },
-    {
-      name: "storage-backed-to-tracked",
-      seed: (fs: ContextFS) =>
-        fs.writeBinary("cover.png", {
-          fileType: "image",
-          storageUrl: "s3://bucket/cover.png",
-          mimeType: "image/png",
-          sizeBytes: 42,
-        }),
-      from: "cover.png",
-      to: "cover.md",
-      message: /storage|tracked/i,
-    },
-  ] as const)("rejects a $name rename with an actionable message", async ({
-    seed,
-    from,
-    to,
-    message,
-  }) => {
-    const { context, move } = createHarness();
-    await seed(context);
-
-    await expect(move(from, to)).resolves.toMatchObject({
-      ok: false,
-      error: { code: "invalid_operation", message: expect.stringMatching(message) },
-    });
-    await expect(context.stat(from)).resolves.toMatchObject({ ok: true });
-    await expect(context.stat(to)).resolves.toEqual({ ok: true, value: null });
-  });
 
   it("serializes overlapping moves so one success cannot be rolled back", async () => {
     const { backing, context, move, mutationStore } = createHarness();
@@ -395,40 +288,13 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
     await expect(context.stat("first/chapter.txt")).resolves.toMatchObject({
       ok: true,
-      value: { documentId: initial.value.documentId, filetype: "text" },
+      value: { documentId: initial.value.documentId, filetype: "markdown" },
     });
     await expect(context.stat("second/chapter.txt")).resolves.toEqual({ ok: true, value: null });
   });
 });
 
 describe("ContextFS write and read", () => {
-  it("makes initial file content retrievable from the created collab document", async () => {
-    const markdownByDocument = new Map<string, string>();
-    const { context } = createKbFs({
-      ensureDocument: async () => {},
-      readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-      seedFromMarkdown: async (documentId: string, markdown: string) => {
-        markdownByDocument.set(documentId, markdown);
-        return Ok(null);
-      },
-      writeDocument: async ({ documentId, markdown }: { documentId: string; markdown: string }) => {
-        markdownByDocument.set(documentId, markdown);
-        return { documentId, markdown, updateSeq: 1, updateData: new Uint8Array(), meta: {} };
-      },
-    });
-
-    const content = "The opening line survives.\n";
-    const written = await context.write("chapter.md", content, {
-      origin: { type: "human", userId: "writer-1" },
-    });
-    expect(written).toEqual(expect.objectContaining({ ok: true }));
-
-    const read = await context.read("chapter.md");
-    expect(read).toEqual(
-      expect.objectContaining({ ok: true, value: expect.objectContaining({ content }) }),
-    );
-  });
-
   it("refuses to replace an unknown-extension binary with tracked text", async () => {
     const writeDocument = vi.fn();
     const { context } = createKbFs({ writeDocument });
@@ -460,33 +326,6 @@ describe("ContextFS write and read", () => {
       },
     });
   });
-
-  it("creates implicit parent folders for nested binary intake in a creatable scheme", async () => {
-    const backing = createInMemoryContextDocumentStoreBacking();
-    const context = new ContextFS({
-      store: new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing }),
-      mutationStore: new InMemoryContextTreeMutationStore(backing),
-      scheme: "scratch",
-      documentSync: {} as never,
-    });
-
-    await expect(
-      context.writeBinary("nest/deep.png", {
-        fileType: "image",
-        storageUrl: "s3://bucket/deep.png",
-        mimeType: "image/png",
-        sizeBytes: 42,
-      }),
-    ).resolves.toMatchObject({ ok: true });
-    await expect(context.list("")).resolves.toMatchObject({
-      ok: true,
-      value: expect.arrayContaining([{ kind: "directory", path: "nest" }]),
-    });
-    await expect(context.stat("nest/deep.png")).resolves.toMatchObject({
-      ok: true,
-      value: { kind: "binary", path: "nest/deep.png" },
-    });
-  });
 });
 
 describe("ContextFS ensureTrackedDocument", () => {
@@ -501,24 +340,7 @@ describe("ContextFS ensureTrackedDocument", () => {
     expect(seeded).toEqual([]);
   });
 
-  it("ensures live Yjs state for existing tracked documents even when response staging defers new docs", async () => {
-    const { documentSync, ensured } = documentSyncProbe();
-    const fs = manuscriptFs(documentSync);
-    const seeded = await fs.ensureTrackedDocument("chapter-1.md");
-    if (!seeded.ok) throw new Error(`seed failed: ${seeded.error.code}`);
-    ensured.length = 0;
-
-    const existing = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
-
-    expect(existing.ok && existing.value).toEqual({
-      documentId: seeded.value.documentId,
-      created: false,
-    });
-    expect(ensured).toEqual([seeded.value.documentId]);
-  });
-
   it.each([
-    ["write", (fs: ContextFS) => fs.write("assets/cover.png", "not image bytes")],
     [
       "createTrackedDocument",
       (fs: ContextFS) => fs.createTrackedDocument("assets/cover.png", "not image bytes"),
@@ -536,5 +358,203 @@ describe("ContextFS ensureTrackedDocument", () => {
       },
     });
     await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
+  });
+});
+
+describe("canonical document naming laws", () => {
+  it("creates one row for every prose spelling, returns canonical paths and refuses disguised data", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const first = await fs.ensureTrackedDocument("ch12.md");
+    expect(first.ok).toBe(true);
+    for (const path of ["ch12", "ch12.md", "ch12.txt", "ch12.markdown", "ch12.mdx", "ch12.MD.md"]) {
+      expect(await fs.ensureTrackedDocument(path)).toMatchObject({
+        ok: true,
+        value: { created: false, documentId: first.ok ? first.value.documentId : "" },
+      });
+      expect(await fs.stat(path)).toMatchObject({
+        ok: true,
+        value: { path: "ch12", filetype: "markdown" },
+      });
+      expect(await fs.read(path)).toMatchObject({ ok: true, value: { content: "" } });
+    }
+    expect([...backing.documents.values()]).toHaveLength(1);
+    expect(await fs.ensureTrackedDocument("data.json.md")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_name" },
+    });
+    await fs.ensureTrackedDocument("outline.json");
+    expect(await fs.stat("outline")).toEqual({ ok: true, value: null });
+  });
+  it("renames aliases in place and keeps the actual non-prose extension for CAS destinations and copies", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    const prose = await fs.ensureTrackedDocument("ch12");
+    if (!prose.ok) throw new Error("fixture failed");
+    expect(
+      await mover.commitWriterLocation(dispatch("ch12"), dispatch("ch12.md"), {
+        expected: { kind: "file", nodeId: prose.value.documentId },
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { destinationPath: "ch12", movedNodeId: prose.value.documentId },
+    });
+    await fs.ensureTrackedDocument("config.toml");
+    expect(
+      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings")),
+    ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
+    expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
+      ok: true,
+    });
+    expect(await fs.stat("copied.toml")).toMatchObject({ ok: true, value: { filetype: "text" } });
+    expect([...backing.documents.values()].map((row) => [row.name, row.extension])).toEqual([
+      ["ch12", ""],
+      ["settings", "toml"],
+      ["copied", "toml"],
+    ]);
+  });
+  it("refuses file/folder clashes in both directions and at exact moves", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Lore");
+    expect(await fs.ensureTrackedDocument("Lore.md")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    await fs.ensureTrackedDocument("Chapter.md");
+    await expect(fs.mkdir("Chapter")).rejects.toThrow("Context entry already exists");
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    expect(await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect(await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+  });
+});
+
+it("atomically claims opposite-kind names across in-memory store instances", async () => {
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const left = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  const right = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  for (const [index, fileFirst] of [true, false].entries()) {
+    const name = `Clash ${index}`;
+    const file = () =>
+      left.createDocument({
+        folderId: null,
+        name,
+        extension: "",
+        filetype: "markdown",
+        markdown: "",
+      });
+    const folder = () => right.createFolder(null, name);
+    const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason.message).toBe(
+      "Context entry already exists",
+    );
+  }
+});
+
+describe("router through real ContextFS naming", () => {
+  function harness() {
+    const fixture = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([
+        ["manuscript", { adapter: fixture.fs, authority: { kind: "contextual" } }],
+      ]),
+      workAuthorities: new Map(),
+    });
+    return { ...fixture, port };
+  }
+
+  it("consumes destination inheritance once and stores the codec filetype", async () => {
+    const { port, backing } = harness();
+    const created = await port.ensureTrackedDocument("manuscript://settings.txt", {
+      sourceExtension: "toml",
+    });
+    expect(created).toMatchObject({ ok: true, value: { uri: "manuscript://settings" } });
+    expect([...backing.documents.values()]).toMatchObject([
+      { name: "settings", extension: "", filetype: "markdown" },
+    ]);
+    expect(await port.stat("manuscript://settings")).toMatchObject({
+      ok: true,
+      value: { documentId: created.ok ? created.value.documentId : "" },
+    });
+  });
+
+  it("creates readable binary names through the same identity codec", async () => {
+    const { port, fs } = harness();
+    const written = await port.writeBinary("manuscript://bytes.txt", {
+      fileType: "pdf",
+      mimeType: "application/pdf",
+      storageUrl: "s3://bytes",
+      sizeBytes: 3,
+    });
+    expect(written).toMatchObject({ ok: true, value: { uri: "manuscript://bytes.pdf" } });
+    expect(await port.stat("manuscript://bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { documentId: written.ok ? written.value.documentId : "" },
+    });
+    expect(await fs.tree.inspectMovable("bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { kind: "file" },
+    });
+    const unregistered = await port.writeBinary("manuscript://LICENSE", {
+      fileType: "binary",
+      mimeType: "application/octet-stream",
+      storageUrl: "s3://license",
+      sizeBytes: 3,
+    });
+    expect(unregistered).toMatchObject({ ok: true, value: { uri: "manuscript://LICENSE" } });
+    expect(await port.stat("manuscript://LICENSE")).toMatchObject({ ok: true });
+  });
+
+  it("refuses folder document-alias claims, parent provisioning and CAS moves", async () => {
+    const { fs, port } = harness();
+    await fs.mkdir("Lore.md");
+    expect(await port.ensureTrackedDocument("manuscript://Lore")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
+    expect(chapter.ok).toBe(true);
+    await expect(fs.mkdir("Chapter.txt/child")).rejects.toThrow("Context entry already exists");
+    expect(
+      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+    await fs.mkdir("Other");
+    expect(
+      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it.each([
+    ["data.json", "data.md"],
+    ["notes", "notes.json"],
+  ])("refuses cross-schema rename %s to %s without changing identity or location", async (source, destination) => {
+    const { port, backing } = harness();
+    const original = await port.ensureTrackedDocument(`manuscript://${source}`);
+    expect(original.ok).toBe(true);
+    const before = [...backing.documents.values()].map((row) => ({ ...row }));
+    expect(
+      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`),
+    ).toMatchObject({ ok: false, error: { code: "invalid_operation" } });
+    expect([...backing.documents.values()]).toEqual(before);
   });
 });

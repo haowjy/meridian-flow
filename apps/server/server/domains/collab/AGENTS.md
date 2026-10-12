@@ -32,12 +32,29 @@ editor UI or transport-shell policy.
   struct history.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
+- Model reads and writes go through the thread-peer pool with a caller-computed
+  destination; nothing in collab decides live versus draft from a thread's
+  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
+  throws if asked to.
+- A reply saves once: every document it wrote, live or drafted, in one
+  transaction. Live text reaches open editors only after commit.
+- Derive live read models from a journal-locked durable cut, never a warm room
+  paired with a database watermark. The recovery sweep owns freshness; triggers
+  only reduce latency. Push derivation joins its completion transaction.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
-  composition root injects the project asset resolver. A second `mdxCodec(...)`
-  silently loses that index.
+  composition root injects `DocumentLinkScopes`. Links and image sources spell
+  from the document tree per operation (`domain/document-link-scope-doors.ts`
+  opens the scope, the operation prepares it before its synchronous
+  serialize), never cached; a new door that hands Markdown to a reader joins
+  that scope and prepares. Spelling outside every scope, or from a scope no
+  door prepared, throws under test and logs `serialize.link_unscoped` /
+  `serialize.link_snapshot_miss` in production. Parse is pure syntax: writes
+  assign written image paths' `asset:` srcs in agent-edit's ref assignment
+  (`assignLinkRefs`) after it.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).
 Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

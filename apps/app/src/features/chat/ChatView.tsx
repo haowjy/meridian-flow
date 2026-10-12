@@ -17,56 +17,72 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import { resolveDocumentLink } from "@/client/api/document-links-api";
+import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import {
-  getChatSubmissionEpoch,
-  recordChatSubmission,
-  retireChatSubmission,
-} from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
+import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
+  type ComposerChatCommand,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
-import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { useAccountId } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { displayThreadTitle } from "@/lib/thread-title";
+import { LinkFollowDialog } from "@/features/links";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  displayedChatThreadId,
+  useChatNavigation,
+} from "@/features/project/routing/chat-navigation";
+import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { chatLineageId } from "./chat-scratch-owner";
+import { answeredControlIds } from "./compaction/compaction-model";
+import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
+import { useThreadControls } from "./compaction/useThreadControls";
+import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import {
+  canDeriveFrom,
+  type TurnDerivation,
+  TurnDerivationProvider,
+} from "./derivation/DeriveTurnActions";
+import {
+  type DerivationDeps,
+  startDerivation,
+  useDerivationStatus,
+} from "./derivation/derive-conversation";
+import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
+import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
+import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
-import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
+import { ReferenceAvailabilityContext } from "./reference-availability";
+import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
-import { activeDescendants } from "./thread-activity";
-import type { UserTurnRecovery } from "./UserTurn";
-import {
-  type FailedChatSubmission,
-  forgetSubmissionTurnId,
-  rememberSubmissionTurnId,
-  submissionTurnId,
-  useChatSubmissionRecovery,
-} from "./useChatSubmissionRecovery";
+import { activeChildren } from "./thread-activity";
+import { useChatLinkFollowing } from "./useChatLinkFollowing";
+import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
+import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
-import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
+import { useThreadRunResume } from "./useThreadRunResume";
 
 const EMPTY_TURNS: Turn[] = [];
 
@@ -95,6 +111,8 @@ export type ChatViewProps = {
   activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
+  /** False while the chat is mounted but hidden (collapsed dock, Settings). */
+  active?: boolean;
 };
 
 export function ChatView({
@@ -103,26 +121,69 @@ export function ChatView({
   activeThread = null,
   activeWork = null,
   snapshotLiveState = null,
-  snapshotNextSeq = null,
   snapshotThreadUsage = null,
   historySettled,
   activateProjection,
   composerStrip,
+  active = true,
 }: ChatViewProps) {
-  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openReferenceDocument = useOpenChatDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
-  const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();
-  const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
+  const accountSignal = useAccountEpochSignal();
+  const openThread = useOpenChatThread();
+  const navigation = useChatNavigation();
+  const pendingCreation = useIsThreadPendingCreation(threadId);
+  const derivation = useDerivationStatus(threadId);
+  const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
+  const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const brief = useHandoffBrief({ threadId, storedTurns });
+  const replyRetry = useReplyRetry({ threadId, storedTurns });
+  // A handoff's brief is on its way the moment the writer lands; until the
+  // server's seed arrives the card stands in for it (it has nothing to stop
+  // yet). A Retry's new card, or a failed reply's new reply, stands after the
+  // turn it followed until the server has it.
+  const intent = derivation?.intent;
+  const { localSeeds } = brief;
+  const { standIns: replyStandIns } = replyRetry;
+  const turns = useMemo(() => {
+    const opening =
+      intent?.kind === "handoff" &&
+      derivation?.state !== "failed" &&
+      !storedTurns.some(isHandoffSeed)
+        ? [
+            optimisticHandoffSeed({
+              threadId,
+              sourceThreadId: intent.sourceThreadId,
+              sourceTitle: intent.sourceTitle,
+              cutoffTurnId: intent.originTurnId,
+              createdAt: intent.createdAt,
+            }),
+          ]
+        : [];
+    const placed = placeStandIns(storedTurns, [...localSeeds, ...replyStandIns]);
+    return opening.length ? [...opening, ...placed] : placed;
+  }, [derivation?.state, intent, localSeeds, replyStandIns, storedTurns, threadId]);
+  // Live announcements follow the server's replies: a Retry's stand-in speaks
+  // for itself, and a lost one is not a failed run.
   const latestAssistantTurn =
-    [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
+    [...turns]
+      .reverse()
+      .find((turn) => turn.role === "assistant" && replyRetry.requestOf(turn.id) === null) ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
+  // Only what the server has can be stopped: a stand-in brief is not a run yet.
+  const { canStop: canStopSeed } = brief;
+  const run = useMemo(
+    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
+    [canStopSeed, turns],
+  );
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -130,22 +191,115 @@ export function ChatView({
     projectId,
     activeWork?.id,
     t`Reference a file`,
+    chatLineageId({ thread: activeThread, work: activeWork }),
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const activity = useThreadActivity({
     threadId,
-    rootThreadId: activeThread?.rootThreadId ?? threadId,
     seed: snapshotLiveState,
   });
-  const runningSubagents = activeDescendants(activity.activity);
+  const runningSubagents = activeChildren(activity.activity);
   const runningBackgroundSubagents = runningSubagents.filter(
-    (node) => node.parentThreadId === threadId && node.deliveryMode === "background_notification",
+    (node) => node.deliveryMode === "background_notification",
   );
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
   const queuedWriterTurnIds = useMemo(
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
   );
+  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const controls = useThreadControls({
+    threadId,
+    pending: pendingInbox,
+    answeredControlIds: answeredControls,
+  });
+  useControlTurnAnnouncements(turns);
+  // The snapshot revalidates as a compaction reserves and settles, so its live
+  // state is fresher here than the subscription seed.
+  const liveStatus = snapshotLiveState?.status ?? activity.status;
+  const { enqueue: enqueueControl } = controls;
+  // `/compact` is always the command. A chat with nothing to summarize yet is
+  // refused by the server, and that refusal shows on the command's own row.
+  const chatCommands = useMemo<readonly ComposerChatCommand[]>(
+    () => [
+      {
+        slug: "compact",
+        name: t`Compact conversation`,
+        description: t`Summarize earlier messages so the model has room to keep going`,
+        run: (instructions) => {
+          requestTailFollow();
+          enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
+        },
+      },
+    ],
+    [enqueueControl],
+  );
+
+  // Only a primary the server already has can be forked or handed off; a
+  // subagent's view offers neither (the server refuses both there).
+  const canDerive = canDeriveFrom({
+    kind: activeThread?.kind ?? null,
+    pendingCreation,
+    canOpen: openThread !== null,
+  });
+  const inheritedView = inherited.view;
+  const turnDerivation = useMemo<TurnDerivation | null>(() => {
+    if (!canDerive || !activeThread || !openThread) return null;
+    const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+    const base = {
+      projectId,
+      sourceThreadId: threadId,
+      sourceTitle: activeThread.title,
+      workId: activeWork?.id ?? activeThread.workId,
+    };
+    return {
+      projectId,
+      sourceAgent: {
+        name: activeThread.agentName,
+        definitionRevisionId: activeThread.agentDefinitionRevisionId,
+      },
+      fork: (originTurnId) => {
+        startDerivation(
+          {
+            ...base,
+            kind: "fork",
+            originTurnId,
+            agent: null,
+            agentName: activeThread.agentName,
+          },
+          {
+            ...deps,
+            source: activeThread,
+            inherited: optimisticForkPrefix({
+              source: activeThread,
+              sourceInherited: inheritedView,
+              localTurns: storedTurns,
+              cutoffTurnId: originTurnId,
+            }),
+            open: openThread,
+          },
+        );
+      },
+      handoff: (originTurnId, agent) => {
+        startDerivation(
+          { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
+          { ...deps, source: activeThread, inherited: null, open: openThread },
+        );
+      },
+    };
+  }, [
+    accountId,
+    accountSignal,
+    actions,
+    activeThread,
+    activeWork?.id,
+    canDerive,
+    inheritedView,
+    openThread,
+    projectId,
+    storedTurns,
+    threadId,
+  ]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -157,12 +311,32 @@ export function ChatView({
     isStreaming,
   });
 
-  const submissionRecovery = useChatSubmissionRecovery(threadId, accountId, controller, actions);
-  const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
-    liveState: snapshotLiveState,
-    nextSeq: snapshotNextSeq,
-    activateProjection,
-  });
+  const submissions = useChatSubmissions(
+    threadId,
+    projectId,
+    accountId,
+    controller,
+    actions,
+    () => composerRef.current?.focus(),
+    () => {
+      navigation.forgetChat(threadId);
+      void navigation.openNewChat(undefined, { replace: true });
+    },
+    {
+      visible: active,
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (displayedChatThreadId(navigation.display) === threadId)
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
+  );
+  useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const draftMode = activeWork?.aiWriteMode === "draft";
@@ -174,117 +348,19 @@ export function ChatView({
   const dock = useDraftDock({ generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
-    const text = envelope.text;
-    // Durable witness before display and dispatch: a displayed action survives
-    // reload only if the intent was persisted first. If the journal refuses the
-    // write, do not show a row or dispatch — keep the draft and report failure.
-    const epoch = getChatSubmissionEpoch();
-    const recorded = recordChatSubmission(accountId, {
-      kind: "existing-thread",
-      submissionId: envelope.submissionId,
-      threadId,
-      projectId,
-      createdAt: new Date().toISOString(),
-      text,
-      blocks: [...envelope.blocks],
-      references: [...envelope.references],
-      activatedSkillSlugs: [...envelope.activatedSkillSlugs],
-    });
-    if (!recorded) {
-      return {
-        kind: "rejected" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    }
-    requestTailFollow();
-    const optimisticUserTurn = actions.appendUserTurn(threadId, text);
-    // Register the live row before the POST awaits admission: a thread remount
-    // while the server still holds the lease must reuse it, not append a second
-    // pending copy. Cleared below on acknowledgement or proved rejection.
-    rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
-    try {
-      const outcome = await controller.submit(threadId, envelope, {
-        optimisticUserTurnId: optimisticUserTurn.id,
-        keepOptimisticOnFailure: true,
-      });
-      if (outcome.kind === "accepted") {
-        forgetSubmissionTurnId(accountId, envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId, epoch);
-      } else if (outcome.kind === "rejected") {
-        // A proved rejection stays on the turn with edit/retry recovery; the
-        // recovery owner retires the journal witness and retains the payload.
-        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
-      }
-      return outcome;
-    } catch (error) {
-      // An unexpected throw is ambiguous: keep the row and journal so a reload
-      // can still reconcile or replay instead of losing the displayed send.
-      announceError(error instanceof Error ? error.message : "Failed to submit message");
-      return {
-        kind: "ambiguous" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    } finally {
-      // The PRIOR assistant turn may have errored and the projector clears it
-      // off `status:error` when the next user turn arrives — a side-effect with
-      // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn. Ambiguous transport failures
-      // retain the row until a later acknowledgement or reload can reconcile;
-      // a proved rejection keeps the failed row for edit/retry recovery.
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-    }
+    const recorded = await submissions.submit(envelope);
+    if (recorded) requestTailFollow();
+    return recorded;
   }
 
-  const restoreRejectedMessage = useCallback((entry: FailedChatSubmission) => {
-    const composer = composerRef.current;
-    if (!composer) return;
-    // A live send left the draft in the composer, so Edit focuses it. Only a
-    // plain-text rejection with an empty composer can be restored faithfully;
-    // a structured message has no blocks-to-composer inverse, and a live draft
-    // is never replaced.
-    restoreRejectedDraft(composer, entry.fingerprint);
-  }, []);
-
-  const settleQuarantined = useCallback(
-    async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
-      const optimisticUserTurnId = submissionTurnId(accountId, envelope.submissionId);
-      const epoch = getChatSubmissionEpoch();
-      const outcome = await (retire
-        ? controller.retire(threadId, envelope, { optimisticUserTurnId })
-        : controller.lookup(threadId, envelope, {
-            optimisticUserTurnId,
-            keepOptimisticOnFailure: true,
-          }));
-      if (!retire && outcome.kind === "not-seen" && optimisticUserTurnId) {
-        // The server never saw this submission. Replay the stored fingerprint
-        // through the shared recovery path with the live optimistic row so the
-        // displayed send is not lost; this surface owns no second re-issue.
-        // The replay carries revision 0, so keep the envelope's revision.
-        const replayOutcome = await submissionRecovery.replaySubmission(
-          envelope.submissionId,
-          optimisticUserTurnId,
-        );
-        if (replayOutcome.kind === "accepted") {
-          forgetSubmissionTurnId(accountId, envelope.submissionId);
-        }
-        return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
-      }
-      if (outcome.kind === "accepted" || (retire && outcome.kind === "rejected")) {
-        // Acknowledgement, or writer-directed Start over: retire the witness.
-        forgetSubmissionTurnId(accountId, envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId, epoch);
-      } else if (outcome.kind === "rejected" && optimisticUserTurnId) {
-        // A definitive rejection keeps the failed row with edit/retry recovery.
-        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurnId);
-      }
-      return outcome;
-    },
-    [accountId, controller, submissionRecovery, threadId],
-  );
-
   function handleStop() {
+    // A compaction or brief has no reply stream for the run controller to
+    // stop: cancel its turn, as the divider's and the card's own Stop do.
+    if (run?.kind === "placeholder") {
+      if (run.turn.role === "compaction") controls.stop(run.turn.id);
+      else brief.stop(run.turn.id);
+      return;
+    }
     controller.cancel(threadId);
   }
 
@@ -293,137 +369,99 @@ export function ChatView({
     [controller],
   );
 
-  const transcriptNavigation = useRef<AbortController | null>(null);
-  useEffect(() => () => transcriptNavigation.current?.abort(), [projectId, activeWork?.id]);
-  const followTranscriptLink = useCallback(
-    async (target: LinkTarget) => {
-      if (target.kind === "relative") return;
-      const request = documentLinkTarget(target, "");
-      if (!request) return;
-      transcriptNavigation.current?.abort();
-      const attempt = new AbortController();
-      transcriptNavigation.current = attempt;
-      try {
-        const result = await resolveDocumentLink(
-          projectId,
-          {
-            workId: activeWork?.id,
-            target: request,
-          },
-          { signal: attempt.signal },
-        );
-        if (attempt.signal.aborted) return;
-        if (!result.document) {
-          announce(t`No document with this name yet`);
-          return;
-        }
-        await openReferenceDocument({
-          documentId: result.document.documentId,
-          disposition: "current",
-        });
-      } catch {
-        if (!attempt.signal.aborted) announceError(t`That link could not be checked`);
-      }
-    },
-    [projectId, activeWork?.id, openReferenceDocument],
-  );
-
-  const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
-  for (const entry of submissionRecovery.recovered) {
-    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
-      kind: "ambiguous",
-      onCheck: () => submissionRecovery.check(entry.submissionId),
-      onRetire: () => submissionRecovery.retire(entry.submissionId),
-    });
-  }
-  for (const entry of submissionRecovery.rejected) {
-    const draftIsRecoverable = entry.draftRetained || canRestoreRejectedDraft(entry.fingerprint);
-    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
-      kind: "rejected",
-      onRetry: () => {
-        void submissionRecovery.retry(entry.optimisticTurnId);
-      },
-      // Edit focuses a live draft or restores a plain-text message. A structured
-      // rejection whose draft is gone cannot be rebuilt, so only Retry remains.
-      ...(draftIsRecoverable ? { onEdit: () => restoreRejectedMessage(entry) } : {}),
-    });
-  }
+  const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={followTranscriptLink}>
-      <ChatSurface
-        title={pageTitle}
-        surfaceRef={chatSurfaceRef}
-        footer={
-          <div data-debug-composer={threadId}>
-            {composerStrip ? (
-              // The composer's own border and radius, open at the bottom: the
-              // composer's top border is the strip's lower edge, so the two
-              // read as one unit. Inset like the draft dock below it.
-              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                {composerStrip}
-              </div>
-            ) : null}
-            {/* The dock strip sits BEHIND (below) the composer — narrower via
-              mx-2, top corners rounded, jade-tinted background. The composer
-              always keeps its own border and overlaps the strip's edge. */}
-            <DraftDock dock={dock} />
-            <Composer
-              onOpenReference={(reference) => {
-                void openReferenceDocument({
-                  documentId: reference.documentId,
-                  disposition: "current",
-                });
-              }}
-              ref={composerRef}
-              variant="pinned"
-              streaming={isStreaming}
-              referenceCatalog={referenceCatalog}
-              availableSkills={availableSkills.skills}
-              uploadPort={uploadIntakePort}
-              uploadScope={
-                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-              }
-              onSubmit={handleSubmit}
-              onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-              onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
-              onStop={handleStop}
-              toolbarLeft={
-                activeWork ? (
-                  <ChatComposerToolbar
-                    projectId={projectId}
-                    threadId={threadId}
-                    work={activeWork}
-                    agentName={composerAgentName}
-                  />
-                ) : undefined
-              }
-            />
-          </div>
-        }
-      >
-        <SubagentDisclosureProvider>
-          <SubagentActivityProvider nodes={activity.activity.descendants} turns={turns}>
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              <RunningSubagentsStrip threadId={threadId} />
-              <TurnList
-                threadId={threadId}
-                turns={turns}
-                awaitingSubagents={runningBackgroundSubagents.length > 0}
-                historySettled={historySettled}
-                tailFollowRevision={tailFollowRevision}
-                ariaLabel={t`Chat`}
-                onRespondToInterrupt={handleRespondToInterrupt}
-                failedSendRetry={failedSendRetry}
-                changeTrails={changeTrails.byId}
-                submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-                queuedWriterTurnIds={queuedWriterTurnIds}
-                threadUsage={snapshotThreadUsage}
+    <TranscriptLinkNavigationContext.Provider value={links.navigation}>
+      <ReferenceAvailabilityContext.Provider value={links.references}>
+        <ChatSurface
+          title={pageTitle}
+          surfaceRef={chatSurfaceRef}
+          footer={
+            <div data-debug-composer={threadId}>
+              <Composer
+                key={draft.key}
+                initialDraft={draft.initialDraft}
+                onDraftChange={draft.updateDraft}
+                onOpenReference={(reference) => {
+                  void openReferenceDocument({
+                    documentId: reference.documentId,
+                    disposition: "current",
+                  });
+                }}
+                ref={composerRef}
+                variant="pinned"
+                attached={
+                  <>
+                    {composerStrip ? (
+                      // The composer's own border and radius, open at the bottom: the
+                      // composer's top border is the strip's lower edge, so the two
+                      // read as one unit. Inset like the draft dock below it.
+                      <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                        {composerStrip}
+                      </div>
+                    ) : null}
+                    {/* The dock strip sits BEHIND (below) the composer — narrower via
+                        mx-2, top corners rounded, jade-tinted background. The composer
+                        always keeps its own border and overlaps the strip's edge. */}
+                    <DraftDock dock={dock} />
+                  </>
+                }
+                running={run !== null}
+                referenceCatalog={referenceCatalog}
+                availableSkills={availableSkills.skills}
+                commands={chatCommands}
+                uploadPort={uploadIntakePort}
+                uploadScope={
+                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+                }
+                onSubmit={handleSubmit}
+                onStop={handleStop}
+                toolbarLeft={
+                  activeWork ? (
+                    <ChatComposerToolbar
+                      projectId={projectId}
+                      threadId={threadId}
+                      work={activeWork}
+                      agentName={composerAgentName}
+                    />
+                  ) : undefined
+                }
               />
             </div>
-          </SubagentActivityProvider>
-        </SubagentDisclosureProvider>
-      </ChatSurface>
+          }
+        >
+          <TurnDerivationProvider value={turnDerivation}>
+            <SubagentDisclosureProvider>
+              <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                  <RunningSubagentsStrip threadId={threadId} />
+                  <TurnList
+                    threadId={threadId}
+                    turns={turns}
+                    awaitingSubagents={runningBackgroundSubagents.length > 0}
+                    historySettled={historySettled}
+                    tailFollowRevision={tailFollowRevision}
+                    ariaLabel={t`Chat`}
+                    onRespondToInterrupt={handleRespondToInterrupt}
+                    changeTrails={changeTrails.byId}
+                    submissionRecoveryByTurnId={submissions.presentation}
+                    queuedWriterTurnIds={queuedWriterTurnIds}
+                    controls={controls}
+                    brief={brief}
+                    replyRetry={replyRetry}
+                    busy={liveStatus.kind === "awake" || run !== null}
+                    inherited={inheritedView}
+                    onRetryInherited={inherited.failed ? inherited.retry : null}
+                    threadUsage={snapshotThreadUsage}
+                  />
+                </div>
+              </SubagentActivityProvider>
+            </SubagentDisclosureProvider>
+          </TurnDerivationProvider>
+        </ChatSurface>
+        <LinkFollowDialog {...links.dialog} />
+      </ReferenceAvailabilityContext.Provider>
     </TranscriptLinkNavigationContext.Provider>
   );
 }

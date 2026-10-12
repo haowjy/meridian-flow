@@ -2,7 +2,7 @@
  * group-delivery-segments — converts delivery blocks into render segments.
  *
  * Adjacent raw tool protocol blocks are paired into logical ToolViews before
- * grouping so live (`tool_use` with output) and durable (`tool_use` +
+ * grouping so live (`tool_use` with its result) and durable (`tool_use` +
  * `tool_result`) shapes produce the same delivery segment model before React
  * rendering.
  */
@@ -14,20 +14,25 @@ export type ToolView = {
   toolCallId: string | null;
   toolName: string;
   input: JsonValue | null;
-  output: JsonValue | null;
+  /**
+   * The tool's typed result. Renderers read fields here. The model's text
+   * (`output` on the block) is deliberately absent: the app never parses it.
+   * `null` while the call runs.
+   */
+  result: JsonValue | null;
   status: "partial" | "complete";
   isError: boolean;
   message: string | null;
   /**
    * Append-only interleaved stdout+stderr buffer streamed via
    * `meridian.tool.output_delta` while the tool is running. Distinct from
-   * `output` (the structured final result). Kept past completion so the
+   * `result` (the structured final result). Kept past completion so the
    * card can still surface the live log inside expandable details.
    * `null` when the wire never produced a delta.
    */
   streamedOutput: string | null;
   /**
-   * Server-authored result metadata persisted beside the output — never
+   * Server-authored result metadata persisted beside the result — never
    * model-authored. Carried as `content.metadata` on the durable tool_result
    * block and as `metadata` on the live `tool.result` event; this is where
    * the `work` tool's receipt (`metadata.workReceipt`) rides.
@@ -46,7 +51,7 @@ type ToolFields = {
   toolCallId: string | null;
   toolName: string | null;
   input: JsonValue | null;
-  output: JsonValue | null;
+  result: JsonValue | null;
   isError: boolean;
   message: string | null;
   streamedOutput: string | null;
@@ -94,7 +99,7 @@ function toToolView(block: Block): ToolView {
     toolCallId: fields.toolCallId,
     toolName: fields.toolName ?? "tool",
     input: fields.input,
-    output: fields.output,
+    result: fields.result,
     status: fields.isError || block.status !== "partial" ? "complete" : "partial",
     isError: fields.isError,
     message: fields.message,
@@ -155,7 +160,7 @@ function pairToolViews(blocks: Block[]): ToolView[] {
 
 function mergeToolResult(view: ToolView, resultBlock: Block): void {
   const fields = readToolFields(blockContentRecord(resultBlock));
-  view.output = fields.output;
+  view.result = fields.result;
   view.isError = fields.isError;
   view.status = "complete";
   // Prefer the most-complete non-empty buffer: the live `tool_use` block
@@ -173,7 +178,7 @@ function toolResultOnlyView(block: Block): ToolView {
     toolCallId: fields.toolCallId,
     toolName: fields.toolName ?? "tool",
     input: null,
-    output: fields.output,
+    result: fields.result,
     status: "complete",
     isError: fields.isError,
     message: fields.message,
@@ -192,7 +197,7 @@ function readToolFields(content: Record<string, JsonValue>): ToolFields {
     toolCallId: stringField(content, "toolCallId") ?? stringField(content, "toolUseId"),
     toolName: stringField(content, "toolName"),
     input: jsonField(content, "input"),
-    output: jsonField(content, "output"),
+    result: jsonField(content, "result"),
     isError: booleanField(content, "isError") ?? false,
     message: stringField(content, "message"),
     streamedOutput: stringField(content, "streamedOutput"),

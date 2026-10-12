@@ -1,4 +1,5 @@
-/** Malformed write calls receive repair guidance, then write(read) dispatches in the same turn. */
+/** The retired write(command="read") gets repair guidance, then `read` dispatches in the same turn. */
+import { modelResult } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import type { GenerateResult } from "../../gateway/index.js";
 import {
@@ -35,31 +36,50 @@ function textResult(): GenerateResult {
   };
 }
 
-describe("document command recovery through the runtime loop", () => {
-  it("reports malformed args and dispatches corrected write(read) without ending the turn", async () => {
-    const dispatched: unknown[] = [];
-    const handlers: CoreToolHandlers = {
-      write: async (input: Parameters<CoreToolHandlers["write"]>[0]) => {
-        dispatched.push(input);
-        return { content: "chapter text" };
-      },
-      work: async () => ({ ok: true }),
-      ls: async () => ({ ok: true }),
-      search: async () => ({ ok: true }),
-      ask_user: async () => ({ ok: true }),
+const CHAPTER_READ = modelResult({
+  command: "read",
+  status: "success",
+  phase: "committed",
+  payload: {
+    path: "manuscript://chapter.md",
+    read: { format: "full" },
+    blocks: [
+      { extent: "full", relation: "document", items: [{ hash: "a1b2", body: "Chapter text." }] },
+    ],
+  },
+});
+
+function documentToolRegistry(dispatched: Array<{ tool: string; input: unknown }>) {
+  const handler =
+    (tool: string): CoreToolHandlers["read"] =>
+    async (input: unknown) => {
+      dispatched.push({ tool, input });
+      return { output: CHAPTER_READ };
     };
-    const writeRegistration = createCoreToolRegistrations(handlers).find(
+  const handlers: CoreToolHandlers = {
+    read: handler("read"),
+    write: handler("write"),
+    work: async () => ({ ok: true }),
+    ls: async () => ({ ok: true }),
+    search: async () => ({ ok: true }),
+    ask_user: async () => ({ ok: true }),
+  };
+  return createToolRegistry({
+    registrations: createCoreToolRegistrations(handlers).filter(
       (registration) =>
-        registration.definition.type === "function" && registration.definition.name === "write",
-    );
-    if (!writeRegistration) throw new Error("Core write registration was not created");
-    const toolRegistry = createToolRegistry({ registrations: [writeRegistration] });
+        registration.definition.type === "function" &&
+        (registration.definition.name === "read" || registration.definition.name === "write"),
+    ),
+  });
+}
+
+describe("document command recovery through the runtime loop", () => {
+  it("refuses the retired write read with repair guidance, then dispatches read", async () => {
+    const dispatched: Array<{ tool: string; input: unknown }> = [];
+    const toolRegistry = documentToolRegistry(dispatched);
     const results = [
-      toolCall("write", "read-missing-command", { path: "manuscript://chapter.md" }),
-      toolCall("write", "read-corrected", {
-        command: "read",
-        path: "manuscript://chapter.md",
-      }),
+      toolCall("write", "retired-read", { command: "read", path: "manuscript://chapter.md" }),
+      toolCall("read", "read-corrected", { path: "manuscript://chapter.md" }),
       textResult(),
     ];
     const gateway = scriptedGateway({ results });
@@ -79,68 +99,43 @@ describe("document command recovery through the runtime loop", () => {
     expect(toolResults).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          toolCallId: "read-missing-command",
-          output: expect.objectContaining({
+          toolCallId: "retired-read",
+          output: expect.stringContaining("Invalid arguments for write:\n- command:"),
+          result: {
             error: "invalid_arguments",
-            reason: expect.stringContaining('command: "read"'),
-          }),
+            issues: [expect.objectContaining({ path: "command" })],
+          },
           isError: true,
         }),
         expect.objectContaining({
           toolCallId: "read-corrected",
-          output: { content: "chapter text" },
+          output: "status: success; path: manuscript://chapter.md; blocks: 1\n\na1b2|Chapter text.",
+          result: CHAPTER_READ,
           isError: undefined,
         }),
       ]),
     );
-    expect(events.some((event) => event.type === "permission.denied")).toBe(false);
-    expect(dispatched).toEqual([{ command: "read", path: "manuscript://chapter.md" }]);
+    expect(dispatched).toEqual([{ tool: "read", input: { path: "manuscript://chapter.md" } }]);
     const assistantTurn = (await repos.turns.listByThread(thread.id)).find(
       (turn) => turn.role === "assistant",
     );
-    expect(assistantTurn).toBeDefined();
     const savedRejection = (await repos.blocks.listByTurn(assistantTurn?.id ?? "")).find(
       (block) =>
         block.blockType === "tool_result" &&
-        (block.content as { toolCallId?: string } | null)?.toolCallId === "read-missing-command",
+        (block.content as { toolCallId?: string } | null)?.toolCallId === "retired-read",
     );
     const persistedOutput = (savedRejection?.content as { output?: unknown } | null)?.output;
-    expect(persistedOutput).toMatchObject({ error: "invalid_arguments" });
-    const repairReason = (persistedOutput as { reason: string }).reason;
-    expect(repairReason).toContain("command");
-    expect(repairReason).toContain("read");
+    expect(persistedOutput).toEqual(expect.stringContaining("Invalid arguments for write:"));
     const retryMessage = requests[1]?.messages
       .flatMap((message) => message.content)
-      .find((part) => part.type === "tool_result" && part.toolCallId === "read-missing-command");
-    expect(retryMessage).toMatchObject({
-      type: "tool_result",
-      toolCallId: "read-missing-command",
-      output: persistedOutput,
-      isError: true,
-    });
-    expect(JSON.stringify(retryMessage)).toContain("invalid_arguments");
-    expect((retryMessage as { output: { reason: string } }).output.reason).toBe(repairReason);
+      .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");
+    expect(retryMessage).toMatchObject({ output: persistedOutput, isError: true });
     expect(events.some((event) => event.type === "turn.completed")).toBe(true);
   });
 
-  it("persists policy denials for edits and retired read calls while allowing baseline write.read", async () => {
-    const dispatched: unknown[] = [];
-    const handlers: CoreToolHandlers = {
-      write: async (input: Parameters<CoreToolHandlers["write"]>[0]) => {
-        dispatched.push(input);
-        return { content: "chapter text" };
-      },
-      work: async () => ({ ok: true }),
-      ls: async () => ({ ok: true }),
-      search: async () => ({ ok: true }),
-      ask_user: async () => ({ ok: true }),
-    };
-    const writeRegistration = createCoreToolRegistrations(handlers).find(
-      (registration) =>
-        registration.definition.type === "function" && registration.definition.name === "write",
-    );
-    if (!writeRegistration) throw new Error("Core write registration was not created");
-    const toolRegistry = createToolRegistry({ registrations: [writeRegistration] });
+  it("refuses write for an agent without edit and still dispatches read", async () => {
+    const dispatched: Array<{ tool: string; input: unknown }> = [];
+    const toolRegistry = documentToolRegistry(dispatched);
     const results = [
       {
         content: [
@@ -148,29 +143,13 @@ describe("document command recovery through the runtime loop", () => {
             type: "tool_use" as const,
             toolCallId: "edit-denied",
             toolName: "write",
-            input: {
-              command: "replace",
-              path: "manuscript://chapter.md",
-              text: "Changed text",
-            },
-          },
-          {
-            type: "tool_use" as const,
-            toolCallId: "old-read-denied",
-            toolName: "read",
-            input: {
-              command: "read",
-              path: "manuscript://chapter.md",
-            },
+            input: { command: "replace", path: "manuscript://chapter.md", in: 1, content: "x" },
           },
           {
             type: "tool_use" as const,
             toolCallId: "baseline-read",
-            toolName: "write",
-            input: {
-              command: "read",
-              path: "manuscript://chapter.md",
-            },
+            toolName: "read",
+            input: { path: "manuscript://chapter.md" },
           },
         ],
         toolCalls: [],
@@ -191,7 +170,7 @@ describe("document command recovery through the runtime loop", () => {
         return binding
           ? {
               ...binding,
-              configuration: { ...binding.configuration, tools: { edit: "deny" as const } },
+              configuration: { ...binding.configuration, tools: ["read"] },
             }
           : undefined;
       },
@@ -208,47 +187,32 @@ describe("document command recovery through the runtime loop", () => {
     expect((await handle.execute()).status).toBe("complete");
     const events = eventWriter.getEvents(thread.id).map((entry) => entry.event);
 
-    const denied = events.filter((event) => event.type === "tool.result" && event.isError === true);
-    expect(denied).toEqual(
+    expect(requests[0]?.tools?.map((tool) => (tool.type === "function" ? tool.name : ""))).toEqual([
+      "read",
+    ]);
+    expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          type: "tool.result",
           toolCallId: "edit-denied",
-          output: expect.objectContaining({
-            error: "permission_denied",
-          }),
-        }),
-        expect.objectContaining({
-          toolCallId: "old-read-denied",
-          output: expect.objectContaining({
-            error: "permission_denied",
-          }),
+          isError: true,
+          output: expect.objectContaining({ error: "permission_denied" }),
         }),
       ]),
     );
-    expect(dispatched).toEqual([{ command: "read", path: "manuscript://chapter.md" }]);
+    expect(dispatched).toEqual([{ tool: "read", input: { path: "manuscript://chapter.md" } }]);
 
     const assistantTurn = (await repos.turns.listByThread(thread.id)).find(
       (turn) => turn.role === "assistant",
     );
     const persisted = await repos.blocks.listByTurn(assistantTurn?.id ?? "");
-    for (const toolCallId of ["edit-denied", "old-read-denied"]) {
-      const block = persisted.find(
-        (candidate) =>
-          candidate.blockType === "tool_result" &&
-          (candidate.content as { toolCallId?: string } | null)?.toolCallId === toolCallId,
-      );
-      expect((block?.content as { output?: unknown } | null)?.output).toMatchObject({
-        error: "permission_denied",
-      });
-    }
-    const retryResults = requests[1]?.messages
-      .flatMap((message) => message.content)
-      .filter((part) => part.type === "tool_result");
-    expect(retryResults).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ toolCallId: "edit-denied", isError: true }),
-        expect.objectContaining({ toolCallId: "old-read-denied", isError: true }),
-      ]),
+    const denial = persisted.find(
+      (candidate) =>
+        candidate.blockType === "tool_result" &&
+        (candidate.content as { toolCallId?: string } | null)?.toolCallId === "edit-denied",
     );
+    expect((denial?.content as { output?: unknown } | null)?.output).toMatchObject({
+      error: "permission_denied",
+    });
   });
 });

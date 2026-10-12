@@ -1,87 +1,70 @@
-/**
- * messageTurnFor's origin derivation: writer provenance is the only human
- * send; every other provenance (agent/child/system) is a machine injection.
- * `origin` is orthogonal to `role` — child notifications are role="system"
- * for rendering, but everything else here stays role="user" regardless of
- * origin.
- */
+/** Notice batches preserve net reversal meaning without creating empty history. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
-import { messageTurnFor } from "./inbox-context.js";
-import type { InboxMessage } from "./ports.js";
+import type { Notice } from "../../notices/index.js";
+import { planMessageTurns } from "./inbox-context.js";
 
-function message(
-  overrides: Partial<InboxMessage> & Pick<InboxMessage, "provenance">,
-): InboxMessage {
+function reversal(id: number, direction: "undo" | "redo", handle = "w1"): Notice {
   return {
-    id: "message-1",
-    threadId: "thread-1" as ThreadId,
-    seq: 1,
-    intent: "message",
-    body: { kind: "text", text: "hello" },
-    idempotencyKey: "idem-1",
-    enqueuedAt: "2026-01-01T00:00:00.000Z",
-    deliveredAt: null,
-    ...overrides,
+    id,
+    kind: "undo",
+    scope: { kind: "thread", threadId: "thread-1" },
+    message: "",
+    data: { uri: "manuscript://Scene", writeHandles: [handle], direction },
+    createdAt: new Date(id),
   };
 }
 
-describe("messageTurnFor", () => {
-  it("gives a writer send origin writer", () => {
-    const { turn } = messageTurnFor(
-      message({ provenance: { kind: "writer", actorId: "user-1" } }),
-      null,
-    );
-    expect(turn.origin).toBe("writer");
-    expect(turn.role).toBe("user");
+function plan(notices: Notice[]) {
+  return planMessageTurns({
+    threadId: "thread-1" as ThreadId,
+    batch: [],
+    notices,
+    prevTurnId: "previous-turn" as TurnId,
+    prevTurnPosition: 1,
+    knownTurnIds: new Set<TurnId>(),
+  });
+}
+
+describe("notice materialization", () => {
+  it("does not append history when undo then redo cancel before delivery", () => {
+    expect(plan([reversal(1, "undo"), reversal(2, "redo")])).toEqual({
+      turns: [],
+      blocks: [],
+      events: [],
+      leafTurnId: "previous-turn",
+      noticesTurnId: null,
+    });
   });
 
-  it("gives an agent-provenance background send origin system, not writer", () => {
-    const { turn } = messageTurnFor(
-      message({ provenance: { kind: "agent", threadId: "other-thread" as ThreadId } }),
-      null,
-    );
-    expect(turn.origin).toBe("system");
-    expect(turn.role).toBe("user");
+  it("does not append history for empty or whitespace-only notices", () => {
+    const empty = { ...reversal(1, "undo"), kind: "other", message: " \n " };
+    expect(plan([empty]).turns).toEqual([]);
   });
 
-  it("gives a child completion notification origin system", () => {
-    const { turn } = messageTurnFor(
-      message({
-        provenance: {
-          kind: "child",
-          threadId: "child-1" as ThreadId,
-          reportId: "report-1" as TurnId,
-          handle: "p1",
-          outcome: "succeeded",
-          agentName: "Critic",
-        },
-      }),
-      null,
+  it("still reports undo alone", () => {
+    expect(plan([reversal(1, "undo")]).blocks[0]?.content).toContain(
+      "The user reversed the following edits before this message:\n- Scene: w1",
     );
-    expect(turn.origin).toBe("system");
-    expect(turn.role).toBe("system");
-    expect(turn.metadata).toMatchObject({ childThreadId: "child-1", agentName: "Critic" });
   });
 
-  it("gives a system-provenance notice origin system", () => {
-    const { turn } = messageTurnFor(
-      message({ provenance: { kind: "system", source: "probe" } }),
-      null,
+  it("reports restoration when the undo was delivered in an earlier batch", () => {
+    expect(plan([reversal(2, "redo")]).blocks[0]?.content).toContain(
+      "The user restored the following edits before this message:\n- Scene: w1",
     );
-    expect(turn.origin).toBe("system");
-    expect(turn.role).toBe("user");
   });
 
-  it("gives a Work-context refresh origin system: it is system-provenance", () => {
-    const { turn } = messageTurnFor(
-      message({
-        provenance: { kind: "system", source: "work_context" },
-        body: { kind: "work_context_refresh" },
-      }),
-      null,
+  it("keeps unrelated notices when reversals cancel", () => {
+    const work = { ...reversal(3, "undo"), kind: "other", message: "The Work changed." };
+    expect(plan([reversal(1, "undo"), reversal(2, "redo"), work]).blocks[0]?.content).toBe(
+      "<system_update>\nThe Work changed.\n</system_update>",
     );
-    expect(turn.origin).toBe("system");
-    expect(turn.metadata).toEqual({ kind: "system_update", section: "work_context" });
+  });
+
+  it("reports only the edits still undone", () => {
+    expect(
+      plan([reversal(1, "undo"), reversal(2, "redo"), reversal(3, "undo", "w2")]).blocks[0]
+        ?.content,
+    ).toContain("- Scene: w2");
   });
 });

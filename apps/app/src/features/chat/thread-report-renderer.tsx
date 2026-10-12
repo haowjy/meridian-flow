@@ -1,6 +1,8 @@
 /**
  * Fold row for `thread_report`: the step where the model read a subagent's
  * report. The report itself lives on the launch card; this row records the read.
+ * It reads the typed `tool.result`; `tool.output` is the model's text rendering.
+ * `SubagentRefLine` names the addressed subagent for every ref-addressed row.
  */
 
 import { t } from "@lingui/core/macro";
@@ -16,15 +18,17 @@ import { SubagentIdentityName } from "./subagent/SubagentRow";
 import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
-function ThreadReportTitle({ tool }: { tool: ToolView }) {
-  const ref = stringInput(toolInputObject(tool), "ref") ?? "";
-  const subagent = useSubagentRun({ ref });
+/**
+ * The subagent a tool call addressed by ref, named the way the other subagent
+ * rows name it. The name is a door to the run's launch card when one exists.
+ */
+export function SubagentRefLine({ handle }: { handle: string }) {
+  const subagent = useSubagentRun({ ref: handle });
   const run = subagent ?? fallbackSubagentRun;
-  const description = subagent?.description;
+  const name = subagent?.name;
   const originTurnId = subagent?.originTurnId;
   const parentThreadId = subagent?.parentThreadId;
   const childThreadId = subagent?.threadId;
-  // The name is a door to the launch card, which holds the same report.
   const who =
     originTurnId && parentThreadId && childThreadId ? (
       <button
@@ -46,35 +50,51 @@ function ThreadReportTitle({ tool }: { tool: ToolView }) {
     ) : (
       <SubagentIdentityName run={run} />
     );
-  const line = (
+  return (
     <>
       {who}
-      {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
+      {name ? <span className="ml-1.5 text-muted-foreground">{name}</span> : null}
     </>
   );
+}
+
+function ThreadReportTitle({ tool }: { tool: ToolView }) {
+  const line = <SubagentRefLine handle={stringInput(toolInputObject(tool), "ref") ?? ""} />;
   if (tool.status === "partial") return <Trans>Reading report from {line}</Trans>;
-  if (tool.isError || !threadReportContent(tool.output)) {
+  if (tool.isError || !readThreadReport(tool.result)) {
     return <Trans>Couldn't read report from {line}</Trans>;
   }
   return <Trans>Read report from {line}</Trans>;
 }
 
 function threadReportExpand(tool: ToolView): ToolExpand | null {
-  const report = threadReportContent(tool.output);
-  if (!report) return null;
+  const read = readThreadReport(tool.result);
+  if (!read) return null;
   return () => (
     <ReportContent
-      report={report}
+      report={read.report}
       empty={<Trans>No report text was returned.</Trans>}
+      message={
+        read.runningAgain ? t`This report is from its previous run. It's running again now.` : null
+      }
       showStopMetadata={false}
       className="space-y-[var(--chat-space-block)] text-sm"
     />
   );
 }
 
-/** A saved report, or null for `not_ready` / `unavailable` and malformed output. */
-export function threadReportContent(output: JsonValue | null): ReportContentValue | null {
-  return toReportContentValue(parseThreadReportResult(output));
+type ThreadReportRead = {
+  report: ReportContentValue;
+  /** The child is running again; this report is from its previous run. */
+  runningAgain: boolean;
+};
+
+/** The finished report in a typed result, or null for not-ready, refusals and malformed results. */
+export function readThreadReport(result: JsonValue | null): ThreadReportRead | null {
+  const parsed = parseThreadReportResult(result);
+  const report = toReportContentValue(parsed);
+  if (!parsed || !report) return null;
+  return { report, runningAgain: "running" in parsed && parsed.running === true };
 }
 
 export const THREAD_REPORT_RENDERER: ToolRenderer = {
@@ -87,7 +107,7 @@ const fallbackSubagentRun: SubagentRun = {
   ref: null,
   execution: null,
   agentName: "Subagent",
-  description: null,
+  name: null,
   status: "unknown",
   startedAt: null,
   endedAt: null,

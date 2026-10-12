@@ -22,8 +22,9 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -216,15 +217,21 @@ function ListingRows({ results }: { results: ToolResultRows }) {
   );
 }
 
-function documentFailureStatus(output: JsonValue | null): string | null {
-  if (output == null) return null;
-  if (typeof output === "object" && !Array.isArray(output)) {
-    const status = asString((output as Record<string, JsonValue>).status);
-    if (status) return status;
-  }
-  const message =
-    typeof output === "string" ? output : meridianErrorFromStructuredToolOutput(output).message;
-  return /^status:\s*([a-z_]+)/i.exec(message.trim())?.[1]?.toLowerCase() ?? null;
+/** The agent-edit status of a failed `read` or `write`, from its typed result. */
+function documentFailureStatus(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.status) ?? null;
+}
+
+function copySource(tool: ToolView): string | null {
+  const source = copySourcePath(inputObject(tool));
+  return source ? documentDisplayName(source) : null;
+}
+
+function copyNotFoundCopy(tool: ToolView, source: string, destination: string | null): string {
+  if (stringInput(inputObject(tool), "command") === "copy") return t`Couldn't find ${source}.`;
+  return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
 }
 
 function documentFailureDocumentName(tool: ToolView): string | null {
@@ -233,17 +240,52 @@ function documentFailureDocumentName(tool: ToolView): string | null {
   return documentDisplayName(path);
 }
 
+/**
+ * A write refused because the model last read another version of the document
+ * (live, or a Work's draft). It moved nothing and the model reads again on its
+ * own, so the writer sees a routine step rather than a failure.
+ */
+function isRereadPause(tool: ToolView): boolean {
+  return (
+    tool.isError && tool.toolName === "write" && documentFailureStatus(tool) === "read_required"
+  );
+}
+
+/** Whether the row reports a failure to the writer. */
+export function toolRowFailed(tool: ToolView): boolean {
+  return tool.isError && !isRereadPause(tool);
+}
+
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
 export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
-  switch (documentFailureStatus(tool.output)) {
+  const status = documentFailureStatus(tool);
+  switch (status) {
+    case "binary_file": {
+      // A block copy's binary file is its source, not the destination in `path`.
+      const binary = copySource(tool) ?? name;
+      return binary ? t`${binary} is a binary file.` : t`That file is binary.`;
+    }
     case "not_found":
-    case "document_not_found":
+    case "document_not_found": {
+      // `path` names the destination, but a copy's missing document is its
+      // source (or, for a block copy, either one), so the copy says which.
+      const source = copySource(tool);
+      if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
+    }
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
         : t`The requested passage wasn't specific enough.`;
+  }
+  // A read changes nothing, so the change-shaped copy below never fits it.
+  if (tool.toolName === "read") {
+    return name
+      ? t`Something went wrong while reading ${name}.`
+      : t`Something went wrong while reading that document.`;
+  }
+  switch (status) {
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
     case "partial_failure":
@@ -264,6 +306,10 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
 
+  if (isRereadPause(tool)) {
+    const verb = t`Paused to reread`;
+    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
+  }
   if (tool.isError) {
     const verb = descriptor.failureVerb(writeMode);
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
@@ -280,12 +326,14 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
   none: () => null,
   renderer: () => null,
-  "output-preview": outputPreview,
-  "output-outline": outputOutline,
+  "result-preview": resultPreview,
+  "result-outline": resultOutline,
   "submitted-content": submittedContent,
 };
 
 function documentExpand(tool: ToolView): ToolExpand | null {
+  // The next rows (the read, then the retried write) say what happened.
+  if (isRereadPause(tool)) return null;
   if (tool.isError) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
@@ -298,23 +346,23 @@ function readPath(tool: ToolView): string | undefined {
   return asString(inputObject(tool).path);
 }
 
-function outputPreview(tool: ToolView): ToolExpand | null {
-  const markup = readPayloadMarkup(tool.output);
+function resultPreview(tool: ToolView): ToolExpand | null {
+  const markup = readPayloadMarkup(tool.result);
   if (!markup) return null;
   const path = readPath(tool);
   return () => <QuotedPreview markup={markup} path={path} />;
 }
 
-function outputOutline(tool: ToolView): ToolExpand | null {
-  const headings = readPayloadOutline(tool.output);
+function resultOutline(tool: ToolView): ToolExpand | null {
+  const headings = readPayloadOutline(tool.result);
   // A document with no headings falls back to whole blocks server-side, so the
-  // payload really is prose and the row should show it as prose.
-  if (!headings) return outputPreview(tool);
+  // result really is prose and the row should show it as prose.
+  if (!headings) return resultPreview(tool);
   const outline = capList(headings, LISTING_CAP);
   return () => <OutlineRows outline={outline} />;
 }
 
-/** What the model submitted, read from the tool *input*: the output carries formatted status and diagnostics, and only the input holds the exact content. */
+/** What the model submitted, read from the tool *input*: the result reports what changed, and only the input holds the exact content. */
 function submittedContent(tool: ToolView): ToolExpand | null {
   const content = asString(inputObject(tool).content);
   if (!content) return null;
@@ -327,7 +375,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
 }
 
 function listingOrNothing(tool: ToolView): ToolExpand | null {
-  const results = normalizeListing(tool.output ?? undefined);
+  const results = normalizeListing(tool.result ?? undefined);
   if (results.rows.length === 0) return null;
   return () => <ListingRows results={results} />;
 }
@@ -339,10 +387,10 @@ function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
   // looking at the array, and leaves every section — and the totals scan —
   // for the writer who actually opens it. A settled turn holds a dozen closed
   // rows; none of them should be parsing search results.
-  const output = tool.output;
-  if (!Array.isArray(output) || output.length === 0) return null;
+  const hits = tool.result;
+  if (!Array.isArray(hits) || hits.length === 0) return null;
   return () => (
-    <ResultRows results={normalizeSearchHits(output, stringInput(inputObject(tool), "pattern"))} />
+    <ResultRows results={normalizeSearchHits(hits, stringInput(inputObject(tool), "pattern"))} />
   );
 }
 
@@ -393,8 +441,8 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
 }
 
 function workExpand(tool: ToolView): ToolExpand | null {
-  if (!tool.isError || tool.output == null) return null;
-  const message = meridianErrorFromStructuredToolOutput(tool.output).message;
+  if (!tool.isError || tool.result == null) return null;
+  const message = meridianErrorFromStructuredToolOutput(tool.result).message;
   if (!message) return null;
   return () => <div className="text-compact text-destructive">{message}</div>;
 }
@@ -420,6 +468,7 @@ const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
 };
 
 const RENDERERS: Record<string, ToolRenderer> = {
+  read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
     title: phraseTitle,
@@ -429,10 +478,16 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: phraseTitle,
     expand: resultRowsOrNothing,
   },
+  // The skill body is for the model; "Couldn't run that skill" is a failure's
+  // whole claim. Neither row has anything for the writer to open.
+  skill: {
+    title: phraseTitle,
+  },
   work: {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: workExpand,
   },
+  thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,
 };
 

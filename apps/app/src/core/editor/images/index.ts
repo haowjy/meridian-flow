@@ -18,11 +18,7 @@ export type {
   ImageUploadPort,
   UploadedImage,
 } from "./image-ingress-ports";
-export {
-  editorAssetIndex,
-  imageIngressStatus,
-  registerImageIngressHost,
-} from "./image-ingress-runtime";
+export { imageIngressStatus, registerImageIngressHost } from "./image-ingress-runtime";
 export type { ImageIngressStatus } from "./image-ingress-store";
 export { imageWidthAttr, setImageWidth } from "./image-resize";
 export { ImageUploadPresenceExtension } from "./image-upload-presence";
@@ -35,6 +31,7 @@ export {
 export {
   acceptsInlineImage,
   assetDocumentIdFromSrc,
+  browserPictureSource,
   imageAttrsFromUpload,
   signedUrlRefreshDelayMs,
 } from "./image-workflow";

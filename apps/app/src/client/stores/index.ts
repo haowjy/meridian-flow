@@ -11,23 +11,27 @@ export {
   commitPlannedContextRemoval,
   commitReviewOverlayClose,
   type DraftWorkspaceSettlementReceipt,
+  durableContextTab,
   getContextTabs,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
+  parseContextTab,
   previewReviewOverlayClose,
   type ReviewOverlayConsumeReceipt,
   type ReviewOverlayTabIdentity,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
+  replaceOwner,
   type ServerContextTab,
   serverContextTabLocatorKey,
+  type TabOwner,
+  tabContextOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
-  viewerTabForCatalogFile,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
@@ -39,11 +43,16 @@ export {
   useProjectActions,
   useProjectStore,
 } from "./project-store";
-export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
+export {
+  announce,
+  announceError,
+  clearAnnouncement,
+  useAnnouncement,
+} from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
   useIsThreadPendingCreation,
   useThreadActions,
   useThreadStore,
 } from "./thread-store/thread-store";
-export type { PendingStreamStart, ThreadStoreActions } from "./thread-store/types";
+export type { ThreadStoreActions } from "./thread-store/types";

@@ -36,7 +36,7 @@ export type ModelRequestDebugCapture =
 
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
-  schema: "meridian.model-request-debug.v1";
+  schema: "meridian.model-request-debug.v2";
   gatewayCallId: string;
   threadId: string;
   /** Assistant turn the request belongs to. */

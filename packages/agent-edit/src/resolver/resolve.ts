@@ -1,35 +1,46 @@
-import { CodecParseError, type ParsedContent } from "@meridian/markup";
-import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
+import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
+import { walkLinkOccurrences } from "@meridian/markup/links";
+import { Fragment } from "prosemirror-model";
+import {
+  type EditResolutionErrorCode,
+  inlineReplacementText,
+  type ResolvedEdit,
+  type ResolvedInlineReplacement,
+} from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
+import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
+import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
+  type SplicedGroup,
   serializeBlockBody,
   serializePmBlockBody,
+  spliceFindMatches,
   type TextFindMatch,
 } from "./find.js";
 import { locateBlockByHash } from "./hash-locator.js";
-import {
-  type BlockScope,
-  headingLevel,
-  isHeading,
-  resolveScope,
-  resolveSearchScope,
-  type ScopeFailure,
-} from "./scope.js";
+import { type BlockScope, resolveScope, resolveSearchScope, type ScopeFailure } from "./scope.js";
 
-export type WriteCommandName = "insert" | "replace" | "delete";
+export type WriteCommandName = "insert" | "replace" | "remove";
 
 export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
+  /** Already-parsed content, with the original source retained in `content` for semantic IR. */
+  parsedContent?: ParsedContent;
+  /**
+   * Blocks copied from another document (D23). They take the place of
+   * `content` and are inserted as nodes, never through markup.
+   */
+  blocks?: readonly Block[];
   after?: string;
   before?: string;
   find?: string;
@@ -42,9 +53,20 @@ export interface ResolveWriteContext {
   doc: DocHandle | null | undefined;
   model: AgentEditModel;
   codec: AgentEditCodec;
+  /**
+   * Ref assignment over the command's prepared link scope; parse itself is
+   * pure syntax. Every door that turns written Markdown into nodes assigns
+   * through it before block alignment and no-op detection. Copies never do:
+   * their nodes already carry what they name. `"preassigned"`: the caller
+   * already assigned refs (a host's lowered overwrite), so nodes stay as given.
+   */
+  links: WriteLinks;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
 }
+
+/** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
+export type WriteLinks = WriteLinkAssigner | "preassigned";
 
 export type ResolveWriteResult =
   | { ok: true; edits: ResolvedEdit[]; ir: SemanticEditIRV1 }
@@ -63,158 +85,315 @@ interface NormalizedParams extends ResolveWriteParams {
   content: string;
 }
 
+/**
+ * A write resolved up to ref assignment: scope, find matches and splices are fixed,
+ * and `written` holds every parsed node assignment will see (a find's
+ * reconstructed groups included), so the host can load what they name
+ * before `assign` runs synchronously over the prepared scope.
+ */
+export type WritePlan =
+  | {
+      ok: true;
+      written: readonly Block[];
+      /** Ref assignment, then block alignment and no-op detection. */
+      assign(links: WriteLinks): ResolveWriteResult;
+    }
+  | ResolveWriteFailure;
+
+export function planWrite(
+  ctx: Omit<ResolveWriteContext, "links">,
+  params: ResolveWriteParams,
+): WritePlan {
+  if (!ctx.doc)
+    return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
+  const doc = ctx.doc;
+  let projected: Block[] | undefined;
+  const concreteCtx: ConcreteResolveContext = {
+    ...ctx,
+    doc,
+    // The document can't change while a write resolves, so one projection
+    // serves every scope it replaces.
+    projectedBlocks: () => {
+      projected ??= ctx.model.projectBlocks(doc);
+      return projected;
+    },
+  };
+  const normalized = normalizeParams(concreteCtx, params);
+  const contentCheck = validateContent(concreteCtx, normalized);
+  if (!contentCheck.ok) return contentCheck;
+
+  let planned: PlannedWrite | ResolveWriteFailure;
+  switch (normalized.command) {
+    case "insert":
+      planned = planInsert(concreteCtx, normalized, contentCheck.parsed);
+      break;
+    case "replace":
+      planned = planReplace(concreteCtx, normalized, contentCheck.parsed);
+      break;
+    case "remove":
+      planned = planRemove(concreteCtx, normalized);
+      break;
+  }
+  if (!("steps" in planned)) return planned;
+  const steps = planned.steps;
+  return {
+    ok: true,
+    written: steps.flatMap((step) =>
+      step.kind === "spliced"
+        ? step.parsed.blocks
+        : step.kind === "edits" || (step.kind === "insert" && !step.assign)
+          ? []
+          : step.blocks,
+    ),
+    assign(links) {
+      const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
+      if (!resolved.ok) return resolved;
+      return {
+        ok: true,
+        edits: resolved.edits,
+        ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
+      };
+    },
+  };
+}
+
+/** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
   params: ResolveWriteParams,
 ): ResolveWriteResult {
-  if (!ctx.doc)
-    return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  if (params.command !== "delete" && params.content === undefined) {
-    return error("invalid_write", "content is required");
-  }
-  const normalized = normalizeParams(params);
-  const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
-  const contentCheck = validateContent(concreteCtx, normalized);
-  if (!contentCheck.ok) return contentCheck;
-
-  let resolved: ResolveWriteResultWithoutIr;
-  switch (normalized.command) {
-    case "insert":
-      resolved = resolveInsert(concreteCtx, normalized, contentCheck.parsed);
-      break;
-    case "replace":
-      resolved = resolveReplace(concreteCtx, normalized, contentCheck.parsed);
-      break;
-    case "delete":
-      resolved = resolveDelete(concreteCtx, normalized);
-      break;
-  }
-  if (!resolved.ok) return resolved;
-  return { ...resolved, ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved.edits) };
+  const plan = planWrite(ctx, params);
+  return plan.ok ? plan.assign(ctx.links) : plan;
 }
 
-type ResolveWriteResultWithoutIr = { ok: true; edits: ResolvedEdit[] } | ResolveWriteFailure;
+/** One planned piece of a write, in edit order. */
+type PlannedStep =
+  /** Edits that need no ref assignment: removes, copies, the plain-text find shortcut. */
+  | { kind: "edits"; edits: ResolvedEdit[] }
+  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
+  /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
+  | { kind: "replace"; scope: BlockScope; blocks: Block[] }
+  /** A formatted find's reconstructed group: only the splice's occurrences are assigned. */
+  | {
+      kind: "spliced";
+      scope: BlockScope;
+      oldGroup: Block[];
+      oldText: string;
+      oldSpans: ParsedContentWithSpans["spans"];
+      newText: string;
+      parsed: ParsedContentWithSpans;
+      splice: SplicedGroup["splice"];
+    };
 
-function resolveInsert(
+interface PlannedWrite {
+  steps: PlannedStep[];
+}
+
+function assignPlannedWrite(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  steps: readonly PlannedStep[],
+  links: WriteLinks,
+): ResolveWriteResultWithoutIr {
+  const edits: ResolvedEdit[] = [];
+  let keptBlocks = false;
+  for (const step of steps) {
+    switch (step.kind) {
+      case "edits":
+        edits.push(...step.edits);
+        break;
+      case "insert": {
+        const blocks = step.assign ? assignSpan(links, [], step.blocks) : step.blocks;
+        edits.push(insertEdit(params, step.after, blocks));
+        break;
+      }
+      case "replace":
+      case "spliced": {
+        const lowered = replaceScope(ctx, params, step.scope, assignScope(ctx, step, links));
+        edits.push(...lowered.edits);
+        keptBlocks ||= lowered.keptBlocks === true;
+        break;
+      }
+    }
+  }
+  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
+}
+
+/** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
+function assignScope(
+  ctx: ConcreteResolveContext,
+  step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
+  links: WriteLinks,
+): Block[] {
+  if (step.kind === "replace") return assignSpan(links, scopeNodes(ctx, step.scope), step.blocks);
+  if (links === "preassigned") return step.parsed.blocks;
+  return links.assignSplice({
+    oldGroup: step.oldGroup,
+    oldText: step.oldText,
+    oldSpans: step.oldSpans,
+    newText: step.newText,
+    parsed: step.parsed,
+    splice: step.splice,
+  });
+}
+
+/** A scope is always a contiguous run of top-level blocks. */
+function scopeNodes(ctx: ConcreteResolveContext, scope: BlockScope): Block[] {
+  return ctx.projectedBlocks().slice(scope.startIndex, scope.startIndex + scope.blocks.length);
+}
+
+type ResolveWriteResultWithoutIr =
+  | {
+      ok: true;
+      edits: ResolvedEdit[];
+      /** Some of the scope's blocks were already equal to their replacement and kept. */
+      keptBlocks?: true;
+    }
+  | ResolveWriteFailure;
+
+function planInsert(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   parsed: ParsedContent,
-): ResolveWriteResultWithoutIr {
-  if (params.content.length === 0)
-    return error("invalid_write", "insert requires non-empty content");
-  if (params.after && params.before)
-    return error("invalid_write", "`after` and `before` are mutually exclusive");
-  if ((params.after || params.before) && params.find) {
-    return error(
-      "invalid_write",
-      "Use either block targeting (`after`/`before`) or text targeting (`find`), not both",
-    );
-  }
-  if (params.in !== undefined && !params.find) {
-    return error(
-      "invalid_write",
-      "`in` scopes a find-based insert; use `after` or `before` for block positioning",
-    );
-  }
-
+): PlannedWrite | ResolveWriteFailure {
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
+    if (params.blocks) return error("invalid_write", COPY_WITH_FIND_MESSAGE);
     const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
       allowSlugFallback: false,
     });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return lowerFindMatches(ctx, params, found.matches, "insert");
+    return planFindMatches(ctx, params, parsed, found.matches, "insert");
   }
 
   const lowered = lowerInsertPosition(ctx, params);
   if (!lowered.ok) return lowered;
   return {
-    ok: true,
-    edits: [
-      {
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "insert",
-        ...(lowered.after ? { after: lowered.after } : {}),
-        newText: params.content,
-      },
+    steps: [
+      { kind: "insert", after: lowered.after, blocks: parsed.blocks, assign: !params.blocks },
     ],
   };
 }
 
-function resolveReplace(
+const COPY_WITH_FIND_MESSAGE = "from copies whole blocks, so it can't be combined with find";
+
+function insertEdit(
+  params: NormalizedParams,
+  after: BlockRef | undefined,
+  blocks: readonly Block[],
+  newText = params.content,
+): ResolvedEdit {
+  return {
+    documentId: params.documentAddress.documentId,
+    file: params.documentAddress.filePath,
+    kind: "insert",
+    ...(after ? { after } : {}),
+    newText,
+    blocks,
+  };
+}
+
+/**
+ * Copied blocks replace the scope whole: they go in after the block before it,
+ * then the scope's blocks go. No old block is reused, so every copy gets a
+ * fresh hash and none of the replaced text survives under a copied block.
+ */
+function replaceScopeWithCopies(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  scope: BlockScope,
+  copies: readonly Block[],
+): PlannedWrite {
+  const anchor =
+    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
+  return {
+    steps: [
+      { kind: "edits", edits: [insertEdit(params, anchor, copies), ...deleteEdits(params, scope)] },
+    ],
+  };
+}
+
+function planReplace(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   parsed: ParsedContent,
-): ResolveWriteResultWithoutIr {
-  if (params.after || params.before) {
-    return error(
-      "invalid_write",
-      "replace does not accept `after` or `before`; use `in` or `find`",
-    );
-  }
+): PlannedWrite | ResolveWriteFailure {
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
+    if (params.blocks) return error("invalid_write", COPY_WITH_FIND_MESSAGE);
     const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
       allowSlugFallback: false,
     });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return lowerFindMatches(ctx, params, found.matches, "replace");
+    return planFindMatches(ctx, params, parsed, found.matches, "replace");
   }
 
-  if (params.around !== undefined) {
-    return error("invalid_write", "`around` only scopes find-based replace commands");
-  }
   const target = params.in ?? fragmentScope(params);
-  if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
+  if (target === undefined) {
+    return error("invalid_write", "replace needs `in`, `find` or a #heading-slug in path");
+  }
   const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
-  if (params.content.length === 0) {
-    return error("invalid_write", "Use the delete command to remove a block scope");
+  if (params.blocks) {
+    if (params.blocks.length === 0) return error("invalid_write", "from selected no blocks");
+    return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
-  return replaceScope(ctx, params, scope.scope, parsed);
+  if (params.content.length === 0) {
+    return error("invalid_write", "Use `remove` to remove blocks");
+  }
+  return { steps: [{ kind: "replace", scope: scope.scope, blocks: parsed.blocks }] };
 }
 
-function resolveDelete(
+function planRemove(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-): ResolveWriteResultWithoutIr {
-  if (params.documentAddress.fragment !== undefined) {
-    return error("invalid_write", "delete uses `in` for its block scope; remove the file fragment");
-  }
-  const scope = resolveScope(ctx, params.in, { allowSlugFallback: false });
+): PlannedWrite | ResolveWriteFailure {
+  const scope = resolveScope(ctx, params.in ?? fragmentScope(params), {
+    allowSlugFallback: false,
+  });
   if (!scope.ok) return scopeError(scope);
-  return deleteScope(params, scope.scope);
+  return { steps: [{ kind: "edits", edits: deleteEdits(params, scope.scope) }] };
 }
 
-interface ConcreteResolveContext extends ResolveWriteContext {
+interface ConcreteResolveContext extends Omit<ResolveWriteContext, "links"> {
   doc: DocHandle;
+  /** Every top-level block as a ProseMirror node, in document order. */
+  projectedBlocks(): readonly Block[];
 }
 
-function normalizeParams(params: ResolveWriteParams): NormalizedParams {
-  return { ...params, content: params.content ?? "" };
+function normalizeParams(
+  ctx: ConcreteResolveContext,
+  params: ResolveWriteParams,
+): NormalizedParams {
+  // Copied blocks are described by their markup only for the semantic IR.
+  const content = params.blocks
+    ? serializeReplacementBlocks(ctx, [...params.blocks])
+    : (params.content ?? "");
+  return { ...params, content };
+}
+
+function assignSpan(links: WriteLinks, old: readonly Block[], written: readonly Block[]): Block[] {
+  return links === "preassigned" ? [...written] : links.assignSpan(old, written);
 }
 
 function validateContent(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
-  if (params.find === "") return error("invalid_write", "`find` must not be empty");
-  if (params.command === "insert" && params.content.length === 0) {
-    return error("invalid_write", "insert requires non-empty content");
-  }
+  if (params.blocks) return { ok: true, parsed: { blocks: [...params.blocks] } };
   if (params.command === "replace" && params.content.length === 0) {
     return { ok: true, parsed: { blocks: [] } };
   }
-  if (params.command === "delete") return { ok: true, parsed: { blocks: [] } };
+  if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
+  if (params.parsedContent) return { ok: true, parsed: params.parsedContent };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {
@@ -267,16 +446,13 @@ function lowerInsertPosition(
   return last ? { ok: true, after: last } : { ok: true };
 }
 
-function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteResultWithoutIr {
-  return {
-    ok: true,
-    edits: scope.blocks.map((element) => ({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "delete",
-      block: element,
-    })),
-  };
+function deleteEdits(params: NormalizedParams, scope: BlockScope): ResolvedEdit[] {
+  return scope.blocks.map((element) => ({
+    documentId: params.documentAddress.documentId,
+    file: params.documentAddress.filePath,
+    kind: "delete",
+    block: element,
+  }));
 }
 
 interface FindMatchGroup {
@@ -287,88 +463,79 @@ interface FindMatchGroup {
   matches: TextFindMatch[];
 }
 
-function lowerFindMatches(
+function planFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
+  parsed: ParsedContent,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
-): ResolveWriteResultWithoutIr {
-  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, matches, command);
-  if (plainTextEdits) return { ok: true, edits: plainTextEdits };
+): PlannedWrite | ResolveWriteFailure {
+  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, parsed, matches, command);
+  if (plainTextEdits) return { steps: [{ kind: "edits", edits: plainTextEdits }] };
 
-  const edits: ResolvedEdit[] = [];
+  const steps: PlannedStep[] = [];
   // Structural groups can replace their predecessor block. Lower from the end
   // so every insert anchor remains live until its group executes.
   for (const group of groupFindMatches(matches).reverse()) {
     const groupSource = group.elements
       .map((element) => serializeBlockBody(ctx, element))
       .join("\n\n");
-    const replacedSource = spliceFindMatches(
+    const spliced = spliceFindMatches(
       groupSource,
       group.matches,
       group.rangeStart,
       params.content,
       command,
     );
-    const parsed = parseReplacementRange(ctx, replacedSource);
-    if (!parsed.ok) return parsed;
-    const lowered = replaceScope(
-      ctx,
-      params,
-      {
-        kind: "range",
-        blocks: group.elements,
-        startIndex: group.startIndex,
-        endIndex: group.endIndex,
-      },
-      parsed.parsed,
-    );
-    if (!lowered.ok) return lowered;
-    edits.push(...lowered.edits);
+    const scope: BlockScope = {
+      kind: "range",
+      blocks: group.elements,
+      startIndex: group.startIndex,
+      endIndex: group.endIndex,
+    };
+    const step = planSplicedGroup(ctx, scope, groupSource, spliced);
+    if ("ok" in step) return step;
+    steps.push(step);
   }
-  return { ok: true, edits };
+  return { steps };
 }
 
 function lowerPlainTextFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
+  parsed: ParsedContent,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
 ): ResolvedEdit[] | null {
-  if (!isPlainTextContent(ctx, params.content)) return null;
+  const content = plainTextInline(ctx, params.content, parsed);
+  if (!content) return null;
   const byBlock = new Map<BlockRef, TextFindMatch[]>();
   for (const match of matches) {
     if (match.elements.length !== 1) return null;
     const [element] = match.elements;
     if (match.rangeSource !== ctx.model.getText(element)) return null;
+    // A block holding a link goes through ref assignment, so a ref- or title-only
+    // change is never filtered out as equal text.
+    const node = ctx.projectedBlocks()[match.startIndex];
+    if (!node || walkLinkOccurrences([node]).length > 0) return null;
     const existing = byBlock.get(element);
     if (existing) existing.push(match);
     else byBlock.set(element, [match]);
   }
   const edits: ResolvedEdit[] = [];
   for (const [element, blockMatches] of byBlock) {
-    const replacements = blockMatches.map((match) => ({
-      span: {
-        start: command === "insert" ? match.matchEnd : match.matchStart,
-        end: match.matchEnd,
-      },
-      newText: params.content,
-    }));
-    const first = replacements[0];
-    if (!first) continue;
-    if (replacements.length === 1) {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "text",
-        block: element,
-        span: first.span,
-        newText: first.newText,
-        semanticLowering: "prosemirror",
-      });
-      continue;
-    }
     const blockText = ctx.model.getText(element);
+    const replacements = blockMatches
+      .map((match) => ({
+        span: {
+          start: command === "insert" ? match.matchEnd : match.matchStart,
+          end: match.matchEnd,
+        },
+        content,
+      }))
+      // Replacing a match with itself changes nothing, so it makes no edit.
+      .filter(({ span }) => blockText.slice(span.start, span.end) !== params.content);
+    if (replacements.length === 0) continue;
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
@@ -383,7 +550,7 @@ function lowerPlainTextFindMatches(
 
 function replacementWindowOutput(
   source: string,
-  replacements: readonly { span: { start: number; end: number }; newText: string }[],
+  replacements: readonly ResolvedInlineReplacement[],
 ): string {
   const first = replacements[0];
   if (!first) return "";
@@ -391,22 +558,29 @@ function replacementWindowOutput(
   let output = "";
   for (const replacement of replacements) {
     output += source.slice(sourceCursor, replacement.span.start);
-    output += replacement.newText;
+    output += inlineReplacementText(replacement);
     sourceCursor = replacement.span.end;
   }
   return output;
 }
 
-function isPlainTextContent(ctx: ConcreteResolveContext, content: string): boolean {
-  if (content.length === 0) return true;
-  const parsed = parseReplacementRange(ctx, content);
-  if (!parsed.ok || parsed.parsed.blocks.length !== 1) return false;
-  const [block] = parsed.parsed.blocks;
-  return (
+/**
+ * The parsed write's inline content when it is one plain-text paragraph whose
+ * markup is its text; null when the write needs structural lowering.
+ */
+function plainTextInline(
+  ctx: ConcreteResolveContext,
+  content: string,
+  parsed: ParsedContent,
+): Fragment | null {
+  if (content.length === 0) return Fragment.empty;
+  if (parsed.blocks.length !== 1) return null;
+  const [block] = parsed.blocks;
+  const plain =
     block.isTextblock &&
     block.textContent === content &&
-    serializePmBlockBody(ctx, block) === content
-  );
+    serializePmBlockBody(ctx, block) === content;
+  return plain ? block.content : null;
 }
 
 function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
@@ -435,30 +609,28 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
   return groups;
 }
 
-function spliceFindMatches(
-  source: string,
-  matches: readonly TextFindMatch[],
-  rangeStart: number,
-  content: string,
-  command: WriteCommandName,
-): string {
-  let result = source;
-  for (const match of [...matches].reverse()) {
-    const start = match.rangeStart + match.matchStart - rangeStart;
-    const end = match.rangeStart + match.matchEnd - rangeStart;
-    const spliceStart = command === "insert" ? end : start;
-    result = result.slice(0, spliceStart) + content + result.slice(end);
-  }
-  return result;
-}
-
-function parseReplacementRange(
+/**
+ * Parse a group's spliced text with source spans, so ref assignment can tell the
+ * splice's occurrences from the untouched ones around it (§5.4).
+ */
+function planSplicedGroup(
   ctx: ConcreteResolveContext,
-  source: string,
-): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
-  if (source.length === 0) return { ok: true, parsed: { blocks: [] } };
+  scope: BlockScope,
+  oldText: string,
+  spliced: SplicedGroup,
+): PlannedStep | ResolveWriteFailure {
+  if (spliced.text.length === 0) return { kind: "replace", scope, blocks: [] };
   try {
-    return { ok: true, parsed: ctx.codec.parse(source) };
+    return {
+      kind: "spliced",
+      scope,
+      oldGroup: scopeNodes(ctx, scope),
+      oldText,
+      oldSpans: ctx.codec.parseWithSpans(oldText).spans,
+      newText: spliced.text,
+      parsed: ctx.codec.parseWithSpans(spliced.text),
+      splice: spliced.splice,
+    };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
       return error("invalid_write", cause.message, { line: cause.line, column: cause.column });
@@ -467,29 +639,32 @@ function parseReplacementRange(
   }
 }
 
+/**
+ * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
+ * left alone, a changed block keeps its identity and is diffed in place, and
+ * only blocks with no counterpart are inserted or removed. Atoms (pictures,
+ * hard breaks) are matched as nodes, never through flat text offsets.
+ */
 function replaceScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   scope: BlockScope,
-  parsed: ParsedContent,
-): ResolveWriteResultWithoutIr {
+  newBlocks: readonly Block[],
+): { edits: ResolvedEdit[]; keptBlocks?: true } {
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
-  const newBlocks = parsed.blocks;
+  const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
+  let keptBlocks = false;
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "insert",
-        ...(anchor ? { after: anchor } : {}),
-        newText: serializeReplacementBlocks(ctx, pendingInsert),
-      });
+      edits.push(
+        insertEdit(params, anchor, pendingInsert, serializeReplacementBlocks(ctx, pendingInsert)),
+      );
     }
     for (const block of pendingDelete) {
       edits.push({
@@ -503,59 +678,41 @@ function replaceScope(
     pendingDelete = [];
   };
 
-  const sharedCount = Math.min(oldBlocks.length, newBlocks.length);
-  for (let index = 0; index < sharedCount; index += 1) {
-    const oldBlock = oldBlocks[index];
-    const newBlock = newBlocks[index];
-    if (
-      ctx.model.getBlockType(oldBlock) === newBlock.type.name &&
-      reusableAttrs(ctx, oldBlock, newBlock)
-    ) {
-      flushStructural();
-      edits.push(
-        newBlock.isTextblock && newBlock.type.name !== "code_block"
-          ? {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "text",
-              block: oldBlock,
-              span: { start: 0, end: ctx.model.getText(oldBlock).length },
-              newText: serializePmBlockBody(ctx, newBlock),
-              ...(params.find !== undefined ? { semanticLowering: "prosemirror" as const } : {}),
-            }
-          : {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "block",
-              block: oldBlock,
-              replacement: newBlock,
-            },
-      );
-      anchor = oldBlock;
-      continue;
+  for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
+    switch (step.kind) {
+      case "remove":
+        pendingDelete.push(oldBlocks[step.old]);
+        break;
+      case "add":
+        pendingInsert.push(newBlocks[step.next]);
+        break;
+      case "change":
+        flushStructural();
+        edits.push({
+          documentId: params.documentAddress.documentId,
+          file: params.documentAddress.filePath,
+          kind: "block",
+          block: oldBlocks[step.old],
+          replacement: newBlocks[step.next],
+        });
+        anchor = oldBlocks[step.old];
+        break;
+      case "keep":
+        flushStructural();
+        anchor = oldBlocks[step.old];
+        keptBlocks = true;
+        break;
     }
-    pendingDelete.push(oldBlock);
-    pendingInsert.push(newBlock);
-  }
-
-  for (let index = sharedCount; index < oldBlocks.length; index += 1) {
-    pendingDelete.push(oldBlocks[index]);
-  }
-
-  for (let index = sharedCount; index < newBlocks.length; index += 1) {
-    pendingInsert.push(newBlocks[index]);
   }
   flushStructural();
 
-  return { ok: true, edits };
+  return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-function reusableAttrs(ctx: ConcreteResolveContext, oldBlock: BlockRef, newBlock: Block): boolean {
-  if (ctx.model.getBlockType(oldBlock) !== newBlock.type.name) return false;
-  if (isHeading(ctx.model, oldBlock)) {
-    return headingLevel(ctx.model, oldBlock) === Number(newBlock.attrs.level ?? 1);
-  }
-  return true;
+/** A block keeps its element only as the same node type and heading level. */
+function canRewriteInPlace(old: Block, next: Block): boolean {
+  if (old.type !== next.type) return false;
+  return old.type.name !== "heading" || old.attrs.level === next.attrs.level;
 }
 
 function serializeReplacementBlocks(
@@ -576,26 +733,14 @@ function trimOneTrailingNewline(value: string): string {
 function semanticIrForResolvedEdits(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-  edits: readonly ResolvedEdit[],
+  resolved: Extract<ResolveWriteResultWithoutIr, { ok: true }>,
 ): SemanticEditIRV1 {
+  const { edits } = resolved;
   const scope: LineageRange[] = [];
   const deleted: LineageRange[] = [];
   const mappedEdits = edits.map((edit) => {
     let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "text") {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
-      scope.push(...lineage);
-      deleted.push(...sliceLineage(lineage, edit.span.start, edit.span.end));
-      if (edit.newText.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.newText,
-            output: { from: 0, to: edit.newText.length },
-          },
-        ];
-      }
-    } else if (edit.kind === "textRanges") {
+    if (edit.kind === "textRanges") {
       const lineage = ctx.model.getVisibleContentLineage(edit.block);
       scope.push(...lineage);
       for (const replacement of edit.replacements) {
@@ -630,15 +775,19 @@ function semanticIrForResolvedEdits(
   });
   const normalizedScope = normalizeLineageRanges(scope);
   const normalizedDeleted = normalizeLineageRanges(deleted);
+  // Its payload is the whole requested content, so it only describes a scope
+  // whose every block was rewritten.
   const isTotalFreshReplacement =
     params.command === "replace" &&
     params.find === undefined &&
+    resolved.keptBlocks === undefined &&
     normalizedScope.length > 0 &&
     sameLineageRanges(normalizedScope, normalizedDeleted);
   return {
     version: 1,
     documentId: params.documentAddress.documentId,
-    inputRevision: (ctx.inputRevision ?? revisionOf(ctx)) as SemanticEditIRV1["inputRevision"],
+    inputRevision: (ctx.inputRevision ??
+      documentRevision(ctx)) as SemanticEditIRV1["inputRevision"],
     scope: normalizedScope,
     intent: isTotalFreshReplacement
       ? { kind: "fullScopeFreshReplacement", payload: params.content }
@@ -666,13 +815,14 @@ function semanticRunsForTextRanges(
       });
       outputCursor += source.length;
     }
-    if (replacement.newText.length > 0) {
+    const text = inlineReplacementText(replacement);
+    if (text.length > 0) {
       runs.push({
         kind: "fresh",
-        payload: replacement.newText,
-        output: { from: outputCursor, to: outputCursor + replacement.newText.length },
+        payload: text,
+        output: { from: outputCursor, to: outputCursor + text.length },
       });
-      outputCursor += replacement.newText.length;
+      outputCursor += text.length;
     }
     sourceCursor = replacement.span.end;
   }
@@ -709,19 +859,25 @@ function sliceLineage(lineage: readonly LineageRange[], from: number, to: number
   return slices;
 }
 
-function revisionOf(ctx: ConcreteResolveContext): string {
+/** The revision a semantic IR names: the document's state vector, in hex. */
+export function documentRevision(ctx: { model: AgentEditModel; doc: DocHandle }): string {
   return [...ctx.model.encodeStateVector(ctx.doc)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
-function scopeError(result: ScopeFailure): ResolveWriteResultWithoutIr {
-  return error(result.code === "ambiguous" ? "ambiguous_match" : result.code, result.message);
+function scopeError(result: ScopeFailure): ResolveWriteFailure {
+  if (result.code === "ambiguous") return error("ambiguous_match", result.message);
+  return error(
+    result.code,
+    result.message,
+    result.documentBlocks === undefined ? undefined : { documentBlocks: result.documentBlocks },
+  );
 }
 
 function findError(
   result: Extract<ReturnType<typeof findTextMatches>, { ok: false }>,
-): ResolveWriteResultWithoutIr {
+): ResolveWriteFailure {
   return error(
     result.code,
     result.message,

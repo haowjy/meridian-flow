@@ -373,9 +373,8 @@ async function runUpload(
 
 /** The bytes arrived: the picture's own node becomes the picture. */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
-  const storage = imageIngressStorage(editor);
   const entry = uploadEntry(editor, id);
-  if (!editor || editor.isDestroyed || !storage || !entry) return;
+  if (!editor || editor.isDestroyed || !entry) return;
   const at = resolvePendingImage(editor.state, entry);
   // The slot is gone, so there is nothing to land in. The asset stays in the
   // project, which is where the writer put it.
@@ -390,7 +389,6 @@ function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
     }));
     return;
   }
-  storage.assetIndex.remember(uploaded.assetDocumentId, uploaded.assetPath);
   const picture = { src: uploaded.src, alt: uploaded.alt ?? entry.alt };
 
   if (entry.landing === "insert") {

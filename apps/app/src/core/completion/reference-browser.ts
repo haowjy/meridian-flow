@@ -6,11 +6,16 @@ import type {
   CatalogFileEntry,
   CatalogScope,
 } from "@meridian/contracts/protocol";
-import { catalogScopeKey } from "@meridian/contracts/protocol";
+import {
+  catalogScopeKey,
+  parseDocumentFilename,
+  renderFilename,
+} from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
   authoritativeReferenceForFile,
   canonicalReferenceUri,
+  normalizeReferenceName,
   type ReferenceAuthorityIndex,
   type ReferenceKind,
   type ReferenceNavigationAction,
@@ -51,20 +56,37 @@ export type ReferenceBrowserMeta = {
   canBacktrack: boolean;
 };
 
+/**
+ * A host's row beside the catalog rows: a link to a document nobody has
+ * written yet, at an address the host computed. Only a host that can hold
+ * such a link (the Editor) offers one; identity-bearing references never do.
+ */
+export type LinkAheadRow = {
+  kind: "link-ahead";
+  rowId: "link-ahead";
+  /** The name as typed: the inserted link's text. */
+  label: string;
+  /** The canonical Context URI the link will address. */
+  uri: string;
+};
+
+/** What the browser's menu lists: catalog rows, then at most one link-ahead row. */
+export type ReferenceMenuRow = ReferenceRow | LinkAheadRow;
+
 export type ReferenceBrowserState =
   | { kind: "closed" }
   | (ReferenceBrowserMeta & {
       kind: "root";
       query: string;
       warmScopes: readonly CatalogScope[];
-      rows: readonly ReferenceRow[];
+      rows: readonly ReferenceMenuRow[];
     })
   | (ReferenceBrowserMeta & {
       kind: "drilled";
       query: string;
       activeScope: CatalogScope;
       containerId?: string;
-      rows: readonly ReferenceRow[];
+      rows: readonly ReferenceMenuRow[];
     });
 
 export type ReferenceBrowserOpenContext = Readonly<{
@@ -73,7 +95,7 @@ export type ReferenceBrowserOpenContext = Readonly<{
 }>;
 export type ReferenceBrowserController = SuggestionDriver<
   never,
-  ReferenceRow,
+  ReferenceMenuRow,
   ReferenceBrowserMeta
 > & {
   refresh: () => boolean;
@@ -89,6 +111,13 @@ export type ReferenceBrowserOptions = {
     triggerRange: SuggestionTriggerRange;
   }) => void;
   onCompleteSegment: (input: { prefix: string; triggerRange: SuggestionTriggerRange }) => void;
+  /**
+   * Where a link to a not-yet-written document named `name` would point, or
+   * null when the host offers none for it. Asked only for a root search that
+   * names no existing document exactly.
+   */
+  linkAhead?: (name: string) => { uri: string } | null;
+  onLinkAhead?: (input: { row: LinkAheadRow; triggerRange: SuggestionTriggerRange }) => void;
 };
 
 type RootLocation = {
@@ -113,14 +142,14 @@ type BrowsableCatalogEntry = Extract<CatalogEntry, { kind: "source" | "folder" |
 export function createReferenceBrowserController(
   options: ReferenceBrowserOptions,
 ): ReferenceBrowserController {
-  const { menu, lifecycle } = createSuggestionDriverCore<ReferenceRow, ReferenceBrowserMeta>();
+  const { menu, lifecycle } = createSuggestionDriverCore<ReferenceMenuRow, ReferenceBrowserMeta>();
   let identity: InternalSuggestionGeneration | null = null;
   let location: Location | null = null;
   let history: Location[] = [];
   let query = "";
   let triggerRange = { from: 0, to: 0 };
   let completedPrefix = "";
-  let rows: readonly ReferenceRow[] = [];
+  let rows: readonly ReferenceMenuRow[] = [];
   let incomplete = false;
   let loadFailed = false;
   let queriedContainer: Extract<ReferenceRow, { kind: "source" | "folder" }> | null = null;
@@ -170,10 +199,13 @@ export function createReferenceBrowserController(
     canBacktrack: explicitUri() !== null || location?.kind === "drilled",
   });
 
-  const session = (): InternalSuggestionSession<ReferenceRow, ReferenceBrowserMeta> => ({
+  const session = (): InternalSuggestionSession<ReferenceMenuRow, ReferenceBrowserMeta> => ({
     items: rows,
     keepOpenWhenEmpty: true,
     rowId: (row) => row.rowId,
+    // A sentence after `@` that names no document must still end in a new
+    // paragraph on Enter; the link-ahead row is reached by arrow or pointer.
+    defaultActive: (row) => row.kind !== "link-ahead",
     query,
     anchorRect,
     label: options.label(),
@@ -183,7 +215,7 @@ export function createReferenceBrowserController(
     dismiss,
   });
 
-  const project = (override?: CatalogCacheView): readonly ReferenceRow[] => {
+  const project = (override?: CatalogCacheView): readonly ReferenceMenuRow[] => {
     if (!location) return [];
     const authorityIndex = authorities();
     const root = location.kind === "root" ? location : history[0];
@@ -221,7 +253,12 @@ export function createReferenceBrowserController(
               )
             );
           }
-          if (parsed.authority.kind === "contextual") return scope.kind === "work";
+          if (parsed.authority.kind === "lineage") return scope.kind === "lineage";
+          // A No Work chat's bare Scratch is its lineage's.
+          if (parsed.authority.kind === "contextual")
+            return parsed.scheme === "scratch" && scopes.some((other) => other.kind === "lineage")
+              ? scope.kind === "lineage"
+              : scope.kind === "work";
           return (
             scope.kind === "work" &&
             [...authorityIndex.values()].some(
@@ -239,14 +276,7 @@ export function createReferenceBrowserController(
       (location.kind === "drilled" ? location.activeScope : undefined);
     if (targetScope) {
       const view = override ?? options.catalog.read(targetScope);
-      const containerId =
-        queriedContainer?.action.containerId ??
-        (parsed
-          ? view?.sourceIdsByScheme.get(parsed.scheme)
-          : location.kind === "drilled"
-            ? location.containerId
-            : undefined);
-      incomplete = acquisition !== null || containerIncomplete(view, containerId, parsed !== null);
+      incomplete = acquisition !== null || catalogIncomplete(view);
       loadFailed = options.catalog.status(targetScope) === "error" || loadFailed;
       if (loadFailed) incomplete = false;
     } else {
@@ -274,7 +304,15 @@ export function createReferenceBrowserController(
       ? typedQuery.slice(queriedContainer.action.prefix.length)
       : query;
     hasSearch = search.length > 0 && !(parsed && parsed.path === "");
-    return rankReferenceRows(candidates, search, { ...options.priors, kinds: referenceKinds });
+    const ranked = rankReferenceRows(candidates, search, {
+      ...options.priors,
+      kinds: referenceKinds,
+    });
+    const ahead =
+      options.linkAhead && location.kind === "root" && !parsed && !queriedContainer
+        ? linkAheadRow(search, ranked, options.linkAhead)
+        : null;
+    return ahead ? [...ranked, ahead] : ranked;
   };
 
   const publish = (
@@ -327,7 +365,14 @@ export function createReferenceBrowserController(
     }
   }
 
-  function chooseRow(row: ReferenceRow, action: SuggestionChoiceAction): void {
+  function chooseRow(row: ReferenceMenuRow, action: SuggestionChoiceAction): void {
+    if (row.kind === "link-ahead") {
+      if (settled || !identity) return;
+      settled = true;
+      options.onLinkAhead?.({ row, triggerRange });
+      requestExit?.();
+      return;
+    }
     if (row.kind !== "file") {
       void navigate(row.action, row.label);
       if (action === "tab") {
@@ -494,7 +539,7 @@ function rootRows(
         rows.push(row);
         continue;
       }
-      if (entry.kind !== "source" || view.invalidatedEntryIds.has(entry.entryId)) continue;
+      if (entry.kind !== "source") continue;
       const sourceRow = rowForEntry(entry, authorities);
       if (sourceRow && (!populated || populated.has(entry.entryId))) rows.push(sourceRow);
       appendDescendants(rows, view, entry.entryId, authorities, populated);
@@ -547,30 +592,10 @@ function drilledRows(
 }
 
 function catalogIncomplete(view: CatalogCacheView | null): boolean {
-  return !view?.generation || view.invalidatedEntryIds.size > 0;
+  return !view?.generation;
 }
 
-function containerIncomplete(
-  view: CatalogCacheView | null,
-  containerId: string | undefined,
-  explicit: boolean,
-): boolean {
-  if (!view?.generation) return true;
-  if (!containerId) return !explicit && view.invalidatedEntryIds.size > 0;
-  for (const id of view.invalidatedEntryIds) {
-    let entry = view.entries.get(id);
-    while (entry) {
-      if (entry.entryId === containerId) return true;
-      entry =
-        entry.kind === "folder" || entry.kind === "file"
-          ? view.entries.get(entry.parentId)
-          : undefined;
-    }
-  }
-  return false;
-}
-
-/** Snapshot metadata proves emptiness; cold or invalidated containers must not disappear. */
+/** Snapshot metadata proves emptiness; cold containers must not disappear. */
 function populatedContainers(
   view: CatalogCacheView,
   authorities: ReferenceAuthorityIndex,
@@ -583,14 +608,10 @@ function populatedContainers(
     return populated;
   }
   for (const entry of view.entries.values()) {
-    let parentId: string | undefined;
-    if (view.invalidatedEntryIds.has(entry.entryId)) parentId = entry.entryId;
-    else {
-      if (entry.kind !== "file") continue;
-      const row = rowForFile(entry, authorities);
-      if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
-      parentId = entry.parentId;
-    }
+    if (entry.kind !== "file") continue;
+    const row = rowForFile(entry, authorities);
+    if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
+    let parentId: string | undefined = entry.parentId;
     while (parentId && !populated.has(parentId)) {
       populated.add(parentId);
       const parent = view.entries.get(parentId);
@@ -636,7 +657,8 @@ function rowForEntry(
       kind: "source",
       rowId: `source:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
       label: entry.name,
-      location: prefix,
+      // A chat's Scratch is named by the chat, never by the first chat's handle.
+      location: entry.scope.kind === "lineage" ? "" : prefix,
       matchAliases: [entry.scheme],
       action: {
         type: "navigate",
@@ -677,7 +699,45 @@ function rowForFile(
     fileKind: entry.editable ? "document" : "asset",
     aliases: entry.aliases,
     matchedAlias: null,
-    ambiguous: false,
     action: { type: "select", reference },
   };
+}
+
+/**
+ * The link-ahead row for a search, when it names no document the rows already
+ * offer exactly: by stored name (`Chapter 13.md` typed is `Chapter 13`), or
+ * by a visible-extension file's name without the extension (`outline` for
+ * `outline.json`), the way a link reaches it.
+ */
+function linkAheadRow(
+  search: string,
+  ranked: readonly ReferenceRow[],
+  linkAhead: NonNullable<ReferenceBrowserOptions["linkAhead"]>,
+): LinkAheadRow | null {
+  const name = search.trim();
+  if (!name) return null;
+  const typed = parseDocumentFilename(name);
+  const needle = normalizeReferenceName(
+    typed.ok ? renderFilename(typed.value.name, typed.value.extension) : name,
+  );
+  const named = ranked.some((row) => {
+    if (row.kind !== "file") return false;
+    if (normalizeReferenceName(row.label) === needle) return true;
+    const stored = parseDocumentFilename(row.label);
+    return (
+      stored.ok &&
+      Boolean(stored.value.extension) &&
+      normalizeReferenceName(stored.value.name) === needle
+    );
+  });
+  if (named) return null;
+  const target = linkAhead(name);
+  return target
+    ? {
+        kind: "link-ahead",
+        rowId: "link-ahead",
+        label: typed.ok ? renderFilename(typed.value.name, typed.value.extension) : name,
+        uri: target.uri,
+      }
+    : null;
 }

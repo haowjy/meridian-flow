@@ -1,11 +1,17 @@
 /** PostgreSQL regression coverage for filetype-aware branch-push projections. */
+
 import { randomUUID } from "node:crypto";
-import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
+import {
+  createAgentEditCodecFactory,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branchPushSettlementOutbox,
   contextSources,
+  documentDerivations,
   documents,
   documentYjsUpdates,
   projects,
@@ -16,11 +22,12 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { desc, eq } from "drizzle-orm";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
@@ -30,11 +37,13 @@ import {
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
+import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
@@ -71,212 +80,6 @@ describe("branch-push durable projection", () => {
     await db.$client.end();
   });
 
-  it("persists code-file pushes as raw code text", async () => {
-    const userId = randomUUID();
-    const projectId = randomUUID();
-    const workId = randomUUID();
-    const sourceId = randomUUID();
-    const documentId = randomUUID();
-    const threadId = randomUUID();
-    const turnId = randomUUID();
-    await db.insert(users).values(conformanceUserValues(userId, "branch-push-projection"));
-    await db.insert(projects).values({
-      id: projectId,
-      userId,
-      name: "Projection project",
-      slug: `projection-${projectId}`,
-    });
-    await db.insert(works).values({
-      id: workId,
-      projectId,
-      createdByUserId: userId,
-      name: "Projection work",
-      slug: "projection-work",
-    });
-    await db.insert(contextSources).values({
-      id: sourceId,
-      projectId,
-      name: "Manuscript",
-      slug: "manuscript",
-      scope: "project",
-      isPrimary: true,
-    });
-    await db.insert(documents).values({
-      id: documentId,
-      contextSourceId: sourceId,
-      name: "example",
-      extension: "ts",
-      fileType: "typescript",
-    });
-    await db.insert(threads).values({
-      id: threadId,
-      projectId,
-      createdByUserId: userId,
-      title: "Projection thread",
-      kind: "primary",
-      status: "idle",
-    });
-    await db.insert(turns).values({
-      id: turnId,
-      threadId,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
-    await persistence.lifecycle.ensureDocument(documentId as never);
-
-    const schema = buildDocumentSchema();
-    const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
-    const durableProjectionSerializer = createMarkdownDocumentEngine({
-      schema,
-      model,
-      codec,
-      journal: persistence.journal,
-      coordinator: liveCoordinator,
-      lifecycle: persistence.lifecycle,
-      initialDocumentSeeds: persistence.lifecycle,
-      metaForOrigin: () => ({ origin: "system", seq: 0 }),
-      identityPreservingWrite: async () => {
-        throw new Error("Identity-preserving writes are not part of this projection scenario");
-      },
-      resolveFiletype: async (resolvedDocumentId) => {
-        const [row] = await db
-          .select({ filetype: documents.fileType })
-          .from(documents)
-          .where(eq(documents.id, resolvedDocumentId));
-        return row?.filetype ?? null;
-      },
-    });
-    const branchCoordinator = createBranchCoordinator({ store: branchStore });
-    const liveDoc = createCollabYDoc({ gc: false });
-    const branch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
-      workId: workId as never,
-      liveDoc,
-    });
-    const code = "const answer = 42;\nconsole.log(answer);";
-    const branchDoc = createCollabYDoc({ gc: false });
-    model.insertBlocks(toDocHandle(branchDoc), null, {
-      blocks: [schema.nodes.code_block.create({ language: "typescript" }, schema.text(code))],
-    });
-    await branchCoordinator.commitUpdate({
-      branchId: branch.branchId,
-      updateData: Y.encodeStateAsUpdate(branchDoc),
-      source: "agent",
-      threadId: threadId as never,
-      turnId: turnId as never,
-    });
-    const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
-    const journalReadStore = createDrizzleBranchJournalReadStore(db);
-    const commitStore = createDrizzlePushCommitStore(
-      db,
-      stagePendingSettlementWithinTx,
-      changeTrails,
-    );
-    const commitSpy = vi.spyOn(commitStore, "commitPush");
-    const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
-    const branchPush = createBranchPushService({
-      changeEventDelivery: { deliver() {} },
-      branchStore,
-      journalReadStore,
-      commitStore,
-      workPushPolicyStore,
-      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
-      settlementStore: createDrizzlePendingSettlementStore(
-        db,
-        durableProjectionSerializer,
-        createDrizzleDocumentProjectionEffects(db),
-        changeTrails,
-      ),
-      branchCoordinator,
-      journal: persistence.journal,
-      liveCoordinator,
-      model,
-      codec,
-    });
-
-    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toMatchObject({
-      name: "WorkLifecycleUnavailableError",
-      state: "archived",
-    });
-    await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({
-      status: "pushed",
-    });
-    const prepared = commitSpy.mock.calls.at(-1)?.[0];
-    if (!prepared) throw new Error("Expected a prepared push");
-    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
-    await expect(commitStore.commitPush(prepared)).resolves.toMatchObject({ status: "conflict" });
-    await expect(commitStore.commitPushBatch({ pushes: [prepared] })).rejects.toThrow(
-      "changed before its push could commit",
-    );
-    await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
-    const [persisted] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
-    expect(persisted?.markdownProjection).toBe(code);
-
-    await db
-      .update(documents)
-      .set({ extension: "png", fileType: "png" })
-      .where(eq(documents.id, documentId));
-    const currentLive = createCollabYDoc({ gc: false });
-    await liveCoordinator.withDocument(documentId, (doc) => {
-      Y.applyUpdate(currentLive, Y.encodeStateAsUpdate(doc));
-    });
-    const nextBranch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
-      workId: workId as never,
-      liveDoc: currentLive,
-    });
-    const nextBranchDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(nextBranchDoc, Y.encodeStateAsUpdate(currentLive));
-    const [codeBlock] = model.getBlocks(toDocHandle(nextBranchDoc));
-    if (!codeBlock) throw new Error("Code block is unavailable after the first push");
-    model.applyTextEdit(
-      toDocHandle(nextBranchDoc),
-      codeBlock,
-      { from: code.length, to: code.length },
-      "\n// unsupported projection",
-    );
-    await branchCoordinator.commitSyncFromDoc({
-      branchId: nextBranch.branchId,
-      expectedGeneration: nextBranch.generation,
-      sourceDoc: nextBranchDoc,
-      source: "agent",
-      threadId: threadId as never,
-      turnId: turnId as never,
-    });
-
-    await expect(branchPush.pushToLive({ branchId: nextBranch.branchId })).rejects.toThrow(
-      "Tracked document has registered binary filetype: png",
-    );
-    const [blocked] = await db
-      .select({
-        state: branchPushSettlementOutbox.state,
-        lastErrorCode: branchPushSettlementOutbox.lastErrorCode,
-      })
-      .from(branchPushSettlementOutbox)
-      .where(eq(branchPushSettlementOutbox.documentId, documentId))
-      .orderBy(desc(branchPushSettlementOutbox.pushId))
-      .limit(1);
-    expect(blocked).toEqual({ state: "blocked", lastErrorCode: "corrupt_state" });
-    const [afterBlocked] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
-    expect(afterBlocked?.markdownProjection).toBe(code);
-
-    nextBranchDoc.destroy();
-    currentLive.destroy();
-    branchDoc.destroy();
-    liveDoc.destroy();
-  });
-
   it("keeps a generic projection failure pending and completes it on recovery", async () => {
     const userId = randomUUID();
     const projectId = randomUUID();
@@ -311,10 +114,11 @@ describe("branch-push durable projection", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     });
     await db.insert(threads).values({
+      rootThreadId: threadId,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -325,6 +129,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -334,9 +139,9 @@ describe("branch-push durable projection", () => {
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+    const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
-      schema,
+      links: createStaticDocumentLinkScopes(),
       model,
       codec,
       journal: persistence.journal,
@@ -353,7 +158,7 @@ describe("branch-push durable projection", () => {
     const serializer = {
       async serializeDocument(resolvedDocumentId: string, doc: Y.Doc) {
         if (failProjection) throw new Error("injected generic projection failure");
-        return engine.serializeDocument(resolvedDocumentId as never, doc);
+        return engine.serializeDocument(resolvedDocumentId as never, doc, { kind: "live" });
       },
     };
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
@@ -369,6 +174,7 @@ describe("branch-push durable projection", () => {
       serializer,
       createDrizzleDocumentProjectionEffects(db),
       changeTrails,
+      createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
@@ -387,6 +193,7 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      links: createStaticDocumentLinkScopes(),
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
@@ -398,7 +205,7 @@ describe("branch-push durable projection", () => {
       journal: persistence.journal,
       liveCoordinator,
       model,
-      codec,
+      codec: createAgentEditCodecFactory(codec),
     });
 
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
@@ -459,6 +266,11 @@ describe("branch-push durable projection", () => {
       .from(documents)
       .where(eq(documents.id, documentId));
     expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
+    const [watermark] = await db
+      .select()
+      .from(documentDerivations)
+      .where(eq(documentDerivations.documentId, documentId));
+    expect(watermark?.projectionAdmissionSequence).toBe(2n);
 
     branchDoc.destroy();
     liveDoc.destroy();
@@ -502,12 +314,13 @@ describe("branch-push durable projection", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
       markdownProjection: "stale projection",
       updatedAt: old,
     });
     await db.insert(threads).values({
+      rootThreadId: threadId,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -525,6 +338,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -534,9 +348,9 @@ describe("branch-push durable projection", () => {
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+    const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
-      schema,
+      links: createStaticDocumentLinkScopes(),
       model,
       codec,
       journal: persistence.journal,
@@ -573,6 +387,7 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      links: createStaticDocumentLinkScopes(),
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
@@ -584,12 +399,13 @@ describe("branch-push durable projection", () => {
         engine,
         createDrizzleDocumentProjectionEffects(db),
         changeTrails,
+        createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
       ),
       branchCoordinator,
       journal: persistence.journal,
       liveCoordinator,
       model,
-      codec,
+      codec: createAgentEditCodecFactory(codec),
       writerIngressBarrier: {
         drain: async () => 1,
         isGenerationCurrent: () => false,

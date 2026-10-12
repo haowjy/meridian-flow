@@ -1,8 +1,12 @@
 /** AssistantTurn — single render path for assistant turns. */
 
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  isProviderDeclined,
+  isTerminalTurnStatus,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
@@ -13,7 +17,7 @@ import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
-import { ErrorBlock } from "./ErrorBlock";
+import { ErrorBlock, type ErrorBlockKind } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
@@ -57,15 +61,32 @@ export type AssistantTurnProps = {
   }>;
   isLatestAssistant?: boolean;
   /**
+   * No visible turn follows this one. An error is current only here: once the
+   * writer (or a woken model) moves on, it stays as a quiet historical marker.
+   */
+  endsTranscript?: boolean;
+  /**
    * The next visible turn continues this response (a subagent notification
    * woke the model, with no writer message between), so this part has no
    * settled action row of its own.
    */
   continuesResponse?: boolean;
-  onRetry?: () => void;
+  /** Retry on a failed reply; absent where the reply can't be retried from here. */
+  replyRetry?: ReplyRetryView;
+  /** A Retry's new reply before the server has it: nothing to read or act on yet. */
+  standIn?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
+};
+
+export type ReplyRetryView = {
+  /** Present only while this failed reply is the latest turn. */
+  onRetry?: () => void;
+  /** The server refused this reply's last Retry, and it is still the latest turn. */
+  refused: boolean;
+  /** This is a Retry's stand-in whose request never answered. */
+  requestLost: boolean;
 };
 
 function AssistantTurnComponent({
@@ -75,8 +96,10 @@ function AssistantTurnComponent({
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
+  endsTranscript = false,
   continuesResponse = false,
-  onRetry,
+  replyRetry,
+  standIn = false,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -89,28 +112,19 @@ function AssistantTurnComponent({
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
   const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
   const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
-  // Progressive-disclosure label: "Thinking part N" for a turn with several
-  // process folds (one per artifact/interrupt-delimited stretch).
-  // Ordinals count only visible folds: a process item whose runs have nothing
-  // to show renders nothing, so it must not advance "Thinking part N" or the
-  // total.
-  const rows = useMemo(() => {
-    const isVisibleFold = (item: RenderItem) =>
-      item.kind === "process" && foldHasVisibleContent(item.runs);
-    const processCount = items.filter(isVisibleFold).length;
-    const result: { item: RenderItem; processOrdinal: number; processCount: number }[] = [];
-    let processOrdinal = 0;
-    for (const item of items) {
-      if (isVisibleFold(item)) processOrdinal += 1;
-      result.push({ item, processOrdinal, processCount });
-    }
-    return result;
-  }, [items]);
-  const isErrored = turn.status === "error";
+  const errorKind =
+    turn.status === "error"
+      ? replyErrorKind({
+          requestLost: replyRetry?.requestLost ?? false,
+          metadata: turn.metadata,
+        })
+      : null;
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
+    enabled: !isLive && !standIn,
+  });
   const liveLineageDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
@@ -133,12 +147,10 @@ function AssistantTurnComponent({
       data-turn-status={turn.status}
     >
       <div className="flex flex-col gap-[var(--chat-space-block)]">
-        {rows.map(({ item, processOrdinal, processCount }) => (
+        {items.map((item) => (
           <TurnItemView
             key={itemRenderKey(item)}
             item={item}
-            processOrdinal={processOrdinal}
-            processCount={processCount}
             threadId={resolvedThreadId}
             turnStatus={turn.status}
             onRespondToInterrupt={onRespondToInterrupt}
@@ -166,15 +178,18 @@ function AssistantTurnComponent({
           />
         ) : null}
 
-        {isErrored ? (
+        {errorKind ? (
           <ErrorBlock
-            isLatest={isLatestAssistant}
-            kind={turn.blocks.length === 0 ? "send" : "generation"}
-            onRetry={isLatestAssistant ? onRetry : undefined}
+            isLatest={endsTranscript}
+            kind={errorKind}
+            onRetry={
+              endsTranscript && errorKind !== "provider-declined" ? replyRetry?.onRetry : undefined
+            }
+            retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse ? (
+      {isSettled && !continuesResponse && !standIn ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
@@ -186,6 +201,19 @@ function AssistantTurnComponent({
       {showsInkDrop ? <InkDrop /> : null}
     </div>
   );
+}
+
+/** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
+function replyErrorKind({
+  requestLost,
+  metadata,
+}: {
+  requestLost: boolean;
+  metadata: Turn["metadata"];
+}): ErrorBlockKind {
+  if (requestLost) return "retry";
+  if (isProviderDeclined(metadata)) return "provider-declined";
+  return "generation";
 }
 
 function InkDrop() {
@@ -211,8 +239,6 @@ function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft
 
 const TurnItemView = memo(function TurnItemView({
   item,
-  processOrdinal,
-  processCount,
   threadId,
   turnStatus,
   onRespondToInterrupt,
@@ -220,8 +246,6 @@ const TurnItemView = memo(function TurnItemView({
   directResult,
 }: {
   item: RenderItem;
-  processOrdinal: number;
-  processCount: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -238,10 +262,7 @@ const TurnItemView = memo(function TurnItemView({
     if (!foldHasVisibleContent(item.runs)) return null;
     return (
       <div data-turn-item-kind="process">
-        <ProcessDisclosure
-          label={digest ?? thinkingLabel()}
-          ariaLabel={thinkingAriaLabel(processOrdinal - 1, processCount)}
-        >
+        <ProcessDisclosure label={digest ?? thinkingLabel()}>
           {item.runs.map((run) => (
             <FoldRun
               key={runRenderKey(run)}
@@ -287,10 +308,6 @@ const TurnItemView = memo(function TurnItemView({
 
 function thinkingLabel() {
   return <Trans>Thinking</Trans>;
-}
-
-function thinkingAriaLabel(processIndex: number, processCount: number): string | undefined {
-  return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
 /** A process item earns its disclosure only when it holds something the writer can read. */

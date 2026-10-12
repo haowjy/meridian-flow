@@ -9,12 +9,12 @@ import { getWorkReceiptReversalAvailability } from "../../../../../lib/work-rece
 
 type AvailabilityRouteServices = {
   contextPorts: AppServices["contextPorts"];
+  fileAccess: AppServices["fileAccess"];
   threads: AppServices["threadRepos"]["threads"];
   threadWorks: AppServices["threadRepos"]["threadWorks"];
   works: AppServices["workRepo"];
   workAuthorityResolver: AppServices["workAuthorityResolver"];
   documentSync: AppServices["documentSync"];
-  projects: AppServices["projectRepo"];
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
 };
@@ -22,12 +22,12 @@ type AvailabilityRouteServices = {
 function selectAvailabilityRouteServices(app: AppServices): AvailabilityRouteServices {
   return {
     contextPorts: app.contextPorts,
+    fileAccess: app.fileAccess,
     threads: app.threadRepos.threads,
     threadWorks: app.threadRepos.threadWorks,
     works: app.workRepo,
     workAuthorityResolver: app.workAuthorityResolver,
     documentSync: app.documentSync,
-    projects: app.projectRepo,
     blocks: app.threadRepos.blocks,
     turns: app.threadRepos.turns,
   };
@@ -39,11 +39,7 @@ export default defineEventHandler(async (event) => {
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const { uri, target } = getQuery(event);
   if (typeof target === "string" && target.length > 0) {
-    await requireThreadOwner(
-      { threads: services.threads, projects: services.projects },
-      threadId,
-      user.userId,
-    );
+    await requireThreadOwner({ threads: services.threads }, threadId, user.userId);
     return getWorkReceiptReversalAvailability(
       {
         blocks: services.blocks,
@@ -61,6 +57,7 @@ export default defineEventHandler(async (event) => {
   const document = await readThreadContextDocument(
     {
       contextPorts: services.contextPorts,
+      fileAccess: services.fileAccess,
       threads: services.threads,
       threadWorks: services.threadWorks,
       works: services.works,

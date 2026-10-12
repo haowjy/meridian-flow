@@ -14,9 +14,11 @@ import type {
   ConcurrentUpdate,
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
+import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
+import { withRunShownLinks } from "../links/shown.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
@@ -25,15 +27,17 @@ import type {
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
+import type { CommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
+import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
 }
 
 export interface SyncedMutationSummary {
+  revision?: string | null;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   reconciled: boolean;
@@ -41,6 +45,8 @@ export interface SyncedMutationSummary {
 
 export interface MutationEchoInput {
   runtime: MutationCommitRuntime;
+  /** The command's links; the echo spells through them. */
+  links: CommandLinks;
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
@@ -55,13 +61,14 @@ export interface JournaledUpdate {
 
 export interface LiveUpdateCommitInput {
   docId: string;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   updates: readonly JournaledUpdate[];
   liveOrigin: ConcurrentUpdateOrigin;
   interactionContext?: InteractionContext;
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
+  links: CommandLinks;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
@@ -71,19 +78,38 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
+  /**
+   * What admission answers when the document is not empty at that moment. A
+   * create without overwrite lands only in an empty document, and this is the
+   * one acquisition that journals, so the check belongs here and not earlier.
+   */
+  refuseUnlessEmpty?: InternalWriteResult;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
+}
+
+/** One of the actor's own updates and the state it was made against. */
+export interface OwnWriteStep {
+  preOwnSnapshot: Uint8Array;
+  update: Uint8Array;
 }
 
 export interface CommitPreflightInput {
   docId: string;
   runtime: MutationCommitRuntime;
+  /** The command's links: comparison snapshots spell through their codec, the revision reads their scope. */
+  links: CommandLinks;
   deletedHashes: ReadonlySet<string>;
   touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
   ownTurnId?: string;
   actor: MutationActor;
+  /**
+   * The writes being committed, each against what the actor saw. What they
+   * remove was asked for, so the save never reports it as swept writer text.
+   */
+  ownWrites?: readonly OwnWriteStep[];
 }
 
 export interface CapturedConcurrentDetection {
@@ -101,6 +127,7 @@ export interface DestructiveSweepReport {
 }
 
 export interface ApplyWithRecheckResult {
+  revision: string | null;
   concurrent: CapturedConcurrentDetection;
   lateSweep?: DestructiveSweepReport;
 }
@@ -112,6 +139,7 @@ export type JournalBatchCommit = {
 type MutationSubmissionResult = (
   | {
       ok: true;
+      revision: string | null;
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
@@ -139,6 +167,7 @@ export interface MutationCommit {
   detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
+    links: CommandLinks;
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
@@ -161,12 +190,12 @@ export interface MutationCommit {
 }
 
 export function createMutationCommit(deps: {
+  links: DocumentLinksPort;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
-  codec: AgentEditCodec;
 }): MutationCommit {
-  const { journal, coordinator, model, codec } = deps;
+  const { journal, coordinator, model } = deps;
 
   return {
     submitMutation,
@@ -183,7 +212,8 @@ export function createMutationCommit(deps: {
     concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
   ): SyncedMutationSummary {
     const after =
-      input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
+      input.afterSnapshot ??
+      snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
     const echo = computeEcho({
       before: input.before,
       after,
@@ -192,7 +222,7 @@ export function createMutationCommit(deps: {
     });
     return {
       echo,
-      concurrentEdits: concurrent.info,
+      concurrentEdits: withRunShownLinks(concurrent.info, input.links),
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
   }
@@ -200,6 +230,7 @@ export function createMutationCommit(deps: {
   async function detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
+    links: CommandLinks;
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
@@ -224,6 +255,7 @@ export function createMutationCommit(deps: {
       return applyConcurrentOnDoc(
         detectionDoc,
         input.runtime,
+        input.links,
         updates,
         detectionVector,
         input.ownTurnId,
@@ -235,6 +267,7 @@ export function createMutationCommit(deps: {
   }
 
   async function submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult> {
+    let revision: string | null = null;
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
@@ -244,17 +277,26 @@ export function createMutationCommit(deps: {
         coordinator,
         input.docId,
         input.commandName,
-        input.docId,
         async (liveDoc) => {
+          if (input.refuseUnlessEmpty && model.getBlocks(toDocHandle(liveDoc)).length > 0) {
+            return input.refuseUnlessEmpty;
+          }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
+            ownWrites: [
+              {
+                preOwnSnapshot: input.preOwnSnapshot,
+                update: mergeUpdates(input.updates.map((entry) => entry.update)),
+              },
+            ],
             journalEntries: journalEntries(input),
             onJournalAccepted: (accepted) => {
               journalCommitKind = accepted;
             },
           });
+          revision = applied.revision;
           captured = applied.concurrent;
           lateSweep = applied.lateSweep;
           return null;
@@ -268,9 +310,11 @@ export function createMutationCommit(deps: {
     if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
     return {
       ok: true,
+      revision,
       summary: summarizeMutationEcho(
         {
           runtime: input.runtime,
+          links: input.links,
           before: input.before,
           touchedHashes: input.touchedHashes,
           deletedHashes: input.deletedHashes,
@@ -310,6 +354,7 @@ export function createMutationCommit(deps: {
       preflight,
     });
     return {
+      revision: applied.revision,
       concurrent: applied.concurrent,
       ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
     };
@@ -327,7 +372,14 @@ export function createMutationCommit(deps: {
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
       input.journalEntries.length > 0
-        ? (await commitJournalBatch(input.journalEntries)).journalCommitKind
+        ? (
+            await commitJournalBatch(
+              input.journalEntries.map((entry) => ({
+                ...entry,
+                authority: coordinator.documentAuthority?.(liveDoc),
+              })),
+            )
+          ).journalCommitKind
         : null;
     if (journalCommitKind) input.onJournalAccepted?.(journalCommitKind);
     const current = input.preflight
@@ -337,10 +389,12 @@ export function createMutationCommit(deps: {
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+    const revision = deps.links.revision(liveDoc, input.links.scope);
     const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
       const lateSweep = await destructiveReport(input, current, beforeApplyDoc, afterApplyDoc);
       return {
+        revision,
         concurrent: current,
         journalCommitKind,
         ...(lateSweep ? { lateSweep } : {}),
@@ -361,7 +415,7 @@ export function createMutationCommit(deps: {
     const afterRecovery = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
       const lateSweep = await destructiveReport(input, concurrent, beforeRecovery, afterRecovery);
-      return { concurrent, ...(lateSweep ? { lateSweep } : {}) };
+      return { revision: null, concurrent, ...(lateSweep ? { lateSweep } : {}) };
     } finally {
       beforeRecovery.destroy();
       afterRecovery.destroy();
@@ -406,7 +460,7 @@ export function createMutationCommit(deps: {
       const incremental = applyConcurrentUpdates(
         toDocHandle(detectionDoc),
         model,
-        codec,
+        input.links.codec,
         updates,
         ownUpdateOrigin(input.actor),
       );
@@ -434,6 +488,7 @@ export function createMutationCommit(deps: {
   function applyConcurrentOnDoc(
     detectionDoc: Y.Doc,
     runtime: MutationCommitRuntime,
+    links: CommandLinks,
     updates: readonly ConcurrentUpdate[],
     _syncVector: Uint8Array,
     turnId: string | undefined,
@@ -441,7 +496,7 @@ export function createMutationCommit(deps: {
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
       model,
-      codec,
+      links.codec,
       updates,
       turnId ? agentUpdateOrigin(turnId) : undefined,
     );
@@ -461,12 +516,15 @@ export function createMutationCommit(deps: {
   ): Promise<DestructiveSweepReport | undefined> {
     if (input.actor.kind !== "agent") return undefined;
     const affected = await classifyDestructiveDocumentEffect(
-      { journal, model, codec },
+      { journal, model, codec: input.links.codec },
       {
         documentId: input.docId,
         before: toDocHandle(before),
         afterCandidate: toDocHandle(afterCandidate),
         attributedLineage: concurrent.detection.lineageOrigins,
+        ...(input.ownWrites
+          ? { ownWrites: ownWriteLineage(input.ownWrites, concurrent.detection) }
+          : {}),
       },
     );
     const affectedBlockHashes = affected.map((block) => block.hash).sort();
@@ -474,12 +532,48 @@ export function createMutationCommit(deps: {
     return {
       affectedBlockHashes,
       capturedDeletedBodies: captureSnapshotBodies(
-        snapshotBlocks(toDocHandle(before), model, codec),
+        snapshotBlocks(toDocHandle(before), model, input.links.codec),
         affectedBlockHashes,
       ),
       sweptContent: true,
       beforeContentRef: input.interactionContext?.afterJournalId ?? null,
     };
+  }
+
+  /**
+   * Visible lineage the own writes were made against, and what each one hid.
+   * A writer edit that landed after the actor's last read may already be in a
+   * write's runtime, pulled in silently; the actor never saw it, so it is not
+   * counted as seen.
+   */
+  function ownWriteLineage(
+    steps: readonly OwnWriteStep[],
+    detection: ConcurrentDetectionResult,
+  ): {
+    seen: LineageRange[];
+    removed: LineageRange[];
+  } {
+    const seen: LineageRange[] = [];
+    const removed: LineageRange[] = [];
+    for (const step of steps) {
+      const doc = docFromSnapshot(step.preOwnSnapshot);
+      try {
+        const before = visibleLineage(doc);
+        Y.applyUpdate(doc, step.update, { type: "system" });
+        seen.push(...before);
+        removed.push(...subtractLineageRanges(before, visibleLineage(doc)));
+      } finally {
+        doc.destroy();
+      }
+    }
+    const unread = detection.lineageOrigins.filter((lineage) => lineage.origin === "human");
+    return { seen: subtractLineageRanges(seen, unread), removed };
+  }
+
+  function visibleLineage(doc: Y.Doc): LineageRange[] {
+    return model
+      .getBlocks(toDocHandle(doc))
+      .flatMap((block) => [...model.getVisibleContentLineage(block)]);
   }
 }
 

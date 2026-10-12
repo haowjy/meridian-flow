@@ -3,7 +3,7 @@
  *
  * Rows and nothing else. The physics the writer feels — focus staying in the
  * prose, the eight-row cap, the scroll that follows the arrow keys, the fades
- * — belong to `SuggestionMenu`, which the `[[` menu shares; this file decides
+ * — belong to `SuggestionMenu`, which the `@` menu shares; this file decides
  * what a slash row says and when a group heading opens.
  */
 

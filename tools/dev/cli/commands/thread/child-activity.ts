@@ -1,11 +1,11 @@
-/** `thread events --child`: one descendant's status and current tool from each activity frame. */
+/** `thread events --child`: one child's status and current tool from each activity frame. */
 import { oneLine, truncate } from "../../core/output";
 import type { CliEvent } from "./events-map";
 import { asRecord } from "./transcript";
 
 export const ACTIVITY_EVENT = "meridian.subagent.activity";
 
-/** One descendant's row from one activity frame. */
+/** One child's row from one activity frame. */
 export type ChildActivity = {
   type: "child.activity";
   seq: string;
@@ -36,15 +36,14 @@ function matchesChild(node: Record<string, unknown>, child: string): boolean {
   );
 }
 
-/** The chosen descendant's row from an activity frame, or null when the frame lacks it. */
+/** The chosen child's row from an activity frame, or null when the frame lacks it. */
 export function childActivity(event: CliEvent, child: string): ChildActivity | null {
   if (event.type !== "event" || event.name !== ACTIVITY_EVENT) return null;
-  const descendants = asRecord(event.value).descendants;
-  if (!Array.isArray(descendants)) return null;
-  const node = descendants.map(asRecord).find((entry) => matchesChild(entry, child));
+  const children = asRecord(event.value).children;
+  if (!Array.isArray(children)) return null;
+  const node = children.map(asRecord).find((entry) => matchesChild(entry, child));
   if (!node) return null;
   const status = asRecord(node.status);
-  // currentTool is read loosely so frames from before and after it existed both work.
   const tool = asRecord(node.currentTool);
   return {
     type: "child.activity",
@@ -59,7 +58,7 @@ export function childActivity(event: CliEvent, child: string): ChildActivity | n
   };
 }
 
-/** The `followThread` presenter for --child: drops everything but that descendant's rows. */
+/** The `followThread` presenter for --child: drops everything but that child's rows. */
 export function presentChild(
   child: string,
 ): (event: CliEvent) => { value: ChildActivity; line: string } | null {

@@ -12,8 +12,12 @@ import type {
 import {
   classifyFiletype,
   documentFileTypeFor,
+  filenameForBinary,
   filetypeForKnownMimeType,
   filetypeForKnownPath,
+  type ParsedDocumentFilename,
+  parseDocumentFilename,
+  registeredExtensionForFiletype,
 } from "@meridian/contracts/protocol";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -37,6 +41,7 @@ export interface UploadReservation {
   intakeId: string;
   documentId: string;
   fingerprint: string;
+  filename: string;
   finalPath: string;
   objectKey: string;
   canonicalUri: string;
@@ -60,6 +65,7 @@ export interface UploadIntakeRepository {
     actorUserId: string;
     owner: UploadOwner;
     filename: string;
+    documentFilename: ParsedDocumentFilename;
     mimeType: string;
     byteDigest: string;
     fingerprint: string;
@@ -70,26 +76,44 @@ export interface UploadIntakeRepository {
   resetObjectStored(projectId: string, intakeId: string): Promise<void>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   finalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  deleteDraft(
+  /** Locks and validates the exact unused identity a writer asked to delete. */
+  lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
-  ): Promise<{
-    result: DeleteDraftUploadResult;
-    objectKey?: string;
-  }>;
+  ): Promise<
+    | { kind: "claimed"; reservation: UploadReservation }
+    | { kind: "refused"; result: DeleteDraftUploadResult; objectKey?: string }
+  >;
+  markDeleted(projectId: string, intakeId: string): Promise<void>;
   /** F5 includes this singular seam in the admission transaction. */
   consume(documentIds: readonly string[]): Promise<void>;
 }
 
-/** ContextFS adapter seam; it is the only content/catalog mutation dependency. */
-export interface UploadContentPort {
+/**
+ * ContextFS adapter seam; it is the only content/catalog mutation dependency.
+ * `bind` runs before finalize's transaction opens: binding tracked text
+ * assigns its link refs and may register ahead refs, which must not wait on the
+ * locks finalize holds (contract §6.2). `persist` applies what it bound.
+ */
+export interface UploadContentPort<Bound = unknown> {
+  bind(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+    bytes: Uint8Array;
+  }): Promise<{ ok: true; bound: Bound } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
+    bound: Bound;
     actorUserId: string;
     mimeType: string;
     bytes: Uint8Array;
     storageUrl: string | null;
   }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
+  /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
+  remove(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+  }): Promise<{ ok: true } | { ok: false; stale: true }>;
 }
 
 export interface UploadIntake {
@@ -142,7 +166,8 @@ export function classifyUpload(input: {
   if (textLike) {
     const candidate = byPath ?? byMime ?? "text";
     const classification = classifyFiletype(candidate);
-    if (classification.kind === "tracked") return candidate;
+    if (classification.kind === "tracked")
+      return candidate === "text" && byPath === null ? "markdown" : candidate;
     return classification.kind === "unknown" ? "text" : classification.fileType;
   }
   const candidate = byMime ?? byPath;
@@ -189,9 +214,9 @@ async function cleanupObject(
   }
 }
 
-export function createUploadIntake(deps: {
+export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
-  content: UploadContentPort;
+  content: UploadContentPort<Bound>;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }): UploadIntake {
@@ -215,6 +240,16 @@ export function createUploadIntake(deps: {
       if (actualDigest !== byteDigest)
         return { ok: false, error: { code: "idempotency_conflict" } };
       const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
+      const tracked = classifyFiletype(fileType).kind === "tracked";
+      const inferredExtension = registeredExtensionForFiletype(fileType) ?? undefined;
+      let parsed = parseDocumentFilename(filename, {
+        sourceExtension: tracked ? inferredExtension : undefined,
+      });
+      if (parsed.ok && !tracked) {
+        parsed = { ok: true, value: filenameForBinary(parsed.value, fileType, mimeType) };
+      }
+      if (!parsed.ok)
+        return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
       const canonicalFingerprint = fingerprint({
         actorUserId: raw.actorUserId,
         owner: raw.owner,
@@ -226,7 +261,8 @@ export function createUploadIntake(deps: {
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
         owner: raw.owner,
-        filename,
+        filename: raw.filename,
+        documentFilename: parsed.value,
         mimeType,
         byteDigest,
         fingerprint: canonicalFingerprint,
@@ -251,10 +287,10 @@ export function createUploadIntake(deps: {
         };
       }
 
-      const tracked = classifyFiletype(reservation.fileType).kind === "tracked";
+      const storedTracked = classifyFiletype(reservation.fileType).kind === "tracked";
       let storageUrl = reservation.storageUrl;
       let storedThisAttempt = false;
-      if (!tracked && !storageUrl) {
+      if (!storedTracked && !storageUrl) {
         const stored = await deps.objectStore.put(reservation.objectKey, raw.bytes, mimeType);
         if (!stored.ok) return { ok: false, error: { code: "storage_failed" } };
         storageUrl = stored.value.storageUrl;
@@ -264,11 +300,18 @@ export function createUploadIntake(deps: {
       }
 
       try {
+        const bound = await deps.content.bind({
+          reservation,
+          actorUserId: raw.actorUserId,
+          bytes: raw.bytes,
+        });
+        if (!bound.ok) throw Object.assign(new Error("upload binding failed"), bound);
         const finalized = await deps.repository.transaction(async () => {
           const current = await deps.repository.lockForFinalize(raw.owner.projectId, raw.intakeId);
           if (current.state === "finalized") return current;
           const persisted = await deps.content.persist({
             reservation: current,
+            bound: bound.bound,
             actorUserId: raw.actorUserId,
             mimeType,
             bytes: raw.bytes,
@@ -311,7 +354,23 @@ export function createUploadIntake(deps: {
       }
     },
     async deleteDraft(input, actorUserId) {
-      const deleted = await deps.repository.deleteDraft(input, actorUserId);
+      const deleted = await deps.repository.transaction(async () => {
+        const claim = await deps.repository.lockForDelete(input, actorUserId);
+        if (claim.kind === "refused") return claim;
+        const { reservation } = claim;
+        // An arrived upload keeps its identity through the canonical soft delete, so a ref
+        // settled to it answers gone and never captures a later upload at the same address.
+        // A reservation that never finalized has no document row to remove.
+        if (reservation.state === "finalized") {
+          const removed = await deps.content.remove({ reservation, actorUserId });
+          if (!removed.ok) return { result: { kind: "identity_mismatch" as const } };
+        }
+        await deps.repository.markDeleted(reservation.projectId, reservation.intakeId);
+        return {
+          result: { kind: "deleted" as const },
+          objectKey: reservation.storageUrl ? reservation.objectKey : undefined,
+        };
+      });
       if (deleted.objectKey) {
         await cleanupObject(deps.objectStore, deps.eventSink, deleted.objectKey, input.documentId);
       }

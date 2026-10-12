@@ -1,5 +1,9 @@
 /** Immutable Agent content and future-chat catalog selection. Callers own resource authorization. */
-import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import type {
+  InvocationOverlay,
+  ResolvedAgentConfiguration,
+  RetainedSkillReference,
+} from "@meridian/contracts/agents";
 import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
 import type { AgentSourceSnapshot } from "../domain/agent-source-revision.js";
 
@@ -15,6 +19,8 @@ export interface AgentRevisionBinding {
   revision: AgentRevision | null;
   configuration: ResolvedAgentConfiguration;
   invocationOverlay: InvocationOverlay | null;
+  /** Packaged skills the user invoked in this thread, by slug, pinned as read (D64). */
+  invokedSkills: Readonly<Record<string, RetainedSkillReference>>;
 }
 export interface AgentCatalogEntry {
   id: string;
@@ -95,4 +101,13 @@ export interface AgentRevisionStore {
     invocationOverlay: InvocationOverlay | null,
   ): Promise<boolean>;
   readThreadBinding(threadId: string): Promise<AgentRevisionBinding | undefined>;
+  /**
+   * Pins a user-invoked skill on the thread's binding, replacing an earlier
+   * pin of the same slug (D64). False when the thread has no binding.
+   */
+  recordInvokedSkill(
+    threadId: string,
+    slug: string,
+    reference: RetainedSkillReference,
+  ): Promise<boolean>;
 }

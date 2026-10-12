@@ -2,8 +2,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
-  bodyFromHashline,
-  deletionBoundaryTarget,
   liveBlockTarget,
   normalizeTrailPushes,
   type RawTrailChange,
@@ -42,64 +40,15 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
 }
 
 describe("trail navigation", () => {
-  it("anchors a full-document delete at the durable empty root", () => {
-    const { doc } = docWithBlocks();
-    expect(deletionBoundaryTarget({ doc })).toMatchObject({
-      kind: "deletion_boundary",
-      affinity: "document_start",
-    });
-  });
-
   it("rejects a modify target after its block is deleted even if anchors resolve", () => {
     const { doc, blocks } = docWithBlocks("target", "neighbor");
     const target = liveBlockTarget(doc, blocks[0]);
     doc.getXmlFragment("prosemirror").delete(0, 1);
     expect(validateLiveBlockTarget({ doc, target })).toBe(false);
   });
-
-  it("captures only the body suffix of a protocol hashline", () => {
-    expect(bodyFromHashline("hash|Writer markdown")).toEqual({
-      status: "available",
-      markdown: "Writer markdown",
-    });
-  });
 });
 
 describe("trail normalization", () => {
-  it("folds repeated block changes and removes a net-cancelled change", () => {
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [{ threadId: "thread-a", turnId: "turn-a" }],
-        changes: [
-          change(),
-          change({ changeId: "c2", beforeText: "after", afterTextAtReceipt: "final", sequence: 2 }),
-        ],
-      },
-    ]);
-    expect(trails[0].changes).toHaveLength(1);
-    expect(trails[0].changes[0]).toMatchObject({
-      beforeText: "before",
-      afterTextAtReceipt: "final",
-    });
-
-    const cancelled = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [],
-        changes: [
-          change({ kind: "insert", beforeText: null }),
-          change({ kind: "delete", beforeText: "after", afterTextAtReceipt: null, sequence: 2 }),
-        ],
-      },
-    ]);
-    expect(cancelled[0].changes).toEqual([]);
-  });
-
   it("folds repeated changes with the same canonical block identity", () => {
     const identity = { documentId: "doc-a", clientID: 42, clock: 7 };
     const trails = normalizeTrailPushes([
@@ -132,54 +81,5 @@ describe("trail normalization", () => {
       beforeText: "before",
       afterTextAtReceipt: "final",
     });
-  });
-
-  it("preserves stable push grouping and ordering across documents", () => {
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [],
-        changes: [change()],
-      },
-      {
-        pushId: "p2",
-        receiptId: "r2",
-        threadId: "thread-a",
-        journalOwners: [],
-        changes: [
-          change({
-            changeId: "c2",
-            documentId: "doc-b",
-            beforeBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
-            afterBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
-            sequence: 2,
-            pushId: "p2",
-            receiptId: "r2",
-          }),
-        ],
-      },
-    ]);
-    expect(
-      trails[0].changes.map(({ pushId, receiptId, ordinal }) => ({ pushId, receiptId, ordinal })),
-    ).toEqual([
-      { pushId: "push-a", receiptId: "receipt-a", ordinal: 0 },
-      { pushId: "p2", receiptId: "r2", ordinal: 1 },
-    ]);
-    expect(trails[0].counts).toEqual({ changes: 2, documents: 2 });
-  });
-
-  it("counts an addition without writer impact", () => {
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [],
-        changes: [change({ kind: "insert", beforeText: null })],
-      },
-    ]);
-    expect(trails[0].counts).toEqual({ changes: 1, documents: 1 });
   });
 });

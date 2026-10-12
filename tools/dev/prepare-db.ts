@@ -25,15 +25,6 @@ async function main(): Promise<void> {
       shell: true,
       env: process.env,
     });
-    if (db.postMigrateScript) {
-      console.log(`▸ Applying post-migrate SQL for ${db.label}`);
-      execFileSync(db.postMigrateScript, {
-        cwd: repoRoot,
-        stdio: "inherit",
-        shell: true,
-        env: process.env,
-      });
-    }
   }
 }
 

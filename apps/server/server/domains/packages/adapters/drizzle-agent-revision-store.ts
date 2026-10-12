@@ -361,6 +361,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           revision: agentDefinitionRevisions,
           configuration: threadAgentBindings.configuration,
           invocationOverlay: threadAgentBindings.invocationOverlay,
+          invokedSkills: threadAgentBindings.invokedSkills,
         })
         .from(threadAgentBindings)
         .leftJoin(
@@ -373,7 +374,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         revision: row.revision?.id ? revision(row.revision) : null,
         configuration: row.configuration,
         invocationOverlay: row.invocationOverlay,
+        invokedSkills: row.invokedSkills,
       };
+    },
+    async recordInvokedSkill(threadId, slug, reference) {
+      const rows = await db()
+        .update(threadAgentBindings)
+        .set({
+          invokedSkills: sql`${threadAgentBindings.invokedSkills} || jsonb_build_object(${slug}::text, ${JSON.stringify(reference)}::jsonb)`,
+        })
+        .where(eq(threadAgentBindings.threadId, threadId))
+        .returning({ threadId: threadAgentBindings.threadId });
+      return rows.length === 1;
     },
   };
   return store;

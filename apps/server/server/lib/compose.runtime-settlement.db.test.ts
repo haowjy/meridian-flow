@@ -1,10 +1,11 @@
-/** Production-composition regression for response credit and staged-push completion. */
+/** Production-composition regression for response credit and staged-push settlement. */
 
-import { Hocuspocus } from "@hocuspocus/server";
-import { splitHashline } from "@meridian/agent-edit";
+import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -17,12 +18,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import("../test-support/rollback-test-database.js");
-    const { truncateDrizzleTables } = await import("../test-support/drizzle-reset.js");
-    const { createInMemoryEventSink, createNoopEventSink } = await import(
-      "../domains/observability/index.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../test-support/drizzle-reset.js"
     );
-    const { composeAppServices, createProductionAppPorts } = await import("./compose.js");
+    const { createInMemoryEventSink } = await import("../domains/observability/index.js");
+    const { bindEditAgent, unloadHocuspocus, useComposedRuntimes } = await import(
+      "../test-support/composed-runtime.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
@@ -32,12 +34,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const THREAD_ID = "00000000-0000-4000-8000-000000000905";
     const TURN_ID = "00000000-0000-4000-8000-000000000906";
     const DOC_ID = "00000000-0000-4000-8000-000000000907";
-    const RESPONSE_ID = "00000000-0000-4000-8000-000000000908";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
+    const runtimes = useComposedRuntimes(() => db);
+    const THREAD = { threadId: THREAD_ID, turnId: TURN_ID };
     beforeEach(async () => {
       db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "runtime-settlement"));
@@ -67,10 +70,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "runtime-settlement",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -81,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "complete",
@@ -91,6 +96,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         isPrimary: true,
       });
+    });
+
+    it("returns a structured history tool error for a removed bound model", async () => {
+      const runtime = await runtimes.compose();
+      try {
+        await runtime.app.agentRevisions.bindThread(
+          THREAD_ID,
+          null,
+          {
+            model: "removed-history-model",
+            skills: { load: [], available: [] },
+            namedTargets: [],
+            permission: "edit" as const,
+          },
+          null,
+        );
+        const result = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "history-unavailable",
+            name: "thread_history",
+            arguments: {},
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        // The refusal keeps its typed shape beside the rendered text.
+        expect(result).toMatchObject({
+          isError: true,
+          result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+        });
+        expect(result.output).toBe("Model not found: removed-history-model (model_unavailable)");
+      } finally {
+        await unloadHocuspocus(runtime.hocuspocus);
+      }
     });
 
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
@@ -115,8 +153,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         isPrimary: true,
       });
       const eventSink = createInMemoryEventSink();
-      const runtime = await composeRuntime(eventSink);
-      await runtime.ports.documentSync.writeDocument({
+      const runtime = await runtimes.compose({ eventSink });
+      await writeMarkdown(runtime.ports.documentSync, {
         documentId: DOC_ID,
         markdown: "Writer live content.",
         origin: { type: "user", actorUserId: USER_ID },
@@ -125,25 +163,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
         projectId: PROJECT_ID,
       });
-      await db.insert(schema.modelResponses).values({
-        id: RESPONSE_ID,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "runtime-test",
-        model: "runtime-test",
-      });
+      const responseId = await runtimes.insertModelResponse(THREAD);
+      await bindEditAgent(runtime, THREAD_ID);
 
       const toolContext = {
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId: RESPONSE_ID,
+        responseId: responseId,
         agentSlug: null,
       } as const;
       const read = await runtime.app.toolExecutor.executeTool(
         {
           id: "00000000-0000-4000-8000-000000000910",
-          name: "write",
-          arguments: { command: "read", path: "manuscript://runtime-settlement.md" },
+          name: "read",
+          arguments: { path: "manuscript://runtime-settlement" },
         },
         toolContext,
       );
@@ -155,7 +188,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "write",
           arguments: {
             command: "replace",
-            path: "manuscript://runtime-settlement.md",
+            path: "manuscript://runtime-settlement",
             find: "Writer live content.",
             content: "Model draft content.",
             all: true,
@@ -167,14 +200,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (result.isError) {
         throw new Error(JSON.stringify({ output: result.output, events: eventSink.events }));
       }
-      await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+      await runtime.ports.documentSync.finalizeResponseCommit(responseId, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        execution: {
-          scope: { workId: NO_WORK_ID, workSlug: null },
-          aiWriteMode: "draft",
-          draftOwner: { kind: "work", workId: NO_WORK_ID },
-        },
       });
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
@@ -198,33 +226,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           isPrimary: true,
         }),
       ]);
-      await unloadRuntime(runtime.hocuspocus);
+      await unloadHocuspocus(runtime.hocuspocus);
     });
 
     async function runScenario(writerAfterRead: boolean): Promise<void> {
-      let runtime = await composeRuntime();
+      let runtime = await runtimes.compose();
       let { ports, app } = runtime;
 
-      await ports.documentSync.writeDocument({
+      await writeMarkdown(ports.documentSync, {
         documentId: DOC_ID,
         markdown: "Writer V1 observed.",
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD_ID,
       });
-      await db.insert(schema.modelResponses).values({
-        id: RESPONSE_ID,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "runtime-test",
-        model: "runtime-test",
-      });
-      await ports.documentSync.agentEdit().write(
-        { command: "read", file: "runtime-settlement.md", documentId: DOC_ID },
+      const responseId = await runtimes.insertModelResponse(THREAD);
+      await ports.documentSync.agentEdit().read(
+        { file: "runtime-settlement", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: RESPONSE_ID,
+          responseId: responseId,
         },
       );
 
@@ -263,22 +286,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insert = await ports.documentSync.agentEdit().write(
         {
           command: "insert",
-          file: "runtime-settlement.md",
+          file: "runtime-settlement",
           documentId: DOC_ID,
           content: "Agent prelude.",
         },
         {
           sessionId: "runtime-settlement",
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: RESPONSE_ID,
+          responseId: responseId,
         },
       );
-      if (insert.status !== "success") throw new Error(insert.text);
+      if (insert.status !== "success") throw new Error(renderAgentEditResult(insert.result));
       const write = await ports.documentSync.agentEdit().write(
         {
           command: "replace",
-          file: "runtime-settlement.md",
+          file: "runtime-settlement",
           documentId: DOC_ID,
           content: "Agent final.",
           find: writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
@@ -286,16 +310,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: RESPONSE_ID,
+          responseId: responseId,
         },
       );
-      if (write.status !== "success") throw new Error(write.text);
-      await ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+      if (write.status !== "success") throw new Error(renderAgentEditResult(write.result));
+      await ports.documentSync.finalizeResponseCommit(responseId, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       });
+      // The Work is in auto-apply, but this reply wrote its draft: the writes
+      // wait there (D59) until the writer applies them.
+      const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);
+      expect(unapplied.ok && unapplied.value.trim()).toBe(
+        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
+      );
+      const [draft] = await db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.documentId, DOC_ID),
+          ),
+        );
+      if (!draft) throw new Error("the reply's draft is missing");
+      await ports.documentSync.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID });
       await app.changeTrailDelivery.drain();
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);
@@ -318,23 +360,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.arrayContaining([expect.objectContaining({ writerImpact: expect.anything() })]),
       );
       await room.disconnect();
-      await unloadRuntime(runtime.hocuspocus);
+      await unloadHocuspocus(runtime.hocuspocus);
 
       if (writerAfterRead) {
         // Drop every warm composition object; the next assertions can only use
         // the journal, settlement, and trail rows in PostgreSQL.
-        runtime = await composeRuntime();
+        runtime = await runtimes.compose();
         ({ ports, app } = runtime);
         const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
         expect(cold.ok && cold.value).toContain("Agent final.");
 
-        await unloadRuntime(runtime.hocuspocus);
+        await unloadHocuspocus(runtime.hocuspocus);
 
         await db
           .update(schema.documents)
           .set({ deletedAt: new Date() })
           .where(eq(schema.documents.id, DOC_ID));
-        runtime = await composeRuntime();
+        runtime = await runtimes.compose();
         ({ ports, app } = runtime);
         const [reloaded] = await app.changeTrails.readDetails({
           threadId: THREAD_ID,
@@ -350,37 +392,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(retained.anchorState).toBe("deleted");
         expect(retainedChange?.beforeText).toContain("Writer V2 unseen.");
-        await unloadRuntime(runtime.hocuspocus);
-      }
-    }
-
-    async function composeRuntime(eventSink = createNoopEventSink()) {
-      const ports = await createProductionAppPorts({
-        db,
-        eventSink,
-        environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
-      });
-      const server = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await ports.documentSync.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          ports.documentSync.storeHocuspocusDocument(documentName, document),
-      });
-      ports.documentSync.bindHocuspocus(server);
-      return { ports, hocuspocus: server, app: composeAppServices(ports) };
-    }
-
-    async function unloadRuntime(server: Hocuspocus): Promise<void> {
-      for (let pass = 0; pass < 3; pass += 1) {
-        await Promise.all(server.loadingDocuments.values());
-        await Promise.all(
-          [...server.documents.values()].map((document) => server.unloadDocument(document)),
-        );
-        await Promise.all(server.unloadingDocuments.values());
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await unloadHocuspocus(runtime.hocuspocus);
       }
     }
   });

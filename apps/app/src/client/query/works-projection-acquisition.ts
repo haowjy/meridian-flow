@@ -4,13 +4,13 @@ import type { QueryClient } from "@tanstack/react-query";
 import { listProjectWorks } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 
-/** Prospective `workId === null` and `workId === noWork.id` both mean No Work. */
+/** Resolve a known binding by row identity, including the locked No Work row. */
 export function workFromSnapshot(
   snapshot: Pick<WorksSnapshot, "works" | "noWork"> | null | undefined,
-  workId: string | null,
+  workId: string,
 ): Work | null {
   if (!snapshot) return null;
-  if (workId === null || workId === snapshot.noWork.id) return snapshot.noWork;
+  if (workId === snapshot.noWork.id) return snapshot.noWork;
   return snapshot.works.find((work) => work.id === workId && work.deletedAt === null) ?? null;
 }
 

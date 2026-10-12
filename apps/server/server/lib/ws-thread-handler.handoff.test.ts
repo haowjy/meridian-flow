@@ -16,7 +16,7 @@ const LIVE_STATE = {
   threadId: THREAD_ID,
   status: { kind: "asleep" as const },
   runningTurnId: null,
-  activity: { descendants: [] },
+  activity: { children: [] },
   pending: { items: [] },
   resumeAfterSeq: "0",
 };

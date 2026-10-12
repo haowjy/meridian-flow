@@ -1,4 +1,4 @@
-/** ContextFS agent effective-view contracts for manuscript membership and search/read bytes. */
+/** ContextFS agent effective-view contracts for drafted-source membership and search/read bytes. */
 import { describe, expect, it } from "vitest";
 import type { Result } from "../../../../shared/result.js";
 import { Ok } from "../../../../shared/result.js";
@@ -22,39 +22,56 @@ function okMarkdown(value: string): Result<string, SyncError> {
   return Ok(value);
 }
 
-describe("ContextFS manuscript effective view", () => {
-  it("lists and searches the resolved manifest branch, not the SQL document set", async () => {
+describe("ContextFS drafted-source effective view", () => {
+  // Every drafted source takes this path (D9); kb stands for manuscript too.
+  it("lists and searches kb through the resolved manifest branch, not the SQL document set", async () => {
+    const scheme = "kb";
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: LIVE_DOC_ID,
       folderId: null,
       name: "live-only",
-      extension: "md",
+      extension: "",
       markdown: "SQL row that the draft manifest deleted",
       filetype: "markdown",
     });
-    await store.upsertDocument({
+    await store.createDocument({
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
-      extension: "md",
+      extension: "",
       markdown: "SQL identity row for a draft-created document",
       filetype: "markdown",
     });
 
     const fs = new ContextFS({
+      holder: { projectId: PROJECT_ID },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
-      scheme: "manuscript",
+      scheme,
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
         readEffectiveMarkdown: async ({ documentId }: { documentId: string }) =>
-          okMarkdown(documentId === CREATED_DOC_ID ? "new branch bytes" : "unexpected"),
+          Ok({
+            content: documentId === CREATED_DOC_ID ? "new branch bytes" : "unexpected",
+            revision: "test-revision",
+          }),
         readEffectiveHashlines: async ({ documentId }: { documentId: string }) =>
-          Ok([documentId === CREATED_DOC_ID ? "createdhash|new branch bytes" : "unexpected"]),
+          Ok({
+            content: [
+              documentId === CREATED_DOC_ID ? "createdhash|new branch bytes" : "unexpected",
+            ],
+            revision: "test-revision",
+            links: [[]],
+          }),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
           members: [CREATED_DOC_ID],
@@ -63,20 +80,19 @@ describe("ContextFS manuscript effective view", () => {
         writeDocument: async () => {
           throw new Error("not used");
         },
-        editDocument: async () => {
-          throw new Error("not used");
-        },
       } as never,
     });
 
     const listed = await fs.list("");
     expect(listed.ok ? listed.value : []).toEqual([
-      expect.objectContaining({ documentId: CREATED_DOC_ID, path: "draft-created.md" }),
+      expect.objectContaining({ documentId: CREATED_DOC_ID, path: "draft-created" }),
     ]);
     const hits = await fs.search("branch");
     expect(hits.ok ? hits.value : []).toEqual([
       {
-        path: "draft-created.md",
+        path: "draft-created",
+        documentId: CREATED_DOC_ID,
+        revision: "test-revision",
         matches: [{ excerpt: "new branch bytes", blockHash: "createdhash" }],
         matchCount: 1,
       },
@@ -86,19 +102,19 @@ describe("ContextFS manuscript effective view", () => {
   it("searches the effective branch bytes for branch-touched and draft-created docs", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: BRANCH_DOC_ID,
       folderId: null,
       name: "branch-touched",
-      extension: "md",
+      extension: "",
       markdown: "live old bytes",
       filetype: "markdown",
     });
-    await store.upsertDocument({
+    await store.createDocument({
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
-      extension: "md",
+      extension: "",
       markdown: "identity only",
       filetype: "markdown",
     });
@@ -107,26 +123,33 @@ describe("ContextFS manuscript effective view", () => {
       [CREATED_DOC_ID, "createdhash|draft created needle bytes"],
     ]);
     const fs = new ContextFS({
+      holder: { projectId: PROJECT_ID },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
         readEffectiveMarkdown: async ({ documentId }: { documentId: string }) =>
-          okMarkdown(effective.get(documentId) ?? ""),
+          Ok({ content: effective.get(documentId) ?? "", revision: "test-revision" }),
         readEffectiveHashlines: async ({ documentId }: { documentId: string }) =>
-          Ok([effective.get(documentId) ?? ""]),
+          Ok({
+            content: [effective.get(documentId) ?? ""],
+            revision: "test-revision",
+            links: [[]],
+          }),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
           members: [BRANCH_DOC_ID, CREATED_DOC_ID],
         }),
         seedFromMarkdown: async () => Ok(null),
         writeDocument: async () => {
-          throw new Error("not used");
-        },
-        editDocument: async () => {
           throw new Error("not used");
         },
       } as never,
@@ -136,21 +159,23 @@ describe("ContextFS manuscript effective view", () => {
     expect(hits.ok ? hits.value : []).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "branch-touched.md",
+          path: "branch-touched",
           matches: [{ excerpt: "branch touched needle bytes", blockHash: "branchhash" }],
           matchCount: 1,
         }),
         expect.objectContaining({
-          path: "draft-created.md",
+          path: "draft-created",
+          documentId: CREATED_DOC_ID,
+          revision: "test-revision",
           matches: [{ excerpt: "draft created needle bytes", blockHash: "createdhash" }],
           matchCount: 1,
         }),
       ]),
     );
-    await expect(fs.read("branch-touched.md")).resolves.toEqual(
+    await expect(fs.read("branch-touched")).resolves.toEqual(
       Ok({ content: effective.get(BRANCH_DOC_ID) ?? "", documentId: BRANCH_DOC_ID }),
     );
-    await expect(fs.read("draft-created.md")).resolves.toEqual(
+    await expect(fs.read("draft-created")).resolves.toEqual(
       Ok({ content: effective.get(CREATED_DOC_ID) ?? "", documentId: CREATED_DOC_ID }),
     );
   });
@@ -158,16 +183,18 @@ describe("ContextFS manuscript effective view", () => {
   it("fails closed when manifest membership resolution is unavailable", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: LIVE_DOC_ID,
       folderId: null,
       name: "chapter-1",
-      extension: "md",
+      extension: "",
       markdown: "seed",
       filetype: "markdown",
     });
 
     const fs = new ContextFS({
+      holder: { projectId: PROJECT_ID },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",

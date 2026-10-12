@@ -1,6 +1,7 @@
 /** Public client working-set store and sync-driver surface. */
 
 export {
+  bindWorkingSetSyncLifetime,
   configureWorkingSetSync,
   hydrateWorkingSet,
   readRecentRoutes,

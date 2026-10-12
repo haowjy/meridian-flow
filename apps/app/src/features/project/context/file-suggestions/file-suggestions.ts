@@ -23,7 +23,6 @@ export function catalogFileSuggestions(views: readonly CatalogCacheView[]): File
       ),
     );
     for (const entry of view.entries.values()) {
-      if (view.invalidatedEntryIds.has(entry.entryId)) continue;
       if (entry.kind === "source") {
         const key = `${entry.scheme}:${entry.entryId}`;
         if (!seen.has(key)) {

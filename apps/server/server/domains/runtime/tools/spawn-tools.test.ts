@@ -1,157 +1,50 @@
-/** Spawn/thread_message tool argument parsing and the advertised JSON schema. */
-import { describe, expect, it, vi } from "vitest";
-import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
-import {
-  createSpawnToolRegistrations,
-  parseSpawnToolArgs,
-  parseThreadMessageArgs,
-  parseThreadReportArgs,
-} from "./spawn-tools.js";
+/** Spawn-family registrations: advertised schemas, guidance copy and handler results. */
+import { describe, expect, it } from "vitest";
+import { createSpawnToolRegistrations } from "./spawn-tools.js";
+import { createToolExecutor } from "./tool-executor.js";
+import { createToolRegistry } from "./tool-registry.js";
 
-describe("parseSpawnToolArgs", () => {
-  it("keeps append_system_prompt and overrides when present and drops malformed values", () => {
-    const args = parseSpawnToolArgs({
-      agent: "critic",
-      prompt: "review",
-      description: "crit",
-      mode: "foreground",
-      append_system_prompt: "You are a harsh critic.",
-      overrides: { tools: { edit: "allow" }, effort: "high" },
-    });
-    expect(args.append_system_prompt).toBe("You are a harsh critic.");
-    expect(args.overrides).toEqual({ tools: { edit: "allow" }, effort: "high" });
-    expect(parseSpawnToolArgs({ prompt: "go", append_system_prompt: 42 })).not.toHaveProperty(
-      "append_system_prompt",
-    );
-    expect(parseSpawnToolArgs({ prompt: "go", overrides: "nope" })).not.toHaveProperty("overrides");
-    expect(parseSpawnToolArgs({ prompt: "go", overrides: null })).not.toHaveProperty("overrides");
-    expect(() => parseSpawnToolArgs({ prompt: "go", overrides: { effort: "invalid" } })).toThrow(
-      InvocationPatchError,
-    );
-  });
-
-  it("maps malformed nested patches before spawning", async () => {
-    const spawn = vi.fn();
-    const registration = createSpawnToolRegistrations().find(
-      (entry) => entry.definition.name === "spawn",
-    );
-    if (registration?.execution.type !== "server") throw new Error("missing spawn");
-    const result = await registration.execution.handler(
-      { prompt: "go", overrides: { effort: "invalid" } },
-      { spawn } as never,
-    );
-    expect(result).toMatchObject({ ok: false, error: { code: "spawn_invocation_patch_invalid" } });
-    expect(spawn).not.toHaveBeenCalled();
-  });
-});
-
-describe("parseThreadMessageArgs", () => {
-  it("keeps ref and message and defaults mode to background", () => {
-    const args = parseThreadMessageArgs({ ref: "p1", message: "keep going" });
-    expect(args).toEqual({
-      ref: "p1",
-      message: "keep going",
-      mode: "background",
-    });
-    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "foreground" }).mode).toBe(
-      "foreground",
-    );
-    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "sideways" }).mode).toBe(
-      "background",
-    );
-  });
-
-  it("drops malformed non-string fields", () => {
-    expect(parseThreadMessageArgs({ ref: 7, message: 42 })).toEqual({
-      ref: "",
-      message: "",
-      mode: "background",
-    });
-    expect(parseThreadMessageArgs(null)).toEqual({
-      ref: "",
-      message: "",
-      mode: "background",
-    });
-  });
-});
-
-describe("thread_report tool contract", () => {
-  it("selects the latest report by ref or an earlier run", () => {
-    expect(parseThreadReportArgs({ ref: "p3" })).toEqual({ ref: "p3" });
-    expect(parseThreadReportArgs({ ref: "p3", run: 2 })).toEqual({ ref: "p3", run: 2 });
-    const registration = createSpawnToolRegistrations().find(
-      (entry) => entry.definition.name === "thread_report",
-    );
-    expect(registration?.capability).toBe("thread_report");
-    expect(registration?.advertise).toBe(true);
-    expect(registration?.definition).toMatchObject({
-      inputSchema: { required: ["ref"], additionalProperties: false },
-    });
-    expect(registration?.definition).toMatchObject({
-      inputSchema: { properties: { ref: { type: "string" }, run: { type: "integer" } } },
-    });
-  });
-});
-
-describe("return_result tool contract", () => {
-  const registration = createSpawnToolRegistrations().find(
-    (entry) => entry.definition.name === "return_result",
+describe("spawn and thread_message refusals", () => {
+  const executor = createToolExecutor(
+    createToolRegistry({ registrations: createSpawnToolRegistrations() }),
   );
+  const refusal = {
+    status: "error" as const,
+    error: {
+      code: "thread_message_target_busy",
+      message: "Child thread already has an active run",
+    },
+  };
+  const context = { threadId: "thread-1" as never, turnId: "turn-1" as never, agentSlug: null };
 
-  it("advertises URI string artifact items and resolves them to object refs", async () => {
-    const returnResult = vi.fn(async () => ({ ok: true as const }));
-    if (registration?.execution.type !== "server") throw new Error("missing return_result");
-
-    const properties = registration.definition.inputSchema.properties as
-      | Record<string, unknown>
-      | undefined;
-    expect(properties?.artifacts).toEqual({
-      type: "array",
-      description: "Meridian document URIs produced by this child.",
-      items: {
-        type: "string",
-        description:
-          "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
-      },
-    });
-    await registration.execution.handler(
-      {
-        summary: "done",
-        artifacts: ["scratch://the-lamplighters-arithmetic.md"],
-      },
-      { returnResult } as never,
+  it("reach the model as errors when no run started", async () => {
+    const spawned = await executor.executeTool(
+      { id: "call-spawn", name: "spawn", arguments: { prompt: "Check chapter 3." } },
+      { ...context, spawn: async () => refusal as never },
+    );
+    const messaged = await executor.executeTool(
+      { id: "call-message", name: "thread_message", arguments: { ref: "p2", message: "Again." } },
+      { ...context, threadMessage: async () => refusal as never },
     );
 
-    expect(returnResult).toHaveBeenCalledWith({
-      summary: "done",
-      payload: undefined,
-      artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
-    });
+    for (const result of [spawned, messaged]) {
+      expect(result).toMatchObject({ isError: true, result: refusal });
+    }
   });
 
-  it.each([
-    ["HTTP URL", "https://example.test/cover.png"],
-    ["non-URI string", "not a Meridian URI"],
-    ["typed artifact object", { type: "object", uri: "scratch://draft.md" }],
-  ])("returns a tool error for a %s without invoking capture", async (_label, artifact) => {
-    const returnResult = vi.fn(async () => ({ ok: true as const }));
-    if (registration?.execution.type !== "server") throw new Error("missing return_result");
-
-    const result = await registration.execution.handler(
-      { summary: "done", artifacts: [artifact] },
-      { returnResult } as never,
+  it("leave a run that started and failed as a delivered report", async () => {
+    const failed = {
+      status: "error" as const,
+      execution: "execution-2",
+      outcome: "failed" as const,
+      error: { code: "child_failed", message: "Child run failed" },
+      report: { handle: "p2", threadId: "child-2", source: "empty" as const, summary: "" },
+    };
+    const result = await executor.executeTool(
+      { id: "call-spawn", name: "spawn", arguments: { prompt: "Check chapter 3." } },
+      { ...context, spawn: async () => failed as never },
     );
-
-    expect(result).toMatchObject({
-      isError: true,
-      output: {
-        code: "tool_error",
-        message: expect.stringContaining("artifacts[0]"),
-      },
-    });
-    if (typeof artifact === "string") {
-      expect(result).toMatchObject({ output: { message: expect.stringContaining(artifact) } });
-    }
-    expect(returnResult).not.toHaveBeenCalled();
+    expect(result.isError).toBeUndefined();
+    expect(result.result).toEqual(failed);
   });
 });

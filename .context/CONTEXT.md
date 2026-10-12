@@ -31,9 +31,9 @@ Acyclic at the domain level: threads reference project/work ownership, never
 the reverse (the only projects↔threads imports are test fixtures).
 Every live thread has a primary `thread_works` row. Root creation may omit a
 Work or send explicit null: both bind the project's locked No Work row.
-An existing thread may later be explicitly rebound through the composer or
-model tool; both adapters share the canonical thread-domain operation. Work
-management and navigation never invoke that operation implicitly.
+An existing thread may later be explicitly rebound through the composer's
+canonical thread-domain operation; Work management and navigation never invoke
+it implicitly. The model's `work switch` never rebinds ([rule](../apps/server/server/domains/runtime/.context/tools.md#permissions)).
 `apps/server/server/lib/app.ts` is the composition root that wires the runtime,
 thread repositories, gateway, event hub, Agent revision store, preferences,
 billing, projects, collab services, and the shared model/writer safety-notice port.
@@ -55,6 +55,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/projects` | Project/work ownership, personal-project bootstrap with locked No Work, project CRUD, Work catalogs, and owner gates for project-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
 | `domains/collab` | Yjs document sync and markdown projection |
+| `domains/file-policy` | The one file-access decision for people and agents (level and live-or-draft destination), the edit grants every write seam confirms under lock, and live-room access changes |
 
 ## DI wiring pattern
 

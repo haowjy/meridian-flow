@@ -10,7 +10,6 @@ import {
   type ComponentBlockContent,
   isAskUserKind,
   parseAskUserOptions,
-  parseAskUserToolInput,
 } from "../components/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 import type { AskRequest, JsonSchema } from "./index.js";
@@ -135,36 +134,4 @@ export function componentContentForAsk(
   };
 }
 
-export function parseAskReplyValue(answerSchema: JsonSchema, responseValue: JsonValue): JsonValue {
-  if (typeof responseValue === "string") {
-    return { value: responseValue };
-  }
-  if (responseValue && typeof responseValue === "object" && !Array.isArray(responseValue)) {
-    const record = responseValue as Record<string, unknown>;
-    if ("value" in record) {
-      return responseValue;
-    }
-  }
-
-  const properties = answerSchema.properties;
-  if (properties && typeof properties === "object" && "value" in properties) {
-    return { value: responseValue };
-  }
-
-  return responseValue;
-}
-
-export function minimalAskRequest(interruptId: string, prompt = "test"): AskRequest {
-  return {
-    interruptId,
-    prompt,
-    artifacts: [],
-    answerSchema: {
-      type: "object",
-      properties: { value: { type: "string" } },
-      required: ["value"],
-    },
-  };
-}
-
-export { parseAskUserOptions, parseAskUserToolInput };
+export { parseAskUserOptions };

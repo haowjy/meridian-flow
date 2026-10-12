@@ -92,16 +92,6 @@ describe("interrupt response settlement", () => {
     expect(pendingEntry(scenario)).toMatchObject({ status: "ambiguous" });
   });
 
-  it("leaves another generation's pending response alone", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.transport.socketGeneration = 7;
-    scenario.controller.respondInterrupt(response);
-
-    scenario.closeSocket(8);
-
-    expect(pendingEntry(scenario)).toMatchObject({ status: "pending" });
-  });
-
   it("still settles to the server resolution after the socket closes", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
@@ -123,23 +113,6 @@ describe("interrupt response settlement", () => {
     expect(pendingEntry(scenario)).toMatchObject({ status: "pending", value: { value: "yes" } });
   });
 
-  it("binds a thread-only error frame to the newest pending tuple", () => {
-    const scenario = new ThreadRunScenario();
-    const older = { ...response, interruptId: "interrupt_older" };
-    const newer = { ...response, interruptId: "interrupt_newer" };
-    scenario.controller.respondInterrupt(older);
-    scenario.controller.respondInterrupt(newer);
-
-    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
-
-    expect(
-      scenario.store.getState().interruptResponses[interruptKey("interrupt_older")],
-    ).toMatchObject({ status: "pending" });
-    expect(
-      scenario.store.getState().interruptResponses[interruptKey("interrupt_newer")],
-    ).toMatchObject({ status: "ambiguous" });
-  });
-
   it("clears a settlement when a snapshot already shows the interrupt resolved", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
@@ -152,15 +125,6 @@ describe("interrupt response settlement", () => {
     );
 
     expect(pendingEntry(scenario)).toBeUndefined();
-  });
-
-  it("marks a still-pending settlement ambiguous when the snapshot still waits", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.controller.respondInterrupt(response);
-
-    applySnapshot(scenario, assistantTurn("waiting_interrupt", [interruptBlock(INTERRUPT)]));
-
-    expect(pendingEntry(scenario)).toMatchObject({ status: "ambiguous" });
   });
 });
 

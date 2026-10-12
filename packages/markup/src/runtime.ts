@@ -18,7 +18,7 @@ export const MARKDOWN_STRINGIFY_OPTIONS = {
   ruleRepetition: 3,
   ruleSpaces: false,
   incrementListMarker: true,
-  resourceLink: false,
+  resourceLink: true,
   setext: false,
   tightDefinitions: true,
 } as const;

@@ -74,8 +74,8 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
   const header = (
     <SubagentIdentity
       run={first.run}
-      showDescription={false}
-      name={<span className="truncate font-medium text-foreground">{summary}</span>}
+      showName={false}
+      agentLabel={<span className="truncate font-medium text-foreground">{summary}</span>}
     />
   );
   return (
@@ -154,7 +154,7 @@ function deliveryRun(event: DeliveryEvent): SubagentRun {
     ref: update?.handle ?? null,
     execution: update?.execution ?? null,
     agentName: update?.agentName?.trim() || "Subagent",
-    description: event.title?.trim() || null,
+    name: event.title?.trim() || null,
     status: subagentStatus(outcome),
     startedAt: null,
     endedAt: event.turn.completedAt ?? null,

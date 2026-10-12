@@ -1,9 +1,8 @@
 /**
- * Thread activity read: "what subagents are running in this thread" as a pure
- * projection over durable rows (descendant walk) plus live leases (batch status
- * read). Never persisted as a turn block; the same read feeds the HTTP snapshot
- * and the WS `subscribed` live state, and the recomputed subtree rides the
- * `subagent.activity` event.
+ * Thread activity read: "what direct subagents are running in this thread" as a
+ * pure projection over child rows plus live leases (batch status read). Never
+ * persisted as a turn block; the same read feeds snapshots, WS `subscribed`
+ * state, and live `subagent.activity` events.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
@@ -14,61 +13,59 @@ import type {
 import type {
   ExecutionReportRepository,
   LatestChildExecution,
-  ThreadDescendant,
+  ThreadChild,
   ThreadRepository,
   ThreadStatusReader,
 } from "../ports/index.js";
 
 /** Pure projection of child rows, admitted executions, and batch lease state. */
 export function projectThreadActivity(
-  descendants: readonly ThreadDescendant[],
+  children: readonly ThreadChild[],
   leases: ReadonlyMap<ThreadId, ThreadLeaseState>,
   latestRuns: ReadonlyMap<ThreadId, LatestChildExecution>,
 ): ThreadActivity {
   return {
-    descendants: descendants.map(
-      (descendant): ThreadActivityNode => ({
-        threadId: descendant.id,
-        parentThreadId: descendant.parentThreadId,
-        rootThreadId: descendant.rootThreadId,
-        depth: descendant.spawnDepth,
-        ref: descendant.ref,
-        title: descendant.title,
-        agentName: descendant.agentName,
-        spawnStatus: descendant.spawnStatus,
-        status: leases.get(descendant.id as ThreadId)?.status ?? { kind: "asleep" },
-        deliveryMode: deliveryMode(latestRuns.get(descendant.id as ThreadId)),
-        runStartedAt: latestRuns.get(descendant.id as ThreadId)?.admittedAt ?? null,
-        runEndedAt: latestRuns.get(descendant.id as ThreadId)?.terminalAt ?? null,
+    children: children.map(
+      (child): ThreadActivityNode => ({
+        threadId: child.id,
+        parentThreadId: child.parentThreadId,
+        ref: child.ref,
+        title: child.title,
+        agentName: child.agentName,
+        spawnStatus: child.spawnStatus,
+        status: leases.get(child.id as ThreadId)?.status ?? { kind: "asleep" },
+        deliveryMode: deliveryMode(latestRuns.get(child.id as ThreadId)),
+        runStartedAt: latestRuns.get(child.id as ThreadId)?.admittedAt ?? null,
+        runEndedAt: latestRuns.get(child.id as ThreadId)?.terminalAt ?? null,
         currentTool:
-          leases.get(descendant.id as ThreadId)?.status.kind === "awake"
-            ? (leases.get(descendant.id as ThreadId)?.currentTool ?? null)
+          leases.get(child.id as ThreadId)?.status.kind === "awake"
+            ? (leases.get(child.id as ThreadId)?.currentTool ?? null)
             : null,
-        originTurnId: descendant.originTurnId ?? null,
+        originTurnId: child.originTurnId ?? null,
       }),
     ),
   };
 }
 
 export type ThreadActivityReadDeps = {
-  threads: Pick<ThreadRepository, "listDescendants">;
+  threads: Pick<ThreadRepository, "listChildren">;
   statusReader: Pick<ThreadStatusReader, "readMany">;
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
 };
 
-/** Read the activity subtree with batched lease and latest-admission projections. */
+/** Read `threadId`'s direct-child activity + one batched lease read. */
 export async function readThreadActivity(
   deps: ThreadActivityReadDeps,
   threadId: ThreadId,
 ): Promise<ThreadActivity> {
-  const descendants = await deps.threads.listDescendants(threadId);
-  const childIds = descendants.map((descendant) => descendant.id as ThreadId);
+  const children = await deps.threads.listChildren(threadId);
+  const childIds = children.map((child) => child.id as ThreadId);
   const [leases, runs] = await Promise.all([
     deps.statusReader.readMany(childIds),
     deps.executionReports.listLatestByChildren(childIds),
   ]);
   return projectThreadActivity(
-    descendants,
+    children,
     leases,
     new Map(runs.map((run) => [run.childThreadId, run])),
   );

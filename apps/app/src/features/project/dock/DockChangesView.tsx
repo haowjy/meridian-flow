@@ -4,11 +4,18 @@ import { Trans } from "@lingui/react/macro";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { FileCheck2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import {
+  clearDraftCommandFailure,
+  draftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { NewBadge } from "@/components/app/NewBadge";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import type {
   DraftReviewController,
   InlineReviewMessageCode,
@@ -21,6 +28,7 @@ import { useAiDraftLauncher } from "./useAiDraftLauncher";
 export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
+  const commandRecords = useDraftCommandRecords();
 
   const rows = useMemo(() => dockRows(groups), [groups]);
   const hasChanges = rows.length > 0;
@@ -58,6 +66,12 @@ export function DockChangesView({ className }: { className?: string }) {
             key={row.documentId}
             row={row}
             controller={controller}
+            error={draftCommandFailure(commandRecords, {
+              projectId: controller.projectId,
+              workId: controller.workId,
+              documentId: row.documentId,
+              draftId: row.draft.draftId,
+            })}
             active={row.documentId === inlineReview?.documentId}
             preview={row.documentId === inlineReview?.documentId ? activePreview : null}
             onReview={() =>
@@ -90,12 +104,15 @@ type ActivePreview = {
 function ChangesDocumentGroup({
   row,
   controller,
+  error,
   active,
   preview,
   onReview,
 }: {
   row: DockRow;
   controller: DraftReviewController;
+  /** A held failure on this row's draft, such as a Review that could not open. */
+  error: InlineReviewMessageCode | null;
   active: boolean;
   preview: ActivePreview | null;
   onReview: () => void;
@@ -137,6 +154,19 @@ function ChangesDocumentGroup({
           </span>
         ) : null}
       </button>
+      {error ? (
+        <InlineErrorRow
+          message={<ReviewMessageText code={error} />}
+          onDismiss={() =>
+            clearDraftCommandFailure({
+              projectId: controller.projectId,
+              workId: controller.workId,
+              documentId: row.documentId,
+              draftId: row.draft.draftId,
+            })
+          }
+        />
+      ) : null}
       {preview && preview.operations.length > 0 ? (
         <ReviewOperationCards
           preview={preview}
@@ -213,15 +243,4 @@ function currentReviewMessage(
     return { code: controller.inlineDiscardError, tone: "error" };
   }
   return null;
-}
-
-function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
-  switch (code) {
-    case "apply-failed":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "discard-offline":
-      return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
-    case "discard-failed":
-      return <Trans>Couldn't discard. Try again.</Trans>;
-  }
 }

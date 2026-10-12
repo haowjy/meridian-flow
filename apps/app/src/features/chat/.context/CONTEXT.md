@@ -20,35 +20,40 @@ draft-control changes can be understood independently.
   composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
+  never render, `endsTranscript` with a divider, and optimistic writer
+  controls (`/compact`, withdrawal).
+- [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
+  creation and its failure, the brief card, a fork's inherited view, and
+  `from` sources.
+- [Failed-reply Retry](failed-reply-retry.md) — Retry on the latest failed
+  reply, the optimistic new reply below it, and the refused and lost cases.
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.
-- Durable acknowledged submissions — the account-stamped intent journal in
-  `client/chat-submissions` and the reload reconciliation in
-  `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
-  identity only; the server owns outcome. First-send creation is replayed by
-  `useThreadHandoff` using current-chat identity; it never becomes lost-message
-  recovery copy. For later sends, a proved rejection retires the witness
-  but keeps the failed user row with Retry / Edit (Retry remints the submission
-  id, since the server never re-admits a rejected one); ambiguous sends keep the
-  row with Check submission status / Start over. A Retry that is itself
-  unresolved — ambiguous, unmounted, or epoch-fenced — leaves its fresh journal
-  entry as the only witness and remounts as Check / Start over, never a second
-  Retry; the retained rejection is inserted only after a proved rejection and
-  cleared on acceptance. Edit focuses a live draft, or restores plain text only
-  when the fingerprint is plain and the composer is empty; a structured
-  rejection whose draft is gone offers Retry only. Recovery lookup/replay/ack/
-  retire is fenced by a per-hook recovery-session token in `ThreadRunController`,
-  distinct from the run `admissionEpoch`: mounting the session hook tears the run
-  session down in the same React StrictMode commit that starts recovery, so the
-  admission epoch must not fence recovery's own work; a genuinely unmounted
-  recovery owner stops matching, so a stale recovery lookup/replay cannot
-  acknowledge, start a run, or retire; a stale recovery replay also leaves the
-  optimistic row untouched (`StaleAcceptPolicy: "leave-row"`) rather than
-  bridging it, so the returning session's `already-accepted` lookup owns the
-  bridge and the retire. Live sends keep the admission-epoch fence and still
-  bridge an accepted row after teardown.
-  See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
+- Durable acknowledged submissions — `client/chat-submissions` owns one
+  account-stamped record for every unadmitted writer message. Its tab owner owns
+  one shared account/thread row identity, live session/id-fenced attempts,
+  failed/busy knowledge, Edit transfers and observable presentation snapshot. `useChatSubmissions` binds cancellation, external wakes and keyed alerts;
+  `useThreadRunResume` resumes only
+  server snapshot runs. First-send creation is a field on the same record, not a
+  separate stream handoff. The driver holds a per-thread Web Lock, bounds requests
+  and fences every result by the account epoch and mounted recovery session.
+  Accepted messages bridge and retire. Rejections remain on writer rows and never
+  replay automatically. Ambiguity is tab-local and re-drives on mount, online,
+  snapshot refresh and reconnect. Retry looks up first and re-mints only after successfully decoded
+  rejection/retirement proof. Failed lookup/retire requests preserve ambiguity and identity. Edit retires server-side before transferring words, preserving newer
+  drafts; this tab's Edit dissolves a never-created chat to New chat in the same pane.
+  A stable record-id receipt is saved atomically with the transferred draft;
+  same-tab reload or partial retirement cannot copy or Retry those words again.
+  These receipts are tab-local, not a cross-tab ownership transaction.
+  Remote absence requires a server 404 before dissolution; failed reads and
+  inconclusive requests retain the destination and rows. Composer
+  clears when the journal accepts ownership, not when the network completes.
+
+- Transcript links follow through `useChatLinkFollowing.ts` over the shared
+  [`features/links`](../../links/AGENTS.md) follower; its header holds chat's
+  scope, destination, and visibility rules, including the known deleted-Work gap.
 
 - Every `ChatView` is owned by a project workspace and receives its required
   project ID from `ChatScreen`. Child-thread doors use the project shell's

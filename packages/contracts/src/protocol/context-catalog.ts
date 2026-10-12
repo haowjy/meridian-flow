@@ -8,7 +8,8 @@ import type { DocumentFileType } from "./http-types.js";
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId }
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string };
 
 export type CatalogAuthorityEntry = {
   kind: "authority";
@@ -31,6 +32,8 @@ export type CatalogSourceEntry = {
 
 export type CatalogFolderEntry = {
   kind: "folder";
+  /** Globally ordered namespace observation, independent of catalog replay cursors. */
+  observationVersion: string;
   entryId: FolderId;
   scope: CatalogScope;
   sourceId: ContextSourceId;
@@ -39,10 +42,13 @@ export type CatalogFolderEntry = {
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;
+  /** Device-synthesized ancestry has no server folder identity or management actions. */
+  navigationOnly?: true;
 };
 
 type CatalogFileEntryBase = {
   kind: "file";
+  observationVersion: string;
   entryId: DocumentId;
   scope: CatalogScope;
   sourceId: ContextSourceId;
@@ -92,6 +98,8 @@ export type CatalogEntry =
 export type CatalogChange =
   | { operation: "upsert"; ordinal: number; entry: CatalogEntry }
   | { operation: "delete"; ordinal: number; entryId: string }
+  // Atomic replacement: clear root and descendants, then restore survivors via
+  // subsequent upserts in the same commit. Never a durable partial/hidden state.
   | { operation: "invalidate-subtree"; ordinal: number; rootEntryId: string };
 
 export type CatalogCommit = {
@@ -155,6 +163,8 @@ export function catalogScopeKey(scope: CatalogScope): string {
       return `project:${scope.projectId}`;
     case "user":
       return `user:${scope.userId}`;
+    case "lineage":
+      return `lineage:${scope.projectId}:${scope.rootThreadId}`;
     case "work":
       return `work:${scope.projectId}:${scope.workId}`;
   }

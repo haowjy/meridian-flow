@@ -1,51 +1,53 @@
 /** Direct-child rows and inline actions for one context catalog scheme. */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, Folder, FolderOpen, TriangleAlert } from "lucide-react";
-import {
-  createContext,
-  type KeyboardEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { createContext, type KeyboardEvent, type ReactNode, useContext } from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
 import { cn } from "@/lib/utils";
-import {
-  ContextEntryMenu,
-  type EntryAction,
-  type EntryActionTarget,
-  EntryKebabButton,
-} from "./ContextEntryActions";
+import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
-import { parentContextEntryPath } from "./context-entry-name";
+import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import { contextTreeRowClassName } from "./context-row-geometry";
-import { schemeAllowsCreation } from "./context-schemes";
+import {
+  contextTreeFileRowClassName,
+  contextTreeRowClassName,
+  contextTreeRowGrowClassName,
+} from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
+import { LinkUpdateNote } from "./LinkUpdateNote";
+import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
+import {
+  type EntryCapabilities,
+  type EntryCreation,
+  EntryInteractionShell,
+  useEntryInteraction,
+} from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
 
 export type TreeEnv = {
   projectId: string;
-  workId: string | null;
+  owner: ContextOwner;
+  capabilities: EntryCapabilities;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  creating: { kind: ContextCreateKind; parentPath: string } | null;
+  creation?: {
+    creating: { kind: ContextCreateKind; parentPath: string } | null;
+    request: EntryCreation;
+    done: () => void;
+    createdFile: (path: string) => void;
+  };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
-  onCreateDone: () => void;
-  onCreatedFilePath: (path: string) => void;
-  isExpanded: (entryId: string, depth: number) => boolean;
-  toggleEntry: (entryId: string, defaultOpen: boolean) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
+  isExpanded: (entryId: string) => boolean;
+  toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
 };
 
@@ -73,29 +75,29 @@ export function TreeChildren({
 }) {
   const env = useTreeEnv();
   const children = env.catalog.children(parentId);
-  const siblingNames = children.map((child) => child.name);
+  const siblings = children;
   return (
     <>
-      {env.creating?.parentPath === parentPath ? (
+      {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
-          kind={env.creating.kind}
+          kind={env.creation?.creating.kind}
           parent={parentPath}
           depth={depth}
-          siblingNames={siblingNames}
+          siblings={siblings}
         />
       ) : null}
       {children.map((child) =>
         child.kind === "dir" ? (
-          <DirRow key={child.entryId} dir={child} depth={depth} siblingNames={siblingNames} />
+          <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
         ) : (
-          <FileRow key={child.entryId} file={child} depth={depth} siblingNames={siblingNames} />
+          <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
         ),
       )}
     </>
   );
 }
 
-function rowPaddingLeft(depth: number): number {
+export function rowPaddingLeft(depth: number): number {
   return depth * 16;
 }
 
@@ -108,7 +110,7 @@ function activateOnKey(handler: () => void) {
   };
 }
 
-function Twistie({ expanded }: { expanded: boolean }) {
+export function Twistie({ expanded }: { expanded: boolean }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <ChevronRight
@@ -119,7 +121,7 @@ function Twistie({ expanded }: { expanded: boolean }) {
   );
 }
 
-function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
+export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <Icon aria-hidden className="size-3.5" />
@@ -127,51 +129,56 @@ function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
+export function ContextTreeEntry({
+  node,
+  depth,
+  siblings,
+}: {
+  node: ContextNode;
+  depth: number;
+  siblings: readonly ContextEntrySibling[];
+}) {
+  return node.kind === "dir" ? (
+    <DirRow dir={node} depth={depth} siblings={siblings} />
+  ) : (
+    <FileRow file={node} depth={depth} siblings={siblings} />
+  );
+}
+
 function DirRow({
   dir,
   depth,
-  siblingNames,
+  siblings,
 }: {
   dir: Extract<ContextNode, { kind: "dir" }>;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
-  const [renaming, setRenaming] = useState(false);
-  const isOpen = env.isExpanded(dir.entryId, depth);
+  const interaction = useEntryInteraction({
+    projectId: env.projectId,
+    node: dir,
+    owner: env.owner,
+    scheme: env.scheme,
+    capabilities: env.capabilities,
+    create: env.creation?.request,
+    onRequestDelete: env.onRequestDelete,
+    siblings,
+  });
+  const isOpen = env.isExpanded(dir.entryId);
   const toggle = () => {
-    if (env.creating) env.onCreateDone();
-    env.toggleEntry(dir.entryId, depth < 2);
+    if (env.creation?.creating) env.creation.done();
+    env.toggleEntry(dir.entryId);
   };
-
-  function handleAction(action: EntryAction) {
-    if (action === "new-file") env.onRequestCreate("file", dir.path);
-    else if (action === "new-folder") env.onRequestCreate("folder", dir.path);
-    else if (action === "rename") setRenaming(true);
-    else if (action === "delete")
-      env.onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-  }
-
-  if (renaming) {
+  if (interaction.renaming) {
     return (
-      <RenameRow
-        entryId={dir.entryId}
-        path={dir.path}
-        currentName={dir.name}
-        siblingNames={siblingNames}
-        kind="folder"
-        depth={depth}
-        icon={isOpen ? FolderOpen : Folder}
-        onDone={() => setRenaming(false)}
-      />
+      <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
     );
   }
 
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
   return (
     <>
-      <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
+      <EntryInteractionShell interaction={interaction}>
         {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
         <div
           role="button"
@@ -182,20 +189,31 @@ function DirRow({
           onKeyDown={activateOnKey(toggle)}
           className={cn(
             "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
-            contextTreeRowClassName,
+            contextTreeRowGrowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
-          <EntryKebabButton
-            allowCreate={allowCreate}
-            allowDelete={allowDelete}
-            onAction={handleAction}
-          />
+          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+            <span className="truncate">{dir.name}</span>
+            <LinkUpdateNote
+              projectId={env.projectId}
+              subject={{ kind: "folder", id: dir.entryId }}
+              operationId={interaction.operationId}
+              layout="stacked"
+            />
+          </span>
+          {dir.namespaceFailure ? (
+            <NamespaceFailureMark
+              failure={dir.namespaceFailure}
+              move={Boolean(dir.namespaceRepairMove)}
+              folder
+            />
+          ) : null}
+          <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
         </div>
-      </ContextEntryMenu>
+      </EntryInteractionShell>
       {isOpen ? (
         <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
       ) : null}
@@ -206,135 +224,74 @@ function DirRow({
 function FileRow({
   file,
   depth,
-  siblingNames,
+  siblings,
 }: {
   file: ContextFile;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
-  const [renaming, setRenaming] = useState(false);
+  const interaction = useEntryInteraction({
+    projectId: env.projectId,
+    node: file,
+    owner: env.owner,
+    scheme: env.scheme,
+    capabilities: env.capabilities,
+    create: env.creation?.request,
+    onRequestDelete: env.onRequestDelete,
+    siblings,
+  });
   const select = () => env.onSelectFile(env.scheme, file);
-  useEffect(() => {
-    if (file.namespaceFailure === "set-location") setRenaming(true);
-  }, [file.namespaceFailure]);
-
-  function handleAction(action: EntryAction) {
-    const parentPath = parentContextEntryPath(file.path);
-    if (action === "new-file") env.onRequestCreate("file", parentPath);
-    else if (action === "new-folder") env.onRequestCreate("folder", parentPath);
-    else if (action === "rename") setRenaming(true);
-    else if (action === "delete")
-      env.onRequestDelete({
-        name: file.name,
-        path: file.path,
-        kind: "file",
-        documentId: file.documentId,
-      });
-  }
-
-  if (renaming) {
-    return (
-      <RenameRow
-        entryId={file.documentId}
-        path={file.path}
-        currentName={file.name}
-        repairName={file.namespaceRepairName}
-        siblingNames={siblingNames}
-        kind="file"
-        depth={depth}
-        icon={fileKindIcon(file)}
-        onDone={() => setRenaming(false)}
-      />
-    );
+  if (interaction.renaming) {
+    return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }
 
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
+
   return (
-    <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
+    <EntryInteractionShell interaction={interaction}>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
       <div
         role="button"
         tabIndex={0}
         onClick={select}
         onKeyDown={activateOnKey(select)}
-        className={cn(
-          "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm",
-          contextTreeRowClassName,
-          /* Hover is inactive-only: the active row retains its stronger fill. */
-          active
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-foreground hover:bg-sidebar-accent/50",
-        )}
+        className={cn("focus-ring", contextTreeFileRowClassName(active))}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
-        <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
+        <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+          <span className="truncate">{file.name}</span>
+          <LinkUpdateNote
+            projectId={env.projectId}
+            subject={{ kind: "file", id: file.documentId }}
+            operationId={interaction.operationId}
+            layout="stacked"
+          />
+        </span>
         {file.namespaceFailure ? (
-          <span
-            role="img"
-            className="flex size-7 shrink-0 items-center justify-center text-destructive"
-            aria-label={
-              file.namespaceFailure === "delete"
-                ? t`Couldn't delete this document. Try again.`
-                : t`Couldn't rename this document. Try again.`
-            }
-            title={
-              file.namespaceFailure === "delete"
-                ? t`Couldn't delete this document. Try again.`
-                : t`Couldn't rename this document. Try again.`
-            }
-          >
-            <TriangleAlert aria-hidden className="size-3.5" />
-          </span>
+          <NamespaceFailureMark
+            failure={file.namespaceFailure}
+            move={Boolean(file.namespaceRepairMove)}
+          />
         ) : null}
-        <EntryKebabButton
-          allowCreate={allowCreate}
-          allowDelete={allowDelete}
-          onAction={handleAction}
-        />
+        <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
       </div>
-    </ContextEntryMenu>
+    </EntryInteractionShell>
   );
 }
 
 function RenameRow({
-  entryId,
-  path,
-  currentName,
-  repairName,
-  siblingNames,
-  kind,
+  options,
   depth,
   icon,
-  onDone,
 }: {
-  entryId: string;
-  path: string;
-  currentName: string;
-  repairName?: string;
-  siblingNames: readonly string[];
-  kind: ContextCreateKind;
+  options: Parameters<typeof useRenameEntryForm>[0];
   depth: number;
   icon: typeof Folder;
-  onDone: () => void;
 }) {
-  const env = useTreeEnv();
-  const form = useRenameEntryForm({
-    projectId: env.projectId,
-    workId: env.workId,
-    scheme: env.scheme,
-    entryId,
-    path,
-    currentName,
-    repairName,
-    siblingNames,
-    kind,
-    onDone,
-  });
+  const form = useRenameEntryForm(options);
   return (
     <div
       className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
@@ -351,23 +308,24 @@ function CreateRow({
   kind,
   parent,
   depth,
-  siblingNames,
+  siblings,
 }: {
   kind: ContextCreateKind;
   parent: string;
   depth: number;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
+  const creation = env.creation;
+  if (!creation) throw new Error("Create row requires creation capability");
   const form = useCreateEntryForm({
     projectId: env.projectId,
-    workId: env.workId,
     scheme: env.scheme,
     kind,
     parent,
-    siblingNames,
-    onDone: env.onCreateDone,
-    onCreated: kind === "file" ? env.onCreatedFilePath : undefined,
+    siblings,
+    onDone: creation.done,
+    onCreated: kind === "file" ? creation.createdFile : undefined,
   });
   return (
     <div

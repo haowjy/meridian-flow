@@ -1,9 +1,3 @@
-/** Per-document sync state tracked for an external actor session. */
-export interface ActorSessionDocumentState {
-  /** State vector at last sync with the live document. */
-  stateVector: Uint8Array;
-}
-
 /**
  * Stable actor identity for external distribution modes (MCP, Pi, embedded library).
  * Survives transport reconnects; the core library operates on ActorSession only.
@@ -13,8 +7,8 @@ export interface ActorSession {
   id: string;
   /** Which thread/agent this session represents. */
   threadId: string;
-  /** Per-document local snapshot state. */
-  documents: Map<string, ActorSessionDocumentState>;
+  /** Documents initialized in this session’s runtime. */
+  documents: Set<string>;
 }
 
 /**

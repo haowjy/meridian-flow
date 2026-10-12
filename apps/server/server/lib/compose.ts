@@ -1,10 +1,17 @@
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { AgentPermission } from "@meridian/contracts/agents";
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -18,24 +25,34 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
+  createLinkScopeObserver,
+  type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
-  createDrizzleAssetPathResolver,
+  createDocumentRevisions,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentArrivals,
+  createDrizzleDocumentLinkHistory,
+  createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
+  createDrizzleLineageScratchLifecycle,
+  createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
+  createDrizzleScratchLineages,
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
@@ -48,13 +65,28 @@ import {
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
+  type LinkAheadRegistry,
+  type LinkScopeMembership,
+  type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
+  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
-  type ResultRepository,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import {
+  type AgentChain,
+  createAllowAllFileAccess,
+  createDrizzleFileFacts,
+  createFileAccess,
+  createLocalFileAccessChanges,
+  createOwnerFileGrants,
+  createPgFileAccessChanges,
+  type FileAccess,
+  type FileAccessChanges,
+  type PgFileAccessChanges,
+} from "../domains/file-policy/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -103,14 +135,26 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+} from "../domains/runtime/detached-work.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
+import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
+import {
+  createHandoffBriefs,
+  type HandoffBriefs,
+} from "../domains/runtime/handoff/brief-service.js";
 import {
   createChildRunCoordinator,
   createChildRunDriver,
   createContextImageAssetPort,
+  createConversationSummarizer,
   createDrizzleAdmissionRecords,
+  createDrizzleHandoffStatusReader,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
+  createDrizzleShownLinkStore,
   createDrizzleThreadLock,
   createGatewayFromEnv,
   createInMemoryInbox,
@@ -118,27 +162,31 @@ import {
   createInMemoryRunStarter,
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
+  createInspectionToolRegistrations,
   createInstrumentedGateway,
   createOrchestrator,
   createOrphanReportRepair,
+  createPrefixCacheStateService,
   createReportPublisher,
   createRunStarter,
-  createSkillToolRegistrations,
   createSpawnToolRegistrations,
+  createSubagentActivityRefresher,
   createToolExecutor,
   createToolRegistry,
   createUserTurnAdmission,
   createWorkContextReader,
   createWriterTurnProducer,
   type DeliveryProducer,
-  emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
+  readAgentChain,
+  readChainPermission,
   readPendingInbox,
   requireWritableThread,
+  type ShownLinkStore,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -148,20 +196,20 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  loadModelSkillBody,
   resolveThreadUserInvocableSkills,
-  SkillUnavailableError,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import {
   createInterruptRegistry,
   type InterruptRegistry,
 } from "../domains/runtime/loop/interrupts.js";
+import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
+import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
@@ -179,6 +227,7 @@ import type {
   EventJournalWriter,
   InternalThreadRepositories,
   ThreadRepositories,
+  ThreadStatusReader,
 } from "../domains/threads/ports/index.js";
 import {
   createThreadRuntimeService,
@@ -193,15 +242,15 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
-import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
-import { createObjectStoreFromEnv } from "./object-store-factory.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
+  createModelToolRegistrations,
   createReferenceReader,
-  createWiredCoreToolRegistrations,
-} from "./wired-core-tools.js";
+} from "./model-tools/index.js";
+import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
+import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -215,10 +264,14 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
+  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -236,13 +289,16 @@ export type AppServices = {
   eventQuery?: EventQuery;
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
+  accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   stopThreadRun(threadId: ThreadId): Promise<void>;
   runStarter: RunStarter;
-  delivery: DeliveryProducer;
+  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  handoffBriefs: HandoffBriefs;
+  shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
@@ -262,8 +318,10 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
-  documentAccess: DocumentAccessPort;
+  /** The file policy every route and model call asks (file-access §1). */
+  fileAccess: FileAccess;
+  /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
+  fileAccessChanges: FileAccessChanges;
   notices: NoticePort;
   changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
   changeTrailDelivery: ReturnType<typeof createChangeTrailWorker>;
@@ -275,7 +333,17 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** Detached work any port started; the composed app drains it at shutdown. */
+  backgroundTasks: DetachedWorkTracker;
+  /** A thread's delegation chain, read fresh (file-access §8). */
+  readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  /** The chain's effective permission, from the lighter lineage walk. */
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
+  /** The file policy every model read and write asks (file-access §1). */
+  fileAccess: FileAccess;
+  fileAccessChanges: PgFileAccessChanges;
   gateway: Gateway;
+  summarizerConfig: { model: string };
   threadRepos: InternalThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
@@ -283,11 +351,20 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog;
+  contextCatalog: ContextCatalog &
+    ContextCatalogMutationPort &
+    ProjectCatalogLifecyclePort &
+    ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  /**
+   * Per-(project, reader) link snapshots: every serializing door spells
+   * through them and the resolver endpoint answers ref links from one.
+   */
+  linkScopes: DocumentLinkScopes;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -301,6 +378,7 @@ export type ProductionAppPorts = {
   agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
+  accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -310,12 +388,13 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
   promotionService: PromotionService;
-  documentAccess: DocumentAccessPort;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
+  statusReader: ThreadStatusReader;
+  /** Links shown to the model per thread and document (contract §7). */
+  shownLinks: ShownLinkStore;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -391,10 +470,22 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
+  const backgroundTasks = createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
+  let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
+    eventSink,
+    backgroundTasks,
+    manifestMembership: {
+      resolveManifestMembership: (input) => {
+        if (!boundManifestMembership) {
+          throw new Error("Manifest membership resolver used before the collab domain was bound");
+        }
+        return boundManifestMembership.resolveManifestMembership(input);
+      },
+    },
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
@@ -404,12 +495,33 @@ export async function createProductionAppPorts(input: {
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runClaim);
+  const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
+    eventSink,
+  );
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
+  const threadRepos = createDrizzleRepositories(
+    db,
+    workProjectionMutation,
+    lineageScratch,
+    statusReader,
+  );
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
-  const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db);
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
@@ -420,21 +532,42 @@ export async function createProductionAppPorts(input: {
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPathResolver = await createDrizzleAssetPathResolver(db);
+  const agentRevisions = createDrizzleAgentRevisionStore(db);
+  const chainDeps = {
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+    agentRevisions,
+    works: { findById: (id: string) => workRepo.findById(id) },
+  };
+  const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
+  const fileAccess = createFileAccess({
+    facts: createDrizzleFileFacts(db),
+    grants: createOwnerFileGrants(),
+    readAgentChain: readChain,
+  });
+  const documentLinks = createDrizzleDocumentLinkScopes({
+    db,
+    fileAccess,
+    membership: manifestMembership,
+    observer: createLinkScopeObserver(eventSink),
+  });
   const documentSync = createCollabDomain({
     db,
-    assetPathResolver,
-    documentAccess,
+    arrivals,
+    aheadRegistrations: linkAheadRegistry,
+    fileAccess,
+    links: documentLinks,
+    aheadRefs: linkAheadRegistry,
     eventSink,
     notices,
-    workAuthorityResolver,
     workProjectionMutation,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
-          { threads: threadRepos.threads, projects: projectRepo },
+          { threads: threadRepos.threads },
           input.threadId,
           input.userId as never,
         );
@@ -444,6 +577,7 @@ export async function createProductionAppPorts(input: {
         readThreadContextDocument(
           {
             contextPorts,
+            fileAccess,
             threads: threadRepos.threads,
             threadWorks: threadRepos.threadWorks,
             works: workRepo,
@@ -453,39 +587,41 @@ export async function createProductionAppPorts(input: {
         ),
     },
   });
+  boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
+    lineages: createDrizzleScratchLineages(db),
     objectStore,
     results,
     workAuthorityResolver,
     eventSink,
   });
   contextPorts = createProductionUnifiedContextPortFactory({
+    links: documentLinks,
     db,
     documentSync,
     manifestMembership: documentSync,
+    documentDerivations: documentSync.documentDerivations,
     catalogMutations: contextCatalog,
     eventSink,
+    arrivals,
   });
   const uploadIntake = createUploadIntake({
-    repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
+    repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
-  // context ports; it feeds each new path straight back into the resolver the
-  // codec reads.
+  // context ports.
   const figureAssets = createFigureAssetService({
     objectStore,
     documents: createDrizzleFigureDocumentRepository({ db }),
     contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     eventSink,
-    assetPaths: assetPathResolver,
   });
-  const agentRevisions = createDrizzleAgentRevisionStore(db);
   await seedGeneralAgent(agentRevisions, defaultModel);
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,
@@ -502,9 +638,13 @@ export async function createProductionAppPorts(input: {
     documents: documentSync,
     catalogLifecycle: contextCatalog,
   });
+  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
     projectionMutation: workProjectionMutation,
+    fileAccessChanges,
+    lineageScratch,
+    arrivals,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -513,6 +653,14 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  if (
+    !MODEL_REGISTRY.providers.some((provider) =>
+      provider.models.some((model) => model.id === summarizerModel),
+    )
+  ) {
+    throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);
+  }
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
   const billingDomain = createBillingDomain({
     ledger: creditLedger,
@@ -523,14 +671,20 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    backgroundTasks,
     runClaim,
+    statusReader,
     gateway,
+    summarizerConfig: { model: summarizerModel },
+    fileAccess,
+    fileAccessChanges,
     threadRepos,
     journalReader,
     journalWriter,
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    linkAheadRegistry,
     contextPorts,
     contextCatalog,
     projectContextAvailability,
@@ -539,7 +693,13 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     contextCatalogWakeHub,
-    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    documentLinks: createDocumentLinkResolver({
+      catalog: contextCatalog,
+      workAuthorityResolver,
+      history: createDrizzleDocumentLinkHistory(db),
+      lineages: createDrizzleScratchLineages(db),
+    }),
+    linkScopes: documentLinks,
     projects,
     works: workRepo,
     projectRepo,
@@ -553,6 +713,7 @@ export async function createProductionAppPorts(input: {
     agentRevisions,
     marsPackageFetcher,
     preferences,
+    accountSettings,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -562,28 +723,30 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
-    results,
     promotionService,
-    documentAccess,
     notices,
     activeDocuments,
+    readAgentChain: readChain,
+    readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
+    shownLinks: createDrizzleShownLinkStore(db),
   };
 }
 
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
+  const { backgroundTasks } = ports;
+  const shutdown = { started: false };
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
   });
-  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
+  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.fileAccess);
   const changeTrailDelivery = createChangeTrailWorker({
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
@@ -591,6 +754,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
+    readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
@@ -598,23 +762,43 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
+  const publishThreadStatus = async (threadId: ThreadId) => {
+    const status = await ports.statusReader.read(threadId);
+    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    await threadEventHub.appendEvent(threadId, {
+      type: "thread.status",
+      threadId,
+      status,
+      runningTurnId,
+    });
+  };
+  let publishReport:
+    | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
+    | undefined;
   const stopThreadRun = async (threadId: ThreadId) => {
     const turnId = await ports.runClaim.readRunningTurnId(threadId);
     if (turnId) await runner.cancel(threadId, turnId);
   };
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
+    backgroundTasks,
+    toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     runClaim: ports.runClaim,
     notices: ports.notices,
     runStarter,
     workContext,
+    publishStatus: publishThreadStatus,
+    async publishFinalizedReports(reports) {
+      if (!publishReport) throw new Error("Report publisher is not initialized");
+      for (const report of reports)
+        await publishReport(report.childThreadId, report.executionTurnId);
+    },
   });
+  const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    threadWorks: ports.threadRepos.threadWorks,
-    works: ports.workRepo,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
@@ -629,25 +813,34 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
-    transaction: ports.threadRepos.transaction,
+    objectStore: ports.objectStore,
+    fileAccess: ports.fileAccess,
+    agentRevisions: ports.agentRevisions,
+    readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
+    shownLinks: ports.shownLinks,
   };
-  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
+  for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
-  for (const registration of createSpawnToolRegistrations()) {
-    toolRegistry.register(registration);
-  }
-  for (const registration of createSkillToolRegistrations({
-    async loadBody(threadId, slug) {
-      const thread = await ports.threadRepos.threads.findById(threadId as never);
-      if (!thread) throw new SkillUnavailableError(slug);
-      return loadModelSkillBody({
-        thread,
-        slug,
-        agentRevisions: ports.agentRevisions,
-      });
+  for (const registration of createInspectionToolRegistrations({
+    repos: ports.threadRepos,
+    statusReader: ports.statusReader,
+    registry: toolRegistry,
+    async tokenizer(caller) {
+      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
+      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
+      if (!model)
+        return {
+          ok: false,
+          error: meridianErrorFromSystem("model_unavailable", `Model not found: ${modelId}`),
+        };
+      return model.tokenizer;
     },
-  })) {
+  }))
+    toolRegistry.register(registration);
+  for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry);
@@ -655,24 +848,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readThreadActivity(
       {
         threads: ports.threadRepos.threads,
-        statusReader: ports.runClaim,
+        statusReader: ports.statusReader,
         executionReports: ports.threadRepos.executionReports,
       },
       threadId,
     );
   // A drain-woken subagent run (a child report or thread_message) has no driver
-  // to emit its activity frames; refresh the root's activity when its lease goes
+  // to emit its activity frames; refresh its parent's activity when its lease goes
   // live and after it releases, so the strip never reads `asleep` during the run
   // nor stays `awake` after it.
-  const refreshSubagentActivity = (threadId: ThreadId) => {
-    void emitRunActivityBestEffort({
-      findThread: (id) => ports.threadRepos.threads.findById(id),
-      threadId,
-      eventWriter: threadEventHub,
-      readActivity,
-      eventSink: ports.eventSink,
-    });
-  };
+  const refreshSubagentActivity = createSubagentActivityRefresher({
+    findThread: (id) => ports.threadRepos.threads.findById(id),
+    eventWriter: threadEventHub,
+    readActivity,
+    eventSink: ports.eventSink,
+  });
   const threadLock = createDrizzleThreadLock(ports.db);
   const inbox = delivery;
   const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
@@ -682,18 +872,24 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     eventSink: ports.eventSink,
   });
+  publishReport = reportPublisher.publish;
   const workPurger = createDrizzleWorkPurger({
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
   });
   const orphanRepair = createOrphanReportRepair({
+    toolRegistry,
+    inbox: delivery,
+    retireOrphanedReply: delivery.retireOrphanedReply,
+    clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,
     threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
+    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
@@ -715,6 +911,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
+    fileAccess: ports.fileAccess,
     identities: ports.uploadIdentity,
     availability: ports.projectContextAvailability,
     objects: ports.objectStore,
@@ -763,6 +960,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
+    backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
     repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
@@ -782,6 +980,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     defaultModel: () => ports.gateway.getDefaultModel(),
     repos: {
       threads: ports.threadRepos.threads,
+      turns: ports.threadRepos.turns,
       subagentThreads: ports.threadRepos.threads,
       transaction: ports.threadRepos.transaction,
     },
@@ -800,14 +999,39 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     eventSink: ports.eventSink,
   });
-  const orchestrator = createOrchestrator({
-    headSeq: (id) => threadEventHub.headSeq(id),
+  let handoffBriefs!: HandoffBriefs;
+  const handoffBriefStopper: HandoffBriefStopper = {
+    stop: (threadId, seedTurnId) => handoffBriefs.stop(threadId, seedTurnId),
+  };
+  const orchestratorDeps = {
+    backgroundTasks,
+    shutdown,
+    summarizer: createConversationSummarizer({
+      gateway: ports.gateway,
+      eventSink: ports.eventSink,
+      agentRevisions: ports.agentRevisions,
+      prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
+        .prefixCacheStateFor,
+      modelRequestDebug: ports.modelRequestDebug,
+      toolRegistry,
+      config: ports.summarizerConfig,
+    }),
+    headSeq: (id: ThreadId) => threadEventHub.headSeq(id),
     onRunStarted: refreshSubagentActivity,
-    onRunSettled(threadId) {
+    onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
+    shownLinks: ports.shownLinks,
+    documentRevisions: createDocumentRevisions({
+      links: ports.linkScopes,
+      threads: ports.threadRepos.threads,
+      availability: ports.projectContextAvailability,
+      documents: ports.documentSync,
+      threadWorks: coreToolDeps.threadWorks,
+      works: coreToolDeps.works,
+    }),
     toolExecutor,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -816,7 +1040,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
-      async read(workId) {
+      async read(workId: string) {
         const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
         if (!work) throw new Error(`Work not found: ${workId}`);
         return work.aiWriteMode;
@@ -831,15 +1055,34 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       objectStore: ports.objectStore,
     }),
     eventSink: ports.eventSink,
+    wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     delivery,
     runClaim: ports.runClaim,
+    handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
     concurrentRenderBudgetBytes,
-  });
+  };
+  const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
+  handoffBriefs = createHandoffBriefs({
+    backgroundTasks,
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    eventSink: ports.eventSink,
+    threadLock,
+    runClaim: ports.runClaim,
+    shutdown,
+    wakeIfRunnable,
+    billingUsage: ports.billingUsage,
+    toolRegistry,
+    generate: ({ destination, seed, signal }) =>
+      generateHandoffBrief(orchestratorDeps, destination, seed, signal),
+    publishStatus: publishThreadStatus,
+    schedulePostCommit: runAfterDrizzleCommit,
+  });
 
   return {
     gateway: ports.gateway,
@@ -851,18 +1094,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
-      statusReader: ports.runClaim,
+      statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
     }),
     documentSync: ports.documentSync,
+    linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
+    contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
+    linkScopes: ports.linkScopes,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -885,6 +1131,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventQuery: ports.eventQuery,
     marsPackageFetcher: ports.marsPackageFetcher,
     preferences: ports.preferences,
+    accountSettings: ports.accountSettings,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -893,6 +1140,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission,
     runClaim: ports.runClaim,
     toolRegistry,
@@ -904,15 +1152,35 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
-    results: ports.results,
-    documentAccess: ports.documentAccess,
+    fileAccess: ports.fileAccess,
+    fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
+    async shutdown() {
+      runner.beginShutdown();
+      handoffBriefs.beginShutdown();
+      ports.documentSync.dispose();
+      await ports.documentSync.documentDerivations.stop();
+      const timeoutMs = APP_DRAIN_DEADLINE_MS;
+      const drained = await backgroundTasks.drain(timeoutMs);
+      if (!drained)
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.background-work",
+          name: "shutdown.drain_timed_out",
+          payload: {
+            pendingCount: backgroundTasks.pendingCount,
+            pendingTasks: backgroundTasks.pendingTasks,
+            timeoutMs,
+          },
+        });
+    },
   };
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
     transactionOwner,
@@ -924,6 +1192,7 @@ export function createInMemoryAppServices(): AppServices {
       Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
   });
   const preferences = createInMemoryProjectPreferencesRepository();
+  const accountSettings = createInMemoryAccountSettingsRepository();
   const workingSet = createInMemoryWorkingSetRepository();
   const recentDocuments = createInMemoryRecentDocumentsRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
@@ -937,9 +1206,11 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
+  const inbox = createInMemoryInbox();
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
+    backgroundTasks,
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");
@@ -949,13 +1220,27 @@ export function createInMemoryAppServices(): AppServices {
     eventWriter: createInMemoryEventJournalWriter(),
     notices,
     runClaim,
-    inbox: createInMemoryInbox(),
+    inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
+    async publishFinalizedReports() {},
     schedulePostCommit: (task) => {
       void task();
     },
   });
+  const handoffBriefs: HandoffBriefs = {
+    async hold() {
+      return null;
+    },
+    launchAfterCommit() {},
+    async stop() {
+      return false;
+    },
+    async retry() {
+      throw new Error("in-memory handoff retry is not implemented");
+    },
+    beginShutdown() {},
+  };
   const recovery = {
     async scanWakes() {
       return 0;
@@ -1019,6 +1304,16 @@ export function createInMemoryAppServices(): AppServices {
     async lockById() {
       return null;
     },
+  };
+
+  // Nothing in the in-memory composition registers or settles ahead refs; fail loudly, never pretend.
+  const unsupported = (): never => {
+    throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
+  };
+  const linkAheadRegistry: LinkAheadRegistry = {
+    register: async () => unsupported(),
+    settleArrivals: async () => unsupported(),
+    registerUnregistered: async () => unsupported(),
   };
 
   return {
@@ -1098,8 +1393,14 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    contextCatalogRefresh: {
+      async refreshProjectDocuments() {
+        throw new Error("Project document catalog refresh is unavailable in memory");
+      },
+    },
     documentAddresses: {
       async resolve() {
         return { kind: "unavailable" };
@@ -1120,6 +1421,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
         return false;
@@ -1204,12 +1506,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureUser() {
         throw new Error("in-memory user repository is not implemented");
       },
-      async getWorkingSetSyncEnabled() {
-        return true;
-      },
-      async updateWorkingSetSyncEnabled(_userId, enabled) {
-        return enabled;
-      },
     },
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     workRepo: {
@@ -1276,6 +1572,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     preferences,
+    accountSettings,
     workingSet,
     recentDocuments,
     orchestrator: {
@@ -1287,6 +1584,9 @@ export function createInMemoryAppServices(): AppServices {
       async prepare() {
         throw new Error("in-memory run preparation is not implemented");
       },
+      async retryReply() {
+        throw new Error("in-memory reply retry is not implemented");
+      },
       getRunningTurn() {
         return null;
       },
@@ -1296,6 +1596,7 @@ export function createInMemoryAppServices(): AppServices {
       isThreadRunning() {
         return false;
       },
+      beginShutdown() {},
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
       },
@@ -1307,6 +1608,7 @@ export function createInMemoryAppServices(): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };
@@ -1379,32 +1681,8 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory figure assets are not implemented");
       },
     },
-    results: {
-      async createOrConverge() {
-        throw new Error("in-memory results are not implemented");
-      },
-      async listByProject() {
-        return [];
-      },
-    },
-    documentAccess: {
-      async documentAccessState() {
-        return "available";
-      },
-      async lockDocumentAccessState() {
-        return "available";
-      },
-      async canAccessDocument() {
-        return true;
-      },
-      async canAccessProjectDocument() {
-        return true;
-      },
-      async requireOwnedDocument() {},
-      async projectIdForDocument() {
-        return null;
-      },
-    },
+    fileAccess: createAllowAllFileAccess(),
+    fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,
     mockModelScript: null,
@@ -1421,6 +1699,9 @@ export function createInMemoryAppServices(): AppServices {
         return 0;
       },
     },
+    async shutdown() {
+      await backgroundTasks.drain();
+    },
   };
 }
 
@@ -1432,16 +1713,14 @@ function createInMemoryNoticePort(): NoticePort {
       const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
     },
-    async drainForModelContext(threadId) {
-      const consumed: Notice[] = [];
+    async peek(threadId) {
+      return rows.filter((notice) => notice.scope.threadId === threadId);
+    },
+    async consume(ids) {
+      const consumed = new Set(ids);
       for (let index = rows.length - 1; index >= 0; index -= 1) {
-        const notice = rows[index];
-        if (!notice) continue;
-        if (notice.scope.threadId !== threadId) continue;
-        consumed.unshift(notice);
-        rows.splice(index, 1);
+        if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
       }
-      return consumed;
     },
   };
 }

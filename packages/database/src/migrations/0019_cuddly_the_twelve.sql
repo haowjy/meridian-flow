@@ -1,0 +1,1 @@
+CREATE INDEX "turns_pending_placeholders" ON "turns" USING btree ("id") WHERE "turns"."status" = 'pending' AND "turns"."role" IN ('compaction'); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-launch turns has no deployed rows; Drizzle runs migrations transactionally, so CONCURRENTLY is unavailable)

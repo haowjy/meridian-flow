@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
+import { type CanonicalContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ProjectWorkAuthorityResolver } from "../../projects/index.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
@@ -47,6 +46,7 @@ export interface PromotionServiceDeps {
   results: ResultRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   eventSink: EventSink;
+  lineages?: import("../scratch-owner.js").ScratchLineages;
 }
 const err = (code: PromotionErrorCode, message: string): PromotionResult => ({
   ok: false,
@@ -93,7 +93,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       const policy = evaluatePromotionPolicy(sourcePath);
       if (policy.decision === "skip" || !policy.mimeType)
         return err("policy_skip", `Path not eligible for promotion: ${sourcePath}`);
-      let authority: ResolvedWorkAuthority | { kind: "none" } = { kind: "none" };
+      let authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }> = { kind: "none" };
       if (input.workId) {
         try {
           const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
@@ -107,6 +107,12 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       }
       if (input.workId && !("workId" in authority))
         return err("invalid_input", "Work is not available in this project");
+      if (!("workSlug" in authority) || authority.workSlug === null) {
+        const lineage = await deps.lineages?.byId(input.projectId, input.provenance.rootThreadId);
+        if (!lineage)
+          return err("invalid_input", "Results require the first chat's assigned handle");
+        authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+      }
       const resultId = randomUUID();
       const objectKey = objectStoreKeyForResult(
         input.projectId,

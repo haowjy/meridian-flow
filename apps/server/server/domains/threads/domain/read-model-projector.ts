@@ -1,11 +1,9 @@
 /**
  * Read-model projector: applies durable orchestrator events to thread read-model
  * tables. This is the in-transaction projection seam that makes event journal
- * facts the authority for model responses, blocks, and their rollups. When a
- * new user turn arrives, this projector clears only that turn's explicit
- * `prevTurnId` if it is an errored assistant turn: the append-only error event
- * remains journal truth, while the projected snapshot stops rendering a stale
- * error banner after the user moves on.
+ * facts the authority for model responses, blocks, and their rollups. Each
+ * turn row carries exactly the lifecycle its own events recorded: a later turn
+ * never rewrites an earlier turn's terminal status.
  */
 import {
   type BlockUpsertedRow,
@@ -25,7 +23,7 @@ import type {
 
 type ReadModelProjectorRepositories = Pick<
   ThreadRepositories,
-  "blocks" | "modelResponses" | "threads" | "turns"
+  "blocks" | "imageInclusions" | "modelResponses" | "threads" | "turns"
 >;
 
 function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelResponseInput {
@@ -48,9 +46,13 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     pricingSnapshot: response.pricingSnapshot ?? null,
     finishReason: response.finishReason ?? null,
     latencyMs: response.latencyMs ?? null,
+    requestMessageCount: response.requestMessageCount,
+    requestStartedAt: response.requestStartedAt ?? null,
     timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
     generationMs: response.generationMs ?? null,
     rawUsage: response.rawUsage ?? null,
+    predictedCacheState: response.predictedCacheState,
+    predictedCacheReason: response.predictedCacheReason,
   };
 }
 
@@ -74,6 +76,8 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     threadId: turn.threadId,
     createdAt: turn.createdAt,
     prevTurnId: turn.prevTurnId ?? turn.parentTurnId ?? null,
+    promptBakeId: turn.promptBakeId ?? null,
+    compactionModel: turn.compactionModel ?? null,
     role: turn.role,
     origin: turn.origin,
     writeMode: turn.writeMode,
@@ -89,6 +93,9 @@ function turnToLifecycleStatusUpdate(turn: Turn): UpdateTurnStatusInput {
     finishReason: turn.finishReason,
     completedAt: turn.completedAt,
     error: turn.error,
+    promptBakeId: turn.promptBakeId ?? null,
+    compactionModel: turn.compactionModel ?? null,
+    metadata: turn.metadata ?? null,
   };
 }
 
@@ -102,68 +109,53 @@ async function updateInterruptTurnStatus(
   await repos.turns.updateStatus(turnId, { status });
 }
 
-async function clearPreviousAssistantErrorIfUserTurn(
-  repos: ReadModelProjectorRepositories,
-  turn: Turn,
-): Promise<void> {
-  if (turn.role !== "user" || !turn.prevTurnId) return;
-  const previousTurn = await repos.turns.findById(turn.prevTurnId);
-  if (
-    previousTurn?.threadId !== turn.threadId ||
-    previousTurn.role !== "assistant" ||
-    previousTurn.status !== "error"
-  ) {
-    return;
-  }
-
-  await repos.turns.updateStatus(previousTurn.id, {
-    status: "complete",
-    finishReason: previousTurn.finishReason,
-    completedAt: previousTurn.completedAt,
-    error: null,
-  });
-}
-
 export async function projectReadModelEvent(
   repos: ReadModelProjectorRepositories,
   event: OrchestratorEvent,
-): Promise<void> {
+): Promise<Turn | null> {
   switch (event.type) {
     case "turn.created":
-      await repos.turns.create(turnToCreateInput(event.turn));
-      await clearPreviousAssistantErrorIfUserTurn(repos, event.turn);
-      return;
+      return repos.turns.create(turnToCreateInput(event.turn));
     case "turn.completed":
     case "turn.cancelled":
     case "turn.error":
       await repos.turns.updateStatus(event.turn.id, turnToLifecycleStatusUpdate(event.turn));
-      return;
+      return null;
     case "interrupt.created":
       await updateInterruptTurnStatus(repos, event.turnId, "waiting_interrupt");
-      return;
+      return null;
     case "interrupt.resolved":
     case "interrupt.expired":
       await updateInterruptTurnStatus(repos, event.turnId, "streaming");
-      return;
+      return null;
     case "model.response_received": {
       const response = responseToCreateInput(event.response);
       const result = await repos.modelResponses.create(response);
-      if (!result.inserted) return;
+      if (!result.inserted) return null;
       const turn = await repos.turns.recomputeRollups(event.response.turnId);
       await repos.threads.recomputeCostFromModelResponses(turn.threadId);
-      return;
+      return null;
     }
     case "block.upserted":
       await repos.blocks.upsert(blockToUpsertInput(event.block));
-      return;
+      return null;
     case "block.updated":
       if (!(await repos.blocks.replaceExisting(blockToUpsertInput(event.block))))
         throw new Error(`Cannot replace missing block ${event.block.id}`);
-      return;
-    case "block.pruned":
-      await repos.blocks.updatePruned(event.blockId, true);
-      return;
+      return null;
+
+    case "image.inclusion_decided":
+      await projectImageInclusionDecision(repos, event);
+      return null;
     default:
-      return;
+      return null;
   }
+}
+
+/** Shared repository write used by both journal projection and fork inheritance. */
+export async function projectImageInclusionDecision(
+  repos: Pick<ThreadRepositories, "imageInclusions">,
+  event: Extract<OrchestratorEvent, { type: "image.inclusion_decided" }>,
+): Promise<void> {
+  await repos.imageInclusions.set(event);
 }

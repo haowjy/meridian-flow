@@ -20,74 +20,168 @@
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
+import {
+  executableSql,
+  isNoTransactionMigration,
+  normalizeMigrationSql,
+  SQL_IDENTIFIER,
+  sqlParts,
+} from "./lib/migration-sql";
+
+interface LintContext {
+  content: string;
+  marker: boolean;
+  chunks: { sql: string; offset: number }[];
+  statements: { sql: string; offset: number }[];
+}
 interface Rule {
   id: string;
-  pattern: RegExp;
   severity: "error" | "warning";
   message: string;
+  pattern?: RegExp;
+  enabled?: (context: LintContext) => boolean;
+  matches?: (context: LintContext) => number[];
 }
-
 const MIGRATION_DIRS = ["packages/database/src/migrations"];
-
+const identifier = SQL_IDENTIFIER;
+const regex = (pattern: string) => new RegExp(pattern, "gi");
 const RULES: Rule[] = [
   {
     id: "ADD_NOT_NULL_WITHOUT_DEFAULT",
-    pattern:
-      /ALTER\s+TABLE\s+"[^"]+"\s+ADD\s+COLUMN\s+"[^"]+"\s+(?!.*\bDEFAULT\b).*\bNOT\s+NULL\b/i,
     severity: "error",
+    pattern: regex(
+      String.raw`ADD\s+COLUMN\s+${identifier}\s+(?![^;]*\bDEFAULT\b)[^;]*\bNOT\s+NULL\b`,
+    ),
     message:
       "ADD COLUMN NOT NULL without DEFAULT cannot migrate a populated table. Add it nullable, backfill, then set NOT NULL.",
   },
   {
     id: "RENAME_COLUMN",
-    pattern: /ALTER\s+TABLE\s+"[^"]+"\s+RENAME\s+COLUMN/i,
     severity: "warning",
+    pattern: /\bRENAME\s+COLUMN\b/gi,
     message:
       "RENAME COLUMN holds a strong table lock. Prefer add + dual-write + drop across deploys.",
   },
   {
     id: "DROP_COLUMN",
-    pattern: /ALTER\s+TABLE\s+"[^"]+"\s+DROP\s+COLUMN/i,
     severity: "warning",
-    message: "DROP COLUMN is irreversible. Remove reads first, then drop in a follow-up deploy.",
+    // Pre-launch deploys retire unused fields in one release, after auditing data
+    // and removing reads. The mechanical gate bounds the lock acquisition wait.
+    matches: (context) =>
+      context.statements.flatMap((statement) => {
+        const drops = [...statement.sql.matchAll(/\bDROP\s+COLUMN\b/gi)];
+        if (!drops.length) return [];
+        const timeout = context.statements
+          .filter(
+            (previous) =>
+              previous.offset < statement.offset &&
+              (/\b(?:SET|RESET)\b[\s\S]*\block_timeout\b|\bRESET\s+ALL\b|\bset_config\s*\(/i.test(
+                previous.sql,
+              ) ||
+                /^\s*(?:BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|ABORT|SAVEPOINT|RELEASE)\b/i.test(
+                  previous.sql,
+                )),
+          )
+          .at(-1);
+        const bounded =
+          !context.marker &&
+          timeout &&
+          /^\s*SET\s+LOCAL\s+lock_timeout\s*(?:=|TO)\s*'[1-5](?:s|000ms)'\s*;?\s*$/i.test(
+            context.content.slice(
+              timeout.offset + timeout.sql.search(/\bSET\s+LOCAL\s+lock_timeout\s*(?:=|TO)/i),
+              timeout.offset + timeout.sql.length,
+            ),
+          );
+        return bounded ? [] : drops.map((drop) => statement.offset + drop.index);
+      }),
+    message:
+      "DROP COLUMN needs a transactional SET LOCAL lock_timeout of 1–5 seconds. Audit retired data and remove reads in the same release.",
   },
   {
     id: "SET_NOT_NULL_UNSAFE",
-    pattern: /ALTER\s+TABLE\s+"[^"]+"\s+ALTER\s+COLUMN\s+"[^"]+"\s+SET\s+NOT\s+NULL/i,
     severity: "warning",
+    pattern: regex(String.raw`ALTER\s+COLUMN\s+${identifier}\s+SET\s+NOT\s+NULL`),
     message:
       "SET NOT NULL scans the table. Prefer nullable column, backfill, validated check, then set not null.",
   },
   {
     id: "ADD_FOREIGN_KEY_NOT_VALID",
-    pattern:
-      /ADD\s+CONSTRAINT\s+"[^"]+"\s+FOREIGN\s+KEY\s*(?:\(.*?\))\s*REFERENCES(?!.*\bNOT\s+VALID\b)/i,
     severity: "warning",
+    pattern: regex(
+      String.raw`ADD\s+(?:CONSTRAINT\s+${identifier}\s+)?FOREIGN\s+KEY\b(?![\s\S]*\bNOT\s+VALID\b)`,
+    ),
     message:
       "ADD FOREIGN KEY without NOT VALID can scan the child table. Prefer NOT VALID then VALIDATE CONSTRAINT.",
   },
   {
     id: "INDEX_NOT_CONCURRENTLY",
-    pattern: /CREATE\s+(?:UNIQUE\s+)?INDEX\s+"[^"]+"(?!.*\bCONCURRENTLY\b)/i,
     severity: "warning",
+    pattern: regex(
+      String.raw`CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY\b)(?:IF\s+NOT\s+EXISTS\s+)?${identifier}`,
+    ),
     message: "CREATE INDEX without CONCURRENTLY can block writes during the build.",
   },
   {
     id: "UPDATE_WITHOUT_WHERE",
-    pattern: /\bUPDATE\s+"[^"]+"\s+SET\b(?![\s\S]*?\bWHERE\b)/i,
     severity: "warning",
+    pattern: regex(String.raw`\bUPDATE\s+${identifier}\s+SET\b(?![\s\S]*\bWHERE\b)`),
     message: "UPDATE without WHERE affects all rows. Verify intent.",
   },
   {
     id: "DELETE_WITHOUT_WHERE",
-    pattern: /\bDELETE\s+FROM\s+"[^"]+"\b(?![\s\S]*?\bWHERE\b)/i,
     severity: "error",
+    pattern: regex(String.raw`\bDELETE\s+FROM\s+${identifier}(?![\s\S]*\bWHERE\b)`),
     message: "DELETE without WHERE removes all rows. This is almost certainly unintended.",
   },
+  {
+    id: "CONCURRENTLY_IN_TRANSACTION",
+    severity: "error",
+    pattern: /\bCONCURRENTLY\b/gi,
+    enabled: (context) => !context.marker,
+    message: "CONCURRENTLY requires -- migration: no-transaction on the first line.",
+  },
+  {
+    id: "ADD_CHECK_NOT_VALID",
+    severity: "warning",
+    pattern: regex(
+      String.raw`ADD\s+(?:CONSTRAINT\s+${identifier}\s+)?CHECK\b(?![\s\S]*\bNOT\s+VALID\b)`,
+    ),
+    message:
+      "ADD CHECK scans the table under an ACCESS EXCLUSIVE lock. Add NOT VALID, then VALIDATE in a later migration.",
+  },
+  {
+    id: "DROP_INDEX_NOT_CONCURRENTLY",
+    severity: "warning",
+    pattern: /DROP\s+INDEX\b(?!\s+CONCURRENTLY\b)/gi,
+    message: "DROP INDEX without CONCURRENTLY can block writes. Use a no-transaction migration.",
+  },
+  {
+    id: "CONCURRENT_INDEX_IF_NOT_EXISTS",
+    severity: "error",
+    enabled: (context) => context.marker,
+    pattern: regex(
+      String.raw`CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?!IF\s+NOT\s+EXISTS\b)${identifier}`,
+    ),
+    message:
+      "Concurrent builds must use IF NOT EXISTS. The runner removes only invalid remnants before retrying.",
+  },
+  {
+    id: "CONCURRENTLY_SHARED_CHUNK",
+    severity: "error",
+    matches: (context) =>
+      context.chunks.flatMap((chunk) => {
+        const statements = sqlParts(chunk.sql, ";").filter((part) => part.sql.trim());
+        if (statements.length < 2) return [];
+        return [...chunk.sql.matchAll(/\bCONCURRENTLY\b/gi)].map(
+          (match) => chunk.offset + match.index,
+        );
+      }),
+    message: "A CONCURRENTLY statement must be alone in its --> statement-breakpoint chunk.",
+  },
 ];
-
-interface Finding {
+export interface Finding {
   ruleId: string;
   severity: "error" | "warning";
   message: string;
@@ -95,38 +189,59 @@ interface Finding {
   line: number;
 }
 
-function lintFile(filePath: string): Finding[] {
-  // A staged/changed migration set can include deletions (e.g. squashing or
-  // renaming migrations); a deleted file has nothing to lint.
-  if (!existsSync(filePath)) return [];
+/** Exit status the CLI uses: errors always fail, warnings fail only under --strict. */
+export function migrationLintStatus(findings: readonly Finding[], strict: boolean): 0 | 1 {
+  if (findings.some((finding) => finding.severity === "error")) return 1;
+  if (strict && findings.some((finding) => finding.severity === "warning")) return 1;
+  return 0;
+}
 
-  const findings: Finding[] = [];
-  const content = readFileSync(filePath, "utf8");
+export function lintMigrationFile(filePath: string): Finding[] {
+  if (!existsSync(filePath) || path.basename(filePath).startsWith("0000_")) return [];
+  const content = normalizeMigrationSql(readFileSync(filePath, "utf8"));
   const lines = content.split("\n");
-  const fileName = path.basename(filePath);
-  const isInitialSchema = fileName.startsWith("0000_");
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineContent = lines[i];
-
-    if (lineContent.includes("-- migration-lint: skip")) continue;
-
-    for (const rule of RULES) {
-      if (!rule.pattern.test(lineContent)) continue;
-      if (isInitialSchema && rule.id !== "DELETE_WITHOUT_WHERE") continue;
-      if (rule.id === "ADD_FOREIGN_KEY_NOT_VALID" && !/ALTER\s+TABLE/i.test(lineContent)) continue;
-
-      findings.push({
-        ruleId: rule.id,
-        severity: rule.severity,
-        message: rule.message,
-        file: filePath,
-        line: i + 1,
-      });
-    }
+  const chunks: LintContext["chunks"] = [];
+  let offset = 0;
+  for (const chunk of content.split("--> statement-breakpoint")) {
+    chunks.push({ sql: executableSql(chunk), offset });
+    offset += chunk.length + "--> statement-breakpoint".length;
   }
-
-  return findings;
+  const statements = chunks.flatMap((chunk) =>
+    sqlParts(chunk.sql, ";").flatMap((statement) =>
+      // ALTER clauses are independent: one NOT VALID must not bless another CHECK.
+      (/\bALTER\s+TABLE\b/i.test(statement.sql)
+        ? sqlParts(statement.sql, ",")
+        : [{ sql: statement.sql, offset: 0 }]
+      ).map((clause) => ({
+        sql: clause.sql,
+        offset: chunk.offset + statement.offset + clause.offset,
+      })),
+    ),
+  );
+  const context: LintContext = {
+    content,
+    marker: isNoTransactionMigration(content),
+    chunks,
+    statements,
+  };
+  return RULES.flatMap((rule) => {
+    if (rule.enabled && !rule.enabled(context)) return [];
+    const offsets = rule.matches
+      ? rule.matches(context)
+      : statements.flatMap((statement) =>
+          [...statement.sql.matchAll(rule.pattern ?? /$^/g)].map(
+            (match) => statement.offset + match.index,
+          ),
+        );
+    return offsets.flatMap((position) => {
+      const line = content.slice(0, position).split("\n").length;
+      const annotation = lines[line - 1].match(/-- migration-lint: skip\s+([A-Z_, ]+)/)?.[1];
+      if (annotation?.split(/[ ,]+/).includes(rule.id)) return [];
+      return [
+        { ruleId: rule.id, severity: rule.severity, message: rule.message, file: filePath, line },
+      ];
+    });
+  });
 }
 
 function formatFindings(findings: Finding[]): string {
@@ -187,6 +302,7 @@ function report(findings: Finding[], strict = false): void {
 
   const errorCount = findings.filter((finding) => finding.severity === "error").length;
   const warningCount = findings.filter((finding) => finding.severity === "warning").length;
+  if (migrationLintStatus(findings, strict) === 0) return;
 
   if (errorCount > 0) {
     console.log(
@@ -228,15 +344,19 @@ function main(): void {
       return;
     }
 
-    report(changed.flatMap(lintFile), strict);
+    report(changed.flatMap(lintMigrationFile), strict);
     return;
   }
 
   if (args.includes("--all")) {
-    report(
-      MIGRATION_DIRS.flatMap((dir) => migrationFilesIn(dir).flatMap(lintFile)),
-      strict,
+    const frozen = new Set(
+      execSync("git ls-tree -r --name-only origin/main", { encoding: "utf8" }).trim().split("\n"),
     );
+    const files = MIGRATION_DIRS.flatMap(migrationFilesIn);
+    const historical = files.filter((file) => frozen.has(file)).flatMap(lintMigrationFile);
+    if (historical.length)
+      console.log(`Frozen migration findings (non-blocking):${formatFindings(historical)}`);
+    report(files.filter((file) => !frozen.has(file)).flatMap(lintMigrationFile), strict);
     return;
   }
 
@@ -251,7 +371,7 @@ function main(): void {
       return;
     }
 
-    report(staged.flatMap(lintFile), strict);
+    report(staged.flatMap(lintMigrationFile), strict);
     return;
   }
 
@@ -264,7 +384,7 @@ function main(): void {
     process.exit(1);
   }
 
-  report(files.flatMap(lintFile), strict);
+  report(files.flatMap(lintMigrationFile), strict);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

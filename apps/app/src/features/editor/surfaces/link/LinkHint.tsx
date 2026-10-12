@@ -14,12 +14,14 @@
  * so it travels with its link through a scroll and is clipped by the pane
  * rather than riding up over the app above it.
  *
- * An internal link says two things: where it goes, and — when nothing is there
- * yet — that nothing is there yet. The second line is a sentence rather than a
- * warning, because linking a chapter before writing it is how serial writers
- * work (§5.5). While the answer is still in flight it says only the
- * destination: a hint that guessed "not written" and corrected itself a moment
- * later would be worse than one that waited.
+ * An internal link says two things: where it goes, and — when nothing is at
+ * that address yet, or the document it named is gone — that, in the follow's
+ * own words.
+ * The second line is a sentence rather than a warning, because linking a
+ * chapter before writing it is how serial writers work (§5.5). While the
+ * answer is still in flight it says only the destination: a hint that guessed
+ * "not written" and corrected itself a moment later would be worse than one
+ * that waited.
  */
 
 import { t } from "@lingui/core/macro";
@@ -59,7 +61,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
   const position = useHintPosition(element, rect, overlay);
   const visible = Boolean(hint) && !suppressed;
   const href = shown ? linkTargetHref(shown.target) : null;
-  const resolution = useLinkResolution(editor, href);
+  const resolution = useLinkResolution(editor, href ? { ref: shown?.ref ?? null, href } : null);
 
   if (!shown || !href || !rect || !overlay || typeof document === "undefined") return null;
 
@@ -72,15 +74,18 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       style={position ?? { left: rect.left, top: rect.bottom + HINT_GAP_PX }}
     >
       <span className="meridian-link-hint__destination">
-        {resolution?.state === "resolved"
+        {resolution?.state === "document"
           ? resolution.document.title
           : linkTargetLabel(shown.target)}
       </span>
-      {resolution?.state === "resolved" ? (
+      {resolution?.state === "document" ? (
         <span className="meridian-link-hint__note">{resolution.document.path}</span>
       ) : null}
-      {resolution?.state === "unresolved" ? (
-        <span className="meridian-link-hint__note">{t`No document with this name yet`}</span>
+      {resolution?.state === "missing" ? (
+        <span className="meridian-link-hint__note">{t`Doesn't exist yet`}</span>
+      ) : null}
+      {resolution?.state === "gone" ? (
+        <span className="meridian-link-hint__note">{t`No longer available`}</span>
       ) : null}
     </div>,
     overlay,

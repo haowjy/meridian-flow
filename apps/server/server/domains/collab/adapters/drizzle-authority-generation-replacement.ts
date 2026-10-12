@@ -2,14 +2,13 @@
 import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import type * as Y from "yjs";
+import { documentAuthority, retireDocumentHandle } from "../domain/document-handle.js";
 import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
 } from "../domain/document-mutation-policy.js";
-import {
-  ensureAndReadDocumentAuthorityHead,
-  replaceDocumentAuthorityHeadGeneration,
-} from "./drizzle-document-authority-head.js";
+import { replaceDocumentAuthorityHeadGeneration } from "./drizzle-document-authority-head.js";
 
 type CheckpointReader = {
   getCheckpoint(id: string): Promise<{
@@ -22,20 +21,22 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
   db: Database;
   coordinator: DocumentCoordinator;
   checkpoints: CheckpointReader;
+  onReplaced(documentId: DocumentId): void;
   disconnectGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
 }): NonNullable<
   Parameters<
     typeof import("../checkpoints.js").createCheckpointService
   >[0]["replaceAuthorityGeneration"]
 > {
-  return (documentId, checkpointId) =>
-    replaceAuthorityGeneration(
+  return (documentId, checkpointId) => {
+    let acquiredDocument: Y.Doc | undefined;
+    return replaceAuthorityGeneration(
       {
-        readMutationTarget: async () => ({
-          documentId,
-          generation: (await ensureAndReadDocumentAuthorityHead(input.db, documentId)).generation,
-          doc: await input.coordinator.withDocument(documentId, async (doc) => doc),
-        }),
+        readMutationTarget: () =>
+          input.coordinator.withDocument(documentId, async (doc) => {
+            acquiredDocument = doc;
+            return { documentId, generation: documentAuthority(doc).generation, doc };
+          }),
         loadCheckpoint: async (id) => {
           const checkpoint = await input.checkpoints.getCheckpoint(id);
           return checkpoint
@@ -53,7 +54,11 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
             checkpointId: Number(checkpoint.checkpointId),
             expectedGeneration,
           });
-          if (result.ok) return result.generation;
+          if (result.ok) {
+            if (acquiredDocument) retireDocumentHandle(acquiredDocument);
+            input.onReplaced(documentId);
+            return result.generation;
+          }
           throw new DocumentMutationPolicyError(
             result.code === "authority_head_busy"
               ? "authority_head_busy"
@@ -67,4 +72,5 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
       },
       checkpointId,
     );
+  };
 }

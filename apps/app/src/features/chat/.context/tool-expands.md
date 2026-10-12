@@ -17,22 +17,23 @@ rendering tiers and the expand contents.
 titles, listing rows, quoted previews, terminal tails. Raw payloads are a
 debugging concern and belong behind a dev-only setting, never in chat.
 
-Tier 2 is keyed by **tool name**; the single document tool (`write`)
-carries reading, skimming, creating, editing, deleting, reverting and reviewing. Which of those a row is
-comes from `tool-command.ts`, and what to do about it comes from
+Tier 2 is keyed by **tool name**. The two document tools share one renderer:
+`read` carries reading and skimming, and `write` carries creating, copying,
+editing, removing and reverting. Which of those a row is comes from
+`tool-command.ts`, and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
 
-**Work rows are receipts.** A `work` mutation's row title is the server's
-receipt line (`metadata.workReceipt.line`, carried on the tool result), worn
-verbatim minus its terminal period — it is already the factual sentence, in
-Work names. Reads keep one minimal generic row; failures title with the
-failure verb and open onto the structured message. A mutation receipt's
+**Work rows are receipts.** A `work` mutation's row title comes from the
+server's structured receipt facts (`metadata.workReceipt`, carried on the tool
+result): operation, Work name, before and after. `work-receipt-copy.ts`
+localizes them into the sentence, in Work names. Reads keep one minimal
+generic row; failures title with the failure verb and open onto the
+structured message. A mutation receipt's
 `inverse` (`workReceipt` in `tool-command.ts`) makes create/update/delete
 reversible, and that action lives on the turn edits receipt, not on this row:
 the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
-lineage owns Undo authority. Switch receipts remain factual rows with
-`inverse: null`; they never create an Undo card. This row stays a record.
+lineage owns Undo authority. This row stays a record.
 
 **The tool picks the parser.** A search hit and a listing entry are both
 `{uri, …}`, so a payload cannot be asked what it is: guessing from the first
@@ -49,11 +50,13 @@ transcript from claiming things it cannot stand behind.
 | Channel | Question | Surface | Source of truth |
 |---|---|---|---|
 | Process | What did the agent do? | Tool rows in the fold | Turn blocks |
-| Intent | What did it look at, or mean to write? | Row expands | Tool **input** and read output |
+| Intent | What did it look at, or mean to write? | Row expands | Tool **input** and the typed read result |
 | Outcome | What changed in my manuscript? | Turn edits receipt | Change trail |
 
 **A write expand reads `tool.input.content`, never the output.** The output is
-formatted status plus diagnostics; only the input holds exactly what was sent.
+the model's text (a status line and hashlines) and the typed `tool.result` is a
+receipt; only the input holds exactly what was sent. A copy (`copy`, or
+`insert`/`replace` with `from`) submits no content, so it has no expand.
 A write can succeed as a tool call and still be superseded downstream, so
 rendering its output as a change would assert something that never landed.
 
@@ -66,17 +69,21 @@ the UI says neither "intent" nor "outcome".
 
 | Command | Expand | Cut by | Doors inside |
 |---|---|---|---|
-| `write(command: read)` | The passage that came back, as quoted prose | Height, with a fade | The document, at the fade |
-| `write(command: read, format: outline)` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
-| `create` / `insert` / `replace` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
-| `delete` / `undo` / `redo` / `diff` | Nothing | — | — |
+| `read` | The passage that came back (the typed result's `document` blocks), as quoted prose | Height, with a fade | The document, at the fade |
+| `read` with `format: outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
+| `create` / `insert` / `replace` with `content` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
+| `copy`, or `insert` / `replace` with `from` | Nothing; the verb names the source ("Copied a.md to", "Copied from a.md into") | — | — |
+| `remove` / `undo` / `redo` | Nothing | — | — |
 | `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | unknown | Nothing | — | — |
 
-A **failed document tool** always shows why it failed, in place of whatever the
-command would otherwise have opened onto. No other tool has a general failure
-expand: a failed `search` or `ls` opens onto nothing at all. Whether every
+A **failed document tool** shows why it failed, in place of whatever the
+command would otherwise have opened onto, with one exception: a `write`
+refused with `read_required` is titled "Paused to reread" and opens onto
+nothing, since the next rows (the read, then the retried write) say what
+happened. A failed `work` call opens onto its structured message. A failed
+`search` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
 in a renderer.
 
@@ -85,17 +92,11 @@ states a count when cut. It gets no fade and no second door, because those
 belong to continuous prose, where the need to see the rest arrives only after
 reading. A clipped outline is already answered by the door in the row title.
 
-Read payloads arrive in two shapes, and `read-payload.ts` accepts either so no
-renderer branches on it. The `write(command: read)` command returns the `meridian.agent-edit.v1`
-envelope, whose block items already separate `hash` from `body`; those bodies
-are taken verbatim. Any remaining caller hands back hashlines, and outline reads
-interleave locator lines the model uses to read further. Both are addressing
-machinery and are stripped before any renderer sees them. The serialized path
-reads through `splitHashline`, not the anchored stripper: this payload was
-serialized by this system, so the reader that inverts the writer is the correct
-one, and an empty hash would otherwise leak its separator into the writer's
-prose. Envelope bodies are already hash-free, so a `|` in the writer's prose is
-left alone. Targeting is resolved server-side, so a scoped read's payload
+`read-payload.ts` reads a `read` call's typed `meridian.agent-edit.v1`
+result (`ToolView.result`) and never parses the model's text. Its block items
+already separate `hash` from `body`, so bodies are taken verbatim and a `|` in
+the writer's prose is left alone. A row without that result renders no
+preview. Targeting is resolved server-side, so a scoped read's payload
 already *is* the region asked for: the preview rule is "show the top of what
 came back" for every read.
 
@@ -178,10 +179,10 @@ carry no affordance.
   never "Showing…", which is systems voice. Listings and outlines cap at 8, one
   line each; search hits cap at 4, because each is three lines.
 
-**The anchor is the trap.** `StreamTail` is bottom-pinned with a *top* fade,
+**The anchor is the trap.** A stream tail is bottom-pinned with a *top* fade,
 because for a running command the newest output wins. A preview is the
 opposite: **top-anchored with a bottom fade**, because the opening of the
-passage wins. Reusing `StreamTail` here shows the end of the chapter.
+passage wins. Reusing a tail here shows the end of the chapter.
 
 **A second door sits at the fade** of clipped *prose*, labelled `Open
 ‹Document›`. The row title carries the first door, at the top; this one sits

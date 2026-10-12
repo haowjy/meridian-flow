@@ -18,14 +18,15 @@ export type DirectInvocationResult = {
   reason: string | null;
 };
 
-type SettledOutput = { output: JsonValue | null; isError: boolean; message: string | null };
+/** The tool's typed `result`; `output` is the model's text and is never parsed. */
+type SettledResult = { result: JsonValue | null; isError: boolean; message: string | null };
 
 /** The complete parent turn is one identity scope; presentation runs are not protocol boundaries. */
 export function directResultsForTurn(
   blocks: readonly Block[],
 ): Map<string, DirectInvocationResult> {
   const names = new Map<string, string>();
-  const settled = new Map<string, SettledOutput>();
+  const settled = new Map<string, SettledResult>();
   for (const block of blocks) {
     if (block.blockType !== "tool_use" && block.blockType !== "tool_result") continue;
     const content = blockContentRecord(block);
@@ -36,11 +37,11 @@ export function directResultsForTurn(
       const name = stringField(content, "toolName");
       if (name) names.set(key, name);
       // Live reduction merges the settled result onto the use; durable history has a separate result.
-      if (block.status === "complete" && Object.hasOwn(content, "output")) {
-        settled.set(key, outputFields(content));
+      if (block.status === "complete" && Object.hasOwn(content, "result")) {
+        settled.set(key, resultFields(content));
       }
     } else {
-      settled.set(key, outputFields(content));
+      settled.set(key, resultFields(content));
     }
   }
 
@@ -62,7 +63,7 @@ export function directResultsForTurn(
     if (name !== "spawn" && name !== "thread_message") continue;
     const result = settled.get(key);
     if (!result) continue;
-    const envelope = resultEnvelope(result.output, result.isError, result.message);
+    const envelope = resultEnvelope(result.result, result.isError, result.message);
     // Persisted direct results are already scoped by parent turn + tool call.
     // Some valid spawn results omit their execution ID, but may not contradict
     // the invocation when the ID is present.
@@ -76,22 +77,22 @@ export function directResultsForTurn(
   return direct;
 }
 
-function outputFields(content: Record<string, JsonValue>): SettledOutput {
+function resultFields(content: Record<string, JsonValue>): SettledResult {
   return {
-    output: content.output ?? null,
+    result: content.result ?? null,
     isError: content.isError === true,
     message: stringField(content, "message"),
   };
 }
 
 function resultEnvelope(
-  output: JsonValue | null,
+  typed: JsonValue | null,
   isError: boolean,
   toolMessage: string | null,
 ): (Omit<DirectInvocationResult, "execution"> & { execution?: string }) | null {
-  if (!isRecord(output)) return null;
-  const outcome = output.outcome;
-  if (output.status !== "completed" && output.status !== "error") return null;
+  if (!isRecord(typed)) return null;
+  const outcome = typed.outcome;
+  if (typed.status !== "completed" && typed.status !== "error") return null;
   if (
     outcome !== undefined &&
     outcome !== "succeeded" &&
@@ -99,11 +100,11 @@ function resultEnvelope(
     outcome !== "cancelled"
   )
     return null;
-  if (outcome === undefined && output.status !== "error") return null;
-  const report = isRecord(output.report) ? output.report : null;
+  if (outcome === undefined && typed.status !== "error") return null;
+  const report = isRecord(typed.report) ? typed.report : null;
   const summary = report && typeof report.summary === "string" ? report.summary : "";
-  const error = isRecord(output.error) ? output.error : null;
-  const reason = typeof output.reason === "string" ? output.reason : null;
+  const error = isRecord(typed.error) ? typed.error : null;
+  const reason = typeof typed.reason === "string" ? typed.reason : null;
   const message =
     error && typeof error.message === "string"
       ? error.message
@@ -111,13 +112,13 @@ function resultEnvelope(
         ? toolMessage
         : null;
   return {
-    ...(typeof output.execution === "string" ? { execution: output.execution } : {}),
+    ...(typeof typed.execution === "string" ? { execution: typed.execution } : {}),
     outcome: outcome ?? null,
     summary,
     ...(report && Object.hasOwn(report, "payload") ? { payload: report.payload } : {}),
     artifacts:
       report && Array.isArray(report.artifacts) ? report.artifacts.filter(isArtifactRef) : [],
-    partial: output.partial === true || (outcome !== undefined && outcome !== "succeeded"),
+    partial: typed.partial === true || (outcome !== undefined && outcome !== "succeeded"),
     message,
     reason,
   };

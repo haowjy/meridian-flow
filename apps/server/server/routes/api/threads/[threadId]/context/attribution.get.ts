@@ -7,6 +7,7 @@ import { readThreadContextDocument } from "../../../../../lib/thread-context-rou
 
 type AttributionRouteServices = {
   contextPorts: AppServices["contextPorts"];
+  fileAccess: AppServices["fileAccess"];
   threads: AppServices["threadRepos"]["threads"];
   threadWorks: AppServices["threadRepos"]["threadWorks"];
   works: AppServices["workRepo"];
@@ -17,6 +18,7 @@ type AttributionRouteServices = {
 function selectAttributionRouteServices(app: AppServices): AttributionRouteServices {
   return {
     contextPorts: app.contextPorts,
+    fileAccess: app.fileAccess,
     threads: app.threadRepos.threads,
     threadWorks: app.threadRepos.threadWorks,
     works: app.workRepo,
@@ -37,6 +39,7 @@ export default defineEventHandler(async (event) => {
   const document = await readThreadContextDocument(
     {
       contextPorts: services.contextPorts,
+      fileAccess: services.fileAccess,
       threads: services.threads,
       threadWorks: services.threadWorks,
       works: services.works,

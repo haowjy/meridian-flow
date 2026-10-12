@@ -1,6 +1,6 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
@@ -10,19 +10,23 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
-import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
+import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
+import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
+import { createLinkBinder } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -36,37 +40,45 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 >;
 
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
+  /**
+   * The live agent-edit core's coordinator when it differs from `coordinator`:
+   * production defers live projection until a reply's transaction commits.
+   */
+  agentCoordinator?: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
-  /**
-   * Project asset index for `asset:<documentId>` ↔ project-relative path
-   * translation. Compositions with no asset namespace (in-memory, tests) leave
-   * it out and get the resolver that refuses to serialize an asset ref.
-   */
-  assetPathResolver?: AssetPathResolver;
+  /** How links and image sources spell, loaded per operation (contract §4.4). */
+  links: DocumentLinkScopes;
+  /** Durable ahead-ref registration for refs the model's writes mint. */
+  aheadRefs: AheadRefRegistrar;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
+  /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
+  inTransaction(): boolean;
 }) {
   const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({
-    schema,
-    assetPathResolver: input.assetPathResolver ?? unresolvedAssetPathResolver,
-  });
-  const codec = createAgentEditCodec(markupCodec);
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
+      links: createScopedDocumentLinks({
+        scopes: input.links,
+        registrar: input.aheadRefs,
+        viewFor: liveViewFor,
+      }),
       journal: input.journal,
-      coordinator: input.coordinator,
+      coordinator: input.agentCoordinator ?? input.coordinator,
       lifecycle: input.lifecycle,
       codec,
       model,
@@ -77,42 +89,60 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  const markdownDocuments = createMarkdownDocumentEngine({
+  const markdownDocuments = scopeMarkdownEngine(
+    createMarkdownDocumentEngine({
+      codec: markupCodec,
+      links: input.links,
+      model,
+      journal: input.journal,
+      coordinator: input.coordinator,
+      lifecycle: input.lifecycle,
+      initialDocumentSeeds: input.initialDocumentSeeds,
+      deferUntilCommit: input.deferUntilCommit,
+      metaForOrigin,
+      afterWrite: input.runDocumentWriteHook,
+      identityPreservingWrite: ({ documentId, content, actor }) =>
+        liveUtilityCore.write(
+          {
+            command: "create",
+            file: "document",
+            documentId,
+            content: content.markdown,
+            // Bound against the holder's document: overwrite it. Bound fresh: an empty one only.
+            overwrite: !content.fresh,
+          },
+          {
+            boundNodes: content.blocks,
+            actor,
+            sessionId:
+              actor.kind === "human"
+                ? actor.userId
+                : actor.kind === "agent"
+                  ? actor.turnId
+                  : `system:${actor.origin}`,
+            ...(actor.kind === "agent" || actor.kind === "human"
+              ? { threadId: actor.threadId }
+              : {}),
+          },
+        ),
+      resolveFiletype: input.resolveDocumentFiletype,
+      observeSerializationAnomaly: input.observeSerializationAnomaly,
+    }),
+    input.links,
+  );
+  const linkBinder = createLinkBinder({
     codec: markupCodec,
     schema,
     model,
-    journal: input.journal,
     coordinator: input.coordinator,
-    lifecycle: input.lifecycle,
-    initialDocumentSeeds: input.initialDocumentSeeds,
-    deferUntilCommit: input.deferUntilCommit,
-    metaForOrigin,
-    afterWrite: input.runDocumentWriteHook,
-    identityPreservingWrite: ({ documentId, markdown, actor }) =>
-      liveUtilityCore.write(
-        {
-          command: "create",
-          file: "document.md",
-          documentId,
-          content: markdown,
-          overwrite: true,
-        },
-        {
-          actor,
-          sessionId:
-            actor.kind === "human"
-              ? actor.userId
-              : actor.kind === "agent"
-                ? actor.turnId
-                : `system:${actor.origin}`,
-          ...(actor.kind === "agent" || actor.kind === "human" ? { threadId: actor.threadId } : {}),
-        },
-      ),
+    links: input.links,
+    registrar: input.aheadRefs,
     resolveFiletype: input.resolveDocumentFiletype,
-    observeSerializationAnomaly: input.observeSerializationAnomaly,
+    inTransaction: input.inTransaction,
   });
   return {
     codec,
+    linkBinder,
     liveUtilityCore,
     markdownDocuments,
     markupCodec,

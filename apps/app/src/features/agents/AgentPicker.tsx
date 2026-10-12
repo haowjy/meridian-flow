@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
-import type { ReactNode, RefObject } from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
@@ -34,6 +34,14 @@ export function AgentPickerPanel({
   focusRefs,
 }: AgentPickerPanelProps) {
   const firstId = agents[0]?.selection.catalogEntryId;
+  // A row's tooltip waits until the writer moves through the list: the picker
+  // focuses a row as it opens, and that tooltip would cover the rows below
+  // before the writer has looked at them.
+  const engaged = useRef(false);
+  const [tooltipRowId, setTooltipRowId] = useState<string | null>(null);
+  const engage = () => {
+    engaged.current = true;
+  };
   return (
     <TooltipProvider delayDuration={500}>
       <div className={cn(dropdownResultsClass, "flex flex-col")}>
@@ -52,8 +60,9 @@ export function AgentPickerPanel({
             <Trans>No agents available.</Trans>
           </PickerHint>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-0.5" onPointerMove={engage} onKeyDown={engage}>
             {agents.map((agent) => {
+              const rowId = agent.selection.catalogEntryId;
               const active =
                 agent.selection.catalogEntryId === selectedAgent?.selection.catalogEntryId &&
                 agent.selection.definitionRevisionId ===
@@ -64,7 +73,20 @@ export function AgentPickerPanel({
                   data-selected={active}
                   className={dropdownRowContainerClass}
                 >
-                  <Tooltip>
+                  <Tooltip
+                    open={tooltipRowId === rowId}
+                    onOpenChange={(open) =>
+                      setTooltipRowId((current) =>
+                        open
+                          ? engaged.current
+                            ? rowId
+                            : current
+                          : current === rowId
+                            ? null
+                            : current,
+                      )
+                    }
+                  >
                     <TooltipTrigger asChild>
                       <button
                         ref={
@@ -98,7 +120,13 @@ export function AgentPickerPanel({
                         ) : null}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-xs space-y-1">
+                    {/* Below the row, kept inside the viewport: beside it has no room on a phone. */}
+                    <TooltipContent
+                      side="bottom"
+                      align="start"
+                      collisionPadding={8}
+                      className="max-w-xs space-y-1"
+                    >
                       <p>
                         {agent.name}
                         {agent.model ? ` (${agent.model})` : ""}

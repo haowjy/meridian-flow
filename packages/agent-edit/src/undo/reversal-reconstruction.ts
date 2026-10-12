@@ -35,6 +35,29 @@ export function reconstructReversalUpdate(input: {
     : reconstructed;
 }
 
+/**
+ * The document a reversal restores when nothing else changed after the writes
+ * it reverses: before the first undone write, or before the undo a redo
+ * reverses. Null when the journal no longer holds that point.
+ */
+export function reversalBaselineDoc(
+  direction: "undo" | "redo",
+  plans: readonly PreparedPlan[],
+): Y.Doc | null {
+  const first = plans[0];
+  if (!first) return null;
+  const seqs: number[] = [];
+  for (const plan of plans) {
+    if (direction === "undo") seqs.push(...plan.targetSeqs);
+    else if (plan.redoGroup) seqs.push(plan.redoGroup.undoUpdateSeq);
+    else return null;
+  }
+  if (seqs.length === 0) return null;
+  const boundary = Math.min(...seqs);
+  if (!first.snapshot.updates.some((update) => update.seq === boundary)) return null;
+  return docFromSnapshot(first, { untilSeqExclusive: boundary });
+}
+
 function redoTargetSeqs(plan: PreparedPlan): ReadonlySet<number> | null {
   const undoUpdateSeq = plan.redoGroup?.undoUpdateSeq;
   return undoUpdateSeq === undefined ? null : new Set([undoUpdateSeq]);
@@ -109,7 +132,7 @@ function textOrderRepairs(input: {
     const currentText = currentBlocks.get(hash);
     const repairedBlock = repairedBlocks.get(hash);
     if (targetText === undefined || currentText === undefined || !repairedBlock) continue;
-    if (input.model.inlineRuns(repairedBlock).length > 1) continue;
+    if (input.model.inlineRunCount(repairedBlock) > 1) continue;
 
     const edit = simpleReplacement(baseText, targetText);
     if (!edit || edit.inserted.length === 0 || edit.deleted.length === 0) continue;

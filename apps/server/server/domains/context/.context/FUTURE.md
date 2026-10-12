@@ -1,7 +1,7 @@
 # domains/context — deferred / future work
 
-Durable scope this domain will grow into but hasn't yet. Each entry points to a
-tracking issue; details live there, not here. Delete an entry when it ships.
+Optional local improvements and future domain scope. Cross-cutting entries link
+to tracking issues. Delete an entry when it ships.
 
 ## Manuscript ordering & agent reorder tool
 
@@ -22,3 +22,22 @@ reorder port method + route, and an **agent reorder/move tool** (the AI
 co-authors the manuscript, so create/move become order-aware). Resolve the
 design question first — Scrivener-style explicit binder order for manuscript,
 and how the agent participates — via design-lead → tech-lead.
+
+## Batch revision availability lookups
+
+`document-revisions.ts` `current` calls `availability.lookup` once per
+document, though the port accepts a `documentIds` batch. Compaction calls it
+twice (before the summary and once per successor-prepare attempt) over every
+document recorded in the history it checks. Unmeasured; batch it if those
+round trips show in compaction latency.
+
+## Cache link-scope membership by manifest head
+
+`adapters/document-link-scope.ts` reads manifest membership through the same
+resolver ContextFS lists through, which flushes the manifest and replays it
+per snapshot. With real membership a live model read's scope costs about
+21 ms p50 on a 1,000-document project, but a single draft-view operation
+costs about 49 ms, of which about 33 ms is the manifest flush and replays
+(`729-730-scope-benchmark.log` in the model-tool-surface work directory).
+Cache membership per snapshot key by manifest head sequence and draft branch
+state, without weakening the flush that keeps reads fresh; measure first.

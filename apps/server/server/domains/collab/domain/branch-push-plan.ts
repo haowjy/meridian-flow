@@ -1,14 +1,15 @@
 /** Pure document materialization and effect-verification primitives for branch pushes. */
 import { createHash } from "node:crypto";
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import * as Y from "yjs";
-import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
   rangeCovers,
   suppliedRanges,
-} from "./journal-dependencies.js";
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
+import * as Y from "yjs";
+import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
 export class BranchPushEffectVerificationError extends Error {
   constructor(
     readonly operation: string,

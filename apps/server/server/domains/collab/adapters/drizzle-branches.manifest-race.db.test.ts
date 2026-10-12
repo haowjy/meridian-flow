@@ -1,6 +1,5 @@
 /** PostgreSQL contracts for project manifest identity and reconciliation. */
 import { randomUUID } from "node:crypto";
-
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -87,7 +86,7 @@ describe("Drizzle manifest persistence", () => {
       id: contentDocumentId,
       contextSourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     });
     return { projectId, contextSourceId, contentDocumentId };
@@ -177,20 +176,6 @@ describe("Drizzle manifest persistence", () => {
     await expect(
       store.resolveManifestMembership({ projectId: projectId as never }),
     ).resolves.toEqual(expect.objectContaining({ members: [contentDocumentId] }));
-  });
-
-  it("keeps resolved membership reads pure after explicit reconciliation", async () => {
-    const { projectId, contentDocumentId } = await createProjectFixture("idempotence");
-
-    await store.reconcileProjectManifest(projectId as never);
-    const first = await store.resolveManifestMembership({ projectId: projectId as never });
-    const firstHistory = await manifestHistoryCounts(first.documentId);
-    const second = await store.resolveManifestMembership({ projectId: projectId as never });
-
-    expect(first).toEqual({ documentId: first.documentId, members: [contentDocumentId] });
-    expect(second).toEqual(first);
-    expect(firstHistory).toEqual({ updates: 1, checkpoints: 1 });
-    await expect(manifestHistoryCounts(first.documentId)).resolves.toEqual(firstHistory);
   });
 
   it("heals a live-room gate miss with exactly one seed update", async () => {

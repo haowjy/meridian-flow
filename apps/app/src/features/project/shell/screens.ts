@@ -3,7 +3,7 @@
  *
  * `SCREENS` is the single source of route-valid primary destinations: Chat,
  * Work, and Editor. Auxiliary routed surfaces are deliberately not screens —
- * Settings uses `?settings=` and phone Results uses `?results=` — so desktop
+ * Settings uses `?settings=` — so desktop
  * placement and pane rendering never need fake destination fallbacks.
  */
 

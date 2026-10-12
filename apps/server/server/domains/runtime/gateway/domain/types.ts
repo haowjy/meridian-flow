@@ -25,8 +25,12 @@
  *   `prompt_cache_key` routing hint, or nothing at all).
  */
 import type { Usage } from "@meridian/contracts/runtime";
+import type { ProviderErrorResponse } from "@meridian/contracts/threads";
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;
+
+/** Tokenizer family used for conservative model-input estimation. */
+export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
 
 /**
  * Declared LLM capability flags. Used by the orchestrator and context builder
@@ -41,8 +45,14 @@ export type Capability =
   | "image_output"
   | "file_input"
   | "structured_output"
-  | "reasoning"
-  | "caching";
+  | "reasoning";
+
+/** Registry-declared provider cache behavior and its best-known retention window. */
+export interface PromptCacheDescriptor {
+  kind: "explicit" | "automatic" | "none";
+  /** Best-known TTL in milliseconds; null means the provider does not publish one. */
+  ttlMs: number | null;
+}
 
 /**
  * Static model metadata registered per provider. `provider` is filled in by
@@ -51,11 +61,16 @@ export type Capability =
  * etc.) that the provider executes without Meridian involvement.
  */
 export interface ModelInfo {
+  /** Whole-request input repricing threshold, if the model has one. */
+  inputTierTokens?: number;
+  /** Underlying tokenizer family; OpenRouter models declare their upstream family. */
+  tokenizer: TokenizerFamily;
   id: string;
   provider: string;
   displayName: string;
   contextWindow: number;
   maxOutputTokens: number;
+  promptCache: PromptCacheDescriptor;
   capabilities: Set<Capability>;
   hostedTools?: Set<string>;
   /** Per-model inactivity window override. 0 disables the stall guard. */
@@ -272,6 +287,8 @@ export type ErrorCode =
   | "context_overflow"
   | "provider_error";
 
+export type { ProviderErrorResponse } from "@meridian/contracts/threads";
+
 /**
  * Stream event — the canonical event set that every adapter emits and the
  * orchestrator consumes. Each event is a complete, Meridian-typed value; the
@@ -309,9 +326,13 @@ export type StreamEvent =
   | {
       type: "error";
       code: ErrorCode;
+      /** Metered partial output when the provider terminates with an error. */
+      result?: GenerateResult;
       message: string;
       retryable: boolean;
       retryAfterMs?: number;
+      /** Present when the provider answered; absent for network, timeout, and local failures. */
+      providerError?: ProviderErrorResponse;
     };
 
 /**
@@ -341,7 +362,7 @@ export interface ToolCall {
  *   `max_tokens`→`max_tokens`, `stop_sequence`→`stop_sequence`, `refusal`→`error`.
  *   NOTE: Anthropic docs additionally list `model_context_window_exceeded` but the
  *   installed SDK 0.100.1 union does not include it; if that value arrives at runtime
- *   it falls through the switch in stream-collect.ts and becomes `end_turn`.
+ *   the adapter maps the wire string to the canonical `context_overflow` error.
  * - OpenAI Responses status: `completed`→`end_turn`, `failed`/`cancelled`→`error`,
  *   `incomplete` maps to `max_tokens` or `error` depending on `incomplete_details.reason`.
  * - OpenAI-Chat finish_reason: `stop`→`end_turn`, `tool_calls`→`tool_use`,
@@ -384,6 +405,8 @@ export interface GenerateResult {
 
 /** Provider-arrival timing for one successful model request attempt. */
 export interface ModelCallTiming {
+  /** Wall-clock start of this attempt, retained even under consumer backpressure. */
+  requestStartedAt: string;
   /** Adapter invocation to stream-end arrival; null if the pump was already backpressured. */
   latencyMs: number | null;
   /** Adapter invocation to first output; null if absent or the pump was already backpressured. */

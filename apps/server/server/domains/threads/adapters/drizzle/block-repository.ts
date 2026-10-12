@@ -10,7 +10,7 @@
  */
 
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -39,6 +39,20 @@ function blockValues(input: CreateBlockInput) {
 
 export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
   return {
+    async listToolBlocks(keys) {
+      if (keys.length === 0) return [];
+      const tuples = keys.map(({ turnId, toolCallId }) => sql`(${turnId}::uuid, ${toolCallId})`);
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turnBlocks)
+        .where(
+          and(
+            inArray(schema.turnBlocks.blockType, ["tool_use", "tool_result"]),
+            sql`(${schema.turnBlocks.turnId}, ${schema.turnBlocks.content}->>'toolCallId') IN (${sql.join(tuples, sql`, `)})`,
+          ),
+        );
+      return rows.map(mapBlock);
+    },
     async create(input: CreateBlockInput) {
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnBlocks)
@@ -75,7 +89,10 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
     async replaceExisting(input) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.turnBlocks)
-        .set({ content: input.content ?? null, status: input.status ?? "complete" })
+        .set({
+          content: input.content ?? null,
+          status: input.status ?? "complete",
+        })
         .where(
           and(
             eq(schema.turnBlocks.id, input.id),
@@ -108,16 +125,8 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .from(schema.turnBlocks)
         .innerJoin(schema.turns, eq(schema.turnBlocks.turnId, schema.turns.id))
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(asc(schema.turns.createdAt), asc(schema.turnBlocks.sequence));
+        .orderBy(asc(schema.turns.position), asc(schema.turnBlocks.sequence));
       return rows.map((row) => mapBlock(row.block));
-    },
-    async updatePruned(id, pruned) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.turnBlocks)
-        .set({ pruned })
-        .where(eq(schema.turnBlocks.id, id))
-        .returning();
-      return row ? mapBlock(row) : null;
     },
   };
 }

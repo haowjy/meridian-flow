@@ -5,6 +5,8 @@ import type {
   EventRecord,
   TraceStreamRef,
 } from "@meridian/contracts/observability";
+import type { ModelResponse } from "@meridian/contracts/threads";
+import { cacheHitPercent } from "@/features/chat/turn-stats";
 
 export type LlmCallOutcome = "in-flight" | "ok" | "cancelled" | "error";
 
@@ -32,6 +34,57 @@ export type LlmCallSummary = {
   chunks: LlmCallChunkSummary[];
   chunkCount: number;
 };
+
+export type LlmCallCacheComparison = {
+  response: ModelResponse;
+  predictedState: ModelResponse["predictedCacheState"];
+  predictedReason: ModelResponse["predictedCacheReason"];
+  cacheHitPercent: number | null;
+  mismatch: boolean;
+};
+
+/** Pair successful gateway calls with persisted responses and compare prediction to observation. */
+export function pairLlmCallResponses(
+  calls: readonly LlmCallSummary[],
+  responsesByTurn: Readonly<Record<string, readonly ModelResponse[]>>,
+): Map<string, LlmCallCacheComparison> {
+  const result = new Map<string, LlmCallCacheComparison>();
+  const byTurn = new Map<string, LlmCallSummary[]>();
+  for (const call of calls) {
+    if (!call.turnId || !call.threadId) continue;
+    const group = byTurn.get(call.turnId) ?? [];
+    group.push(call);
+    byTurn.set(call.turnId, group);
+  }
+
+  for (const [turnId, turnCalls] of byTurn) {
+    const orderedCalls = turnCalls
+      .filter((call) => call.outcome === "ok")
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    const available = [...(responsesByTurn[turnId] ?? [])].sort((a, b) => a.sequence - b.sequence);
+    for (const call of orderedCalls) {
+      const responseIndex = available.findIndex((response) => response.model === call.model);
+      if (responseIndex < 0) continue;
+      const [response] = available.splice(responseIndex, 1);
+      if (!response) continue;
+      const hitPercent =
+        response.cacheReadTokens == null
+          ? null
+          : cacheHitPercent(response.cacheReadTokens, response.inputTokens);
+      const mismatch =
+        (response.predictedCacheState === "warm" && response.cacheReset) ||
+        (response.predictedCacheState === "cold" && hitPercent !== null && hitPercent >= 50);
+      result.set(call.gatewayCallId, {
+        response,
+        predictedState: response.predictedCacheState,
+        predictedReason: response.predictedCacheReason,
+        cacheHitPercent: hitPercent,
+        mismatch,
+      });
+    }
+  }
+  return result;
+}
 
 const OUTCOME_PRECEDENCE: Record<Exclude<LlmCallOutcome, "in-flight">, number> = {
   ok: 0,

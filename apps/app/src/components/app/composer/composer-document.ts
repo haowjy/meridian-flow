@@ -1,4 +1,6 @@
 /** Pure Composer document schema, serialization, and exact selection snapshots. */
+
+import { spellDocumentHref } from "@meridian/contracts";
 import type {
   ReferenceOccurrence,
   SkillOccurrence,
@@ -9,14 +11,20 @@ import type {
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { decodeWorkSlug } from "@meridian/contracts/works";
-import { formatWikilink, wikilinkTarget } from "@meridian/markup";
+import { formatMarkdownLink } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
-import { mergeAttributes, Node } from "@tiptap/core";
+import { getSchema, mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
-import { Plugin, TextSelection } from "@tiptap/pm/state";
+import { Plugin, Selection as PMSelection, TextSelection } from "@tiptap/pm/state";
+import { Transform } from "@tiptap/pm/transform";
+import StarterKit from "@tiptap/starter-kit";
 import type { AuthoritativeReference } from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
-import { internalClipboardTarget } from "@/core/editor/links";
+import {
+  clipboardLinkAddress,
+  internalClipboardTarget,
+  LINK_ADDRESS_ATTRIBUTE,
+} from "@/core/editor/links";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -47,35 +55,7 @@ export type ComposerSubmitEnvelope = Readonly<{
   activatedSkillSlugs: readonly string[];
 }>;
 
-function jsonNodeSize(node: JSONContent): number {
-  if (node.type === "text") return node.text?.length ?? 0;
-  if (!node.content) return 1;
-  return 2 + node.content.reduce((size, child) => size + jsonNodeSize(child), 0);
-}
-
-/** Preserve a failed submitted document before everything authored after it. */
-export function mergeComposerDraftSnapshots(
-  submitted: ComposerDraftSnapshot,
-  later: ComposerDraftSnapshot,
-): ComposerDraftSnapshot {
-  const prefix = [...(submitted.doc.content ?? []), { type: "paragraph" }];
-  const offset = prefix.reduce((size, child) => size + jsonNodeSize(child), 0);
-  const uploads = new Map(
-    [...submitted.ownedUploads, ...later.ownedUploads].map((upload) => [upload.intakeId, upload]),
-  );
-  return {
-    revision: Math.max(submitted.revision, later.revision) + 1,
-    doc: { type: "doc", content: [...prefix, ...(later.doc.content ?? [])] },
-    selection: {
-      anchor: later.selection.anchor + offset,
-      head: later.selection.head + offset,
-    },
-    ownedUploads: [...uploads.values()],
-  };
-}
-
 export type ComposerReferenceAttrs = AuthoritativeReference & {
-  spelling: string;
   /** Per-occurrence prose, independent of the catalog title and stable identity. */
   displayText?: string;
   imageCapable: boolean;
@@ -93,6 +73,16 @@ export type ComposerSkillAttrs = {
   description: string;
 };
 
+/**
+ * What a reference reads as in text: the occurrence a sent message carries
+ * (what the model reads) and the plain clipboard form. A standard Markdown
+ * link to the canonical URI, spelled by the href module so a `#` or `%` in a
+ * name stays part of the address the model and a paste read back.
+ */
+function referenceSpelling(value: ComposerReferenceAttrs): string {
+  return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
+}
+
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
   if (!raw) return null;
@@ -105,7 +95,7 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
   if (
     !value ||
     typeof value !== "object" ||
-    ![value.documentId, value.uri, value.fileType, value.label, value.spelling].every(
+    ![value.documentId, value.uri, value.fileType, value.label].every(
       (field) => typeof field === "string",
     ) ||
     (value.displayText !== undefined && typeof value.displayText !== "string") ||
@@ -139,6 +129,14 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
       authority = { kind: "work", projectId, workId, workSlug };
       break;
     }
+    case "lineage": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const rootThreadId = parseRequestId(rawAuthority.rootThreadId);
+      const rootThreadRef = rawAuthority.rootThreadRef;
+      if (!projectId || !rootThreadId || typeof rootThreadRef !== "string") return null;
+      authority = { kind: "lineage", projectId, rootThreadId, rootThreadRef };
+      break;
+    }
     default:
       return null;
   }
@@ -153,7 +151,6 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     uri,
     fileType: value.fileType,
     label: value.label,
-    spelling: value.spelling,
     ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
     upload: null,
     imageCapable: classification.kind === "binary" && classification.fileType === "image",
@@ -213,15 +210,14 @@ export const ComposerReferenceNode = Node.create({
                 continue;
               // Manuscript marks carry a target, not admitted attachment identity.
               // Preserve their Markdown rather than inventing a Composer attachment.
-              const target = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+              // Chat has no folder, so a recorded address (the full Context URI
+              // the link named where it was copied) wins over a relative href.
+              const target =
+                clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE)) ??
+                internalClipboardTarget(element.getAttribute("data-meridian-link"));
               if (!target) continue;
               element.replaceWith(
-                document.createTextNode(
-                  formatWikilink(
-                    wikilinkTarget(target) ?? target,
-                    element.textContent ?? undefined,
-                  ),
-                ),
+                document.createTextNode(formatMarkdownLink(element.textContent ?? target, target)),
               );
             }
             return container.innerHTML;
@@ -230,17 +226,14 @@ export const ComposerReferenceNode = Node.create({
       }),
     ];
   },
-  renderText: ({ node }) => {
-    const value = node.attrs.reference as ComposerReferenceAttrs;
-    return formatWikilink(value.uri, value.displayText ?? value.label);
-  },
+  renderText: ({ node }) => referenceSpelling(node.attrs.reference as ComposerReferenceAttrs),
   renderHTML: ({ node, HTMLAttributes }) => {
     const value = node.attrs.reference as ComposerReferenceAttrs;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-composer-reference": JSON.stringify({ ...value, upload: null }),
-        "data-meridian-link": formatWikilink(value.uri),
+        "data-meridian-link": value.uri,
         role: "link",
         tabindex: "0",
         "aria-label": value.displayText ?? value.label,
@@ -377,10 +370,7 @@ export function serializeComposerDraft(
     }
     if (node.type === "composerReference") {
       const value = node.attrs?.reference as ComposerReferenceAttrs;
-      const spelling =
-        value.displayText === undefined
-          ? value.spelling
-          : formatWikilink(wikilinkTarget(value.spelling) ?? value.uri, value.displayText);
+      const spelling = referenceSpelling(value);
       const occurrence: ReferenceOccurrence = {
         type: "reference",
         text: spelling,
@@ -443,4 +433,89 @@ export function plainComposerDoc(text: string): JSONContent {
       },
     ],
   };
+}
+
+let restorableDraftSchema: ReturnType<typeof getSchema> | null = null;
+
+/** Validate stored authoring state, excluding uploads whose bytes lived in memory. */
+export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnapshot | null {
+  try {
+    if (!value || typeof value !== "object") return null;
+    const snapshot = value as ComposerDraftSnapshot;
+    if (
+      !Number.isSafeInteger(snapshot.revision) ||
+      snapshot.revision < 0 ||
+      !Array.isArray(snapshot.ownedUploads) ||
+      snapshot.doc?.type !== "doc"
+    )
+      return null;
+    const clean = (node: JSONContent): JSONContent | null => {
+      if (!node || typeof node !== "object" || typeof node.type !== "string")
+        throw new Error("Invalid node");
+
+      if (node.type === "composerReference") {
+        const reference = parseClipboardReference(JSON.stringify(node.attrs?.reference));
+        if (!reference) throw new Error("Invalid reference");
+        const upload = node.attrs?.reference?.upload as ComposerOwnedUpload | null;
+        if (
+          upload &&
+          (typeof upload.intakeId !== "string" ||
+            upload.documentId !== reference.documentId ||
+            upload.uri !== reference.uri ||
+            typeof upload.locationRevision !== "string")
+        )
+          throw new Error("Invalid upload");
+        return composerReferenceContent({ ...reference, upload });
+      }
+      if (node.type === "composerSkill" && !parseClipboardSkill(JSON.stringify(node.attrs)))
+        throw new Error("Invalid skill");
+      return {
+        ...node,
+        ...(node.content
+          ? {
+              content: node.content
+                .map(clean)
+                .filter((child): child is JSONContent => child !== null),
+            }
+          : {}),
+      };
+    };
+    const doc = clean(snapshot.doc);
+    if (!doc) return null;
+    restorableDraftSchema ??= getSchema([
+      StarterKit,
+      ComposerReferenceNode,
+      ComposerSkillNode,
+      ComposerUploadNode,
+    ]);
+    const parsed = restorableDraftSchema.nodeFromJSON(doc);
+    parsed.check();
+    const saved = snapshot.selection;
+    const valid =
+      saved &&
+      [saved.anchor, saved.head].every(
+        (position) =>
+          Number.isSafeInteger(position) &&
+          position >= 0 &&
+          position <= parsed.content.size &&
+          parsed.resolve(position).parent.inlineContent,
+      );
+    const selection = valid
+      ? TextSelection.create(parsed, saved.anchor, saved.head)
+      : PMSelection.atStart(parsed);
+    const transform = new Transform(parsed);
+    const uploads: { position: number; size: number }[] = [];
+    parsed.descendants((node, position) => {
+      if (node.type.name === "composerUpload") uploads.push({ position, size: node.nodeSize });
+    });
+    for (const { position, size } of uploads.reverse()) transform.delete(position, position + size);
+    const mapped = selection.map(transform.doc, transform.mapping);
+    return serializeComposerDraft(
+      transform.doc.toJSON(),
+      snapshot.revision,
+      composerSelection(mapped),
+    ).draft;
+  } catch {
+    return null;
+  }
 }

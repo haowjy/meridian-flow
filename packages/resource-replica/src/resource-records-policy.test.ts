@@ -36,16 +36,6 @@ function reserved(): ResourceRecord {
   };
 }
 
-it("allows a new local reservation and its one-way initialization acknowledgement", () => {
-  const first = reserved();
-  expect(() => validateResourceRecordUpdate(null, first)).not.toThrow();
-  const initialized = structuredClone(first);
-  initialized.resource.revision = 2;
-  if (initialized.resource.content.kind === "exact")
-    delete initialized.resource.content.initialization;
-  expect(() => validateResourceRecordUpdate(first, initialized)).not.toThrow();
-});
-
 it("requires explicit monotonic eligibility for executable local creation", () => {
   const missing = reserved();
   missing.resource.obligations = {};

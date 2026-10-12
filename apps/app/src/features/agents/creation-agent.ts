@@ -2,4 +2,4 @@
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 
 export type CreationAgent = Pick<AgentCatalogItem, "selection" | "slug" | "name">;
-export type CreationChoices = { workId?: string | null; agent?: CreationAgent };
+export type CreationChoices = { workId?: string; agent?: CreationAgent };

@@ -1,5 +1,5 @@
 /**
- * SuggestionMenu — the list a writer types underneath, for `/` and for `[[`.
+ * SuggestionMenu — the list a writer types underneath, for `/` and for `@`.
  *
  * The writer never leaves the sentence: focus stays in the prose, the query
  * they are typing IS the document text after the trigger, and this surface

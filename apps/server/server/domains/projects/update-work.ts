@@ -2,9 +2,9 @@
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import {
-  INVALID_WORK_STATUS,
-  normalizeWorkStatus,
-  WORK_STATUS_MAX_LENGTH,
+  normalizeWorkMetadata,
+  WORK_NAME_REQUIRED_MESSAGE,
+  WORK_STATUS_INVALID_MESSAGE,
   type Work,
   workLifecycleState,
 } from "@meridian/contracts/works";
@@ -14,43 +14,30 @@ import {
   WorkLockedError,
   type WorkRepository,
 } from "./ports/work-repository.js";
-import type { WorkContextNotices } from "./work-context-notices.js";
+import type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";
 
 export type UpdateWorkCommandInput = UpdateWorkInput;
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
 
 export class WorkStatusInvalidError extends Error {
   constructor() {
-    super(
-      `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
-    );
+    super(WORK_STATUS_INVALID_MESSAGE);
     this.name = "WorkStatusInvalidError";
   }
 }
 
 export class WorkNameRequiredError extends Error {
   constructor() {
-    super("Work name must be a non-empty string");
+    super(WORK_NAME_REQUIRED_MESSAGE);
     this.name = "WorkNameRequiredError";
   }
 }
 
 /** Canonical metadata semantics for every human, model, and reversal caller. */
 export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateWorkCommandInput {
-  const optionalText = (value: string | null | undefined): string | null | undefined => {
-    if (value === undefined || value === null) return value;
-    const trimmed = value.trim();
-    return trimmed || null;
-  };
-  const name = input.name?.trim();
-  if (name !== undefined && !name) throw new WorkNameRequiredError();
-  const status = input.status === undefined ? undefined : normalizeWorkStatus(input.status);
-  if (status === INVALID_WORK_STATUS) throw new WorkStatusInvalidError();
-  return {
-    ...(name !== undefined ? { name } : {}),
-    ...(input.goal !== undefined ? { goal: optionalText(input.goal) } : {}),
-    ...(input.status !== undefined ? { status } : {}),
-  };
+  const normalized = normalizeWorkMetadata(input);
+  if (normalized.ok) return normalized.value;
+  throw normalized.field === "name" ? new WorkNameRequiredError() : new WorkStatusInvalidError();
 }
 
 export async function updateWorkTransition(
@@ -60,6 +47,7 @@ export async function updateWorkTransition(
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
+  origin: WorkChangeOrigin = {},
 ): Promise<WorkTransition> {
   const normalized = normalizeWorkUpdateInput(input);
   const result = await deps.works.transaction(async () => {
@@ -94,7 +82,7 @@ export async function updateWorkTransition(
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
-    if (result.contextChanged) await deps.workContextNotices.workChanged(work.id);
+    if (result.contextChanged) await deps.workContextNotices.workChanged(work.id, origin);
     return result;
   });
   return { before: result.before, after: result.after, changed: result.changed };
@@ -108,6 +96,7 @@ export async function setWorkArchived(
   },
   workId: WorkId,
   archived: boolean,
+  origin: WorkChangeOrigin = {},
 ): Promise<WorkTransition> {
   return deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
@@ -118,7 +107,7 @@ export async function setWorkArchived(
     }
     const after = archived ? await deps.works.archive(workId) : await deps.works.unarchive(workId);
     const result = { before, after, changed: before.archivedAt !== after.archivedAt };
-    if (result.changed) await deps.workContextNotices.workChanged(after.id);
+    if (result.changed) await deps.workContextNotices.workChanged(after.id, origin);
     return result;
   });
 }
