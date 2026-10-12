@@ -307,8 +307,9 @@ destinations claim after navigation. Claims require Work, document identity,
 mounted document, and draft membership to agree. Review addresses bind the
 selected branch to its document through the Work draft list before local path
 resolution; a colliding live catalog entry never substitutes for that identity. The document address persists
-the draft identity, so reload restores through the same handoff; stale identities
-are removed by replacing the current entry. The owner survives phone view
+the draft identity, so reload restores through the same handoff. Unknown or refused
+selectors stay on their unavailable/error destination; only owned Exit or deliberate
+navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
 unmounts. Exit consumes only the owned Work and branch: known document identity
 decides, with the last confirmed scheme/path as fallback while identity is
 unresolved. Pending rename guesses never replace that confirmed locator.

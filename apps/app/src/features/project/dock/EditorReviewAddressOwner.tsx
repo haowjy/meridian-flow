@@ -9,6 +9,7 @@ import { exitedReviewOwnsAddress, type OwnedReviewAddress } from "./review-addre
 
 export function EditorReviewAddressOwner({
   review,
+  reviewAddressAdmission,
   requestedDraftId,
   activeScreen,
   activeScheme,
@@ -17,6 +18,7 @@ export function EditorReviewAddressOwner({
   onSetDraftId,
 }: {
   review: DraftReviewContextValue;
+  reviewAddressAdmission: "pending" | "admitted" | "unavailable" | "failed";
   requestedDraftId?: string;
   activeScreen: ScreenKey;
   activeScheme: ProjectContextTreeScheme | null;
@@ -94,6 +96,8 @@ export function EditorReviewAddressOwner({
       return;
     }
     if (pendingDraftId === requestedDraftId) return;
+    // Only the route admits review identity; missing presentation metadata cannot consume intent.
+    if (reviewAddressAdmission !== "admitted") return;
     if (review.drafts.status !== "ready" && review.drafts.status !== "empty") return;
     const group = review.groups.find((candidate) => candidate.draft.draftId === requestedDraftId);
     const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
@@ -103,7 +107,6 @@ export function EditorReviewAddressOwner({
         : "no";
     if (match === "no") {
       restoring.current = null;
-      onSetDraftId(null);
       return;
     }
     if (match === "pending" || !group?.contextLocation || !draft) return;
@@ -130,6 +133,7 @@ export function EditorReviewAddressOwner({
     pendingDraftId,
     requestedDraftId,
     review,
+    reviewAddressAdmission,
   ]);
 
   return null;

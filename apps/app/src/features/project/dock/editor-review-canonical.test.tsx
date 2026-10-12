@@ -33,6 +33,7 @@ it.each([
         }}
       >
         <EditorReviewAddressOwner
+          reviewAddressAdmission="admitted"
           review={review}
           requestedDraftId={draftId ?? undefined}
           activeScreen="context"
