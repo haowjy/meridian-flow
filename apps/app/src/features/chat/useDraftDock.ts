@@ -73,7 +73,6 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     },
     [openReviewFile, workId],
   );
-  const reviewable = files.find((file) => file.row.contextPath) ?? null;
 
   const send = useCallback(
     (mode: "apply" | "discard") => {
@@ -114,12 +113,10 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
-    reviewable: reviewable !== null,
     projectId,
     workId,
     fileFailures,
     review,
-    reviewFirst: () => reviewable && review(reviewable),
     apply: () => send("apply"),
     discard: () => send("discard"),
   };

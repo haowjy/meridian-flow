@@ -5,6 +5,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -50,30 +51,25 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <Trans>Discard</Trans>
           </QuietButton>
         </>
-      ) : (
+      ) : dock.showCommands ? (
         <>
-          {dock.showCommands ? (
-            <>
-              <QuietButton
-                onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
-                disabled={!dock.canCommand}
-              >
-                <Trans>Discard</Trans>
-              </QuietButton>
-              <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
-                <Trans>Apply</Trans>
-              </QuietButton>
-            </>
-          ) : null}
-          <ReviewPill onClick={dock.reviewFirst} disabled={!dock.reviewable} />
+          <QuietButton
+            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
+            disabled={!dock.canCommand}
+          >
+            <Trans>Discard</Trans>
+          </QuietButton>
+          <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+            <Trans>Apply</Trans>
+          </QuietButton>
         </>
-      )}
+      ) : null}
     </div>
   );
 
   const summary = (trouble: ReactNode = null) => (
     <>
-      {/* The whole first line toggles expansion; command buttons intercept their own clicks. */}
+      {/* The first line toggles expansion; document names and command buttons intercept their own clicks. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
@@ -111,18 +107,19 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               </button>
             }
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-            {trouble || (
-              <>
-                <span className="min-w-[10ch] shrink truncate">
-                  {multi ? <Trans>{dock.files.length} documents</Trans> : only?.name}
+            {multi ? (
+              <span className="min-w-[10ch] shrink truncate">
+                <Trans>{dock.files.length} documents</Trans>
+              </span>
+            ) : only ? (
+              <DockFileName file={only} onReview={() => dock.review(only)} />
+            ) : null}
+            {trouble ||
+              (dock.changeCount !== null ? (
+                <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
+                  <ChangeCount count={dock.changeCount} />
                 </span>
-                {dock.changeCount !== null ? (
-                  <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
-                    <ChangeCount count={dock.changeCount} />
-                  </span>
-                ) : null}
-              </>
-            )}
+              ) : null)}
           </div>
         )}
         {commands}
@@ -176,8 +173,12 @@ function DockFileLine({
   );
   const own = new Set(file.changes.map((change) => change.classId));
   const items = view.items.filter(({ change }) => own.has(change.classId));
+  const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // Ownership comes from the rows that will actually render, not the kind of document.
-  const renderedItems = expanded && file.status !== "error" && view.status === "ready" ? items : [];
+  const renderedItems =
+    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
+      ? items
+      : [];
   const failures = dock.fileFailures(file).filter(
     (held) =>
       !renderedItems.some((item) => {
@@ -203,21 +204,17 @@ function DockFileLine({
     >
       {summary ? (
         summary(trouble)
-      ) : expanded ? (
+      ) : expanded && !wholeDocument ? (
         <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
-          <button
-            type="button"
-            className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
-            onClick={() => dock.review(file)}
-          >
-            {file.name}
-          </button>
+          <DockFileName file={file} onReview={() => dock.review(file)} />
           {trouble}
         </div>
       ) : null}
-      {expanded && file.status !== "error" ? (
+      {!summary && wholeDocument ? trouble : null}
+      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
+            documentName={file.name}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}
@@ -308,15 +305,19 @@ function TroubleLine({
   );
 }
 
-function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+/** One document's review door, independent of the strip's expansion toggle. */
+function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
+  const touch = usePhoneShell() ?? false;
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center justify-center rounded-sm bg-primary px-2 @max-[25rem]/dock:px-1 text-caption @max-[20rem]/dock:[font-size:12px] font-semibold text-primary-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+      className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
+      onClick={(event) => {
+        event.stopPropagation();
+        onReview();
+      }}
     >
-      <Trans>Review</Trans>
+      {file.name}
     </button>
   );
 }

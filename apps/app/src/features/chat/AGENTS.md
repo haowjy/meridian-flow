@@ -209,9 +209,13 @@ chat. A chat with none shows no strip. Apply and Discard send the union of this
 chat's complete classes per file; only new documents
 are one whole-draft item using existing whole commands. Creation-bound
 Work batches hide every queued item at the click; failure restores its file.
-Summary and commands share one row. Narrow strips hide the count before
+Summary and commands share one row. Each document name opens its own review,
+including the single-document summary (also when a launch fails); the chevron and remaining summary area
+toggle expansion. There is no summary-wide Review command. Narrow strips hide the count before
 truncating the name, which has a readable width floor. Expanded
-file headers share one line each; expansion shows this chat’s changes through
+file headers share one line each, except a sole whole-document change is the
+file row itself. A single-document summary already provides that row and its
+commands, so it does not repeat below. Expansion shows this chat’s changes through
 the same DocumentChangeRows used by Work Files, without per-file counts.
 There are no notes or Work-page footer; Work-wide
 lists and Apply all remain on the Work page. Coarse-pointer targets stay 44px.
