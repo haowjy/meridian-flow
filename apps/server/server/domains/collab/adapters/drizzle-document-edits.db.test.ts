@@ -1,17 +1,18 @@
 // Durable capture, selective placement and compaction through the existing review application API.
 import { randomUUID } from "node:crypto";
-import { toDocHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
   PROJECT_ID,
   resetDatabase,
+  runInDrizzleTransaction,
   schema,
   THREAD_ID,
   TURN_ID,
@@ -74,6 +75,192 @@ async function stageDraft(
     .orderBy(schema.branchWriteJournal.id);
   expect(rows).toHaveLength(writes.length);
   return { fixture, branchId, rows, baseUpdate };
+}
+
+// Whole Discard revokes Alpha's held commands/read even while Beta keeps the reply open.
+async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDatabase>) {
+  for (const pause of ["before", "after", "read"] as const) {
+    await resetDatabase(db);
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(
+        db,
+        harness,
+        "red\n\nblue\n\ngreen",
+        "replace",
+        [
+          ["red", "gold"],
+          ["blue", "azure"],
+        ],
+      );
+      const responseId = randomUUID();
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 2,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      const context = {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+      };
+      const core = fixture.collab.agentEdit();
+      expect(
+        await core.write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "green",
+            content: "lime",
+            tool_use_id: "independent-alpha",
+          },
+          context,
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      expect(
+        await core.write(
+          {
+            command: "create",
+            file: "beta.md",
+            documentId: BETA_ID,
+            content: "Beta staged.",
+            overwrite: true,
+            tool_use_id: "independent-beta",
+          },
+          { ...context, createdDocument: false },
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      let entered!: () => void, release!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const originalRead = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+      const originalReplay = fixture.branchCoordinator.withStagedRows.bind(
+        fixture.branchCoordinator,
+      );
+      let once = true;
+      fixture.branchCoordinator.readBranch = async (branch, fn) => {
+        const targeted =
+          pause !== "read" &&
+          once &&
+          branch === branchId &&
+          String(fn).includes("listConcurrentJournalRows");
+        if (targeted) once = false;
+        if (targeted && pause === "before") {
+          entered();
+          await gate;
+        }
+        const result = await originalRead(branch, fn);
+        if (targeted && pause === "after") {
+          entered();
+          await gate;
+        }
+        return result;
+      };
+      fixture.branchCoordinator.withStagedRows = async (...args) => {
+        if (pause === "read" && once) {
+          once = false;
+          entered();
+          await gate;
+        }
+        return originalReplay(...args);
+      };
+      const pending =
+        pause === "read"
+          ? core.prepare(responseId, ALPHA_ID)
+          : core.write(
+              {
+                command: "replace",
+                file: "alpha.md",
+                documentId: ALPHA_ID,
+                find: "azure",
+                content: "cobalt",
+                tool_use_id: "held-alpha",
+              },
+              context,
+            );
+      // Observe rejection immediately, before releasing an orphaned read.
+      const settled = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await waiting;
+      try {
+        expect(
+          await fixture.collab.draftReview.discardWorkDraft({
+            projectId: PROJECT_ID as never,
+            workId: WORK_ID,
+            documentId: ALPHA_ID,
+            draftId: branchId,
+            userId: USER_ID as never,
+          }),
+        ).toMatchObject({ status: "discarded" });
+      } finally {
+        release();
+      }
+      const outcome = await settled;
+      fixture.branchCoordinator.readBranch = originalRead;
+      fixture.branchCoordinator.withStagedRows = originalReplay;
+      if (pause === "read") {
+        if ("value" in outcome && outcome.value && "dispose" in outcome.value)
+          outcome.value.dispose();
+        expect(outcome).toHaveProperty("error");
+      } else {
+        expect(outcome).toMatchObject({
+          value: {
+            status: "invalid_write",
+            result: {
+              message:
+                "Write did not land: the user discarded the text it edited. Re-read and retry.",
+            },
+          },
+        });
+      }
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+      // A new command has the new epoch; the revoked command cannot recreate its old base.
+      expect(
+        await core.write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "green",
+            content: "olive",
+            tool_use_id: "fresh-alpha",
+          },
+          context,
+        ),
+      ).toMatchObject({ status: "success", phase: "staged" });
+      expect(await harness.commit(responseId)).toMatchObject({
+        status: "committed",
+        documents: expect.arrayContaining([
+          expect.objectContaining({ documentId: ALPHA_ID, updateCount: 1 }),
+          expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
+        ]),
+      });
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
+      const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
+      try {
+        expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
+      } finally {
+        beta.doc.destroy();
+      }
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  }
 }
 
 describe("document edit receipts (Postgres)", () => {
@@ -162,6 +349,38 @@ describe("document edit receipts (Postgres)", () => {
         responseId,
         grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
       };
+      const scopedRead = async () => {
+        const { createEffectiveDocumentReader } = await import(
+          "../domain/effective-document-reader.js"
+        );
+        const reader = createEffectiveDocumentReader({
+          branches: fixture.branchStore,
+          branchCoordinator: fixture.branchCoordinator,
+          branchPulls: fixture.branchPulls,
+          liveCoordinator: fixture.liveCoordinator,
+          agentEdit: fixture.collab.agentEdit(),
+          documents: fixture.runtime.markdownDocuments,
+          model: fixture.runtime.model,
+          codec: fixture.runtime.codec,
+          links: fixture.links,
+        });
+        const args = {
+          documentId: ALPHA_ID,
+          threadId: THREAD_ID,
+          responseId,
+          destination: "draft" as const,
+          workId: WORK_ID,
+        };
+        const markdown = await reader.readEffectiveMarkdown(args);
+        expect(markdown).toMatchObject({ ok: true });
+        if (markdown.ok) expect(markdown.value.content).toBe("red\n\nazure\n\nlime\n");
+        const hashlines = await reader.readEffectiveHashlines(args);
+        expect(hashlines).toMatchObject({ ok: true });
+        if (hashlines.ok)
+          expect(
+            hashlines.value.content.map((block) => block.slice(block.indexOf("|") + 1)),
+          ).toEqual(["red", "azure", "lime"]);
+      };
       let tool = 0;
       const write = (find: string, content: string, command: "replace" | "insert" = "replace") =>
         fixture.collab.agentEdit().write(
@@ -217,10 +436,6 @@ describe("document edit receipts (Postgres)", () => {
         return;
       }
       if (witness.startsWith("reply") || witness.startsWith("drop") || witness === "CAS retry") {
-        const plannedBase =
-          witness === "CAS retry"
-            ? (await fixture.branchStore.getBranch(branchId))?.state
-            : undefined;
         const dropped = [];
         const droppedAll = witness === "drop all before next tool";
         if (witness.startsWith("drop") || witness === "CAS retry") {
@@ -241,9 +456,87 @@ describe("document edit receipts (Postgres)", () => {
           ).toMatchObject({ status: "discarded" });
           await expect(harness.commit(responseId)).rejects.toThrow("already rolled back");
           expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+          harness.cancelScheduledPulls();
+          harness.destroyWarmState();
+          await wholeDiscardLeaseSchedules(db);
           return;
         }
-        await review("gold", witness === "reply empty apply");
+        if (witness === "reply empty discard") {
+          let entered!: () => void, release!: () => void;
+          const waiting = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const original = fixture.branchCoordinator.withStagedRows.bind(fixture.branchCoordinator);
+          let once = true;
+          fixture.branchCoordinator.withStagedRows = async (...args) => {
+            if (once) {
+              once = false;
+              entered();
+              await gate;
+            }
+            return original(...args);
+          };
+          const reading = read();
+          await waiting;
+          try {
+            await review("gold");
+          } finally {
+            release();
+          }
+          try {
+            const result = await reading;
+            expect(result.status).toBe("success");
+            expect(
+              result.result.blocks?.flatMap((group) => group.items.map((item) => item.body)),
+            ).toEqual(["red", "blue", "lime"]);
+          } finally {
+            fixture.branchCoordinator.withStagedRows = original;
+          }
+          expect(await read()).toMatchObject({ status: "success" });
+        } else if (witness === "drop at save") {
+          let entered!: () => void, release!: () => void;
+          const waiting = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const original = fixture.links.prepare.bind(fixture.links);
+          let once = true;
+          fixture.links.prepare = async (request) => {
+            if (
+              once &&
+              request.docs?.length &&
+              request.holders.some(
+                (holder) => holder.view.kind === "draft" && holder.view.responseId === responseId,
+              )
+            ) {
+              once = false;
+              entered();
+              await gate;
+            }
+            return original(request);
+          };
+          const writing = write("lime", "olive");
+          await waiting;
+          try {
+            await review("gold");
+            await scopedRead();
+          } finally {
+            release();
+          }
+          try {
+            const result = await writing;
+            expect(result.status).toBe("success");
+            expect(result.result.message?.split("Dropped writes:")).toHaveLength(2);
+          } finally {
+            fixture.links.prepare = original;
+          }
+          expect((await read()).result.message).toBeUndefined();
+        } else await review("gold", witness === "reply empty apply");
         if (witness === "drop before next tool" || droppedAll) {
           const missing = await write("gold", "missing");
           expect(missing.status).toBe("not_found");
@@ -292,26 +585,28 @@ describe("document edit receipts (Postgres)", () => {
             fixture.branchStore.commitBranchMutation = original;
           }
           expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
-          if (!plannedBase) throw new Error("Missing planning cut");
-          const base = new Y.Doc({ gc: false });
+          const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
+          if (!lease) throw new Error("Missing prepared lease");
           try {
-            Y.applyUpdate(base, plannedBase);
+            // A post-failure exposure is itself an accepted fresh replay, not a raw buffer peek.
             expect(
-              await fixture.collab
-                .agentEdit()
-                .withResponseDocument(responseId, ALPHA_ID, toDocHandle(base), (doc) =>
-                  fixture.model.getBlocks(doc).map((block) => fixture.model.getText(block)),
-                ),
-            ).toEqual(["bronze", "azure", "lime"]);
+              fixture.model.getBlocks(lease.doc).map((block) => fixture.model.getText(block)),
+            ).toEqual(["red", "azure", "lime"]);
           } finally {
-            base.destroy();
+            lease.dispose();
           }
         }
         const saved = await harness.commit(responseId);
         expect(saved).toMatchObject({
           status: "committed",
           documents: [
-            { updateCount: droppedAll ? 0 : witness === "drop before next tool" ? 2 : 1 },
+            {
+              updateCount: droppedAll
+                ? 0
+                : witness === "drop before next tool" || witness === "drop at save"
+                  ? 2
+                  : 1,
+            },
           ],
         });
         if (dropped.length) {
@@ -341,42 +636,84 @@ describe("document edit receipts (Postgres)", () => {
               ? "\n\nblue\n\ngreen\n"
               : empty
                 ? "\n\nblue\n\nlime\n"
-                : "\n\nazure\n\nlime\n"),
+                : witness === "drop at save"
+                  ? "\n\nazure\n\nolive\n"
+                  : "\n\nazure\n\nlime\n"),
         );
         expect(await harness.branchGeneration(branchId)).toBe(droppedAll ? 3 : 2);
         return;
       }
       if (witness === "ambient retired") {
-        expect(await write("green", "lime")).toMatchObject({ status: "success" });
-        await review("gold");
-        const snapshot = await fixture.branchStore.getBranch(branchId);
-        if (!snapshot) throw new Error("Missing branch");
-        const room = new Y.Doc({ gc: false });
+        const writer = async () => {
+          const snapshot = await fixture.branchStore.getBranch(branchId);
+          if (!snapshot) throw new Error("Missing branch");
+          const room = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(room, snapshot.state);
+            const updates: Uint8Array[] = [];
+            room.on("update", (update) => updates.push(update));
+            const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
+              0,
+            ) as Y.XmlText;
+            room.transact(() => {
+              text.delete(0, text.length);
+              text.insert(0, "pink");
+            });
+            expect(
+              await fixture.branchCoordinator.commitWriterUpdate({
+                branchId,
+                expectedGeneration: snapshot.generation,
+                updateData: Y.mergeUpdates(updates),
+                roomDocument: room,
+                actorUserId: USER_ID as never,
+              }),
+            ).toEqual({ admitted: true });
+          } finally {
+            room.destroy();
+          }
+        };
+        let entered!: () => void, release!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const original = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+        let once = true;
+        fixture.branchCoordinator.readBranch = async (branch, fn) => {
+          if (once && branch === branchId && String(fn).includes("listConcurrentJournalRows")) {
+            once = false;
+            entered();
+            await gate;
+          }
+          return original(branch, fn);
+        };
+        const writing = write("green", "lime");
+        await waiting;
         try {
-          Y.applyUpdate(room, snapshot.state);
-          const updates: Uint8Array[] = [];
-          room.on("update", (update) => updates.push(update));
-          const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
-            0,
-          ) as Y.XmlText;
-          room.transact(() => {
-            text.delete(0, text.length);
-            text.insert(0, "pink");
-          });
-          expect(
-            await fixture.branchCoordinator.commitWriterUpdate({
-              branchId,
-              expectedGeneration: snapshot.generation,
-              updateData: Y.mergeUpdates(updates),
-              roomDocument: room,
-              actorUserId: USER_ID as never,
-            }),
-          ).toEqual({ admitted: true });
+          await writer();
         } finally {
-          room.destroy();
+          release();
         }
-        expect(await read()).toMatchObject({ status: "success" });
+        try {
+          expect(await writing).toMatchObject({ status: "success" });
+        } finally {
+          fixture.branchCoordinator.readBranch = original;
+        }
         await review("pink");
+        expect(await read()).toMatchObject({ status: "success" });
+        // An aborted rollback must not replace the helper with this ambient peer.
+        await writer();
+        await fixture.branchPulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+        await expect(
+          runInDrizzleTransaction(db, async () => {
+            await fixture.collab.agentEdit().rollbackResponse(responseId);
+            throw new Error("rollback abort probe");
+          }),
+        ).rejects.toThrow("rollback abort probe");
+        await review("pink");
+        await scopedRead();
         expect(await read()).toMatchObject({ status: "success" });
         expect(await harness.commit(responseId)).toMatchObject({
           status: "committed",

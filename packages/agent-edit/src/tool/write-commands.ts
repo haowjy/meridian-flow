@@ -16,7 +16,6 @@ import { documentRevision, planWrite, type ResolveWriteResult } from "../resolve
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
-import { withLiveDocument } from "./coordinator.js";
 import { copyEdgeLines, copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
@@ -27,7 +26,7 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import type { ResponseCommitter } from "./response-committer.js";
+import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
 import {
   formatApplySuccess,
   formatUnchangedSuccess,
@@ -35,7 +34,7 @@ import {
   status,
   truncateCreateEcho,
 } from "./response-format.js";
-import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
+import type { RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -92,9 +91,47 @@ export function createWriteCommands(deps: {
     runtimeStore,
     responseCommitter,
   } = deps;
-  const { markSynced, requireSynced, runtimeFor } = runtimeStore;
+  const { markSynced } = runtimeStore;
 
-  return { read, create, mutate };
+  return {
+    read: (command: ReadCommand, session: ActorSession, context: WriteContext) =>
+      run(command, session, context, read),
+    create: (
+      command: Extract<WriteCommand, { command: "create" | "copy" }>,
+      session: ActorSession,
+      context: WriteContext,
+    ) => run(command, session, context, create),
+    mutate: (
+      command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
+      session: ActorSession,
+      context: WriteContext,
+    ) => run(command, session, context, mutate),
+  };
+
+  async function run<C extends ReadCommand | WriteCommand>(
+    command: C,
+    session: ActorSession,
+    context: WriteContext,
+    handler: (
+      command: C,
+      session: ActorSession,
+      context: WriteContext,
+      lease: CommandDocumentLease,
+    ) => Promise<InternalWriteResult>,
+  ) {
+    const address = parseFileAddress(command);
+    if (!address.ok) return status("invalid_write", address.message);
+    return responseCommitter.stage(
+      {
+        responseId: context.responseId,
+        docId: address.documentId,
+        session,
+        commandName: "command" in command ? command.command : "read",
+        context,
+      },
+      (lease) => handler(command, session, context, lease),
+    );
+  }
 
   function emptiedDocument(
     runtime: { doc: Y.Doc },
@@ -109,27 +146,13 @@ export function createWriteCommands(deps: {
     command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    const runtime = runtimeFor(session, address.documentId);
 
-    const stagedUpdates = context.responseId
-      ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
-      : [];
-    const restored = await runtimeStore.restoreRuntimeFromLive(
-      session,
-      address.documentId,
-      runtime,
-      "read",
-    );
-    if (isInternalWriteResult(restored)) {
-      if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
-      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
-    for (const update of stagedUpdates) {
-      Y.applyUpdate(runtime.doc, update, { type: "system" });
-    }
+    const restored = await runtime.restore();
+    if (isInternalWriteResult(restored)) return restored;
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
@@ -181,6 +204,7 @@ export function createWriteCommands(deps: {
     command: Extract<WriteCommand, { command: "create" | "copy" }>,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
@@ -209,7 +233,6 @@ export function createWriteCommands(deps: {
       });
     }
 
-    const runtime = runtimeFor(session, address.documentId);
     const given = copiedNodes ?? boundNodes;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
@@ -224,27 +247,14 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
-    const bufferedResponseUpdates =
-      context.responseId && actor.kind === "agent"
-        ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
-        : [];
     const overwriting =
-      command.overwrite === true ||
-      (deferNewDocumentCreation && bufferedResponseUpdates.length === 0);
+      command.overwrite === true || (deferNewDocumentCreation && !runtime.hasStagedWrites);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
     );
-    const liveCheck = await withLiveDocument(
-      options.coordinator,
-      address.documentId,
-      command.command,
-      (liveDoc) =>
-        options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
-          ? alreadyExists
-          : null,
-    );
+    const liveCheck = await runtime.checkEmpty(overwriting, alreadyExists);
     const missingLiveForDeferredNewDocument =
       deferNewDocumentCreation &&
       isInternalWriteResult(liveCheck) &&
@@ -252,21 +262,11 @@ export function createWriteCommands(deps: {
     if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
 
     if (!missingLiveForDeferredNewDocument) {
-      const restored = await runtimeStore.restoreRuntimeFromLive(
-        session,
-        address.documentId,
-        runtime,
-        command.command,
-      );
+      const restored = await runtime.restore();
       if (isInternalWriteResult(restored)) return restored;
     }
     if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
-    if (context.responseId && actor.kind === "agent") {
-      for (const update of bufferedResponseUpdates) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      }
     }
     const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
@@ -485,7 +485,7 @@ export function createWriteCommands(deps: {
       }
     }
 
-    runtimeStore.attachRuntime(session, address.documentId, runtime);
+    runtime.attach();
     return withShown(
       links,
       formatApplySuccess({
@@ -516,6 +516,7 @@ export function createWriteCommands(deps: {
     command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
@@ -528,18 +529,8 @@ export function createWriteCommands(deps: {
         writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
       });
     }
-    const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(session, address.documentId, command.command, runtime);
+    const synced = await runtime.sync();
     if (!synced.ok) return synced.response;
-    if (context.interactionContext) {
-      const merged = await runtimeStore.syncLocalFromLive(
-        session,
-        address.documentId,
-        runtime,
-        command.command,
-      );
-      if (!merged.ok) return merged.response;
-    }
 
     const from = command.command === "remove" ? undefined : command.from;
     const copiedNodes = from ? context.copiedNodes : undefined;
@@ -655,6 +646,7 @@ export function createWriteCommands(deps: {
               runtime,
               links,
               agentUpdate: ownUpdate,
+              reportingOnly: runtime.reportingOnly,
               interactionContext,
               preOwnSnapshot,
               ...(turnId ? { ownTurnId: turnId } : {}),
@@ -776,7 +768,7 @@ export function createWriteCommands(deps: {
       };
     }
 
-    runtimeStore.attachRuntime(session, address.documentId, runtime);
+    runtime.attach();
     return withShown(
       links,
       formatApplySuccess({
@@ -795,7 +787,7 @@ export function createWriteCommands(deps: {
   }
 
   async function submitPreparedMutation(
-    input: PreparedMutation & { runtime: RuntimeDocumentState },
+    input: PreparedMutation & { runtime: CommandDocumentLease },
     session: ActorSession,
   ) {
     let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
@@ -819,14 +811,7 @@ export function createWriteCommands(deps: {
       await runtimeStore.evictRuntime(session, input.docId);
       return result;
     }
-    await runtimeStore.recoverCommittedResponseProjection([
-      {
-        docId: input.docId,
-        session,
-        runtime: input.runtime,
-        commandName: input.commandName,
-      },
-    ]);
+    await input.runtime.recover();
     return { ...result, awarenessDegraded: true };
   }
 

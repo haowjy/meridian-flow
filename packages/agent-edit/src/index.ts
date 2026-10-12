@@ -1,6 +1,8 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
+export type { ResponseReadLease } from "./tool/response-committer.js";
+
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
 export interface AgentEditCore {
@@ -10,7 +12,7 @@ export interface AgentEditCore {
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
-  withResponseDocument: ReturnType<typeof createWriteTool>["withResponseDocument"];
+  prepare: ReturnType<typeof createWriteTool>["prepare"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
   getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
   undo: ReturnType<typeof createWriteTool>["undo"];
@@ -28,7 +30,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
     hasResponseDocument: tool.hasResponseDocument,
-    withResponseDocument: tool.withResponseDocument,
+    prepare: tool.prepare,
     responseDocuments: tool.responseDocuments,
     getAvailability: tool.getAvailability,
     undo: tool.undo,

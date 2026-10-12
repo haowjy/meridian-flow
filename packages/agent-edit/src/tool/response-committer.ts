@@ -11,6 +11,7 @@ import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { cloneYDoc, yjsUpdateFromState } from "../yjs-update.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
@@ -41,6 +42,7 @@ import type {
   ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
+  WriteContext,
 } from "./types.js";
 
 export interface ResponseCommitter {
@@ -55,21 +57,63 @@ export interface ResponseCommitter {
     options?: Pick<ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
-  bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   hasResponseDocument(responseId: string, docId: string): boolean;
-  withResponseDocument<T>(
-    responseId: string,
-    docId: string,
-    base: DocHandle | null,
-    read: (doc: DocHandle) => T | Promise<T>,
-  ): Promise<T | null>;
   responseDocuments(
     responseId: string,
     threadId?: string,
   ): { staged: readonly string[]; created: readonly string[] };
   dropForThread(docId: string, threadId: string): void;
-  refreshResponse(responseId: string): Promise<string[]>;
+  prepare(responseId: string, docId: string): Promise<ResponseReadLease | null>;
+  stage<T>(
+    input: CommandLeaseInput,
+    run: (lease: CommandDocumentLease) => Promise<T>,
+  ): Promise<T | InternalWriteResult>;
+  drainNotices(responseId: string): string[];
 }
+
+/** A call-scoped replica. Disposing it cannot change the committer's helper. */
+interface DocumentReplica {
+  readonly doc: DocHandle;
+  dispose(): void;
+}
+
+export interface ResponseReadLease extends DocumentReplica {
+  readonly lifetime: DocumentLifetime;
+}
+
+interface DocumentLifetime {
+  readonly responseId: string;
+  readonly docId: string;
+  readonly epoch: number;
+}
+interface DocumentEpoch {
+  threadId: string;
+  epoch: number;
+}
+
+interface CommandLeaseInput {
+  responseId?: string;
+  docId: string;
+  session: ActorSession;
+  commandName: DocumentCommandName;
+  context: WriteContext;
+}
+interface CommandLeaseMethods {
+  readonly lifetime: DocumentLifetime | null;
+  doc: Y.Doc;
+  hasStagedWrites: boolean;
+  reportingOnly: boolean;
+  restore(): Promise<InternalWriteResult | null>;
+  sync(): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }>;
+  attach(): void;
+  recover(): Promise<void>;
+  checkEmpty(
+    overwriting: boolean,
+    refusal: InternalWriteResult,
+  ): Promise<InternalWriteResult | null>;
+}
+export type CommandDocumentLease = CommandLeaseMethods &
+  ({ kind: "prepared" } | { kind: "live"; runtime: RuntimeDocumentState });
 
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
@@ -93,10 +137,10 @@ export interface ResponseStageUpdateInput {
   responseId: string;
   docId: string;
   session: ActorSession;
-  runtime: RuntimeDocumentState;
+  runtime: CommandDocumentLease;
   commandName: DocumentCommandName;
-  documentLabel?: string;
-  description?: string;
+  documentLabel: string;
+  description: string;
   update: Uint8Array;
   segments?: readonly Uint8Array[];
   editParts?: readonly Uint8Array[];
@@ -138,26 +182,43 @@ interface StagedResponseUpdate extends JournaledUpdate {
   copied?: CopySummary;
 }
 
-/** One post-admission transition; rejected write owners retain their per-result receipts. */
-interface ResponseReplaySettlement {
-  updates: StagedResponseUpdate[];
-  rejected: StagedResponseUpdate[];
-  helperState: Uint8Array;
-  helperCut: StagedHelperCut;
-}
-
-interface ResponseDocumentBuffer {
+interface ResponseDocumentBufferFields {
   docId: string;
   session: ActorSession;
-  runtime: RuntimeDocumentState;
   commandName: DocumentCommandName;
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
   discardedUpdates?: StagedResponseUpdate[];
-  helperCut?: StagedHelperCut;
   interactionContext?: InteractionContext;
+}
+
+interface PreparedResponseView {
+  kind: "prepared";
+  doc: Y.Doc;
+  replay: NonNullable<DocumentCoordinator["withStagedWrites"]>;
+  cut: StagedHelperCut;
+}
+type ResponseDocumentBuffer = LiveResponseDocumentBuffer | PreparedResponseDocumentBuffer;
+type PreparedResponseDocumentBuffer = ResponseDocumentBufferFields & { view: PreparedResponseView };
+
+function isPrepared(doc: ResponseDocumentBuffer): doc is PreparedResponseDocumentBuffer {
+  return doc.view.kind === "prepared";
+}
+
+type LiveResponseDocumentBuffer = ResponseDocumentBufferFields & {
+  view: { kind: "live"; runtime: RuntimeDocumentState };
+};
+function isLive(doc: ResponseDocumentBuffer): doc is LiveResponseDocumentBuffer {
+  return doc.view.kind === "live";
+}
+function documentDoc(doc: ResponseDocumentBuffer): Y.Doc {
+  return isPrepared(doc) ? doc.view.doc : doc.view.runtime.doc;
+}
+function liveRuntime(lease: CommandDocumentLease): RuntimeDocumentState {
+  if (lease.kind !== "live") throw new Error("Prepared lease cannot supply a runtime replica");
+  return lease.runtime;
 }
 
 interface ResponseBuffer {
@@ -171,6 +232,11 @@ interface BufferedResponseState {
   buffer: ResponseBuffer;
 }
 
+interface RollbackPendingResponseState {
+  kind: "rollbackPending";
+  buffer: ResponseBuffer;
+}
+
 interface CommittingResponseState {
   kind: "committing";
   acceptance: "none" | JournalCommitKind;
@@ -180,6 +246,7 @@ interface CommittingResponseState {
 }
 
 type ResponseState =
+  | RollbackPendingResponseState
   | BufferedResponseState
   | CommittingResponseState
   | {
@@ -258,7 +325,30 @@ export function createResponseCommitter(deps: {
     onClaimDiscarded,
     onTransition,
   } = deps;
+  const noticeOutbox = new Map<
+    string,
+    Map<string, { docId: string; writes: StagedResponseUpdate[] }>
+  >();
   const responses = new Map<string, ResponseState>();
+  // Includes leases issued before the first staged write creates a document buffer.
+  const documentEpochs = new Map<string, Map<string, DocumentEpoch>>();
+  let nextDocumentEpoch = 0;
+  function lifetime(responseId: string, docId: string, threadId: string): DocumentLifetime {
+    let docs = documentEpochs.get(responseId);
+    if (!docs) {
+      docs = new Map();
+      documentEpochs.set(responseId, docs);
+    }
+    let entry = docs.get(docId);
+    if (!entry) {
+      entry = { threadId, epoch: nextDocumentEpoch++ };
+      docs.set(docId, entry);
+    }
+    return { responseId, docId, epoch: entry.epoch };
+  }
+  function ownsLifetime(token: DocumentLifetime): boolean {
+    return documentEpochs.get(token.responseId)?.get(token.docId)?.epoch === token.epoch;
+  }
   /** Each document's command links for the commit attempt that renders its receipts. */
   const commitLinks = new WeakMap<ResponseDocumentBuffer, CommandLinks>();
   const linksOf = (docBuffer: ResponseDocumentBuffer): CommandLinks => {
@@ -334,67 +424,290 @@ export function createResponseCommitter(deps: {
     commitResponse,
     rollbackResponse,
     hasBufferedWrites,
-    bufferedUpdatesForDoc,
     hasResponseDocument,
-    withResponseDocument,
     responseDocuments,
     dropForThread,
-    refreshResponse,
-  };
-
-  async function replayDocument(docBuffer: ResponseDocumentBuffer, commit: boolean) {
-    const host = coordinator.withStagedWrites;
-    if (!host) throw new Error("Staged replay host is unavailable");
-    if (!docBuffer.helperCut) throw new Error("Staged helper has no authority cut");
-    const accepted = await host({
-      docId: docBuffer.docId,
-      sourceDoc: docBuffer.runtime.doc,
-      helperCut: docBuffer.helperCut,
-      entries: responseJournalBatch([docBuffer]),
-      commit,
-    });
-    const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
-    const settlement: ResponseReplaySettlement = {
-      updates: docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId)),
-      rejected: docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId)),
-      helperState: accepted.helperState,
-      helperCut: accepted.helperCut,
-    };
-    const helper = new Y.Doc({ gc: false });
-    Y.applyUpdate(helper, settlement.helperState);
-    const previous = docBuffer.runtime.doc;
-    // No buffer or helper mutation occurs before host admission and CAS accept.
-    Object.assign(docBuffer, {
-      updates: settlement.updates,
-      discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...settlement.rejected],
-      helperCut: settlement.helperCut,
-      runtime: { ...docBuffer.runtime, doc: helper },
-    });
-    runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-    previous.destroy();
-    const notices = new Map<string, StagedResponseUpdate[]>();
-    for (const entry of settlement.rejected) {
-      const group = notices.get(entry.writeId) ?? [];
-      group.push(entry);
-      notices.set(entry.writeId, group);
-    }
-    return {
-      dropped: [...notices].map(([handle, writes]) => {
-        const scope = settlement.updates.some((entry) => entry.writeId === handle)
+    prepare,
+    stage,
+    drainNotices: (responseId) => {
+      const notices = noticeOutbox.get(responseId);
+      noticeOutbox.delete(responseId);
+      return [...(notices?.values() ?? [])].map(({ docId, writes }) => {
+        const handle = writes[0]?.writeId;
+        const kept = activeBuffer(responseId)?.docs.get(docId)?.updates ?? [];
+        const scope = kept.some((entry) => entry.writeId === handle)
           ? "part of this handle"
           : "all staged writes for this handle";
         return `${writes[0]?.documentLabel} ${handle}: ${scope} was discarded with the text it edited. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
-      }),
-      beforeState: accepted.beforeState,
-    };
+      });
+    },
+  };
+
+  async function prepareCommitLinks(
+    responseId: string,
+    doc: ResponseDocumentBuffer,
+    before: readonly Y.Doc[] = [],
+  ): Promise<void> {
+    const current = readLease(documentDoc(doc));
+    try {
+      commitLinks.set(
+        doc,
+        await openCommandLinks(deps, {
+          documentId: doc.docId,
+          docs: [unwrapDoc(current.doc), ...before],
+          context: { responseId, threadId: doc.session.threadId },
+        }),
+      );
+    } finally {
+      current.dispose();
+    }
   }
 
-  async function refreshResponse(responseId: string): Promise<string[]> {
-    if (!coordinator.withStagedWrites) return [];
-    const dropped: string[] = [];
-    for (const doc of activeBuffer(responseId)?.docs.values() ?? [])
-      dropped.push(...(await replayDocument(doc, false)).dropped);
-    return dropped;
+  async function replayDocument(
+    docBuffer: PreparedResponseDocumentBuffer,
+    commit: boolean,
+    owns?: () => boolean,
+  ) {
+    for (;;) {
+      const view = docBuffer.view;
+      const source = readLease(view.doc);
+      let accepted: Awaited<ReturnType<PreparedResponseView["replay"]>>;
+      try {
+        accepted = await view.replay({
+          docId: docBuffer.docId,
+          sourceDoc: unwrapDoc(source.doc),
+          helperCut: { ...view.cut, state: view.cut.state.slice() },
+          entries: responseJournalBatch([docBuffer]),
+          commit,
+        });
+      } finally {
+        source.dispose();
+      }
+      if (owns && !owns()) throw new Error("Response preparation lost lifecycle ownership");
+      // Another accepted preparation or stage changed the entries while this replay awaited.
+      if (docBuffer.view !== view) continue;
+      const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
+      const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
+      const rejected = docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId));
+      // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
+      if (
+        !rejected.length &&
+        view.cut.generation === accepted.helperCut.generation &&
+        sameBytes(view.cut.state, accepted.helperCut.state) &&
+        sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState)
+      )
+        return { rejected, beforeState: accepted.beforeState };
+      const helper = new Y.Doc({ gc: false });
+      Y.applyUpdate(helper, accepted.helperState.slice());
+      const previous = documentDoc(docBuffer);
+      // No buffer or helper mutation occurs before host admission and CAS accept.
+      Object.assign(docBuffer, {
+        updates,
+        discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...rejected],
+        view: {
+          ...docBuffer.view,
+          cut: { ...accepted.helperCut, state: accepted.helperCut.state.slice() },
+          doc: helper,
+        },
+      });
+      previous.destroy();
+      return { rejected, beforeState: accepted.beforeState };
+    }
+  }
+
+  function projectLive(
+    doc: LiveResponseDocumentBuffer,
+    updates: readonly import("../apply/types.js").ConcurrentUpdate[],
+  ) {
+    for (const entry of updates)
+      if (entry.update.length) Y.applyUpdate(doc.view.runtime.doc, entry.update, entry.origin);
+    runtimeStore.attachRuntime(doc.session, doc.docId, doc.view.runtime);
+  }
+
+  function enqueueNotices(
+    responseId: string,
+    docId: string,
+    rejected: readonly StagedResponseUpdate[],
+  ) {
+    const outbox =
+      noticeOutbox.get(responseId) ??
+      new Map<string, { docId: string; writes: StagedResponseUpdate[] }>();
+    for (const write of rejected) {
+      const key = `${docId}:${write.writeId}`;
+      const group = outbox.get(key) ?? { docId, writes: [] };
+      if (!group.writes.some((entry) => entry.durableWriteId === write.durableWriteId))
+        group.writes.push(write);
+      outbox.set(key, group);
+    }
+    if (outbox.size) noticeOutbox.set(responseId, outbox);
+  }
+
+  async function prepare(responseId: string, docId: string): Promise<ResponseReadLease | null> {
+    if (responses.get(responseId)?.kind === "rollbackPending")
+      throw new Error("Response rollback is pending settlement");
+    const buffer = activeBuffer(responseId);
+    const doc = buffer?.docs.get(docId);
+    if (!doc || !hasStagedReceipts(doc)) return null;
+    const token = lifetime(responseId, docId, doc.session.threadId);
+    const owner = responses.get(responseId);
+    if (isPrepared(doc)) {
+      const replayed = await replayDocument(
+        doc,
+        false,
+        () =>
+          responses.get(responseId) === owner &&
+          buffer?.docs.get(docId) === doc &&
+          ownsLifetime(token),
+      );
+      enqueueNotices(responseId, docId, replayed.rejected);
+      return { ...readLease(documentDoc(doc)), lifetime: token };
+    }
+    const restored = await runtimeStore.restoreRuntimeFromLive(
+      doc.session,
+      docId,
+      doc.view.runtime,
+      "read",
+    );
+    if (
+      isInternalWriteResult(restored) &&
+      !(restored.status === "document_not_found" && doc.createdDocumentBeforeCommit)
+    )
+      throw internalResultError(restored);
+    const lease = readLease(doc.view.runtime.doc);
+    for (const entry of doc.updates) Y.applyUpdate(unwrapDoc(lease.doc), entry.update);
+    if (
+      responses.get(responseId) !== owner ||
+      !ownsLifetime(token) ||
+      buffer?.docs.get(docId) !== doc
+    ) {
+      lease.dispose();
+      throw new Error("Response preparation lost lifecycle ownership");
+    }
+    return { ...lease, lifetime: token };
+  }
+
+  function readLease(doc: Y.Doc): DocumentReplica {
+    const replica = new Y.Doc({ gc: false });
+    Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc));
+    return { doc: toDocHandle(replica), dispose: () => replica.destroy() };
+  }
+
+  async function stage<T>(
+    input: CommandLeaseInput,
+    run: (lease: CommandDocumentLease) => Promise<T>,
+  ) {
+    const token = input.responseId
+      ? lifetime(input.responseId, input.docId, input.session.threadId)
+      : null;
+    let read: ResponseReadLease | null;
+    try {
+      read = input.responseId ? await prepare(input.responseId, input.docId) : null;
+    } catch (cause) {
+      if (token && !ownsLifetime(token)) return discardedWrite();
+      throw cause;
+    }
+    const prepared = Boolean(
+      input.responseId &&
+        input.context.interactionContext?.mode === "threadPeer" &&
+        coordinator.withStagedWrites,
+    );
+    const live = runtimeStore.runtimeFor(input.session, input.docId);
+    if (read && !prepared) {
+      const previous = live.doc;
+      live.doc = unwrapDoc(readLease(unwrapDoc(read.doc)).doc);
+      previous.destroy();
+    }
+    let replica =
+      read && prepared
+        ? unwrapDoc(read.doc)
+        : prepared
+          ? unwrapDoc(readLease(live.doc).doc)
+          : live.doc;
+    const copyLive = () => {
+      if (prepared) {
+        replica.destroy();
+        replica = unwrapDoc(readLease(live.doc).doc);
+      }
+    };
+    const restore = async () => {
+      if (read) return null;
+      const restored = await runtimeStore.restoreRuntimeFromLive(
+        input.session,
+        input.docId,
+        live,
+        input.commandName,
+      );
+      if (isInternalWriteResult(restored)) return restored;
+      if (!prepared && input.responseId) {
+        const buffer = activeBuffer(input.responseId)?.docs.get(input.docId);
+        if (buffer && isLive(buffer))
+          for (const entry of buffer.updates)
+            Y.applyUpdate(live.doc, entry.update, { type: "system" });
+      }
+      copyLive();
+      return null;
+    };
+    const lease: CommandDocumentLease = {
+      lifetime: token,
+      ...(prepared ? { kind: "prepared" as const } : { kind: "live" as const, runtime: live }),
+      get doc() {
+        return prepared ? replica : live.doc;
+      },
+      set doc(doc) {
+        if (prepared) replica = doc;
+        else live.doc = doc;
+      },
+      hasStagedWrites: input.responseId
+        ? (activeBuffer(input.responseId)?.docs.get(input.docId)?.updates.length ?? 0) > 0
+        : false,
+      reportingOnly: prepared,
+      restore,
+      sync: async () => {
+        if (read) return { ok: true };
+        const synced = await runtimeStore.requireSynced(
+          input.session,
+          input.docId,
+          input.commandName,
+          live,
+        );
+        if (!synced.ok) return synced;
+        if (input.context.interactionContext) {
+          const merged = await runtimeStore.syncLocalFromLive(
+            input.session,
+            input.docId,
+            live,
+            input.commandName,
+          );
+          if (!merged.ok) return merged;
+        }
+        copyLive();
+        return { ok: true };
+      },
+      attach: () => {
+        if (!prepared) runtimeStore.attachRuntime(input.session, input.docId, live);
+      },
+      recover: () => runtimeStore.recoverCommittedResponseProjection([{ ...input, runtime: live }]),
+      checkEmpty: async (overwriting, refusal) => {
+        if (prepared) {
+          const restored = await restore();
+          if (isInternalWriteResult(restored)) return restored;
+          return deps.model.getBlocks(toDocHandle(replica)).length > 0 && !overwriting
+            ? refusal
+            : null;
+        }
+        return withLiveDocument(coordinator, input.docId, input.commandName, (doc) =>
+          deps.model.getBlocks(toDocHandle(doc)).length > 0 && !overwriting ? refusal : null,
+        );
+      },
+    };
+    try {
+      return await run(lease);
+    } finally {
+      if (prepared) {
+        replica.destroy();
+        if (read && unwrapDoc(read.doc) !== replica) read.dispose();
+      } else read?.dispose();
+    }
   }
 
   async function commitResponse(
@@ -409,6 +722,8 @@ export function createResponseCommitter(deps: {
     if (state.kind === "closed") {
       throw lifecycleError({ responseId, operation: "commit", state: state.outcome });
     }
+    if (state.kind === "rollbackPending")
+      throw new Error("Response rollback is pending settlement");
     if (state.kind === "committing") return state.promise;
 
     const deferred = deferredPromise<ResponseCommitSuccessResult>();
@@ -459,14 +774,7 @@ export function createResponseCommitter(deps: {
           return doc;
         });
         try {
-          commitLinks.set(
-            docBuffer,
-            await openCommandLinks(deps, {
-              documentId: docBuffer.docId,
-              docs: [docBuffer.runtime.doc, ...before],
-              context: { responseId, threadId: docBuffer.session.threadId },
-            }),
-          );
+          await prepareCommitLinks(responseId, docBuffer, before);
         } finally {
           for (const doc of before) doc.destroy();
         }
@@ -489,7 +797,7 @@ export function createResponseCommitter(deps: {
             }
             return mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
-              runtime: docBuffer.runtime,
+              runtime: { doc: documentDoc(docBuffer) },
               links: linksOf(docBuffer),
               deletedHashes: hashes.deletedHashes,
               touchedHashes: hashes.touchedHashes,
@@ -529,7 +837,7 @@ export function createResponseCommitter(deps: {
                 docBuffer.docId,
                 {
                   docId: docBuffer.docId,
-                  runtime: docBuffer.runtime,
+                  runtime: { doc: documentDoc(docBuffer) },
                   links: linksOf(docBuffer),
                   deletedHashes: new Set(hashes.deletedHashes),
                   touchedHashes: new Set(hashes.touchedHashes),
@@ -547,16 +855,9 @@ export function createResponseCommitter(deps: {
         lockOptions?: { signal?: AbortSignal; timeoutMs?: number },
       ): Promise<ResponseCommitDocumentResult> => {
         let replayBase: Y.Doc | undefined;
-        if (coordinator.withStagedWrites) {
+        if (isPrepared(docBuffer)) {
           const replayed = await replayDocument(docBuffer, true);
-          commitLinks.set(
-            docBuffer,
-            await openCommandLinks(deps, {
-              documentId: docBuffer.docId,
-              docs: [docBuffer.runtime.doc],
-              context: { responseId, threadId: docBuffer.session.threadId },
-            }),
-          );
+          await prepareCommitLinks(responseId, docBuffer);
           if (!docBuffer.updates.length)
             return {
               documentId: docBuffer.docId,
@@ -581,9 +882,15 @@ export function createResponseCommitter(deps: {
                 return await run(cut);
               } finally {
                 cut.destroy();
+                reportingRuntime.doc.destroy();
               }
             }
           : withLiveDocument;
+        const reportingRuntime = replayBase
+          ? { ...{ doc: documentDoc(docBuffer) }, doc: new Y.Doc({ gc: false }) }
+          : { doc: documentDoc(docBuffer) };
+        if (replayBase)
+          Y.applyUpdate(reportingRuntime.doc, Y.encodeStateAsUpdate(documentDoc(docBuffer)));
         const applied = await reportAtCut(
           coordinator,
           docBuffer.docId,
@@ -593,7 +900,7 @@ export function createResponseCommitter(deps: {
               liveDoc,
               {
                 docId: docBuffer.docId,
-                runtime: docBuffer.runtime,
+                runtime: reportingRuntime,
                 links: linksOf(docBuffer),
                 deletedHashes: hashes.deletedHashes,
                 touchedHashes: hashes.touchedHashes,
@@ -612,12 +919,7 @@ export function createResponseCommitter(deps: {
         );
         if (isInternalWriteResult(applied)) throw internalResultError(applied);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
-        for (const concurrent of applied.concurrent.updates) {
-          if (concurrent.update.length > 0) {
-            Y.applyUpdate(docBuffer.runtime.doc, concurrent.update, concurrent.origin);
-          }
-        }
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        if (isLive(docBuffer)) projectLive(docBuffer, applied.concurrent.updates);
         const lateSweep = applied.lateSweep
           ? {
               ...applied.lateSweep,
@@ -757,7 +1059,9 @@ export function createResponseCommitter(deps: {
         ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs).catch(() => null)
         : null;
       const recoveryFailure = await runtimeStore
-        .recoverCommittedResponseProjection(docBuffers)
+        .recoverCommittedResponseProjection(
+          docBuffers.filter(isLive).map((doc) => ({ ...doc, runtime: doc.view.runtime })),
+        )
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
         emit("recovery_succeeded", responseId, "journalCommitted", {
@@ -868,14 +1172,14 @@ export function createResponseCommitter(deps: {
     lateSweep?: DestructiveSweepReport,
   ): ResponseCommitDocumentResult["receipts"] {
     const links = linksOf(docBuffer);
-    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, links.codec);
+    const after = snapshotBlocks(toDocHandle(documentDoc(docBuffer)), deps.model, links.codec);
     const lastIndex = docBuffer.updates.length - 1;
     const receipts = docBuffer.updates.map((update, index) => {
       const beforeDoc = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
         const summary = mutationCommit.summarizeMutationEcho({
-          runtime: docBuffer.runtime,
+          runtime: { doc: documentDoc(docBuffer) },
           links,
           before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, links.codec),
           touchedHashes: update.touchedHashes,
@@ -900,7 +1204,7 @@ export function createResponseCommitter(deps: {
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
           ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
           ...(index === lastIndex &&
-          isDocumentEmpty(deps.model, links.codec, toDocHandle(docBuffer.runtime.doc))
+          isDocumentEmpty(deps.model, links.codec, toDocHandle(documentDoc(docBuffer)))
             ? { documentEmpty: true }
             : {}),
           ...(update.copied
@@ -1010,6 +1314,8 @@ export function createResponseCommitter(deps: {
     if (state.kind === "closed") {
       throw lifecycleError({ responseId, operation: "rollback", state: state.outcome });
     }
+    if (state.kind === "rollbackPending")
+      throw new Error("Response rollback is pending settlement");
     // Rollback is intentionally rejected once commit owns the snapshot. Joining would
     // report a commit result through a rollback API and hide the caller's lifecycle bug.
     if (state.kind === "committing") {
@@ -1021,42 +1327,33 @@ export function createResponseCommitter(deps: {
     const threadId = bufferThreadId(buffer);
     emit("rollback", responseId, "buffered", { ...(threadId ? { threadId } : {}) });
 
-    try {
-      for (const docBuffer of docBuffers) {
-        if (docBuffer.ensureDocumentBeforeCommit) {
-          await runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
-          continue;
-        }
-        const restored = await runtimeStore.restoreRuntimeFromLive(
-          docBuffer.session,
-          docBuffer.docId,
-          docBuffer.runtime,
-          docBuffer.commandName,
-        );
-        if (isInternalWriteResult(restored)) throw internalResultError(restored);
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-      }
-      const result = {
-        status: "rolledBack" as const,
-        responseId,
-        stagedCreates: responseStagedCreateOutcome(buffer, [], liveResponseState(responseId), {
-          discardPendingStagedCreates: true,
-        }),
-      };
-      finalizeRollbackClosed(responseId, state, threadId, options);
-      return result;
-    } catch {
-      await runtimeStore.evictResponseRuntimes(docBuffers);
-      finalizeRollbackClosed(responseId, state, threadId, options);
-      return {
-        status: "rolledBackDegraded",
-        responseId,
-        stagedCreates: responseStagedCreateOutcome(buffer, [], liveResponseState(responseId), {
-          discardPendingStagedCreates: true,
-        }),
-        restorationFailed: true,
-      };
-    }
+    const pending: RollbackPendingResponseState = { kind: "rollbackPending", buffer };
+    responses.set(responseId, pending);
+    const result = {
+      status: "rolledBack" as const,
+      responseId,
+      stagedCreates: responseStagedCreateOutcome(buffer, [], liveResponseState(responseId), {
+        discardPendingStagedCreates: true,
+      }),
+    };
+    let settled = false;
+    const commit = async () => {
+      if (settled) return;
+      settled = true;
+      await runtimeStore.evictResponseRuntimes(docBuffers.filter(isLive));
+      transitionClosed(responseId, pending, "rolledBack", null, threadId);
+    };
+    if (options.deferFinalization)
+      options.deferFinalization({
+        commit,
+        abort: () => {
+          if (settled) return;
+          settled = true;
+          if (responses.get(responseId) === pending) responses.set(responseId, state);
+        },
+      });
+    else await commit();
+    return result;
   }
 
   function hasBufferedWrites(responseId: string): boolean {
@@ -1065,36 +1362,9 @@ export function createResponseCommitter(deps: {
     return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
   }
 
-  function bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[] {
-    return (
-      activeBuffer(responseId)
-        ?.docs.get(docId)
-        ?.updates.map((entry) => entry.update) ?? []
-    );
-  }
-
   function hasResponseDocument(responseId: string, docId: string): boolean {
     const doc = activeBuffer(responseId)?.docs.get(docId);
     return !!doc && hasStagedReceipts(doc);
-  }
-
-  async function withResponseDocument<T>(
-    responseId: string,
-    docId: string,
-    base: DocHandle | null,
-    read: (doc: DocHandle) => T | Promise<T>,
-  ): Promise<T | null> {
-    const updates = bufferedUpdatesForDoc(responseId, docId);
-    if (updates.length === 0) return null;
-    const effective = new Y.Doc({ gc: false });
-    try {
-      if (base)
-        Y.applyUpdate(effective, Y.encodeStateAsUpdate(unwrapDoc(base)), { type: "system" });
-      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
-      return await read(toDocHandle(effective));
-    } finally {
-      effective.destroy();
-    }
   }
 
   function responseDocuments(
@@ -1119,6 +1389,8 @@ export function createResponseCommitter(deps: {
   function assertCanStage(input: ResponseStagePreflightInput): void {
     const state = responses.get(input.responseId);
     if (!state || state.kind === "buffered") return;
+    if (state.kind === "rollbackPending")
+      throw new Error("Response rollback is pending settlement");
     if (state.kind === "committing") {
       throw new Error(`Cannot stage response ${input.responseId}: commit is already in progress.`);
     }
@@ -1141,6 +1413,14 @@ export function createResponseCommitter(deps: {
       turnId: input.turnId,
       writeId: input.durableWriteId,
     });
+    const token = input.runtime.lifetime;
+    if (
+      !token ||
+      token.responseId !== input.responseId ||
+      token.docId !== input.docId ||
+      !ownsLifetime(token)
+    )
+      return discardedWrite();
     let buffer = activeBuffer(input.responseId);
     if (!buffer) {
       buffer = emptyResponseBuffer();
@@ -1149,24 +1429,56 @@ export function createResponseCommitter(deps: {
 
     let docBuffer = buffer.docs.get(input.docId);
     if (!docBuffer) {
-      docBuffer = {
+      const fields = {
         docId: input.docId,
         session: input.session,
-        runtime: input.runtime,
         commandName: input.commandName,
-        updates: [],
+        updates: [] as StagedResponseUpdate[],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
       };
+      docBuffer =
+        input.interactionContext?.mode === "threadPeer" && coordinator.withStagedWrites
+          ? {
+              ...fields,
+              view: {
+                kind: "prepared",
+                doc: yjsUpdateFromState(input.preOwnSnapshot),
+                replay: coordinator.withStagedWrites,
+                cut: {
+                  generation: input.interactionContext.branchGeneration,
+                  state: input.preOwnSnapshot.slice(),
+                },
+              },
+            }
+          : { ...fields, view: { kind: "live", runtime: liveRuntime(input.runtime) } };
       buffer.docs.set(input.docId, docBuffer);
     }
 
-    if (!docBuffer.helperCut && input.interactionContext?.mode === "threadPeer")
-      docBuffer.helperCut = {
-        generation: input.interactionContext.branchGeneration,
-        state: input.preOwnSnapshot,
-      };
+    let rejected = false;
+    if (isPrepared(docBuffer)) {
+      const next = cloneYDoc(docBuffer.view.doc);
+      const segments = input.segments ?? [input.update];
+      for (const update of segments) Y.applyUpdate(next, update);
+      // Public clock metadata detects pending structs/delete ranges without touching private stores.
+      // Only this write's deltas move into the owned view, never a stale lease's old edits.
+      const state = Y.decodeStateVector(Y.encodeStateVector(next));
+      rejected = segments.some(
+        (update) =>
+          [...Y.parseUpdateMeta(update).to].some(
+            ([client, clock]) => (state.get(client) ?? 0) < clock,
+          ) ||
+          [...Y.decodeUpdate(update).ds.clients].some(([client, ranges]) =>
+            ranges.some((range) => (state.get(client) ?? 0) < range.clock + range.len),
+          ),
+      );
+      if (rejected) next.destroy();
+      else {
+        docBuffer.view.doc.destroy();
+        docBuffer.view = { ...docBuffer.view, doc: next };
+      }
+    }
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
@@ -1177,10 +1489,10 @@ export function createResponseCommitter(deps: {
     if (input.interactionContext?.mode === "threadPeer" || !docBuffer.interactionContext) {
       docBuffer.interactionContext = interactionContext;
     }
-    docBuffer.updates.push({
+    const entry: StagedResponseUpdate = {
       commandName: input.commandName,
-      documentLabel: input.documentLabel ?? input.docId,
-      description: input.description ?? input.commandName,
+      documentLabel: input.documentLabel,
+      description: input.description,
       update: input.update,
       segments: input.segments ?? [input.update],
       meta: input.meta,
@@ -1210,7 +1522,11 @@ export function createResponseCommitter(deps: {
       deletedHashes: new Set(input.deletedHashes),
       preOwnSnapshot: input.preOwnSnapshot,
       ...(input.copied ? { copied: input.copied } : {}),
-    });
+    };
+    if (rejected) {
+      docBuffer.discardedUpdates = [...(docBuffer.discardedUpdates ?? []), entry];
+      enqueueNotices(input.responseId, input.docId, [entry]);
+    } else docBuffer.updates.push(entry);
     buffer.nextStageSeq += 1;
     const stagedState = responses.get(input.responseId);
     if (stagedState?.kind === "buffered") {
@@ -1244,6 +1560,10 @@ export function createResponseCommitter(deps: {
   }
 
   function dropForThread(docId: string, threadId: string): void {
+    for (const docs of documentEpochs.values()) {
+      const entry = docs.get(docId);
+      if (entry?.threadId === threadId) entry.epoch = nextDocumentEpoch++;
+    }
     for (const [responseId, state] of [...responses]) {
       if (state.kind !== "buffered") continue;
       const buffer = state.buffer;
@@ -1265,6 +1585,7 @@ export function createResponseCommitter(deps: {
           }
         }
         if (docBuffer.updates.length === 0 && !docBuffer.discardedBeforeCommit) {
+          if (isPrepared(docBuffer)) docBuffer.view.doc.destroy();
           buffer.docs.delete(docId);
         }
       }
@@ -1299,7 +1620,7 @@ export function createResponseCommitter(deps: {
 
   function assertOwner(
     responseId: string,
-    owner: BufferedResponseState | CommittingResponseState,
+    owner: BufferedResponseState | CommittingResponseState | RollbackPendingResponseState,
   ): void {
     if (responses.get(responseId) !== owner) {
       throw new Error(`Response ${responseId} lifecycle ownership changed unexpectedly.`);
@@ -1308,12 +1629,15 @@ export function createResponseCommitter(deps: {
 
   function transitionClosed(
     responseId: string,
-    owner: BufferedResponseState | CommittingResponseState,
+    owner: BufferedResponseState | CommittingResponseState | RollbackPendingResponseState,
     closed: ResponseLifecycleClosedState,
     journalCommitKind: JournalCommitKind | null,
     threadId?: string,
   ): void {
     assertOwner(responseId, owner);
+    for (const doc of owner.buffer.docs.values()) if (isPrepared(doc)) doc.view.doc.destroy();
+    noticeOutbox.delete(responseId);
+    documentEpochs.delete(responseId);
     responses.set(responseId, { kind: "closed", outcome: closed });
     emit("closed", responseId, "closed", {
       closedOutcome: closed,
@@ -1356,29 +1680,6 @@ export function createResponseCommitter(deps: {
           kind: "buffered",
           buffer: owner.buffer,
         });
-      },
-    });
-  }
-
-  function finalizeRollbackClosed(
-    responseId: string,
-    owner: BufferedResponseState,
-    threadId: string | undefined,
-    options: Pick<ResponseCommitOptions, "deferFinalization">,
-  ): void {
-    if (!options.deferFinalization) {
-      transitionClosed(responseId, owner, "rolledBack", null, threadId);
-      return;
-    }
-    let settled = false;
-    options.deferFinalization({
-      commit() {
-        if (settled) return;
-        settled = true;
-        transitionClosed(responseId, owner, "rolledBack", null, threadId);
-      },
-      abort() {
-        settled = true;
       },
     });
   }
@@ -1591,4 +1892,17 @@ function deferredPromise<T>(): {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function discardedWrite(): InternalWriteResult {
+  return {
+    status: "invalid_write",
+    model: {
+      message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
+    },
+  };
 }

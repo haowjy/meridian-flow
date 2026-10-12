@@ -1,5 +1,10 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
+
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import { unwrapDoc } from "../handles.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -54,6 +59,151 @@ describe("response committer", () => {
       transition: "closed",
       closedOutcome: "committed",
     });
+
+    const links = createStaticDocumentLinks();
+    let mutateSaveLinks = false;
+    let failSaveLinks = false;
+    const saveReplicas: Y.Doc[] = [];
+    const openLinks = links.prepare.bind(links);
+    links.prepare = async (request) => {
+      if (mutateSaveLinks) {
+        saveReplicas.push(...request.docs);
+        for (const doc of request.docs)
+          doc.getMap("save-link-adapter").set("must-stay-on-replica", true);
+        if (failSaveLinks) throw new Error("link preparation refused");
+      }
+      return openLinks(request);
+    };
+    const prepared = harness({ "chapter.md": "Alpha." }, { links });
+    const snapshots: {
+      bytes: Uint8Array;
+      cut: import("../ports/document-coordinator.js").StagedHelperCut;
+    }[] = [];
+    let pauseNext = false;
+    let entered!: () => void, release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.assign(prepared.coordinator, {
+      withStagedWrites: (async (request) => {
+        if (pauseNext) {
+          pauseNext = false;
+          entered();
+          await gate;
+        }
+        snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
+        return prepared.coordinator.withDocument(request.docId, async (canonical) => {
+          const candidate = new Y.Doc({ gc: false });
+          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
+          for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
+          const state = Y.encodeStateAsUpdate(candidate);
+          candidate.destroy();
+          return {
+            keptEntries: request.entries,
+            helperState: state,
+            helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
+            beforeState: Y.encodeStateAsUpdate(canonical),
+          };
+        });
+      }) satisfies NonNullable<DocumentCoordinator["withStagedWrites"]>,
+    });
+    const peer = {
+      ...context,
+      responseId: "prepared-abort",
+      turnId: "prepared-turn",
+      interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, afterJournalId: 0 },
+    };
+    await prepared.core.read({ file: "chapter.md" }, peer);
+    expect(
+      (await prepared.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, peer))
+        .status,
+    ).toBe("success");
+    const borrowed = await prepared.core.prepare(peer.responseId, "chapter.md");
+    if (!borrowed) throw new Error("Missing prepared lease");
+    unwrapDoc(borrowed.doc).getMap("foreign").set("must-stay-on-replica", true);
+    borrowed.dispose();
+    const before = snapshots.at(-1);
+    await prepared.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Pink." },
+      context,
+    );
+    let rollback: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
+    await prepared.core.rollbackResponse(peer.responseId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    expect(snapshots.at(-1)).toEqual(before);
+    // A scoped read replay started before a later stage must not reject that new write.
+    pauseNext = true;
+    const reading = prepared.core.prepare(peer.responseId, "chapter.md");
+    await waiting;
+    try {
+      expect(
+        (
+          await prepared.core.write(
+            { command: "insert", file: "chapter.md", content: "Gamma." },
+            peer,
+          )
+        ).status,
+      ).toBe("success");
+    } finally {
+      release();
+    }
+    const current = await reading;
+    if (!current) throw new Error("Missing read lease");
+    try {
+      expect(blockTexts(unwrapDoc(current.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+    } finally {
+      current.dispose();
+    }
+    expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
+    const replayCount = snapshots.length;
+    const readers = await Promise.all(
+      Array.from({ length: 12 }, () => prepared.core.prepare(peer.responseId, "chapter.md")),
+    );
+    for (const reader of readers) {
+      if (!reader) throw new Error("Missing concurrent read lease");
+      expect(blockTexts(unwrapDoc(reader.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+      reader.dispose();
+    }
+    expect(snapshots.length - replayCount).toBe(12);
+    mutateSaveLinks = true;
+    failSaveLinks = true;
+    await expect(prepared.core.commitResponse(peer.responseId)).rejects.toThrow(
+      "link preparation refused",
+    );
+    expect(saveReplicas.length).toBeGreaterThan(0);
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    failSaveLinks = false;
+    await prepared.core.commitResponse(peer.responseId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    const checkSaveReplica = () => {
+      const snapshot = snapshots.at(-1);
+      if (!snapshot) throw new Error("Missing replay source");
+      const source = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(source, snapshot.bytes);
+        expect(source.getMap("save-link-adapter").size).toBe(0);
+      } finally {
+        source.destroy();
+      }
+    };
+    checkSaveReplica();
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    checkSaveReplica();
+    await prepared.core.rollbackResponse(peer.responseId);
+    expect(prepared.core.hasResponseDocument(peer.responseId, "chapter.md")).toBe(false);
   });
 
   it("commits a multi-document thread-peer response in one journal batch", async () => {

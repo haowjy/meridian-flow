@@ -173,6 +173,8 @@ export interface MutationCommit {
     runtime: MutationCommitRuntime;
     links: CommandLinks;
     agentUpdate: Uint8Array;
+    /** Prepared response helpers cannot acquire ambient bytes through reporting. */
+    reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
     /** Frozen host cut before checked publication, for terminal receipt reporting. */
@@ -238,6 +240,8 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime;
     links: CommandLinks;
     agentUpdate: Uint8Array;
+    /** Prepared response helpers cannot acquire ambient bytes through reporting. */
+    reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
     /** Frozen host cut before checked publication, for terminal receipt reporting. */
@@ -246,7 +250,9 @@ export function createMutationCommit(deps: {
   }): Promise<ConcurrentDetectionResult> {
     const detectionDoc = input.preOwnSnapshot
       ? docFromSnapshot(input.preOwnSnapshot)
-      : input.runtime.doc;
+      : input.reportingOnly
+        ? docFromSnapshot(Y.encodeStateAsUpdate(input.runtime.doc))
+        : input.runtime.doc;
     const detectionVector = Y.encodeStateVector(detectionDoc);
     const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
     try {
@@ -268,6 +274,7 @@ export function createMutationCommit(deps: {
         updates,
         detectionVector,
         input.ownTurnId,
+        input.reportingOnly,
       );
     } finally {
       preOwnDoc?.destroy();
@@ -502,6 +509,7 @@ export function createMutationCommit(deps: {
     updates: readonly ConcurrentUpdate[],
     _syncVector: Uint8Array,
     turnId: string | undefined,
+    reportingOnly = false,
   ): ConcurrentDetectionResult {
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
@@ -510,7 +518,7 @@ export function createMutationCommit(deps: {
       updates,
       turnId ? agentUpdateOrigin(turnId) : undefined,
     );
-    if (detectionDoc !== runtime.doc) {
+    if (!reportingOnly && detectionDoc !== runtime.doc) {
       for (const item of updates) {
         if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
       }
