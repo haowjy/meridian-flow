@@ -177,6 +177,7 @@ export class ImportCoordinator {
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
         rows,
+        handedOff: new Set(),
         total: rows.filter((row) => row.kind === "file").length,
         held: null,
         manifest: null,
@@ -273,6 +274,7 @@ export class ImportCoordinator {
         destination: state.local?.destination ?? destinationFromSummary(summary),
         roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
+        handedOff: new Set(),
         total: built.manifest.entries.length,
         held: built.held,
         manifest: built.manifest,
@@ -297,6 +299,17 @@ export class ImportCoordinator {
       { manifest: local.manifest, held: new Map(local.held) },
       this.runFor(store),
     );
+  }
+
+  /** The tree now draws these rows from the catalog: they are not this tab's to draw again. */
+  handOff(importId: string, keys: readonly string[]) {
+    const store = this.stores.get(importId);
+    const local = store?.getSnapshot().local;
+    if (!store || !local || keys.every((key) => local.handedOff.has(key))) return;
+    store.setLocal((current) => ({
+      ...current,
+      handedOff: new Set([...current.handedOff, ...keys]),
+    }));
   }
 
   // ---- Uploading

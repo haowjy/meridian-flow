@@ -4,6 +4,10 @@
  * rows gain "arriving" and "failed" marks; rows the server has not created yet
  * (every row before the plan answers; binaries and code until they land) are
  * drawn from the importing tab's selection.
+ *
+ * Each client row hands off on its own: it is drawn until this browser's catalog
+ * holds what it stands for, or the report says nothing will. A finished import
+ * is not a handoff: the report and the catalog reach this tab independently.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -30,6 +34,8 @@ export function catalogPathOfUri(uri: string | null): string | null {
 type Placed = {
   row: ClientRow;
   importId: string;
+  /** The full report has been read: the plan has answered and its names are known. */
+  planned: boolean;
   parentPath: string;
   name: string;
   entryId: string;
@@ -45,13 +51,12 @@ export function pseudoRowId(importId: string, row: ClientRow) {
 /** Where each of an import's client rows lands now: the plan's names once it has answered. */
 function place(state: ImportState): Placed[] {
   const local = state.local;
-  if (!local || local.rows.length === 0) return [];
-  // A finished import has nothing left to draw: what landed is in the catalog.
-  if (state.report?.summary.state === "finished") return [];
+  if (!local || local.rows.length === local.handedOff.size) return [];
   const report = fullyRead(state.report) ? state.report : null;
   const rootPath = new Map<number, string | null>();
   for (const root of report?.roots ?? []) rootPath.set(root.rootId, catalogPathOfUri(root.uri));
-  return local.rows.map<Placed>((row) => {
+  return local.rows.flatMap<Placed>((row) => {
+    if (local.handedOff.has(row.key)) return [];
     let parentPath = row.parentPath;
     let name = row.name;
     let entry: Placed["entry"];
@@ -80,6 +85,7 @@ function place(state: ImportState): Placed[] {
     return {
       row,
       importId: state.importId,
+      planned: report !== null,
       parentPath,
       name,
       entryId: pseudoRowId(state.importId, row),
@@ -93,17 +99,66 @@ function joinRel(base: string, relative: string): string {
   return relative.split("/").reduce(joinCatalogPath, base);
 }
 
-/** Layers every given import's rows over `catalog`; returns it unchanged when none touch it. */
+/** What this browser's catalog holds now: every document id and folder path. */
+type Held = { documents: ReadonlySet<string>; folders: ReadonlySet<string> };
+
+function heldBy(catalog: CatalogContextView): Held {
+  const documents = new Set<string>();
+  const folders = new Set<string>();
+  const walk = (parentId: string) => {
+    for (const node of catalog.children(parentId)) {
+      if (node.kind === "file") documents.add(node.documentId);
+      else {
+        folders.add(node.path);
+        walk(node.entryId);
+      }
+    }
+  };
+  walk(catalog.root.entryId);
+  return { documents, folders };
+}
+
+/**
+ * The one handoff rule: a client row goes once the catalog holds its document
+ * (wherever it has moved) or its folder, or once the report says no row will
+ * come (skipped, deleted, left unmade, or never planned at all).
+ */
+function handedOff(p: Placed, held: Held): boolean {
+  if (p.row.kind === "dir")
+    return p.planned && held.folders.has(joinCatalogPath(p.parentPath, p.name));
+  const entry = p.entry;
+  // The plan answered without this file (it could not be read): nothing will arrive.
+  if (!entry) return p.planned;
+  if (entry.state === "skipped" || entry.state === "deleted") return true;
+  if (!entry.exists && (entry.state === "landed" || entry.state === "not_imported")) return true;
+  return held.documents.has(entry.documentId);
+}
+
+export type ImportedCatalog = {
+  view: CatalogContextView;
+  /** Client rows, by import, that the catalog now draws or that will never come. */
+  handedOff: ReadonlyMap<string, readonly string[]>;
+};
+
+/** Layers every given import's rows over `catalog`; the view is unchanged when none touch it. */
 export function withImportRows(
   catalog: CatalogContextView,
   scheme: ProjectContextTreeScheme,
   imports: readonly ImportState[],
-): CatalogContextView {
-  const placed = imports.flatMap(place).filter((p) => p.row.scheme === scheme);
+): ImportedCatalog {
+  const candidates = imports.flatMap(place).filter((p) => p.row.scheme === scheme);
+  const held = candidates.length ? heldBy(catalog) : null;
+  const handed = new Map<string, string[]>();
+  const placed = candidates.filter((p) => {
+    if (!held || !handedOff(p, held)) return true;
+    const keys = handed.get(p.importId);
+    if (keys) keys.push(p.row.key);
+    else handed.set(p.importId, [p.row.key]);
+    return false;
+  });
   const arrivingEntries = new Map<string, ImportRowMeta>();
   const folders = new Set<string>();
   for (const state of imports) {
-    if (state.report?.summary.state === "finished") continue;
     for (const raw of state.report?.entries.values() ?? []) {
       const entry = effectiveEntry(state, raw);
       const arriving = entry.state === "planned" || entry.state === "landing";
@@ -134,7 +189,8 @@ export function withImportRows(
       addAncestors(folders, joinCatalogPath(p.parentPath, p.name));
   }
 
-  if (placed.length === 0 && arrivingEntries.size === 0 && failures.size === 0) return catalog;
+  if (placed.length === 0 && arrivingEntries.size === 0 && failures.size === 0)
+    return { view: catalog, handedOff: handed };
 
   const byParent = new Map<string, Placed[]>();
   for (const p of placed) byParent.set(p.parentPath, [...(byParent.get(p.parentPath) ?? []), p]);
@@ -195,25 +251,6 @@ export function withImportRows(
     return file;
   };
 
-  const realized = (
-    p: Placed,
-    ids: ReadonlySet<string>,
-    dirNames: ReadonlySet<string>,
-  ): boolean => {
-    if (p.row.kind === "file") {
-      const entry = p.entry;
-      if (!entry) return false;
-      if (entry.state === "skipped" || entry.state === "deleted") return true;
-      return ids.has(entry.documentId);
-    }
-    // A folder is real once the plan has answered and the parent holds one by that name.
-    return hasReport(p.importId) && dirNames.has(p.name);
-  };
-  const reports = new Set(
-    imports.filter((state) => fullyRead(state.report)).map((state) => state.importId),
-  );
-  const hasReport = (importId: string) => reports.has(importId);
-
   const sorted = (nodes: CatalogNode[]) =>
     nodes.sort((a, b) =>
       a.kind !== b.kind ? (a.kind === "dir" ? -1 : 1) : a.name.localeCompare(b.name),
@@ -230,22 +267,13 @@ export function withImportRows(
         ? "/"
         : folderPathOf(catalog, parentId);
     const real = pseudo ? [] : catalog.children(parentId);
-    const candidates = byParent.get(parentPath);
-    let result: readonly CatalogNode[];
-    if (!candidates) result = real.map(mark);
-    else {
-      const ids = new Set(real.flatMap((node) => (node.kind === "file" ? [node.documentId] : [])));
-      const dirNames = new Set(real.flatMap((node) => (node.kind === "dir" ? [node.name] : [])));
-      const added = candidates
-        .filter((p) => !realized(p, ids, dirNames))
-        .map((p) => clientNode(p, parentId));
-      result = added.length === 0 ? real.map(mark) : sorted([...real.map(mark), ...added]);
-    }
+    const added = (byParent.get(parentPath) ?? []).map((p) => clientNode(p, parentId));
+    const result = added.length === 0 ? real.map(mark) : sorted([...real.map(mark), ...added]);
     cache.set(parentId, result);
     return result;
   };
 
-  return { ...catalog, children };
+  return { view: { ...catalog, children }, handedOff: handed };
 }
 
 type ImportRowMeta = { importId: string };

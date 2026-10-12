@@ -27,6 +27,7 @@
 - Import decodes only Markdown link destinations, so a name containing `%` keeps its links and survives an export round trip; wikilinks stay literal.
 - Import and the Properties row read frontmatter through one bounded policy, so they agree on readable YAML and on aliases (and the links aliases resolve).
 - The import report says why a folder's Obsidian settings went unused (hidden by the browser, unreadable, too large, or not valid settings) instead of always blaming the browser.
+- The tree keeps an import's new rows when it finishes until this browser's catalog holds each one, instead of briefly showing an empty Knowledge Base.
 
 
 ### Added
