@@ -151,6 +151,12 @@
   -webkit-user-select: none;
 }
 
+/* A long removal folds to one quiet line the writer can open. Its text stays in
+   the widget, hidden: whatever shows the original (a restored removal) has it. */
+.meridian-editor .ProseMirror .meridian-review-removal-folded > :not(button) {
+  display: none;
+}
+
 /* A long removal folds to one quiet line the writer can open. */
 .meridian-editor .ProseMirror .meridian-review-removal-toggle {
   display: inline-flex;
@@ -327,4 +333,11 @@
   .meridian-review-removal.meridian-review-restored
   .meridian-review-removal-toggle {
   display: none;
+}
+
+/* A folded removal that is restored shows the text it was holding. */
+.meridian-editor .ProseMirror
+  .meridian-review-removal.meridian-review-restored.meridian-review-removal-folded
+  > :not(button) {
+  display: revert;
 }

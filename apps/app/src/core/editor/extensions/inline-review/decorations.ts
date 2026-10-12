@@ -141,6 +141,7 @@ export function resolveGeometry(
         position: startPos,
         block: isBlockPosition(resolver.doc, startPos),
         segments: removed,
+        blockId: hunk.kind === "block" ? hunk.deletedBlock?.blockId : hunk.deletedBlockId,
         tight: endsBeforePunctuation(resolver.doc, startPos),
         hunkId: hunk.hunkId,
         operationIds: hunk.operationIds,
@@ -230,7 +231,7 @@ export function paintDecorations(
           }),
         {
           // The locale is part of the key: the fold's label is copy, redrawn when it changes.
-          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.restored, plan.hunkIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
+          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.restored, plan.hunkIds, plan.blockIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.

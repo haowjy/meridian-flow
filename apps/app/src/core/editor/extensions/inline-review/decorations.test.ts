@@ -5,7 +5,6 @@ import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-
 import {
   createReviewEditor,
   destroyReviewEditors,
@@ -438,7 +437,47 @@ describe("removals", () => {
     expect(editor.getText()).not.toContain("courtyard");
 
     open?.querySelector("button")?.click();
-    expect(removals(editor)[0]?.querySelectorAll("del")).toHaveLength(0);
+    // Folded again: the text stays in the widget, hidden, for whatever restores it.
+    const folded = removals(editor)[0];
+    expect(folded?.classList.contains("meridian-review-removal-folded")).toBe(true);
+    expect(folded?.querySelectorAll("p")).toHaveLength(3);
+  });
+
+  it("keeps a folded removal's text beneath the fold, named by its blocks, so restoring it has the text to show", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    const long = "The courtyard held its breath while the elders conferred. ".repeat(2);
+    const hunks = [0, 1].map((i) =>
+      textHunk(
+        editor,
+        `h${i}`,
+        ["a1"],
+        { from: between, to: between },
+        { deletedText: `${i}: ${long}`, deletedBlockId: `7:${i}` },
+      ),
+    );
+    setModel(editor, model([operation("a1", "agent")], hunks));
+    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
+    const widget = () => copy.querySelector<HTMLElement>(".meridian-review-removal-block");
+    // As a cover captures it: the label, and the paragraphs held (hidden by the fold's class) with the live blocks they were.
+    expect(widget()?.classList.contains("meridian-review-removal-folded")).toBe(true);
+    expect(widget()?.querySelector("button")?.textContent).toBe("2 paragraphs removed");
+    expect(
+      [...(widget()?.querySelectorAll("p") ?? [])].map((p) => [
+        p.getAttribute("data-review-block-id"),
+        p.textContent?.slice(0, 2),
+      ]),
+    ).toEqual([
+      ["7:0", "0:"],
+      ["7:1", "1:"],
+    ]);
+    // Restoring and withdrawing only toggle the class; the fold and the text stay as they were.
+    const before = widget()?.innerHTML;
+    projectRestoring(copy, new Set(["a1"]));
+    expect(widget()?.classList.contains("meridian-review-restored")).toBe(true);
+    projectRestoring(copy, new Set());
+    expect(widget()?.classList.contains("meridian-review-restored")).toBe(false);
+    expect(widget()?.innerHTML).toBe(before);
   });
 
   it("refreshes removal content and attribution without reusing stale DOM", () => {

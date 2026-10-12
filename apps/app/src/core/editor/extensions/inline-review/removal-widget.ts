@@ -33,6 +33,14 @@ export const RESTORED_CLASS = "meridian-review-restored";
  * also holds a button), so what reads a captured page counts its blocks right.
  */
 export const REMOVED_BLOCKS_ATTR = "data-review-removed-blocks";
+/**
+ * A block's Yjs item (`blockItemKey`). On a removal's paragraph it is the live
+ * block it was, which the draft's next generation still has; on a cover's copy of
+ * a real block, the block itself.
+ */
+export const BLOCK_ID_ATTR = "data-review-block-id";
+/** A long removal shown as its label only: its text is in the widget, hidden, for whatever restores it. */
+export const REMOVAL_FOLDED_CLASS = "meridian-review-removal-folded";
 
 /** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
 export interface RemovalSegment {
@@ -56,6 +64,8 @@ export interface RemovalPlan {
   kind: RemovalKind;
   /** Each paragraph is its removed stretches in order, each in its author's colour. */
   paragraphs: RemovalSegment[][];
+  /** The live block each paragraph was (its `blockItemKey`), where the server named it. */
+  blockIds: (string | null)[];
   hunkIds: string[];
   operationIds: string[];
   /** Its change is being discarded: drawn as plain prose, with no strike, tint, fold or click. */
@@ -67,6 +77,7 @@ export interface RemovalInput {
   position: number;
   block: boolean;
   segments: RemovalSegment[];
+  blockId?: string | undefined;
   tight: boolean;
   hunkId: string;
   operationIds: string[];
@@ -97,6 +108,7 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       last.restored === input.restored
     ) {
       last.paragraphs.push(segments);
+      last.blockIds.push(input.blockId ?? null);
       last.hunkIds.push(input.hunkId);
       for (const id of input.operationIds) {
         if (!last.operationIds.includes(id)) last.operationIds.push(id);
@@ -112,6 +124,7 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       tight: input.tight,
       kind: planKind([segments]),
       paragraphs: [segments],
+      blockIds: [input.blockId ?? null],
       hunkIds: [input.hunkId],
       operationIds: [...input.operationIds],
       restored: input.restored,
@@ -203,6 +216,7 @@ export function createRemovalElement(
     REMOVAL_CLASS,
     plan.block ? REMOVAL_BLOCK_CLASS : "",
     plan.restored ? RESTORED_CLASS : "",
+    folded ? REMOVAL_FOLDED_CLASS : "",
     plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
     plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
     plan.kind === "unattributed" ? REMOVAL_UNATTRIBUTED_CLASS : "",
@@ -225,27 +239,29 @@ export function createRemovalElement(
     root.append(toggle);
     if (options.refocusToggle) queueMicrotask(() => toggle.focus());
   }
-  if (!folded) {
-    for (const segments of plan.paragraphs) {
-      const struck = segments.map((segment) => {
-        const del = doc.createElement("del");
-        del.className = [
-          REMOVAL_TEXT_CLASS,
-          segment.kind === "writer" ? REMOVAL_TEXT_WRITER_CLASS : "",
-          segment.kind === "unattributed" ? REMOVAL_TEXT_UNATTRIBUTED_CLASS : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
-        del.textContent = segment.text;
-        return del;
-      });
-      if (plan.block) {
-        const paragraph = doc.createElement("p");
-        paragraph.append(...struck);
-        root.append(paragraph);
-      } else {
-        root.append(...struck);
-      }
+  // The text is always here: a fold only hides it, so a projection that shows the
+  // original (a Discard accepted under a cover) has it to show.
+  for (const [index, segments] of plan.paragraphs.entries()) {
+    const struck = segments.map((segment) => {
+      const del = doc.createElement("del");
+      del.className = [
+        REMOVAL_TEXT_CLASS,
+        segment.kind === "writer" ? REMOVAL_TEXT_WRITER_CLASS : "",
+        segment.kind === "unattributed" ? REMOVAL_TEXT_UNATTRIBUTED_CLASS : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      del.textContent = segment.text;
+      return del;
+    });
+    if (plan.block) {
+      const paragraph = doc.createElement("p");
+      const blockId = plan.blockIds[index];
+      if (blockId) paragraph.setAttribute(BLOCK_ID_ATTR, blockId);
+      paragraph.append(...struck);
+      root.append(paragraph);
+    } else {
+      root.append(...struck);
     }
   }
   // Keep the editor's caret and focus where the writer left them. The change is

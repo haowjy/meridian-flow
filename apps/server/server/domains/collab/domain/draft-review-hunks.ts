@@ -1,7 +1,7 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import type { AgentEditModel } from "@meridian/agent-edit/integration";
-import type { ReviewHunk } from "@meridian/contracts/drafts";
+import type { ReviewBlockDisplay, ReviewHunk } from "@meridian/contracts/drafts";
 import type * as Y from "yjs";
 import {
   alignBlocks,
@@ -102,6 +102,7 @@ function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): ReviewHunk {
         anchor: hunk.anchor,
         spans: [],
         ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+        ...(hunk.deletedBlockId ? { deletedBlockId: hunk.deletedBlockId } : {}),
       };
     case "block":
       return {
@@ -115,8 +116,12 @@ function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): ReviewHunk {
   }
 }
 
-function reviewBlockDisplay(block: RawBlockDisplay): { type: string; display: string } {
-  return { type: block.type, display: block.display };
+function reviewBlockDisplay(block: RawBlockDisplay): ReviewBlockDisplay {
+  return {
+    type: block.type,
+    display: block.display,
+    ...(block.blockId ? { blockId: block.blockId } : {}),
+  };
 }
 
 function cancelRestorativeRejectBlockHunks(input: {

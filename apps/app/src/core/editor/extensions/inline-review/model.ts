@@ -168,6 +168,7 @@ export function buildInlineReviewModel(input: {
       spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
       ...(hunk.deletedSpans ? { deletedSpans: hunk.deletedSpans } : {}),
+      ...(hunk.deletedBlockId ? { deletedBlockId: hunk.deletedBlockId } : {}),
     });
   }
   return {
