@@ -779,6 +779,7 @@ msgstr "chart"
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr "Chat"
@@ -1926,6 +1927,7 @@ msgid "File this document"
 msgstr "File this document"
 
 #: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/routing/EditorRouteChrome.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"
@@ -4454,6 +4456,7 @@ msgstr "Withdraw compaction"
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work"

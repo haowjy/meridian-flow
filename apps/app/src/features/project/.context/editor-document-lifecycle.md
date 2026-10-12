@@ -117,7 +117,15 @@ still pending. Only that fallback is keyed by the destination; the editor is
 never keyed or remounted for loading. Settlement removes feedback immediately,
 with no minimum display duration. Busy state is exposed without loading copy.
 Different-project entry, Work recovery, unavailable destinations, and errors do
-not expose retained content as if it were the requested destination. A cold
+not expose retained content as if it were the requested destination.
+A masked destination leaves the workspace rails, dock and address navigation
+usable. Desktop supplies route-derived chrome outside the content mask when no
+admitted document chrome can be shown; the path is a locator, not an admitted
+identity or an editable placement. Review's prose-width hold does not collapse
+the sidebar while a route issue is shown. Phone keeps its top bar and drawer
+outside the boundary and mounts a document host only after admission (or for a
+retained warm transition), so a masked missing address cannot repair itself to
+Files. A cold
 content host may also need its own startup UI after address resolution.
 
 ## Session and synchronization boundary

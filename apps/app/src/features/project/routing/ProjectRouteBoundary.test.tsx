@@ -22,3 +22,34 @@ it("shows the failure with a retry, keeping the destination's own content mounte
     },
   );
 });
+
+it.each([
+  "unavailable",
+  "error",
+  "resource-viewing",
+  "loading",
+] as const)("%s masks the destination body, not its address navigation", async (issue) => {
+  const onNavigate = vi.fn();
+  await withReactRoot(
+    <ProjectRouteBoundary
+      issue={issue}
+      chrome={
+        <nav aria-label="Address navigation">
+          <button type="button" onClick={onNavigate}>
+            Files
+          </button>
+        </nav>
+      }
+    >
+      <p>document body</p>
+    </ProjectRouteBoundary>,
+    async () => {
+      const nav = document.querySelector('nav[aria-label="Address navigation"]');
+      expect(nav).not.toBeNull();
+      expect(nav?.closest('[inert], [aria-hidden="true"]')).toBeNull();
+      expect(document.querySelector("[inert]")?.textContent).toBe("document body");
+      await act(async () => nav?.querySelector("button")?.click());
+      expect(onNavigate).toHaveBeenCalledOnce();
+    },
+  );
+});
