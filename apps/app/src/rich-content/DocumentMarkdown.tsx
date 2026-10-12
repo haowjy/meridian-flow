@@ -5,6 +5,7 @@ import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import { createElement, Fragment, memo, type ReactNode, useMemo } from "react";
 import remend from "remend";
 
+import { browserPictureSource } from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
@@ -205,15 +206,18 @@ function renderDocumentNode(
       return <hr />;
     case "code_block":
       return <DocumentCodeBlock node={node} throttle={throttle} diagrams={node !== openCode} />;
-    case "image":
+    case "image": {
+      const src = browserPictureSource(String(node.attrs.src));
+      if (!src) return node.attrs.alt ?? "";
       return (
         <img
-          src={node.attrs.src}
+          src={src}
           alt={node.attrs.alt ?? ""}
           title={node.attrs.title ?? undefined}
           style={node.attrs.width ? { width: node.attrs.width } : undefined}
         />
       );
+    }
     case "table":
       return (
         <div className="tableWrapper">

@@ -66,3 +66,23 @@ describe("settled document rendering", () => {
     expect(render("[unsafe](javascript:alert%281%29)")).not.toContain('href="javascript:');
   });
 });
+
+it("uses the Editor picture-source boundary at the chat image sink", () => {
+  for (const source of [
+    "javascript:alert%281%29",
+    "data:text/html;base64,AAAA",
+    "/map.png",
+    "asset:abc",
+  ]) {
+    expect(render(`![unavailable](${source})`)).not.toContain("<img");
+    expect(render(`![unavailable](${source})`)).toContain("unavailable");
+  }
+  for (const source of [
+    "https://example.com/a.png",
+    "http://example.com/a.png",
+    "//example.com/a.png",
+    "data:image/png;base64,AAAA",
+  ]) {
+    expect(render(`![picture](${source})`)).toContain(`<img src="${source}"`);
+  }
+});

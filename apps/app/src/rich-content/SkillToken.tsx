@@ -26,16 +26,3 @@ export function SkillToken({
     </Tooltip>
   );
 }
-
-export function TranscriptSkillToken({
-  "data-slug": slug,
-  "data-name": name,
-  "data-description": description,
-}: {
-  "data-slug"?: string;
-  "data-name"?: string;
-  "data-description"?: string;
-}) {
-  if (!slug) return null;
-  return <SkillToken slug={slug} name={name ?? slug} description={description ?? ""} />;
-}
