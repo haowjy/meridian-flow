@@ -171,6 +171,23 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
   }
 }
 
+/** Admission uncertainty is a claim result, not a successful send or an app failure. */
+function admissionFailure(error: unknown, threadId: string): SendOutcome {
+  if (!(error instanceof CliError) || !["unproven", "http_error"].includes(error.code)) throw error;
+  return {
+    type: "result",
+    command: "thread.send",
+    threadId,
+    turnId: null,
+    outcome: error.code === "unproven" ? "unproven" : "failed",
+    reason: error.code === "unproven" ? "admission_unknown" : null,
+    status: "unknown",
+    finalText: null,
+    error: error.message,
+    submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
+  };
+}
+
 /**
  * Send and wait: admit, follow from `resumeAfterSeq` until this send's run
  * finishes, fails, or raises an interrupt, then read the durable outcome.
@@ -184,21 +201,7 @@ export async function sendMessage(
   try {
     admission = await admitMessage(session, input);
   } catch (error) {
-    if (error instanceof CliError && (error.code === "unproven" || error.code === "http_error")) {
-      return {
-        type: "result",
-        command: "thread.send",
-        threadId: input.threadId,
-        turnId: null,
-        outcome: error.code === "unproven" ? "unproven" : "failed",
-        reason: error.code === "unproven" ? "admission_unknown" : null,
-        status: "unknown",
-        finalText: null,
-        error: error.message,
-        submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
-      };
-    }
-    throw error;
+    return admissionFailure(error, input.threadId);
   }
   const { admitted, mockScriptId } = admission;
   try {
@@ -374,17 +377,7 @@ export const threadSendCommand: CommandSpec = {
       try {
         admission = await admitMessage(session, { threadId, ...input });
       } catch (error) {
-        if (error instanceof CliError && (error.code === "unproven" || error.code === "http_error"))
-          return finishResult(ctx.out, {
-            type: "result",
-            command: "thread.send",
-            threadId,
-            outcome: error.code === "unproven" ? "unproven" : "failed",
-            reason: error.code === "unproven" ? "admission_unknown" : null,
-            error: error.message,
-            submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
-          });
-        throw error;
+        return finishResult(ctx.out, admissionFailure(error, threadId));
       }
       const { submissionId, admitted, mockScriptId } = admission;
       ctx.out.result(

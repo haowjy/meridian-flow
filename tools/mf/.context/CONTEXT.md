@@ -24,8 +24,12 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
     `src/main.ts`. Help, parsing, output, and errors come from `core/`.
   - **Output contract:** compact text by default; `--json` prints exactly one
-    object, or NDJSON for streams with the terminal envelope last; errors go to
-    stderr. `EXIT` in `src/core/cli-error.ts` is the exit-code contract. Set
+    object, or NDJSON for streams. Live claims and journal replay end with one
+    `type: "result"` envelope (`command`, `threadId`, `outcome`, `reason`, then
+    command fields). Seed embeds its sends' envelopes and exits with their worst
+    exit. `--fields` always preserves terminal `type`, `command`, `outcome` and
+    `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason.
+    Run failures are results; CLI errors remain on stderr. `EXIT` in `src/core/cli-error.ts` is the exit-code contract. Set
     `process.exitCode`; never call `process.exit()` (it truncates piped output).
   - **Missing data** means a new server route behind the debug gate
     (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
@@ -52,8 +56,16 @@ deduplication, gaps and reconnect/resume. A CLI subscription queue bounds waits
 by the command deadline; terminal/auth closes remain exit 4. `stream.ts` only
 maps events, prints them and runs the existing CLI follow predicates. Those
 predicates are not yet the shared follow session, so the existing run-outcome
-limitations still apply. `respond` uses the shared interrupt sender but still
-reports sent, not journal confirmation.
+limitations still apply. In particular `tail --until-idle` waits for the next
+`turn.finished` or `turn.failed`, not confirmed idle. On a deadline, send and
+until-idle tail read a final snapshot and report `stillRunning`, pending writer
+messages (`owed`, or `pendingUnavailable`), and `next`; they never cancel.
+`respond` uses the shared interrupt sender and confirms its exact interrupt's
+journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`
+6 `replay_truncated` after printing the replay. Send recovers a lost HTTP
+admission answer with one app-route lookup (`submissionId`); a failed lookup
+or pending admission is 6 `admission_unknown`. Tool results distinguish staged
+`tool.completed` from committed `tool.settled` in both output modes.
 
 Message admission builds skill nodes, a prose paragraph, then reference nodes
 and passes that document to `serializeMessageDoc`. Reference labels and image

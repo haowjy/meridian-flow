@@ -68,7 +68,7 @@ export function parseSeedFixture(raw: unknown): SeedFixture {
 
 export const seedCommand: CommandSpec = {
   path: ["seed"],
-  summary: "Set up a scenario from a fixture: docs, a thread, opening messages",
+  summary: "Set up docs, a thread and messages (exit = worst send outcome)",
   args: "<fixture.json>",
   route: "composes doc put + POST /api/threads + thread send",
   options: {

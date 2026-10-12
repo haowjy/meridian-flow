@@ -13,7 +13,7 @@ import { followThread } from "./stream";
 
 export const threadEventsCommand: CommandSpec = {
   path: ["thread", "events"],
-  summary: "Replay the thread's journaled events (no live follow)",
+  summary: "Replay journaled events (no live follow; exit 6 on a replay gap)",
   args: "<thread>",
   route: "WS /api/threads/ws subscribe {lastSeq} catch-up",
   options: {

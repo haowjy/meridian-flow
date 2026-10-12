@@ -376,4 +376,93 @@ describe("thread", () => {
       await isolated.close();
     }
   });
+  it.each([
+    true,
+    false,
+  ])("timeout distinguishes owed from an unavailable pending inbox (pending=%s)", async (pending) => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.snapshotPolicy.pending = pending;
+      isolated.snapshotPolicy.running = false;
+      const result = await isolated.mf([
+        "thread",
+        "send",
+        THREAD_ID,
+        "hang",
+        "--timeout",
+        "100ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.timeout);
+      const record = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
+      expect(record).toMatchObject({
+        type: "result",
+        outcome: "timeout",
+        reason: "owed",
+        stillRunning: null,
+      });
+      if (pending) expect(record.owed).toEqual([]);
+      else {
+        expect(record).not.toHaveProperty("owed");
+        expect(record.pendingUnavailable).toBe(true);
+      }
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("timeout text says the server is still running and prints no answer", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "100ms"]);
+    expect(result.code).toBe(EXIT.timeout);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toMatch(/timeout: turn .* still streaming on the server/);
+    expect(result.stderr).toContain("stop it with ./mf thread cancel");
+  });
+  it.each([
+    ["hi", EXIT.ok, "complete"],
+    ["fail", EXIT.failed, "failed"],
+    ["cancelled", EXIT.cancelled, "cancelled"],
+  ] as const)("tail --until-idle ends %s with a result", async (text, code, outcome) => {
+    const isolated = await startFakeStack();
+    try {
+      await isolated.mf(["thread", "send", THREAD_ID, text, "--no-wait"]);
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--since",
+        "0",
+        "--until-idle",
+        "--json",
+      ]);
+      expect(result.code).toBe(code);
+      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+        type: "result",
+        command: "thread.tail",
+        outcome,
+        reason: null,
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("send --no-wait also reports admission uncertainty", async () => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.admissionPolicy.loseAnswer = true;
+      isolated.admissionPolicy.lookup = "failed";
+      const result = await isolated.mf(["thread", "send", THREAD_ID, "hi", "--no-wait", "--json"]);
+      expect(result.code).toBe(EXIT.unproven);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        type: "result",
+        command: "thread.send",
+        outcome: "unproven",
+        reason: "admission_unknown",
+        submissionId: expect.any(String),
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
 });
