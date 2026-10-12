@@ -113,6 +113,12 @@ export function indexDraftUpdates(input: {
           const item = findItem(replayDoc, range.client, range.clock);
           return visible && item instanceof Y.Item && item.content instanceof Y.ContentFormat;
         });
+      const richSources = recreatesFormatting
+        ? captureRichRestorationSources(
+            replayDoc,
+            beforeVisibility.filter((entry) => entry.visible).map((entry) => entry.range),
+          )
+        : [];
       const beforeContent = recreatesFormatting
         ? visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))
         : null;
@@ -141,11 +147,7 @@ export function indexDraftUpdates(input: {
           beforeContent,
           visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
         )
-          ? restoredRichAliases(
-              replayDoc,
-              beforeVisibility.filter((entry) => entry.visible).map((entry) => entry.range),
-              introducedRanges,
-            )
+          ? restoredRichAliases(replayDoc, richSources, introducedRanges)
           : [];
       for (const alias of [...certifiedAliases, ...richRestorationAliases]) {
         aliases.push(alias);
@@ -884,29 +886,65 @@ function splitAtAliasBoundaries(
     .map((clock, index) => ({ client: range.client, clock, length: clocks[index + 1] - clock }));
 }
 
-/** A semantically unchanged retype can recreate mark boundaries; later removals still own their effects. */
-function restoredRichAliases(
+type RichRestorationSource = {
+  source: ClockRange;
+  parent: Y.XmlText;
+  offset: number;
+  key: string;
+  value: unknown;
+};
+
+function captureRichRestorationSources(
   doc: Y.Doc,
   removed: readonly ClockRange[],
+): RichRestorationSource[] {
+  return removed.flatMap((source) => {
+    const item = findItem(doc, source.client, source.clock);
+    if (
+      !(item instanceof Y.Item) ||
+      !(item.content instanceof Y.ContentFormat) ||
+      !(item.parent instanceof Y.XmlText)
+    )
+      return [];
+    const offset = formatItemOffset(item);
+    return offset === null
+      ? []
+      : [{ source, parent: item.parent, offset, key: item.content.key, value: item.content.value }];
+  });
+}
+
+/** A semantically unchanged retype recreates the same mark boundaries, not new formatting effects. */
+function restoredRichAliases(
+  doc: Y.Doc,
+  sources: readonly RichRestorationSource[],
   introduced: readonly ClockRange[],
 ): RangeAlias[] {
   const remaining = [...introduced];
-  return removed.flatMap((source) => {
-    const old = findItem(doc, source.client, source.clock);
-    if (!(old instanceof Y.Item) || !(old.content instanceof Y.ContentFormat)) return [];
-    const oldFormat = old.content;
+  return sources.flatMap(({ source, parent, offset, key, value }) => {
     const index = remaining.findIndex((target) => {
       const fresh = findItem(doc, target.client, target.clock);
       return (
         fresh instanceof Y.Item &&
         fresh.content instanceof Y.ContentFormat &&
-        old.parent === fresh.parent &&
-        oldFormat.key === fresh.content.key &&
-        isDeepStrictEqual(contentValue(oldFormat.value), contentValue(fresh.content.value))
+        parent === fresh.parent &&
+        offset === formatItemOffset(fresh) &&
+        key === fresh.content.key &&
+        isDeepStrictEqual(contentValue(value), contentValue(fresh.content.value))
       );
     });
     if (index < 0) return [];
     const [target] = remaining.splice(index, 1);
     return [{ source, target }];
   });
+}
+
+function formatItemOffset(item: Y.Item): number | null {
+  if (!(item.parent instanceof Y.XmlText)) return null;
+  let offset = 0;
+  for (let candidate = item.parent._start; candidate; candidate = candidate.right) {
+    if (candidate === item) return offset;
+    if (!candidate.deleted && candidate.content instanceof Y.ContentString)
+      offset += candidate.length;
+  }
+  return null;
 }

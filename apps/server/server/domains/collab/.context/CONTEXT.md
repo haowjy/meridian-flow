@@ -375,7 +375,9 @@ and pending settlement: text, marks, node types, attributes and ordered children
 Yjs history and attribute-object prototypes do not change content. Alignment uses
 canonical block identities, not scope-dependent display hash widths. Rich-only
 changes are whole-block hunks attributed through changed format/attribute clocks;
-unchanged prose is not an inserted or removed text effect. Their formatting facts
+unchanged prose is not an inserted or removed text effect. Attribution intersects
+changed mark intervals and reads winning attribute items; copied unchanged marks
+never nominate an authoring row. Nested paragraph boundaries are content too. Their formatting facts
 are localized by the client, in the same row as text changes.
 `domain/draft-review-hunks.ts` composes the raw difference with review attribution; publication consumes the raw difference directly. Recreated identical blocks
 are equal at that shared semantic boundary, not hidden by a review-only cancellation rule.

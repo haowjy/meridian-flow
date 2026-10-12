@@ -3763,6 +3763,10 @@ msgstr "Stopping the handoff brief"
 msgid "Strikethrough"
 msgstr "Strikethrough"
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Structure changed"
+msgstr "Structure changed"
+
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "Subagent chat path"

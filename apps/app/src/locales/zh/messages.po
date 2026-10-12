@@ -3763,6 +3763,10 @@ msgstr ""
 msgid "Strikethrough"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Structure changed"
+msgstr ""
+
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "子代理对话路径"
