@@ -1,26 +1,34 @@
-/** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
+/**
+ * DocumentIdentityBar — where an open document lives: its path, which navigates,
+ * and the chips about it (Choose a home for a document in Unfiled, device-only, a
+ * refused move, a review). The Editor shows it as a band above the page; a
+ * document beside the chat shows it in the dock header (`variant="header"`).
+ */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { FolderDown, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
-import { schemeIcon, schemeLabel } from "./context-schemes";
+import { schemeLabel } from "./context-schemes";
+import { DocumentPath } from "./DocumentPath";
+import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
-import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
-import { type TabLocation, tabLocation } from "./identity-location";
+import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
+import { tabLocation } from "./identity-location";
+import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
+import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
   useIdentityCommit,
 } from "./use-identity-commit";
+import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
@@ -28,12 +36,14 @@ export type DocumentIdentityBarProps = {
   tab: ContextTab;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
+  /** A band above the page (the Editor), or the content of the dock's header row. */
+  variant?: "band" | "header";
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 };
 
 export function DocumentIdentityBar({
@@ -41,23 +51,34 @@ export function DocumentIdentityBar({
   editorWorkId,
   tab,
   readOnly = false,
+  variant = "band",
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const commit = useIdentityCommit({
+  const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {
+    kind: "file",
+    id: tab.documentId,
+  });
+  const commitIdentity = useIdentityCommit({
     projectId,
     tab,
     editorWorkId: editorWorkId,
     onCommitted,
   });
+  // The note follows the resource handle, so list moves and identity remints show here too.
+  // A placement made here re-resolves the tab and remounts this bar, so the
+  // operation is remembered outside it.
+  const commit: typeof commitIdentity = async (target) => {
+    const outcome = await commitIdentity(target);
+    if (outcome.status === "committed" && outcome.operationId) remember(outcome.operationId);
+    return outcome;
+  };
 
-  // A queued placement that failed after this document materialized reopens
-  // the field with the writer's name restored and the failure's recovery
-  // note — the receipt must never be dropped silently.
-  const { records } = useAccountResourceProjection(projectId);
+  // Only provisional placement can be repaired here; homed refusals stay in lists.
+  const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.resourceHandle
       ? resource.handle === tab.resourceHandle
@@ -65,19 +86,35 @@ export function DocumentIdentityBar({
   );
   const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
   const identityFailure =
-    repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
+    location.provisional && repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
       ? ({ kind: "error", name: repair.name } as const)
       : null;
-  useEffect(() => {
-    if (identityFailure) setFieldOpen(true);
-  }, [identityFailure]);
+  const repairMove = resource?.resource.canonical
+    ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
+    : undefined;
+  const failedFolder = repairMove
+    ? repairMove.parent.kind === "root"
+      ? schemeLabel(repairMove.parent.scheme)
+      : t`that folder`
+    : null;
+  const passiveFailure = failedFolder
+    ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
+    : t`Couldn't rename. Use Rename in the file list to try again.`;
+  const failureAt =
+    repair?.kind === "set-location"
+      ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+      : undefined;
+  useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
+    setFieldOpen(true),
+  );
 
-  // The chip always opens the one inline field when moving the document is
-  // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = !readOnly && location.scheme !== "uploads";
+  // A document in Unfiled, untitled or named, is invited to choose a home. Once it
+  // has one, renaming and moving belong to the lists. Uploads aren't writing material.
+  const showChip = !readOnly && location.provisional && location.scheme !== "uploads";
+  const placementOpen = fieldOpen && showChip;
 
   return (
-    <div className="@container shrink-0">
+    <div className={cn("@container min-w-0", variant === "header" ? "flex-1" : "shrink-0")}>
       {/* Fixed-height band, full pane width. The bar is navigation chrome
           like the tab strip above it — it spans edge to edge, NOT the prose
           column. Geometry contract lives in identity-bar-geometry.ts: same
@@ -86,11 +123,11 @@ export function DocumentIdentityBar({
           the suggestion-popover rows it sits beside. */}
       <div
         className={cn(
-          "flex items-center gap-1 px-4 font-mono text-ink-subtle text-sm",
-          IDENTITY_BAR_BAND_CLASS,
+          "flex items-center gap-1 font-mono text-ink-subtle text-sm",
+          variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
         )}
       >
-        {fieldOpen && !readOnly ? (
+        {placementOpen ? (
           <IdentityPlacementField
             projectId={projectId}
             editorWorkId={editorWorkId}
@@ -108,15 +145,44 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <IdentityPath location={location} />
+          <DocumentPath
+            projectId={projectId}
+            tab={tab}
+            location={location}
+            trailing={
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "file", id: tab.documentId }}
+                operationId={noteOperationId}
+                className="ml-3 font-sans text-ink-muted"
+              />
+            }
+          />
         )}
-        <span className="min-w-1 flex-1" />
+        {/* The path fills the row; the placement field needs the same push. */}
+        {placementOpen ? <span className="min-w-1 flex-1" /> : null}
+        {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
+        {repair?.kind === "set-location" && !placementOpen ? (
+          location.provisional && !readOnly ? (
+            <button
+              type="button"
+              className="focus-ring flex min-w-0 items-center rounded-md"
+              onClick={() => {
+                setDismissedRepairId(null);
+                setFieldOpen(true);
+              }}
+            >
+              <NamespaceFailureMark failure="set-location" labelled />
+            </button>
+          ) : (
+            <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+          )
+        ) : null}
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
-          location={location}
-          show={showChip && !fieldOpen}
+          show={showChip && !placementOpen}
           onChooseHome={() => {
             setFieldOpen(true);
           }}
@@ -126,64 +192,15 @@ export function DocumentIdentityBar({
   );
 }
 
-function IdentityPath({ location }: { location: TabLocation }) {
-  const SchemeIcon = schemeIcon(location.scheme);
-  const separator = (
-    <span aria-hidden className="shrink-0 opacity-60">
-      ›
-    </span>
-  );
-  const lastFolderIndex = location.folders.length;
-  const segments = (
-    <>
-      <span data-seg="0" className="flex shrink-0 items-center gap-1">
-        <SchemeIcon aria-hidden className="size-3 shrink-0" />
-        <span className="@max-md:hidden">{schemeLabel(location.scheme)}</span>
-      </span>
-      {location.folders.length > 0 ? (
-        <>
-          {separator}
-          <span className="flex min-w-0 items-center gap-1 @max-md:hidden">
-            {location.folders.length > 1 ? (
-              <>
-                <span aria-hidden data-seg="1">
-                  …
-                </span>
-                {separator}
-              </>
-            ) : null}
-            <span data-seg={lastFolderIndex} className="truncate">
-              {location.folders[location.folders.length - 1]}
-            </span>
-          </span>
-          <span aria-hidden data-seg="1" className="hidden @max-md:inline">
-            …
-          </span>
-        </>
-      ) : null}
-      {separator}
-      <span
-        data-seg="leaf"
-        className={cn("truncate text-ink-muted", location.provisional && "italic")}
-      >
-        {location.leaf}
-      </span>
-    </>
-  );
-  return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
-}
-
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   tab,
-  location,
   show,
   onChooseHome,
 }: {
   projectId: string;
   tab: ContextTab;
-  location: TabLocation;
   show: boolean;
   onChooseHome: () => void;
 }) {
@@ -192,73 +209,8 @@ function IdentityChipSlot({
   return (
     <>
       {deviceOnly ? <DeviceOnlyChip /> : null}
-      {show ? <HomeChip provisional={location.provisional} onClick={onChooseHome} /> : null}
+      {show ? <ChooseHomeChip onClick={onChooseHome} /> : null}
     </>
-  );
-}
-
-const chipClass = cn(
-  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
-  IDENTITY_BAR_BOX_CLASS,
-);
-
-/** The permanent re-home affordance (D4), whose label graduates with the
- *  document: jade "Choose a home" while provisional (an invitation), quiet
- *  outline "Rename" once homed (a tool — rename is the common case; folder
- *  browsing in the same field keeps move discoverable). Same geometry in both states. */
-function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          key={provisional ? "invite" : "quiet"}
-          type="button"
-          onClick={onClick}
-          className={cn(
-            "focus-ring",
-            chipClass,
-            provisional
-              ? "border-primary/30 bg-primary/10 text-jade-text"
-              : "border-border bg-transparent text-ink-subtle",
-          )}
-        >
-          <FolderDown aria-hidden className="size-3" />
-          <span className="@max-md:hidden">
-            {provisional ? <Trans>Choose a home</Trans> : <Trans>Rename</Trans>}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4} className="max-w-60">
-        {provisional ? (
-          <Trans>
-            This draft is untitled and lives in your Scratch. Click to name it or move it where it
-            belongs.
-          </Trans>
-        ) : (
-          <Trans>Rename this document or move it somewhere else in your project.</Trans>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function DeviceOnlyChip() {
-  const label = t`Only on this device`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          className={cn(chipClass, "border-warning-border bg-warning-bg text-warning-foreground")}
-        >
-          <TriangleAlert aria-hidden className="size-3" />
-          <span className="@max-md:hidden">{label}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -266,7 +218,7 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
 
 /** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
 function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
-  const { records } = useAccountResourceProjection(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.kind === "new"
       ? resource.handle === tab.resourceHandle

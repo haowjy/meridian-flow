@@ -1,7 +1,9 @@
 /** Postgres coverage for bootstrap readiness fast and repair paths. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -18,9 +20,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
 
@@ -30,7 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const probeClient = postgres(DATABASE_URL, { max: 1 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "bootstrap-readiness"));
     });
 
@@ -42,10 +42,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createBoundCollab() {
       const collab = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -82,7 +82,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 1, 3, 2, 0]);
+      ).resolves.toEqual([1, 1, 2, 2, 0]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })

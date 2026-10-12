@@ -2,17 +2,17 @@
 
 ## Public surface
 
-`@meridian/markup` exports:
+The root `@meridian/markup` exports:
 
-- Presets: `markdownCodec({ schema, assetPathResolver })` and
-  `mdxCodec({ schema, components, assetPathResolver })`.
-- `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
-  serialize an asset ref) and `createAssetPathResolver(entries)`.
-- `remarkWikiLink`: the same syntax grammar for read-only renderers. Consumers
-  own inline presentation and navigation authority; the parser resolves neither.
-- Both presets include the first-class `[[target]]` wikilink extension. It maps
-  to the existing link mark with `href: "[[target]]"` and `title: null`; labels
-  may be authored with `[[target|display text]]`.
+- Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
+- `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
+  href and src spells as written, `asset:` refs stay refs). It is for
+  comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
+  `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
+  not a package export.
+- `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
+  surfaces that spell a link without serializing a document (a chat
+  reference, a clipboard fallback). It shares the link mark's destination rule.
 - Codec author helpers for converting between ProseMirror nodes and mdast/MDX
   AST nodes.
 - Codec and AST types, `CodecParseError`, and MDX component registry types.
@@ -20,18 +20,39 @@
   `documentComponentRegistry` (the product component set every document surface
   shares).
 
+Two subpath entries carry the link rules, so a consumer loads only what it
+uses (the client's assignment path loads neither codecs nor Yjs; the root
+loads neither Yjs nor the schema builder):
+
+- `@meridian/markup/links` (`links.ts`): the rules every host shares
+  (`holder-link-scope.ts`, see Shared link rules): `createHolderLinkScope(holder,
+  catalog)` over a `HolderCatalog`, `assignFreshLink` (pass 3),
+  `classifyWrittenHref`, `writtenAddresses` and `writtenSourceUri`; and
+  `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
+  (`link-occurrences.ts`), see Link occurrences.
+- `@meridian/markup/stored-links` (`stored-links.ts`): `extractStoredLinks(fragment)`
+  and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
+  fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
+  builder.
+
 Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 `mdxBlockCodecs`, and required-block-name lists) are not exported from the
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes only `parse`, `serialize`, `serializeBlock`, and
-`serializeBlocks`. `serializeBlock`/`serializeBlocks` return normalized block
-bodies without hash prefixes. Agent-edit owns any hash-prefixed adapter layer.
+`MarkupCodec` exposes only `parse`, `parseWithSpans`, `serialize`,
+`serializeBlock`, and `serializeBlocks`. Every serialize call takes the
+`DocumentLinkScope` explicitly; nothing is captured at construction.
+`serializeBlock`/`serializeBlocks` return normalized block bodies without hash
+prefixes. Agent-edit owns any hash-prefixed adapter layer.
 
 ## Round-trip guarantees
 
-These concern supported durable document semantics, not CRDT identity or history.
+These concern wire semantics: what Markdown/MDX can say. A stored link's
+`ref` is deliberately not in the wire, so `parse(serialize(blocks))` returns
+every link with `ref: null` and the destination the scope spelled; restoring a
+ref is ref assignment's job, never the codec's. They also exclude CRDT
+identity and history.
 A newly parsed document cannot replace an existing Yjs replica without losing
 that replica's identities and merge lineage. Arbitrary accepted Markdown may
 normalize on first parse; canonical wire spelling then stabilizes.
@@ -51,6 +72,16 @@ normalize on first parse; canonical wire spelling then stabilizes.
 `postParse`, and `postSerializeBlock` hooks. Markdown autolink demotion is intentionally owned by the
 markdown/mdx plugins via `postParse`, not the builder; non-markdown format
 plugins do not inherit markdown-specific autolink behavior by default.
+Hooks receive the preprocessed source matching AST positions and run on internal
+reparses too. Only bare GFM autolink literals are demoted to prose; links whose
+source opens with `[` remain links even when their words equal their
+destination. Angle autolinks (`<kb://a.md>`) remain links in Markdown only;
+MDX ingress escapes them to literal text. Links without usable source positions
+are retained, not guessed.
+The GFM legacy text transform is disabled: it invents positionless links from
+escaped URL prose after tokenization. Positioned GFM literal tokens still parse
+and are demoted. The serializer always writes resource links (`[x](x)`),
+never angle autolinks, so generated links survive MDX and Layout wrappers.
 
 Merge order:
 
@@ -64,31 +95,83 @@ Merge order:
 Build validation always rejects duplicate block names, duplicate mark names, and
 missing schema mark codecs. Required block validation is opt-in through
 `requiredBlockNames` or `requireSchemaBlockCoverage`; schema coverage excludes
-`doc`, `text`, and `hard_break`.
+`doc`, `text`, and the table's row and cell nodes. `hard_break` is a registered
+codec like any other block (see Hard breaks and emphasis).
 
 ## MDX components
 
-`ParseContext` and `SerializeContext` carry the schema and the asset-path
-resolver. The MDX plugin
+`ParseContext` carries only the schema;
+`SerializeContext` carries the schema and the call's `DocumentLinkScope`. The
+MDX plugin
 creates fresh `createJsxLeafCodec(components)` and
 `createJsxContainerCodec(components)` instances so component lookup is captured
 in closures. `registeredComponent(components, name)` remains a helper with an
 explicit registry parameter.
 
-## Asset paths
+## Link scope
 
-Images hold a stable `asset:<documentId>` src inside ProseMirror; markdown holds
-a project-relative path. `AssetPathResolver` is the only translation seam, and
-it is required — a consumer with no project asset namespace passes
-`unresolvedAssetPathResolver` and gets a throw rather than a silently wrong URL.
-`assetForPath` returns null for anything the project does not know, so external
-and unknown paths stay literal.
+Stored links, images and figures may carry a `ref` (`doc:<uuid>`, `ahead:<uuid>`,
+see `@meridian/contracts` `document-ref.ts`). The codec never reads or writes
+it: serialization asks the call's `DocumentLinkScope` for every destination
+(`spellLink` for link marks and HTML-table anchors, `spellSource` for `image`
+and `figure` sources) and writes only the spelled `href`. A scope spells a
+resolvable ref as its target's current path, anything else as stored
+(`spellStoredLink` in contracts), and an `asset:` source as the path the
+project knows it by, else its row's last address in full, else an empty
+destination (`UNSPELLED_UPLOAD`): a picture never fails its document, and no
+id ever reaches a reader.
+
+Parse is pure syntax: every parsed link has `ref: null` and its destination
+as written, and every image and figure `src` is the source as written. The
+shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
+parse, in pass 3 of the host's ref assignment over a prepared scope (agent-edit
+`assignLinkRefs`), which is what lets a host load only what the text names. An
+upload's `asset:<id>` is its identity: `spellSource` reports the address it
+spelled, and `spelledLinks` records a fact keyed `asset:<id>` there, so a
+rewrite that keeps the shown address continues the upload. An upload spelled
+as an empty destination records a fact at the empty address, so a rewrite
+that writes `()` back over it keeps the picture even once it became
+addressable (agent-edit's correspondence).
+
+## Shared link rules
+
+Server, agent-edit and client resolve and assign through this package, so
+none of them can disagree; the rules themselves are contracts'
+`resolveStoredLink`, `spellStoredLink` and `classifyWrittenLink`. Each host
+implements `HolderCatalog` over its own data (the server's prepared snapshot,
+agent-edit's static catalog, the client's document index plus its settlement
+memo). `undefined` from a catalog lookup is "not held": the server records a
+snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
+assignment for a written href or source: classify, then the document
+`documentFor` finds (exact, then unique extension-omitted) spelled with
+`storedHref`, else a minted ahead ref at `aheadAddress`; agent-edit's
+`assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
+`stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
+side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf
+below agent-edit.
+
+## Link occurrences
+
+`walkLinkOccurrences(blocks)` is the one traversal of stored link occurrences:
+document order, table cells row-major, one entry per maximal run of text
+sharing one link mark (marks of a different kind do not split it), one per
+`image` and `figure` (`src` reported as `href`). `parseWithSpans` returns one
+source span per occurrence in that order: the AST position of the link run,
+image or figure, or the enclosing top-level block when the AST cannot place it
+(raw-HTML table anchors, a link wrapping an image), or the whole text when the
+ingress preprocessor rewrote it. A span always encloses its occurrence.
+`spelledLinks(blocks, links)` reports `{ ref, address }` for each ref-bearing
+occurrence, spelled by the given scope; a serialization itself never records
+what it showed. Its Yjs twin, `extractStoredLinks` (`stored-links.ts`), reads
+the live fragment for derive, scope loading
+and the revision digest; a parity row in agent-edit pins both walks to the same
+`(kind, ref, href)` sequence.
 
 ## Image wire format
 
 Image serialization, accepted ingress shapes, placement, and raw-HTML entity
 handling live in [image-wire-format.md](image-wire-format.md). The image
-contract is separate from the generic asset-path translation seam above because
+contract is separate from the link scope above because
 it owns the markdown/MDX spelling and the exact-once HTML decoding boundary.
 
 ## Reserved wire components
@@ -148,7 +231,7 @@ conversion. `rawTextForAst()` slices from `runtime.source`, so fallback text and
 AST positions stay self-consistent even when preprocessors rewrite input.
 MDX ingress asks CommonMark to classify raw-HTML literal ranges, then hides
 their punctuation behind character references before the MDX parse. Valid
-PascalCase components, supported HTML tables, and the hard-break spelling stay
+PascalCase components, images, supported HTML tables, and the hard-break spelling stay
 active markup; syntax-looking text inside other raw HTML stays inert prose.
 Whole-source CommonMark-classified enclosed link/image destinations likewise
 keep their `<` delimiter active when an MDX syntax probe preserves the same
@@ -157,29 +240,53 @@ If MDX cannot consume the resource (for example, a link label containing
 nested link syntax), ingress keeps the delimiter escaped and the result
 deterministic instead of exposing it as a JSX opener.
 
-## Wikilinks
+Both the codec and the enclosed-destination probe use
+`remarkMdxWithHtmlVoidElements` (`mdx/syntax.ts`). Its JSX tag-exit adapter closes
+lowercase HTML void names implicitly, leaving syntax/attributes and other closing
+tags to remark-mdx. It does not rewrite source or positions. Registering stock
+remark-mdx afterward would override these handlers. Ingress escaping still owns
+which tags reach this parser: ordinary prose `<br>` and `<hr>` remain literal;
+`<img>` and the canonical `<br/>` spelling remain active.
 
-`[[target]]` and `[[target|display text]]` are non-GFM inline constructs shared
-by the markdown and MDX presets. Parsing stores only `[[target]]` in the ordinary
-ProseMirror `link` mark; the display text is its text content. Resolution never
-occurs in the codec. Unresolved destinations round-trip unchanged.
+## Hard breaks and emphasis
 
-Display text is literal prose, not nested Markdown. Backslash escapes backslash,
-closing bracket, and pipe inside the label. Destinations also escape both brackets,
-pipes, and backslashes, so destination text such as `Gate|Map.png` becomes
-`[[Gate\|Map.png]]`, not an alias for `Gate`. The shared formatter/decoder owns
-this boundary for editor insertion, Composer, images, and transcript rendering.
-Empty labels and line endings are not recognized; tabs remain literal label text.
-Target outer whitespace is trimmed; label whitespace is preserved. Plain labeled Markdown links such as `[label]([[target]])` normalize
-to the pipe spelling. Rich labels and links with title metadata retain the
-ordinary Markdown resource spelling to avoid losing marks or metadata. Images
-retain `![alt]([[target]])`.
+A hard break between words is `\` and a newline. A break ending a paragraph
+has no Markdown spelling (CommonMark reads a trailing `\` as a backslash), so it
+and every break directly before it escalate to `<br/>`, the way a sized picture escalates to `<img>`.
+`hardBreakCodec` (`markdown/blocks/hard-break.ts`) owns that tag in both
+dialects and is hoisted above the JSX codecs in MDX; inline parsing asks it and
+the image codec in turn, and a lone break wraps back into a paragraph. MDX
+parses one element per `<br/>`, so its `postParse` (`joinBreakLines`) regroups
+the tags on one source line into one paragraph; a paragraph of only breaks
+round-trips.
 
-The shared micromark grammar owns recognition, including MDX ingress protection
-and read-only transcript parsing. `formatWikilink` spells plain labels;
-`wikilinkTarget` extracts a destination-only href, not a complete aliased link.
-App routing interprets scoped URI destinations without changing the label.
+Overlapping bold and italic split into adjacent sibling runs whose delimiters
+would fuse (`****`). `markdown/attention.ts` overrides the stringify handlers:
+along a chain of adjacent bold or italic runs the marker alternates, `_` after
+an odd count (`*a*__b__*c*`), and `peek` reports the same marker. Strike gets
+the edge encoding remark gives `*`, so a strike starting or ending on a space
+or punctuation writes that character, or the letter outside it, as a character
+reference (`Li&#x6E;~~&#x20;Feng~~`). The encoding is
+copied from `mdast-util-to-markdown`'s private `encodeInfo`; recheck it when
+that dependency moves.
 
-Wire recognition does not authorize creating a Context file with that name.
-The app's shared Context entry-name validator owns filename policy separately;
-for example, it permits brackets but currently rejects pipe characters.
+## Links
+
+A link is a standard Markdown link, `[text](destination "title")`, in both
+presets; there is no wikilink syntax. `[[anything]]` is literal text on parse
+and serializes with its openers escaped (`\[\[name]]`), so it reads back as the
+same text. Images are `![alt](src)`; uploaded pictures keep their
+`asset:<id>` identity inside the editor and travel as scope-spelled paths.
+
+The link mark spells its destination so the parser reads it back exactly
+(`markdownLinkDestination`): bare when it can be, else enclosed in `<…>` with
+backslashes and angle brackets escaped. Neither form may span lines, so a line
+ending travels percent-encoded, which the document href resolver
+(`@meridian/contracts` `resolveDocumentHref`) decodes back. The final bytes are
+the Markdown stringifier's: a destination with spaces goes out enclosed
+(`[x](<chapter 1.md>)`). Resolution never occurs in the codec: the scope
+it is handed spells the destination, and a no-ref destination round-trips
+unchanged.
+
+Wire recognition does not authorize creating a Context file at a destination.
+The app's shared Context entry-name validator owns filename policy separately.

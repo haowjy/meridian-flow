@@ -21,7 +21,7 @@ export const threadEventsCommand: CommandSpec = {
     child: {
       type: "string",
       description:
-        "One descendant's activity per frame: status, phase, current tool, target (id, id prefix, or pN)",
+        "One child's activity per frame: status, phase, current tool, target (id, id prefix, or pN)",
     },
     full: { type: "boolean", description: "Do not truncate tool payloads" },
     timeout: { type: "string", description: "Give up after this long (default 15s)" },

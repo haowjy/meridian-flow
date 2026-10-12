@@ -15,14 +15,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import {
+  getChatSubmissionAccountId,
+  isThreadAwaitingCreation,
+  subscribeChatSubmissions,
+} from "@/client/chat-submissions";
 import {
   type InterruptResponseEntry,
   interruptResponseKey,
@@ -41,7 +48,6 @@ import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type {
   EnsureAssistantTurnOptions,
   LiveTurnMeta,
-  PendingStreamStart,
   ThreadStoreActions,
   ThreadStoreState,
   TurnStatusPatch,
@@ -56,8 +62,6 @@ type ThreadStoreSliceState = ThreadStoreState & {
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
   durableBlockCursorByThread: Record<string, string>;
-  handoffPendingThreadIds: Record<string, true>;
-  pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
   /** Monotonic order for the newest-pending error correlation. */
@@ -184,11 +188,13 @@ function createAssistantTurn(
   return {
     id: turnId,
     threadId,
+    position: 0,
     prevTurnId,
     role: "assistant",
     origin: "assistant",
     writeMode: opts?.writeMode ?? null,
     status: "streaming",
+    promptBakeId: null,
     finishReason: null,
     ...baseTurnFields(),
     error: null,
@@ -211,13 +217,11 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
-    markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
-    removeAssistantBlock: state.removeAssistantBlock,
     invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
@@ -225,8 +229,6 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
     applyThreadSnapshot: state.applyThreadSnapshot,
-    markPendingStream: state.markPendingStream,
-    consumePendingStream: state.consumePendingStream,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
     interruptResponseFor: state.interruptResponseFor,
@@ -249,8 +251,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         snapshotNextSeqFloorByThread: {},
         durableBlockCursorByThread: {},
         liveMeta: {},
-        handoffPendingThreadIds: {},
-        pendingStreamByThreadId: {},
         pendingCreation: { threadIds: {} },
         interruptResponses: {},
         interruptResponseCounter: 0,
@@ -275,18 +275,12 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           );
         },
 
-        markHandoffPending(threadId) {
-          set((state) => ({
-            handoffPendingThreadIds: { ...state.handoffPendingThreadIds, [threadId]: true },
-          }));
-        },
-
-        appendUserTurn(threadId, text) {
+        appendUserTurn(threadId, blocks) {
           const { now, turnCounter } = get();
           const { id, next } = nextTurnId(turnCounter);
           const existing = get().turnsByThread[threadId] ?? [];
           const prevTurnId = existing.length > 0 ? existing[existing.length - 1].id : null;
-          const turn = buildOptimisticUserTurn({ id, threadId, text, now, prevTurnId });
+          const turn = buildOptimisticUserTurn({ id, threadId, blocks, now, prevTurnId });
 
           set((state) => {
             const existing = state.turnsByThread[threadId] ?? [];
@@ -436,24 +430,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
         },
 
-        removeAssistantBlock(threadId, blockId) {
-          set((state) => {
-            const turns = state.turnsByThread[threadId];
-            if (!turns) return state;
-            let changed = false;
-            const nextTurns = turns.map((turn) => {
-              if (!turn.blocks.some((block) => block.id === blockId)) return turn;
-              changed = true;
-              return {
-                ...turn,
-                blocks: turn.blocks.filter((block) => block.id !== blockId),
-              };
-            });
-            if (!changed) return state;
-            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
-          });
-        },
-
         invalidateThreadSnapshot(threadId) {
           threadCache.invalidateThreadSnapshot(threadId);
         },
@@ -469,10 +445,14 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (turnIndex < 0) return state;
 
             const definedPatch = definedTurnStatusPatch(patch);
-            threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
             const nextTurns = turns.map((turn, index) =>
               index === turnIndex ? { ...turn, ...definedPatch, status } : turn,
             );
+            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
+            if (turns[turnIndex]?.role === "user" && isOptimisticTurnId(turnId)) {
+              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+            }
+            threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
             if (!isTerminalTurnStatus(status)) {
               return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
             }
@@ -581,30 +561,9 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           const threadId = thread.id;
           const { nextSeq, lifecycle } = options;
           if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
-          const handoffPending = Boolean(get().handoffPendingThreadIds[threadId]);
-          const keepLocalTurns = handoffPending && serverTurns.length === 0;
-
           threadCache.upsertThread(thread, lifecycle);
-          if (!keepLocalTurns) {
-            clearPendingInterruptPatchesForThread(threadId);
-          }
-
+          clearPendingInterruptPatchesForThread(threadId);
           set((state) => {
-            const handoffPendingThreadIds = { ...state.handoffPendingThreadIds };
-            if (!keepLocalTurns) {
-              delete handoffPendingThreadIds[threadId];
-            }
-
-            if (keepLocalTurns) {
-              return {
-                handoffPendingThreadIds,
-                snapshotNextSeqFloorByThread: {
-                  ...state.snapshotNextSeqFloorByThread,
-                  [threadId]: nextSeq,
-                },
-              };
-            }
-
             const localTurns = state.turnsByThread[threadId] ?? [];
             const runningTurnId = lifecycle.runningTurnId;
             const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
@@ -612,7 +571,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             });
 
             const nextState: Partial<ThreadStoreSliceState> = {
-              handoffPendingThreadIds,
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
 
@@ -651,27 +609,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return nextState;
           });
           return true;
-        },
-
-        markPendingStream(threadId, start) {
-          set((state) => ({
-            pendingStreamByThreadId: {
-              ...state.pendingStreamByThreadId,
-              [threadId]: start ?? {},
-            },
-          }));
-        },
-
-        /** One-shot read-and-remove of pending stream metadata. */
-        consumePendingStream(threadId) {
-          const pending = get().pendingStreamByThreadId[threadId];
-          if (!pending) return null;
-          set((state) => {
-            const { [threadId]: _removed, ...pendingStreamByThreadId } =
-              state.pendingStreamByThreadId;
-            return { pendingStreamByThreadId };
-          });
-          return pending;
         },
 
         markPendingCreation({ threadId }) {
@@ -890,5 +827,25 @@ export function useThreadActions(): ThreadStoreActions {
 
 /** True when an optimistic thread create is in flight (pre-server confirmation). */
 export function useIsThreadPendingCreation(threadId: string | null | undefined): boolean {
-  return useThreadStore((s) => (threadId ? Boolean(s.pendingCreation.threadIds[threadId]) : false));
+  const store = useThreadStoreApi();
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const unsubscribeStore = store.subscribe((state, previous) => {
+        if (state.pendingCreation !== previous.pendingCreation) listener();
+      });
+      const unsubscribeJournal = subscribeChatSubmissions(listener);
+      return () => {
+        unsubscribeStore();
+        unsubscribeJournal();
+      };
+    },
+    [store],
+  );
+  const snapshot = () =>
+    isThreadAwaitingCreation(
+      getChatSubmissionAccountId() ?? "",
+      threadId,
+      Boolean(threadId && store.getState().pendingCreation.threadIds[threadId]),
+    );
+  return useSyncExternalStore(subscribe, snapshot, () => false);
 }

@@ -1,4 +1,6 @@
-# Recently opened landing follow-up
+# Context browser FUTURE
+
+## Recently opened landing
 
 Code-local nice-to-haves for `RecentDocumentsLanding.tsx`, the recorder in
 `recent-documents-api.ts`, and the device record those surfaces read. Nothing
@@ -16,10 +18,10 @@ here is a known defect.
   newest opens account-wide may not cover it. Per-project pruning needs the
   project on the recents row, which is only worth doing if the short list shows
   up in use.
-- Scratch and uploads rows would open onto the "Viewing chat resources is not
-  available yet." wall (`ReadableProjectRoute.tsx`). The tab seam produces no
-  such tab, so none is recorded today; omit those schemes from the list if one
-  ever is.
+- Uploads rows would open onto the "Viewing chat resources is not available
+  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). The tab
+  seam produces no such tab, so none is recorded today; omit that scheme from
+  the list if one ever is.
 - Nothing asserts that every scheme in `CONTEXT_URI_SCHEMES` is resolvable by
   `document-address`, which is the one axis where recents' listability and
   context's addressability can genuinely diverge: a listed but unaddressable
@@ -44,3 +46,15 @@ here is a known defect.
   abort/latest-attempt fence. Add a visible unavailable result and the shared
   navigation fence only if the dead click or competing open appears in use;
   preserve the empty-path local-draft route and Back behavior.
+
+# Context tree follow-ups
+
+- `use-create-entry-form.ts` and `ContextTreeRows.tsx`: offer **Open existing**
+  when the tree's New file form hits an existing file, opening that identity
+  rather than making the writer dismiss the form and find it manually. Only
+  `IdentityPlacementField.tsx` currently offers this recovery action. Keep
+  folder conflicts distinct and preserve the editable failed field.
+- `use-rename-entry-form.ts`: surface the server's actionable reason when a
+  rename cannot change type (for example `data.json` to `data.md`), instead of
+  generic retry copy. Verify the message stays on the attempted rename and
+  the existing document remains unchanged.

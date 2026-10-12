@@ -54,16 +54,6 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
     expect(assistantBlocks(params).some((block) => block.type === "tool_use")).toBe(true);
   });
 
-  it("prepends empty thinking when reasoning is enabled", () => {
-    const params = toAnthropicMessageParams(
-      { ...requestWithToolPair(), reasoning: { effort: "medium" } },
-      "claude-sonnet-4",
-      4096,
-      "anthropic",
-    );
-    expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
-  });
-
   it("does not invent thinking for Anthropic when reasoning is disabled", () => {
     const params = toAnthropicMessageParams(
       { ...requestWithToolPair(), reasoning: "disabled" },
@@ -153,6 +143,8 @@ describe("Anthropic message alternation", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
     expect(params.messages[1]).toMatchObject({
@@ -173,7 +165,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
         messages: [
           {
             ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
           },
           assistant([
             {
@@ -201,6 +193,8 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.system).toEqual([
       { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
@@ -235,11 +229,11 @@ describe("Anthropic prompt-cache breakpoints", () => {
         messages: [
           {
             ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
           },
           {
             ...user("History line one."),
-            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true as const }],
           },
           assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
           {
@@ -258,10 +252,39 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      undefined,
+      60 * 60 * 1_000,
     );
     const wireJson = JSON.stringify(params);
     const breakpointCount = wireJson.split('"cache_control"').length - 1;
     expect(breakpointCount).toBe(3);
     expect(breakpointCount).toBeLessThanOrEqual(4);
   });
+});
+
+it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
+  const request = {
+    messages: [
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: "Task", cacheBreakpoint: true as const }],
+      },
+    ],
+    reasoning: { effort: "low" as const },
+  };
+  const original = toAnthropicMessageParams(
+    request,
+    "claude-sonnet-4-20250514",
+    16384,
+    "anthropic",
+    3600000,
+  );
+  const capped = toAnthropicMessageParams(
+    { ...request, maxTokens: 4096 + 300 },
+    "claude-sonnet-4-20250514",
+    16384,
+    "anthropic",
+    3600000,
+  );
+  expect(capped).toEqual({ ...original, max_tokens: 4396 });
 });

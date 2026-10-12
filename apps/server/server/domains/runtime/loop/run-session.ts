@@ -3,44 +3,54 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
-import { createRunStarter } from "./run-starter.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
+import { createLocalTurn } from "./local-turn.js";
+import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import {
   NoPendingWakeError,
   type PreparedLoop,
   type PreparedRun,
+  ReplyRetryUnavailableError,
   type RunLoopInput,
   type RunOutcome,
   type RunTurnInput,
+  RuntimeShuttingDownError,
+  UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 type RunSession = {
   controller: AbortController;
-  assistantTurnId: TurnId | null;
+  currentTurn: CurrentTurn | null;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
 };
 
 export function createRunSessions(deps: {
+  shutdown: { started: boolean };
+  backgroundTasks: DetachedWorkTracker;
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
     threadId: ThreadId;
-    assistantTurnId: TurnId;
+    turnId: TurnId;
     error: unknown;
     signal: AbortSignal;
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "refreshPending">;
+  delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
+  handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const running = new Map<ThreadId, RunSession>();
+  const shutdown = deps.shutdown;
+  const backgroundTasks = deps.backgroundTasks;
   const authority = deps.runClaim;
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
@@ -62,12 +72,13 @@ export function createRunSessions(deps: {
 
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
     const { threadId } = input;
+    if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
     if (running.has(threadId)) throw new TurnStartConflictError(threadId, "already_running");
     const controller = new AbortController();
     let complete!: () => void;
     const session: RunSession = {
       controller,
-      assistantTurnId: null,
+      currentTurn: null,
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -81,57 +92,89 @@ export function createRunSessions(deps: {
     else parentSignal?.addEventListener("abort", abort, { once: true });
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let preparedRun = false;
+    let setupMayWake = false;
     async function cleanup() {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
       // A child invocation bounds its whole subtree; a primary may detach background children.
       abortChildrenOf(threadId, !!input.child);
+      let claimReleased = !lease;
+      let wakeAfterRelease = false;
       try {
-        if (lease) await authority.release(lease);
-        if (lease) await deps.delivery.refreshPending(threadId);
+        if (lease) {
+          await authority.release(lease);
+          claimReleased = true;
+          wakeAfterRelease =
+            preparedRun || setupMayWake || ("replyTurnId" in input && !!input.replyTurnId);
+        }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
       } finally {
         complete();
         try {
-          if (session.assistantTurnId) deps.onRunSettled?.(threadId);
+          if (preparedRun) deps.onRunSettled?.(threadId);
         } catch (error) {
           observe(threadId, "settled.failed", error);
+        }
+        if (claimReleased && wakeAfterRelease) {
+          backgroundTasks.track(
+            session.completion
+              .then(() => deps.wakeIfRunnable(threadId))
+              .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
+            "run cleanup wake",
+          );
         }
       }
     }
     try {
       lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
       heartbeat = setInterval(
         () => {
-          void authority
-            .renew(heldLease)
-            .then((held) => {
-              if (!held) {
-                clearInterval(heartbeat);
-                observe(threadId, "lease.lost", new Error("Run lease lost"));
-                controller.abort();
-              }
-            })
-            .catch((error) => observe(threadId, "lease_renew.failed", error));
+          backgroundTasks.track(
+            authority
+              .renew(heldLease)
+              .then(async (held) => {
+                if (!held) {
+                  clearInterval(heartbeat);
+                  observe(threadId, "lease.lost", new Error("Run lease lost"));
+                  controller.abort();
+                } else {
+                  const state = await authority.read(threadId);
+                  if (state.kind === "awake" && state.cancelRequested) controller.abort();
+                }
+              })
+              .catch((error) => observe(threadId, "lease_renew.failed", error)),
+            "run lease renewal",
+          );
         },
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
+      await deps.delivery.repairOrphanedTurns(lease);
+      if (
+        "expectedLeafTurnId" in input &&
+        input.expectedLeafTurnId &&
+        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
+      )
+        throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
         signal: controller.signal,
         lease,
-        onAssistantTurnChanged(turnId) {
-          session.assistantTurnId = turnId;
-          input.onAssistantTurnChanged?.(turnId);
+        onCurrentTurnChanged(turn) {
+          session.currentTurn = turn;
+          input.onCurrentTurnChanged?.(turn);
         },
       });
-      session.assistantTurnId = loop.assistantTurnId;
+      session.currentTurn = loop.currentTurn;
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
+      preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
         deps.onRunStarted?.(threadId);
@@ -147,9 +190,12 @@ export function createRunSessions(deps: {
             turn = await loop.execute();
           } catch (error) {
             observe(threadId, "execution.failed", error);
+            if (error instanceof UnsettledPlaceholderError) {
+              throw error;
+            }
             turn = await deps.finalizeFailure({
               threadId,
-              assistantTurnId: session.assistantTurnId ?? loop.assistantTurnId,
+              turnId: session.currentTurn?.id ?? loop.currentTurn.id,
               error,
               signal: controller.signal,
               lease: heldLease,
@@ -166,17 +212,18 @@ export function createRunSessions(deps: {
       return {
         runId: lease.runId,
         userTurnId: loop.userTurnId,
-        assistantTurnId: loop.assistantTurnId,
+        executionTurnId: loop.currentTurn.id,
         resumeAfterSeq,
         snapshotFloorNextSeq,
         execute: () => (execution ??= execute()),
       };
     } catch (error) {
-      if (lease && session.assistantTurnId) {
+      setupMayWake = error instanceof NoPendingWakeError || isAbortError(error);
+      if (lease && session.currentTurn) {
         try {
           await deps.finalizeFailure({
             threadId,
-            assistantTurnId: session.assistantTurnId,
+            turnId: session.currentTurn.id,
             error,
             signal: controller.signal,
             lease,
@@ -193,42 +240,112 @@ export function createRunSessions(deps: {
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
-      void run.execute();
+      backgroundTasks.track(run.execute(), "detached run execution");
     } catch (error) {
-      if (!(error instanceof NoPendingWakeError)) throw error;
+      if (!(error instanceof NoPendingWakeError) && !(error instanceof RuntimeShuttingDownError))
+        throw error;
     }
   }
   return {
     prepare,
+    async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
+      const existing = await deps.repos.turns.findById(input.replyTurnId);
+      if (existing) {
+        if (existing.threadId !== input.threadId || existing.role !== "assistant")
+          throw new ReplyRetryUnavailableError(input.threadId);
+        return { created: false as const, turn: existing };
+      }
+
+      const [failedTurn, latestTurn, runState] = await Promise.all([
+        deps.repos.turns.findById(input.failedTurnId),
+        deps.repos.turns.getLatestByThread(input.threadId),
+        authority.read(input.threadId),
+      ]);
+      if (shutdown.started) throw new RuntimeShuttingDownError(input.threadId);
+      if (
+        running.has(input.threadId) ||
+        runState.kind === "awake" ||
+        !failedTurn ||
+        failedTurn.threadId !== input.threadId ||
+        failedTurn.role !== "assistant" ||
+        failedTurn.status !== "error" ||
+        latestTurn?.id !== failedTurn.id
+      )
+        throw new ReplyRetryUnavailableError(input.threadId);
+
+      try {
+        const run = await prepare({
+          threadId: input.threadId,
+          drain: true,
+          replyTurnId: input.replyTurnId,
+          expectedLeafTurnId: input.failedTurnId,
+        });
+        const persisted = await deps.repos.turns.findById(input.replyTurnId);
+        const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
+        const turn =
+          persisted ??
+          createLocalTurn({
+            id: input.replyTurnId,
+            threadId: input.threadId,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : failedTurn.id,
+            position:
+              (firstTurn?.role === "compaction" ? firstTurn.position : failedTurn.position) + 1,
+            role: "assistant",
+            origin: "assistant",
+            status: "pending",
+            writeMode: failedTurn.writeMode ?? undefined,
+          });
+        backgroundTasks.track(run.execute(), "detached reply retry");
+        return { created: true as const, turn };
+      } catch (error) {
+        const raced = await deps.repos.turns.findById(input.replyTurnId);
+        if (raced?.threadId === input.threadId && raced.role === "assistant") {
+          return { created: false as const, turn: raced };
+        }
+        if (error instanceof TurnStartConflictError || error instanceof NoPendingWakeError) {
+          throw new ReplyRetryUnavailableError(input.threadId);
+        }
+        throw error;
+      }
+    },
     startDrain,
     getRunningTurn(threadId: ThreadId) {
       const session = running.get(threadId);
       return session
-        ? { assistantTurnId: session.assistantTurnId, startedAt: session.startedAt }
+        ? {
+            turnId: session.currentTurn?.id ?? null,
+            kind: session.currentTurn?.kind ?? null,
+            startedAt: session.startedAt,
+          }
         : null;
     },
-    getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.assistantTurnId ?? null,
+    getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.currentTurn?.id ?? null,
     isThreadRunning: (threadId: ThreadId) => running.has(threadId),
+    beginShutdown() {
+      shutdown.started = true;
+      for (const session of running.values()) session.controller.abort("shutdown");
+    },
     async cancel(
       threadId: ThreadId,
       turnId: TurnId,
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
-      if (active?.assistantTurnId === turnId) {
-        if (!(await authority.cancelExecution(threadId, turnId))) return "already_finished";
-        abortChildrenOf(threadId, true);
-        active.controller.abort();
-        void active.completion
-          .then(() => createRunStarter({ startDrain }, deps.eventSink).start(threadId))
-          .catch((error) => observe(threadId, "cancel_wake.failed", error));
-        return "cancelled";
-      }
       const turn = await deps.repos.turns.findById(turnId);
       if (!turn || turn.threadId !== threadId) return "not_found";
-      if (isTerminalTurnStatus(turn.status) || active) return "already_finished";
-      return (await authority.cancelExecution(threadId, turnId)) ? "cancelled" : "not_found";
+      if (await deps.handoffBriefs.stop(threadId, turnId)) return "cancelled";
+      if (!(await authority.cancelExecution(threadId, turnId)))
+        return isTerminalTurnStatus(turn.status) || active ? "already_finished" : "not_found";
+      if (active) {
+        abortChildrenOf(threadId, true);
+        active.controller.abort();
+      }
+      return "cancelled";
     },
   };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 export type TurnRunner = ReturnType<typeof createRunSessions>;

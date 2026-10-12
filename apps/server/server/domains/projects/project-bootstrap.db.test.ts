@@ -1,7 +1,10 @@
 /** PostgreSQL contract for project bootstrap with locked No Work. */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { writeMarkdown } from "../collab/test-support/bound-writes.js";
+import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -16,19 +19,16 @@ else
     );
     const { eq } = await import("drizzle-orm");
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
     );
     const { runInDrizzleTransaction } = await import("../../shared/drizzle-transaction.js");
     const USER_ID = "00000000-0000-4000-8000-000000000751";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     beforeEach(async () => {
@@ -37,10 +37,10 @@ else
     });
     function collab() {
       const domain = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -53,10 +53,10 @@ else
     }
     function boundCollab() {
       const domain = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -66,7 +66,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, manuscript, locked No Work, and work-scoped scratch/uploads without a thread", async () => {
+    it("converges project, manuscript, locked No Work, and No Work uploads without a thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
@@ -117,13 +117,14 @@ else
       expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
       expect(workSources).toEqual(
         expect.arrayContaining([
-          { slug: "scratch", workId: noWorkId, scope: "work", projectId: null },
           { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
         ]),
       );
-      expect(workSources).toHaveLength(2);
+      expect(workSources).toHaveLength(1);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
+      expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });
+      expect(first.uri).toBe("manuscript://Chapter 1");
     });
 
     it("rolls project source provisioning back with its ambient transaction", async () => {
@@ -150,33 +151,6 @@ else
           .where(eq(schema.contextSources.projectId, projectId)),
       ).resolves.toEqual([]);
       await expect(store.createFolder(null, "retry")).resolves.toBeDefined();
-    });
-
-    it("preserves writer content across repeated initialize-only bootstrap", async () => {
-      const documents = collab();
-      const repository = createDrizzleProjectBootstrapRepository({ db, documents });
-      const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await documents.writeDocument({
-        documentId: first.documentId,
-        markdown: "Writer content\n",
-        origin: { type: "user", actorUserId: USER_ID as never },
-      });
-      const checkpointsBefore = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, first.documentId));
-
-      await expect(repository.ensureDefaultBootstrap(USER_ID as never)).resolves.toEqual(first);
-      await expect(documents.readAsMarkdown(first.documentId)).resolves.toEqual({
-        ok: true,
-        value: "Writer content\n",
-      });
-      await expect(
-        db
-          .select({ id: schema.documentYjsCheckpoints.id })
-          .from(schema.documentYjsCheckpoints)
-          .where(eq(schema.documentYjsCheckpoints.documentId, first.documentId)),
-      ).resolves.toHaveLength(checkpointsBefore.length);
     });
 
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {
@@ -224,7 +198,7 @@ else
       const documents = collab();
       const repository = createDrizzleProjectBootstrapRepository({ db, documents });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await documents.writeDocument({
+      await writeMarkdown(documents, {
         documentId: first.documentId,
         markdown: "Durable writer draft\n",
         origin: { type: "user", actorUserId: USER_ID as never },

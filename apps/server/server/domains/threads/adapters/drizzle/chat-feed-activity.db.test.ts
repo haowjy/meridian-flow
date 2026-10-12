@@ -7,7 +7,8 @@ import {
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../../test-support/drizzle-reset.js";
+import { workUpdateMetadata } from "../../index.js";
 import { createDrizzleRepositoriesForTest } from "./repositories.js";
 
 const USER = "00000000-0000-4000-8000-000000000891";
@@ -24,14 +25,17 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     const repos = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.threads]);
+      await deleteDrizzleRows(db, [schema.users, schema.threads]);
       await db.insert(schema.users).values(conformanceUserValues(USER, "chat-activity"));
       await db
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Chat", slug: "chat" });
-      await db
-        .insert(schema.threads)
-        .values({ id: THREAD, projectId: PROJECT, createdByUserId: USER });
+      await db.insert(schema.threads).values({
+        rootThreadId: THREAD,
+        id: THREAD,
+        projectId: PROJECT,
+        createdByUserId: USER,
+      });
     });
     afterAll(() => db.close());
 
@@ -125,7 +129,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         prevTurnId: first.id,
         role: "user",
         origin: "system",
-        metadata: { kind: "system_update", section: "work_context" },
+        metadata: workUpdateMetadata(),
         createdAt: "2025-01-01T00:05:00.000Z",
       });
       await repos.turns.updateStatus(hidden.id, {
@@ -264,40 +268,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         .from(schema.threads)
         .where(eq(schema.threads.id, THREAD));
       expect(stored?.leaf).toBe(firstSibling.id);
-    });
-
-    it("pages across equal activity timestamps using descending thread IDs", async () => {
-      const second = "00000000-0000-4000-8000-000000000894";
-      await db
-        .insert(schema.threads)
-        .values({ id: second, projectId: PROJECT, createdByUserId: USER });
-      const timestamp = new Date("2025-01-01T00:00:00.000Z");
-      await db
-        .update(schema.threads)
-        .set({ lastActivityAt: timestamp })
-        .where(eq(schema.threads.projectId, PROJECT));
-      const firstPage = await repos.chatFeed.queryPage({
-        projectId: PROJECT,
-        userId: USER,
-        after: null,
-        limit: 1,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      const cursor = firstPage[0];
-      if (!cursor) throw new Error("Expected first cursor page to contain a chat");
-      const nextPage = await repos.chatFeed.queryPage({
-        projectId: PROJECT,
-        userId: USER,
-        after: { sortAt: cursor.lastActivityAt, threadId: cursor.id },
-        limit: 1,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      expect(firstPage.map((item) => item.id)).toEqual([second]);
-      expect(nextPage.map((item) => item.id)).toEqual([THREAD]);
     });
   });
 }

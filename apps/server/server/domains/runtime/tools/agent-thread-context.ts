@@ -7,29 +7,36 @@ import {
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
+import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
-import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
+import { bindingNamesSkills } from "../loop/available-skills.js";
+import { readChainPermission } from "../loop/permissions/agent-chain.js";
 import {
-  type EffectiveToolPolicy,
+  advertiseTools,
   projectToolPolicy,
-} from "../loop/permissions/project-tool-policy.js";
+  type ToolPolicy,
+} from "../loop/permissions/tool-policy.js";
 import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
   agentSlug: string;
+  compaction: { autocompact?: number; autocompact_pct?: number };
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   tools: Tool[];
   agentBody: string;
   appendPrompt: string | undefined;
   subagentGuidance: string | undefined;
-  policy: EffectiveToolPolicy;
+  permissionGuidance: string | undefined;
+  policy: ToolPolicy;
 }
 
 export interface ResolveAgentThreadTurnContextInput {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  /** Walks the spawn lineage for the chain's permission. */
+  threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   toolRegistry: ToolRegistry;
   baseTools: Tool[] | undefined;
 }
@@ -37,6 +44,10 @@ export interface ResolveAgentThreadTurnContextInput {
 /** Mandatory closing instruction for subagent threads; owns the prompt's last layer. */
 export const SUBAGENT_GUIDANCE =
   "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
+
+/** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
+const READ_PERMISSION_GUIDANCE =
+  "Your permission is read: you can read every file, and edit only scratch://.";
 
 /**
  * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
@@ -79,8 +90,16 @@ export async function resolveAgentThreadTurnContext(
     if (reasons.length) throw new Error(reasons.join(" "));
   }
 
-  const policy = projectToolPolicy(binding.configuration);
-  let tools = advertiseTools(input.baseTools, policy).map((tool) =>
+  const policy = withoutSkillToolWhenNoSkills(
+    projectToolPolicy(binding.configuration, input.thread.kind),
+    binding,
+  );
+  // return_result is unadvertised in the registry; the policy adds it for subagents.
+  const report = input.toolRegistry.getRegistration("return_result")?.definition;
+  const tools = advertiseTools(
+    [...(input.baseTools ?? []), ...(report ? [report] : [])],
+    policy,
+  ).map((tool) =>
     tool.type === "function" && tool.name === "spawn"
       ? {
           ...tool,
@@ -88,13 +107,12 @@ export async function resolveAgentThreadTurnContext(
         }
       : tool,
   );
-  const report =
-    input.thread.kind === "subagent"
-      ? input.toolRegistry.getRegistration("return_result")?.definition
-      : undefined;
-  if (report && !tools.some((tool) => toolName(tool) === report.name)) tools = [...tools, report];
   const agentBody = binding.revision?.definition.systemPrompt ?? GENERIC_AGENT_BODY;
   return {
+    compaction: {
+      autocompact: binding.revision?.definition.metadata.autocompact,
+      autocompact_pct: binding.revision?.definition.metadata.autocompact_pct,
+    },
     agentSlug: binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
     gatewayParams: agentGatewayMetaToGenerateParams({
       model: binding.configuration.model,
@@ -105,9 +123,31 @@ export async function resolveAgentThreadTurnContext(
     agentBody,
     appendPrompt: binding.invocationOverlay?.appendSystemPrompt,
     subagentGuidance: input.thread.kind === "subagent" ? SUBAGENT_GUIDANCE : undefined,
+    permissionGuidance: (await chainIsReadOnly(input, binding.configuration.permission))
+      ? READ_PERMISSION_GUIDANCE
+      : undefined,
   };
 }
 
-function toolName(tool: Tool): string {
-  return tool.type === "function" ? tool.name : tool.kind;
+/**
+ * A thread that can see no skill isn't offered `skill` (D64). It reads only
+ * the binding already in hand, so an agent whose listed skills are all hidden
+ * from the model keeps the tool and gets a refusal instead.
+ */
+function withoutSkillToolWhenNoSkills(
+  policy: ToolPolicy,
+  binding: Parameters<typeof bindingNamesSkills>[0],
+): ToolPolicy {
+  if (!policy.has("skill") || bindingNamesSkills(binding)) return policy;
+  return new Set([...policy].filter((tool) => tool !== "skill"));
+}
+
+/** A root thread needs no lineage walk; a child is `read` when any spawner is. */
+async function chainIsReadOnly(
+  input: ResolveAgentThreadTurnContextInput,
+  own: ResolvedAgentConfiguration["permission"],
+): Promise<boolean> {
+  if (own === "read") return true;
+  const parentId = input.thread.parentThreadId;
+  return parentId != null && (await readChainPermission(input, parentId)) === "read";
 }

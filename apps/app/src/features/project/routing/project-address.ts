@@ -30,15 +30,22 @@ export type ProjectAddress = {
   destination: ProjectDestination;
   /**
    * The Editor's Work. For Scratch and Uploads it is the resource's identity:
-   * `none` is No Work and `absent` is not an address.
+   * `none` is No Work (Uploads only) and `absent` is not an address.
    */
   work: AddressSelection;
+  /**
+   * A No Work chat's Scratch note or folder names its owner here: the lineage,
+   * by the first chat's id. Exactly one of `work` and `lineage` names a
+   * Scratch resource's owner.
+   */
+  lineage?: ParsedRequestId;
   /** Work detail's chats view is the default and is omitted from the address. */
   workView?: "files";
   /** The Work list's Active tab is the default and is omitted from the address. */
   worksView?: "archived" | "deleted";
+  /** Pending draft projected by the current manuscript Editor address. */
+  draftId?: string;
   settings?: SettingsSection;
-  results: boolean;
 };
 export type WorkView = "chats" | "files";
 export type WorksView = "active" | "archived" | "deleted";
@@ -46,7 +53,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "settings", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -55,7 +62,9 @@ function uuid(value: string | undefined): string | null {
 }
 
 /** A nullable Work id as a selection: no id selects no Work. */
-export function workIdSelection(workId: string | null): AddressSelection {
+export function workIdSelection(
+  workId: string | null,
+): Exclude<AddressSelection, { kind: "absent" }> {
   if (workId === null) return { kind: "none" };
   const id = parseRequestId(workId);
   return id ? { kind: "id", id } : { kind: "malformed", value: workId };
@@ -78,6 +87,14 @@ export function workIsIdentity(destination: ProjectDestination): boolean {
   return (
     (destination.kind === "document" || destination.kind === "browse") &&
     isWorkScopedScheme(destination.scheme)
+  );
+}
+
+/** Whether `?chat=` can name the resource's owner: only Scratch has a lineage. */
+export function lineageIsIdentity(destination: ProjectDestination): boolean {
+  return (
+    (destination.kind === "document" || destination.kind === "browse") &&
+    destination.scheme === "scratch"
   );
 }
 
@@ -150,22 +167,36 @@ export function parseProjectAddress(
     destination.kind === "browse" ||
     destination.kind === "editor";
   const work = editor ? selection(query.get("work")) : ABSENT;
-  if (workIsIdentity(destination) && work.kind !== "id" && work.kind !== "none")
-    return { kind: "invalid", reason: "work" };
+  const chatParam = query.get("chat");
+  const lineage = lineageIsIdentity(destination)
+    ? (parseRequestId(chatParam) ?? undefined)
+    : undefined;
+  // A Scratch resource has exactly one owner; a chat's Scratch has no No Work spelling.
+  if (workIsIdentity(destination)) {
+    const scratch = lineageIsIdentity(destination);
+    const owned = lineage
+      ? work.kind === "absent"
+      : scratch
+        ? work.kind === "id"
+        : work.kind === "id" || work.kind === "none";
+    if (!owned || (chatParam !== null && !lineage)) return { kind: "invalid", reason: "work" };
+  }
   const settings = query.get("settings");
   const workView =
     destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
   const view = query.get("view");
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
+  const draftId = destination.kind === "document" ? query.get("draft") || undefined : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
+    ...(lineage ? { lineage } : {}),
     ...(workView ? { workView } : {}),
     ...(worksView ? { worksView } : {}),
+    ...(draftId ? { draftId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
-    results: (editor || destination.kind === "chat") && query.has("results"),
   };
   const href = projectAddressHref(address);
   const empty =
@@ -176,19 +207,37 @@ export function parseProjectAddress(
     empty &&
     typeof empty === "object" &&
     "href" in empty &&
-    empty.href === projectAddressHref({ ...address, settings: undefined, results: false })
+    empty.href === projectAddressHref({ ...address, settings: undefined })
   ) {
     if (editor && address.work.kind === "absent") address.work = { kind: "none" };
   }
   return { kind: "valid", address, href };
 }
 
+/**
+ * Whether the address itself says "No Work" (`?work=`) rather than leaving it to history state.
+ * A resource's Work is its identity. A review address is shared and reloaded outside its history
+ * entry, and its draft belongs to exactly one Work, so it states No Work instead of borrowing
+ * whichever Work is selected.
+ */
+function queryStatesNoWork(address: ProjectAddress): boolean {
+  return (
+    address.work.kind === "none" &&
+    (workIsIdentity(address.destination) ||
+      (address.destination.kind === "document" && address.draftId !== undefined))
+  );
+}
+
 function writeWork(query: URLSearchParams, address: ProjectAddress): void {
+  if (address.lineage && lineageIsIdentity(address.destination)) {
+    query.set("chat", address.lineage);
+    return;
+  }
   const work = address.work;
   if (work.kind === "id") query.set("work", work.id);
   else if (work.kind === "malformed") query.set("work", work.value);
   // An Editor context of no Work is pinned by history state; a resource of No Work is `?work=`.
-  else if (work.kind === "none" && workIsIdentity(address.destination)) query.set("work", "");
+  else if (work.kind === "none" && queryStatesNoWork(address)) query.set("work", "");
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
@@ -223,7 +272,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
-  if ((context || d.kind === "chat") && address.results) query.set("results", "");
+  if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);
@@ -241,11 +290,12 @@ export function projectAddressState(
   // Non-Editor destinations do not read an Editor Work selection back from history.
   const noWork =
     (destination === "editor" || destination === "document" || destination === "browse") &&
-    address.work.kind === "none";
+    address.work.kind === "none" &&
+    !queryStatesNoWork(address);
   return {
     ...state,
     meridianProjectEmptySelection: noWork
-      ? { href: projectAddressHref({ ...address, settings: undefined, results: false }) }
+      ? { href: projectAddressHref({ ...address, settings: undefined }) }
       : undefined,
   };
 }

@@ -28,6 +28,7 @@ export default defineEventHandler(async (event) => {
   const response = await writeThreadContextDocument(
     {
       contextPorts: app.contextPorts,
+      fileAccess: app.fileAccess,
       threads: app.threadRepos.threads,
       threadWorks: app.threadRepos.threadWorks,
       works: app.workRepo,

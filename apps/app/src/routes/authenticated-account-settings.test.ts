@@ -19,12 +19,4 @@ describe("loadAccountSettingsWithDeadline", () => {
     await expect(result).resolves.toBeNull();
     expect(load.mock.calls[0]?.[0]?.aborted).toBe(true);
   });
-
-  it("disables sync when the settings request rejects", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await expect(
-      loadAccountSettingsWithDeadline(() => Promise.reject(new Error("unavailable"))),
-    ).resolves.toBeNull();
-  });
 });

@@ -1,12 +1,13 @@
 /** Regression coverage for branch-push behavior preserved by the candidate pipeline. */
 
 import {
+  createAgentEditCodecFactory,
   type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -15,12 +16,17 @@ import {
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
 import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import {
+  type BranchCriticalSections,
+  createBranchCriticalSections,
+} from "./branch-critical-sections.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
   BranchJournalReadStore,
@@ -32,6 +38,7 @@ import type {
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
+import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const MANIFEST_ID = "00000000-0000-4000-8000-000000000102" as DocumentId;
@@ -40,7 +47,7 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000104" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000105" as TurnId;
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 function docFromMarkdown(markdown: string): Y.Doc {
@@ -63,7 +70,6 @@ function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): Br
     upstreamBranchId: null,
     workId: WORK_ID,
     threadId: null,
-    pushPolicy: "manual",
     status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),
@@ -200,6 +206,10 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     throw new Error("review regression store does not support discard");
   }
 
+  async lockDraftWorks(): Promise<ReadonlySet<string>> {
+    return new Set();
+  }
+
   async commitTurnRedo(_input: PreparedDiscardCommit): Promise<void> {
     throw new Error("review regression store does not support redo");
   }
@@ -234,13 +244,15 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 
 function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
   return {
-    async updateWorkDraftPushPolicy() {
+    async setWorkWriteMode() {
       throw new Error("review regression store does not support work policy writes");
     },
   };
 }
 
 function serviceFixture(input: {
+  links?: DocumentLinkScopes;
+  criticalSections?: BranchCriticalSections;
   branches: readonly BranchSnapshot[];
   rows: BranchJournalRow[];
   pushes?: readonly PushLineageRow[];
@@ -279,6 +291,8 @@ function serviceFixture(input: {
   return {
     stores,
     service: createBranchPushService({
+      links: input.links ?? createStaticDocumentLinkScopes(),
+      criticalSections: input.criticalSections,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore: stores,
@@ -296,12 +310,14 @@ function serviceFixture(input: {
       journal: input.journal,
       liveCoordinator,
       model,
-      codec,
+      codec: createAgentEditCodecFactory(codec),
     }),
   };
 }
 
-async function blindConflictFixture() {
+async function blindConflictFixture(
+  options: { links?: DocumentLinkScopes; criticalSections?: BranchCriticalSections } = {},
+) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentBranchDoc = cloneDoc(contentLive);
   const doomed = model.getBlocks(toDocHandle(contentBranchDoc))[0];
@@ -339,6 +355,7 @@ async function blindConflictFixture() {
     seq: 0,
   });
   const fixture = serviceFixture({
+    ...options,
     branches: [contentBranch, manifestBranch],
     rows: [row],
     journal,
@@ -405,6 +422,38 @@ describe("branch push review regressions", () => {
       journalIds: [2],
       message: "manifest_membership_push left pending Yjs dependencies for journal rows 2",
     });
+  });
+
+  it.each([
+    false,
+    true,
+  ])("opens the link scope before branch locks (companion: %s)", async (companion) => {
+    const criticalSections = createBranchCriticalSections();
+    let loaded = false;
+    const fixture = await blindConflictFixture({
+      criticalSections,
+      links: {
+        ...createStaticDocumentLinkScopes(),
+        async within<T>(_key: LinkScopeKey, operation: () => Promise<T>) {
+          // Nested settlement reuses the operation's snapshot, just as the adapter does.
+          if (!loaded) {
+            await criticalSections.withBranches(["branch_content", "branch_manifest"], async () => {
+              loaded = true;
+            });
+          }
+          return operation();
+        },
+      },
+    });
+    const result = companion
+      ? await fixture.service.pushToLiveWithManifestEntry({
+          branchId: fixture.contentBranch.branchId,
+          manifestBranchId: fixture.manifestBranch.branchId,
+          manifestEntryDocumentId: CONTENT_ID,
+        })
+      : await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
+    expect(result.status).toBe("pushed");
+    expect(loaded).toBe(true);
   });
 
   it("always applies writer-overlapping whole and companion pushes", async () => {

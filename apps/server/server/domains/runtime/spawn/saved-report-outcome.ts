@@ -9,15 +9,15 @@ export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnRes
   const content: AgentReport = {
     handle: report.handle,
     threadId: report.childThreadId,
+    source: report.source,
     summary: report.summary,
     ...(report.payload !== undefined ? { payload: report.payload } : {}),
     ...(report.artifacts !== null ? { artifacts: report.artifacts } : {}),
-    costMillicredits: report.costMillicredits ?? 0,
   };
   if (report.outcome === "succeeded") {
     return {
       status: "completed",
-      execution: report.assistantTurnId,
+      execution: report.executionTurnId,
       outcome: "succeeded",
       report: content,
     };
@@ -28,7 +28,7 @@ export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnRes
       report.outcome === "cancelled" ? "spawn_cancelled" : "spawn_failed",
       report.outcome === "cancelled" ? "Child run was cancelled" : "Child run failed",
     ),
-    execution: report.assistantTurnId,
+    execution: report.executionTurnId,
     outcome: report.outcome,
     report: content,
     partial: true,

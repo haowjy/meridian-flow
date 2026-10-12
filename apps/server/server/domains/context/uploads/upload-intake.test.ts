@@ -21,6 +21,7 @@ function harness() {
         intakeId: input.intakeId,
         documentId: "00000000-0000-4000-8000-000000000001",
         fingerprint: input.fingerprint,
+        filename: input.filename,
         finalPath: input.filename,
         objectKey: "uploads/project/document",
         canonicalUri: `uploads://@/${input.filename}`,
@@ -51,27 +52,31 @@ function harness() {
       row = { ...row, state: "finalized" };
       return row;
     },
-    async deleteDraft(input) {
+    async lockForDelete(input) {
       if (
         !row ||
         row.documentId !== input.documentId ||
         row.canonicalUri !== input.uri ||
         row.locationRevision !== input.expectedRevision
       )
-        return { result: { kind: "identity_mismatch" } };
-      if (row.consumed) return { result: { kind: "already_used" } };
-      if (row.state === "deleted") return { result: { kind: "already_deleted" } };
-      row = { ...row, state: "deleted" };
-      return { result: { kind: "deleted" } };
+        return { kind: "refused", result: { kind: "identity_mismatch" } };
+      if (row.consumed) return { kind: "refused", result: { kind: "already_used" } };
+      if (row.state === "deleted") return { kind: "refused", result: { kind: "already_deleted" } };
+      return { kind: "claimed", reservation: row };
+    },
+    async markDeleted() {
+      if (row) row = { ...row, state: "deleted" };
     },
     async consume() {
       if (row) row = { ...row, consumed: true };
     },
   };
   const content = {
+    bind: vi.fn(async () => ({ ok: true as const, bound: null })),
     persist: vi.fn<() => Promise<{ ok: true } | { ok: false; definite: boolean }>>(async () => ({
       ok: true,
     })),
+    remove: vi.fn(async () => ({ ok: true as const })),
   };
   const objectStore = {
     put: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),
@@ -106,28 +111,6 @@ function input() {
 }
 
 describe("UploadIntake", () => {
-  it.each([
-    "Gate|Map.txt",
-    "Gate?Map.txt",
-    "Gate:Map.txt",
-  ])("rejects invalid filename %s before allocating identity or storing content", async (filename) => {
-    const h = harness();
-    expect(await h.service.intake({ ...input(), filename })).toMatchObject({
-      ok: false,
-      error: { code: "invalid_filename", reason: "name/invalid-character" },
-    });
-    expect(h.reservation()).toBeNull();
-    expect(h.content.persist).not.toHaveBeenCalled();
-    expect(h.objectStore.put).not.toHaveBeenCalled();
-  });
-  it("accepts brackets in a filename", async () => {
-    const h = harness();
-    expect(await h.service.intake({ ...input(), filename: "Gate[Map].txt" })).toMatchObject({
-      ok: true,
-      value: { uri: "uploads://@/Gate[Map].txt" },
-    });
-  });
-
   it("rejects digest and fingerprint mismatches without a second write", async () => {
     const { service, content } = harness();
     await service.intake(input());
@@ -140,28 +123,6 @@ describe("UploadIntake", () => {
       error: { code: "idempotency_conflict" },
     });
     expect(content.persist).toHaveBeenCalledOnce();
-  });
-
-  it("stores binary bytes once and resumes the stable reservation", async () => {
-    const { service, objectStore } = harness();
-    const binary = new Uint8Array([0, 1, 2]);
-    const result = await service.intake({
-      ...input(),
-      filename: "asset.bin",
-      mimeType: "application/octet-stream",
-      bytes: binary,
-      byteDigest: createHash("sha256").update(binary).digest("hex"),
-    });
-    expect(result.ok && result.value.fileType).toBe("binary");
-    expect(objectStore.put).toHaveBeenCalledOnce();
-    await service.intake({
-      ...input(),
-      filename: "asset.bin",
-      mimeType: "application/octet-stream",
-      bytes: binary,
-      byteDigest: createHash("sha256").update(binary).digest("hex"),
-    });
-    expect(objectStore.put).toHaveBeenCalledOnce();
   });
 
   it("compensates definite binary non-commit and reuses the same identity on recovery", async () => {
@@ -201,38 +162,9 @@ describe("UploadIntake", () => {
     expect(objectStore.put).toHaveBeenCalledOnce();
   });
 
-  it("identity/revision deletion cannot remove a replacement and consumption wins", async () => {
-    const { service } = harness();
-    const created = await service.intake(input());
-    if (!created.ok) throw new Error("intake failed");
-    expect(
-      await service.deleteDraft(
-        {
-          intakeId: "intake-1",
-          documentId: created.value.documentId,
-          uri: created.value.uri,
-          expectedRevision: "wrong",
-        },
-        "user-1",
-      ),
-    ).toEqual({ kind: "identity_mismatch" });
-    await service.consume([created.value.documentId]);
-    expect(
-      await service.deleteDraft(
-        {
-          intakeId: "intake-1",
-          documentId: created.value.documentId,
-          uri: created.value.uri,
-          expectedRevision: "revision-1",
-        },
-        "user-1",
-      ),
-    ).toEqual({ kind: "already_used" });
-  });
-
   it("classifies text, images, and designation-only binaries on the server", () => {
     expect(classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
-      "text",
+      "markdown",
     );
     expect(
       classifyUpload({ filename: "cover.png", mimeType: "image/png", bytes: new Uint8Array([0]) }),

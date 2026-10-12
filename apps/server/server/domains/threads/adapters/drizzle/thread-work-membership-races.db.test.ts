@@ -4,6 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
+import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -48,7 +50,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const threads = createDrizzleRepositoriesForTest(db);
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const branches = createDrizzleBranchStore(db, undefined);
@@ -249,6 +253,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source: "agent",
         });
         if (!draft) throw new Error("Branch journal append is unavailable");
+        // The append can reject while `deletion` is still being awaited, before
+        // the assertion below attaches; mark it handled so load can't surface it
+        // as an unhandled rejection.
+        draft.catch(() => {});
         await waitForLock("transactionid");
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;

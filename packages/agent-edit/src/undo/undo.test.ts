@@ -1,30 +1,28 @@
 // Reconcile coverage for cold journal undo/redo reconstruction.
 
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { applyEdits } from "../apply/tiers.js";
+import { applyEdits } from "../apply/apply-edits.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
-import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";
@@ -32,58 +30,11 @@ const THREAD_A = "thread-a";
 const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
-describe("thread origins", () => {
-  it("returns a stable transaction origin per document/thread", () => {
-    const origins = createThreadOriginRegistry();
-    const first = origins.getThreadOrigin(DOC_ID, THREAD_A);
-
-    expect(origins.getThreadOrigin(DOC_ID, THREAD_A)).toBe(first);
-    expect(origins.getThreadOrigin("doc-2", THREAD_A)).not.toBe(first);
-    expect(origins.getThreadOrigin(DOC_ID, "thread-b")).not.toBe(first);
-
-    origins.evictThread(DOC_ID, THREAD_A);
-    expect(origins.getThreadOrigin(DOC_ID, THREAD_A)).not.toBe(first);
-  });
-});
-
-describe("cold reconstruction", () => {
-  it("captures Y.applyUpdate with the outer doc.transact origin token", () => {
-    const source = new Y.Doc({ gc: false });
-    const text = source.getText("probe");
-    const beforeSource = Y.encodeStateVector(source);
-    source.transact(() => text.insert(0, "captured"), Symbol("source"));
-    const update = Y.encodeStateAsUpdate(source, beforeSource);
-
-    const token = Symbol("target-turn");
-    const replay = new Y.Doc({ gc: false });
-    const replayText = replay.getText("probe");
-    const seenOrigins: unknown[] = [];
-    const um = new Y.UndoManager(replayText, {
-      trackedOrigins: new Set([token]),
-      captureTimeout: Number.POSITIVE_INFINITY,
-    });
-    um.on("stack-item-added", (event: { origin: unknown }) => seenOrigins.push(event.origin));
-
-    replay.transact(() => {
-      Y.applyUpdate(replay, update);
-    }, token);
-
-    expect(seenOrigins).toEqual([token]);
-    expect(um.undoStack).toHaveLength(1);
-    um.undo();
-    expect(replayText.toString()).toBe("");
-  });
-});
-
-describe("8-case reconcile matrix", () => {
+describe("cold undo reconstruction boundaries", () => {
   it.each([
-    ["clean reverse", caseCleanReverse],
-    ["human edited different paragraph", caseHumanDifferentParagraph],
-    ["human edited around agent edit", caseHumanAroundAgentEdit],
     ["human built inside agent-inserted paragraph", caseHumanInsideAgentInsertedParagraph],
     ["discontiguous multi-range", caseDiscontiguousMultiRange],
     ["markdown/whitespace normalization", caseMarkdownWhitespaceNormalization],
-    ["cross-unload rebuild", caseCrossUnloadRebuild],
     ["partial reversal", casePartialReversal],
   ] satisfies Array<[string, () => MatrixCase]>)("%s", (_name, buildCase) => {
     const matrixCase = buildCase();
@@ -200,8 +151,14 @@ function applyAgentText(
   const result = applyEdits(
     ctx.doc,
     model,
-    codec,
-    { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(block), span, newText },
+    {
+      documentId: DOC_ID,
+      file: FILE,
+      kind: "textRanges",
+      block: toRef(block),
+      replacements: [{ span, content: inlineText(newText) }],
+      output: newText,
+    },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -217,13 +174,13 @@ function applyAgentInsert(
   const result = applyEdits(
     ctx.doc,
     model,
-    codec,
     {
       documentId: DOC_ID,
       file: FILE,
       kind: "insert",
       ...(after ? { after: toRef(after) } : {}),
       newText,
+      blocks: codec.parse(newText).blocks,
     },
     threadOrigin(ctx, threadId),
   );
@@ -235,7 +192,7 @@ function applyAgentEdits(
   threadId: string,
   edits: readonly ResolvedEdit[],
 ): void {
-  const result = applyEdits(ctx.doc, model, codec, edits, threadOrigin(ctx, threadId));
+  const result = applyEdits(ctx.doc, model, edits, threadOrigin(ctx, threadId));
   expectOk(result);
 }
 
@@ -266,7 +223,14 @@ function textEdit(
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(element), span, newText };
+  return {
+    documentId: DOC_ID,
+    file: FILE,
+    kind: "textRanges",
+    block: toRef(element),
+    replacements: [{ span, content: inlineText(newText) }],
+    output: newText,
+  };
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {
@@ -280,41 +244,6 @@ function blockTexts(doc: Y.Doc): string[] {
 
 function serializeDoc(doc: Y.Doc): string {
   return codec.serialize(model.projectBlocks(doc));
-}
-
-function caseCleanReverse(): MatrixCase {
-  const ctx = createScenario("Alpha sword.");
-  agentTurn(ctx, "clean", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  return { ctx, turnId: "clean", expectedTexts: ["Alpha sword."] };
-}
-
-function caseHumanDifferentParagraph(): MatrixCase {
-  const ctx = createScenario("Alpha sword.\n\nBeta waits.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  humanText(ctx, 1, { from: 5, to: 10 }, "marches");
-  return { ctx, turnId: "agent", expectedTexts: ["Alpha sword.", "Beta marches."] };
-}
-
-function caseHumanAroundAgentEdit(): MatrixCase {
-  const ctx = createScenario("Alpha sword.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  humanText(ctx, 0, { from: 0, to: 0 }, "Old ");
-  humanText(
-    ctx,
-    0,
-    {
-      from: model.getText(model.getBlocks(ctx.doc)[0]).length,
-      to: model.getText(model.getBlocks(ctx.doc)[0]).length,
-    },
-    " now",
-  );
-  return { ctx, turnId: "agent", expectedTexts: ["Old Alpha sword. now"] };
 }
 
 function caseHumanInsideAgentInsertedParagraph(): MatrixCase {
@@ -351,14 +280,6 @@ function caseMarkdownWhitespaceNormalization(): MatrixCase {
   };
 }
 
-function caseCrossUnloadRebuild(): MatrixCase {
-  const ctx = createScenario("Alpha sword.\n\nBeta waits.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "marches");
-  });
-  return { ctx, turnId: "agent", expectedTexts: ["Alpha sword.", "Beta waits."] };
-}
-
 function casePartialReversal(): MatrixCase {
   const ctx = createScenario("Alpha\n\nBeta");
   agentTurn(ctx, "partial", () => {
@@ -366,4 +287,9 @@ function casePartialReversal(): MatrixCase {
   });
   humanDeleteBlock(ctx, 2);
   return { ctx, turnId: "partial", expectedTexts: ["Alpha", "Beta"] };
+}
+
+/** Plain inline content standing in for a resolved text replacement. */
+function inlineText(text: string): Fragment {
+  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
 }

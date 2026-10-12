@@ -45,7 +45,8 @@ flowchart TD
   selection; a cancelled decision publishes neither. A background open publishes
   the tab without navigating or cancelling a foreground attempt. Uploads resources are not Editor
   tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice.
-  A Work's Scratch is an Editor tab only in that Work's Editor (`isEditorTab`).
+  A Work's Scratch is an Editor tab only in that Work's Editor, and a chat's
+  Scratch (`rootThreadId`) in every Editor (`isEditorTab`).
   The URL layer still does not repeat
   live admission; session binding belongs to the host.
 - **New or pending local Unfiled writing:** an exact local identity in `/editor`

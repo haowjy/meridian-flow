@@ -1,38 +1,45 @@
 /**
  * useRenameEntryForm — inline context entry renaming, built on useInlineEdit.
  *
- * Adds rename-specific behavior: pre-populated name, extension-aware selection
- * (selects basename without extension), sibling filtering that excludes the
- * current name, and same-name = cancel semantics.
+ * Adds rename-specific behavior: the stored name pre-populated, selection of
+ * the part before a visible extension (all of a prose name), sibling filtering
+ * that excludes the current identity, and same-name = cancel semantics. Names are
+ * compared as the codec stores them, but submitted as typed, so `Chapter 13.md` on
+ * `Chapter 13` is no change and `settings` on `config.toml` is `settings.toml`.
  */
 
 import { t } from "@lingui/core/macro";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useWorks } from "@/client/query/useWorks";
+import type { TabOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import { parentContextEntryPath, validateContextEntryName } from "./context-entry-name";
-import { createContextIdentityMutationService } from "./context-identity-mutation";
+import type { ContextEntrySibling } from "./context-entry-name";
+import { entryNameStemEnd, validateContextEntryName } from "./context-entry-name";
+import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
   entryId: string;
-  workId: string | null;
+  /** Who holds the entry: a Work row, or a chat's lineage with its handle. */
+  owner: TabOwner;
   scheme: ProjectContextTreeScheme;
-  /** Current full path of the entry being renamed. */
-  path: string;
-  /** Current basename of the entry (pre-populates the input). */
+  /** Stored name of the entry (pre-populates the input). */
   currentName: string;
   /** Failed durable destination restored after asynchronous namespace repair. */
   repairName?: string;
   /** Sibling names for collision detection (should include all siblings). */
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
+  /** Called with the move's operation id once the rename is admitted, before `onDone`. */
+  onRenamed?: (operationId: string) => void;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
 };
@@ -42,65 +49,65 @@ export type RenameEntryForm = InlineEdit;
 export function useRenameEntryForm({
   projectId,
   entryId,
-  workId,
+  owner,
   scheme,
-  path,
   currentName,
   repairName,
-  siblingNames,
+  siblings,
   kind,
+  onRenamed,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
-  const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const ownedWorkId = isWorkScopedProjectContextScheme(scheme) ? workId : null;
+  const { works, noWork } = useWorks(projectId);
+  const storedName = (typed: string) => {
+    const stored = storedFilename(typed, currentName);
+    return stored.ok ? stored.name : typed;
+  };
   const mutation = useMutation({
-    mutationFn: async (name: string) => {
-      if (kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
-        const key = await resources.keyForDocument(projectId, entryId);
-        if (!key) throw new Error(t`This file is unavailable. Refresh and try again.`);
-        await resources.setLocation(projectId, key, {
-          scheme,
-          folderPath: parentContextEntryPath(path),
-          name,
-          workId: ownedWorkId,
-        });
-        return;
-      }
-      const result = await createContextIdentityMutationService(queryClient).move(
-        entryId,
-        projectId,
-        { scheme, path, ...(ownedWorkId ? { workId: ownedWorkId } : {}) },
-        {
-          name,
-          destination: {
-            scheme,
-            folderPath: parentContextEntryPath(path),
-            ...(ownedWorkId ? { workId: ownedWorkId } : {}),
-          },
-        },
-        kind,
+    mutationFn: async (typed: string) => {
+      const name = typed;
+      const unavailable = () =>
+        new Error(
+          kind === "folder"
+            ? t`This folder is unavailable. Refresh and try again.`
+            : t`This file is unavailable. Refresh and try again.`,
+        );
+      const authority = destinationOwner(
+        { scheme, ...(isWorkScopedProjectContextScheme(scheme) ? owner : {}) },
+        works,
+        noWork,
       );
-      if (result.result.status === "conflict") throw new Error(t`That name is already in use.`);
-      if (result.result.status === "retry") throw new Error(t`The location changed. Try again.`);
+      if (!authority) throw unavailable();
+      const destination = { parent: await resources.parentForEntry(projectId, entryId), name };
+      if (kind === "folder") {
+        return resources
+          .setFolderLocation(projectId, entryId, destination)
+          .catch(() => {
+            throw unavailable();
+          })
+          .then(({ operationId }) => operationId);
+      }
+      const key = await resources.keyForDocument(projectId, entryId);
+      if (!key) throw unavailable();
+      return (await resources.setLocation(projectId, key, destination)).operationId;
     },
   });
 
-  // Exclude the current name from collision checks — renaming "foo" to "foo"
-  // is a no-op, not a collision.
+  // Another entry may have a codec-equivalent name; only this identity is excluded.
   const filteredSiblings = useMemo(
-    () => siblingNames.filter((sibling) => sibling.replace(/\/$/, "") !== currentName),
-    [siblingNames, currentName],
+    () => siblings.filter((sibling) => sibling.entryId !== entryId),
+    [siblings, entryId],
   );
 
-  // Select the name sans extension on focus (e.g. "chapter-1" in "chapter-1.md").
+  // Select the name sans a visible extension on focus ("outline" in
+  // "outline.json"); a prose name has none, so all of it.
   const select = useCallback(
     (input: HTMLInputElement) => {
       const initialName = repairName ?? currentName;
-      const dotIndex = initialName.lastIndexOf(".");
-      input.setSelectionRange(0, dotIndex > 0 ? dotIndex : initialName.length);
+      input.setSelectionRange(0, entryNameStemEnd(initialName, kind));
     },
-    [currentName, repairName],
+    [currentName, repairName, kind],
   );
 
   return useInlineEdit({
@@ -109,12 +116,17 @@ export function useRenameEntryForm({
     initialError: repairName
       ? t`That rename couldn't be completed. Choose another name or try again.`
       : undefined,
-    validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind),
-    onCommit: async (name) => {
-      await mutation.mutateAsync(name);
+    validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind, currentName),
+    onCommit: async (typed) => {
+      // Typing the name it already has, another way (`Chapter 13.md`), is no change.
+      if (kind === "file" && storedName(typed) === currentName) return onDone();
+      const operationId = await mutation.mutateAsync(typed);
+      if (operationId) onRenamed?.(operationId);
       onDone();
     },
     onCancel: onDone,
     select,
+    // A refused rename is retried by an explicit Enter, never by leaving the field.
+    commitOnBlur: !repairName,
   });
 }

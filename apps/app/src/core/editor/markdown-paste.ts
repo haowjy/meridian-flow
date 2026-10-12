@@ -6,8 +6,10 @@
  * contains: a writer, or the AI relay they are working with, who pastes
  * headings, lists, fences, tables and links gets headings, lists, fences,
  * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
- * the wire uses, wikilinks included, so nothing here has to know what markdown
- * looks like.
+ * the wire uses, so nothing here has to know what markdown looks like. Pasted
+ * `[[Name]]` parses as text here. The wikilink paste extension, where it is
+ * mounted, contributes a parse extension that keeps an escaped `\[[` visible
+ * to its transform, which spells it out again (`links/WikilinkPasteExtension.ts`).
  *
  * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
  * and MDX reads `<` and `{` as syntax. Fiction contains both.
@@ -20,11 +22,7 @@
  * parsed blocks rather than on a guess about the raw text.
  */
 
-import {
-  type AssetPathResolver,
-  markdownCodec,
-  unresolvedAssetPathResolver,
-} from "@meridian/markup";
+import { markdownCodec, mdxCodec } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -33,6 +31,10 @@ import {
   Slice,
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
+
+import type { PluggableList } from "unified";
+
+import { clipboardLinkScope } from "./links";
 
 /**
  * Does this parse carry anything plain-text paste would have thrown away?
@@ -51,9 +53,15 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
   return blocks.some((block) => block.type.name !== "paragraph" || carriesInlineStructure(block));
 }
 
+/**
+ * Parsing is pure syntax: every link comes out unbound. The editor's
+ * `transformPasted` binds them, and every picture source, for every paste,
+ * text or HTML (`links/link-clipboard.ts`).
+ */
 export function markdownClipboardParser(
   schema?: Schema,
-  assetPathResolver: AssetPathResolver = unresolvedAssetPathResolver,
+  /** Parse extensions other editor extensions contribute, read per paste. */
+  remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
     // Paste-without-formatting asked for the characters, and gets them.
@@ -62,8 +70,8 @@ export function markdownClipboardParser(
     let blocks: readonly PMNode[];
     try {
       blocks = markdownCodec({
-        assetPathResolver,
         schema: schema ?? view.state.schema,
+        remarkPlugins: remarkPlugins(),
       }).parse(text).blocks;
     } catch {
       return defaultPlainTextPaste();
@@ -118,21 +126,38 @@ function defaultPlainTextPaste(): Slice {
   return undefined as unknown as Slice;
 }
 
-/** Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor structure. */
+/**
+ * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
+ * structure. Internal links go out as full current addresses, so the text
+ * means the same thing wherever it lands, holder or not. Pasted back, the
+ * editor's paste door binds them fresh (`links/link-clipboard.ts`).
+ */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
-  slice,
+  copied,
   view,
 ) => {
   const schema = view.state.schema;
   const blocks: PMNode[] = [];
-  if (slice.content.firstChild?.isInline) {
-    blocks.push(schema.nodes.paragraph.create(null, slice.content));
+  if (copied.content.firstChild?.isInline) {
+    blocks.push(schema.nodes.paragraph.create(null, copied.content));
   } else {
-    slice.content.forEach((node) => {
+    copied.content.forEach((node) => {
       blocks.push(node);
     });
   }
-  return markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })
-    .serializeBlocks(blocks)
+  const links = clipboardLinkScope(view.state);
+  const markdown = markdownCodec({ schema });
+  let mdx: ReturnType<typeof mdxCodec> | null = null;
+  return blocks
+    .map((block) => {
+      // A figure or a component has no Markdown form, and a copy that throws
+      // here loses the whole clipboard, the HTML a rich paste reads included.
+      try {
+        return markdown.serializeBlock(block, links);
+      } catch {
+        mdx ??= mdxCodec({ schema });
+        return mdx.serializeBlock(block, links);
+      }
+    })
     .join("\n\n");
 };

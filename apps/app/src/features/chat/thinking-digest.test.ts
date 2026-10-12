@@ -1,62 +1,48 @@
-import type { Block } from "@meridian/contracts/protocol";
-import { describe, expect, it } from "vitest";
+/** Guards document counts against section addresses splitting one file into two. */
+import { expect, it } from "vitest";
 import type { ToolView } from "./group-delivery-segments";
 import { countFoldTools } from "./thinking-digest";
 
-const keyBlock: Block = {
-  id: "block-0",
-  turnId: "turn-1",
-  responseId: null,
-  blockType: "tool_use",
-  sequence: 0,
-  content: null,
-  status: "complete",
-  createdAt: "2026-01-01T00:00:00.000Z",
-};
-
-function tool(args: {
-  toolName: string;
-  input?: Record<string, unknown>;
-  isError?: boolean;
-}): ToolView {
+function tool(toolName: "read" | "write", path: string): ToolView {
   return {
-    toolCallId: `call-${args.toolName}`,
-    toolName: args.toolName,
-    input: (args.input ?? null) as ToolView["input"],
-    output: null,
+    toolCallId: path,
+    toolName,
+    input: toolName === "write" ? { command: "replace", path } : { path },
+    result: null,
     status: "complete",
-    isError: args.isError ?? false,
+    isError: false,
     message: null,
     streamedOutput: null,
     metadata: null,
-    keyBlock,
+    keyBlock: {
+      id: path,
+      turnId: "turn",
+      responseId: null,
+      blockType: "tool_use",
+      sequence: 0,
+      content: {},
+      status: "complete",
+      textContent: null,
+      createdAt: "2026-10-11T00:00:00.000Z",
+    },
   };
 }
 
-describe("countFoldTools", () => {
-  it("does not count a diff review as an edit", () => {
-    const counts = countFoldTools([
-      // A diff carries no `path` on the wire; the writer-facing classification
-      // must hold regardless, including the document identity the old branch
-      // consumed.
-      tool({ toolName: "write", input: { command: "diff", document_id: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "diff", path: "ch1.md" } }),
-    ]);
+it.each([
+  "read",
+  "write",
+] as const)("%s counts sections and their file once, without merging different documents", (command) => {
+  const tools = [
+    tool(command, "manuscript://chapter-11.md#the-pill-hall"),
+    tool(command, "chapter-11.md"),
+  ];
+  const documents = (input: ToolView[]) => {
+    const counts = countFoldTools(input);
+    return command === "read" ? counts.readDocuments : counts.editedDocuments;
+  };
 
-    expect(counts.editedDocuments.size).toBe(0);
-    expect(counts.readDocuments.size).toBe(0);
-    expect(counts.steps).toBe(2);
-  });
-
-  it("counts non-document tools and failed operations as steps", () => {
-    const counts = countFoldTools([
-      tool({ toolName: "search" }),
-      tool({ toolName: "ls" }),
-      tool({ toolName: "work" }),
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" }, isError: true }),
-    ]);
-
-    expect(counts.steps).toBe(4);
-    expect(counts.readDocuments.size).toBe(0);
-  });
+  expect([...documents(tools)]).toEqual(["manuscript://chapter-11.md"]);
+  expect(
+    documents([...tools, tool(command, "manuscript://chapter-12.md#the-pill-hall")]).size,
+  ).toBe(2);
 });

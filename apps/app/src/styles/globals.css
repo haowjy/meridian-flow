@@ -8,6 +8,8 @@
 @import "@meridian/design-tokens/ink-jade.css";
 @import "@meridian/design-tokens/themes.css";
 @import "tw-animate-css";
+@import "../components/app/link-chip/link-chip.css";
+@import "../rich-content/code-block.css";
 
 /* Components' `dark:` utilities key off the UI-theme attribute the boot
    script stamps on <html> — one switch for tokens and variants alike. */
@@ -68,6 +70,10 @@
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
 [data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
 [data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
+/* A delivered message's Hand off row sits under it and spaces like a reply's action row. */
+[data-chat-turn-row][data-chat-turn-role="user"]:has([data-user-turn-actions]) { padding-bottom: var(--chat-space-exchange); }
+/* A brief card is a turn of its own: the writer's next message sits a turn away. */
+[data-chat-turn-row][data-chat-turn-kind="handoff-seed"] { padding-bottom: var(--chat-space-turn); }
 /* A response woken by a subagent notification continues without a turn break. */
 [data-chat-turn-row][data-chat-turn-continues] { padding-bottom: var(--chat-space-block); }
 
@@ -215,13 +221,13 @@
   summary {
     cursor: pointer;
   }
-  [data-composer-reference],
+  /* Composer references are link chips (`link-chip.css`); a skill is not a
+     document link and keeps its quiet underline. */
   [data-composer-skill] {
     text-decoration: underline;
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-reference]:focus-visible,
   [data-composer-skill]:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
@@ -447,6 +453,10 @@
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
   @apply text-base leading-relaxed md:text-[15px];
+  /* The composer is a raised, page-toned surface wherever it sits, so its
+     reference chips keep the page's fill (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 
 @utility user-turn {
@@ -468,6 +478,38 @@
 @media (hover: none), (pointer: coarse) {
   [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
 }
+/* A finished compaction divider's Fork and Info follow the same rule, revealed
+   from anywhere on the divider; an open Info popover keeps them shown. */
+@media (hover: hover) {
+  [data-compaction-divider] .compaction-divider-actions {
+    opacity: 0;
+  }
+  [data-compaction-divider]:hover .compaction-divider-actions,
+  [data-compaction-divider]:focus-within .compaction-divider-actions,
+  [data-compaction-divider]:has(.compaction-divider-actions [aria-expanded="true"])
+    .compaction-divider-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-compaction-divider] .compaction-divider-actions { opacity: 1; }
+}
+/* A writer message's Hand off follows the same rule, revealed from anywhere on
+   its transcript row since the bubble hugs the right edge. Like a reply's row
+   it always sits under the bubble, on the bubble's right edge. */
+@media (hover: hover) {
+  [data-turn-role="user"] .user-turn-actions {
+    opacity: 0;
+  }
+  [data-chat-turn-role="user"]:hover .user-turn-actions,
+  [data-turn-role="user"]:focus-within .user-turn-actions,
+  [data-turn-role="user"]:has(.user-turn-actions [aria-expanded="true"]) .user-turn-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-turn-role="user"] .user-turn-actions { opacity: 1; }
+}
 
 @utility chat-card {
   padding: var(--chat-card-pad-y) var(--chat-card-pad-x);
@@ -486,6 +528,10 @@
    surface") without per-component forks. */
 @utility bg-chat-interactive {
   background-color: var(--color-chat-interactive, var(--color-background));
+  /* A raised surface is page-toned again, so a link chip on it takes the
+     page's fill back from the dock (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
    own whitespace, so this wrapper sets typography without `whitespace-pre-wrap`.
@@ -580,8 +626,11 @@
     @apply border-0 border-t border-border-subtle;
     margin-block: var(--prose-space-rule);
   }
-  & a {
+  /* Streamdown draws a transcript's external link as a button (it asks before
+     leaving), so the anchor look is applied to it too. */
+  & :is(a, [data-streamdown="link"]) {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
+    font-weight: inherit;
   }
 
   /* Streamdown ships className strings only (its styles.css is keyframes we
@@ -800,6 +849,10 @@
 @utility dock-surface {
   /* Chat interactive surfaces lift above the chrome (background = page tone). */
   --color-chat-interactive: var(--color-background);
+  /* The dock's own tone is the recess, so a link chip on it would vanish; it
+     takes the next step, and hovers one further toward the ink. */
+  --link-chip-fill: var(--color-sidebar-accent);
+  --link-chip-fill-hover: color-mix(in oklab, var(--color-sidebar-accent) 90%, var(--color-foreground));
   background-color: var(--color-sidebar);
   background-image: var(--background-image-dock-airlight);
 }
@@ -916,7 +969,7 @@
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline;
+  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */

@@ -5,6 +5,7 @@ import {
   serializeTransport,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
+import type { Thread } from "@meridian/contracts/threads";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 
@@ -21,20 +22,22 @@ type FakeTurn = {
   status: string;
   error: string | null;
   text: string;
+  prevTurnId?: string;
   /** Extra persisted blocks ahead of the text block, with their own createdAt. */
   blocks?: { blockType: string; content: unknown; createdAt: string }[];
 };
 
-function threadDto() {
+function threadDto(): Thread {
   return {
     id: THREAD_ID,
     projectId: PROJECT_ID,
     workId: null,
     userId: "u1",
     kind: "primary",
-    status: "active",
+    status: "idle",
     title: "Fake thread",
     ref: "c1",
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: "General",
     activeLeafTurnId: null,
@@ -46,6 +49,7 @@ function threadDto() {
     turnCount: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T00:00:00.000Z",
+    lastActivityAt: "2026-01-02T00:00:00.000Z",
     deletedAt: null,
   };
 }
@@ -54,6 +58,7 @@ function turnDto(turn: FakeTurn) {
   return {
     id: turn.id,
     threadId: THREAD_ID,
+    ...(turn.prevTurnId ? { prevTurnId: turn.prevTurnId } : {}),
     role: turn.role,
     origin: turn.role === "user" ? "writer" : "assistant",
     writeMode: null,
@@ -84,13 +89,13 @@ function turnDto(turn: FakeTurn) {
   };
 }
 
-function liveState(seq: string) {
+function liveState(seq: string, pendingItems: unknown[] = []) {
   return {
     threadId: THREAD_ID,
     status: { kind: "asleep" },
     runningTurnId: null,
-    activity: { descendants: [] },
-    pending: { items: [] },
+    activity: { children: [] },
+    pending: { items: pendingItems },
     resumeAfterSeq: seq,
   };
 }
@@ -114,6 +119,15 @@ function childNode(status: unknown, spawnStatus: string, currentTool: unknown) {
 function createFake() {
   const journal: Journal = [];
   const turns: FakeTurn[] = [];
+  const pendingItems: {
+    id: string;
+    seq: number;
+    intent: "message";
+    provenance: { kind: "writer"; actorId: string };
+    deliveryState: "waiting";
+    summary: string;
+    enqueuedAt: string;
+  }[] = [];
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
@@ -171,9 +185,9 @@ function createFake() {
           delta: '{"agent":"r"}',
         } as AGUIEvent);
         publish({ type: "TOOL_CALL_END", toolCallId: "call-1" } as AGUIEvent);
-        activity({ descendants: [] });
+        activity({ children: [] });
         activity({
-          descendants: [
+          children: [
             childNode({ kind: "awake", phase: "generating", cancelRequested: false }, "running", {
               toolCallId: "c-1",
               toolName: "doc_read",
@@ -181,7 +195,7 @@ function createFake() {
             }),
           ],
         });
-        activity({ descendants: [childNode({ kind: "asleep" }, "succeeded", null)] });
+        activity({ children: [childNode({ kind: "asleep" }, "succeeded", null)] });
         publish({
           type: "TOOL_CALL_RESULT",
           messageId: "call-1-result",
@@ -268,6 +282,74 @@ function createFake() {
       const concatenated = body.blocks.map((block) => block.text ?? "").join("");
       if (concatenated !== body.text) return send(400, { message: "text must equal blocks" });
       const resumeAfterSeq = String(journal.length);
+      if (body.text === "wait behind cancelled run") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const runningTurnId = `turn-running-${runCounter}`;
+        const running: FakeTurn = {
+          id: runningTurnId,
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(running);
+        turns.push({
+          id: userTurnId,
+          role: "user",
+          prevTurnId: runningTurnId,
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        pendingItems.push({
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        });
+        setTimeout(() => {
+          running.status = "error";
+          running.error = "cancelled";
+          pendingItems.splice(0, pendingItems.length);
+          const replyId = `turn-reply-${runCounter}`;
+          const reply: FakeTurn = {
+            id: replyId,
+            role: "assistant",
+            prevTurnId: userTurnId,
+            status: "streaming",
+            error: null,
+            text: "",
+          };
+          turns.push(reply);
+          publish({ type: "RUN_ERROR", message: "cancelled" } as AGUIEvent);
+          setTimeout(() => {
+            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            const messageId = `${replyId}::0`;
+            publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
+            publish({
+              type: "TEXT_MESSAGE_CONTENT",
+              messageId,
+              delta: "Answered the queued message",
+            } as AGUIEvent);
+            publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
+            reply.status = "complete";
+            reply.text = "Answered the queued message";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+          }, 20);
+        }, 5);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: runningTurnId,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
       runScenario(body.text);
       return send(202, {
         threadId: THREAD_ID,
@@ -283,7 +365,7 @@ function createFake() {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
-        liveState: liveState(String(journal.length)),
+        liveState: liveState(String(journal.length), pendingItems),
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
@@ -313,7 +395,7 @@ function createFake() {
           type: "subscribed",
           threadId: THREAD_ID,
           catchup: journal.filter((entry) => BigInt(entry.seq) > after),
-          state: liveState(String(journal.length)) as never,
+          state: liveState(String(journal.length), pendingItems) as never,
         };
         ws.send(JSON.stringify(frame));
       });

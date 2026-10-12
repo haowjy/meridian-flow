@@ -31,7 +31,7 @@ export function useChatThreadSession({
 
   useEffect(() => {
     return () => {
-      controllerRef.current.teardown();
+      controllerRef.current.teardown(threadId);
     };
   }, [threadId]);
 

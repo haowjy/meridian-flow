@@ -5,14 +5,18 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { projectResourceLocation, type ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourcePlacement,
+  type ResourceRecord,
+  resourcePlacementForSnapshot,
+} from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
  * A document id is all a door carries: a change trail's receipt, a search
- * result, a wikilink the writer just followed. Turning that id into an open
+ * result, a link the writer just followed. Turning that id into an open
  * tab means finding which scheme's tree holds it, and that lookup plus the
  * openTab-and-route pair is the same work every door was about to write for
  * itself.
@@ -27,7 +31,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 
 import {
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -46,10 +49,10 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextTabFromFile } from "./context-tab-from-file";
+import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -160,7 +163,7 @@ export class ProjectDocumentLiveOpener {
       async bind(ownerId: string): Promise<LiveDocumentBinding> {
         registry.retain(ownerId, [lease]);
         try {
-          const session = registry.get(lease);
+          let session = registry.get(lease);
           const snapshot = session.getSnapshot();
           if (
             snapshot.status === "access-lost" ||
@@ -168,6 +171,7 @@ export class ProjectDocumentLiveOpener {
             snapshot.connectionState?.kind === "terminal"
           ) {
             await registry.restartUnavailableRoom(lease);
+            session = registry.get(lease);
           }
           let released = false;
           return Object.freeze({
@@ -192,9 +196,15 @@ export class ProjectDocumentLiveOpener {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
-  /** Host Work context for project-scoped files; resolved Work/no-Work authority wins. */
-  workId?: string | null;
+  /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
+  workId?: string;
   disposition?: "current" | "background";
+  /**
+   * Offered the resolved tab before the route changes: a surface that shows
+   * documents beside the writer's place (the Chat screen's dock) takes it, so
+   * the open finishes without leaving. `cancelled` means a newer intent won.
+   */
+  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -214,6 +224,7 @@ type NavigationAdapterDependencies = {
   captureNavigation?: () => () => boolean;
   resources?: {
     readonly accountId: string;
+    readProjection: import("@/core/resources/account-resource-replica").AccountResourceReplica["readProjection"];
     openKnownDocument(
       projectId: string,
       documentId: string,
@@ -229,26 +240,29 @@ type NavigationAdapterDependencies = {
 function localFileForRecord(
   projectId: string,
   record: ResourceRecord,
+  placement: ResourcePlacement,
 ): {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string;
   file: CatalogFile;
   entry: CatalogFileEntry;
 } | null {
   if (record.resource.content.kind !== "exact") return null;
-  const location = projectResourceLocation(projectId, record);
+  const location = placement.resourceLocation(record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, location.workId);
+  const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
   if (!scope) return null;
-  const projected = accessibleResourceCatalogView(projectId, scope, record);
-  const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
-    record.resource.identity.documentId,
-  );
+  const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
+  const file = projectCatalogView(projectId, location.scheme, projected, placement, [
+    record,
+  ]).findDocument(record.resource.identity.documentId);
   const entry = projected.entries.get(record.resource.identity.documentId);
   if (!file || entry?.kind !== "file") return null;
   return {
     scheme: location.scheme,
     workId: location.workId,
+    rootThreadId: location.rootThreadId,
     file,
     entry,
   };
@@ -271,7 +285,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId = null, disposition = "current", signal }: OpenProjectDocumentRequest,
+    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -301,7 +315,11 @@ export class ProjectDocumentNavigationAdapter {
       if (local.kind === "opened") {
         const prepared = local.handle;
         try {
-          const resolved = localFileForRecord(projectId, local.record);
+          const placement = resourcePlacementForSnapshot(
+            projectId,
+            await this.dependencies.resources!.readProjection(projectId),
+          );
+          const resolved = localFileForRecord(projectId, local.record, placement);
           if (!resolved) return { kind: "unavailable", reason: "deleted" };
           if (!isCurrent()) return { kind: "cancelled" };
           const committed = await this.commitFile({
@@ -309,7 +327,9 @@ export class ProjectDocumentNavigationAdapter {
             scheme: resolved.scheme,
             file: resolved.file,
             routeWorkId: resolved.workId ?? workId,
+            rootThreadId: resolved.rootThreadId,
             disposition,
+            beside,
             isCurrent,
             canCommit,
           });
@@ -349,7 +369,10 @@ export class ProjectDocumentNavigationAdapter {
       if (
         local.kind === "unavailable" &&
         (local.record.resource.lifecycle.kind !== "acknowledged" ||
-          !projectResourceLocation(projectId, local.record))
+          !resourcePlacementForSnapshot(
+            projectId,
+            await this.dependencies.resources!.readProjection(projectId),
+          ).resourceLocation(local.record))
       )
         return {
           kind: "unavailable",
@@ -368,6 +391,8 @@ export class ProjectDocumentNavigationAdapter {
       if (!scheme) return { kind: "unavailable", reason: "failed" };
       const routeWorkId =
         result.document.scope.kind === "work" ? result.document.scope.workId : workId;
+      const rootThreadId =
+        result.document.scope.kind === "lineage" ? result.document.scope.rootThreadId : undefined;
       const file = projectCatalogFile(result.document);
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
@@ -377,7 +402,9 @@ export class ProjectDocumentNavigationAdapter {
         scheme,
         file,
         routeWorkId,
+        rootThreadId,
         disposition,
+        beside,
         isCurrent,
         canCommit,
       });
@@ -394,15 +421,44 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string;
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
-    routeWorkId: string | null;
+    routeWorkId: string | undefined;
+    /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
+    rootThreadId?: string;
     disposition: "current" | "background";
+    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tab = isWorkScopedProjectContextScheme(input.scheme)
-      ? undefined
-      : contextTabFromFile(input.scheme, input.file, input.routeWorkId);
+    const tab = isEditorScheme(input.scheme)
+      ? contextTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        )
+      : undefined;
     if (!input.isCurrent()) return "cancelled";
+    if (input.disposition === "current" && input.beside) {
+      // A document with no owner row to name (never a dock candidate) is left to the route.
+      let besideTab: ServerContextTab | null = null;
+      try {
+        besideTab = serverTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        );
+      } catch {
+        besideTab = null;
+      }
+      if (besideTab) {
+        const placed = input.beside(besideTab);
+        this.current = null;
+        return placed === "opened" ? "applied" : "cancelled";
+      }
+    }
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
@@ -411,7 +467,8 @@ export class ProjectDocumentNavigationAdapter {
         {
           scheme: input.scheme,
           path: input.file.path,
-          workId: input.routeWorkId,
+          workId: input.rootThreadId ? undefined : input.routeWorkId,
+          ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
         { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },

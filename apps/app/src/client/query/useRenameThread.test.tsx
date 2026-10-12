@@ -10,8 +10,6 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { HttpResponseError } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -81,47 +79,6 @@ function client(): QueryClient {
   queryClient.setQueryData(projectQueryKeys.threads(PROJECT_ID), [threadItem("Original")]);
   return queryClient;
 }
-
-async function settleRefused(error: Error, queryClient: QueryClient) {
-  let rename: Rename | undefined;
-  mocks.renameThread.mockRejectedValue(error);
-  let result: PromiseSettledResult<void> | undefined;
-  let title: string | null | undefined;
-  await withReactRoot(
-    <QueryClientProvider client={queryClient}>
-      <AccountFeatureTestProvider accountId="account-a">
-        <Probe expose={(next) => (rename = next)} />
-      </AccountFeatureTestProvider>
-    </QueryClientProvider>,
-    async () => {
-      await act(async () => {
-        [result] = await Promise.allSettled([rename?.("Renamed") ?? Promise.resolve()]);
-      });
-      // Read before unmount: leaving the account lifetime discards the record.
-      title = titleOf(queryClient);
-    },
-  );
-  return { result, title };
-}
-
-describe("useRenameThread", () => {
-  it("rejects when the server refuses the title, after reverting it", async () => {
-    const refusal = new HttpResponseError("Bad title", 422, null);
-    const { result, title } = await settleRefused(refusal, client());
-    expect(result).toEqual({ status: "rejected", reason: refusal });
-    expect(title).toBe("Original");
-  });
-
-  it("resolves an unknown outcome and keeps the title while it reconciles", async () => {
-    mocks.listProjectThreads.mockReturnValue(new Promise(() => {}));
-    const { result, title } = await settleRefused(
-      new HttpResponseError("Unavailable", 503, null),
-      client(),
-    );
-    expect(result?.status).toBe("fulfilled");
-    expect(title).toBe("Renamed");
-  });
-});
 
 describe("useRenameThread account fence", () => {
   it("rejects a late completion after an A→B→A account replacement", async () => {

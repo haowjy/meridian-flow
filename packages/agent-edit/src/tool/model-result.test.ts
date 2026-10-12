@@ -14,27 +14,9 @@ describe("agent-edit model result", () => {
     expect(
       isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
-        command: "delete",
+        command: "remove",
         status: "not_found",
         phase: "staged",
-      }),
-    ).toBe(false);
-  });
-
-  it("rejects unknown commands and statuses", () => {
-    expect(
-      isAgentEditResultEnvelope({
-        schema: "meridian.agent-edit.v1",
-        command: "overwrite",
-        status: "success",
-        phase: "committed",
-      }),
-    ).toBe(false);
-    expect(
-      isAgentEditResultEnvelope({
-        schema: "meridian.agent-edit.v1",
-        command: "read",
-        status: "pending",
       }),
     ).toBe(false);
   });

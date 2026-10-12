@@ -1,3 +1,4 @@
+import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import mammoth from "mammoth";
 import TurndownService from "turndown";
 import type {
@@ -31,8 +32,9 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
     const ext = extension(input.filename);
     const mime = cleanMimeType(input.mimeType);
     if (ext === "docx" || mime === DOCX_MIME_TYPE) return "docx";
-    if (ext === "md" || ext === "markdown" || MARKDOWN_MIME_TYPES.has(mime)) return "markdown";
-    if (ext === "txt" || TEXT_MIME_TYPES.has(mime)) return "text";
+    if (filetypeForKnownPath(input.filename) === "markdown" || MARKDOWN_MIME_TYPES.has(mime))
+      return "markdown";
+    if (TEXT_MIME_TYPES.has(mime)) return "text";
     return "unsupported";
   }
 

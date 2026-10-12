@@ -1,13 +1,444 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
+- A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
+
+### Fixed
+
+- Development: `pnpm dev --restart` failed with "port … is still held but could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
+- Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
+
+- Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
+
+- Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
+- Reacquire unversioned catalog checkpoints after a device metadata upgrade without removing document content or queued namespace work.
+- Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
+- Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
+
+- Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.
+- Treat delivery into a retired destination authority as move repair rather than a missing Work.
+- Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
+
+### Fixed
+
+- Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
+
+- Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
+
+- Missing folder parents reuse real recovery identities; synthesized ancestors only navigate.
+
+- Deeply nested pending folder renames no longer stall workspace projection when a destination is missing.
+
+- Folder moves and renames keep descendants visible in the tree and move open Editor and dock paths together, including across Works. Folder repair stays reachable even when its catalog row disappears.
+
+- Folder moves follow destination and ancestor renames regardless of settlement order. Missing destinations keep their last canonical placement instead of breaking the file catalog.
+- Late refusals cannot restart a deleted resource. Queued deletion resolves through exact identity availability when its folder disappears during a move refresh.
+
+- Deletion continues from canonical identity when an earlier pending move is refused. Moving into a pending-deleted folder hides the placed subtree without breaking the file catalog.
+- Chat Recent hides pending-deleted files and folder descendants until deletion is refused.
+
+- Folder deletion hides its rows immediately and uses the same durable retry path as file deletion. Refused deletion restores the folder with a failure mark. Delayed deletion cannot delete a replacement folder at the old path.
+- Chat Recent hides known-deleted documents instead of showing their cached names.
+
+- Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.
+
+- Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.
+- Chat Recent follows document renames and moves from the file catalog.
+
+- Move feedback now appears on a folder’s first move and follows a new document through identity-conflict recovery.
+
+### Changed
+
+- Consolidate namespace observation migrations into one schema migration and one data backfill.
+
+- Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.
+
+- Move feedback survives slow or offline settlement and names the destination from the move receipt.
+
+- Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.
+
+- Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
+- `.txt` files open as prose. Code, data and images keep their extensions.
+- Dotted names stay whole. Renames keep the file type unless a new extension is typed.
+- No prose twins. Files and folders cannot claim the same document name.
+- Imports and uploads keep writer names. Clashes count up with ` (2)`, ` (3)` and onward.
+- Prose downloads end in `.md`. Other downloads keep their filenames.
+- Existing documents and saved addresses use the same names. Name clashes keep every document.
+
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
+- A chat message that fails to send says "Couldn't send." on the message itself, with Retry, and Edit when the server refused it, the same way in new chats, existing chats, the side panel and on phones. Retry never sends a message twice, and a refused message stays in the chat until you retry or edit it.
+- The message box clears as soon as you press Send.
+- Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
+- Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.
+- Reloading keeps the document and view you had open in the side panel.
+- Each browser tab remembers its own chat and Work across reloads, while new tabs start from your last selection. Folder expansion stays with each tab; Scratch and Recent layout preferences carry into new tabs.
+
+- Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
+
+- The path above a document is now a way to get around: each part opens the list it sits in, with itself marked: the area among the areas, a folder beside its neighbors, the file name beside the other files, and `…` when folders do not fit. Menus mark where you are, including the folder you just left.
+
+- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker, and Scratch notes can be deleted from the chat's Scratch list. The path no longer has a Rename button; only a document still in Unfiled keeps a short File it button, whose tooltip explains where it sits.
+
+- A document open beside the chat shows its path in the panel header instead of a separate title. With nothing open, the panel reads Recent and lists the documents this chat touched.
+
+- Copying Scratch and Uploads links keeps the applicable owner. Scratch links in No Work uploads stay contextual instead of preventing copy.
+
+- Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
+
+- Restoring a chat or Work reconnects waiting links to its returning Scratch notes.
+
+- Links in a No Work fork keep reading its draft after the first chat moves to another Work.
+
+- Your existing No Work Scratch notes stay available under Unfiled when chats gain their own Scratch.
+
+- "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
+
+- On the Chat screen, the side panel's header now has an "Open document" menu even when nothing is open, listing Manuscript, Knowledge Base, User, Unfiled and Scratch. Clicking a file in the left project tree also opens it in the side panel (images and PDFs included), and the tree highlights it. On the Editor and Work screens and on a phone, tree clicks open as before.
+- On the Chat screen, opening a document from the chat (a link chip, a receipt row, a search or tool-result door, an `@` reference) now opens it in the side panel beside the chat instead of leaving for the Editor. From the Editor or Work screen and on a phone, they open as before.
+- The side panel's document header now has Close on the left, an expand button on the right that opens the document in the Editor, and a menu that climbs from the document's folder to the project's areas (Manuscript, Knowledge Base, User, Unfiled and Scratch) so any document is a few taps away.
+- Unfiled now has its own inbox icon, so it no longer looks like Scratch. It shows in the sidebar and on Unfiled link chips.
+- On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. Results are gone from the rail, and the phone's Results screen and its top-bar button are removed.
+- A SCRATCH section at the bottom of the left sidebar, styled like the file tree's sections, lists the notes the AI keeps for the chat on screen, even before its first note. Click its heading to expand it upwards (it remembers whether it was open), and open folders in place. On desktop, drag the divider above it to change how much of the sidebar it takes (double-click to reset); it remembers that too. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the section sits at the bottom of the menu drawer. The open note is highlighted. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
+
+- A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues.
+
+- Links to a chat's Scratch notes open them, in chapters and in chat, and name the chat by its title. The Scratch crumb on a phone note no longer opens a view that says the folder is gone.
+
+- A handoff can read its source conversation again. The two chats can send each other background messages.
+
+- Rebinding a chat tells the AI where its earlier Scratch notes remain.
+
+- Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
+
+- Handoffs start fresh chat lineages. No Work Scratch links name the first chat.
+- A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
+- Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
+- The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
+- Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
+### Fixed
+
+- A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
+- Chat summaries count a section and its whole file as one document, for both reads and edits.
+
+- Passage jumps stay visible when you return to an already-open Editor tab.
+
+- Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
+
+- Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
+
+- Links name the document they point at. Renaming or moving a chapter no longer edits the chapters that link to it: their links follow it and show its new path on the next read, and "Updated N links" counts the links in this project that point at what moved. When the AI edits a link's words, rewrites the paragraph around it, or writes a path it read before the target moved, the link keeps its document; words it unlinks stay plain, and a link it points somewhere new goes there.
+- Links you insert with `@`, Ctrl+K or a paste, and links in imports, uploads and saves, all name their document. Pasting within a project keeps each link on its document; pasting into another project links by address. Copied plain text spells each link's current full address.
+- A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available"; clicking it places the cursor, like any text. It never opens a document that later takes its path, and it works again if the document is restored. A link written before its document exists connects to the first document created, uploaded, moved in, restored or applied from a draft at that exact path, and from then on stays with that document, even when another document later takes that path.
+- A file you reference with `@` in a new chat's first message keeps its document, like one in any later message: once the file is deleted its chip says "No longer available" and never opens a file that later takes its path.
+- An image or figure the AI writes before its file is uploaded shows the picture as soon as a file lands at that path, and keeps showing that file afterwards. Until then it says no image has been uploaded there yet, and one whose file was deleted says it is no longer available. Copying and pasting an image or figure within a project keeps it on its file; pasting into another project links it by path. A picture written as a project address without a link to its file, such as `uploads://seal.png`, shows the file at that address. Changing a picture's source never leaves the previous picture showing while the new one loads. When the AI rewrites an uploaded picture's caption or the paragraph around it, keeping the path it read, the picture keeps its file even after that file moved and another image took its old path.
+- No uploaded picture is ever shown by its internal id. A deleted upload whose path another image took reads, downloads and copies at its own last address in full (`manuscript://...`), so the AI keeps it apart from the new image; a picture whose file this project has no address for reads as `![alt]()`, and the AI rewriting the paragraph around it keeps the picture.
+- A save to a file that another file replaced at the same path while it was being saved is refused instead of landing on the wrong file. Uploading a text file and creating a code file with content work again. A file whose only copy of its text is the stored copy says it can't be repaired instead of opening empty. Downloading a chapter whose live text can't be read fails with a retryable error (503) instead of serving a stale copy.
+- Development: links store a ref (`doc:` or `ahead:`) beside their href. agent-edit binds every written link, image and figure at each write door (correspondence, latest showing, then classify, resolve or mint), registers ahead refs before applying, and reports host-only shown-link facts; a two-client Yjs merge matrix covers #728, #729, #730 and undo after a move. Whole-document writes take a `BoundWrite` bound outside their transaction: assigned blocks, applied as the ordinary overwrite and certified for one holder; a fresh one is refused at admission if the document is no longer empty. Model writes and checkpoint restore apply ProseMirror nodes directly, and the string-transform edit APIs are gone.
+- Development: migration 0032 adds `link_ahead_refs` and `thread_shown_links`, recreates `document_links` keyed by link key and drops `link_redirects`; the link-update worker and the `link-update` journal origin are gone. The resolver endpoint answers batches of `(ref, href)`, and a link the reader cannot reach answers `gone` without a location. Revision tokens move from `y1:` to `y2:` and cover where linked documents and images sit.
+- Development: the link rules server and client share live in `@meridian/markup`: the holder scope over any `HolderCatalog`, pass-3 assignment (`assignFreshLink`, used by agent-edit and the editor's `assignWrittenHref`) and the stored-link walks, loaded from `@meridian/markup/links` and `@meridian/markup/stored-links` so neither the markup root nor the editor's assignment path pulls in codecs, Yjs or the schema builder. The client resolves through `resolveStoredLink` over a catalog on its document index; its ahead-ref settlement memo belongs to the account lifetime, and a ref first answered settled gone learns its document when a later answer names it.
+
+- Draft saves no longer credit reconciliation to the writer; authored block credit survives it.
+
+- Development: fold six split lifecycle tests into the scenarios they continue: one run lease from acquire through stale release, Agent catalog removal then restore, Retry then the superseded original, fork-ID replay after source trash, and nested presence suspension. Outcome checks stay beside each transition.
+- Development: reconcile the focused suite with current image-path and model-write regression contracts without restoring retired scaffolding.
+- Development: `pnpm test:all` runs unit and managed PostgreSQL tests together; its DB guard checks nested tests and rejects unit-only runs even with custom singular or plural reporter flags. Failed concurrency fixtures release and await their paused pulls.
+- Development: DB fixture resets send their ordered deletes in one round trip, preserving transaction rollback and FK locking. DB suites own their connections; DB and pure contract/codec workers reuse module caches.
+- Development: prune duplicate frontend, runtime, collaboration, package and tooling tests; keep recovery, authorization, billing, concurrent edits and persisted atomicity contracts. Shutdown fixtures report startup failures and await process cleanup. Keep focused stalled-stdout and paid-summary recovery regressions. Drop weaker stream-order, missing-hash and cleanup-ref duplicates.
+- Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
+
+- Model reads, writes and recovery stop retaining unused session clock maps.
+
+- AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back.
+
+- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes and downloads keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one link snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading link paths no longer holds up branch edits during reads or Apply.
+- Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
+
+- Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
+
+- An AI overwrite or replace changes only the paragraphs and words that differ. Single-match and find-all replacements use the same inline operation, without numeric apply tiers. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
+
+- An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
+
+- An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
+
+- Undo repair counts formatting runs without rebuilding unused mark metadata.
+
+- A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
+
+- Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
+
+- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
+- File moves, Apply, and Discard share one catalog repair queue instead of racing independent repairs. Repairs read file metadata without chapter prose; queued bursts append without recopying earlier moves. Lock contention logs warnings, not errors.
+
+- Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
+
+- Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
+
+- A link to a Scratch note that doesn't exist says it can't be found, and nothing in the Editor creates Scratch notes. Named-Work notes can be made from its Files tab or by the AI. Lineage notes are made by the AI.
+- A link clicked while the Editor is still loading its document's details waits, then opens, instead of doing nothing.
+
+- The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
+
+- Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
+
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
-## [Unreleased]
+- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
+- Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.
+- Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
+- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
+- `write` gains `copy` (a document, or part of it via `#fragment` or `in`, with its own history) and `from` on `insert`/`replace` (copy blocks as exact nodes). Undo and rollback cover both.
+- In a draft-mode Work, `scratch://` and `uploads://` writes go live; every other drafted source goes to the Work draft. Write results say `version: live` or `version: draft (@slug)`.
+- A reply's live and draft writes save in one database transaction; a failure saves none. `undo` and `redo` save pending writes first.
+- `read`, `search` and `ls` take `version: draft | live` (omitted: the version your writes change). A write against a different version than the last read returns `read_required`.
+- Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
+- An AI reply that was writing to a Work's draft when you switched the Work to auto-apply finishes in that draft, where it waits for your review like the changes you kept. Nothing in a draft goes live until you apply it.
+- `undo` and `redo` reverse each write in the journal it landed in (live or the Work draft). An undo or redo is `reconciled` only when other edits survive it.
+- Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
+- Skills are read-only files under `skills://<skill>/`. The prompt lists available skills by slug, and `skill({name})` loads one, returning what `read` returns for its `SKILL.md`: the address, a line saying paths in the skill are relative to its folder, then the text. `read` and `ls` reach the skill's other files; `read` on a skill's markdown takes `#heading` and `format: "outline"`, and `in` or `around` is `invalid_arguments`. `write` and `search` refuse `skills://`. The built-in skills no longer name files or skills that don't ship.
+- An agent sees the skills its own Agent preloads or offers as `model-invocable`, plus any skill the user invoked with `/skill` in that chat; a fork keeps those, spawned subagents and handoffs don't. `skill` refuses any other skill with the names it can load, and `read` answers not found. An agent that can see no skill isn't offered `skill`. A `/skill` body carries the same header as `skill()`. Migration 0028 adds `thread_agent_bindings.invoked_skills`.
+- Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
+- A skill's chat row reads "Invoked 'Story Review'", like the Thinking fold's summary.
+- Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0026 renames the report column.
+- A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
+- `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
+- Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
+- Tool lists say only which tools an agent has: `tools` is an optional allow-list and `disallowed-tools` removes tools, both arrays of real tool names. `edit` in `tools` and the allow/deny map fail to compile with the replacement named. An unknown name in `tools` makes the Agent unsupported; an unknown name in `disallowed-tools`, `Edit` and `apply_patch` included, is ignored. Tool names never fold onto another Flow tool: `search` stays `search`. No tool narrows its commands; a `read` agent gets `write` and is refused per file. Critic and Writer drop their tool lists.
+- `spawn.overrides` publishes its typed shape. `tools` is gone, `disallowed_tools` only adds denials and refuses a name outside the tool catalog, listing the tools, and a child with a tool its parent lacks is `invalid_arguments` naming it.
+- One action policy decides Work changes: a `read` agent (or any agent under a `read` parent) can't create, update, archive, unarchive or delete Works. The model's `work switch` takes `work` (was `target`) and is refused until the writer can approve it.
+- A `write` the file policy refuses returns `permission_denied` with a `reason`: `work_archived`, `agent_read_only`, `uploads_read_only`, or `action_denied` for a refused `work` command. Agents can't write `uploads://`. A read agent refused on another Work's `scratch://` is told it can change only this chat's.
+- An archived Work's scratch and draft are refused when the call runs, with the archived-Work copy, and so are `undo` and `redo` there. The archived Work's context line says which of its files are frozen and that `work unarchive` changes that; a read agent is told to ask the user.
+- File routes on an archived Work's files return 403 `work_archived` (was 409).
+- Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
+- The editor follows a room's access in place: an archived Work's draft review and scratch files turn read-only under the archived notice without a refresh, in the tab that archives at once and in other tabs when the server's 4409 arrives, and turn editable again after Unarchive once the server reconnects them read-write. Keystrokes the server refused at that moment are dropped, never replayed: a scratch file holding them drops its local copy and reopens from the server.
+- A tab that loaded while a Work was archived turns its draft review and scratch editors editable again when the Work is unarchived elsewhere, even if their room first connected after the unarchive.
+- An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
+- Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
+- Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
 
-- Fix: `pnpm dev --restart` failed with "port … is still held but could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
+- Documents and chat go offline promptly and retry together when the network returns, the tab wakes, or another connection recovers. Resource and working-set sync share the same recovery signals.
+- Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
+- Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
+
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link points at what moved or the rename is refused.
+
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
+
+- A rename the server refused no longer comes back under the refused name after a later delete of the same document is also refused.
+
+- No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
+- Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
+
+- Draft review: Work Files "Drafts to review" rows open review; repeated "Review draft" launches settle once; reload restores review from `?draft=` and repairs a stale one; leaving the document exits review; launches across documents push history.
+- Draft review: Apply is done when the server confirms it. The editor returns to live at once, and any later connecting or open problem shows on the document itself, with a retry, instead of a separate Finish or Abandon step. Applying several documents counts each at confirmation. If an Apply response is lost, the draft says it couldn't confirm whether it applied, apart from "Couldn't apply".
+- Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
+- Draft review: a never-applied document has no live version, so its review exit reads "Close review" and closes the tab (the draft stays in your list) instead of leaving a blank editor. Only Apply and Discard in the same Work disable each other, and a Discard that fails before it is sent no longer leaves the draft locked.
+- Draft review: a never-applied document opens its review from anywhere (Recently opened, a link without `draft=`, Back), and shows "unavailable" once its draft is discarded. It never opens as an empty editor.
+- Editor: entering review, Apply, Discard and Back to live never show an empty editor. The current text stays on screen and is read-only until the review is ready, so typing can't land in the live document by mistake.
+- Draft review: Discard of a never-applied document closes its tab at once and selects the neighbouring tab; a refused Discard leaves the tab closed and shows the error on the draft in the composer strip and Work Files.
+- Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.
+
+- Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.
+- Editor: after any change elsewhere in the project, reopening a document could show its saved copy and silently keep your typing in the browser only, never reaching the server, even after reload. It now reconnects, typing reaches the server, and text stranded this way syncs on the next load. A document whose reconnection to the server fails shows "Saved locally (offline)" instead of nothing.
+- Editor: after a lost connection, or a document that could not reconnect to the server on reopening, the "Saved locally (offline)" pill stays through the reconnect until the server has acknowledged every change made offline, then reads "Back online (all changes saved)" for three seconds. It never appears on a first load, and a new drop returns it to the offline label, and typing again during the confirmation hides it at once.
+- Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
+
+- Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
+- Chat: web links open in a new tab without a confirmation, like the Editor.
+- Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
+- Consolidate Markdown link round trips and remove type-only replica checks while preserving existing persistence and admission-ledger coverage.
+
+- Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
+- `@` is how you link a document, in the Editor and in chat; typing `[[` is plain text. In the Editor, `@` shows where each document lives and writes a standard link; for a name no document has yet, its last row links one in the same folder before it exists. Ctrl+K takes a web address, a document address, or a relative path.
+- Links in the Editor and chat: a link with nothing at its address offers Create, which makes the document at exactly that address and opens it (in chat, in the Editor). Uploads are never created from a link. Cancel on "Opening the link" stops the link from opening. A link that could not be checked offers Try again. Relative links in chat are plain text.
+- Links to your documents show as tags in the Editor, chat and the composer: an icon for where the document lives, then its name. Formatting inside a link stays one tag, and the name stays editable text. A link with nothing behind it yet, or a reference to a document that was deleted, has a dashed outline. Links to websites are underlined with an arrow, in chat as in the Editor.
+- Links: clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
+- A reference sent from the composer reads to the AI, and copies, as a standard link to the document's address.
+- Links copied from the Editor keep pointing at the same document wherever they are pasted: into a document in another folder or area, into chat, or into another app as text.
+- Pasting into an Editor document turns `[[Name]]` into a standard link, so notes brought over from Obsidian keep their links. `[[Name|label]]` keeps its label and `[[Name#Heading]]` its heading. When several documents share the name, the one in the same folder wins, then the one at the area's root. A name no document has yet becomes a dashed link beside the document, which Create makes. `![[embeds]]`, an escaped `\[[`, and anything pasted into or inside code stay text. Paste without formatting (Ctrl+Shift+V, or Cmd+Shift+V on a Mac) keeps the brackets as typed, and a typed `[[` is still plain text.
+- A chat with no Work no longer says "This Work is unavailable", and a No Work Scratch document opens in the Editor. No Work has one Editor however you reach it, and its tabs stay in its strip.
+- Renaming a Work's Scratch document from the title bar keeps it in that Work and saves the new name.
+- Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
+
+- Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
+
+- Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
+- Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
+- Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
+- Compaction turns and conversation seeds no longer count as chat, Work, or project activity.
+- Purge M4's thread-owned event journals and turns with an expired Work's chats.
+- Development: M4 migrations follow the Work screen migrations as 0014–0024; reset previously migrated M4 worktree databases with `pnpm db:reset`.
+
+- Shorten model-facing tool definitions and context cards, strip redundant `$schema` metadata, and keep advertised tools on `user` vocabulary.
+- Accept `current` for every conversation reference.
+- Compact `thread_history` dates and cursors; print the complete `next:` call with the inputs needed to continue the page.
+- Format `thread_ls` as compact lineage and conversation rows, marking only live runs awake.
+- Return compact model-facing `thread_report` results without internal IDs and redundant fields.
+
+- Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
+- Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
+- Catalog runtime control, compaction, handoff, and history probes.
+- Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.
+- Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
+
+- Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
+
+- Require an explicit ownership acknowledgment before detaching test database cleanup.
+
+- Run unit tests in worker threads while preserving module isolation.
+
+- Run DB tests on eight isolated workers, with a bounded override for busy shared servers.
+
+- Build the large transcript plan fixture once; restore only the tail each case mutates.
+
+- Prove failed control runs stay sweep-paced at the lease boundary instead of sleeping fifteen seconds.
+
+- Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
+
+- Disable synchronous commit only on runner-owned DB test connections.
+
+- Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
+- Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
+
+- Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed, was stopped, or was interrupted by a restart. Retry shows the new brief's card at once and waits while the chat is replying; a refused or lost Retry and a failed Stop say so on the card. Messages sent meanwhile are answered once the brief ends.
+- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once. A refused or lost Retry says so on the reply.
+- Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
+- Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
+- A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
+- Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
+
+- Always honor manual compaction once the chat has a completed reply, even when little context can be removed. Tell warm summaries not to repeat retained conversation.
+
+- Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
+- Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
+- A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
+- Treat a null spawn source as omitted.
+
+- Preserve bake-gated history guidance in rolling handoff summaries; classify completed and failed briefs as system history.
+
+- Preserve structured inspection errors, including unavailable bound models.
+
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
+- Batch history tool pairs by page, including pairs outside the page.
+
+- Keep model projection cursors out of writer transcript pages.
+
+- Authorize execution reports through the canonical lineage predicate.
+
+- Seed browser-test conversations with their lineage root.
+
+- Find connected conversations and read their history with document pointers and dated edit records.
+
+- Require a lineage root on every conversation; index fork and handoff discovery.
+- Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs follow the shared summary rule at every cutoff without rewriting failed reply history.
+
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
+
+- Acquire the destination run claim before creating a handoff seed; the detached brief releases it through the shared runnable-queue wake without creating a run boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fail handoff when source request preparation fails instead of making a rolling fallback call. Preserve queued skill activations behind pending seeds and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preparation discovers a lost asset; fail the brief without a rolling fallback.
+
+- Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
+
+### Changed
+- Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
+- Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
+- Preserve Work-context delivery while the detached brief holds the destination run claim.
+- A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
+- Validate Agent selections consistently across handoff and thread creation.
+- Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
+- Withdraw a control only before its start; after C records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
+- Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
+- Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
+- Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
+- Handoff requests require a destination id and cutoff; client-written summaries removed.
+
+- Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
+- Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
+- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
+
+- Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
+
+### Added
+- Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
+- Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
+- Queue manual compaction at the end of the queue. Withdraw queued requests or stop running dividers.
+- Pass `/compact <instructions>` to the summarizer and show the instructions on the queued row and divider. Offer Fork from a compaction divider.
+- Show "Compacting conversation" on every pending divider and the server's generic failure copy when compaction fails.
+- Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
+- Summarize long chats with cached requests or rolling cheap-model summaries. Give summaries and handoff briefs fixed sections, merge earlier summaries explicitly, and keep story facts and user preferences.
+- Show what each conversation was last asked beneath its `thread_ls` row.
+- Default compaction to the model's usable window or a 400,000-token ceiling.
+- Stop a running compaction and deliver messages queued during its summary afterward.
+- Compact long conversations through durable summary turns and atomic successor replies.
+- Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
+- Persist request sizes and turn-neutral child execution selectors for compaction.
+- Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+
+### Fixed
+- Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
+- Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
+- Keep interrupted compaction metadata parseable across run-start and startup recovery.
+- Read transcript segment cuts with the planned-compaction codec; failed dividers stay ordinary items.
+- Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
+- Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
+- Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
+- Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
+- Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
+- Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
+- Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
+- A queued compact stays at the end of the queue and is not absorbed by automatic compaction. A streaming reply adopts every message sent meanwhile at its tool steps.
+- Stop ends only the current turn; normal queue selection runs waiting messages before a command. Leave a command whose start throws queued like a message.
+- Always send queued-compaction withdrawal to the server so a command cannot run unseen after its local row disappears. When sending a row fails, offer Withdraw beside Retry.
+- Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
+- Follow each compaction summary with an explicit continuation line, and give handoff briefs the same changed-document warnings as compaction.
+- Refer to the human as `the user` throughout model-facing prompts and `thread_history` labels.
+- Advertise defaulted model-tool fields as optional rather than required.
+- Render component model text in `thread_history` instead of raw props or IDs; omit bake hashes from segment headers and revision tokens from reference reads.
+- Fail a warm-summary error once instead of retrying it cold. Give summaries no output limit of their own, leaving provider defaults in place without changing cached thinking; advertise DeepSeek V4 Flash at 65,536 output tokens and Claude Sonnet 4 at 64,000.
+- Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
+- Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
+- Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
+- Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
+- Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
+- Propagate context-window errors when provider fallback is enabled.
+- Roll summaries for cold or known-too-large requests; branch only from warm source requests. A `context_overflow` summary rejection is recorded as `request_too_large` so the next attempt rolls.
+- Allow clients to join chats while compaction is running.
+- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed when its start commits, so neither path replays it for another summary.
+- Include summary requests in the model-request debug capture.
+- Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
+- Leave a compaction pending for recovery when its live failure transaction cannot commit.
+- Development: reset worktree databases that already applied the earlier unreleased 0018 (`cold_lifeguard`, formerly 0014) with `pnpm db:reset`.
+- Bill summary responses on success, failure and cancellation, once per paid call.
+- Include compaction-call costs in child reports and the shared tree budget; estimate CJK text with required tokenizer-family rates (Anthropic 3.0, measured `o200k` 1.1, Gemini 1.2, DeepSeek 0.8), and probe CJK, image, and file estimates against live provider usage.
+- Cache TTL starts at the provider attempt, not response persistence.
+- Saved-report repair preserves fork cutoffs and cross-thread history.
+- Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.
+
+- Add the pure compaction classifier, trigger resolution, retained-tail planner, and active-history projection; project completed summaries before image inclusion and context building.
+- Make forks retain their source Agent and idempotent by client ID. Require fork and handoff to use the selected `originTurnId` exactly; refuse unsettled history with 409 `unsettled_history` and non-actionable turns with 400 `turn_not_actionable` instead of falling back to an earlier settled turn. Refuse fork and handoff from subagent threads.
+- Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
+- Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
+
+- Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
+- Derive prefix-cache warmth from durable bakes, completed compaction and typed image boundaries; record each request prediction on its response row, and share one runtime cache-state service across consumers.
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
 - Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
@@ -51,6 +482,8 @@
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
+- Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
+- Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
 - Opening a project is faster: its identity and shell reads run together, library hover or focus and the open New project dialog warm workspace code without loading project data, and route caches seed outside React render.
@@ -89,7 +522,7 @@
 
 - Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
 
-- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
+- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 - Chat navigation reopens the chat this browser last had open, or the chat index when there is none. The remembered chat is per device and no longer synced.
 - Opening or starting a chat from Work or Editor keeps the screen and shows it in the right sidebar. A first Send stays in its pane, including across reload.
@@ -1659,7 +2092,6 @@
   (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
   lifecycle branch.
 - `apps/app`: turn reversal waits for refreshed lineage before settling, so
-  refused Undo attempts immediately replace the stale Undo affordance.
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.

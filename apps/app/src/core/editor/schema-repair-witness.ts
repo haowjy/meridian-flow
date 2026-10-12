@@ -3,7 +3,7 @@
  *
  * The witness owns one Y.Doc update listener across both construction and live
  * editing. Construction repairs are unambiguous; live repairs are correlated
- * with the ProseMirror transaction emitted by the y-sync binding.
+ * with ProseMirror transactions from every view bound to the session.
  */
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
@@ -239,7 +239,7 @@ export type SchemaRepairWitness = {
   readonly phase: "open" | "live";
   readonly preBindSnapshot: Uint8Array;
   readonly latestPostRepairSnapshot: Uint8Array | null;
-  enterLive(editor: Editor): void;
+  enterLive(editor: Editor): () => void;
   destroy(): void;
 };
 
@@ -262,7 +262,7 @@ export function createSchemaRepairWitness({
   const preBindSnapshot = Y.encodeStateAsUpdate(document);
   let phase: "open" | "live" = "open";
   let latestPostRepairSnapshot: Uint8Array | null = null;
-  let editor: Editor | null = null;
+  const editorSubscriptions = new Map<Editor, () => void>();
   let activeProseMirrorTransaction: {
     transaction: Transaction;
     binding: boolean;
@@ -339,7 +339,11 @@ export function createSchemaRepairWitness({
     if (phase !== "live") return;
     const binding = bindingDispatched(transaction);
     const userDeletion = binding ? null : proseMirrorDeletion(transaction);
-    activeProseMirrorTransaction = { transaction, binding, userDeletion };
+    // A peer binding can dispatch synchronously inside the originating view's
+    // writer bracket. It must not replace that writer's attribution.
+    if (!binding || activeProseMirrorTransaction?.binding !== false) {
+      activeProseMirrorTransaction = { transaction, binding, userDeletion };
+    }
     if (!binding) {
       // TipTap emits beforeTransaction after ProseMirror applies the state, but
       // before view.updateState. A PM→Y transaction may therefore have started
@@ -489,10 +493,17 @@ export function createSchemaRepairWitness({
       return latestPostRepairSnapshot;
     },
     enterLive(liveEditor) {
-      editor = liveEditor;
-      editor.on("beforeTransaction", onBeforeProseMirrorTransaction);
-      editor.on("transaction", onProseMirrorTransaction);
+      if (destroyed) throw new Error("Cannot bind a destroyed schema repair witness");
+      liveEditor.on("beforeTransaction", onBeforeProseMirrorTransaction);
+      liveEditor.on("transaction", onProseMirrorTransaction);
+      const release = () => {
+        liveEditor.off("beforeTransaction", onBeforeProseMirrorTransaction);
+        liveEditor.off("transaction", onProseMirrorTransaction);
+        editorSubscriptions.delete(liveEditor);
+      };
+      editorSubscriptions.set(liveEditor, release);
       phase = "live";
+      return release;
     },
     destroy() {
       if (destroyed) return;
@@ -500,8 +511,7 @@ export function createSchemaRepairWitness({
       const repairs = fallbackRepairs();
       clearBatch();
       activeProseMirrorTransaction = null;
-      editor?.off("beforeTransaction", onBeforeProseMirrorTransaction);
-      editor?.off("transaction", onProseMirrorTransaction);
+      for (const release of editorSubscriptions.values()) release();
       document.off("update", onUpdate);
       document.off("beforeAllTransactions", onBeforeAllTransactions);
       document.off("beforeTransaction", onBeforeTransaction);

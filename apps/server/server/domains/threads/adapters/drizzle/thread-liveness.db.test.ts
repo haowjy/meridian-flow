@@ -1,3 +1,4 @@
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
  * PostgreSQL coverage for R2: the project list and the live state read the
@@ -24,7 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRunClaim } = await import("../../../runtime/index.js");
     const { createThreadRuntimeService } = await import("../../runtime-service.js");
     const { createDrizzleThreadRepository } = await import("./thread-repository.js");
@@ -34,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 6 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-liveness"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -43,6 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "thread-liveness",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -51,6 +53,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "streaming",
@@ -133,7 +136,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reads the running turn from the lease in both the list and live state", async () => {
       const authority = createDrizzleRunClaim(db);
-      const repo = createDrizzleThreadRepository(db, { statusReader: authority });
+      const repo = createDrizzleThreadRepository(db, {
+        statusReader: authority,
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const repos = createDrizzleRepositoriesForTest(db);
       const runtime = createThreadRuntimeService({
         db,
@@ -147,6 +153,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!lease) throw new Error("expected the lease to be acquired");
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
         value: undefined,
+        turnKind: "assistant" as const,
         turnId: TURN_ID,
         messageIds: [],
       }));

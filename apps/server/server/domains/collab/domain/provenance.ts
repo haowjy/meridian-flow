@@ -485,7 +485,6 @@ function nearestVisibleType(
 }
 
 function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number } | undefined {
-  if (edit.kind === "text") return { from: edit.span.start, to: edit.span.end };
   if (edit.kind !== "textRanges") return undefined;
   const first = edit.replacements[0];
   const last = edit.replacements.at(-1);
@@ -493,7 +492,6 @@ function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number
 }
 
 function textEditOutputLength(edit: MappedEdit["edit"]): number {
-  if (edit.kind === "text") return edit.newText.length;
   if (edit.kind === "textRanges") return edit.output.length;
   return 0;
 }
@@ -575,23 +573,6 @@ export function provenanceInstrumentation(): { enumerations: number } {
 
 export function resetProvenanceInstrumentation(): void {
   provenanceEnumerationCount = 0;
-}
-
-/**
- * Rejects client structs that enter the reserved ancestry and delete sets that
- * touch existing reserved structs. It inspects decoded ranges and the two
- * reserved subtrees only; it never scratch-applies or scans prose.
- */
-export function assertClientUpdateOutsideReservedNamespace(
-  referenceDocument: Y.Doc,
-  update: Uint8Array,
-): void {
-  const decoded = Y.decodeUpdate(update) as DecodedUpdate;
-  assertDecodedUpdateOutsideReservedNamespace(
-    referenceDocument,
-    decoded,
-    decoded.structs.map(asStruct),
-  );
 }
 
 export function validateClientUpdateAdmission(

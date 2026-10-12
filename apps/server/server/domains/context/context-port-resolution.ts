@@ -2,11 +2,15 @@
  * ContextPort resolution helpers: centralize the non-deleted Work lookup that turns
  * thread or project-browse context into the correct unified ContextPort.
  */
+
+import type { DocumentVersion } from "@meridian/agent-edit";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
 import type { ContextPort } from "./ports/context-port.js";
+import { scratchOwnerFor } from "./scratch-owner.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
 export interface ThreadContextResolution {
@@ -14,12 +18,17 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
+  /** The thread's Work when it drafts AI writes; null in auto-apply. */
+  primaryDraftWork: WorkRef | null;
+  scratchLineages?: import("./scratch-owner.js").ScratchLineages;
+  scratchOwner?: import("./scratch-owner.js").ScratchOwner;
 }
 
 export interface ThreadContextResolutionDeps {
+  scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -46,18 +55,31 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
+  // By id: the project listing leaves out No Work, which can be in draft mode too.
+  const primaryWork = primaryMembership
+    ? await deps.works.findById(primaryMembership.workId)
+    : null;
   return {
     thread,
+    scratchLineages: deps.scratchLineages,
+    ...(primaryWork ? { scratchOwner: scratchOwnerFor(thread, primaryWork) } : {}),
     primaryWorkId: primaryMembership?.workId ?? null,
     workAuthorities,
     primaryWorkAuthority,
+    primaryDraftWork:
+      primaryWork?.aiWriteMode === "draft" ? { id: primaryWork.id, slug: primaryWork.slug } : null,
   };
 }
 
 export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
-  options: { responseId?: string | null } = {},
+  options: {
+    responseId?: string | null;
+    version?: DocumentVersion;
+    /** Write live whatever the Work's mode, as a binary copy does (D24). */
+    liveWrites?: boolean;
+  } = {},
 ): ContextPort {
   if (!resolution.primaryWorkAuthority) {
     throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
@@ -67,14 +89,22 @@ export function contextPortForThread(
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
-    resolution.thread.id,
-    options.responseId,
+    {
+      scratchOwner: scratchOwnerFor(resolution.thread, {
+        id: resolution.primaryWorkAuthority.workId,
+        isNoWork: resolution.primaryWorkAuthority.workSlug === null,
+      }),
+      threadId: resolution.thread.id,
+      responseId: options.responseId,
+      draftWork: options.liveWrites ? null : resolution.primaryDraftWork,
+      ...(options.version ? { version: options.version } : {}),
+    },
   );
 }
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -130,7 +160,14 @@ export async function contextPortForProjectAuthorities(input: {
   projectWorks?: Awaited<ReturnType<WorkRepository["listByProject"]>>;
 }): Promise<ContextPort | null> {
   if (input.workIds.size === 0) {
-    return input.deps.contextPorts.forProject(input.projectId, input.userId, new Map());
+    const works =
+      input.projectWorks ??
+      (await input.deps.works.listByProject(input.projectId, { lifecycle: "all" }));
+    return input.deps.contextPorts.forProject(
+      input.projectId,
+      input.userId,
+      await resolvedAuthorities(input.deps, input.projectId, works),
+    );
   }
   if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
   const resolved = await Promise.all(
@@ -164,7 +201,23 @@ export async function contextPortForProjectBrowse(input: {
   projectId: string;
   userId: string;
   workId?: string | null;
+  rootThreadId?: string | null;
 }): Promise<ContextPort | null> {
+  if (input.rootThreadId) {
+    if (input.workId) return null;
+    const lineage = await input.deps.contextPorts.lineages.byId(
+      input.projectId,
+      input.rootThreadId,
+    );
+    if (!lineage) return null;
+    const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
+    return input.deps.contextPorts.forProject(
+      input.projectId,
+      input.userId,
+      await resolvedAuthorities(input.deps, input.projectId, works),
+      lineage,
+    );
+  }
   const workIds = new Set(input.workId ? [input.workId] : []);
   return contextPortForProjectAuthorities({
     ...input,

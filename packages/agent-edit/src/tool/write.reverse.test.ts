@@ -1,7 +1,7 @@
 // Host reverse() API coverage for user-facing write, turn, and thread reversal scopes.
 import { describe, expect, it, vi } from "vitest";
 
-import { blockTexts, expectOutcome } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 
@@ -34,25 +34,6 @@ describe("write host reverse", () => {
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "After undo."]);
   });
 
-  it("undoes a targeted write by id", async () => {
-    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
-    await scenario.ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "One." },
-      { ...context, turnId: "turn-one" },
-    );
-
-    const undo = await scenario.ctx.core.reverse({
-      docId: "chapter.md",
-      threadId: THREAD_ID,
-      direction: "undo",
-      selection: { kind: "single", to: "w1" },
-      actor,
-    });
-
-    expectOutcome(undo, "reversed");
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
-  });
-
   it("undoes all writes in a turn", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
@@ -63,8 +44,9 @@ describe("write host reverse", () => {
       { command: "insert", file: "chapter.md", content: "Two." },
       { ...context, turnId: "turn-target" },
     );
+    // Edits only base text, so nothing it writes anchors on the target turn's.
     await scenario.ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Later." },
+      { command: "replace", file: "chapter.md", find: "Base.", content: "Base, revised." },
       { ...context, turnId: "turn-later" },
     );
 
@@ -76,24 +58,9 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(undo, "reversed");
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Later."]);
-  });
-
-  it("undoes the whole thread", async () => {
-    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
-    await scenario.appendBlocks(["One.", "Two."], "turn-thread");
-
-    const undo = await scenario.ctx.core.reverse({
-      docId: "chapter.md",
-      threadId: THREAD_ID,
-      direction: "undo",
-      selection: { kind: "all" },
-      actor,
-    });
-
-    expectOutcome(undo, "reversed");
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    expectOutcome(undo, "reconciled");
+    expect(outcomeText(undo)).toContain("later edits were kept");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base, revised."]);
   });
 
   it("supports undo → redo → undo again for turn-scoped reversal", async () => {
@@ -120,7 +87,7 @@ describe("write host reverse", () => {
       selection: { kind: "turn", turnId: "turn-cycle" },
       actor,
     });
-    expectOutcome(redo, "reconciled");
+    expectOutcome(redo, "reversed");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
@@ -146,7 +113,7 @@ describe("write host reverse", () => {
       selection: { kind: "turn", turnId: "turn-cycle" },
       actor,
     });
-    expectOutcome(secondRedo, "reconciled");
+    expectOutcome(secondRedo, "reversed");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 

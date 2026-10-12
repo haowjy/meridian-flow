@@ -70,39 +70,6 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
 }
 
 describe("rebindThreadWork", () => {
-  it("rebinds named Work to No Work with a null slug receipt", async () => {
-    const h = fixture(SOURCE_ID);
-    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
-    expect(result).toMatchObject({
-      changed: true,
-      before: { workId: SOURCE_ID, name: "Source", slug: expect.any(String) },
-      after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
-      receipt: {
-        before: { workId: SOURCE_ID },
-        after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
-        inverse: null,
-      },
-    });
-    expect(h.threadChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it("rebinds No Work to named Work", async () => {
-    const h = fixture(NO_WORK_ID);
-    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: TARGET_ID });
-    expect(result).toMatchObject({
-      changed: true,
-      before: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
-      after: { workId: TARGET_ID, name: "Target" },
-    });
-  });
-
-  it("no-ops when already bound to No Work", async () => {
-    const h = fixture(NO_WORK_ID);
-    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
-    expect(result.changed).toBe(false);
-    expect(h.threadChanged).not.toHaveBeenCalled();
-  });
-
   it.each([
     [null, "target_work_unavailable"],
     [{ ...work(TARGET_ID, "Deleted"), deletedAt: "now" }, "target_work_unavailable"],

@@ -1,3 +1,10 @@
+/** Convert supported corpus files into prose, keeping the writer's titles and hierarchy. */
+import {
+  type ParsedDocumentFilename,
+  parseDocumentFilename,
+  renderFilename,
+} from "@meridian/contracts/protocol";
+import { allocateFilename, joinPath } from "../context/paths.js";
 import type { ContextError } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { ConvertedDocument, DocumentConverterPort } from "./ports/document-converter.js";
@@ -61,49 +68,25 @@ export type CorpusImportService = {
   }): Promise<CorpusImportBatchResult>;
 };
 
-function titleFromFilename(filename: string): string {
+function titleFromFilename(
+  filename: string,
+  kind: ReturnType<DocumentConverterPort["classify"]>,
+): string {
   const leaf = filename.split(/[\\/]/).pop()?.trim() || "Untitled";
-  const withoutExtension = leaf.replace(/\.[^.]+$/, "").trim() || "Untitled";
-  return withoutExtension.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || "Untitled";
+  // DOCX is a conversion source, not the converted document's type.
+  const input = kind === "docx" ? leaf.replace(/\.docx$/i, "") : leaf;
+  const parsed = parseDocumentFilename(input);
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : input;
 }
 
-function slugSegment(value: string): string {
-  const slug = value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "untitled";
-}
-
-function targetPathBase(file: CorpusImportInputFile): string {
-  const rawPath = (file.relativePath || file.filename).replace(/\\/g, "/");
-  const segments = rawPath
+function targetDirectory(file: CorpusImportInputFile): string {
+  const segments = (file.relativePath || file.filename)
+    .replace(/\\/g, "/")
     .split("/")
     .map((segment) => segment.trim())
     .filter((segment) => segment && segment !== "." && segment !== "..");
-  const leaf = segments.pop() || file.filename;
-  const title = titleFromFilename(leaf);
-  const dir = segments.map(slugSegment);
-  return ["imports", ...dir, slugSegment(title)].join("/");
-}
-
-async function uniqueTargetPath(
-  file: CorpusImportInputFile,
-  taken: Set<string>,
-  exists: (path: string) => Promise<boolean>,
-): Promise<string> {
-  const base = targetPathBase(file);
-  let suffix = 1;
-  while (true) {
-    const path = suffix === 1 ? `${base}.md` : `${base}-${suffix}.md`;
-    if (!taken.has(path) && !(await exists(path))) {
-      taken.add(path);
-      return path;
-    }
-    suffix += 1;
-  }
+  segments.pop();
+  return ["imports", ...segments].join("/");
 }
 
 function markdownForImport(
@@ -130,6 +113,7 @@ function contextErrorMessage(error: ContextError): string {
       return "Context access denied";
     case "context_unavailable":
       return "Context is unavailable";
+    case "destination_missing":
     case "not_found":
       return "Context path not found";
     case "conflict":
@@ -139,6 +123,7 @@ function contextErrorMessage(error: ContextError): string {
     case "stale_source":
     case "stale_target":
       return "Context location changed; retry the operation";
+    case "invalid_name":
     case "invalid_operation":
       return error.message ?? "Invalid context operation";
   }
@@ -162,17 +147,26 @@ export function createCorpusImportService({
     };
     const items: CorpusImportItemResult[] = [];
 
-    for (const file of input.files) {
-      const title = titleFromFilename(file.filename);
+    const prepared: {
+      file: CorpusImportInputFile;
+      index: number;
+      kind: ReturnType<DocumentConverterPort["classify"]>;
+      title: string;
+      parts: ParsedDocumentFilename;
+      directory: string;
+      converted: ConvertedDocument;
+    }[] = [];
+    for (const [index, file] of input.files.entries()) {
       const kind = converter.classify({ filename: file.filename, mimeType: file.mimeType });
+      const title = titleFromFilename(file.filename, kind);
       if (kind === "unsupported") {
-        items.push({
+        items[index] = {
           status: "skipped",
           filename: file.filename,
           title,
           reason: `Unsupported file type${file.mimeType ? `: ${file.mimeType}` : ""}`,
           source: input.source,
-        });
+        };
         continue;
       }
 
@@ -180,47 +174,125 @@ export function createCorpusImportService({
       try {
         converted = await converter.convert(file);
       } catch (error) {
-        items.push({
+        items[index] = {
           status: "failed",
           filename: file.filename,
           title,
           reason: error instanceof Error ? error.message : String(error),
           source: input.source,
-        });
+        };
         continue;
       }
 
-      const path = await uniqueTargetPath(file, taken, exists);
-      const uri = `kb://${path}`;
-      const write = await port.write(uri, markdownForImport(kind, title, converted.markdown), {
-        origin: {
-          type: "import",
-          userId: input.userId,
-          source: input.source.kind,
+      const parsed = parseDocumentFilename(title);
+      if (!parsed.ok || parsed.value.filetype !== "markdown") {
+        items[index] = {
+          status: "failed",
           filename: file.filename,
-          sourceId: file.sourceId,
-        },
+          title,
+          reason: parsed.ok ? "A converted document must have a prose name" : parsed.error.message,
+          source: input.source,
+        };
+        continue;
+      }
+      prepared.push({
+        file,
+        index,
+        kind,
+        title,
+        parts: parsed.value,
+        directory: targetDirectory(file),
+        converted,
       });
+    }
+
+    // Folder claims and all desired document names are known before numbering.
+    // A suffix may not steal a name another source file brings into this batch.
+    const desired = new Set<string>();
+    for (const item of prepared) {
+      desired.add(joinPath(item.directory, renderFilename(item.parts.name, item.parts.extension)));
+      const segments = item.directory.split("/");
+      for (let depth = 0; depth < segments.length; depth += 1) {
+        const folder = parseDocumentFilename(segments[depth] ?? "");
+        if (folder.ok)
+          taken.add(
+            joinPath(
+              segments.slice(0, depth).join("/"),
+              renderFilename(folder.value.name, folder.value.extension),
+            ),
+          );
+      }
+    }
+    const sourceName = (file: CorpusImportInputFile) =>
+      (file.relativePath || file.filename).replace(/\\/g, "/");
+    const canonical = (item: (typeof prepared)[number]) =>
+      item.file.filename.split(/[\\/]/).pop() ===
+      renderFilename(item.parts.name, item.parts.extension);
+    prepared.sort(
+      (left, right) =>
+        Number(canonical(right)) - Number(canonical(left)) ||
+        (sourceName(left.file) < sourceName(right.file)
+          ? -1
+          : sourceName(left.file) > sourceName(right.file)
+            ? 1
+            : 0),
+    );
+
+    for (const { file, index, kind, title, parts, directory, converted } of prepared) {
+      const ownDesired = joinPath(directory, renderFilename(parts.name, parts.extension));
+      const create = async () => {
+        const filename = await allocateFilename(parts, async (candidate) => {
+          const path = joinPath(directory, candidate);
+          return (
+            taken.has(path) || (path !== ownDesired && desired.has(path)) || (await exists(path))
+          );
+        });
+        const path = joinPath(directory, filename);
+        taken.add(path);
+        return port.createTrackedDocument(
+          `kb://${path}`,
+          markdownForImport(kind, title, converted.markdown),
+          {
+            origin: {
+              type: "import",
+              userId: input.userId,
+              source: input.source.kind,
+              filename: file.filename,
+              sourceId: file.sourceId,
+            },
+          },
+        );
+      };
+      // Another intake can claim after stat. Create never overwrites its content;
+      // retry with that candidate held in this batch's taken set.
+      let write = await create();
+      for (
+        let attempt = 1;
+        !write.ok && write.error.code === "conflict" && attempt < 8;
+        attempt += 1
+      ) {
+        write = await create();
+      }
       if (!write.ok) {
-        items.push({
+        items[index] = {
           status: "failed",
           filename: file.filename,
           title,
           reason: contextErrorMessage(write.error),
           source: input.source,
-        });
+        };
         continue;
       }
 
-      items.push({
+      items[index] = {
         status: "imported",
         filename: file.filename,
         title,
-        uri,
+        uri: write.value.uri,
         documentId: write.value.documentId,
         source: input.source,
         messages: converted.messages.map((message) => message.message),
-      });
+      };
     }
 
     return {

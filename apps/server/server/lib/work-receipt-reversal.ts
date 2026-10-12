@@ -3,11 +3,10 @@ import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/pr
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import {
-  isReversibleWorkMutationReceipt,
+  isReversibleWorkReceipt,
   isWorkArchived,
   parseWorkReceipt,
   type Work,
-  type WorkMutationReceipt,
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
@@ -38,7 +37,7 @@ export type WorkReceiptReversal = WorkReversalResult & { workId: WorkId };
 type Direction = "undo" | "redo";
 type ShadowWork = Work & { deleted: boolean };
 type PlannedStep = {
-  receipt: WorkMutationReceipt;
+  receipt: WorkReceipt;
   command: WorkReversalResult["command"];
   executable: boolean;
   message?: string;
@@ -150,7 +149,7 @@ export async function getWorkReceiptReversalAvailability(
 async function reversalContext(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "threads">,
   input: { threadId: ThreadId; turnId: TurnId },
-): Promise<{ thread: Thread; receipts: WorkMutationReceipt[] } | null> {
+): Promise<{ thread: Thread; receipts: WorkReceipt[] } | null> {
   const [turn, thread] = await Promise.all([
     deps.turns.findById(input.turnId),
     deps.threads.findById(input.threadId),
@@ -159,26 +158,23 @@ async function reversalContext(
   return { thread, receipts: await receiptsForTurn(deps, input.turnId) };
 }
 
-function orderReceipts(
-  receipts: WorkMutationReceipt[],
-  direction: Direction,
-): WorkMutationReceipt[] {
+function orderReceipts(receipts: WorkReceipt[], direction: Direction): WorkReceipt[] {
   return direction === "undo" ? [...receipts].reverse() : receipts;
 }
 
 async function receiptsForTurn(
   deps: Pick<WorkReceiptReversalDeps, "blocks">,
   turnId: TurnId,
-): Promise<WorkMutationReceipt[]> {
+): Promise<WorkReceipt[]> {
   return (await deps.blocks.listByTurn(turnId)).flatMap((block) => {
     const receipt = receiptFromContent(block.content);
-    return receipt && isReversibleWorkMutationReceipt(receipt) ? [receipt] : [];
+    return receipt && isReversibleWorkReceipt(receipt) ? [receipt] : [];
   });
 }
 
 async function lockReceiptState(
   deps: Pick<WorkReceiptReversalDeps, "works">,
-  receipts: WorkMutationReceipt[],
+  receipts: WorkReceipt[],
 ): Promise<void> {
   const ids = new Set<WorkId>(receipts.map(({ workId }) => workId));
   for (const workId of [...ids].sort()) await deps.works.lockById(workId);
@@ -186,7 +182,7 @@ async function lockReceiptState(
 
 async function planReceipts(
   deps: Pick<WorkReceiptReversalDeps, "works">,
-  receipts: WorkMutationReceipt[],
+  receipts: WorkReceipt[],
   thread: Thread,
   direction: Direction,
 ): Promise<PlannedStep[]> {
@@ -261,7 +257,7 @@ async function planReceipts(
 
 async function applyStep(
   deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
-  receipt: WorkMutationReceipt,
+  receipt: WorkReceipt,
   direction: Direction,
 ): Promise<{ threadIds: ThreadId[] }> {
   if (receipt.operation === "create") {
@@ -329,10 +325,7 @@ async function applyState(
   }
 }
 
-function commandFor(
-  receipt: WorkMutationReceipt,
-  direction: Direction,
-): WorkReversalResult["command"] {
+function commandFor(receipt: WorkReceipt, direction: Direction): WorkReversalResult["command"] {
   if (direction === "undo" && receipt.inverse) return receipt.inverse.command;
   switch (receipt.operation) {
     case "create":
@@ -345,7 +338,7 @@ function commandFor(
 }
 
 function result(
-  receipt: WorkMutationReceipt,
+  receipt: WorkReceipt,
   projectId: string,
   command: WorkReversalResult["command"],
   status: WorkReversalResult["status"],

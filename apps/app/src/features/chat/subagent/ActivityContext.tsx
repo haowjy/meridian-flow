@@ -36,22 +36,8 @@ export function useSubagentRun(key: SubagentRunKey) {
   return runs.byExecution.get(key.execution);
 }
 
-export function useSubagentRuns(
-  threadId: string,
-  { directOnly = false }: { directOnly?: boolean } = {},
-) {
+/** The provider receives the viewed thread's direct-child activity from the server. */
+export function useSubagentRuns() {
   const { nodes, runs } = useContext(SubagentActivityContext);
-  const included = new Set([threadId]);
-  const descendants: ThreadActivityNode[] = [];
-  for (const node of nodes) {
-    if (
-      directOnly
-        ? node.parentThreadId === threadId
-        : node.parentThreadId != null && included.has(node.parentThreadId)
-    ) {
-      descendants.push(node);
-      if (!directOnly) included.add(node.threadId);
-    }
-  }
-  return descendants.map((node) => runs.byThreadId.get(node.threadId)).filter((run) => run != null);
+  return nodes.map((node) => runs.byThreadId.get(node.threadId)).filter((run) => run != null);
 }

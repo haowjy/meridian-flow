@@ -4,7 +4,7 @@ import type {
   Filetype,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "@meridian/resource-replica";
+import type { CatalogCacheView, ParentRef, ResourceDestination } from "@meridian/resource-replica";
 
 type CatalogFileBase = {
   kind: "file";
@@ -22,9 +22,14 @@ type CatalogFileBase = {
   resourceOrigin?: "local";
   /** Exact device content can open without a fresh server read. */
   localContent?: true;
+  /** The writer's own move of this document, or of a folder above it, is not yet confirmed. */
+  placementPending?: true;
   /** Durable namespace work that needs the writer to retry. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;
+  namespaceRepairMove?: ResourceDestination;
+  /** When the refusal settled locally; separates a fresh failure from one already there on load. */
+  namespaceFailureAt?: number;
 };
 
 export type CatalogFile =
@@ -42,12 +47,18 @@ export type CatalogFile =
     });
 
 export type CatalogDirectory = {
+  navigationOnly?: true;
   kind: "dir";
   entryId: string;
   parentId: string | null;
   name: string;
   path: string;
   uri: string;
+  /** A refused rename or move put this folder back; the writer retries from here. */
+  namespaceFailure?: "delete" | "set-location";
+  namespaceRepairName?: string;
+  namespaceRepairMove?: ResourceDestination;
+  namespaceFailureAt?: number;
 };
 
 export type CatalogNode = CatalogDirectory | CatalogFile;
@@ -61,3 +72,13 @@ export type CatalogContextView = {
   findPath(path: string): CatalogFile | CatalogDirectory | null;
   findDocument(documentId: string): CatalogFile | null;
 };
+
+/** A rename retains its projected parent and owner; everything else is a move. */
+export function refusedMoveDestination(
+  destination: ResourceDestination | undefined,
+  current: ParentRef | null,
+): ResourceDestination | undefined {
+  return destination && JSON.stringify(destination.parent) !== JSON.stringify(current)
+    ? destination
+    : undefined;
+}

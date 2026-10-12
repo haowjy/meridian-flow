@@ -17,6 +17,7 @@ import {
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
+  apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextOperationPath,
   apiProjectContextReadPath,
@@ -31,6 +32,7 @@ import {
   type CatalogScope,
   type CatalogSnapshot,
   type ContextReadResponse,
+  type CreateContextEntryResult,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
@@ -40,6 +42,7 @@ import {
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressResult,
+  type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
@@ -218,13 +221,12 @@ export async function updateProjectWorkingSet(
 export async function updateWorkWriteMode(
   projectId: string,
   workId: string,
-  input: Work["aiWriteMode"] | UpdateWorkWriteModeRequest,
+  input: UpdateWorkWriteModeRequest,
   init?: RequestInitOptions,
 ): Promise<UpdateWorkWriteModeResponse> {
-  const body = typeof input === "string" ? { aiWriteMode: input } : input;
   return patchJson<UpdateWorkWriteModeResponse>(
     urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
-    body,
+    input,
     { headers: init?.headers },
   );
 }
@@ -232,6 +234,7 @@ export async function updateWorkWriteMode(
 function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
   const query = new URLSearchParams({ scope: scope.kind, ...extra });
   if (scope.kind === "work") query.set("workId", scope.workId);
+  if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
   return query.toString();
 }
 
@@ -271,10 +274,11 @@ export async function getProjectContextAvailability(
   projectId: string,
   documentIds: readonly string[],
   signal?: AbortSignal,
+  folderIds?: readonly string[],
 ): Promise<ProjectContextIdentityLookupResult> {
   return postJson<ProjectContextIdentityLookupResult>(
     `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
-    { projectId, documentIds },
+    { projectId, documentIds, ...(folderIds ? { folderIds } : {}) },
     { signal },
   );
 }
@@ -295,6 +299,7 @@ export async function createProjectThread(
 ): Promise<CreateThreadResponse> {
   return postJson<CreateThreadResponse>(urlFor(apiProjectThreadsPath(projectId), init), data, {
     headers: init?.headers,
+    signal: init?.signal,
   });
 }
 
@@ -314,7 +319,7 @@ export async function createContextEntry(
   body: { type: "file" | "folder"; path: string; content?: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<{ status: "created"; documentId?: string } | { status: "conflict"; uri: string }> {
+): Promise<CreateContextEntryResult> {
   return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
     acceptErrorResponse: acceptsContextConflict,
@@ -401,4 +406,13 @@ export async function getProjectContextRead(
     urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
     { headers: init?.headers },
   );
+}
+
+/** The first chat's handle and title for a lineage, even when that chat is trashed. */
+export async function getContextLineage(
+  projectId: string,
+  rootThreadId: string,
+  signal?: AbortSignal,
+): Promise<LineageInfo> {
+  return getJson<LineageInfo>(apiProjectContextLineagePath(projectId, rootThreadId), { signal });
 }

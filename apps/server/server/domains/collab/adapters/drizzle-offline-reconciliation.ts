@@ -1,7 +1,7 @@
 /** Production offline-reconciliation adapter assembly. */
 import { createHash } from "node:crypto";
 import type {
-  AgentEditCodec,
+  AgentEditCodecFactory,
   ReversalStore,
   UpdateJournal,
   YProsemirrorDocumentModel,
@@ -10,13 +10,15 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import { createOfflineReconciliation } from "../domain/offline-reconciliation.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { documentTitleFromUri } from "../domain/reversal-notices.js";
 
 export function createDrizzleOfflineReconciliation(input: {
   journal: UpdateJournal & ReversalStore;
   changeTrails: ChangeTrailPersistence;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
   resolveTurnThreadId(
     turnId: TurnId,
   ): Promise<import("@meridian/contracts/runtime").ThreadId | null>;
@@ -27,6 +29,7 @@ export function createDrizzleOfflineReconciliation(input: {
     changeTrails: input.changeTrails,
     model: input.model,
     codec: input.codec,
+    links: input.links,
     identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
     resolveThreadId: input.resolveTurnThreadId,
     resolveDocumentTitle: async (documentId) =>

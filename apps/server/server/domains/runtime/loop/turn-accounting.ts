@@ -32,7 +32,7 @@ export interface TurnAccounting {
   recordIterationSpend(treeBudget: TreeBudget): void;
   /** Compute cost for a model response and debit credits. */
   computeAndDebit(
-    response: GenerateResult,
+    response: Pick<GenerateResult, "provider" | "model" | "usage" | "providerData">,
     thread: Thread,
     threadId: ThreadId,
     turnId: TurnId,
@@ -42,6 +42,7 @@ export interface TurnAccounting {
 }
 
 export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
+  const recordedSpend = new Set<string>();
   return {
     async assertPreIterationBudget(
       treeBudget: TreeBudget,
@@ -71,7 +72,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
     },
 
     async computeAndDebit(
-      response: GenerateResult,
+      response: Pick<GenerateResult, "provider" | "model" | "usage" | "providerData">,
       thread: Thread,
       threadId: ThreadId,
       turnId: TurnId,
@@ -99,7 +100,12 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       }
 
       // DEFERRED(bigint-millicredits): pilot scale is orders of magnitude below 2^53; move to bigint/string end-to-end when balances can exceed it.
-      recordCostSpend(treeBudget, Number(computedCost.millicredits));
+      // Settlement may retry after its enclosing transaction rolls back. The
+      // provider call was paid once even when its durable debit must be retried.
+      if (!recordedSpend.has(usageEventId)) {
+        recordCostSpend(treeBudget, Number(computedCost.millicredits));
+        recordedSpend.add(usageEventId);
+      }
       return computedCost;
     },
   };

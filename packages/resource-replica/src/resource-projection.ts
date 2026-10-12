@@ -1,8 +1,13 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
-import type {
-  ResourceCatalogCheckpoint,
-  ResourceLocation,
-  ResourceRecord,
+import { namespaceRepairDestination } from "./namespace-journal-policy";
+import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
+import {
+  type DestinationParentLookup,
+  destinationLocation,
+  type ResourceCatalogCheckpoint,
+  type ResourceDestination,
+  type ResourceLocation,
+  type ResourceRecord,
 } from "./resource-records";
 
 export type ProjectResourceLocation = ResourceLocation & { provisional: boolean };
@@ -23,63 +28,63 @@ export function resourceForDocumentIdentity(
 export function projectResourceNeedsRepair(
   projectId: string,
   record: ResourceRecord,
-): { intentId: string; kind: "set-location" | "delete"; name: string } | null {
+): {
+  intentId: string;
+  kind: "set-location" | "delete";
+  name: string;
+  destination?: ResourceDestination;
+} | null {
   const failed = record.intents.find(
     (intent) => intent.projectId === projectId && intent.state === "needs-repair",
   );
-  if (!failed || failed.desired.kind === "create") return null;
+  if (!failed || failed.desired.kind === "create" || failed.desired.kind === "set-folder-location")
+    return null;
+  const destination =
+    failed.desired.kind === "set-location"
+      ? (namespaceRepairDestination(record.intents, failed) ?? failed.desired.destination)
+      : undefined;
   return {
     intentId: failed.intentId,
     kind: failed.desired.kind,
-    name:
-      failed.desired.kind === "set-location"
-        ? failed.desired.destination.name
-        : (record.resource.canonical?.name ?? "document"),
+    ...(destination ? { destination } : {}),
+    name: destination?.name ?? record.resource.canonical?.name ?? "document",
   };
 }
 
-/** Writer-facing location, including durable local intentions not yet reflected by a catalog. */
+/** Resource-owned placement policy. UI consumers use ResourcePlacement to include ancestor changes. */
 export function projectResourceLocation(
   projectId: string,
   record: ResourceRecord,
+  lookup: DestinationParentLookup = () => null,
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some(
-      (intent) =>
-        intent.projectId === projectId &&
-        intent.desired.kind === "delete" &&
-        intent.state !== "cancelled" &&
-        intent.state !== "needs-repair",
-    )
+    record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
   )
     return null;
-  const placement = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find(
-      (intent) =>
-        intent.projectId === projectId &&
-        intent.desired.kind === "set-location" &&
-        intent.state !== "cancelled" &&
-        intent.state !== "settled-locally" &&
-        intent.state !== "needs-repair",
-    )?.desired;
+  const placement = owningLocationIntent(
+    projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  )?.desired;
   if (placement?.kind === "set-location") {
-    const folder = placement.destination.folderPath.split("/").filter(Boolean).join("/");
-    return {
-      scheme: placement.destination.scheme,
-      path: `/${[folder, placement.destination.name].filter(Boolean).join("/")}`,
-      name: placement.destination.name,
-      workId: placement.destination.workId,
-      ...(placement.destination.workSlug ? { workSlug: placement.destination.workSlug } : {}),
-      provisional: false,
-    };
+    const location = destinationLocation(placement.destination, lookup);
+    if (location) return { ...location, provisional: false };
   }
+
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
+  // Refused filing returns a normal file to its accepted home, not a provisional reservation.
+  const filed = record.intents.some(
+    (intent) =>
+      intent.desired.kind === "set-location" &&
+      (intent.state === "settled" ||
+        intent.state === "needs-repair" ||
+        intent.state === "superseded"),
+  );
   if (record.resource.canonical)
-    return { ...record.resource.canonical, provisional: create?.kind === "create" };
+    return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
   if (create?.kind !== "create") return null;
   const folder = create.folderPath.split("/").filter(Boolean).join("/");
   const name = create.provisionalName ?? "Untitled";
@@ -98,14 +103,18 @@ export function resourceVisibleInProject(
   catalogs: readonly ResourceCatalogCheckpoint[],
 ): boolean {
   if (
-    record.intents.some((intent) => intent.projectId === projectId && intent.state !== "cancelled")
+    record.intents.some(
+      (intent) =>
+        intent.projectId === projectId &&
+        intent.state !== "cancelled" &&
+        intent.state !== "superseded",
+    )
   )
     return true;
   const documentId = record.resource.identity.documentId;
   return catalogs.some(
     (catalog) =>
       catalog.projectId === projectId &&
-      !catalog.invalidatedEntryIds.includes(documentId) &&
       catalog.entries.some((entry) => entry.kind === "file" && entry.entryId === documentId),
   );
 }

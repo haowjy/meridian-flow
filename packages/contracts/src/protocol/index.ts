@@ -35,6 +35,7 @@ export type {
   UpdateThreadUserStateResponse,
 } from "../threads/project-chat-feed.js";
 export { updateThreadUserStateRequestSchema } from "../threads/project-chat-feed.js";
+export { isProviderDeclined } from "../threads/provider-error.js";
 export type { RenameThreadRequest, RenameThreadResponse } from "../threads/rename-thread.js";
 export { renameThreadRequestSchema, THREAD_TITLE_MAX_LENGTH } from "../threads/rename-thread.js";
 export type { TurnStatus } from "../threads/status.js";
@@ -44,8 +45,12 @@ export * from "./billing.js";
 export * from "./context-availability.js";
 export * from "./context-catalog.js";
 export * from "./context-operation.js";
+export * from "./context-owner.js";
+export * from "./document-filename.js";
 export * from "./document-links.js";
+export * from "./document-revision.js";
 export * from "./event-seq.js";
+export * from "./file-access.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
 export * from "./mock-model-script.js";

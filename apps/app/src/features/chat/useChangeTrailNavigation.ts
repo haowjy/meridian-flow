@@ -4,14 +4,14 @@ import { useCallback, useEffect, useRef } from "react";
 import { listProjectThreads } from "@/client/api/projects-api";
 import type { TrailChange } from "@/client/change-trails";
 import { navigateToTrailChange } from "@/core/editor/change-trail-navigation";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { LatestNavigationCoordinator } from "./latest-navigation-coordinator";
 
 export type NavigateToTrailChange = ReturnType<typeof useChangeTrailNavigation>;
 
 export function useChangeTrailNavigation(threadId: string) {
   const { projectId } = useParams({ strict: false }) as { projectId?: string };
-  const openDocument = useOpenProjectDocument(projectId);
+  const openDocument = useOpenChatDocument(projectId);
   const coordinator = useRef(new LatestNavigationCoordinator());
   useEffect(() => () => coordinator.current.dispose(), []);
 
@@ -32,7 +32,7 @@ export function useChangeTrailNavigation(threadId: string) {
             if (signal.aborted) return { kind: "cancelled" };
             return openDocument({
               documentId,
-              workId: thread?.workId ?? null,
+              workId: thread?.workId ?? undefined,
               signal,
             });
           },

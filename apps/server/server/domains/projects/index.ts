@@ -71,20 +71,9 @@ export type ProjectBootstrapRepository = {
   ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult>;
 };
 
-export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
-  return {
-    async ensureDefaultBootstrapReady() {
-      return false;
-    },
-    async ensureDefaultBootstrap() {
-      throw new Error("in-memory project repository is not implemented");
-    },
-  };
-}
-
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
-  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
+  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
   catalogLifecycle: ContextCatalogLifecyclePort;
@@ -188,9 +177,12 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   ): Promise<DocumentId> {
     async function seedDocument(documentId: DocumentId): Promise<void> {
       try {
-        const seeded = await deps.documents.seedFromMarkdown(documentId, "# Chapter 1\n\n", {
-          type: "system",
-        });
+        // Seeded inside the bootstrap transaction: fixed text with no links, so nothing to register.
+        const seeded = await deps.documents.seedFromMarkdown(
+          documentId,
+          deps.documents.bindStatic("# Chapter 1\n\n"),
+          { type: "system" },
+        );
         if (!seeded.ok) {
           throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
         }
@@ -205,8 +197,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .where(
         and(
           eq(documents.contextSourceId, contextSourceId),
-          eq(documents.name, "chapter-1"),
-          eq(documents.extension, "md"),
+          eq(documents.name, "Chapter 1"),
+          eq(documents.extension, ""),
           isNull(documents.deletedAt),
         ),
       )
@@ -231,8 +223,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         }).createDocumentRecordIfAbsent({
           id: documentId,
           folderId: null,
-          name: "chapter-1",
-          extension: "md",
+          name: "Chapter 1",
+          extension: "",
           filetype: "markdown",
           markdown: "",
         });
@@ -268,7 +260,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureProjectManifestSource(db, projectId);
-      await ensureWorkContextSource(db, noWorkId, "scratch");
       await ensureWorkContextSource(db, noWorkId, "uploads");
       const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
 
@@ -362,4 +353,4 @@ export {
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export type { WorkContextNotices } from "./work-context-notices.js";
+export type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";

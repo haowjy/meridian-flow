@@ -71,7 +71,7 @@ export function useWorkNoteIntake(projectId: string, workId: string) {
     (siblingNames: readonly string[]) => {
       const refused = useNoteStore.getState().byWork[workId];
       const name = uniqueScratchNoteName(
-        `Scratch note ${new Date().toLocaleDateString().replaceAll("/", "-")}.md`,
+        `Scratch note ${new Date().toLocaleDateString().replaceAll("/", "-")}`,
         refused ? [...siblingNames, refused.name] : siblingNames,
       );
       return sendNote({ key: crypto.randomUUID(), name, state: "pending" });

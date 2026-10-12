@@ -43,10 +43,10 @@ its own Escape precedence. Releasing the lease tears down both halves once.
 **The browser projects; the catalog owns metadata.** `ReferenceCatalogPort`
 reads the one F1 `CatalogCacheView` and delegates explicit cold-Work acquisition
 to its owner. The browser never stores a second tree, enumerates availability,
-or turns wake hints into rows. Root merges only project, user, and current Work
-or no-Work warm views. Other Works remain authority rows until activated.
-Known-empty sources, folders, and acquired authorities are omitted; cold or
-invalidated metadata cannot prove emptiness. Explicit source and folder URI
+or turns wake hints into rows. Root merges only project, user, the current Work
+or no-Work warm view, and a No Work chat's lineage Scratch. Other Works remain
+authority rows until activated. Known-empty sources, folders, and acquired
+authorities are omitted; cold metadata cannot prove emptiness. Explicit source and folder URI
 queries retain an empty-state surface, and Back clears that search. No
 placeholder row may become a terminal reference.
 
@@ -57,13 +57,21 @@ deduplicated and the 20-row cap applies only after the merged ordering.
 
 **Terminal identity is already authoritative.** A file row contains one
 `AuthoritativeReference`: document ID, persisted file classification, label,
-stable authority, and full non-contextual URI. Work and no-Work contextual URI
+stable authority, and full non-contextual URI. Work, no-Work and lineage
+(`scratch://@/c12/`, the `lineage` arm of `StableReferenceAuthority`) URI
 syntax is verified through the contracts parser at this boundary; contextual
 Work syntax is never reconstructed into stable identity on the client.
 
-**Ambiguity is shown, not resolved.** Two documents with one title resolve to
-nothing, so a row whose name is shared says so and is still offered. Renaming one
-of them is the writer's fix, and the menu never guesses which they meant.
+**Rows say where a document lives**, which is what tells two same-named
+documents apart; a reference is identity-bearing and a link is an address, so
+neither needs a "shared name" state.
+
+**A host may link ahead.** `linkAhead`/`onLinkAhead` let a host that can hold
+a link to a not-yet-written document (the Editor) append one `LinkAheadRow`
+after the catalog rows, for a root search that names no listed document
+exactly. The browser only asks; the host computes the address and writes the
+link. The chat composer passes neither: its references are identity-bearing and
+must name an existing document.
 
 ## Key rules
 
@@ -91,10 +99,7 @@ of them is the writer's fix, and the menu never guesses which they meant.
 - Reading availability lookup or cold wake hints as browse candidates.
 - Fetching recursively or retaining catalog entries in the browser controller.
 
-`wikilink-catalog.ts` serves only the narrower `[[` lane. Do not use it as a
-second `@` browser or add another caller or compatibility export around it.
-
 → [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
   the TipTap adapter that drives this from a lane spec
-→ [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
-  what `[[` does with a chosen row
+→ [`../editor/extensions/at-reference/`](../editor/extensions/at-reference/AtReferenceExtension.ts) —
+  the Editor's `@`, which links ahead

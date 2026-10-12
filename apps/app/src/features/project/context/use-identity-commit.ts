@@ -1,15 +1,25 @@
 /** Derives and transports one explicit writer request for a document's final identity. */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
+import { useWorks } from "@/client/query/useWorks";
+import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
+import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
+import {
+  type DesiredIdentity,
+  destinationOwner,
+  identityDestination,
+  tabLocation,
+} from "./identity-location";
 
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
-export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
+export type IdentityCommitOutcome =
+  /** `operationId` names the move's receipt; absent when the document queued or nothing changed. */
+  { status: "committed"; operationId?: string } | { status: "error"; message: string };
 
 /** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
@@ -17,10 +27,9 @@ export type IdentityCommitted = {
   /** Tree-style path with a leading slash. */
   path: string;
   name: string;
-  workId?: string;
   /** Editor route ownership captured when this command began. */
   routeWorkId: string | null;
-};
+} & TabOwner;
 
 export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
@@ -35,6 +44,27 @@ export function identityCommitMayNavigate(
   return ownership.isLatest && activeDocumentId === committedDocumentId;
 }
 
+/**
+ * The route command that follows a committed rename or move of the document the
+ * address names. The address stays on that document, so it repairs in place: no
+ * history entry, and the review it carries survives.
+ */
+export function identityCommitRoute(
+  documentId: string,
+  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId" | "rootThreadId">,
+): { request: ContextRouteRequest; options: OpenContextOptions } {
+  return {
+    request: {
+      scheme: next.scheme,
+      path: next.path,
+      workId: next.routeWorkId ?? undefined,
+      ...(next.rootThreadId ? { rootThreadId: next.rootThreadId } : {}),
+      documentId,
+    },
+    options: { replace: true },
+  };
+}
+
 type IdentityCommitPlan =
   | { kind: "queue"; desired: DesiredIdentity }
   | { kind: "no-op" }
@@ -46,9 +76,11 @@ export function deriveIdentityCommitPlan(
   editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
+  // Compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
+  const stored = storedFilename(target.name, tab.kind === "new" ? undefined : location.leaf);
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
-    name: target.name.trim(),
+    name: stored.ok ? stored.name : target.name.trim(),
   };
   if (tab.kind === "new") return { kind: "queue", desired };
 
@@ -56,7 +88,8 @@ export function deriveIdentityCommitPlan(
   const sameDestination =
     desired.destination.scheme === current.scheme &&
     desired.destination.folderPath === current.folderPath &&
-    desired.destination.workId === current.workId;
+    desired.destination.workId === current.workId &&
+    desired.destination.rootThreadId === current.rootThreadId;
   const sameName = desired.name === location.leaf;
   if (sameDestination && sameName) {
     return location.provisional ? { kind: "commit", desired } : { kind: "no-op" };
@@ -80,6 +113,7 @@ export function useIdentityCommit({
   ) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const resources = useAccountResourceReplica();
+  const { works, noWork } = useWorks(projectId);
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
     if (plan.kind === "no-op") return { status: "committed" };
@@ -90,11 +124,26 @@ export function useIdentityCommit({
         : await resources.keyForDocument(projectId, tab.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
+      const authority = destinationOwner(destination, works, noWork);
+      if (!authority) throw new Error("The destination Work is unavailable");
+      const parent =
+        destination.parent ??
+        (!destination.folderPath.split("/").filter(Boolean).length
+          ? { kind: "root" as const, scheme: destination.scheme, owner: authority }
+          : tab.kind !== "new" &&
+              destination.scheme === tab.scheme &&
+              destination.folderPath === tabLocation(tab).parentPath
+            ? await resources.parentForEntry(projectId, tab.documentId)
+            : await resources.findParentAtLocation(projectId, {
+                scheme: destination.scheme,
+                path: destination.folderPath,
+                name: "",
+                ...authority,
+              }));
+      if (!parent) throw new Error("Destination folder is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
-        scheme: destination.scheme,
-        folderPath: destination.folderPath,
-        name: plan.desired.name,
-        workId: destination.workId ?? null,
+        parent,
+        name: target.name.trim(),
       });
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(
@@ -103,12 +152,15 @@ export function useIdentityCommit({
           scheme: destination.scheme,
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
-          ...(destination.workId ? { workId: destination.workId } : {}),
-          routeWorkId: destination.workId ?? editorWorkId,
+          ...replaceOwner(destination),
+          routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,
       );
-      return { status: "committed" };
+      return {
+        status: "committed",
+        ...(ownership.operationId ? { operationId: ownership.operationId } : {}),
+      };
     } catch {
       return { status: "error", message: t`Couldn't save this document's home. Try again.` };
     }

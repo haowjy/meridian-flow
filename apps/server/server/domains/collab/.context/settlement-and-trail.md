@@ -62,7 +62,7 @@
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
 - **Draft Apply settles the whole current branch**: every writer Apply and
-  auto-push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
+  Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
   document plus earlier selected branch rows, and recipient/change elevations
@@ -76,7 +76,7 @@
   coverage is not a later semantic dependency.
   Handles eliminated by Work-draft write reversal remain absent. A later writer row can
   therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate.
+  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
@@ -89,6 +89,25 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
+- **Trail work retries only an `auto` branch**: the trail-work claim
+  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
+  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
+  `auto` since D59, so every claim settles `no_op` and drafts wait for the
+  writer's Apply. This depends on the read model never rewriting a failed
+  turn's status (see the threads read-model projector).
+- **Apply settles ahead refs per completion because drafts cannot move documents**
+  (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
+  live and settles in the tree store's move transaction. So the only documents an
+  Apply brings to an address are draft creates the manifest push publishes, their
+  SQL address is already final, and the completion fence (`withCompletionFence`
+  in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
+  under Work → namespace → holder locks. Draft-held moves would break that: a
+  document's address would depend on the view. Building them changes
+  `context/adapters/document-address.ts` (current address and exact occupant
+  become view-dependent), `context/adapters/document-link-scope.ts` (per-view
+  URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
+  the completion fence here (moved documents become arrivals, and their old and
+  new namespaces both lock).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
@@ -131,11 +150,18 @@
   authority joined after the durable commit publishes another trail version. If
   that admission's aggregate fold cancels a provisional row, settlement restores
   the push contribution from the replacement's durable owner/title context.
-- **Settlement verification stack**: the killed-process oracle owns durable
-  settlement risks—transaction boundaries, claims and leases, lock cuts, crash
-  windows, and cold recovery. Pure provenance and policy semantics belong to their
-  focused owners rather than to a second PostgreSQL replay graph. The oracle is
-  necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
+- **Settlement verification stack**: transition ordering, deletion rechecks,
+  lease expiry and handoff, and fault windows run in
+  `domain/branch-push-transition.test.ts` over real Yjs, in-memory ports and fake
+  time; add new matrix cases there. The PostgreSQL killed-process oracle
+  (`branch-push-settlement-oracle.db.test.ts`) keeps only what an in-memory port
+  cannot prove: the cold lock cut with post-cut joins, stale-claim fencing
+  against a live holder, and commit-fault durability inside the completion
+  transaction. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
+  replay, aggregate row version, fold restoration, and journal attribution
+  assertions; do not move them to fakes. Pure provenance and policy semantics
+  belong to their focused owners rather than to a second PostgreSQL replay graph.
+  The oracle is necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
   updates, and release probes must verify writer-visible trail flows.
@@ -176,7 +202,8 @@
   replacement, while checkpoint state supplies sweep policy's neutral covered
   root floor. Under the same document-mutation lock as generation replacement,
   compaction reads, folds, and deletes only the current authority generation;
-  retired-generation suffixes never enter restored authority. Durable trails
+  retired-generation suffixes never enter restored authority. Compaction
+  (`journal.compact`) is implemented but has no production caller. Durable trails
   retain the ordinary before/after record regardless of classification; writer
   lineage only decides whether an authenticated connected session elevates the
   mark.

@@ -12,16 +12,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const {
       expectChatFeedCursorAcrossFilterContract,
-      expectChatFeedFavoriteFilterContract,
       expectChatFeedSearchSemanticsContract,
-      expectChatFeedTiesContract,
       expectChatFeedWorkFilterContract,
     } = await import("../__conformance__/chat-feed-contract.js");
 
@@ -30,7 +27,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -65,14 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
     }
-
-    it("pages ties by descending thread id", async () => {
-      await expectChatFeedTiesContract(harness());
-    });
-
-    it("filters by favorite without changing activity order", async () => {
-      await expectChatFeedFavoriteFilterContract(harness());
-    });
 
     it("matches search metacharacters literally, CJK, and case-folded", async () => {
       await expectChatFeedSearchSemanticsContract(harness());

@@ -10,9 +10,12 @@ as upstream. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
-Work draft capture, redo, and Apply require an active Work under the shared
-lifecycle row lock before durable mutation. Archive preserves captured evidence
-and permits Discard cleanup; it does not permit new capture or Apply. Replaying
+Work draft capture, redo, Apply and Discard require an active Work under the
+shared lifecycle row lock before durable mutation, and take the row through
+`lockSeamWorks` so bound edit grants are confirmed first
+([file policy](../../file-policy/.context/CONTEXT.md)). An archived Work's
+drafts are frozen: captured evidence stays, and nothing writes, applies or
+discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
 new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset
@@ -47,10 +50,24 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
-Live checkpoints are a separate cadence from those pulls: auto every 100 updates
-appended to the log (`reason: "auto"`), and Hocuspocus `onStoreDocument` at
-`debounce: 2000` / `maxDebounce: 10000` plus last-client disconnect
-(`reason: "store"`).
+Live checkpoints are a separate cadence from those pulls. They come from four
+sources: the initialize-only seed (`up_to_seq = 0`); Hocuspocus
+`onStoreDocument` at `debounce: 2000` / `maxDebounce: 10000` plus last-client
+disconnect; explicit `CollabDomain.checkpoint`; and `journal.compact`. Compaction
+is implemented but has no production caller, so live journal rows are never
+deleted.
+
+**Releasing a live room never waits on a database lock.** Closing the last
+connection runs `onStoreDocument` inline in the releaser's async context, often
+inside its DB transaction. The store therefore only captures the journal cut and
+encoded state; the checkpoint write runs after the releaser's transaction
+commits, in its own transaction, and is dropped on rollback (the room may hold
+that transaction's uncommitted updates) or when the live generation was retired.
+Writes queue one per document, newest snapshot wins; shutdown drains them. A
+checkpoint only caches durable journal state, so a dropped or late one costs
+replay time, never data. Thread-peer pulls also take their live snapshot outside
+the caller's transaction, so loading the room cannot leave head or lock rows held
+by a caller that then waits on the root pull transaction.
 
 **Branch mutations are durable before they reach a Hocuspocus room.** A draft
 branch room is a collaborative room: writer frames from a review editor are
@@ -83,7 +100,8 @@ synchronously before waiting for persistence.
 ## Certified provenance materialization
 
 **Ordering invariant:** declaration order in `ir.intent.edits` is not application
-order. `applyEdits` sorts same-block Tier-1 edits right-to-left before execution;
+order. A `textRanges` edit applies its same-block replacements right-to-left
+(`applyInlineReplacements`);
 partitioning allocation-ordered strings by iterating declared edits swaps
 provenance roots between adjacent targets. The writer instead locates each edit
 by its final output span and intersects that span with newly inserted strings.
@@ -137,8 +155,7 @@ manifest operations; the aggregate commits them together. Repair uses the same
 boundary so a row cannot become visible before its Yjs authority is usable.
 Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
 after the enclosing Drizzle transaction commits. Work/thread manifest mutations
-persist their branch state inside that transaction and defer the automatic live
-push until commit.
+persist their branch state inside that transaction; they never push live (D59).
 
 ## Durable records
 
@@ -158,8 +175,9 @@ push until commit.
   lineage never duplicates block diffs.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
-sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
-recovers storage, and journal row counts are not equivalent to semantic edits.
+sentence becomes ~50 rows / ~935 bytes. Journal row counts are not equivalent
+to semantic edits. Checkpoint compaction would recover the storage, but it has
+no production caller.
 Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 

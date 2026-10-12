@@ -13,7 +13,6 @@ export interface UploadIdentity {
   mimeType: string | null;
   sizeBytes: number | null;
   storageUrl: string | null;
-  markdownProjection: string;
   updatedAt: string;
   uri: string;
   locationRevision: string;
@@ -49,7 +48,6 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
         mimeType: document.mimeType,
         sizeBytes: document.sizeBytes,
         storageUrl: document.storageUrl,
-        markdownProjection: document.markdownProjection,
         updatedAt: document.updatedAt.toISOString(),
         uri: intake?.canonicalUri ?? "",
         locationRevision: intake?.locationRevision ?? "",

@@ -1,6 +1,6 @@
 // Scripted tour: replays the harness highlights in the live editor so a viewer
 // sees the headline behaviors without typing.
-import type { WriteCommand, WriteContext } from "@meridian/agent-edit";
+import type { WriteCommand, WriteContext, WriteOutcome } from "@meridian/agent-edit";
 
 import type { PlaygroundEnv } from "./env.js";
 
@@ -26,11 +26,9 @@ export async function runScriptedTour({ env, log }: TourOptions) {
     file: TOUR_DOC,
     content: TOUR_SEED,
   });
-  await step(env, log, "tour: read (refreshes block-hash snapshot)", {
-    command: "read",
-    file: TOUR_DOC,
-    format: "full",
-  });
+  await step(env, log, "tour: read (refreshes block-hash snapshot)", () =>
+    env.core.read({ file: TOUR_DOC, format: "full" }, env.defaultContext),
+  );
 
   const turnId = "tour-multi-write-turn";
   const after = firstBlockHash(env, TOUR_DOC);
@@ -91,11 +89,14 @@ async function step(
   env: PlaygroundEnv,
   log: Logger,
   label: string,
-  command: WriteCommand,
+  command: WriteCommand | (() => Promise<WriteOutcome>),
   context?: WriteContext,
 ) {
   try {
-    const response = await env.core.write(command, context ?? env.defaultContext);
+    const response =
+      typeof command === "function"
+        ? await command()
+        : await env.core.write(command, context ?? env.defaultContext);
     log(label, response.text, !response.isError);
   } catch (cause) {
     log(label, String(cause), false);

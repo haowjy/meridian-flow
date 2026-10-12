@@ -1,10 +1,15 @@
 /** The advertised journal head never replaces the client's delivered cursor. */
 
-import { EventType, type WsServerMessage } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  type ThreadLiveState,
+  type WsServerMessage,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -12,16 +17,19 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const USER_ID = "user-1" as UserId;
 const UNDELIVERED_HEAD = 23_081_000n;
 
-const LIVE_STATE = {
+const LIVE_STATE: ThreadLiveState = {
   threadId: THREAD_ID,
   status: { kind: "asleep" as const },
   runningTurnId: null,
-  activity: { descendants: [] },
+  activity: { children: [] },
   pending: { items: [] },
   resumeAfterSeq: "0",
 };
 
-function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
+function createDelayedDeliveryHarness(
+  catchup: SequencedEventInternal[] = [],
+  liveState = LIVE_STATE,
+) {
   let deliverLive!: (entry: SequencedEventInternal) => void;
   const hub = {
     async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
@@ -39,7 +47,7 @@ function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
     threadRuntime: {
       async requireOwnedThread() {},
       async liveState() {
-        return LIVE_STATE;
+        return liveState;
       },
     },
   } as unknown as AppServices;
@@ -97,4 +105,58 @@ it("preserves typed errors in catchup and live envelopes", async () => {
   expect(frames.at(-1)).toMatchObject({ catchup: [{ seq: "1000", error }] });
   deliverEntry({ ...entry, seq: 2000n });
   expect(frames.at(-1)).toMatchObject({ type: "event", seq: "2000", error });
+});
+
+// HTTP availability proofs never become attested WebSocket disappearance proofs.
+it.each([
+  "thread_not_found",
+  "thread_deleted",
+])("keeps %s subscribe and interrupt.respond refusals as identical unattested not_found frames", async (code) => {
+  const frames: WsServerMessage[] = [];
+  const app = {
+    eventSink: createNoopEventSink(),
+    threadRuntime: {
+      requireOwnedThread: async () =>
+        throwHttpInterrupt(
+          {
+            code,
+            message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
+            retryable: false,
+            source: "system",
+            details: { authenticatedUserId: USER_ID },
+          },
+          404,
+        ),
+    },
+  } as unknown as AppServices;
+  const session = createThreadWebSocketSession({
+    request: new Request("https://app.localhost/api/threads/ws"),
+    context: { app, userId: USER_ID, traceId: "concealment-test" },
+    send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
+    close() {},
+  });
+  session.open();
+  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }));
+  await session.onMessage(
+    JSON.stringify({
+      type: "interrupt.respond",
+      threadId: THREAD_ID,
+      turnId: "00000000-0000-4000-8000-000000000902",
+      interruptId: "ask-1",
+      value: "yes",
+    }),
+  );
+  const expected = {
+    type: "error",
+    threadId: THREAD_ID,
+    kind: "error",
+    error: {
+      code: "not_found",
+      message: "Thread not found",
+      retryable: false,
+      source: "system",
+    },
+  };
+  expect(frames.filter((frame) => frame.type === "error")).toEqual([expected, expected]);
+  session.onClose();
 });

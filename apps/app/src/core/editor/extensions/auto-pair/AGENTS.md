@@ -19,8 +19,9 @@ test choice; changing the table does not extend coverage automatically.
 
 **Openers are one character and pairs compose.** `[[` is the `[` row firing
 twice: `[` gives `[]`, a second `[` gives `[[]]`, and `]]` steps out of both
-in order. A multi-character row would need its own matching logic and would
-race the single-character rows it overlaps.
+in order. `[[name]]` is plain text; nothing opens on it. A multi-character
+row would need its own matching logic and would race the single-character
+rows it overlaps.
 
 **A step is only ever over a closer this plugin wrote.** The plugin state
 holds the positions of its own closers, mapped forward through every
@@ -45,10 +46,6 @@ keystroke that lands as itself costs far less than one that disappears.
   Enter, and the Backspace binding refuses whenever it has no pair to take, so
   the rest of the chain is untouched.
 - **One transaction per gesture**, so one undo takes the whole thing back.
-- **A range replacement that ends at the caret has to swallow the closers
-  written for it.** `autoClosedRunLength` is that seam, and the `[[` menu is
-  its one caller: a link inserted over the trigger's own range would otherwise
-  strand `]]` behind it.
 
 ## Anti-patterns
 
@@ -59,7 +56,5 @@ keystroke that lands as itself costs far less than one that disappears.
 - Dispatching during composition. An IME is mid-word and a transaction
   underneath it corrupts the composition.
 
-→ [`../wikilink/AGENTS.md`](../wikilink/AGENTS.md) — what `[[` opens once the
-  brackets are there
 → [`../MarkdownAutoformatExtension.ts`](../MarkdownAutoformatExtension.ts) —
   the rules this stays out of the way of

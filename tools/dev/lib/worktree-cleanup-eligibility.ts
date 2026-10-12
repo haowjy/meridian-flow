@@ -32,6 +32,13 @@ export type CleanupEligibility =
       readonly baseBranch: string;
       readonly repositoryOwner: string;
       readonly pullRequestNumber: number;
+    }
+  | {
+      readonly kind: "manual";
+      readonly branch: string;
+      readonly plannedOid: string;
+      readonly baseBranch: string;
+      readonly note: string;
     };
 
 export type EligibilityDecision =

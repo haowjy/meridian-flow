@@ -41,7 +41,7 @@
  * - Applied in the context-building layer (here), not inside a provider
  *   adapter: the decision of *which* parts to mark is provider-neutral
  *   (canonical `Message[]`), while whether to mark at all is driven by the
- *   model registry's config-driven `"caching"` capability (see
+ *   model registry's config-driven `promptCache.kind === "explicit"` descriptor (see
  *   `turn-context-assembly.ts`). This keeps the marking policy in one place
  *   instead of duplicating it per adapter.
  */

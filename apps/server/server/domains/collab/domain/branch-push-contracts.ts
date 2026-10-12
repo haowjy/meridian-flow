@@ -1,16 +1,19 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
+
 import type {
+  AgentEditCodecFactory,
   DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -59,13 +62,6 @@ export function branchJournalRevision(
     .map((row) => `${row.id}:${row.status}`)
     .join(",");
 }
-
-export type AutoBranchPushPort = {
-  pushAutoBranchAfterThreadPeerWrite(input: {
-    workDraftBranchId: string;
-    pushedByUserId?: UserId;
-  }): Promise<{ status: string; [key: string]: unknown }>;
-};
 
 export type PublicationBlockChange = {
   blockId: string;
@@ -223,6 +219,12 @@ export type PushCommitStore = {
     pushes: PushLineageRow[];
   }>;
   commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
+  /**
+   * Seam B for a review that changes several drafts in one transaction: locks
+   * their Works (file-access §5) and names the branches whose Work is no longer
+   * active, so their drafts stay frozen (D30).
+   */
+  lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
   markRollbackPending(input: {
     branchId: string;
     generation: number;
@@ -232,7 +234,8 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
+  /** Sets the Work's AI write mode: `auto` is auto-apply, `manual` is draft mode. */
+  setWorkWriteMode(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };
 
 export type PushUpdateComputer = (input: {
@@ -240,15 +243,6 @@ export type PushUpdateComputer = (input: {
   branchDoc: Y.Doc;
   liveDoc: Y.Doc;
 }) => Uint8Array;
-
-export type AutoPushAfterThreadPeerWriteInput = {
-  workDraftBranchId: string;
-  pushedByUserId?: UserId;
-};
-
-export type AutoPushAfterThreadPeerWriteResult =
-  | PushToLiveResult
-  | { status: "skipped"; reason: "manual_policy" | "not_active_work_draft" };
 
 export type BranchPushService = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
@@ -266,19 +260,28 @@ export type BranchPushService = {
     signal?: AbortSignal;
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
-  pushAutoBranchAfterThreadPeerWrite(
-    input: AutoPushAfterThreadPeerWriteInput,
-  ): Promise<AutoPushAfterThreadPeerWriteResult>;
-  setWorkPushPolicy(input: {
-    workId: WorkId;
-    policy: "manual" | "auto";
-    confirmedPush?: boolean;
-    pushedByUserId?: UserId;
-  }): Promise<
-    | { status: "updated"; policy: "manual" | "auto" }
-    | { status: "confirmation_required"; unpushedCount: number; reason: string }
-  >;
+  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
+
+export type SetWorkPushPolicyInput = {
+  workId: WorkId;
+  policy: "manual" | "auto";
+  /** Required to switch to auto-apply while drafts have pending changes. */
+  pending?: PendingChangesChoice;
+  pushedByUserId?: UserId;
+};
+
+export type SetWorkPushPolicyResult =
+  | { status: "updated"; policy: "manual" | "auto" }
+  | { status: "confirmation_required"; unpushedCount: number; reason: string };
+
+export type BranchTurnReversal =
+  | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
+  | {
+      status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo" | "permission_denied";
+      branchId: string;
+      journalIds: number[];
+    };
 
 export type BranchReviewService = {
   discardSelected(input: {
@@ -289,20 +292,14 @@ export type BranchReviewService = {
     | { status: "discarded"; branchId: string; journalIds: number[] }
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
   >;
-  reverseBranchTurn(input: {
-    branchId: string;
+  /** Reverses one turn on each branch; a branch whose Work is archived is refused. */
+  reverseBranchTurns(input: {
+    branchIds: readonly string[];
     threadId: ThreadId;
     turnId: TurnId;
     direction: "undo" | "redo";
     reviewedByUserId?: UserId;
-  }): Promise<
-    | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-    | {
-        status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo";
-        branchId: string;
-        journalIds: number[];
-      }
-  >;
+  }): Promise<BranchTurnReversal[]>;
   markFailedResponseRollbackPending(input: {
     branchId: string;
     threadId: ThreadId;
@@ -322,12 +319,12 @@ export type BranchPushServiceInput = {
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
-  journal: UpdateJournal & {
-    readForReconstruction?: UpdateJournal["read"];
-  };
+  journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
-  codec: MarkupCodec;
+  codec: AgentEditCodecFactory;
+  /** Push and settlement scope themselves; the trail text spells through it. */
+  links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;

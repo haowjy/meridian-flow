@@ -85,9 +85,9 @@ function CardVerbs({
   // that identifier to its authoritative Discard class.
   const operationId = proposal.primaryOperation.operationId;
   // This card is the one running a disposition — drives the visible pending
-  // treatment (stays revealed); the disable itself is global (`isDisposing`).
+  // treatment (stays revealed); the disable itself is global (`dispositionLocked`).
   const activeOnThisCard = controller.pendingInlineDiscardIds(draftId).has(operationId);
-  const disabled = controller.isDisposing;
+  const disabled = controller.dispositionLocked;
   return (
     <div
       className={cn(
@@ -157,7 +157,8 @@ function ProposalVerb({
     return (
       <span className="inline-flex items-center gap-1">
         <Trans>Merged</Trans>
-        <Tooltip>
+        {/* Hoverable: the explanation is said nowhere else. */}
+        <Tooltip hoverable>
           <TooltipTrigger asChild>
             <button
               type="button"

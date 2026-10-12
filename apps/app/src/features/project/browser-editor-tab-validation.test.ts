@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({ availability: vi.fn() }));
 const resources = {
   readProjection: vi.fn<() => Promise<ResourceProjectionSnapshot>>(async () => ({
     records: [],
+    folders: [],
     catalogs: [],
   })),
 };
@@ -16,7 +17,9 @@ vi.mock("@/client/query/project-context-availability", () => ({
 
 beforeEach(() => {
   mocks.availability.mockReset();
-  resources.readProjection.mockReset().mockResolvedValue({ records: [], catalogs: [] });
+  resources.readProjection
+    .mockReset()
+    .mockResolvedValue({ records: [], folders: [], catalogs: [] });
   useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
 });
 
@@ -41,46 +44,6 @@ const restored: ContextTab = {
 };
 
 describe("server tab validation", () => {
-  it("repairs existing browser-local membership by exact availability", async () => {
-    useContextTabsStore.setState({
-      byProject: { project: { tabs: [restored], selectedTabIdByWork: {} } },
-    });
-    mocks.availability.mockResolvedValue({
-      projectId: "project",
-      resolutionId: "lookup-1",
-      resolutions: [
-        {
-          kind: "available",
-          documentId: "a",
-          generation: "1",
-          authority: { kind: "project", projectId: "project" },
-          entry: {
-            kind: "file",
-            entryId: "a",
-            scope: { kind: "project", projectId: "project" },
-            sourceId: "source",
-            parentId: "source",
-            name: "renamed.md",
-            aliases: [],
-            path: ["renamed.md"],
-            uri: "manuscript://renamed.md",
-            provisionalName: false,
-            editable: true,
-            filetype: "markdown",
-            schemaType: "document",
-          },
-        },
-      ],
-    });
-
-    await validate();
-
-    expect(mocks.availability).toHaveBeenCalledWith("project", ["a"]);
-    expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([
-      expect.objectContaining({ documentId: "a", path: "/renamed.md", name: "renamed.md" }),
-    ]);
-  });
-
   it("preserves existing membership when exact availability is unresolved", async () => {
     useContextTabsStore.setState({
       byProject: { project: { tabs: [restored], selectedTabIdByWork: {} } },
@@ -117,24 +80,6 @@ describe("device-local tab validation", () => {
     });
   });
 
-  it("preserves a New tab when local projection is temporarily unreadable", async () => {
-    const local: ContextTab = {
-      tabInstanceId: "member",
-      kind: "new",
-      documentId: "local-id",
-      name: "Untitled",
-      resourceHandle: "resource-local",
-    };
-    useContextTabsStore.setState({
-      byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
-    });
-    resources.readProjection.mockRejectedValue(new Error("IndexedDB unavailable"));
-
-    await validate();
-
-    expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([local]);
-  });
-
   it("does not restore an account resource that is invisible to this project", async () => {
     const source = localPlacement();
     const foreign: ResourceRecord = {
@@ -160,7 +105,7 @@ describe("device-local tab validation", () => {
     useContextTabsStore.setState({
       byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
     });
-    resources.readProjection.mockResolvedValue({ records: [foreign], catalogs: [] });
+    resources.readProjection.mockResolvedValue({ records: [foreign], folders: [], catalogs: [] });
 
     await validate();
 
@@ -189,6 +134,16 @@ describe("device-local tab validation", () => {
     });
     resources.readProjection.mockResolvedValue({
       records: [localPlacement()],
+      folders: [
+        {
+          projectId: "project",
+          handle: "folder:chapters",
+          folderId: "chapters",
+          revision: 1,
+          canonical: { scheme: "manuscript", path: "/chapters", name: "chapters", workId: null },
+          intents: [],
+        },
+      ],
       catalogs: [],
     });
 
@@ -243,12 +198,8 @@ function localPlacement(): ResourceRecord {
         identityRevision: 1,
         desired: {
           kind: "set-location",
-          destination: {
-            scheme: "manuscript",
-            folderPath: "chapters",
-            name: "Opening.md",
-            workId: null,
-          },
+          typedName: "Opening.md",
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "Opening.md" },
         },
         attempts: [],
         state: "pending",

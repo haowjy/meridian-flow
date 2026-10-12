@@ -1,5 +1,7 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import type { FindSplice } from "../links/find-splice.js";
+import { markdownPlainText, markdownTextView } from "../model/markdown-text-view.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
@@ -56,10 +58,11 @@ function matchSerializedText(
   find: string,
   all: boolean,
 ): FindResult {
-  const normalized = normalizeWithOffsetMap(haystack);
-  const matches = nonOverlappingMatches(normalized.text, find.normalize("NFC")).map((match) => ({
-    start: normalized.originalStart[match.start],
-    end: normalized.originalEnd[match.end - 1],
+  const view = markdownTextView(haystack);
+  const needle = markdownPlainText(find);
+  const matches = nonOverlappingMatches(view.text, needle).map((match) => ({
+    start: view.start[match.start],
+    end: view.end[match.end - 1],
   }));
   if (matches.length === 0) return notFound(`Could not find "${find}" in the selected scope`);
   if (matches.length > 1 && !all) {
@@ -136,28 +139,6 @@ function nonOverlappingMatches(
   return matches;
 }
 
-function normalizeWithOffsetMap(input: string): {
-  text: string;
-  originalStart: number[];
-  originalEnd: number[];
-} {
-  const originalStart: number[] = [];
-  const originalEnd: number[] = [];
-  let text = "";
-  for (const match of input.matchAll(/\P{Mark}\p{Mark}*|\p{Mark}+/gu)) {
-    const source = match[0];
-    const start = match.index;
-    const end = start + source.length;
-    const normalized = source.normalize("NFC");
-    text += normalized;
-    for (let index = 0; index < normalized.length; index += 1) {
-      originalStart.push(start);
-      originalEnd.push(end);
-    }
-  }
-  return { text, originalStart, originalEnd };
-}
-
 function resolveMatch(
   entries: readonly SerializedBlockEntry[],
   start: number,
@@ -206,4 +187,41 @@ function notFound(message: string): FindResult {
 
 function invalid(message: string): FindResult {
   return { ok: false, code: "invalid_write", message };
+}
+
+/** The spliced group text and the one span covering every splice in it. */
+export interface SplicedGroup {
+  text: string;
+  splice: FindSplice;
+}
+
+/**
+ * Splice the written content into a serialized group at every match: the
+ * pre-splice text is `source`, and `splice` gives the offsets ref assignment
+ * restores around (§5.4).
+ */
+export function spliceFindMatches(
+  source: string,
+  matches: readonly TextFindMatch[],
+  rangeStart: number,
+  content: string,
+  command: "insert" | "replace" | "remove",
+): SplicedGroup {
+  let result = source;
+  let start = source.length;
+  let oldEnd = 0;
+  for (const match of [...matches].reverse()) {
+    const matchStart = match.rangeStart + match.matchStart - rangeStart;
+    const end = match.rangeStart + match.matchEnd - rangeStart;
+    const spliceStart = command === "insert" ? end : matchStart;
+    result = result.slice(0, spliceStart) + content + result.slice(end);
+    start = Math.min(start, spliceStart);
+    oldEnd = Math.max(oldEnd, end);
+  }
+  // Text between several splices is inside the union too: the suffix after
+  // the last splice is the only text that shifts.
+  return {
+    text: result,
+    splice: { start, oldEnd, newEnd: oldEnd + result.length - source.length },
+  };
 }

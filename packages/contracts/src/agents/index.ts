@@ -1,13 +1,20 @@
 /** Agent source, account/system catalog and retained conversation configuration contracts. */
+import { z } from "zod";
+import { isUuid } from "../request-id.js";
 import type { InvocationPatch } from "./execution-knobs.js";
 
 export * from "./execution-knobs.js";
 
 /** Exact immutable revision selected from an authorized account/system catalog entry. */
-export interface AgentSelection {
-  catalogEntryId: string;
-  definitionRevisionId: string;
-}
+const selectionIdSchema = z
+  .string()
+  .refine((value): boolean => isUuid(value), "must be a canonical UUID")
+  .toLowerCase();
+export const agentSelectionSchema = z.strictObject({
+  catalogEntryId: selectionIdSchema,
+  definitionRevisionId: selectionIdSchema,
+});
+export type AgentSelection = z.infer<typeof agentSelectionSchema>;
 export interface AgentCatalogItem {
   selection: AgentSelection;
   slug: string;

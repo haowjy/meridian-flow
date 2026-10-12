@@ -1,43 +1,37 @@
 /** Builder for assembling markdown/MDX codecs from markup plugins. */
 
+import type { Extension } from "mdast-util-from-markdown";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
-import { type PluggableList, unified } from "unified";
+import { type PluggableList, type Processor, unified } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
+import { blockOccurrenceSpans } from "./link-occurrences.js";
+import { attentionHandlers } from "./markdown/attention.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
-  AssetPathResolver,
   BuildOptions,
   CodecParseErrorLocation,
+  DocumentLinkScope,
   MarkupCodec,
   MarkupCodecBuilder,
   MarkupPlugin,
+  OccurrenceSpan,
   ParseContext,
   SerializeContext,
 } from "./types.js";
 
-const NON_CODEC_SCHEMA_NODES = new Set([
-  "doc",
-  "text",
-  "hard_break",
-  "table_row",
-  "table_header",
-  "table_cell",
-]);
+const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "table_row", "table_header", "table_cell"]);
 
 export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
-export function createMarkupCodec(options: {
-  schema: Schema;
-  assetPathResolver: AssetPathResolver;
-}): MarkupCodecBuilder {
+export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuilder {
   const plugins: MarkupPlugin[] = [];
   return {
     use(plugin: MarkupPlugin) {
@@ -45,19 +39,13 @@ export function createMarkupCodec(options: {
       return this;
     },
     build(buildOptions?: BuildOptions) {
-      return buildMarkupCodec(
-        options.schema,
-        options.assetPathResolver,
-        plugins,
-        buildOptions ?? {},
-      );
+      return buildMarkupCodec(options.schema, plugins, buildOptions ?? {});
     },
   };
 }
 
 function buildMarkupCodec(
   schema: Schema,
-  assetPathResolver: AssetPathResolver,
   plugins: readonly MarkupPlugin[],
   options: BuildOptions,
 ): MarkupCodec {
@@ -91,9 +79,9 @@ function buildMarkupCodec(
       throw new Error(`codec missing BlockCodec for schema node "${blockName}"`);
   }
 
-  const parseProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkPlugins);
+  const parseProcessor = unified().use(remarkParse).use(positionedGfm).use(remarkPlugins);
   const stringifyProcessor = unified()
-    .use(remarkStringify, MARKDOWN_STRINGIFY_OPTIONS)
+    .use(remarkStringify, { ...MARKDOWN_STRINGIFY_OPTIONS, handlers: attentionHandlers })
     .use(remarkGfm)
     .use(remarkPlugins);
 
@@ -102,7 +90,10 @@ function buildMarkupCodec(
 
   const parsePreparedMarkdown = (source: string): MdastRoot => {
     try {
-      return parseProcessor.parse(source) as MdastRoot;
+      return postParsers.reduce(
+        (current, hook) => hook(current, source),
+        parseProcessor.parse(source) as MdastRoot,
+      );
     } catch (error) {
       throw toCodecParseError(error);
     }
@@ -111,20 +102,37 @@ function buildMarkupCodec(
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
-  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] => {
+  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] =>
+    parseTopLevel(content, baseCtx, false).blocks;
+
+  /** One top-level parse; spans only when asked, since every write parses. */
+  const parseTopLevel = (
+    content: string,
+    baseCtx: ParseContext,
+    withSpans: boolean,
+  ): { blocks: PMNode[]; spans: OccurrenceSpan[] } => {
     const source = preprocess(content);
     const runtime = makeRuntime(source);
-    const ctx = withRuntime<ParseContext>(
-      { schema: baseCtx.schema, assetPathResolver: baseCtx.assetPathResolver },
-      runtime,
-    );
-    const tree = postParsers.reduce(
-      (current, hook) => hook(current),
-      parsePreparedMarkdown(source),
-    );
-    return tree.children
-      .map((child) => parseBlockAst(child, ctx))
-      .filter((node): node is PMNode => node !== null);
+    const ctx = withRuntime<ParseContext>({ schema: baseCtx.schema }, runtime);
+    const tree = parsePreparedMarkdown(source);
+    const blocks: PMNode[] = [];
+    const spans: OccurrenceSpan[] = [];
+    for (const child of tree.children) {
+      const node = parseBlockAst(child, ctx);
+      if (node === null) continue;
+      blocks.push(node);
+      if (withSpans)
+        spans.push(
+          ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
+        );
+    }
+    return { blocks, spans };
+  };
+
+  const parseDocument = (content: string, withSpans: boolean) => {
+    if (content.trim().length === 0) return { blocks: [schema.node("paragraph")], spans: [] };
+    const parsed = parseTopLevel(content, { schema }, withSpans);
+    return parsed.blocks.length > 0 ? parsed : { blocks: [schema.node("paragraph")], spans: [] };
   };
 
   const makeRuntime = (source: string): CodecRuntime => ({
@@ -156,31 +164,31 @@ function buildMarkupCodec(
     return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
   };
 
-  const serializeBlocks = (blockList: readonly PMNode[]): string[] => {
+  const serializeBlocks = (blockList: readonly PMNode[], links: DocumentLinkScope): string[] => {
     const runtime = makeRuntime("");
-    const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
+    const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
   return {
-    serialize(blockList: PMNode[]): string {
+    serialize(blockList: PMNode[], links: DocumentLinkScope): string {
       const runtime = makeRuntime("");
-      const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
+      const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
       const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
       if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
       return result;
     },
 
     parse(content: string) {
-      if (content.trim().length === 0) {
-        return { blocks: [schema.node("paragraph")] };
-      }
-      const parsed = parseBlocks(content, { schema, assetPathResolver });
-      return { blocks: parsed.length > 0 ? parsed : [schema.node("paragraph")] };
+      return { blocks: parseDocument(content, false).blocks };
     },
 
-    serializeBlock(block: PMNode): string {
-      return serializeBlocks([block])[0] ?? "";
+    parseWithSpans(content: string) {
+      return parseDocument(content, true);
+    },
+
+    serializeBlock(block: PMNode, links: DocumentLinkScope): string {
+      return serializeBlocks([block], links)[0] ?? "";
     },
 
     serializeBlocks,
@@ -239,4 +247,19 @@ function ensureTrailingNewline(value: string): string {
 
 function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
+}
+
+/** Keep GFM token positions; its legacy text transform invents positionless links even from escaped URLs. */
+function positionedGfm(this: Processor): void {
+  remarkGfm.call(this);
+  // Depends on remark-gfm's extension shape; the bare-prose round-trip row guards upgrades.
+  const extensions = this.data().fromMarkdownExtensions ?? [];
+  const removeLegacyAutolinks = (extension: Extension | Extension[]): void => {
+    if (Array.isArray(extension)) {
+      extension.forEach(removeLegacyAutolinks);
+    } else if (extension.enter?.literalAutolink) {
+      extension.transforms = [];
+    }
+  };
+  extensions.forEach(removeLegacyAutolinks);
 }
