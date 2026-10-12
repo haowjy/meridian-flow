@@ -165,6 +165,7 @@ export function ContinueImportDialog({
           {step.kind === "mismatch" ? (
             <div className="grid gap-2">
               <InlineErrorRow
+                wrap
                 message={t`This isn't the same selection. ${differenceSentence(step.difference)}`}
               />
               <div className="flex justify-end">

@@ -68,6 +68,7 @@ export function useSelectionPicker(reader: Reader) {
         ref={folderInput}
         type="file"
         hidden
+        data-import-input="folder"
         // The attribute is non-standard; React passes it through as written.
         {...{ webkitdirectory: "" }}
         onChange={(event) => {
@@ -81,6 +82,7 @@ export function useSelectionPicker(reader: Reader) {
         type="file"
         multiple
         hidden
+        data-import-input="files"
         onChange={(event) => {
           const files = Array.from(event.target.files ?? []);
           event.target.value = "";
