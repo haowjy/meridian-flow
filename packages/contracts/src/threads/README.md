@@ -50,6 +50,7 @@ fields. See
 `ThreadPendingInbox.blocked` optionally carries `{ reason: "credits_exhausted" }`.
 This is an accepted message's durable start block, not an admission refusal or
 a failed assistant. The runtime delivery owner sets it on a credit-gated drain
-and clears it when the next turn starts. Snapshot pending state, socket
+and clears it when the next turn starts or when no message or control remains
+pending (for example, after the last blocked control is withdrawn). Snapshot pending state, socket
 subscription state (including its validator) and `meridian.inbox.changed`
 preserve the same fact. Clients must not guess it from account balance.
