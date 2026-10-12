@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Edit returns a failed message in a never-created fork to the message box immediately, without removing the fork’s Retry or sending the message when creation is retried.
+
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.

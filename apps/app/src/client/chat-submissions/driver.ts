@@ -407,7 +407,7 @@ export class ChatSubmissionDriver {
       (this.localFailures.has(original.recordId) && !this.options.transferReceived(original))
     )
       return Promise.resolve();
-    return this.locked(original.threadId, () =>
+    return this.locked(original.threadId, (derived) =>
       this.guard(original, async () => {
         const entry = this.read(original.recordId);
         if (
@@ -419,7 +419,9 @@ export class ChatSubmissionDriver {
           return;
         const received = this.options.transferReceived(entry);
         if (this.localFailures.has(entry.recordId) && !received) return;
-        if (!entry.creation && !received) {
+        // A failed, unacknowledged derivation never passed the admission gate.
+        // Keep its destination and creation intent; only this send returns to authoring.
+        if (derived && !entry.creation && !received) {
           const outcome = await this.admissionRequest((signal) =>
             this.options.controller.retireSubmission(
               entry.threadId,
