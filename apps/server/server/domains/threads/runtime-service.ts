@@ -57,7 +57,7 @@ export function createThreadRuntimeService(deps: {
       .limit(1);
 
     const code = threadAvailabilityCode(thread, thread?.project, userId);
-    if (code === "thread_deleted") throwThreadDeleted(userId);
+    if (code === "thread_deleted") throwThreadDeleted(userId, !!thread?.project.deletedAt);
     if (code === "thread_not_found" || !thread) throwThreadNotFound(userId);
     const { userId: _userId, deletedAt: _deletedAt, project: _project, ...owned } = thread;
     return owned;

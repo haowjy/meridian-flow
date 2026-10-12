@@ -18,7 +18,7 @@ import {
   type ThreadRepository,
   type ThreadWorksRepository,
 } from "../domains/threads/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
 import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
 

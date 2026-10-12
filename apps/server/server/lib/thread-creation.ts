@@ -89,7 +89,7 @@ export async function createThreadForProject(
     const project = await deps.projects.findById(existing.projectId);
     const code = threadAvailabilityCode(existing, project, args.userId);
     if (code === "thread_not_found") throw new ThreadCreationNotFoundError();
-    if (code === "thread_deleted") throwThreadDeleted(args.userId);
+    if (code === "thread_deleted") throwThreadDeleted(args.userId, !!project?.deletedAt);
     if (existing.projectId !== args.projectId) throw new ThreadCreationConflictError();
     return existing;
   };

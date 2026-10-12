@@ -4,12 +4,14 @@ import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
+import { requireProjectOwner, requireWorkOwner } from "../domains/projects/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
+import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../shared/interrupt-boundary.js";
 import { useComposedRuntimes } from "../test-support/composed-runtime.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../test-support/drizzle-reset.js";
-import { HTTP_INTERRUPT_ENVELOPE_KEY } from "./interrupt-boundary.js";
 import { createThreadForProject } from "./thread-creation.js";
 import { throwThreadCreationError } from "./thread-creation-http.js";
+import { throwWorkMutationHttpError } from "./work-http.js";
 
 const OWNER = "00000000-0000-4000-8000-000000000a01";
 const OTHER = "00000000-0000-4000-8000-000000000a02";
@@ -33,7 +35,11 @@ async function failure(operation: () => Promise<unknown>) {
       message: string;
     };
     expect(refusal.statusCode).toBe(404);
-    return refusal.data?.[HTTP_INTERRUPT_ENVELOPE_KEY] ?? { message: refusal.message };
+    const envelope = refusal.data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
+    if (envelope) return envelope;
+    // Main's generic project refusal has no attestation or deletion details anywhere.
+    expect(refusal.data).toBeUndefined();
+    return { message: refusal.message };
   }
 }
 
@@ -66,14 +72,15 @@ beforeEach(async () => {
   });
 });
 
-async function deleteFixture(state: "thread" | "project" | "cascade") {
+async function deleteFixture(state: "thread" | "project" | "project-and-thread" | "cascade") {
   const db = database.current;
-  if (state === "project") {
+  if (state === "project" || state === "project-and-thread") {
     await db
       .update(schema.projects)
       .set({ deletedAt: new Date() })
       .where(eq(schema.projects.id, PROJECT));
-  } else {
+  }
+  if (state !== "project") {
     await db
       .update(schema.threads)
       .set({
@@ -96,6 +103,7 @@ describe.each(["snapshot", "runtime"] as const)("%s HTTP owner gate", (gate) => 
   it.each([
     "thread",
     "project",
+    "project-and-thread",
     "cascade",
   ] as const)("attests %s deletion only to the full owner", async (state) => {
     const ask = await fixture();
@@ -107,7 +115,10 @@ describe.each(["snapshot", "runtime"] as const)("%s HTTP owner gate", (gate) => 
         message: "Thread deleted",
         retryable: false,
         source: "system",
-        details: { authenticatedUserId: OWNER },
+        details: {
+          authenticatedUserId: OWNER,
+          ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+        },
       },
     });
     expect(JSON.stringify(await failure(() => ask(THREAD, OTHER)))).toBe(
@@ -119,6 +130,7 @@ describe.each(["snapshot", "runtime"] as const)("%s HTTP owner gate", (gate) => 
     "live",
     "thread",
     "project",
+    "project-and-thread",
     "cascade",
   ] as const)("conceals mismatched creators in %s rows from both users", async (state) => {
     const ask = await fixture();
@@ -187,16 +199,39 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
   it.each([
     "thread",
     "project",
+    "project-and-thread",
     "cascade",
   ] as const)("attests the owner's existing %s-deleted id before project gating", async (state) => {
     const { create } = await fixture();
     await deleteFixture(state);
-    expect(await failure(() => create())).toMatchObject({
+    expect(await failure(() => create())).toEqual({
+      kind: "error",
       error: {
         code: "thread_deleted",
-        details: { authenticatedUserId: OWNER },
+        message: "Thread deleted",
+        retryable: false,
+        source: "system",
+        details: {
+          authenticatedUserId: OWNER,
+          ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+        },
       },
     });
+  });
+
+  it("conceals missing and foreign live or deleted projects for a new id", async () => {
+    const { create, app } = await fixture();
+    const foreign = await app.projectRepo.create({ userId: OTHER, title: "Foreign" });
+    const baseline = JSON.stringify({ message: "Project not found" });
+    for (const projectId of [MISSING, foreign.id]) {
+      expect(JSON.stringify(await failure(() => create({ id: MISSING, projectId })))).toBe(
+        baseline,
+      );
+    }
+    await app.projectRepo.softDelete(foreign.id);
+    expect(
+      JSON.stringify(await failure(() => create({ id: MISSING, projectId: foreign.id }))),
+    ).toBe(baseline);
   });
 
   it("answers foreign live and deleted ids identically", async () => {
@@ -233,6 +268,74 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     expect(created.projectId).toBe(PROJECT);
     expect(created.id).not.toBe(THREAD);
     await deleteFixture("project");
-    expect(await failure(() => create({ id: MISSING }))).toEqual({ message: "Project not found" });
+    expect(await failure(() => create({ id: MISSING }))).toEqual({
+      kind: "error",
+      error: {
+        code: "project_deleted",
+        message: "Project not found",
+        retryable: false,
+        source: "system",
+        details: { authenticatedUserId: OWNER },
+      },
+    });
+  });
+});
+
+describe("project owner gate", () => {
+  it("attests only the owner's deleted project and preserves explicit tombstone access", async () => {
+    const { app } = await runtimes.compose();
+    await deleteFixture("project");
+    expect(
+      await failure(() => requireProjectOwner({ projects: app.projectRepo }, PROJECT, OWNER)),
+    ).toEqual({
+      kind: "error",
+      error: {
+        code: "project_deleted",
+        message: "Project not found",
+        retryable: false,
+        source: "system",
+        details: { authenticatedUserId: OWNER },
+      },
+    });
+    // Flat Work mutations must not erase the parent-project proof in their mapper.
+    expect(
+      await failure(async () => {
+        try {
+          await requireWorkOwner({ projects: app.projectRepo, works: app.workRepo }, WORK, OWNER);
+        } catch (error) {
+          throwWorkMutationHttpError(error);
+        }
+      }),
+    ).toMatchObject({
+      error: { code: "project_deleted", details: { authenticatedUserId: OWNER } },
+    });
+    expect(
+      (
+        await requireProjectOwner({ projects: app.projectRepo }, PROJECT, OWNER, {
+          includeSoftDeleted: true,
+        })
+      ).id,
+    ).toBe(PROJECT);
+  });
+
+  it("keeps missing and foreign live or deleted projects byte-identical to the generic main answer", async () => {
+    const { app } = await runtimes.compose();
+    const ask = (id: string, userId = OTHER) =>
+      failure(() => requireProjectOwner({ projects: app.projectRepo }, id, userId));
+    const baseline = JSON.stringify({ message: "Project not found" });
+    expect(JSON.stringify(await ask(MISSING))).toBe(baseline);
+    expect(JSON.stringify(await ask(PROJECT))).toBe(baseline);
+    await deleteFixture("project");
+    expect(JSON.stringify(await ask(PROJECT))).toBe(baseline);
+    // Even tombstone access must not disclose another account's deletion.
+    expect(
+      JSON.stringify(
+        await failure(() =>
+          requireProjectOwner({ projects: app.projectRepo }, PROJECT, OTHER, {
+            includeSoftDeleted: true,
+          }),
+        ),
+      ),
+    ).toBe(baseline);
   });
 });
