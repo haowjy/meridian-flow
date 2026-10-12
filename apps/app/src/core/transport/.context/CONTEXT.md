@@ -146,18 +146,22 @@ its preference owner binds recovery only for the committed account epoch.
 Local document peers and session wakeup keep their content-recovery listeners,
 independent of network jitter, cooldowns, or unrelated connection successes.
 
-## Thread handshake deadline
+## Thread socket deadlines
 
 `SocketLifecycleController` owns the attempt phases: connecting, transport-open
 awaiting the protocol `connected` frame, and connected. One watchdog starts at
 socket creation and ends only on `connected`, close, or teardown. Its default
 is 10 seconds (`handshakeTimeoutMs` is injectable); opening or receiving other
-frames does not extend it. Expiry retires the socket before requesting native
-close and uses the same reconnect backoff as a network close, without waiting
-for a close acknowledgement. Retired sockets cannot drive product callbacks.
+frames does not extend it. The separate 45-second ping deadline starts on open
+and resets on every inbound frame. Expiry of either deadline retires the socket
+before requesting native close and uses the same reconnect backoff as a network
+close, without waiting for a close acknowledgement. Retired sockets cannot drive
+product callbacks. Both timers are cancelled on retirement or teardown; protocol
+`connected` cancels only the handshake watchdog.
 
 Protocol readiness lives in this lifecycle, not in a second transport flag.
 Subscriptions still resume from the last delivered cursor after `connected`;
-catch-up and gap reconciliation are unchanged. The deadline bounds an attempt,
-not time to recovery: retries still depend on the server/network returning and
-browser timers running (background suspension can delay the watchdog).
+catch-up and gap reconciliation are unchanged. These deadlines bound handshake
+wait and inbound silence, not time to recovery: retries still depend on the
+server/network returning and browser timers running (background suspension can
+delay either deadline).

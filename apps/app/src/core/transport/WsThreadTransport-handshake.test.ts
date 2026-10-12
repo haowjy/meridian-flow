@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Bounded thread handshakes preserve delivered cursors through restart recovery. */
+/** Thread socket deadlines preserve delivered cursors through restart recovery. */
 import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "./test-support/FakeThreadSocket";
@@ -154,6 +154,57 @@ it("uses the injected deadline and cancels it on close before a new attempt", ()
     sockets[2].deliver(connected);
     vi.advanceTimersByTime(100);
     expect(onClose).toHaveBeenCalledTimes(2);
+  } finally {
+    transport.disconnect();
+  }
+});
+
+it("retires a silent connected socket without waiting for native close and resumes its reply", () => {
+  const { transport, sockets, events, onClose } = setup();
+  const states = vi.fn();
+  transport.onConnectionState(states);
+  try {
+    const silent = sockets[0];
+    silent.open();
+    silent.deliver(connected);
+    silent.deliver({ type: "subscribed", threadId: "thread-1", catchup: [], state });
+    silent.deliver({ type: "event", threadId: "thread-1", ...delta("1", "Early ") });
+    silent.stallClose = true;
+    vi.advanceTimersByTime(44_999);
+    expect(onClose).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ code: 4000, reason: "ping_timeout" }),
+    );
+    expect(silent.readyState).toBe(2);
+    expect(states).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "reconnecting" }));
+
+    silent.deliver({ type: "event", threadId: "thread-1", ...delta("99", "Stale") });
+    expect(events).toEqual([delta("1", "Early ")]);
+    vi.advanceTimersByTime(250);
+    expect(sockets).toHaveLength(2);
+    const replacement = sockets[1];
+    replacement.open();
+    replacement.deliver(connected);
+    expect(JSON.parse(replacement.sent[0])).toEqual({
+      type: "resume",
+      subscriptions: [{ threadId: "thread-1", lastSeq: "1" }],
+    });
+    replacement.deliver({
+      type: "subscribed",
+      threadId: "thread-1",
+      catchup: [delta("2", "catch-up ")],
+      state,
+    });
+    replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
+    expect(events).toEqual([
+      delta("1", "Early "),
+      delta("2", "catch-up "),
+      delta("3", "final line"),
+    ]);
+    silent.dispatchEvent(Object.assign(new Event("close"), { code: 4403, wasClean: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(states).toHaveBeenLastCalledWith({ kind: "connected" });
   } finally {
     transport.disconnect();
   }
