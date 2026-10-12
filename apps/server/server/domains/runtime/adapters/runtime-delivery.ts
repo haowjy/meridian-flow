@@ -701,7 +701,17 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockThreadReceipt(threadId);
         const result = await repair();
-        if (receipt) await deps.runClaim.release(receipt.lease);
+        const repaired = await leaseStore.lockThreadReceipt(threadId);
+        // A stale sweep candidate may not repair this receipt's execution. Only
+        // receipt retirement (or an already-empty receipt) permits lease release.
+        if (
+          receipt &&
+          repaired?.lease.runId === receipt.lease.runId &&
+          repaired.lease.holderId === receipt.lease.holderId &&
+          repaired.turnId === null &&
+          repaired.ids.length === 0
+        )
+          await deps.runClaim.release(receipt.lease);
         await appendPending(threadId);
         schedulePostCommit(async () => {
           await deps.publishStatus?.(threadId);
