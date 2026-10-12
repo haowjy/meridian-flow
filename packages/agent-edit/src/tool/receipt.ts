@@ -1,6 +1,8 @@
 // Receipts project accepted evidence. Reporting failure never changes acceptance.
+
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
+import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
 import type { CommandLinks } from "./command-links.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -13,6 +15,7 @@ interface ReceiptIdentity {
   commandName: DocumentCommandName;
   writeId: string;
   durableWriteId: string;
+  rejectionReason?: StagedWriteRejectionReason;
 }
 interface AcceptedEdit extends ReceiptIdentity {
   touchedHashes: ReadonlySet<string>;
@@ -82,7 +85,7 @@ export function renderReceipt(
 
 export function renderSettledReceipts(
   accepted: readonly AcceptedEdit[],
-  discarded: readonly ReceiptIdentity[],
+  rejected: readonly ReceiptIdentity[],
   revision: string | null,
   capture: () => ReceiptCut | null,
 ): ResponseCommitDocumentResult["receipts"] {
@@ -107,11 +110,11 @@ export function renderSettledReceipts(
   }
   return [
     ...receipts,
-    ...discarded.map((edit) =>
+    ...rejected.map((edit) =>
       settledReceipt(edit, null, {
         status: "invalid_write",
         model: {
-          message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
+          message: `Write did not land: ${rejectedWriteExplanation(edit.rejectionReason)}. Re-read and retry.`,
         },
       }),
     ),
@@ -131,4 +134,16 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
       }),
     ),
   );
+}
+
+/** A refusal explains host evidence, not a guess from item visibility. */
+export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
+  switch (reason) {
+    case "discard":
+      return "the user discarded the text it edited";
+    case "inverse":
+      return "an inverse removed the text it edited";
+    default:
+      return "the staged write could not integrate with the current draft";
+  }
 }
