@@ -100,6 +100,8 @@ export interface RuntimeDelivery
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
+  /** Under an exclusive session claim, atomically repair and end the dead run, then publish status. */
+  settleStaleExecution<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
   /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */

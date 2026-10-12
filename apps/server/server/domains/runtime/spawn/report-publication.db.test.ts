@@ -262,7 +262,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -506,7 +506,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -560,7 +560,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
         retireOrphanedReply: delivery.retireOrphanedReply,
@@ -582,9 +582,7 @@ else
         },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
-      expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
-        { threadId: ids.child, turnId: null, boundTurnIds: [], adoptedMessageIds: [] },
-      ]);
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       expect(
         (await journalEventsByThread(db, ids.caller)).filter(
           (event) => event.eventType === "agent.run_completed",
@@ -640,7 +638,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -696,7 +694,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -822,7 +820,7 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
@@ -888,7 +886,7 @@ else
         repos,
         eventWriter,
         authority: createDrizzleRunClaim(db, { holderId: "exact-report-walk" }),
-        threadLock,
+        settleStaleExecution: delivery.settleStaleExecution,
         publisher,
         eventSink,
       });
