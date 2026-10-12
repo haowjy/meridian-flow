@@ -347,6 +347,60 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "attachments/map.png",
     );
   });
+  async function competitorAtPlannedPicture() {
+    await ok(
+      context().writeBinary("kb://vault/attachments/map.png", {
+        fileType: "image",
+        storageUrl: "other",
+        mimeType: "image/png",
+        sizeBytes: 1,
+        origin: { type: "human", userId },
+      }),
+    );
+  }
+  it("a file already at the planned picture address never captures the holder's figure", async () => {
+    const selection = imageSelection(),
+      service = createImportService(ports());
+    const plan = await service.plan(projectId, userId, selection.manifest);
+    await competitorAtPlannedPicture();
+    expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
+      "landed",
+    );
+    const picture = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
+    expect(picture.uri).toBe("kb://vault/attachments/map (2).png");
+    expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
+      "kb://vault/attachments/map (2).png",
+    );
+    expect(
+      (await service.report(plan.importId, projectId)).entries.flatMap((entry) => entry.findings),
+    ).not.toContainEqual(expect.objectContaining({ code: "picture_elsewhere" }));
+  });
+  it("a picture landing between the holder's snapshot and its binding binds by id", async () => {
+    const selection = imageSelection(),
+      deps = ports(),
+      gate = barrier();
+    const bind = deps.tree.bind;
+    deps.tree.bind = async (...args) => {
+      if (args[0].kind === "note") await gate.pause();
+      return bind(...args);
+    };
+    const service = createImportService(deps),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    await competitorAtPlannedPicture();
+    const holder = service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    await gate.arrived;
+    try {
+      expect((await service.land(projectId, plan.importId, 1, selection.bytes[1])).uri).toBe(
+        "kb://vault/attachments/map (2).png",
+      );
+    } finally {
+      gate.release();
+    }
+    expect((await holder).state).toBe("landed");
+    expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
+      "kb://vault/attachments/map (2).png",
+    );
+  });
   it("routes a marked export to area roots, ignores invocation folder, skips Works and records sort off", async () => {
     const selection = loose({
       "Manuscript/Chapter.md":

@@ -72,6 +72,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           resolved.push({
             aheadId,
             address: await resolveCanonicalAddress(this.db, registration),
+            awaitsIdentity: registration.awaitsIdentity === true,
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
@@ -111,7 +112,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           }
         }
 
-        for (const { aheadId, address } of resolved) {
+        for (const { aheadId, address, awaitsIdentity } of resolved) {
+          if (awaitsIdentity) continue;
           const documentId = await this.liveDocumentAt(address);
           if (documentId) await this.settle(address, documentId, aheadId);
         }

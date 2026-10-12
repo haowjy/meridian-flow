@@ -75,6 +75,34 @@ describe("planned link binding", () => {
     expect(subject.registered).toEqual([refs[2]]);
   });
 
+  it("a pending target mints an ahead ref at its written address, never binding the occupant there", async () => {
+    const subject = setup();
+    const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;
+    const result = await subject.planned.bindMarkdown({
+      holder: { documentId: HOLDER },
+      markdown: "![map](kb://A.png) [x](kb://A) [y](kb://elsewhere)",
+      targets: new Map([
+        [0, PLANNED],
+        [1, PLANNED],
+        [2, B],
+      ]),
+      pending: new Set([PLANNED, B]),
+    });
+    const occurrences = walkLinkOccurrences(result.blocks);
+    const refs = occurrences.map(({ attrs }) => attrs.ref);
+    expect(refs[0]).toMatch(/^ahead:/);
+    expect(refs[1]).toMatch(/^ahead:/);
+    expect(refs[1]).not.toBe(`doc:${A}`);
+    // A pending identity that is already live binds to itself.
+    expect(refs[2]).toBe(`doc:${B}`);
+    expect(result.aheadRefs).toEqual([
+      { occurrence: 0, ref: refs[0] },
+      { occurrence: 1, ref: refs[1] },
+    ]);
+    expect(subject.registered).toEqual([refs[0], refs[1]]);
+    expect(result.invalidTargets).toEqual([]);
+  });
+
   it("an invalid id binds nothing rather than falling back to the written occupant", async () => {
     const subject = setup();
     const invalidId = "not-an-id" as DocumentId;

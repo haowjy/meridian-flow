@@ -22,10 +22,12 @@ export interface ImportTreeWriter {
   parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
   lockDocument(id: string): Promise<boolean>;
   create(parent: ImportParent, nodes: ImportEntry[]): Promise<void>;
+  /** `pending`: planned ids bound by an ahead ref while not yet live, never by address. */
   bind(
     entry: ImportEntry,
     text: string,
     targets?: ReadonlyMap<number, string>,
+    pending?: ReadonlySet<string>,
   ): Promise<BoundWrite | null>;
   aheadTargets(
     bound: BoundWrite,

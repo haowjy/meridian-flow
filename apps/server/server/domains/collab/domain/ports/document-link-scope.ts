@@ -77,6 +77,12 @@ export const LIVE_VIEW: LinkView = { kind: "live" };
 /** Durable ahead-ref registration (context's `LinkAheadRegistry.register`). */
 export interface AheadRefRegistrar {
   register(
-    registrations: readonly { aheadId: string; holderProjectId: string; address: string }[],
+    registrations: readonly {
+      aheadId: string;
+      holderProjectId: string;
+      address: string;
+      /** Awaits a planned identity: never settled to a document already at the address. */
+      awaitsIdentity?: boolean;
+    }[],
   ): Promise<void>;
 }

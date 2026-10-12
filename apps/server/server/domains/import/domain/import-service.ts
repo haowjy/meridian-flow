@@ -493,17 +493,17 @@ export function createImportService(deps: {
           text,
         );
         const targets = converted?.targets ?? new Map<number, string>();
-        // Nonexistent binaries/code have ahead identities until arrival; retain their planned
-        // occurrence-to-id relation separately, never look them up again by an address.
-        const liveTargets = new Map<number, string>();
-        for (const [occurrence, targetId] of targets) {
-          const planned = entries.find((item) => item.id === targetId);
-          if (!planned || planned.created) liveTargets.set(occurrence, targetId);
-        }
+        // Binaries and code land later. Bound by planned id, an unlanded one gets an
+        // ahead ref settled to that id on arrival; its address is never resolved.
+        const pending = new Set(
+          entries
+            .filter((item) => item.kind === "binary" || item.kind === "code")
+            .map((item) => item.id),
+        );
         const bound =
           entry.kind === "binary"
             ? null
-            : await tree.bind(entry, converted?.markdown ?? text, liveTargets);
+            : await tree.bind(entry, converted?.markdown ?? text, targets, pending);
         const ahead = bound?.aheadRefs.length
           ? tree
               .aheadTargets(

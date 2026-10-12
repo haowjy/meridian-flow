@@ -7,6 +7,11 @@ export type AheadRegistration = {
   holderProjectId: ProjectId;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
+  /**
+   * The ref awaits a planned identity (an import's unlanded file), settled by `settleRef`:
+   * a document already at the address is someone else's and never settles it.
+   */
+  awaitsIdentity?: boolean;
 };
 
 /** Which holders' index rows a registration recovery reads. */
@@ -35,7 +40,7 @@ export interface LinkAheadRegistry {
   /**
    * Independent root transaction. Takes the targets' namespace keys sorted (no Work or holder
    * lock), inserts idempotently by id (re-registering an id for another address throws), then
-   * settles any row whose address already holds a live document.
+   * settles any row whose address already holds a live document, unless it awaits an identity.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   /**

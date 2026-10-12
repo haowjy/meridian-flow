@@ -20,6 +20,7 @@
  * document.
  */
 import {
+  type AheadMint,
   assignOccurrences,
   type DocumentCoordinator,
   isDocumentNotFoundError,
@@ -31,7 +32,7 @@ import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, PMNode } from "@meridian/markup";
-import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
+import { assignFreshLink, walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -133,12 +134,17 @@ export interface LinkBinderDeps {
 export interface ImportLinkBinder {
   /** Link-free code may be bound to its planned identity before its row exists. */
   bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
-  bindMarkdown(
-    input: Omit<BindMarkdownInput, "against"> & {
-      targets?: ReadonlyMap<number, DocumentId>;
-    },
-  ): Promise<BoundWrite>;
+  bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
 }
+export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
+  targets?: ReadonlyMap<number, DocumentId>;
+  /**
+   * Planned identities that may not exist yet. A target among them that is not
+   * live gets a fresh ahead ref at its written address, settled later by id; the
+   * address is never resolved, so whatever occupies it is not bound.
+   */
+  pending?: ReadonlySet<DocumentId>;
+};
 
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   return binderFor(deps);
@@ -212,9 +218,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     }
   }
 
-  async function bind(
-    input: BindMarkdownInput & { targets?: ReadonlyMap<number, DocumentId> },
-  ): Promise<BoundWrite> {
+  async function bind(input: BindMarkdownInput & ImportBindInput): Promise<BoundWrite> {
     const { holder } = input;
     const view = input.view ?? LIVE_VIEW;
     const documentId = "documentId" in holder ? holder.documentId : null;
@@ -262,6 +266,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       shown: [],
     });
     const invalidTargets: { occurrence: number; documentId: DocumentId }[] = [];
+    const pendingMints: AheadMint[] = [];
     for (const [occurrence] of input.targets ?? []) {
       if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= occurrences.length)
         throw new RangeError(`Invalid link occurrence: ${occurrence}`);
@@ -277,6 +282,22 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         resolved.document.projectId !== scope.holder.projectId ||
         resolved.document.presence !== "live"
       ) {
+        if (ref && input.pending?.has(target as DocumentId)) {
+          const fresh = assignFreshLink({
+            href: occurrence.attrs.href,
+            grammar: occurrence.kind === "link" ? "link" : "source",
+            holderUri: scope.holder.uri,
+            documentFor: () => null,
+          });
+          if (fresh.kind === "ahead") {
+            pendingMints.push({
+              ref: fresh.ref,
+              address: fresh.address,
+              holderProjectId: scope.holder.projectId,
+            });
+            return { ...occurrence.attrs, ref: fresh.ref, href: fresh.href };
+          }
+        }
         invalidTargets.push({ occurrence: index, documentId: target ?? ("" as DocumentId) });
         return { ...occurrence.attrs, ref: null, href: "" };
       }
@@ -285,8 +306,13 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const nodes = rebuildOccurrences(written, occurrences, attrs);
     const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
     const minted = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
-    if (minted.length > 0) await deps.registrar.register(aheadRegistrations(minted));
-    const mintedRefs = new Set<string>(minted.map(({ ref }) => ref));
+    const awaiting = pendingMints.filter(({ ref }) => keptRefs.has(ref));
+    if (minted.length + awaiting.length > 0)
+      await deps.registrar.register([
+        ...aheadRegistrations(minted),
+        ...aheadRegistrations(awaiting).map((row) => ({ ...row, awaitsIdentity: true })),
+      ]);
+    const mintedRefs = new Set<string>([...minted, ...awaiting].map(({ ref }) => ref));
     const aheadRefs = attrs.flatMap((attrs, occurrence) =>
       attrs?.ref && mintedRefs.has(attrs.ref) ? [{ occurrence, ref: attrs.ref }] : [],
     );
