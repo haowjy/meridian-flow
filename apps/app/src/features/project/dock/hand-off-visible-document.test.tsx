@@ -97,8 +97,9 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
 vi.mock("@/components/app/PaintHold", () => ({
   PaintCapture: () => null,
   PaintScope: ({ children }: { children: ReactNode }) => children,
-  useAfterPaintRelease: () => (work: () => void) => work(),
-  usePaintCoverPatch: () => () => {},
+  useAfterPaintRelease: () => (work: (cover: { scrolledBy: number[] }) => void) =>
+    work({ scrolledBy: [] }),
+  usePaintCoverProjection: () => () => {},
 }));
 const liveSession = {
   suspendPresence: () => {},

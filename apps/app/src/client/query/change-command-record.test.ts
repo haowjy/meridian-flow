@@ -10,13 +10,13 @@ import {
   confirmChangeCommand,
   currentChangeCommandRecords,
   failChangeCommand,
-  hiddenOperationIds,
-  previewWithoutOperations,
+  intentKeys,
   queueChangeSelection,
   readPreviewAfterChangeCommands,
   releaseDraftCommand,
   resetDraftCommandRecords,
 } from "./draft-command-record";
+import { previewWithoutKeys } from "./draft-projection";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
 const one = { classIds: ["c1"], operationIds: ["1"] };
@@ -70,7 +70,10 @@ describe("change command record", () => {
     const first = queueChangeSelection(draft, one, "apply");
     queueChangeSelection(draft, two, "apply");
     first.retire();
-    expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual(["2", "3"]);
+    expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
+      "row:2",
+      "row:3",
+    ]);
   });
 
   describe("a selection of several changes", () => {
@@ -102,17 +105,17 @@ describe("change command record", () => {
       await readPreviewAfterChangeCommands(draft, async () => preview());
       expect(changeCommandState(currentChangeCommandRecords(), draft, both)).not.toBeNull();
       await readPreviewAfterChangeCommands(draft, async () =>
-        previewWithoutOperations(preview(), new Set(["1", "2", "3"])),
+        previewWithoutKeys(preview(), new Set(["row:1", "row:2", "row:3"])),
       );
       expect(changeCommandState(currentChangeCommandRecords(), draft, both)).toBeNull();
     });
 
     it("hides every operation of the selection while its claim is held, and a confirmation fences reads", async () => {
       beginChangeCommand(draft, both, "apply", 1);
-      expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual([
-        "1",
-        "2",
-        "3",
+      expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
+        "row:1",
+        "row:2",
+        "row:3",
       ]);
       releaseDraftCommand(draft);
       let finish!: (value: DraftPreviewResponse) => void;

@@ -258,7 +258,8 @@ export function useDraftReviewController({
       if (inline?.documentId !== review.documentId || inline.draftId !== review.draftId) return;
       reportFocusedChange(review, change);
       // The writer chose where to go: a place held across an editor swap yields to it.
-      if (options?.scroll) noteReviewNavigation(change.anchorOperationId);
+      if (options?.scroll)
+        noteReviewNavigation(`${review.documentId}:${review.draftId}`, change.keys ?? []);
       const runtime = inlineRuntimeRef.current;
       if (
         !runtime ||

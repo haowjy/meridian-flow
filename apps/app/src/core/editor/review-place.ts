@@ -14,6 +14,7 @@
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import * as Y from "yjs";
+import { getInlineReviewPluginState, operationKey } from "./extensions/inline-review";
 import {
   type RelativePositionRuntime,
   relativePositionForIndex,
@@ -42,19 +43,25 @@ export type ReviewPlace = {
   caret: { anchor: PlacePoint; head: PlacePoint } | null;
   /** The editor had the writer's focus when they acted. */
   focus: boolean;
-  /** Navigation epoch at capture; a later one belongs to the writer and wins. */
-  epoch: number;
+  /**
+   * Where the writer asked to go while this place was held (the keys of the
+   * change they stepped to). It replaces the held viewport: it is theirs, and
+   * newer, and it names a change by what it is, not by an id of a dead generation.
+   */
+  navigateTo?: readonly string[];
 };
 
 const RESTORING_CLASS = "meridian-review-restoring";
 const places = new Map<string, ReviewPlace>();
-let epoch = 0;
-let navigatedTo: string | null = null;
 
-/** The writer asked to go to a change (stepper, list row): they, not a held place, choose the viewport. */
-export function noteReviewNavigation(operationId: string): void {
-  epoch += 1;
-  navigatedTo = operationId;
+/**
+ * The writer chose a change to go to (stepper, list row) in this draft's review.
+ * Only a place already held for that draft takes it: with none, the editor on
+ * screen simply scrolls.
+ */
+export function noteReviewNavigation(key: string, changeKeys: readonly string[]): void {
+  const place = places.get(key);
+  if (place) place.navigateTo = changeKeys;
 }
 
 function paneOf(editor: Editor): HTMLElement | null {
@@ -170,7 +177,6 @@ export function captureReviewPlace(key: string, editor: Editor, focus: boolean):
         head: pointAt(editor, runtime, head),
       },
       focus,
-      epoch,
     });
   } catch {
     // A place is a convenience; a document that cannot answer keeps the earlier one.
@@ -201,7 +207,12 @@ function focusIsFree(): boolean {
  * scrolled to), then the viewport, then focus. Returns false, keeping the
  * place, when the editor has no layout yet.
  */
-export function restoreReviewPlace(key: string, editor: Editor): boolean {
+export function restoreReviewPlace(
+  key: string,
+  editor: Editor,
+  /** How far the reader scrolled the paint cover that stood in for the old editor. */
+  coverScrolledBy = 0,
+): boolean {
   const place = places.get(key);
   if (!place) return true;
   const pane = paneOf(editor);
@@ -228,18 +239,27 @@ export function restoreReviewPlace(key: string, editor: Editor): boolean {
         );
       }
     }
-    if (place.epoch !== epoch) {
-      // The writer chose where to go while this was held: go there instead.
-      if (navigatedTo) editor.commands.scrollInlineReviewOperationIntoView(navigatedTo);
-    } else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
+    const destination = place.navigateTo && operationOfChange(editor, place.navigateTo);
+    if (destination) editor.commands.scrollInlineReviewOperationIntoView(destination);
+    else if (place.viewport) {
+      restoreViewport(editor, pane, runtime, place.viewport);
+      pane.scrollTop += coverScrolledBy;
+    }
     if (place.focus && editor.isEditable && focusIsFree()) editor.view.focus();
     // The live editor of a finished review is inert until the server answers: focus waits for it.
     else if (place.focus && !editor.isEditable)
-      places.set(key, { viewport: null, caret: null, focus: true, epoch });
+      places.set(key, { viewport: null, caret: null, focus: true });
   } catch {
     // Deleted anchors and unavailable layout are convenience loss, never a broken editor.
   }
   return true;
+}
+
+/** The successor's operation for a change the writer chose, found by what it is. */
+function operationOfChange(editor: Editor, keys: readonly string[]): string | null {
+  const wanted = new Set(keys);
+  const model = getInlineReviewPluginState(editor.state)?.model;
+  return model?.operations.find((op) => wanted.has(operationKey(op)))?.operationId ?? null;
 }
 
 function restoreViewport(
@@ -268,12 +288,17 @@ function restoreViewport(
 }
 
 /** `restoreReviewPlace`, retried when an editor without layout (a hidden pane) first gets some. */
-export function restoreReviewPlaceWhenMeasured(key: string, editor: Editor): void {
-  if (restoreReviewPlace(key, editor)) return;
+export function restoreReviewPlaceWhenMeasured(
+  key: string,
+  editor: Editor,
+  coverScrolledBy = 0,
+): void {
+  if (restoreReviewPlace(key, editor, coverScrolledBy)) return;
   const pane = paneOf(editor);
   if (!pane) return;
   const observer = new ResizeObserver(() => {
-    if (editor.isDestroyed || restoreReviewPlace(key, editor)) observer.disconnect();
+    if (editor.isDestroyed || restoreReviewPlace(key, editor, coverScrolledBy))
+      observer.disconnect();
   });
   observer.observe(pane);
   setTimeout(() => observer.disconnect(), 5_000);

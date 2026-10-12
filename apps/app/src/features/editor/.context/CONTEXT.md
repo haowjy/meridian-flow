@@ -123,8 +123,9 @@ editor is replaced; the writer must not see it. (1) *Original from the click:* a
 discarded change stays in the inline model flagged `restoring`; its insertion is
 hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
 removed text is drawn as plain prose (`meridian-review-restored`). A Discard
-accepted while a cover already holds the old review is applied to the cover's
-DOM (`PaintHold.patchCover`, `restoreRenderedChanges`). A refusal drops the
+accepted while a cover already holds the old review shows on the cover too: the
+cover is its capture plus the current projection of the intents
+(`PaintHold.projectCover`, `restoreRenderedChanges`), rebuilt when they move. A refusal drops the
 flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
 takes the first visible block (Yjs anchor, stable block index, pixel offset), the
 caret and focus ownership in the commit that removes the review editor
@@ -132,12 +133,16 @@ caret and focus ownership in the commit that removes the review editor
 shows only once it has synced, carried the writer's unsent edits and projected
 the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
 the viewport and focus in the task that lifts the cover. A writer's explicit
-navigation in between (`noteReviewNavigation`) wins. The same place is applied to
+navigation in between (`noteReviewNavigation`, addressed to the draft and naming
+the change by its keys) replaces the held viewport. The cover scrolls (its prose
+is inert, typing is blocked), and how far it was scrolled is added to the
+restored viewport. The same place is applied to
 the warm live editor when a last Apply or Discard hands the page over. (3)
 *Chrome is the draft's:* `shown` is not cleared by a generation change, so the
 header, change list and phone sheet stay; the open review's list is held while
-the review and its preview disagree about the generation. A Discard leaves the
-viewport where it is (Apply still advances to the next change).
+the review and its preview disagree about the generation. Discard and Apply both
+move the focus to the next change and scroll to it; the place held across the swap
+is the viewport as it is then.
 
 For generation, completion and command ordering, use the
 [draft-review lifecycle reference](../../draft-review/.context/draft-review.md).

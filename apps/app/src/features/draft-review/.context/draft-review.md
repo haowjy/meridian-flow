@@ -76,19 +76,33 @@ Settlement order is explicit:
    release; the open review can retain a closed completion independently.
 
 **Per-change clicks queue.** `runDraftSelection` accepts every distinct Apply or
-Discard click at once: it hides the change (the queue entry in the record store),
-and `drainIntents` sends the draft's clicks one at a time. The first click is
-sent as made; each later one is found again in a fresh preview read (new tokens)
-by class, operation id or operation key, and is `gone` when nothing there holds
-it. Rows disable only for a whole-draft command, a batch or an archived Work
-(`changesLocked`), never for another change's command.
+Discard click at once: it hides the change (the queue entry in the record store,
+which also holds the caller's promise and the account epoch it was admitted in),
+and `drainClicks` sends the draft's clicks one at a time. Each is found again in
+the draft as it is when its turn comes (a fresh preview read for every click after
+the first, new tokens) by its keys, sent as that generation's rows, and is `gone`
+when nothing there holds it. An account change answers every unsent click
+`blocked`, and the loop checks its click is still queued right after the read, so
+nothing is sent or published for a dead account. Rows disable only for a
+whole-draft command, a batch or an archived Work (`changesLocked`), never for
+another change's command.
 
 **Identity across re-forks.** A selective Discard re-forks the draft, so every
-survivor gets new operation and class ids. Anything that must outlive a
-generation (queued clicks, held failures, hidden sets, the focus, "arrived"
-pulses) also carries `operationKey` (turn, tool call, changed text; the id when
-nothing else tells a write apart). `resolveFocusedChange` falls back to keys, so
-the stepper ordinal re-derives from the surviving operations.
+survivor gets a new journal row, hence a new `operationId`. The server carries the
+recorded edit part (`updateMeta.documentEdit`, `<editId>:<ordinal>`) through
+the re-fork and vends it as `ReviewOperation.partKey`; class ids hash the members'
+part keys, so an unchanged class keeps its id. Anything on the client that must
+outlive a generation (queued clicks, held failures, hidden sets, the focus, the
+"arrived" pulse, the navigation a writer made under a cover) carries
+`operationKey` (the part key; `row:<id>` for a row that records no edit part, which
+therefore only matches itself). Text excerpts are display, never identity.
+
+**One projection.** `draft-projection.ts` is the only place intents are applied to
+an observation: `projectDraft(observed, intentKeys)` gives the list/count preview,
+the manuscript's inline preview (Discards in flight still drawn) and the
+operations being restored. The held list re-projects the draft's last observation
+under the current intents; the paint cover is its capture plus the same
+projection.
 
 **Claims are capabilities.** `beginDraftCommand` returns a `DraftClaim` bound to
 the account epoch (`resetDraftCommandRecords` advances it). Answers, failures,
@@ -114,10 +128,9 @@ it through `bindDraftCommandAccount`. No local lock or optimistic hide supplemen
 
 Queued, pending and confirmed selections are hidden by the shared preview
 projection; failures restore them with their reason. Matching uses shared class
-or operation IDs or operation keys, newest overlap wins. Discards among them are
-`restoringOperationIds`: `useDraftPreview` hands the editor those changes still
-in its model (`inline`), so the manuscript draws their original text from the
-click. `readPreviewAfterChangeCommands` fences
+or operation keys, newest overlap wins. Discards among them are `restoring`:
+`useDraftPreview` hands the editor those changes still in its model (`inline`),
+so the manuscript draws their original text from the click. `readPreviewAfterChangeCommands` fences
 reads begun before selection confirmation; `readDraftsAfterCommands` fences list
 reads begun before whole Apply confirmation. A later read is authoritative,
 since a new proposal can reuse the draft ID. Confirmation records retire once

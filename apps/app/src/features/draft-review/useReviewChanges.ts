@@ -14,6 +14,8 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { DraftCommandOutcome } from "@/client/query/draft-command-executor";
 
+import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
+import { type ActivePreview, previewWithoutKeys } from "@/client/query/draft-projection";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { selectionOf } from "./change-selection";
 import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
@@ -52,7 +54,7 @@ export function useOpenReviewChanges(
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const documentId = inline?.documentId ?? null;
   const draftId = inline?.draftId ?? null;
-  const { preview } = useDraftPreview(
+  const { preview, observed } = useDraftPreview(
     controller.projectId,
     controller.workId,
     documentId,
@@ -71,23 +73,44 @@ export function useOpenReviewChanges(
       ? reviewChangesOfPreview(active)
       : null;
   // While the review and its preview disagree about the generation (the next
-  // one is arriving, or the cache lags behind it), the list the writer was
-  // acting on stays and its rows keep taking clicks; each click is resolved
-  // against the draft as it is when it is sent. Only the draft's own earlier
-  // list is kept, never another draft's.
-  const held = useRef<{ draftId: string | null; changes: readonly ReviewChange[] }>({
+  // one is arriving, or the cache lags behind it), the draft's last observation
+  // of the generation the writer was acting on stays, projected under the
+  // intents as they are now: its rows keep taking clicks, and a click already
+  // made is not in it. Each click is resolved against the draft as it is when it
+  // is sent. Only the draft's own earlier observation is kept, never another's.
+  const held = useRef<{ draftId: string | null; observed: ActivePreview | null }>({
     draftId: null,
-    changes: NO_CHANGES,
+    observed: null,
   });
-  if (own) held.current = { draftId, changes: own };
+  if (own && observed?.status === "active") held.current = { draftId, observed };
+  const records = useChangeCommandRecords();
+  const heldObserved = held.current.draftId === draftId ? held.current.observed : null;
+  const hiddenKey = draftId
+    ? [
+        ...intentKeys(records, {
+          projectId: controller.projectId,
+          workId: controller.workId,
+          documentId: documentId ?? "",
+          draftId,
+        }).hidden,
+      ]
+        .sort()
+        .join(",")
+    : "";
+  const heldChanges = useMemo(() => {
+    if (!heldObserved) return NO_CHANGES;
+    const hidden = new Set(hiddenKey ? hiddenKey.split(",") : []);
+    const projected = previewWithoutKeys(heldObserved, hidden);
+    return projected.status === "active" ? reviewChangesOfPreview(projected) : NO_CHANGES;
+  }, [heldObserved, hiddenKey]);
   // A newer preview with nothing to review is the close's own reset: that is not held.
   const keeping =
     own === null &&
     active !== null &&
-    held.current.draftId === draftId &&
+    heldObserved !== null &&
     shown !== undefined &&
     (active.draftGeneration < shown || reviewChangesOfPreview(active).length > 0);
-  const changes = own ?? (keeping ? held.current.changes : NO_CHANGES);
+  const changes = own ?? (keeping ? heldChanges : NO_CHANGES);
   const settling = keeping && changes.length > 0;
   return { inline, documentId, draftId, preview, active, changes, settling };
 }
@@ -139,18 +162,13 @@ export function useReviewChanges(
     [changes, focus, focusedIndex],
   );
 
-  /**
-   * After a command the focus moves to the next change, or the one before it.
-   * An Apply carries the viewport there. A Discard leaves it where it is: the
-   * draft's next generation replaces the editor, and the writer's place is
-   * kept across that (`review-place`).
-   */
+  /** After a command the writer lands on the next change in the manuscript, or the one before it. */
   const settleFocus = useCallback(
-    (change: ReviewChange, scroll: boolean) => {
+    (change: ReviewChange) => {
       if (focused && focused.classId !== change.classId) return;
       const at = changes.indexOf(change);
       const next = changes[at + 1] ?? changes[at - 1];
-      if (next) focus(next, { scroll });
+      if (next) focus(next, { scroll: true });
     },
     [changes, focus, focused],
   );
@@ -162,11 +180,10 @@ export function useReviewChanges(
         review: DraftReviewSelection,
         selection: ReturnType<typeof selectionOf>,
       ) => Promise<DraftCommandOutcome>,
-      scroll: boolean,
     ) => {
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!change.actionable || !review) return;
-      settleFocus(change, scroll);
+      settleFocus(change);
       const outcome = await command(review, selectionOf([change]));
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
@@ -180,14 +197,14 @@ export function useReviewChanges(
   const apply = useCallback(
     async (change: ReviewChange) => {
       if (change.wholeDraft && review) await controller.apply(review.documentId, review.draftId);
-      else await run(change, controller.applyChanges, true);
+      else await run(change, controller.applyChanges);
     },
     [controller.apply, controller.applyChanges, review, run],
   );
   const discard = useCallback(
     async (change: ReviewChange) => {
       if (change.wholeDraft && review) await controller.discard(review.documentId, review.draftId);
-      else await run(change, controller.discardChanges, false);
+      else await run(change, controller.discardChanges);
     },
     [controller.discard, controller.discardChanges, review, run],
   );

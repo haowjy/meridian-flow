@@ -64,8 +64,9 @@ vi.mock("@/components/app/PaintHold", () => ({
   usePaintPending: () => {},
   PaintCapture: () => null,
   PaintScope: ({ children }: { children: ReactNode }) => children,
-  useAfterPaintRelease: () => (work: () => void) => work(),
-  usePaintCoverPatch: () => () => {},
+  useAfterPaintRelease: () => (work: (cover: { scrolledBy: number[] }) => void) =>
+    work({ scrolledBy: [] }),
+  usePaintCoverProjection: () => () => {},
 }));
 const resources = { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() };
 let fixture: ReturnType<typeof createReviewScopeFixture>;

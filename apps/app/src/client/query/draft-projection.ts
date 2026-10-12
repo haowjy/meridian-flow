@@ -1,0 +1,90 @@
+/**
+ * The one projection of a draft observation under the writer's intents. The
+ * observation (a preview read) is never edited; what a list, a count, the
+ * manuscript's marks and a held paint show is this function of it and of the
+ * intents (`intentKeys`), recomputed when either moves. Intents name changes by
+ * `operationKey`, which survives a re-fork, so one projection serves every
+ * generation of the draft.
+ */
+import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { operationKey } from "@/core/editor/extensions/inline-review";
+
+export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
+
+/** Which changes the writer has acted on: `hidden` are gone from every surface, `restoring` (a subset) are Discards still drawn as their original. */
+export type DraftIntentKeys = {
+  readonly hidden: ReadonlySet<string>;
+  readonly restoring: ReadonlySet<string>;
+};
+
+/** The operation ids in `preview` that these keys name. */
+export function idsNamedBy(preview: ActivePreview, keys: ReadonlySet<string>): Set<string> {
+  const ids = new Set<string>();
+  if (keys.size === 0) return ids;
+  for (const op of preview.operations) if (keys.has(operationKey(op))) ids.add(op.operationId);
+  return ids;
+}
+
+/**
+ * The preview without the changes `keys` name (and the hunks only they own).
+ * A hunk no operation owns (unclassified) is nobody's to hide: it stays.
+ */
+export function previewWithoutKeys(
+  preview: DraftPreviewResponse,
+  keys: ReadonlySet<string>,
+): DraftPreviewResponse {
+  if (preview.status !== "active") return preview;
+  const hidden = idsNamedBy(preview, keys);
+  if (hidden.size === 0) return preview;
+  const operations = preview.operations.filter((op) => !hidden.has(op.operationId));
+  const hunks = preview.hunks.flatMap((hunk) => {
+    const operationIds = hunk.operationIds.filter((id) => !hidden.has(id));
+    if (hunk.operationIds.length > 0 && operationIds.length === 0) return [];
+    if (operationIds.length === hunk.operationIds.length) return [hunk];
+    return [
+      hunk.kind === "text"
+        ? {
+            ...hunk,
+            operationIds,
+            spans: hunk.spans.filter((span) => !hidden.has(span.operationId)),
+          }
+        : { ...hunk, operationIds },
+    ];
+  });
+  return { ...preview, operations, hunks } satisfies ActivePreview;
+}
+
+export type DraftProjection = {
+  /** What is left to review: every list, count and focus reads this. */
+  preview: DraftPreviewResponse;
+  /**
+   * The same observation for the manuscript's marks: Discards in flight are
+   * still in it, named in `restoring` (operation ids of this observation), so
+   * their original text can be drawn in place.
+   */
+  inline: { preview: DraftPreviewResponse; restoring: ReadonlySet<string> };
+};
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** `whole`: a whole-draft command has taken every change of this generation. */
+export function projectDraft(
+  observed: DraftPreviewResponse,
+  intents: DraftIntentKeys,
+  whole: boolean,
+): DraftProjection {
+  if (whole && observed.status === "active") {
+    const emptied = { ...observed, operations: [], hunks: [] };
+    return { preview: emptied, inline: { preview: emptied, restoring: NONE } };
+  }
+  const preview = previewWithoutKeys(observed, intents.hidden);
+  if (observed.status !== "active") return { preview, inline: { preview, restoring: NONE } };
+  const kept = new Set([...intents.hidden].filter((key) => !intents.restoring.has(key)));
+  return {
+    preview,
+    inline: {
+      preview: previewWithoutKeys(observed, kept),
+      restoring: idsNamedBy(observed, intents.restoring),
+    },
+  };
+}
