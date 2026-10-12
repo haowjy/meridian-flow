@@ -128,12 +128,17 @@ invocation card; copy comes from structured handle/outcome metadata, never
 notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
 
-The run controller (`client/copilot/ThreadRunController.ts`) binds a reply by
-identity, never by stream order or timing: the run it observes, the successor
-whose `RUN_STARTED` names that run in `continuesRunId` (after a finish marked
-`continued`), or the reply whose `answersUserTurnIds` names an admitted user
-turn. A message queued behind a write-mode switch waits for its reply; a journal
-gap or a snapshot handoff settles waits from durable turns (`replyReaching`).
+The run controller (`client/copilot/ThreadRunController.ts`) follows a chat by
+the pure rule in `client/copilot/run-follow.ts`, from server-decided run identity
+facts (a turn's execution and the messages it was reserved for, a message's
+deliverer, an execution's end), never by stream order, transcript ancestry or
+timers. A writer message in the chat's pending inbox is owed until delivered, so
+every tab keeps Stop while one is undelivered, and a Stop waiting for work lands
+only on an execution that takes on or delivers a message owed at the press.
+`useThreadRunResume` attaches the snapshot's open execution only while settled.
+The composer shows Stop while a reply streams, a placeholder is pending, or the
+controller is unsettled, except while owed messages wait on an account that
+can't start a turn (`useOwedMessagesBlocked`).
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` projection for the whole

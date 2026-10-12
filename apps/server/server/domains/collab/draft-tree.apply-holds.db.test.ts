@@ -132,6 +132,57 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("atlas/Map"), "still hidden").toBeNull();
   });
 
+  // Review and Apply share the alias rule: a draft item whose name a folder alias holds is
+  // a clash in review, and a live move that brings two hidden aliases together (F11 lets
+  // it) holds both items while an unrelated one applies, never a whole-batch stale.
+  it("reviews and holds document/folder alias clashes a live folder or move brings about (#766 x F11)", async () => {
+    const { s } = await start();
+    const ascension = await s.work("Ascension", "draft");
+    const live = s.view("live");
+
+    const lore = await s.model(ascension).create("Lore", "Lore, drafted.");
+    await s.writer.mkdir("Lore.md");
+    expect.soft(itemFor(await s.items(ascension), lore).conflict, "review sees the alias").toEqual({
+      code: "path_taken",
+      path: "manuscript://Lore",
+    });
+
+    const inner = await s.model(ascension).create("a/Inner", "Inner, drafted.");
+    const chapter = await s.model(ascension).create("b/Inner.md/chapter", "Chapter, drafted.");
+    const other = await s.model(ascension).create("other", "Other, drafted.");
+    await s.writer.mkdir("a");
+    expect
+      .soft(await s.writer.move("a", "b"), "the live move absorbs hidden b (F11)")
+      .toMatchObject({ ok: true });
+    const items = await s.items(ascension);
+    expect.soft(itemFor(items, inner).conflict, "the document meets folder Inner.md").toEqual({
+      code: "path_taken",
+      path: "manuscript://b/Inner",
+    });
+    expect.soft(itemFor(items, chapter).conflict, "its ancestor meets document Inner").toEqual({
+      code: "path_taken",
+      path: "manuscript://b/Inner.md",
+    });
+    const held = (documentId: DocumentId, path: string) => ({
+      itemKey: itemFor(items, documentId).itemKey,
+      status: "held",
+      reason: { code: "path_taken", path: `manuscript://${path}` },
+    });
+    expect.soft(await s.applyAll(ascension), "per-item holds, never stale").toMatchObject({
+      status: "completed",
+      draftClosed: false,
+      items: expect.arrayContaining([
+        held(lore, "Lore"),
+        held(inner, "b/Inner"),
+        held(chapter, "b/Inner.md"),
+        { itemKey: itemFor(items, other).itemKey, status: "applied", notes: [] },
+      ]),
+    });
+    expect.soft(await live.idAt("other"), "the unrelated item applied").toBe(other);
+    expect.soft(await live.idAt("b/Inner"), "held: still hidden").toBeNull();
+    expect.soft(await live.idAt("b/Inner.md/chapter"), "held: still hidden").toBeNull();
+  });
+
   it("applies all as one command with per-item results, holds a clash and closes only when drained (E-7a)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");

@@ -95,7 +95,7 @@ describe("interrupt response settlement", () => {
   it("still settles to the server resolution after the socket closes", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
-    scenario.resume({ expectedTurnId: TURN });
+    scenario.attach({ runningTurnId: TURN });
 
     scenario.closeSocket();
     scenario.emit(resolutionEvent(), "6");

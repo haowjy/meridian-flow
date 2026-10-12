@@ -1,10 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
-
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
-
-import { ErrorCard } from "./ErrorCard";
 
 /**
  * - `generation` → the message was admitted and the reply failed, with or
