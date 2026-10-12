@@ -10,7 +10,11 @@ const PROJECT_ID = "project" as never;
 
 describe("handleReadThreadTranscript", () => {
   it("404s another owner and serves whole inherited turns from a trashed source", async () => {
-    const repos = createInMemoryRepositories();
+    const repos = createInMemoryRepositories({
+      projects: {
+        findById: async () => ({ userId: USER_ID, deletedAt: null }),
+      },
+    });
     const source = await repos.threads.create({
       id: "00000000-0000-4000-8000-0000000006c1" as ThreadId,
       projectId: PROJECT_ID,
@@ -52,11 +56,6 @@ describe("handleReadThreadTranscript", () => {
     const routeDeps = {
       repos,
       threads: repos.threads,
-      projects: {
-        async findById(id: string) {
-          return { id, userId: USER_ID, deletedAt: null } as never;
-        },
-      },
     };
 
     await expect(

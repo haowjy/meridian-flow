@@ -493,3 +493,12 @@ export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,
 } from "./turn-context-preview.js";
+
+/** Attested HTTP 404 proofs. WebSocket not_found frames are not availability proofs. */
+export type ThreadAvailabilityCode = "thread_not_found" | "thread_deleted";
+
+/** Details on attested thread 404s; the project flag is only present when deleted. */
+export interface ThreadAvailabilityDetails {
+  authenticatedUserId: string;
+  projectDeleted?: true;
+}
