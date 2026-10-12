@@ -141,7 +141,7 @@ export function useReviewChanges(
     [documentId, draftId],
   );
   const focus = useCallback(
-    (change: ReviewChange, options?: { scroll?: boolean }) => {
+    (change: ReviewChange, options?: { scroll?: boolean; instant?: boolean }) => {
       if (review) controller.focusReviewChange(review, change, options);
     },
     [controller.focusReviewChange, review],
@@ -162,13 +162,17 @@ export function useReviewChanges(
     [changes, focus, focusedIndex],
   );
 
-  /** After a command the writer lands on the next change in the manuscript, or the one before it. */
+  /**
+   * After a command the writer lands on the next change in the manuscript, or the
+   * one before it. A Discard jumps there: its draft's next generation replaces the
+   * editor, and a smooth scroll would be cut off half way by that swap.
+   */
   const settleFocus = useCallback(
-    (change: ReviewChange) => {
+    (change: ReviewChange, instant: boolean) => {
       if (focused && focused.classId !== change.classId) return;
       const at = changes.indexOf(change);
       const next = changes[at + 1] ?? changes[at - 1];
-      if (next) focus(next, { scroll: true });
+      if (next) focus(next, { scroll: true, instant });
     },
     [changes, focus, focused],
   );
@@ -180,10 +184,11 @@ export function useReviewChanges(
         review: DraftReviewSelection,
         selection: ReturnType<typeof selectionOf>,
       ) => Promise<DraftCommandOutcome>,
+      instant: boolean,
     ) => {
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!change.actionable || !review) return;
-      settleFocus(change);
+      settleFocus(change, instant);
       const outcome = await command(review, selectionOf([change]));
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
@@ -197,14 +202,14 @@ export function useReviewChanges(
   const apply = useCallback(
     async (change: ReviewChange) => {
       if (change.wholeDraft && review) await controller.apply(review.documentId, review.draftId);
-      else await run(change, controller.applyChanges);
+      else await run(change, controller.applyChanges, false);
     },
     [controller.apply, controller.applyChanges, review, run],
   );
   const discard = useCallback(
     async (change: ReviewChange) => {
       if (change.wholeDraft && review) await controller.discard(review.documentId, review.draftId);
-      else await run(change, controller.discardChanges);
+      else await run(change, controller.discardChanges, true);
     },
     [controller.discard, controller.discardChanges, review, run],
   );

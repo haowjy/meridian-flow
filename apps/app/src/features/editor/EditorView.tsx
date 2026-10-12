@@ -16,8 +16,10 @@ import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/doc
 import { operationKey, restoreRenderedChanges } from "@/core/editor/extensions/inline-review";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import {
+  type CoverView,
   dropReviewPlace,
   hasReviewPlace,
+  readCoverView,
   restoreReviewPlaceWhenMeasured,
 } from "@/core/editor/review-place";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -185,7 +187,7 @@ export function EditorView(props: EditorViewProps) {
       restoreReviewPlaceWhenMeasured(
         draftKey,
         placedEditor,
-        cover.scrolledBy.find((by) => by !== 0) ?? 0,
+        cover.read as CoverView | null | undefined,
       ),
     );
   }, [draftKey, placedEditor, surface, closed, afterPaintRelease]);
@@ -225,7 +227,10 @@ export function EditorView(props: EditorViewProps) {
     if (ids.size) restoreRenderedChanges(cover, ids);
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the intents moving is what rebuilds a cover.
-  useLayoutEffect(() => projectCover(projectIntents), [projectCover, projectIntents, restoringKey]);
+  useLayoutEffect(
+    () => projectCover(projectIntents, readCoverView),
+    [projectCover, projectIntents, restoringKey],
+  );
   useEffect(() => () => projectCover(null), [projectCover]);
   return (
     <>
