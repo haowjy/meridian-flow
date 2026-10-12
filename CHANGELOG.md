@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Pasted wikilinks retain comment context across formatting and paragraphs. HTML prose uses editor code semantics, not Markdown indentation.
+
 - Obsidian scanning reports highlights that surround wikilinks.
 
 - Obsidian scanning preserves literal table continuations inside comments.

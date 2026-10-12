@@ -87,6 +87,19 @@ describe("fixture vault", () => {
 });
 
 describe("syntax boundaries", () => {
+  it("scans a prose projection without reinterpreting Markdown code or frontmatter", () => {
+    const input =
+      "---\n[[Front]]\n---\n\n    [[Indented]] `[[Ticks]]` %% [[Hidden]] %% [[Visible]]";
+    const { source, findings } = scanObsidian(input, { context: "prose" });
+    expect(source).toBe(input);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Front" },
+      { linkpath: "Indented" },
+      { linkpath: "Ticks" },
+      { linkpath: "Visible" },
+    ]);
+  });
+
   it.each([
     "[[A]]",
     "[[A#Heading|#label]]",
