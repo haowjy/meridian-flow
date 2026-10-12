@@ -1,5 +1,5 @@
 {
-  "id": "eec65744-9159-4103-afda-b0ef530bc23e",
+  "id": "56f59eb2-0ca0-4339-82eb-ae870403e04f",
   "prevId": "2debb80b-5666-48ad-af44-f84fcca3aedd",
   "version": "7",
   "dialect": "postgresql",
@@ -2570,13 +2570,6 @@
           "notNull": true,
           "default": "'idle'"
         },
-        "trail_dirty_revision": {
-          "name": "trail_dirty_revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
         "initial_prompt_bake_id": {
           "name": "initial_prompt_bake_id",
           "type": "uuid",
@@ -3223,13 +3216,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
-        },
-        "trail_dirty_revision": {
-          "name": "trail_dirty_revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
         },
         "finish_reason": {
           "name": "finish_reason",
@@ -8674,6 +8660,103 @@
       },
       "isRLSEnabled": false
     },
+    "public.change_trail_dirty_log": {
+      "name": "change_trail_dirty_log",
+      "schema": "",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "change_trail_dirty_log_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "change_trail_dirty_log_owner_seq": {
+          "name": "change_trail_dirty_log_owner_seq",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "change_trail_dirty_log_thread_id_threads_id_fk": {
+          "name": "change_trail_dirty_log_thread_id_threads_id_fk",
+          "tableFrom": "change_trail_dirty_log",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "change_trail_dirty_log_turn_id_turns_id_fk": {
+          "name": "change_trail_dirty_log_turn_id_turns_id_fk",
+          "tableFrom": "change_trail_dirty_log",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.change_trail_document_details": {
       "name": "change_trail_document_details",
       "schema": "",
@@ -8860,13 +8943,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "reconciled_revision": {
-          "name": "reconciled_revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
         },
         "change_count": {
           "name": "change_count",

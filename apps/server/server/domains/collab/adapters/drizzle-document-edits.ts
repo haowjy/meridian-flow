@@ -31,7 +31,7 @@ export interface ReceiptWrite {
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
 }
-/** Caller invalidates semantic owners before the authoritative document/branch lock, in this transaction. */
+/** Caller holds the authoritative document/branch mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   const wId =
     input.actor === "agent" && input.threadId
@@ -112,7 +112,6 @@ export function captureReceiptRows(
     origin: rows[i].origin,
   }));
 }
-/** The command prelude invalidates these rows' semantic owners before taking mutation locks. */
 export async function placeDraftRows(
   db: Db,
   branchId: string,

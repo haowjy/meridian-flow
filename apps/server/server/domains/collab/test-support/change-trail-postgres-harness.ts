@@ -1,4 +1,3 @@
-import { invalidateTrailOwners } from "../adapters/drizzle-trail-owners.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -232,7 +231,6 @@ export async function seedDatabase(
     role: "assistant",
     origin: "assistant",
     status: "complete",
-    trailDirtyRevision: 1n,
   });
   await db.insert(schema.threadWorks).values({
     threadId: THREAD_ID,
@@ -576,11 +574,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       aheadRefs: UNSUPPORTED_AHEAD_REFS,
       semanticProvenance: runtime.semanticProvenance,
       observability,
-      commitThreadResponseAtomically: (operation) =>
-        runInDrizzleTransaction(db, async () => {
-          await invalidateTrailOwners(db, { turnIds: [TURN_ID] });
-          return operation();
-        }),
+      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
       responseTransactionSettlement: {
         deferUntilCommit: deferUntilDrizzleCommit,
         deferUntilRollback: deferUntilDrizzleRollback,
@@ -1925,10 +1919,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       }
     },
     markTurnError: () =>
-      db.transaction(async (tx) => {
-        await invalidateTrailOwners(tx, { turnIds: [TURN_ID] });
-        await tx.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID));
-      }),
+      db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
     rollbackResponse: (responseId: string) =>
       collab.finalizeResponseRollback(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
     addLiveDependency: () =>

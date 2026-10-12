@@ -71,7 +71,6 @@ describe("change trail aggregate projections (postgres)", () => {
         role: "assistant" as const,
         origin: "assistant" as const,
         status: "complete" as const,
-        trailDirtyRevision: 1n,
       })),
     );
     await db.insert(schema.changeTrailShells).values(
@@ -88,7 +87,7 @@ describe("change trail aggregate projections (postgres)", () => {
     const states = async () =>
       (await db.select().from(schema.changeTrailShells)).map((row) => row.state);
     await writer.reconcileTerminalOwners();
-    expect((await states()).filter((state) => state === "settling")).toHaveLength(100);
+    expect((await states()).filter((state) => state === "settling")).toHaveLength(99);
     await writer.reconcileTerminalOwners();
     expect((await states()).filter((state) => state === "settling")).toHaveLength(101);
     await writer.reconcileTerminalOwners();

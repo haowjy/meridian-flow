@@ -97,6 +97,8 @@ if (!enabled || !databaseUrl) {
           ORDER BY name
         `;
         expect(functions.map((row) => row.name)).toEqual([
+          "capture_change_trail_signal",
+          "change_trail_owners",
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",
           "enforce_prompt_bake_write_once",

@@ -1,4 +1,3 @@
-import { type AffectedTrailOwners, invalidateTrailOwners } from "./drizzle-trail-owners.js";
 /** Drizzle-backed collab persistence for Yjs updates, checkpoints, and lifecycle. */
 
 import type {
@@ -141,14 +140,9 @@ async function enterJournalSeam(
   db: JournalDb,
   docIds: readonly string[],
   agentDocIds: readonly string[],
-  affected: AffectedTrailOwners = {},
 ): Promise<JournalDb> {
   const txDb = currentDrizzleDb(db as Database) as JournalDb;
   if (agentDocIds.length > 0) await requireAgentWriteGrant(uniqueSortedDocIds(agentDocIds));
-  await invalidateTrailOwners(
-    txDb as import("../../../shared/drizzle-transaction.js").DrizzleDb,
-    affected,
-  );
   await lockSeamWorks(db as Database, []);
   for (const docId of uniqueSortedDocIds(docIds)) await lockDocumentMutation(txDb, docId);
   return txDb;
@@ -901,7 +895,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           db,
           entries.map((entry) => entry.docId),
           entries.filter((entry) => agentAuthored(entry.meta)).map((entry) => entry.docId),
-          { owners: entries.flatMap((entry) => (entry.mutation ? [entry.mutation] : [])) },
         );
         for (const entry of entries)
           await validateAppendAuthority(txDb, entry.docId, entry.authority);
@@ -1428,9 +1421,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
       let undoUpdateSeq: number | undefined;
       const result = await runInDrizzleTransaction(db as Database, async () => {
-        const txDb = await enterJournalSeam(db, [docId], actor.type === "agent" ? [docId] : [], {
-          owners: records,
-        });
+        const txDb = await enterJournalSeam(db, [docId], actor.type === "agent" ? [docId] : []);
         // The dependency check (any later live journal row that depends on the
         // writes being undone) is performed inside the document-mutation
         // transaction so its verdict is authoritative — no caller-derived
@@ -1534,10 +1525,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
     async persistRedo(docId, redoUpdate, ref, meta) {
       const result = await runInDrizzleTransaction(db as Database, async () => {
-        const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : [], {
-          owners: [{ threadId: ref.threadId }],
-          turnIds: meta.actorTurnId ? [meta.actorTurnId] : [],
-        });
+        const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
         return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
       });
       return result.consumed ? { consumed: true, seq: result.seqs?.[0] } : { consumed: false };
@@ -1549,12 +1537,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           db,
           [docId],
           entries.some((entry) => agentAuthored(entry.meta)) ? [docId] : [],
-          {
-            owners: entries.map((entry) => ({ threadId: entry.ref.threadId })),
-            turnIds: entries.flatMap((entry) =>
-              entry.meta.actorTurnId ? [entry.meta.actorTurnId] : [],
-            ),
-          },
         );
         return persistRedoEntries(txDb, docId, entries);
       });

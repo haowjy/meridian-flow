@@ -293,7 +293,6 @@ export const changeTrailShells = pgTable(
     ownerKind: text("owner_kind").$type<ChangeTrailOwnerKind>().notNull(),
     state: text("state").$type<ChangeTrailState>().notNull().default("building"),
     version: integer("version").notNull().default(1),
-    reconciledRevision: bigint("reconciled_revision", { mode: "bigint" }).notNull().default(sql`0`),
     changeCount: integer("change_count").notNull(),
     documentCount: integer("document_count").notNull(),
     documents: jsonb("documents")
@@ -673,3 +672,21 @@ export const documentDerivations = pgTable("document_derivations", {
   linksLocationVersion: bigint("links_location_version", { mode: "bigint" }),
   linksExtractorVersion: integer("links_extractor_version"),
 });
+
+/** Transaction-local dirty signals; sequence is identity, never commit order. */
+export const changeTrailDirtyLog = pgTable(
+  "change_trail_dirty_log",
+  {
+    seq: bigint("seq", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    index("change_trail_dirty_log_owner_seq").on(table.threadId, table.turnId, table.seq),
+  ],
+);
