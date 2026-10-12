@@ -37,6 +37,7 @@ import {
   isBound,
   type RunFollow,
   type RunFollowInput,
+  type RunFollowView,
   stepRunFollow,
   viewRunFollow,
 } from "./run-follow";
@@ -127,6 +128,8 @@ type Subscription = {
 type Follow = {
   threadId: string;
   rule: RunFollow;
+  /** `viewRunFollow(rule)`, recomputed only when `step` changes the rule (stream deltas read it). */
+  view: RunFollowView;
   /** The latest pending projection's writer messages, and the seq it was read at. */
   pending: { ids: readonly string[]; seq: string | null };
   /** Admitted messages no pending projection has shown yet (it will, before delivering them). */
@@ -537,6 +540,7 @@ export class ThreadRunController {
       follow = {
         threadId,
         rule: INITIAL_RUN_FOLLOW,
+        view: viewRunFollow(INITIAL_RUN_FOLLOW),
         pending: { ids: [], seq: null },
         admitted: new Set(),
         status: SETTLED,
@@ -578,8 +582,11 @@ export class ThreadRunController {
    */
   private step(follow: Follow, input: RunFollowInput, after?: string): void {
     const { follow: rule, cancel } = stepRunFollow(follow.rule, input);
-    follow.rule = rule;
-    const view = viewRunFollow(rule);
+    if (rule !== follow.rule) {
+      follow.rule = rule;
+      follow.view = viewRunFollow(rule);
+    }
+    const { view } = follow;
     if (cancel) this.requestCancel(follow, cancel);
     if (view.settled) this.closeSubscription(follow);
     else if (!follow.subscription && after !== undefined) this.openSubscription(follow, after);
@@ -646,7 +653,7 @@ export class ThreadRunController {
             this.step(follow, { kind: "event", event: effectiveEvent });
             if (!live()) return;
             subscription.streamTurn = effectiveEvent.runId;
-            if (isBound(follow.rule, effectiveEvent.runId))
+            if (isBound(follow.rule, effectiveEvent.runId, follow.view))
               push(effectiveEvent.runId, effectiveEvent);
             return;
           }
@@ -655,7 +662,7 @@ export class ThreadRunController {
               ? effectiveEvent.runId
               : subscription.streamTurn;
           // Another execution's events, or a reply this client does not follow.
-          if (!turnId || !isBound(follow.rule, turnId)) return;
+          if (!turnId || !isBound(follow.rule, turnId, follow.view)) return;
           this.actions.ensureAssistantTurn(threadId, turnId);
           push(turnId, effectiveEvent);
           if (
