@@ -18,6 +18,12 @@ can do about it.
 - **One display state** (`display-state.ts`) for every surface. Counts come from
   `effectiveCounts`: a file whose send failed here is failed, though the server
   still thinks it is planned.
+- **`wanted` is the send authority.** The report's `entry.wanted` decides what
+  this tab sends or counts as left; never re-derive it from entry states (a
+  planned/failed filter stranded crashed landings).
+- **No Sort with AI yet.** The dialog has no such option; the manifest's `sort`
+  is always false until P7 (see
+  [the server FUTURE.md](../../../../server/server/domains/import/.context/FUTURE.md)).
 - **Words are the app's.** The server sends codes (`reason-copy.ts`,
   `finding-copy.ts`); every sentence is Lingui, none separates facts with `·`,
   `•`, `—` or `|`, none says manifest, entry, plan, sniff or digest.

@@ -96,7 +96,9 @@ Reports first observe created entries' live address and presence and publish
 any drift as ordinary entry changes, so every report field comes from one
 versioned cut and since never misses a move or delete. Rows a landing commit
 holds are skipped (SKIP LOCKED) and compared again next time. Addresses come
-from Context's canonical batch loaders, never a scalar ancestry walk.
+from Context's canonical batch loaders, never a scalar ancestry walk. Each
+entry's wanted flag uses the rule land() claims by; it is the only authority on
+which entries the app sends or counts.
 
 Intake is bounded before work: paths at 4,096 bytes and 64 segments, entries
 plus synthesized folders at 20,000 nodes, manifest bodies at 32 MiB, file

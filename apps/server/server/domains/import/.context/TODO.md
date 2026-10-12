@@ -12,3 +12,6 @@ Delete an entry when it ships.
   ahead-ref transition in the tree writer), and add a barrier test in
   `import-landing.db.test.ts` that pauses a landing's settle while Finish
   releases.
+
+- **Candidate aliases are re-derived for every prepared note.** Derive them
+  once per selection instead (performance).
