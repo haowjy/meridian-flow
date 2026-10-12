@@ -47,6 +47,7 @@ function elsewhere(destination: ImportSummary["destination"]): ImportState {
     dismissing: false,
     dismissFailed: false,
     activitySeenAt: null,
+    stop: "none",
     report: {
       summary: {
         importId: "import-1",

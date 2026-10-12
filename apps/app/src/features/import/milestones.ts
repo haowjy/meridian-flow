@@ -10,14 +10,15 @@ export function announceMilestones(store: ImportStore) {
   let last = displayOf(store.getSnapshot());
   return store.subscribe(() => {
     const state = store.getSnapshot();
-    if (!state.local) return;
     const next = displayOf(state);
     if (next === last) return;
-    const before = last;
     last = next;
+    // Only what this tab is doing is announced: its own run, or a Stop it asked for.
+    if (!state.local && state.stop === "none") return;
     switch (next) {
       case "finished": {
-        const stopped = (state.report?.summary.counts.notImported ?? 0) > 0;
+        const stopped =
+          state.stop === "stopped" || (state.report?.summary.counts.notImported ?? 0) > 0;
         if (stopped) announce(t`Import stopped.`);
         else {
           const looks = buildReportModel(state).worthALookCount;
@@ -36,8 +37,6 @@ export function announceMilestones(store: ImportStore) {
       case "didnt-start":
         announce(t`Import didn't start.`);
         break;
-      default:
-        if (before === "stopping") announce(t`Import stopped.`);
     }
   });
 }

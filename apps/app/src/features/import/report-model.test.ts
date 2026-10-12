@@ -40,6 +40,7 @@ function stateOf(entries: ImportEntryReport[], finished = true): ImportState {
     dismissing: false,
     dismissFailed: false,
     activitySeenAt: null,
+    stop: "none",
   };
 }
 

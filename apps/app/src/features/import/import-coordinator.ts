@@ -143,7 +143,9 @@ export class ImportCoordinator {
     for (const summary of this.open.summaries) ids.add(summary.importId);
     return [...ids].filter((id) => {
       const state = this.stores.get(id)?.getSnapshot();
-      return !(state?.dismissing || state?.report?.summary.dismissedAt);
+      // Stopped before the server heard of it: nothing is left to show a row for.
+      const endedHere = state?.stop === "stopped" && !state.report;
+      return !(endedHere || state?.dismissing || state?.report?.summary.dismissedAt);
     });
   }
 
@@ -256,6 +258,7 @@ export class ImportCoordinator {
     this.uploads.set(importId, controller);
     store.update((state) => ({
       ...state,
+      stop: "none",
       local: {
         phase: { kind: "idle" },
         destination: state.local?.destination ?? destinationFromSummary(summary),
@@ -374,6 +377,7 @@ export class ImportCoordinator {
     const store = this.store(importId);
     const controller = new AbortController();
     this.uploads.set(importId, controller);
+    store.update((state) => ({ ...state, stop: "none" }));
     store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
     void this.send(store, controller);
   }
@@ -387,19 +391,28 @@ export class ImportCoordinator {
     const planning = this.plans.get(importId);
     const { report } = store.getSnapshot();
     if (!report && !planning) {
-      // Nothing was ever sent: the import ends here and its rows go.
-      store.setLocal((local) => ({ ...local, phase: { kind: "idle" }, rows: [], held: null }));
-      store.update((state) => ({ ...state, load: "idle" }));
+      // Nothing was ever sent: the import ends here, its rows and its status row go.
+      store.update((state) => ({
+        ...state,
+        stop: "stopped",
+        load: "idle",
+        local: state.local && { ...state.local, phase: { kind: "idle" }, rows: [], held: null },
+      }));
+      this.changed(true);
       return "nothing-sent" as const;
     }
-    store.setLocal((local) => ({ ...local, phase: { kind: "stopping" } }));
+    store.update((state) => ({ ...state, stop: "stopping" }));
     try {
       await planning?.catch(() => {});
       store.installReport(await this.api.finish(this.projectId, importId));
-      store.setLocal((local) => ({ ...local, phase: { kind: "idle" }, held: null, rows: [] }));
+      store.update((state) => ({
+        ...state,
+        stop: "stopped",
+        local: state.local && { ...state.local, phase: { kind: "idle" }, held: null, rows: [] },
+      }));
       return "stopped" as const;
     } catch {
-      store.setLocal((local) => ({ ...local, phase: { kind: "stop-failed" } }));
+      store.update((state) => ({ ...state, stop: "failed" }));
       return "failed" as const;
     }
   }

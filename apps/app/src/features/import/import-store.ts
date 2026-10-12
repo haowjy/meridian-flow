@@ -36,6 +36,7 @@ export class ImportStore {
       importId,
       report: null,
       local: null,
+      stop: "none",
       load: "idle",
       refreshFailed: false,
       dismissing: false,
@@ -176,6 +177,7 @@ export class ImportStore {
       // Until the plan has answered there is nothing on the server to read.
       const phase = this.state.local?.phase.kind;
       if (!report && (phase === "preparing" || phase === "not-started")) return;
+      if (!report && this.state.stop === "stopped") return;
       if (report?.complete) {
         this.mergeChanges(
           await this.api.changes(this.projectId, this.importId, report.summary.version),
@@ -270,6 +272,7 @@ export function displayOf(state: ImportState, now = Date.now()): ImportDisplaySt
     summary,
     counts: effectiveCounts(state),
     local: state.local?.phase ?? null,
+    stop: state.stop,
     activityFresh,
   });
 }

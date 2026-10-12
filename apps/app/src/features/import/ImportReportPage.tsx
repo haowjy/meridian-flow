@@ -84,7 +84,7 @@ export function ImportReportPage({
   }
 
   // Stop here before anything was sent: the import ended on this tab alone.
-  const nothingImported = !report && local?.phase.kind === "idle" && local.rows.length === 0;
+  const nothingImported = !report && state.stop === "stopped";
   const destination = destinationName(state);
   // A Meridian export has no wrapper folder: its areas received the files.
   const exportRoot =

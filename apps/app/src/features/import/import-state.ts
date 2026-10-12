@@ -40,10 +40,18 @@ export type ReportData = {
   complete: boolean;
 };
 
+/**
+ * Stop here as this tab asked for it, whether or not it holds the files: a
+ * reloaded tab can stop an import too. `stopped` with no report means the import
+ * ended here before the server heard of it.
+ */
+export type StopCommand = "none" | "stopping" | "failed" | "stopped";
+
 export type ImportState = {
   importId: string;
   report: ReportData | null;
   local: LocalRun | null;
+  stop: StopCommand;
   /** First load of a full report. */
   load: "idle" | "loading" | "error" | "missing";
   /** A later refresh failed; what is shown is the last good read. */

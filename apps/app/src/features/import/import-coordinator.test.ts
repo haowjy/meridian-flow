@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import type { ImportReport } from "@meridian/contracts";
+import { describe, expect, it, vi } from "vitest";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
 import { ImportCoordinator } from "./import-coordinator";
 import { displayOf } from "./import-store";
 import type { Selection } from "./selection";
+
+const announced = vi.hoisted(() => [] as string[]);
+vi.mock("@/client/stores/thread-store/announcements", () => ({
+  announce: (message: string) => announced.push(message),
+}));
 
 const destination: ImportDestination = {
   scheme: "kb",
@@ -38,7 +44,7 @@ async function settled(coordinator: ImportCoordinator, importId: string) {
   const store = coordinator.store(importId);
   for (let tick = 0; tick < 200; tick += 1) {
     const phase = store.getSnapshot().local?.phase.kind;
-    if (phase === "idle" || phase === "not-started" || phase === "stop-failed") return store;
+    if (phase === "idle" || phase === "not-started") return store;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error("import never settled");
@@ -135,5 +141,102 @@ describe("ImportCoordinator.stop", () => {
     expect(await coordinator.stop(importId)).toBe("stopped");
     expect(displayOf(store.getSnapshot())).toBe("finished");
     expect(store.getSnapshot().report?.summary.counts.notImported).toBe(1);
+  });
+});
+
+/** A report the server holds for an import another tab started: one file still arriving. */
+function serverReport(): ImportReport {
+  return {
+    importId: "elsewhere",
+    state: "ready",
+    destination: { folderUri: "kb://", folderId: null },
+    sort: false,
+    counts: {
+      total: 1,
+      landed: 0,
+      failed: 0,
+      arriving: 1,
+      deleted: 0,
+      notImported: 0,
+      skipped: 0,
+      findings: 0,
+    },
+    lastActivityAt: "2000-01-01T00:00:00.000Z",
+    version: "1",
+    dismissedAt: null,
+    roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null, uri: null }],
+    entries: [],
+  };
+}
+
+describe("ImportCoordinator.stop on an import this tab does not hold", () => {
+  it("shows stopping, then Couldn't stop, then finishes when tried again", async () => {
+    const server = fakeImportServer();
+    let refuse!: (error: Error) => void;
+    server.api.finish = () =>
+      new Promise((_resolve, reject) => {
+        refuse = reject;
+      });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const store = coordinator.store("elsewhere");
+    store.installReport(serverReport());
+    expect(displayOf(store.getSnapshot())).toBe("paused");
+
+    const stopping = coordinator.stop("elsewhere");
+    expect(displayOf(store.getSnapshot())).toBe("stopping");
+    await Promise.resolve();
+    refuse(new ImportRequestError(0, null, undefined, "offline"));
+    expect(await stopping).toBe("failed");
+    expect(displayOf(store.getSnapshot())).toBe("couldnt-stop");
+
+    server.api.finish = async () => ({
+      ...serverReport(),
+      state: "finished",
+      version: "2",
+      counts: { ...serverReport().counts, arriving: 0, notImported: 1 },
+    });
+    expect(await coordinator.stop("elsewhere")).toBe("stopped");
+    expect(displayOf(store.getSnapshot())).toBe("finished");
+    coordinator.dispose();
+  });
+
+  it("does not announce Import stopped when the stop is refused", async () => {
+    announced.length = 0;
+    const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = coordinator.start(vault(), destination);
+    await settled(coordinator, importId);
+    server.api.finish = async () => {
+      throw new ImportRequestError(0, null, undefined, "offline");
+    };
+    announced.length = 0;
+    expect(await coordinator.stop(importId)).toBe("failed");
+    expect(announced).not.toContain("Import stopped.");
+    coordinator.dispose();
+  });
+});
+
+describe("ImportCoordinator.stop before anything was sent", () => {
+  it("retires the import here: no status row, no reads of an import the server never saw", async () => {
+    const server = fakeImportServer();
+    let reads = 0;
+    server.api.report = async () => {
+      reads += 1;
+      throw new ImportRequestError(404, "import_not_found", undefined, "missing");
+    };
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = coordinator.start(vault(), destination);
+    expect(coordinator.getSnapshot().ids).toContain(importId);
+
+    expect(await coordinator.stop(importId)).toBe("nothing-sent");
+
+    const store = coordinator.store(importId);
+    expect(coordinator.getSnapshot().ids).not.toContain(importId);
+    expect(displayOf(store.getSnapshot())).toBe("finished");
+    const stopWatching = store.watch("report");
+    await store.refresh();
+    stopWatching();
+    expect(reads).toBe(0);
+    coordinator.dispose();
   });
 });

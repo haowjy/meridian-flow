@@ -76,9 +76,9 @@ export function ImportStatusRow({
   const active = display === "preparing" || display === "stopping";
 
   return (
+    // Not a live region: progress is read on demand, and `announceMilestones` speaks milestones.
     <div
       ref={element}
-      role="status"
       className={cn(
         "group flex items-center text-sm text-foreground",
         variant === "tree"

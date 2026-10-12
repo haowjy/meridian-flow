@@ -1,6 +1,7 @@
 import type { ImportCounts, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { deriveDisplayState, type LocalPhase } from "./display-state";
+import type { StopCommand } from "./import-state";
 
 const counts = (patch: Partial<ImportCounts>): ImportCounts => ({
   total: 10,
@@ -18,12 +19,14 @@ const derive = (input: {
   state?: ImportSummary["state"];
   counts?: Partial<ImportCounts>;
   local?: LocalPhase | null;
+  stop?: StopCommand;
   fresh?: boolean;
 }) =>
   deriveDisplayState({
     summary: input.state ? summary(input.state) : null,
     counts: input.counts ? counts(input.counts) : null,
     local: input.local ?? null,
+    stop: input.stop ?? "none",
     activityFresh: input.fresh ?? false,
   });
 
@@ -53,10 +56,14 @@ describe("deriveDisplayState", () => {
     expect(derive({ state: "ready", counts: {}, local: { kind: "not-started", code: null } })).toBe(
       "didnt-start",
     );
-    expect(derive({ state: "ready", counts: {}, local: { kind: "stopping" } })).toBe("stopping");
-    expect(derive({ state: "ready", counts: {}, local: { kind: "stop-failed" } })).toBe(
-      "couldnt-stop",
-    );
     expect(derive({ state: "finished", counts: { arriving: 0, landed: 10 } })).toBe("finished");
+  });
+
+  it("follows a Stop this tab asked for, whether or not it holds the files", () => {
+    expect(derive({ state: "ready", counts: {}, stop: "stopping" })).toBe("stopping");
+    expect(derive({ state: "ready", counts: {}, stop: "failed" })).toBe("couldnt-stop");
+    expect(derive({ state: "finished", counts: { arriving: 0 }, stop: "failed" })).toBe("finished");
+    // Stopped before the plan was sent: there is no server import, and nothing to wait for.
+    expect(derive({ stop: "stopped", local: { kind: "idle" } })).toBe("finished");
   });
 });

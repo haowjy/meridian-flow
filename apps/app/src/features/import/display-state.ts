@@ -3,6 +3,7 @@
  * notice), derived from the server's summary and what this tab is doing.
  */
 import type { ImportCounts, ImportSummary } from "@meridian/contracts";
+import type { StopCommand } from "./import-state";
 
 export type ImportDisplayState =
   | "preparing"
@@ -20,8 +21,6 @@ export type LocalPhase =
   | { kind: "preparing"; totalBytes: number; planning: boolean }
   | { kind: "uploading" }
   | { kind: "idle" }
-  | { kind: "stopping" }
-  | { kind: "stop-failed" }
   | { kind: "not-started"; code: string | null };
 
 /** A server that has not answered nor been heard from for this long is paused. */
@@ -35,14 +34,17 @@ export function deriveDisplayState(input: {
   summary: ImportSummary | null;
   counts: ImportCounts | null;
   local: LocalPhase | null;
+  stop: StopCommand;
   /** Whether the server has been heard from doing something for this import lately. */
   activityFresh: boolean;
 }): ImportDisplayState {
-  const { summary, counts, local } = input;
-  if (local?.kind === "not-started") return "didnt-start";
-  if (local?.kind === "stopping") return "stopping";
-  if (local?.kind === "stop-failed") return "couldnt-stop";
+  const { summary, counts, local, stop } = input;
+  if (stop === "stopping") return "stopping";
   if (summary?.state === "finished") return "finished";
+  // Stopped before the server heard of it: over, with nothing imported.
+  if (stop === "stopped") return "finished";
+  if (stop === "failed") return "couldnt-stop";
+  if (local?.kind === "not-started") return "didnt-start";
   if (local?.kind === "preparing" || !summary || !counts) return "preparing";
   if (counts.arriving > 0) {
     if (local?.kind === "uploading") return "importing";

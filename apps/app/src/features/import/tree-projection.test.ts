@@ -115,6 +115,7 @@ function stateWith(report?: { entries: ImportEntryReport[]; rootUri: string }): 
     dismissing: false,
     dismissFailed: false,
     activitySeenAt: null,
+    stop: "none",
   };
 }
 
