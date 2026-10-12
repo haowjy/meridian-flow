@@ -115,7 +115,6 @@ it("focuses and discards through this document's sheet, keeping its editor throu
           "document-a",
           {
             draftId: "draft-a",
-            operationIds: ["1"],
             closureClassIds: ["class-1"],
             admissionTokens: ["class-1"],
             liveRevisionToken: "live-1",

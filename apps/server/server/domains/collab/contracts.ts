@@ -289,14 +289,12 @@ export type DocumentCheckpoints = {
 
 export type DraftDiscardCommand =
   | {
-      operationIds?: never;
       liveRevisionToken?: never;
       draftRevisionToken?: never;
       closureClassIds?: never;
       admissionTokens?: never;
     }
   | {
-      operationIds: string[];
       liveRevisionToken: string;
       draftRevisionToken: string;
       closureClassIds: string[];

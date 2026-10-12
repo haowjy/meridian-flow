@@ -259,7 +259,7 @@ export function createWorkDraftReviewService(input: {
     command: {
       closureClassIds?: string[];
       admissionTokens?: string[];
-      operationIds: string[];
+      operationIds?: string[];
       liveRevisionToken?: string;
       draftRevisionToken?: string;
       documentId: DocumentId;
@@ -325,10 +325,14 @@ export function createWorkDraftReviewService(input: {
   ) {
     const projectId = command.projectId;
     const branch = await resolveActiveWorkDraft(command);
-    if (!branch) return { status: "discarded" as const, draftId: command.draftId };
+    if (!branch)
+      return {
+        status: command.closureClassIds !== undefined ? ("gone" as const) : ("discarded" as const),
+        draftId: command.draftId,
+      };
 
-    if (command.operationIds !== undefined) {
-      if (!command.operationIds.length)
+    if (command.closureClassIds !== undefined) {
+      if (!command.closureClassIds.length)
         return { status: "gone" as const, draftId: command.draftId };
       if (
         !command.liveRevisionToken ||
@@ -340,7 +344,7 @@ export function createWorkDraftReviewService(input: {
       try {
         const discarded = await input.branchReview.discardSelected({
           branchId: branch.branchId,
-          selectRows: reviewSelection({ ...command, operationIds: command.operationIds }, false),
+          selectRows: reviewSelection(command, false),
           reviewedByUserId: command.userId,
         });
         return {

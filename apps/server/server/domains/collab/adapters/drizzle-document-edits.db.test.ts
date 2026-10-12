@@ -15,13 +15,13 @@ import {
   USER_ID,
   WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
-
 import {
   createResponse,
   reviewChange,
   setupResponseDraft,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
+import { commitBranchEdit } from "../test-support/draft-review-requests.js";
 
 describe("document edit receipts (Postgres)", () => {
   const db = createTestDatabase();
@@ -213,7 +213,6 @@ describe("document edit receipts (Postgres)", () => {
         const command = {
           ...target,
           userId: USER_ID as never,
-          operationIds: [change.operationId],
           closureClassIds: [change.closureClassId],
           admissionTokens: [change.admissionToken],
           liveRevisionToken: preview.liveRevisionToken,
@@ -221,7 +220,10 @@ describe("document edit receipts (Postgres)", () => {
         };
         expect(
           await (apply
-            ? fixture.collab.draftReview.applyWorkDraftChanges(command)
+            ? fixture.collab.draftReview.applyWorkDraftChanges({
+                ...command,
+                operationIds: [change.operationId],
+              })
             : fixture.collab.draftReview.discardWorkDraft(command)),
         ).toMatchObject({ status: apply ? "applied" : "discarded" });
       };
@@ -310,7 +312,6 @@ describe("document edit receipts (Postgres)", () => {
           await fixture.collab.draftReview.discardWorkDraft({
             ...target,
             userId: USER_ID as never,
-            operationIds: [preview.operations[0].operationId],
             closureClassIds: [preview.operations[0].closureClassId],
             admissionTokens: [preview.operations[0].admissionToken],
             liveRevisionToken: preview.liveRevisionToken,
@@ -344,6 +345,194 @@ describe("document edit receipts (Postgres)", () => {
       expect(
         await fixture.collab.draftReview.list({ projectId: PROJECT_ID as never, workId: WORK_ID }),
       ).toEqual([]);
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+  it.each([
+    "unchanged",
+    "changed",
+    "gone",
+    "apply",
+  ] as const)("admits a held class request after another Discard: %s", async (scenario) => {
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+        ["red", "gold"],
+        ["blue", "silver"],
+      ]);
+      const target = {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: branchId,
+        userId: USER_ID as never,
+      };
+      const before = await fixture.collab.draftReview.preview(target);
+      if (before.status !== "active") throw new Error("Missing preview");
+      const a = before.operations.find((op) => op.afterExcerpt === "gold");
+      const b = before.operations.find((op) => op.afterExcerpt === "silver");
+      if (!a || !b) throw new Error("Missing independent classes");
+      expect(a.closureClassId).not.toBe(b.closureClassId);
+      const discardRequest = {
+        ...target,
+        closureClassIds: [b.closureClassId],
+        admissionTokens: [b.admissionToken],
+        liveRevisionToken: before.liveRevisionToken,
+        draftRevisionToken: before.draftRevisionToken,
+      };
+      const applyRequest = {
+        ...target,
+        operationIds: [b.operationId],
+        liveRevisionToken: before.liveRevisionToken,
+        draftRevisionToken: before.draftRevisionToken,
+      };
+      expect(
+        await fixture.collab.draftReview.discardWorkDraft({
+          ...target,
+          closureClassIds: [a.closureClassId],
+          admissionTokens: [a.admissionToken],
+          liveRevisionToken: before.liveRevisionToken,
+          draftRevisionToken: before.draftRevisionToken,
+        }),
+      ).toMatchObject({ status: "discarded" });
+      const after = await fixture.collab.draftReview.preview(target);
+      if (after.status !== "active") throw new Error("Missing survivor");
+      expect(after.operations).toHaveLength(1);
+      expect(after.operations[0].operationId).not.toBe(b.operationId);
+      expect(after.operations[0].closureClassId).toBe(b.closureClassId);
+      expect(after.operations[0].admissionToken).toBe(b.admissionToken);
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nsilver\n");
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
+
+      if (scenario === "changed") {
+        await commitBranchEdit(fixture, branchId, { source: "writer" }, (doc) => {
+          const paragraph = doc.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
+          (paragraph.get(0) as Y.XmlText).delete(4, 2);
+        });
+        const changed = await fixture.collab.draftReview.preview(target);
+        if (changed.status !== "active") throw new Error("Missing changed class");
+        expect(changed.operations.find((op) => op.kind === "agent")?.closureClassId).toBe(
+          b.closureClassId,
+        );
+        expect(changed.operations.find((op) => op.kind === "agent")?.admissionToken).not.toBe(
+          b.admissionToken,
+        );
+      }
+      if (scenario === "gone") {
+        expect(
+          await fixture.collab.draftReview.discardWorkDraft({
+            ...discardRequest,
+          }),
+        ).toMatchObject({ status: "discarded" });
+      }
+      const result =
+        scenario === "apply"
+          ? await fixture.collab.draftReview.applyWorkDraftChanges(applyRequest)
+          : await fixture.collab.draftReview.discardWorkDraft(discardRequest);
+      expect(result).toMatchObject({
+        status:
+          scenario === "apply" || scenario === "changed"
+            ? "stale"
+            : scenario === "gone"
+              ? "gone"
+              : "discarded",
+      });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
+      expect(await fixture.draftMarkdown(branchId)).toBe(
+        scenario === "apply"
+          ? "red\n\nsilver\n"
+          : scenario === "changed"
+            ? "red\n\nsilv\n"
+            : "red\n\nblue\n",
+      );
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+  it.each([
+    "captured",
+    "without-part",
+  ] as const)("held writer class after re-journaling: %s", async (identity) => {
+    const harness = createHarness(db);
+    try {
+      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+        ["red", "gold"],
+      ]);
+      const snapshot = await fixture.branchStore.getBranch(branchId);
+      if (!snapshot) throw new Error("Missing branch");
+      const room = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(room, snapshot.state);
+        let update!: Uint8Array;
+        room.on("update", (delta: Uint8Array) => {
+          update = delta;
+        });
+        const paragraph = room.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
+        (paragraph.get(0) as Y.XmlText).insert(4, " writer");
+        await fixture.branchCoordinator.commitWriterUpdate({
+          branchId,
+          expectedGeneration: snapshot.generation,
+          updateData: update,
+          roomDocument: room,
+          actorUserId: USER_ID,
+        });
+      } finally {
+        room.destroy();
+      }
+      if (identity === "without-part") {
+        // Exercise the supported row-ID fallback when immutable capture metadata is absent.
+        await db
+          .update(schema.branchWriteJournal)
+          .set({ updateMeta: null })
+          .where(
+            and(
+              eq(schema.branchWriteJournal.branchId, branchId),
+              eq(schema.branchWriteJournal.source, "writer"),
+            ),
+          );
+      }
+      const target = { workId: WORK_ID, documentId: ALPHA_ID, draftId: branchId, userId: USER_ID };
+      const before = await fixture.collab.draftReview.preview(target);
+      if (before.status !== "active") throw new Error("Missing preview");
+      const writer = before.operations.find((op) => op.kind === "writer");
+      const agent = before.operations.find((op) => op.kind === "agent");
+      if (!writer || !agent) throw new Error("Missing classes");
+      if (identity === "captured") expect(writer.partKey).toBeDefined();
+      else expect(writer.partKey).toBeUndefined();
+      const held = {
+        ...target,
+        closureClassIds: [writer.closureClassId],
+        admissionTokens: [writer.admissionToken],
+        liveRevisionToken: before.liveRevisionToken,
+        draftRevisionToken: before.draftRevisionToken,
+      };
+      expect(
+        await fixture.collab.draftReview.discardWorkDraft({
+          ...held,
+          closureClassIds: [agent.closureClassId],
+          admissionTokens: [agent.admissionToken],
+        }),
+      ).toMatchObject({ status: "discarded" });
+      const after = await fixture.collab.draftReview.preview(target);
+      if (after.status !== "active") throw new Error("Missing writer survivor");
+      expect(after.operations).toHaveLength(1);
+      if (identity === "captured") {
+        expect(after.operations[0].closureClassId).toBe(writer.closureClassId);
+        expect(after.operations[0].admissionToken).toBe(writer.admissionToken);
+      } else {
+        expect(after.operations[0].closureClassId).not.toBe(writer.closureClassId);
+        expect(after.operations[0].admissionToken).not.toBe(writer.admissionToken);
+      }
+      expect(await fixture.collab.draftReview.discardWorkDraft(held)).toMatchObject({
+        status: identity === "captured" ? "discarded" : "gone",
+      });
+      expect(await fixture.draftMarkdown(branchId)).toBe(
+        identity === "captured" ? "red\n\nblue\n" : "red\n\nblue writer\n",
+      );
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
     } finally {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();
@@ -412,7 +601,6 @@ describe("document edit receipts (Postgres)", () => {
         await fixture.collab.draftReview.discardWorkDraft({
           ...target,
           userId: USER_ID as never,
-          operationIds: [next.operations[0].operationId],
           closureClassIds: [next.operations[0].closureClassId],
           admissionTokens: [next.operations[0].admissionToken],
           liveRevisionToken: next.liveRevisionToken,

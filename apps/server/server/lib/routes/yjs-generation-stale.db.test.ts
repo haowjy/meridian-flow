@@ -146,7 +146,6 @@ it.each([
       expect(
         await f.collab.draftReview.discardWorkDraft({
           ...request,
-          operationIds: [preview.operations[1].operationId],
           closureClassIds: [preview.operations[1].closureClassId],
           admissionTokens: [preview.operations[1].admissionToken],
           liveRevisionToken: preview.liveRevisionToken,

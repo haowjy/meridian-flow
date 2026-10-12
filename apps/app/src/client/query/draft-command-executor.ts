@@ -249,21 +249,21 @@ async function execute(
               ? applyDraft(draft.projectId, draft.workId, draft.documentId, request)
               : discardDraft(draft.projectId, draft.workId, draft.documentId, request);
           }
-          const request = {
+          const basis = {
             draftId: draft.draftId,
-            operationIds: [...command.selection.operationIds],
-            ...(mode === "discard"
-              ? {
-                  closureClassIds: [...command.selection.classIds],
-                  admissionTokens: [...command.selection.admissionTokens],
-                }
-              : {}),
             liveRevisionToken: command.basis.liveRevisionToken,
             draftRevisionToken: command.basis.draftRevisionToken,
           };
           return mode === "apply"
-            ? applyDraftChanges(draft.projectId, draft.workId, draft.documentId, request)
-            : discardDraft(draft.projectId, draft.workId, draft.documentId, request);
+            ? applyDraftChanges(draft.projectId, draft.workId, draft.documentId, {
+                ...basis,
+                operationIds: [...command.selection.operationIds],
+              })
+            : discardDraft(draft.projectId, draft.workId, draft.documentId, {
+                ...basis,
+                closureClassIds: [...command.selection.classIds],
+                admissionTokens: [...command.selection.admissionTokens],
+              });
         },
       })
       .execute(undefined);

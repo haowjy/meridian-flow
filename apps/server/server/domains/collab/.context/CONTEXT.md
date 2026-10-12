@@ -478,15 +478,21 @@ removal belongs to the row that actually removed it.
 
 ### Preview-scoped selective Discard
 
-Apply and Discard share one operation-to-closure resolver, run inside their
+Apply and Discard share one class-to-row selector, run inside their
 branch critical section and again on each snapshot-CAS retry. Per-change Discard now
 requires the displayed live revision, stable `closureClassIds`, and server-vended
 `admissionTokens` for each class's complete closed rows and rich replay effect; missing
 admission evidence, a changed live revision, or changed class evidence returns
 `stale` without modifying the draft. The draft revision is still carried as the
 displayed observation, but unrelated journal admissions do not veto Discard.
-Discard resolves operations to current classes and compares their complete
-admission tokens before selecting journal rows. Row fingerprints preserve
+Discard selects the clicked class IDs directly, returning `gone` if any is
+absent, and compares their complete admission tokens before selecting current
+operations and journal rows. Operation IDs are not part of the Discard request.
+An unchanged AI class admits even after another Discard re-journals its rows.
+Ordinary captured writer operations also retain immutable part keys. Writer
+operations without immutable part keys still use row IDs in class identity:
+a re-fork replaces that class and the held request returns `gone`. Tokens hash
+the class ID too, so cannot substitute for that missing identity. Row fingerprints preserve
 identical bytes and immutable metadata through re-journaling; all closed rows,
 including invisible deletions, contribute with multiplicity. Apply requires all class members
 and unchanged live/draft revision tokens.

@@ -119,7 +119,6 @@ it("focuses this document, then applies and discards its classes without closing
           "document-a",
           {
             draftId: "draft-a",
-            operationIds: ["2"],
             closureClassIds: ["class-2"],
             admissionTokens: ["class-2"],
             liveRevisionToken: "live-1",
