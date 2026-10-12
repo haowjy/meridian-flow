@@ -25,7 +25,11 @@ const hunkOf = (id: string, operationIds: string[]) => ({
   anchor,
   spans: [],
 });
-const inClass = (id: string, closureClassId: string) => ({ ...operation(id), closureClassId });
+const inClass = (id: string, closureClassId: string) => ({
+  ...operation(id),
+  closureClassId,
+  admissionToken: closureClassId,
+});
 
 const threeChanges = {
   ...preview,

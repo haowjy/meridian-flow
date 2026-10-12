@@ -92,6 +92,8 @@ export interface ReviewOperation {
    * one change per distinct id.
    */
   closureClassId: string;
+  /** Server evidence for this class's complete closed journal membership and rich effect. */
+  admissionToken: string;
   /** False when this class contains incomplete attribution; omit per-change actions. */
   canApplyOrDiscard?: boolean;
   kind: "agent" | "writer";
@@ -183,8 +185,10 @@ export type DraftDiscardRequest = {
   /** Required for per-change Discard; absent for whole-document Discard. */
   liveRevisionToken?: string;
   draftRevisionToken?: string;
-  /** Required for per-change Discard: the exact server-vended closed membership at click. */
+  /** Required for per-change Discard: stable server-vended class identities at click. */
   closureClassIds?: string[];
+  /** Required for per-change Discard: unchanged closed-row/rich-effect evidence at click. */
+  admissionTokens?: string[];
 };
 
 /** Select complete server-vended classes. Physical journal IDs never cross the wire. */

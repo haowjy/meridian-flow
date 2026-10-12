@@ -11,8 +11,10 @@ import {
   branchJournalRevision,
   DraftChangeRefusal,
 } from "./branch-push-contracts.js";
+import { documentDifference } from "./document-difference.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import type { DraftReviewOperationInternal } from "./draft-review-types.js";
 import type { ReviewCut } from "./ports/review-cut.js";
 
 export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel) {
@@ -34,7 +36,11 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
         updateMeta: row.updateMeta,
       })),
     });
-    const operations = review.operations.map((operation) => {
+    const tokens = classAdmissionTokens(liveDoc, rows, review.operations, model);
+    const operations = review.operations.map((raw) => {
+      const admissionToken = tokens.get(raw.closureClassId);
+      if (!admissionToken) throw new Error("Review class has no admission evidence");
+      const operation = { ...raw, admissionToken };
       if (operation.kind !== "agent") return operation;
       const row = rows.find(
         (row) =>
@@ -100,6 +106,7 @@ export function selectReviewCut(
     liveRevisionToken?: string;
     draftRevisionToken?: string;
     closureClassIds?: string[];
+    admissionTokens?: string[];
   },
   requireCompleteClass: boolean,
 ) {
@@ -131,10 +138,15 @@ export function selectReviewCut(
   );
   const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
   if (!requireCompleteClass) {
-    // Discard names the closed members once. Unrelated branch admissions can
-    // move the observation token, but may neither veto nor widen this command.
+    // UI identity is not admission: fence complete closed rows and rich effect.
+    // Independent typing can move the draft observation without changing either.
     const expected = new Set(command.closureClassIds);
+    const expectedTokens = new Set(command.admissionTokens);
+    const currentTokens = new Set(selected.map((op) => op.admissionToken));
     if (
+      !expectedTokens.size ||
+      expectedTokens.size !== currentTokens.size ||
+      [...currentTokens].some((token) => !expectedTokens.has(token)) ||
       !expected.size ||
       expected.size !== classes.size ||
       [...classes].some((id) => !expected.has(id))
@@ -158,4 +170,78 @@ export function selectReviewCut(
 
 function reviewRows(cut: ReviewCut) {
   return cut.history.filter((row) => row.status === "active" || row.status === "rollback_pending");
+}
+
+/** Closed rows replay their full rich effect without incorporating independent draft typing. */
+function classAdmissionTokens(
+  liveDoc: Y.Doc,
+  rows: readonly BranchJournalRow[],
+  operations: readonly DraftReviewOperationInternal[],
+  model: YProsemirrorDocumentModel,
+): Map<string, string> {
+  const tokens = new Map<string, string>();
+  for (const operation of operations) {
+    if (tokens.has(operation.closureClassId)) continue;
+    const closed = rows.filter((row) => operation.closureUpdateIds.includes(row.id as never));
+    const effect = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(effect, Y.encodeStateAsUpdate(liveDoc));
+      for (const row of closed) Y.applyUpdate(effect, row.updateData);
+      // Re-journaling preserves bytes and immutable metadata, not physical row IDs.
+      // Keep every row (including non-visible deletions), with multiplicity.
+      const membership = closed
+        .map((row) =>
+          JSON.stringify([
+            row.status,
+            row.source,
+            row.threadId,
+            row.turnId,
+            row.actorUserId,
+            row.updateMeta,
+            row.wId,
+            row.toolCallId,
+            row.draftBaseUpdateSeq,
+            Buffer.from(row.updateData).toString("base64"),
+          ]),
+        )
+        .sort();
+      const richEffect = documentDifference(liveDoc, effect, model).flatMap((entry) => {
+        if (entry.kind === "equal") return [];
+        return [
+          {
+            kind: entry.kind,
+            ...("live" in entry ? { before: [entry.live.identity, entry.live.content] } : {}),
+            ...("draft" in entry ? { after: [entry.draft.identity, entry.draft.content] } : {}),
+          },
+        ];
+      });
+      const liveManifest = liveDoc.getMap("documents");
+      const effectManifest = effect.getMap("documents");
+      const manifestEffect = [...new Set([...liveManifest.keys(), ...effectManifest.keys()])]
+        .sort()
+        .filter(
+          (id) =>
+            liveManifest.has(id) !== effectManifest.has(id) ||
+            liveManifest.get(id) !== effectManifest.get(id),
+        )
+        .map((id) => [
+          id,
+          liveManifest.has(id),
+          liveManifest.get(id),
+          effectManifest.has(id),
+          effectManifest.get(id),
+        ]);
+      tokens.set(
+        operation.closureClassId,
+        `admission:v1:${createHash("sha256")
+          .update(
+            JSON.stringify([operation.closureClassId, membership, richEffect, manifestEffect]),
+          )
+          .digest("base64url")}`,
+      );
+    } finally {
+      effect.destroy();
+    }
+  }
+  return tokens;
 }

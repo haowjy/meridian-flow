@@ -295,6 +295,9 @@ it("accepts the clicked Discard class after repeated independent writer admissio
     expect(arrived.operations.find((op) => op.kind === "agent")?.closureClassId).toBe(
       request.closureClassIds[0],
     );
+    expect(arrived.operations.find((op) => op.kind === "agent")?.admissionToken).toBe(
+      preview.operations[0].admissionToken,
+    );
     expect(await f.collab.draftReview.discardWorkDraft(request)).toMatchObject({
       status: "discarded",
       draftClosed: false,
@@ -305,6 +308,57 @@ it("accepts the clicked Discard class after repeated independent writer admissio
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
       "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits.\n",
     );
+  } finally {
+    harness.destroyWarmState();
+  }
+});
+
+it("refuses clicked Discard when a writer deletes draft-only characters without changing class identity", async () => {
+  const harness = createHarness(db);
+  try {
+    await harness.seedWriterDocument("Alpha Beta.", "discard-deletion");
+    const f = harness.crossWorkProbeFixture();
+    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
+      const text = (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
+        0,
+      ) as Y.XmlText;
+      text.delete(6, 4);
+      text.insert(6, "Gamma");
+    });
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const clicked = await f.collab.draftReview.preview(command);
+    if (clicked.status !== "active") throw Error("missing preview");
+    const request = fencedRequest(
+      command,
+      clicked,
+      clicked.operations.map((op) => op.operationId),
+    );
+    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+      const text = (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
+        0,
+      ) as Y.XmlText;
+      text.delete(8, 2);
+    });
+    const arrived = await f.collab.draftReview.preview(command);
+    if (arrived.status !== "active") throw Error("missing arrival");
+    expect(arrived.operations).toHaveLength(1);
+    expect(arrived.operations[0].closureClassId).toBe(clicked.operations[0].closureClassId);
+    expect(arrived.operations[0].admissionToken).not.toBe(clicked.operations[0].admissionToken);
+    expect(arrived.operations[0].closureUpdateIds).toHaveLength(2);
+    expect(clicked.operations[0].closureUpdateIds).toHaveLength(1);
+    expect(await f.collab.draftReview.discardWorkDraft(request)).toEqual({
+      status: "stale",
+      draftId: branch.branchId,
+    });
+    expect(await f.draftMarkdown(branch.branchId)).toBe("Alpha Gaa.\n");
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n");
   } finally {
     harness.destroyWarmState();
   }

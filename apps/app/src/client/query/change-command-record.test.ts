@@ -16,13 +16,14 @@ import {
 import { previewWithoutKeys } from "./draft-projection";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
-const one = { classIds: ["c1"], operationIds: ["1"] };
-const two = { classIds: ["c2"], operationIds: ["2", "3"] };
+const one = { classIds: ["c1"], admissionTokens: ["c1"], operationIds: ["1"] };
+const two = { classIds: ["c2"], admissionTokens: ["c2"], operationIds: ["2", "3"] };
 
 function preview(): DraftPreviewResponse {
   const op = (operationId: string, closureClassId: string) => ({
     operationId,
     closureClassId,
+    admissionToken: closureClassId,
     kind: "agent" as const,
     classification: "addition" as const,
   });
@@ -61,7 +62,11 @@ describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
   describe("a selection of several changes", () => {
-    const both = { classIds: ["c1", "c2"], operationIds: ["1", "2", "3"] };
+    const both = {
+      classIds: ["c1", "c2"],
+      admissionTokens: ["c1", "c2"],
+      operationIds: ["1", "2", "3"],
+    };
 
     it("holds one failure per selection, shown on the file and on each change it overlaps", () => {
       failChangeCommand(draft, both, "apply", "stale");
@@ -73,7 +78,11 @@ describe("change command record", () => {
       // Another draft, and a change the selection did not name, show nothing.
       expect(changeCommandState(records, { ...draft, draftId: "y" }, both)).toBeNull();
       expect(
-        changeCommandState(records, draft, { classIds: ["c9"], operationIds: ["9"] }),
+        changeCommandState(records, draft, {
+          classIds: ["c9"],
+          admissionTokens: ["c9"],
+          operationIds: ["9"],
+        }),
       ).toBeNull();
     });
 
@@ -96,9 +105,17 @@ describe("change command record", () => {
   });
 
   describe("a change the server regroups", () => {
-    const a = { classIds: ["closure:1"], operationIds: ["1"] };
-    const b = { classIds: ["closure:1+2"], operationIds: ["1", "2"] };
-    const c = { classIds: ["closure:1+2+3"], operationIds: ["1", "2", "3"] };
+    const a = { classIds: ["closure:1"], admissionTokens: ["closure:1"], operationIds: ["1"] };
+    const b = {
+      classIds: ["closure:1+2"],
+      admissionTokens: ["closure:1+2"],
+      operationIds: ["1", "2"],
+    };
+    const c = {
+      classIds: ["closure:1+2+3"],
+      admissionTokens: ["closure:1+2+3"],
+      operationIds: ["1", "2", "3"],
+    };
 
     it("retires the failure held under its old class when the writer acts again", () => {
       failChangeCommand(draft, a, "apply", "stale");
@@ -128,7 +145,7 @@ describe("change command record", () => {
       failChangeCommand(draft, a, "apply", "stale");
       failChangeCommand(
         draft,
-        { classIds: ["closure:2"], operationIds: ["2"] },
+        { classIds: ["closure:2"], admissionTokens: ["closure:2"], operationIds: ["2"] },
         "discard",
         "offline",
       );
@@ -139,11 +156,17 @@ describe("change command record", () => {
     });
 
     it("leaves the failures of unrelated changes alone", () => {
-      failChangeCommand(draft, { classIds: ["closure:9"], operationIds: ["9"] }, "apply", "stale");
+      failChangeCommand(
+        draft,
+        { classIds: ["closure:9"], admissionTokens: ["closure:9"], operationIds: ["9"] },
+        "apply",
+        "stale",
+      );
       beginChangeCommand(draft, b, "discard", 1);
       expect(
         changeCommandState(currentChangeCommandRecords(), draft, {
           classIds: ["closure:9"],
+          admissionTokens: ["closure:9"],
           operationIds: ["9"],
         }),
       ).toMatchObject({ code: "stale" });

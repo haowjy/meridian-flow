@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Refuse selective Discard when the clicked class's closed rows or rich effect changed, even when its stable review identity did not. Keep independent typing admissible and preserve admission evidence through queued clicks and retries.
+
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.

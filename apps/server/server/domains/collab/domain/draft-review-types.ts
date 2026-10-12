@@ -19,9 +19,12 @@ export function asPhysicalSourceUpdateIds(updateIds: readonly number[]): Physica
   return [...updateIds] as PhysicalSourceUpdateIds;
 }
 
-export type DraftReviewOperationInternal = ReviewOperation & {
+export type DraftReviewOperationInternal = Omit<ReviewOperation, "admissionToken"> & {
   sourceUpdateIds: SourceUpdateIds;
   closureUpdateIds: PhysicalSourceUpdateIds;
 };
 
 export type DraftReviewDiagnostic = { code: "unattributed_hunk"; hunkId: string };
+
+export type DraftReviewOperationWithEvidence = DraftReviewOperationInternal &
+  Pick<ReviewOperation, "admissionToken">;

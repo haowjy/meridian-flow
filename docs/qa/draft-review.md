@@ -851,3 +851,20 @@ The repeatable service-seam check is
 `DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
 It also checks that retirement waits for transaction commit and closes only A's
 peer room. This is DB integration evidence, not a browser or live-runtime probe.
+
+
+## Same class, changed Discard meaning
+
+With live `Alpha Beta.`, stage `Beta → Gamma` and capture the preview and
+selective Discard request. Before sending it, delete `mm` in the draft, leaving
+`Alpha Gaa.`. The visible operation and stable class ID stay the same, but its
+closed rows grow and its admission token changes. The held request must return
+`stale`, retaining `Alpha Gaa.` and unchanged live. If a stale retry or queued
+click reads that changed token, it must refuse rather than send fresh evidence
+for the old click. Independent typing in another change still admits.
+
+DB evidence: `collab/review-disposition.db.test.ts` exercises deletion and
+independent typing through the durable coordinator. Queue/retry evidence:
+`client/query/draft-command-executor.test.tsx` includes changed-effect evidence
+with unchanged stable keys. These are integration/adapter checks, not browser
+smoke verification.

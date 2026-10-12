@@ -138,7 +138,7 @@ describe("draft command executor", () => {
 it("an answer from before an account change cannot settle the new account's claim on the same draft", async () => {
   resetDraftCommandRecords();
   bindDraftCommandAccount("account-a");
-  const selection = { classIds: ["c"], operationIds: ["1"] };
+  const selection = { classIds: ["c"], admissionTokens: ["c"], operationIds: ["1"] };
   const basis = { liveRevisionToken: "l", draftRevisionToken: "d", draftGeneration: 1 };
   const command = {
     target: "selection" as const,
@@ -189,6 +189,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     operationId: id,
     partKey,
     closureClassId: `class-${partKey}`,
+    admissionToken: `evidence-${partKey}`,
     kind: "writer" as const,
     classification: "addition" as const,
     beforeExcerpt: "same",
@@ -206,6 +207,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
   });
   const selecting = (o: ReturnType<typeof op>) => ({
     classIds: [o.closureClassId],
+    admissionTokens: [o.admissionToken],
     operationIds: [o.operationId],
     keys: [o.partKey],
   });
@@ -229,30 +231,45 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
   };
 
   it("keeps each queued caller's members and thread authority across a refork", async () => {
-    const [a, b, c] = [op("2", "a"), op("3", "b"), op("4", "c")];
-    const client = seeded(a, b, c);
+    const [a, b, c, d] = [op("2", "a"), op("3", "b"), op("4", "c"), op("5", "d")];
+    const client = seeded(a, b, c, d);
     const invalidations = vi.spyOn(client, "invalidateQueries");
     const firstAnswer = deferred<unknown>();
     api.discardDraft.mockReturnValueOnce(firstAnswer.promise).mockResolvedValue(discarded);
     api.getDraftPreview.mockResolvedValue(
-      preview(2, op("30", "b"), op("40", "c"), {
-        ...op("5", "writer-new"),
-        closureClassId: c.closureClassId,
-      }),
+      preview(
+        2,
+        op("30", "b"),
+        op("40", "c"),
+        { ...op("50", "d"), admissionToken: "changed-effect" },
+        {
+          ...op("5", "writer-new"),
+          closureClassId: c.closureClassId,
+          admissionToken: c.admissionToken,
+        },
+      ),
     );
     const first = runDraftSelection(client, scope, "discard", target, selecting(a), "thread-a");
     const second = runDraftSelection(client, scope, "discard", target, selecting(b), "thread-b");
     const third = runDraftSelection(client, scope, "discard", target, selecting(c), "thread-c");
     firstAnswer.resolve(discarded);
-    const outcomes = await Promise.all([first, second, third]);
+    const fourth = runDraftSelection(client, scope, "discard", target, selecting(d), "thread-d");
+    const outcomes = await Promise.all([first, second, third, fourth]);
     expect(outcomes).toEqual([
       { kind: "change-settled", mode: "discard" },
       { kind: "change-settled", mode: "discard" },
       { kind: "change-refused", mode: "discard", code: "stale" },
+      { kind: "change-refused", mode: "discard", code: "stale" },
     ]);
     expect(api.discardDraft).toHaveBeenCalledTimes(2);
-    expect(api.discardDraft.mock.calls[0]?.[3]).toMatchObject({ operationIds: ["2"] });
-    expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({ operationIds: ["30"] });
+    expect(api.discardDraft.mock.calls[0]?.[3]).toMatchObject({
+      operationIds: ["2"],
+      admissionTokens: [a.admissionToken],
+    });
+    expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
+      operationIds: ["30"],
+      admissionTokens: [b.admissionToken],
+    });
     for (const thread of ["thread-a", "thread-b"]) {
       expect(invalidations).toHaveBeenCalledWith({
         queryKey: threadQueryKeys.liveLineageRoot(thread),
@@ -260,6 +277,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
       expect(invalidations).toHaveBeenCalledWith({ queryKey: threadQueryKeys.snapshot(thread) });
     }
     expect([...intentKeys(currentChangeCommandRecords(), input).hidden]).not.toContain("c");
+    expect([...intentKeys(currentChangeCommandRecords(), input).hidden]).not.toContain("d");
   });
 
   it("admits the entire batch at the click and revokes an unsent target in its draft queue", async () => {
@@ -309,6 +327,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     for (const situation of [
       "same",
       "joined",
+      "changed-effect",
       "incomplete",
       "stale-again",
       "read-lost",
@@ -318,6 +337,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     ] as const) {
       const client = seeded(b);
       const fresh = { ...preview(2, op("30", "b")), liveRevisionToken: "fresh-live" };
+      if (situation === "changed-effect") fresh.operations[0].admissionToken = "changed-effect";
       if (situation === "joined")
         fresh.operations.push({ ...op("4", "writer"), closureClassId: b.closureClassId });
       api.getDraftPreview.mockImplementation(async () => {
