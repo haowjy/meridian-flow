@@ -63,6 +63,14 @@ export function publicationBlockChanges(input: {
       return [
         {
           blockId: entry.kind === "delete" ? entry.live.id : entry.draft.id,
+          beforeBlockIdentity:
+            entry.kind === "insert"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.live.block),
+          afterBlockIdentity:
+            entry.kind === "delete"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.draft.block),
           beforeText:
             entry.kind === "insert"
               ? null

@@ -2,6 +2,7 @@
 
 import type {
   AgentEditCodecFactory,
+  CanonicalBlockIdentity,
   DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
@@ -67,6 +68,8 @@ export function branchJournalRevision(
 
 export type PublicationBlockChange = {
   blockId: string;
+  beforeBlockIdentity: CanonicalBlockIdentity | null;
+  afterBlockIdentity: CanonicalBlockIdentity | null;
   beforeText: string | null;
   afterText: string | null;
 };

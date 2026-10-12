@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve both paragraph identities in replacement history and keep new formatting selectable when prose repeats an earlier edit.
+
 - Keep replaced paragraphs together in review, omit unchanged recreated runs, and preserve writer ownership of uncertified formatting copies.
 
 - Review and publish formatting-only draft edits. Bold, links, heading levels and list changes keep per-change Apply and Discard.

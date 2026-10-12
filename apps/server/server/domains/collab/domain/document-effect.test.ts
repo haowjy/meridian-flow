@@ -1,10 +1,19 @@
 /** Rich review classes publish and discard exact trees without inventing text effects. */
-import { toDocHandle, unwrapBlock } from "@meridian/agent-edit/integration";
+import {
+  createAgentEditCodecFactory,
+  snapshotBlocks,
+  toDocHandle,
+  unwrapBlock,
+} from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { publicationBlockChanges } from "./branch-push-plan.js";
-import { journalAttributionByChangedBlock } from "./branch-trail-projection.js";
+import {
+  journalAttributionByChangedBlock,
+  preparedTrailChanges,
+} from "./branch-trail-projection.js";
 import { documentEffectsEqual } from "./document-content.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
@@ -12,13 +21,19 @@ import { cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.j
 it.each([
   "marks",
   "heading level",
-  "list type",
-  "split",
+  "structural blocks",
+  "text restoration with novel rich effects",
   "restore then retype and identical recreated run",
   "different-identity formatted replacement",
   "uncertified writer formatting copy",
 ])("reviews, Applies and Discards %s with exact content and attribution", (group) => {
-  if (group === "different-identity formatted replacement") {
+  if (group === "text restoration with novel rich effects") {
+    for (const variant of ["plain", "bold", "attribute", "node"] as const)
+      verifyTextRestoration(variant);
+  } else if (group === "structural blocks") {
+    verifyRichChange("list type", "- Alpha", "1. Alpha");
+    verifyRichChange("split", "> AlphaBeta", "> Alpha\n>\n> Beta");
+  } else if (group === "different-identity formatted replacement") {
     for (const independent of [false, true]) verifyHistoryDifference("replacement", independent);
   } else if (group === "uncertified writer formatting copy") {
     for (const neighbor of [false, true]) verifyHistoryDifference("writer", neighbor);
@@ -33,13 +48,7 @@ it.each([
     ])
       verifyRichChange(kind, before, after);
   } else {
-    const cases = {
-      "heading level": ["## Alpha", "### Alpha"],
-      "list type": ["- Alpha", "1. Alpha"],
-      split: ["> AlphaBeta", "> Alpha\n>\n> Beta"],
-    };
-    const [before, after] = cases[group as keyof typeof cases];
-    verifyRichChange(group, before, after);
+    verifyRichChange(group, "## Alpha", "### Alpha");
   }
 });
 
@@ -312,10 +321,179 @@ function verifyHistoryDifference(
           ),
         );
         expect(documentEffectsEqual(live, applied)).toBe(false);
+        if (kind === "replacement" && main)
+          verifyReplacementTrail(
+            live,
+            applied,
+            rows.filter((row) => ids.has(row.id as never)),
+          );
       } finally {
         applied.destroy();
         discarded.destroy();
       }
+    }
+  } finally {
+    live.destroy();
+    draft.destroy();
+  }
+}
+
+function verifyReplacementTrail(
+  live: Y.Doc,
+  draft: Y.Doc,
+  rows: { id: number; actorTurnId: string | null; updateData: Uint8Array }[],
+) {
+  const scopedCodec = createAgentEditCodecFactory(codec).forScope(UNSCOPED_DOCUMENT_LINKS);
+  const before = snapshotBlocks(toDocHandle(live), model, scopedCodec);
+  const after = snapshotBlocks(toDocHandle(draft), model, scopedCodec);
+  const bodies = (doc: Y.Doc) =>
+    new Map(
+      (doc === live ? before : after).map((block) => [
+        `${block.clientID}:${block.clock}`,
+        block.serialized,
+      ]),
+    );
+  const changedBlocks = publicationBlockChanges({
+    model,
+    beforeDoc: live,
+    afterDoc: draft,
+    renderBlock(doc, block) {
+      const identity = model.getCanonicalBlockIdentity(block);
+      const body = bodies(doc).get(`${identity.clientID}:${identity.clock}`);
+      if (body === undefined) throw new Error("Missing rich snapshot");
+      return body;
+    },
+  });
+  const attribution = journalAttributionByChangedBlock({
+    liveDoc: live,
+    model,
+    rows: rows.map((row) => ({
+      ...row,
+      branchId: "draft",
+      generation: 1,
+      wId: row.id,
+      source: "agent" as const,
+      threadId: `thread-${row.id}` as ThreadId,
+      turnId: row.actorTurnId as TurnId,
+      actorUserId: null,
+      draftBaseUpdateSeq: 1,
+      status: "active" as const,
+    })),
+  });
+  const afterById = new Map(
+    model
+      .getBlocks(toDocHandle(draft))
+      .map((block) => [model.getBlockId(block), unwrapBlock(block)]),
+  );
+  const documentId = "document" as never;
+  const trail = preparedTrailChanges({
+    documentId,
+    changedBlocks,
+    receiptId: "receipt",
+    ownersByBlock: attribution.ownersByBlock,
+    operations: attribution.operations.map((operation) => ({
+      ...operation,
+      insertedBlocks: operation.insertedBlockIds.flatMap((blockId) => {
+        const block = afterById.get(blockId);
+        return block ? [{ blockId, block }] : [];
+      }),
+    })),
+    before,
+    blockIdentities: new Map(
+      [...before, ...after].map((block) => [
+        block.hash,
+        { documentId, clientID: block.clientID, clock: block.clock },
+      ]),
+    ),
+    afterIds: new Set(after.map((block) => block.hash)),
+    afterById,
+    afterDoc: draft,
+  });
+  expect(changedBlocks).toHaveLength(1);
+  expect(changedBlocks[0].beforeBlockIdentity).toEqual({
+    clientID: before[0].clientID,
+    clock: before[0].clock,
+  });
+  expect(changedBlocks[0].afterBlockIdentity).toEqual({
+    clientID: after[0].clientID,
+    clock: after[0].clock,
+  });
+  expect(trail).toHaveLength(rows.length);
+  for (const change of trail)
+    expect(change).toMatchObject({
+      kind: "modify",
+      changeId: `receipt:document:${before[0].clientID}:${before[0].clock}`,
+      beforeBlockIdentity: { documentId, clientID: before[0].clientID, clock: before[0].clock },
+      afterBlockIdentity: { documentId, clientID: after[0].clientID, clock: after[0].clock },
+      beforeText: before[0].serialized,
+      afterTextAtReceipt: after[0].serialized,
+    });
+  expect(trail.map((change) => change.owner)).toEqual(
+    rows.map((row) => ({ threadId: `thread-${row.id}`, turnId: row.actorTurnId })),
+  );
+}
+
+function verifyTextRestoration(variant: "plain" | "bold" | "attribute" | "node") {
+  const live = createDoc("base"),
+    draft = cloneDoc(live);
+  const target = variant === "bold" ? "**alpha**" : "alpha";
+  const rows: { id: number; actorTurnId: string; updateData: Uint8Array }[] = [];
+  try {
+    for (const [index, markdown] of ["alpha", "beta", target].entries()) {
+      draft.clientID = 300 + index;
+      const updates: Uint8Array[] = [];
+      const capture = (update: Uint8Array) => updates.push(update);
+      draft.on("update", capture);
+      try {
+        draft.transact(() => {
+          model.applyBlockReplacement(
+            toDocHandle(draft),
+            model.getBlocks(toDocHandle(draft))[0],
+            codec.parse(markdown).blocks[0],
+          );
+          if (index === 2 && variant === "node") {
+            const paragraph = unwrapBlock(model.getBlocks(toDocHandle(draft))[0]);
+            paragraph.delete(0, paragraph.length);
+            const text = new Y.XmlText();
+            text.insert(0, "alpha");
+            paragraph.insert(0, [text]);
+          }
+          if (index === 2 && variant === "attribute")
+            unwrapBlock(model.getBlocks(toDocHandle(draft))[0]).setAttribute("align", "right");
+        });
+      } finally {
+        draft.off("update", capture);
+      }
+      rows.push({
+        id: index + 1,
+        actorTurnId: `turn-${index + 1}`,
+        updateData: Y.mergeUpdates(updates),
+      });
+    }
+    const preview = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: rows,
+    });
+    expect(preview.diagnostics).toEqual([]);
+    expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
+    expect(preview.operations.every((op) => op.canApplyOrDiscard !== false)).toBe(true);
+    if (variant !== "plain")
+      expect(
+        preview.operations.find((op) => op.sourceUpdateIds.includes(3 as never)),
+      ).toMatchObject({ actorTurnId: "turn-3" });
+    const ids = new Set(preview.operations.flatMap((op) => op.closureUpdateIds));
+    const applied = cloneDoc(live),
+      discarded = cloneDoc(live);
+    try {
+      for (const row of rows)
+        Y.applyUpdate(ids.has(row.id as never) ? applied : discarded, row.updateData);
+      expect(documentEffectsEqual(applied, draft)).toBe(true);
+      expect(documentEffectsEqual(discarded, live)).toBe(true);
+    } finally {
+      applied.destroy();
+      discarded.destroy();
     }
   } finally {
     live.destroy();

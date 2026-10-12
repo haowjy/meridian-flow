@@ -386,6 +386,10 @@ and rich-equal ordered replacement runs are equal at that shared semantic bounda
 not hidden by a review-only cancellation rule. Same-text replacements with different
 immutable identities retain both structural effects and supplying rows in one
 canonical change; only same-identity changes use rich-field-only evidence.
+Publication carries explicit before/after canonical block identities through to
+the durable trail; display hashes and serialized prose never supply identity.
+The model-undo engine still needs legacy text/tombstone restoration inference.
+That text inference cannot transfer novel format, attribute or node ownership.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
