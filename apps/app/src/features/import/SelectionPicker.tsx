@@ -4,8 +4,8 @@ import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import { type DragEvent, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 import { cn } from "@/lib/utils";
-import { captureDrop, type DroppedItems } from "./read-dropped";
 import type { ReaderState, useSelectionReader } from "./use-selection-reader";
 
 /** Whether this browser can pick a whole folder. iOS reports it but cannot. */

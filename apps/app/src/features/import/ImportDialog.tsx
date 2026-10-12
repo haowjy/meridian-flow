@@ -16,9 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { DroppedItems } from "@/lib/dropped-items";
 import { cn } from "@/lib/utils";
 import type { ImportDestination } from "./destination";
-import type { DroppedItems } from "./read-dropped";
 import { LandsSentences, limitSentence, SelectionCards, SelectionWarnings } from "./SelectionBody";
 import { PickZone, useSelectionPicker } from "./SelectionPicker";
 import type { Selection } from "./selection";

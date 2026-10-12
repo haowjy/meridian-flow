@@ -25,5 +25,6 @@ can do about it.
   (`:`, `?`, `*`) are left out and reported as unreadable instead of failing the
   whole import: the manifest's `unreadable` paths keep their source names, which
   the server reports and never allocates.
-- The drop dispatcher is `features/project/context/tree-drop/`; this feature only
-  supplies the `files` route's reader (`read-dropped.ts`).
+- The drop dispatcher is `features/project/context/tree-drop/`. Drop targets
+  capture with `lib/dropped-items.ts`; this feature only supplies the `files`
+  route's reader (`read-dropped.ts`), which walks the capture.

@@ -1,6 +1,7 @@
 /** Reads what the writer picked or dropped, showing a running count, and replaces it on a new pick. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type DroppedItems, readDropped } from "./read-dropped";
+import type { DroppedItems } from "@/lib/dropped-items";
+import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
 import { EMPTY_SELECTION, type Selection } from "./selection";
 

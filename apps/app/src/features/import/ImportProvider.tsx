@@ -16,12 +16,12 @@ import {
 } from "react";
 import { announce } from "@/client/stores/thread-store/announcements";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import type { DroppedItems } from "@/lib/dropped-items";
 import { ContinueImportDialog } from "./ContinueImportDialog";
 import type { ImportDestination } from "./destination";
 import { ImportDialog } from "./ImportDialog";
 import { ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
 import { useImportRoute } from "./import-route";
-import type { DroppedItems } from "./read-dropped";
 import type { Selection } from "./selection";
 
 type DialogRequest =

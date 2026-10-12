@@ -1,24 +1,7 @@
-/**
- * Selection from a drop. A drop's entries and files are dead once the event
- * returns, so `captureDrop` runs inside it and `readDropped` walks the capture.
- */
+/** Selection from a drop: walks what `captureDrop` took inside the drop event. */
+import type { DroppedItems } from "@/lib/dropped-items";
 import { isImportableName, isOmittedPath, normalizeName } from "./path-rules";
 import { readSideFile, type SelectedRoot, type Selection, unreadableReason } from "./selection";
-
-export type DroppedItems = {
-  entries: (FileSystemEntry | null)[];
-  files: File[];
-};
-
-/** Call synchronously inside the drop event. */
-export function captureDrop(dataTransfer: DataTransfer): DroppedItems {
-  return {
-    entries: Array.from(dataTransfer.items ?? []).map((item) =>
-      item.kind === "file" ? item.webkitGetAsEntry() : null,
-    ),
-    files: Array.from(dataTransfer.files ?? []),
-  };
-}
 
 type Walk = {
   root: SelectedRoot;

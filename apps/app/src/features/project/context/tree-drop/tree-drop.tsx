@@ -16,10 +16,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { captureDrop, type DroppedItems } from "@/features/import/read-dropped";
+import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 import { dragPayloadKind } from "./drag-payload";
-
-export type { DroppedItems };
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
