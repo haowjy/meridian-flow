@@ -247,6 +247,67 @@ describe("response helper revocation (Postgres)", () => {
     expect(await harness.commit(freshResponse)).toMatchObject({ status: "committed" });
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
   });
+  it("delayed retirement preserves a fresh peer's write in the same reply", async () => {
+    const oldPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    oldPeer.doc.destroy();
+    let entered!: () => void;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const retire = core.retireThreadPeers;
+    core.retireThreadPeers = async (...args) => {
+      entered();
+      await gate;
+      return retire(...args);
+    };
+    const pending = discard();
+    try {
+      await waiting;
+      expect(await fixture.branchStore.getBranch(oldPeer.branchId)).toMatchObject({
+        status: "closed",
+      });
+      // Model the old response entry's eviction by a refusal before its next write.
+      await core.invalidateThreadDocument(ALPHA_ID, THREAD_ID);
+      expect(await write("green", "olive", "fresh-during-retirement")).toMatchObject({
+        status: "success",
+        phase: "staged",
+      });
+      const freshPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+      freshPeer.doc.destroy();
+      expect(freshPeer.branchId).not.toBe(oldPeer.branchId);
+      const room = branchRoomName(freshPeer.branchId, freshPeer.generation);
+      await fixture.hocuspocus.openDirectConnection(room);
+      release();
+      expect(await pending).toMatchObject({ status: "discarded" });
+      expect(fixture.hocuspocus.documents.has(room)).toBe(true);
+      expect(core.hasResponseDocument(responseId, ALPHA_ID)).toBe(true);
+      const read = await core.read({ file: "alpha.md", documentId: ALPHA_ID }, context);
+      expect(read.result.blocks?.flatMap((group) => group.items.map((item) => item.body))).toEqual([
+        "red",
+        "blue",
+        "olive",
+      ]);
+      expect(await harness.commit(responseId)).toMatchObject({
+        status: "committed",
+        documents: expect.arrayContaining([
+          expect.objectContaining({ documentId: ALPHA_ID, updateCount: 1 }),
+          expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
+        ]),
+      });
+      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
+      expect(await fixture.branchStore.getBranch(freshPeer.branchId)).toMatchObject({
+        status: "active",
+      });
+    } finally {
+      release();
+      core.retireThreadPeers = retire;
+      await pending;
+    }
+  });
   it.each([
     { name: "before replay", afterRead: false, discardCount: 1, fresh: "olive" },
     { name: "after replay", afterRead: true, discardCount: 1, fresh: "olive" },
