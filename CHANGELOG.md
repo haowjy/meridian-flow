@@ -24,6 +24,7 @@
 - Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
 - A path-qualified wikilink, pasted or imported, reaches an exact Unfiled path before suffix matches in other areas.
 - Continue import re-sends files whose landing was cut off by a crashed server once their claim lapses.
+- Import decodes only Markdown link destinations, so a name containing `%` keeps its links and survives an export round trip; wikilinks stay literal.
 
 
 ### Added

@@ -42,16 +42,21 @@ export function readFrontmatter(text: string) {
     return { readable: false, aliases: [] };
   }
 }
-export function decodedPath(value: string): string {
+/**
+ * A Markdown link destination is a URL: percent-encoding is its syntax, so it is
+ * decoded once here. Wikilink targets and file paths are literal and never pass through.
+ */
+export function decodedDestination(value: string): string {
   try {
     return decodeURIComponent(value);
   } catch {
     return value;
   }
 }
+/** A literal selection path with `.`/`..` folded and the stored name of its file. */
 export function normalizedPath(value: string): string {
   const parts: string[] = [];
-  for (const segment of decodedPath(value).replace(/^\//, "").split("/")) {
+  for (const segment of value.replace(/^\//, "").split("/")) {
     if (segment === "." || !segment) continue;
     if (segment === "..") parts.pop();
     else parts.push(segment);
@@ -192,7 +197,7 @@ export function createLinkIndex(
         alias: false,
         existing: false,
       };
-    const spelled = decodedPath(linkpath).toLowerCase();
+    const spelled = linkpath.toLowerCase();
     const aliases = (byAlias.get(spelled) ?? [])
       .filter((candidate) => inPool(source, candidate))
       .sort((a, b) => codePointOrder(a.path, b.path));
@@ -233,6 +238,7 @@ export function createLinkIndex(
       ? { target: aliasTarget, candidates: projectAliases, alias: true, existing: true }
       : null;
   }
+  /** `path` is an already decoded Markdown destination. */
   function resolveMarkdown(path: string, source: ImportLinkCandidate) {
     const first = (normalized: string) =>
       (exact.get(normalized) ?? []).find((item) => inPool(source, item.candidate))?.candidate;
