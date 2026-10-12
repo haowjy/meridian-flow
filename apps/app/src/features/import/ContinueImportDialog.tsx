@@ -94,7 +94,9 @@ export function ContinueImportDialog({
         const report = store.getSnapshot().report;
         if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };
-        const structural = compareStructure(stored, selection);
+        // A plan the server has not finished resumes only for the very same selection.
+        const exact = report.summary.state === "planning";
+        const structural = compareStructure(stored, selection, { exact });
         if (structural) return setStep({ kind: "mismatch", difference: structural });
         const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
         const total = bytesToHash(selection);
@@ -106,7 +108,7 @@ export function ContinueImportDialog({
           onHashed: (bytes) =>
             setStep({ kind: "checking", percent: total ? (bytes / total) * 100 : 100, files }),
         });
-        const hashed = compareDigests(stored, built.manifest);
+        const hashed = compareDigests(stored, built.manifest, { exact });
         if (hashed) return setStep({ kind: "mismatch", difference: hashed });
         setStep({ kind: "match", built, send: outstanding(stored.entries) });
       } catch {

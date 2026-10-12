@@ -103,6 +103,14 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
   };
 }
 
+/** Let timers and renders run until `done` holds, or give up after a second. */
+async function until(done: () => boolean) {
+  for (let tries = 0; tries < 100 && !done(); tries += 1)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+}
+
 /** The tree's way of drawing status rows: one per id in the coordinator's snapshot. */
 function Tree({ coordinator }: { coordinator: ImportCoordinator }) {
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
@@ -156,9 +164,7 @@ describe("ImportDocumentNotice", () => {
     const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
     expect(element.textContent).toContain("This file is still importing.");
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
+    await until(() => element.textContent === "");
 
     expect(reads).toBeGreaterThan(0);
     expect(element.textContent).toBe("");
