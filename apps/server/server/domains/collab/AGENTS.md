@@ -109,6 +109,13 @@ provider authorship; `edit_scope_id` selects the rotated scope. Failed-scope
 rollback includes its durable undo, redo and revert edits and restores stack
 availability from non-rolled-back actions. Provider FKs are unchanged.
 
+Model edit inspection shares one invocation-local context per immutable view:
+prepared lineage and classifications, with a shared rollback-membership and
+effective-action index for that history. Display placement and current-destination
+admission remain separate views. Redo preview reuses the locked inspection;
+every scratch advance invalidates its context before the next planned step.
+Never retain these contexts across invocations or document mutation.
+
 Model inverse `count` measures edits in both directions. Multi-edit Undo plans
 on a scratch copy, admits atomically, and stores one action per target edit.
 Redo restores the last undone edit first; insufficient counts refuse with the
