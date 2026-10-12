@@ -2,13 +2,13 @@
 -- than any issued observation, never a fabricated current version of historical data.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
-UPDATE context_availability_heads SET namespace_generation = generation;
+UPDATE context_availability_heads SET namespace_generation = generation; /* -- migration-lint: skip UPDATE_WITHOUT_WHERE (backfill: every availability head starts at its generation) */
 --> statement-breakpoint
 UPDATE context_catalog_entries
 SET entry = entry || '{"observationVersion":"0"}'::jsonb
 WHERE entry->>'kind' IN ('file', 'folder');
 --> statement-breakpoint
-UPDATE context_catalog_commits
+UPDATE context_catalog_commits /* -- migration-lint: skip UPDATE_WITHOUT_WHERE (backfill: every commit's file/folder upserts get version 0) */
 SET changes = (
   SELECT jsonb_agg(
     CASE WHEN change->>'operation' = 'upsert'
@@ -19,7 +19,7 @@ SET changes = (
   FROM jsonb_array_elements(changes) WITH ORDINALITY AS elements(change, ordinal)
 );
 --> statement-breakpoint
-UPDATE context_operation_receipts
+UPDATE context_operation_receipts /* -- migration-lint: skip UPDATE_WITHOUT_WHERE (backfill: every receipt gets its observation version) */
 SET receipt = receipt || jsonb_build_object('observationVersion',
   CASE WHEN receipt->'command'->>'kind' = 'delete' AND receipt->'result'->>'ok' = 'true'
     THEN receipt->'result'->'value'->>'availabilityGeneration'
