@@ -52,7 +52,7 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
-- Opening a deleted chat returns to New chat even when browser storage is unavailable. Deleting a chat no longer waits for a pending send to finish.
+- Deleting a chat also removes its unsent and failed messages from this browser, including chats deleted on another device.
 
 - A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
 - Chat summaries count a section and its whole file as one document, for both reads and edits.
