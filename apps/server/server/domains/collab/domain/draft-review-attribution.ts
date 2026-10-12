@@ -66,6 +66,7 @@ export function indexDraftUpdates(input: {
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
   const deletedHistory: RangeLookup = new Map();
+  const nonTextDeletionEffects: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
   const insertedItems: Y.Item[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
@@ -176,14 +177,22 @@ export function indexDraftUpdates(input: {
       }
 
       let hasOwnEffect = false;
+      let hasOwnRichDeletion = false;
+      const richDeletionParents = new Set<Y.Item["parent"]>();
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);
         if (wasVisible && !isVisible) {
-          if (!isPureRestorativeRow) {
+          const ownRichDeletion =
+            contentRestorativeRow !== null &&
+            isNonTextEffect(findItem(replayDoc, range.client, range.clock));
+          if (!isPureRestorativeRow || ownRichDeletion) {
             assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
             assignDeletedRange(deletedHistory, replayDoc, aliases, range, operationId);
             hasOwnEffect = true;
+            hasOwnRichDeletion ||= ownRichDeletion;
+            const item = ownRichDeletion ? findItem(replayDoc, range.client, range.clock) : null;
+            if (item instanceof Y.Item && item.parent) richDeletionParents.add(item.parent);
           }
         } else if (!wasVisible && isVisible && isPureRestorativeRow) {
           clearDeletedRange(deleted, replayDoc, aliases, range);
@@ -211,17 +220,27 @@ export function indexDraftUpdates(input: {
           decoded.structs,
           contentRestorativeRow.deletedContent.segments,
         );
-        // Text restoration cannot transfer a novel format, attribute or node effect.
-        hasOwnEffect = restoredIntroduced.some(({ range, operationId: restoredOperationId }) => {
+        // Restored text retains its logical owner; co-located rich removals retain
+        // their own supplier without turning those removals into text ownership.
+        for (const range of introducedRanges) {
           const item = findItem(replayDoc, range.client, range.clock);
-          return (
-            !restoredOperationId &&
-            item instanceof Y.Item &&
-            (item.content instanceof Y.ContentFormat ||
-              item.content instanceof Y.ContentType ||
-              item.parentSub !== null)
+          if (item instanceof Y.Item && richDeletionParents.has(item.parent))
+            setAssignedRange(
+              nonTextDeletionEffects,
+              range.client,
+              range.clock,
+              range.length,
+              operationId,
+            );
+        }
+        // Text restoration cannot transfer non-text introductions or deletions.
+        hasOwnEffect =
+          hasOwnRichDeletion ||
+          restoredIntroduced.some(
+            ({ range, operationId: restoredOperationId }) =>
+              !restoredOperationId &&
+              isNonTextEffect(findItem(replayDoc, range.client, range.clock)),
           );
-        });
       }
 
       if (isPureRestorativeRow) {
@@ -311,9 +330,16 @@ export function indexDraftUpdates(input: {
           deletion.complete &&
           insertedAttribution.reduce((total, range) => total + range.length, 0) ===
             insertedRanges.reduce((total, range) => total + range.length, 0),
-        operationIds: operationIdsForRanges({ insertedRanges, deletedRanges }).filter((id) =>
-          byOperationId.has(id),
-        ),
+        operationIds: [
+          ...new Set([
+            ...operationIdsForRanges({ insertedRanges, deletedRanges }),
+            ...insertedRanges.flatMap((range) =>
+              matchingOperationIds(nonTextDeletionEffects, range),
+            ),
+          ]),
+        ]
+          .filter((id) => byOperationId.has(id))
+          .sort(),
         insertedAttribution,
         deletedSpans: deletion.spans,
       };
@@ -350,6 +376,15 @@ export function indexDraftUpdates(input: {
   };
 }
 
+function isNonTextEffect(item: Y.Item | Y.GC | null): boolean {
+  return (
+    item instanceof Y.Item &&
+    (item.content instanceof Y.ContentFormat ||
+      item.content instanceof Y.ContentType ||
+      item.parentSub !== null)
+  );
+}
+
 function addPhysicalUpdateId(
   lookup: Map<string, Set<PhysicalSourceUpdateId>>,
   operationId: string,
@@ -364,7 +399,7 @@ function sortedUpdateIds<UpdateId extends number>(updateIds: ReadonlySet<UpdateI
   return [...updateIds].sort((left, right) => left - right);
 }
 
-// The model-undo engine emits uncertified text restorations that still need this fallback.
+// Uncertified model-undo text restorations need this guess until its deletion with that engine in undo step 4.
 function contentRestorativeUndoMatch(input: {
   beforeVisibility: readonly {
     range: ClockRange;
@@ -668,7 +703,7 @@ function clearDeletedRange(
   }
 }
 
-// The model-undo engine emits uncertified tombstone restorations that still need this fallback.
+// Uncertified model-undo tombstone restorations need this guess until its deletion with that engine in undo step 4.
 function findAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
   const index = ranges.findIndex((range) => range.length === length);
   if (index < 0) return null;
