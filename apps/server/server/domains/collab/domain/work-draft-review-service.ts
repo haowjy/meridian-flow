@@ -258,6 +258,7 @@ export function createWorkDraftReviewService(input: {
   function reviewSelection(
     command: {
       closureClassIds?: string[];
+      admissionTokens?: string[];
       operationIds: string[];
       liveRevisionToken?: string;
       draftRevisionToken?: string;
@@ -332,7 +333,8 @@ export function createWorkDraftReviewService(input: {
       if (
         !command.liveRevisionToken ||
         !command.draftRevisionToken ||
-        !command.closureClassIds?.length
+        !command.closureClassIds?.length ||
+        !command.admissionTokens?.length
       )
         return { status: "stale" as const, draftId: command.draftId };
       try {

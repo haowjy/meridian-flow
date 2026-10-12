@@ -62,7 +62,8 @@ refusal sends nothing, refreshes nothing and removes no draft-only tab.
 Whole commands send the draft ID without preview tokens or operation sets.
 Selections send every selected operation plus the cached active preview's live
 and draft revision tokens. Discard also sends the exact server-vended closure
-class IDs; the server admits unchanged membership despite unrelated draft typing,
+class IDs and admission tokens; the server admits unchanged closed-row/rich-effect
+evidence despite unrelated draft typing,
 while Apply remains fenced by the full draft observation. The executor reads the generation and predicts
 `completesDraft` from all remaining changes; no active preview refuses `stale`
 without sending. The claim keeps generation, not a retained preview basis.
@@ -90,7 +91,8 @@ Current complete raw classes must have exactly those members and remain
 actionable; a joined, missing or incomplete member refuses rather than changing
 the command. Only the row names and cut tokens may change. An explicit `stale`
 answer refreshes the cut and retries once, under the same drain and live claim,
-only for identical actionable members. A second stale answer, changed membership,
+only for identical actionable members and unchanged server admission tokens.
+A second stale answer, changed membership or effect,
 permission failure or transport ambiguity restores/refuses without another retry.
 The drain supplies no caller authority: each intent carries its own query client
 and thread invalidation context. An account change answers every unsent click
@@ -229,7 +231,8 @@ Whole Apply stays in generation G. Whole Discard and last-selection disposition
 reset the branch to G+1; the reset and next proposal share that room/generation.
 Proposal content, not the number alone, distinguishes them. Revision tokens
 change with writes and are observation/Apply stale fences, never room identity.
-Discard fences current live authority and selected closed membership instead.
+Discard fences current live authority and admission evidence for selected closed
+rows and rich class effect instead.
 The reducer owns shown generation R and completion K:
 
 | Row | Input | Result |

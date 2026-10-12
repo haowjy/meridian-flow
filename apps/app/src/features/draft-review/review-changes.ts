@@ -248,7 +248,12 @@ function describeChange(
     target: classOps.every((op) => op.canApplyOrDiscard !== false)
       ? {
           kind: "operations",
-          selection: { classIds: [classId], operationIds, keys },
+          selection: {
+            classIds: [classId],
+            admissionTokens: [classOps[0].admissionToken],
+            operationIds,
+            keys,
+          },
         }
       : { kind: "display" },
     tone: merged
@@ -314,6 +319,7 @@ export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget 
         kind: "operations",
         selection: {
           classIds: selections.flatMap((s) => s.classIds),
+          admissionTokens: selections.flatMap((s) => s.admissionTokens),
           operationIds: selections.flatMap((s) => s.operationIds),
           keys: selections.flatMap((s) => s.keys ?? []),
         },

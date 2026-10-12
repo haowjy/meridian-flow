@@ -215,6 +215,7 @@ describe("document edit receipts (Postgres)", () => {
           userId: USER_ID as never,
           operationIds: [change.operationId],
           closureClassIds: [change.closureClassId],
+          admissionTokens: [change.admissionToken],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         };
@@ -298,16 +299,20 @@ describe("document edit receipts (Postgres)", () => {
       expect(await fixture.draftMarkdown(branchId)).toBe(
         kind === "insert" ? "red gold\n\nblue silver\n" : "gold\n\nsilver\n",
       );
+      let survivorToken: string | undefined;
       for (let n = 0; n < 2; n++) {
         const preview = await fixture.collab.draftReview.preview(target);
         if (preview.status !== "active") throw new Error("Draft disappeared before Discard");
         expect(preview.operations).toHaveLength(2 - n);
+        if (n === 0) survivorToken = preview.operations[1].admissionToken;
+        else expect(preview.operations[0].admissionToken).toBe(survivorToken);
         expect(
           await fixture.collab.draftReview.discardWorkDraft({
             ...target,
             userId: USER_ID as never,
             operationIds: [preview.operations[0].operationId],
             closureClassIds: [preview.operations[0].closureClassId],
+            admissionTokens: [preview.operations[0].admissionToken],
             liveRevisionToken: preview.liveRevisionToken,
             draftRevisionToken: preview.draftRevisionToken,
           }),
@@ -409,6 +414,7 @@ describe("document edit receipts (Postgres)", () => {
           userId: USER_ID as never,
           operationIds: [next.operations[0].operationId],
           closureClassIds: [next.operations[0].closureClassId],
+          admissionTokens: [next.operations[0].admissionToken],
           liveRevisionToken: next.liveRevisionToken,
           draftRevisionToken: next.draftRevisionToken,
         }),

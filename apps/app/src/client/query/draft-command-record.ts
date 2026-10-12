@@ -44,6 +44,8 @@ export type ChangeCommandMode = "apply" | "discard";
  */
 export type ChangeSelection = {
   classIds: readonly string[];
+  /** Server evidence accepted at the click; queued resolution and retry never replace its meaning. */
+  admissionTokens: readonly string[];
   /** The rows to send: names in the generation the selection was made in, valid for admission only. */
   operationIds: readonly string[];
   /**
@@ -556,6 +558,7 @@ export function beginChangeCommand(
   const claim = beginDraftCommand(draft, {
     target: "selection",
     classIds: selection.classIds,
+    admissionTokens: selection.admissionTokens,
     operationIds: selection.operationIds,
     ...(selection.keys ? { keys: selection.keys } : {}),
     mode,
@@ -606,6 +609,7 @@ export function queueChangeSelection(
   const id = nextQueued++;
   const entry: QueuedSelection = {
     classIds: [...selection.classIds],
+    admissionTokens: [...selection.admissionTokens],
     operationIds: [...selection.operationIds],
     keys: [...selectionKeys(selection)],
     send,
@@ -725,6 +729,7 @@ export function failChangeCommand(
     ...(refusal?.serverReason ? { serverReason: refusal.serverReason } : {}),
     at,
     classIds: selection.classIds,
+    admissionTokens: selection.admissionTokens,
     operationIds: selection.operationIds,
     ...(selection.keys ? { keys: selection.keys } : {}),
   }));
@@ -741,6 +746,7 @@ export function confirmChangeCommand(
     mode,
     at,
     classIds: selection.classIds,
+    admissionTokens: selection.admissionTokens,
     operationIds: selection.operationIds,
     ...(selection.keys ? { keys: selection.keys } : {}),
   }));

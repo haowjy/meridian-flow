@@ -252,7 +252,12 @@ async function execute(
           const request = {
             draftId: draft.draftId,
             operationIds: [...command.selection.operationIds],
-            ...(mode === "discard" ? { closureClassIds: [...command.selection.classIds] } : {}),
+            ...(mode === "discard"
+              ? {
+                  closureClassIds: [...command.selection.classIds],
+                  admissionTokens: [...command.selection.admissionTokens],
+                }
+              : {}),
             liveRevisionToken: command.basis.liveRevisionToken,
             draftRevisionToken: command.basis.draftRevisionToken,
           };
@@ -516,7 +521,7 @@ async function sendClick(
   return start.outcome;
 }
 
-/** Focus follows overlap; a command keeps exactly the stable members accepted at the click. */
+/** Focus follows overlap; commands retain the clicked members and their server admission evidence. */
 function resolveClick(
   preview: Extract<DraftPreviewResponse, { status: "active" }>,
   draft: DraftRef,
@@ -536,6 +541,12 @@ function resolveClick(
   );
   if (!current.length || current.some((change) => change.target.kind !== "operations")) return null;
   const selection = selectionOf(current);
+  const expectedTokens = new Set(click.admissionTokens);
+  if (
+    expectedTokens.size !== selection.admissionTokens.length ||
+    selection.admissionTokens.some((token) => !expectedTokens.has(token))
+  )
+    return null;
   const found = new Set(selectionKeys(selection));
   if (found.size !== wanted.size || [...found].some((key) => !wanted.has(key))) return null;
   return { changes, selection };
