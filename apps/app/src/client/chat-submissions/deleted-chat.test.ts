@@ -111,6 +111,22 @@ it("moves the shown failed row and box ahead of New chat with a reload-safe note
   expect(reloaded.notices).toEqual(f.target.notices);
   expect(reloaded.hasReceived("row")).toBe(true);
   expect(reloaded.initialDraft).toEqual(f.target.initialDraft);
+  const blank = fixture();
+  blank.source.updateDraft({
+    text: "",
+    snapshot: serializeComposerDraft(plainComposerDoc("")).draft,
+  });
+  await cleanDeletedChat("owner", "chat", "project", "deleted", blank.ports);
+  expect(blank.target.notices[0]?.count).toBe(1);
+  const empty = fixture();
+  for (const row of empty.records()) empty.ports.retire(row.recordId);
+  empty.source.updateDraft({
+    text: "",
+    snapshot: serializeComposerDraft(plainComposerDoc("")).draft,
+  });
+  await cleanDeletedChat("owner", "chat", "project", "deleted", empty.ports);
+  expect(empty.target.notices).toEqual([]);
+  expect(empty.left()).toBe(false);
 });
 it("off-screen discards without moving or leaving a note", async () => {
   const f = fixture();
