@@ -1,10 +1,16 @@
 # rich-content
 
 `Markdown` uses `DocumentMarkdown`: the shared markup codec and a React
-walker, with no editor instance. `styles/document.css` owns document typography,
-block surfaces and lowlight colors for both chat and the manuscript. Chat retains
-its smaller reading tier, with 8px between all top-level blocks (including headings)
-and 4px between list rows. The manuscript retains its existing block rhythm.
+walker, with no editor instance ([decision][chat-rendering]). `styles/document.css`
+owns document typography, block surfaces, task-item checkboxes, table headers and
+lowlight colors for both chat and the manuscript. Chat retains its smaller reading
+tier (`--text-scale-chat`) and 4px between list rows; the manuscript retains its
+existing block rhythm.
+
+Chat currently puts 8px between every top-level block, headings included. That
+diverges from the owner-approved [chat rhythm][chat-rhythm], where h1 and h2 open
+24px above and smaller headings 16px. Do not treat the 8px heading gap as settled
+or copy it elsewhere until the owner rules.
 
 Static and streaming use the same source-keyed memoized block components. Only the
 live tail is repaired with remend and reparsed as tokens arrive. Blank lines outside
@@ -33,3 +39,6 @@ Code copy is visible only on hover or focus within the block. External links
 open in a new tab and share the Editor's outbound marker; internal chips stay
 unchanged. Copy-as-HTML keeps its separate sanitized clipboard pipeline in
 `features/chat/assistant-turn-copy.ts`; its characterization tests pin the output.
+
+[chat-rendering]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/chat-markdown-document-rendering.md
+[chat-rhythm]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/chat-thread-rhythm.md
