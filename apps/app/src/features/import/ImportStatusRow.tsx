@@ -5,7 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { FolderInput, Loader2, TriangleAlert, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Progress } from "@/components/ui/progress";
 import { contextTreeRowGrowClassName } from "@/features/project/context/context-row-geometry";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,7 @@ export function ImportStatusRow({
 }) {
   const { coordinator } = useImports();
   const route = useImportRoute();
-  const { state, display, counts } = useImport(importId, "row");
+  const { state, display, counts, store } = useImport(importId, "row");
   const element = useRef<HTMLDivElement>(null);
   // The importing tab's own row scrolls into view once, when it appears.
   const startedHere = state.local !== null;
@@ -47,9 +47,10 @@ export function ImportStatusRow({
 
   const local = state.local;
   const phase = local?.phase;
+  const hashedBytes = useSyncExternalStore(store.subscribeHashed, store.getHashed, store.getHashed);
   const hashedPercent =
     phase?.kind === "preparing" && !phase.planning && phase.totalBytes > 0
-      ? (phase.hashedBytes / phase.totalBytes) * 100
+      ? (hashedBytes / phase.totalBytes) * 100
       : phase?.kind === "preparing" && phase.totalBytes === 0 && !phase.planning
         ? 100
         : null;

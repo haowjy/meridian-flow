@@ -17,7 +17,7 @@ export type ImportDisplayState =
 
 /** What this tab is doing for the import. */
 export type LocalPhase =
-  | { kind: "preparing"; hashedBytes: number; totalBytes: number; planning: boolean }
+  | { kind: "preparing"; totalBytes: number; planning: boolean }
   | { kind: "uploading" }
   | { kind: "idle" }
   | { kind: "stopping" }

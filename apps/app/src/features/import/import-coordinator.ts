@@ -135,12 +135,7 @@ export class ImportCoordinator {
     store.update((state) => ({
       ...state,
       local: {
-        phase: {
-          kind: "preparing",
-          hashedBytes: 0,
-          totalBytes: bytesToHash(selection),
-          planning: false,
-        },
+        phase: { kind: "preparing", totalBytes: bytesToHash(selection), planning: false },
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
         rows,
@@ -170,14 +165,11 @@ export class ImportCoordinator {
         destinationUri: destination.uri,
         signal: controller.signal,
         onHashed: (hashedBytes) => {
+          // Progress has its own channel: the tree must not re-render for it.
           const now = performance.now();
-          if (now - lastPaint < 150) return;
+          if (now - lastPaint < 250) return;
           lastPaint = now;
-          store.setLocal((local) =>
-            local.phase.kind === "preparing"
-              ? { ...local, phase: { ...local.phase, hashedBytes } }
-              : local,
-          );
+          store.setHashed(hashedBytes);
         },
       });
     } catch {
@@ -198,7 +190,6 @@ export class ImportCoordinator {
       ...local,
       phase: {
         kind: "preparing",
-        hashedBytes: local.phase.kind === "preparing" ? local.phase.hashedBytes : 0,
         totalBytes: local.phase.kind === "preparing" ? local.phase.totalBytes : 0,
         planning: true,
       },
@@ -474,6 +465,24 @@ function areaLabel(scheme: ImportDestination["scheme"]): string {
     : scheme === "unfiled"
       ? t`Unfiled`
       : t`Knowledge Base`;
+}
+
+/** Whether two states draw the same rows: phases, progress and clocks do not count. */
+function sameTreeInputs(a: ImportState, b: ImportState): boolean {
+  return (
+    a.dismissing === b.dismissing &&
+    a.report?.entries === b.report?.entries &&
+    a.report?.roots === b.report?.roots &&
+    a.report?.complete === b.report?.complete &&
+    a.report?.summary.state === b.report?.summary.state &&
+    a.report?.summary.dismissedAt === b.report?.summary.dismissedAt &&
+    a.report?.summary.destination.folderUri === b.report?.summary.destination.folderUri &&
+    a.local?.rows === b.local?.rows &&
+    a.local?.failures === b.local?.failures &&
+    a.local?.retrying === b.local?.retrying &&
+    a.local?.destination === b.local?.destination &&
+    (a.local?.held != null) === (b.local?.held != null)
+  );
 }
 
 function failureReason(cause: unknown): ImportFailureReason {

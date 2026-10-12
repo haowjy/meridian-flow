@@ -51,6 +51,21 @@ export class ImportStore {
 
   readonly getSnapshot = () => this.state;
 
+  // Hashing progress is its own channel so only the status row and report header re-render.
+  private hashed = 0;
+  private readonly hashedListeners = new Set<() => void>();
+  readonly subscribeHashed = (listener: () => void) => {
+    this.hashedListeners.add(listener);
+    return () => {
+      this.hashedListeners.delete(listener);
+    };
+  };
+  readonly getHashed = () => this.hashed;
+  setHashed(bytes: number) {
+    this.hashed = bytes;
+    for (const listener of [...this.hashedListeners]) listener();
+  }
+
   get importId() {
     return this.state.importId;
   }
@@ -131,6 +146,13 @@ export class ImportStore {
   private mergeChanges(changes: ImportReportChanges) {
     this.update((state) => {
       if (!state.report) return state;
+      // A poll that found nothing changes nothing, so nothing downstream re-renders.
+      if (
+        changes.entries.length === 0 &&
+        changes.version === state.report.summary.version &&
+        !state.refreshFailed
+      )
+        return state;
       const merged = new Map(state.report.entries);
       for (const entry of changes.entries) merged.set(entry.entryId, entry);
       return {
@@ -151,6 +173,9 @@ export class ImportStore {
     this.polling = true;
     try {
       const report = this.state.report;
+      // Until the plan has answered there is nothing on the server to read.
+      const phase = this.state.local?.phase.kind;
+      if (!report && (phase === "preparing" || phase === "not-started")) return;
       if (report?.complete) {
         this.mergeChanges(
           await this.api.changes(this.projectId, this.importId, report.summary.version),
