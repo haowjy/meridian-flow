@@ -36,6 +36,11 @@ Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
 
+Drive the browser through a named session (`agent-browser --session <name>`) and
+close only that session with `agent-browser --session <name> close`. Never pass
+`--all` to `close`: it closes every agent-browser session on the machine,
+whatever `--session` says, including other teams' probes.
+
 ## Document intake
 
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
