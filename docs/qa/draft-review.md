@@ -641,3 +641,25 @@ into another inverse row.
   below one second. This is a service measurement, not browser evidence.
 
 [receipt-hold-perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/undo-step2-evidence/r4/holds-probe.mts
+## Terminal trail recovery
+
+Use an owned thread and Work draft. Let its producing assistant turn finish,
+then wait for the empty trail to settle while the edit remains unapplied.
+Apply the draft, repeat with another edit and Discard, and read the trail through
+`./mf api GET /api/threads/<thread-id>/change-trails`. Each late disposition
+must reopen the producing trail and settle at a higher version. Unapplied drafts
+must not publish themselves. An empty or failed assistant turn must also settle.
+
+For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
+
+```bash
+DB_TEST_WORKERS=1 pnpm test:db -- apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts apps/server/server/domains/collab/adapters/drizzle-trail-signals.db.test.ts
+```
+
+Its restart checks commit before constructing a fresh aggregate adapter on a
+separate connection. Receipt and placement rollback must leave the signal log
+unchanged; committed invalidation must survive destroying warm state. A lower
+sequence committed after consumption must remain discoverable, and failed
+consumption must restore the signals with the shell and outbox. Pending
+live publication must delay settlement. These are DB integration checks, not a
+claim that this manual writer workflow passed.

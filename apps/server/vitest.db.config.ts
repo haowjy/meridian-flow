@@ -34,6 +34,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-journal.recovery-redo.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-branches.manifest-race.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.db.test.ts",
+  "apps/server/server/domains/collab/adapters/drizzle-trail-signals.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-dispatcher.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
   "apps/server/server/domains/collab/branch-push-projection.db.test.ts",

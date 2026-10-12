@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Settle chat change trails from transactional dirty signals instead of a no-op work queue. Late Apply, Discard and writer inverses reopen their producing trails after restart without adding a cross-domain owner-lock protocol.
+
 - Keep independent AI edits saving across repeated Discards and preserve every write result on publication retries. Dropped-edit notices distinguish partial handle groups and name the affected text.
 
 - Discard a draft change without resurrecting earlier changes. Independent AI edits still save across the draft handoff; edits to discarded text do not land and tell the model to re-read.
