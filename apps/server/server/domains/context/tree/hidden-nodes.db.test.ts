@@ -505,6 +505,64 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it.each([
+      "item",
+      "whole-draft",
+    ] as const)("preserves a revealed draft-created document after %s Discard", async (scope) => {
+      const { runtime, scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      const path = "lore/y";
+      const y = await scenario.model(drafting).create(path, "Drafted y.");
+      const draft = await scenario.draftOf(drafting);
+      expect(await liveStatus(y)).toMatchObject({
+        kind: "hidden",
+        usedBy: [{ draftId: draft.id }],
+      });
+      expect(await scenario.view(drafting).text(path)).toBe("Drafted y.\n");
+      expect(await runtime.ports.documentSync.readAsMarkdown(y)).toEqual({
+        ok: true,
+        value: "",
+      });
+
+      expect(await scenario.writer.create(path)).toEqual({
+        status: "created",
+        documentId: y,
+      });
+      expect(await liveStatus(y), "revealed before Discard").toMatchObject({ kind: "visible" });
+      const liveText = "The writer's live y.";
+      await scenario.writer.write(path, liveText);
+      const storageBefore = await db
+        .select({ id: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, y))
+        .orderBy(documentYjsUpdates.id);
+      expect(storageBefore, "the writer's live write is durable").not.toEqual([]);
+
+      await scenario.discard(drafting, scope === "item" ? [y] : "all");
+
+      expect.soft(await liveStatus(y), "still visible").toMatchObject({ kind: "visible" });
+      expect.soft(await tombstoned(y), "not deleted").toBe(false);
+      expect.soft(await scenario.view("live").idAt(path), "same document id").toBe(y);
+      expect.soft(await scenario.view("live").text(path), "live text intact").toBe(`${liveText}\n`);
+      expect.soft(await rowsNaming(y), "no draft tree row remains").toEqual([]);
+      expect
+        .soft(
+          (await scenario.items(drafting)).map((item) => item.documentId),
+          "no longer listed for review",
+        )
+        .not.toContain(y);
+      expect
+        .soft(
+          await db
+            .select({ id: documentYjsUpdates.id })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.documentId, y))
+            .orderBy(documentYjsUpdates.id),
+          "live storage was not released",
+        )
+        .toEqual(storageBefore);
+    });
+
+    it.each([
       { first: "draft" as const, at: "createInDraft.afterCandidateLock" as const },
       { first: "live" as const, at: "createLive.afterCandidateLock" as const },
     ])("leaves one document when a live create meets a draft create at one path, $first first (I-3)", async ({
