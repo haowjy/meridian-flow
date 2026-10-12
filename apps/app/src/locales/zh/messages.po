@@ -330,6 +330,10 @@ msgstr ""
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr ""
 
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "<0>{title}</0> was deleted."
+msgstr ""
+
 #: src/features/chat/derivation/InheritedMarks.tsx
 #: src/features/chat/derivation/ThreadReferenceChip.tsx
 #: src/features/chat/SpawnReportCard.tsx
@@ -342,6 +346,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
+msgstr ""
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "A chat you had open was deleted."
 msgstr ""
 
 #. placeholder {0}: identityNote.name
@@ -1652,8 +1660,8 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
-#: src/components/app/ErrorCard.tsx
 #: src/components/app/InlineErrorRow.tsx
+#: src/components/app/NoticeCard.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -3986,6 +3994,10 @@ msgstr ""
 msgid "This chat uses {0}."
 msgstr ""
 
+#: src/client/api/meridian-error.ts
+msgid "This chat was deleted."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's current Work could not be found. Refresh the page and try again."
@@ -4125,6 +4137,10 @@ msgstr ""
 
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
+msgstr ""
+
+#: src/client/api/meridian-error.ts
+msgid "This project was deleted."
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
@@ -4553,6 +4569,14 @@ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
+msgstr ""
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "Your message is below."
+msgstr ""
+
+#: src/features/chat/DeletedChatNotice.tsx
+msgid "Your messages are below."
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx

@@ -2,9 +2,9 @@
 import type { ContextOperationReceipt, ContextOperationResult } from "@meridian/contracts/protocol";
 import { expect, it, vi } from "vitest";
 import { ContextOperationReceipts } from "../domains/context/context/context-operation-receipts.js";
+import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../shared/interrupt-boundary.js";
 import { contextErrorToHttp } from "./context-error-http.js";
 import { type ContextMoveRouteDeps, handleContextMoveRequest } from "./context-move-route.js";
-import { HTTP_INTERRUPT_ENVELOPE_KEY } from "./interrupt-boundary.js";
 
 it("records Work refusals and replays the same final HTTP code even after recovery", async () => {
   for (const reason of ["work_archived", "work_deleted", "work_missing"] as const) {
