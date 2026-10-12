@@ -90,18 +90,27 @@ Only an owner-attested `thread_deleted` (without `projectDeleted`) moves words.
 The attestation's `authenticatedUserId` must equal the bound account. The visible
 Chat center, uncovered expanded dock, or phone chat transfers its shown unadmitted
 rows and its tab-local box into the project's New chat ahead of existing writing.
-The same tab-local draft stores the title/count notice and the existing record and
-box receipts atomically; reload cannot prepend twice. Dismiss removes the notice;
+The same tab-local draft stores the title/count notice and unique record-id
+receipts atomically. Box text needs no receipt: transfer and source clear are
+synchronous under the lock. Refused source storage can duplicate words, never lose them. Dismiss removes the notice;
 Send clears it. Then every journal record and this tab's old box are cleared, and
 the surface leaves the deleted chat. Hidden, collapsed, covered and index-warm
-surfaces move nothing. Own successful Delete and project deletion only clear.
+surfaces move nothing. Own Delete intent is published before its request, fenced
+to account and bind epoch, and cancelled on failure. While pending, all cleanup
+for that chat only clears, like confirmed own Delete and project deletion.
 `thread_not_found` and the never-created-chat (O4) lifecycle are unchanged.
 
 Deletion runs under the existing submission lock, or inside that lock when the
 driver reports it. No new lock or cross-tab transfer protocol exists. On account
 bind, after journal rewrite readiness, a single pass probes off-screen journal and
 session-draft destinations (four concurrent requests, each bounded to 15 seconds).
+The URL chat and current project's remembered chat are excluded before panes mount;
+off-screen eligibility is rechecked inside the lock. Those addressed panes report
+their own deletion with the project id, even when hidden.
 Only attested chat/project deletion clears them; other answers preserve them.
+An unreadable journal or refused destination write is incomplete: retain source
+words and stay. The driver shows Couldn't send and retries cleanup on Retry,
+Edit or wake without admitting messages to a known-deleted chat.
 
 Accepted rough edge: in two tabs on the same deleted chat, the first tab's journal
 cleanup can remove the second tab's failed rows before it learns of deletion. Its

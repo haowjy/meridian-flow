@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Deleting a chat also clears its unsent and failed messages from this browser. If it is deleted elsewhere while you're in it, what you wrote moves to New chat.
+- Deleting a chat also clears its unsent and failed messages from this browser. If it is deleted elsewhere while you're in it, what you wrote moves to New chat. Cleanup preserves writing through cold loads and storage failures, and your own Delete keeps nothing even during a send.
 
 ### Changed
 

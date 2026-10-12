@@ -4,6 +4,8 @@ import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import type { ComposerUploadPort, ComposerUploadScope } from "@/components/app/composer";
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 
+import { meridianApiErrorFromPayload } from "./meridian-error";
+
 function url(scope: ComposerUploadScope) {
   const query = scope.kind === "work" ? `?workId=${encodeURIComponent(scope.workId)}` : "";
   return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload${query}`;
@@ -22,7 +24,10 @@ async function response<T>(request: Promise<Response>): Promise<T> {
         t`This filename contains unsupported characters. Rename the file and attach it again.`,
       );
     }
-    throw new Error(errorMessageFromPayload(payload, value.status));
+    throw (
+      meridianApiErrorFromPayload(payload, value.status) ??
+      new Error(errorMessageFromPayload(payload, value.status))
+    );
   }
   return payload as T;
 }

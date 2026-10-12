@@ -39,7 +39,10 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
   return journal;
 }
 
-export function bindChatSubmissions(accountId: string): void {
+export function bindChatSubmissions(
+  accountId: string,
+  addressed: (id: string) => boolean = () => false,
+): void {
   const current = browserJournal();
   if (!current || current.accountId === accountId) return;
   const ready = current.setUser(accountId);
@@ -47,7 +50,7 @@ export function bindChatSubmissions(accountId: string): void {
   void ready
     .then(async () => {
       const { cleanDeletedChatsOnBind } = await import("./deleted-chat");
-      await cleanDeletedChatsOnBind(accountId, epoch);
+      await cleanDeletedChatsOnBind(accountId, epoch, addressed);
     })
     .catch((error) => reportError(error));
 }

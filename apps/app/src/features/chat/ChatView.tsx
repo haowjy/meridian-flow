@@ -35,8 +35,11 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { displayThreadTitle } from "@/lib/thread-title";
+import {
+  displayedChatThreadId,
+  useChatNavigation,
+} from "@/features/project/routing/chat-navigation";
+import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
@@ -321,11 +324,14 @@ export function ChatView({
     },
     {
       visible: active,
-      title: activeThread?.title === "New chat" ? null : (activeThread?.title ?? null),
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (navigation.display.kind === "thread")
+        else if (displayedChatThreadId(navigation.display) === threadId)
           void navigation.openNewChat(undefined, { replace: true });
       },
     },
