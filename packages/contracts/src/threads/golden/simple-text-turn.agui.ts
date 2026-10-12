@@ -26,6 +26,7 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
       writeMode: null,
       executionId: GOLDEN_EXECUTION_ID,
       reservedForUserTurnIds: [GOLDEN_USER_TURN_ID],
+      position: 1,
     },
   },
   {
@@ -48,6 +49,7 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
     name: MESSAGES_DELIVERED_EVENT,
     value: {
       byTurnId: GOLDEN_ASSISTANT_TURN_ID,
+      byTurnPosition: 1,
       executionId: GOLDEN_EXECUTION_ID,
       userTurnIds: [GOLDEN_USER_TURN_ID],
     },

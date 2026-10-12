@@ -229,6 +229,8 @@ export type OrchestratorEvent =
       type: "messages.delivered";
       /** The acknowledging turn; null when none was reserved (a child run aborted before it). */
       byTurnId: string | null;
+      /** The acknowledging turn's `Turn.position`; null with `byTurnId`. */
+      byTurnPosition: number | null;
       executionId: string | null;
       userTurnIds: string[];
     }
