@@ -69,6 +69,13 @@ wait and inbound silence, not time to recovery: retries still depend on the
 server/network returning and client timers running (background suspension can
 delay either deadline).
 
+Both compositions use these defaults; neither client gets its own socket
+timers. A caller's wait limit (an `./mf` command deadline) bounds how long it
+waits for an outcome; these deadlines detect a failed socket. Keep the two
+separate: the server pings every 30 seconds, so shortening the 45-second
+silence deadline to fit a short command would retire healthy quiet sockets,
+and a shorter timer would not make an expired command's report any truer.
+
 ## Socket observation
 
 Thread close observation runs before the controller's current-socket guard so

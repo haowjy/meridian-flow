@@ -58,8 +58,12 @@ The package declares its runtime dependencies (`@meridian/contracts`,
 
 `transport.ts` composes one `ThreadSocketClient` per command run with the session's
 cookie and Portless CA. The shared client owns connected gating, replay,
-deduplication, gaps and reconnect/resume. A CLI subscription queue bounds waits
-by the command deadline; terminal/auth closes remain exit 4. `stream.ts` only
+deduplication, gaps and reconnect/resume, with the package's default socket
+deadlines. A CLI subscription queue bounds waits by the command deadline; never
+add CLI socket timers or tune the package's deadlines to a command's
+`--timeout` (see the
+[package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
+Terminal/auth closes remain exit 4. `stream.ts` only
 maps events, prints them and runs the existing CLI follow predicates. Those
 predicates are not yet the shared follow session, so send still cannot prove which
 reply answered its message. `tail --until-idle` reads an initial snapshot and
@@ -90,8 +94,11 @@ in `result.ts`, in precedence order: `running` for a running turn,
 neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
 without confirmed completion). `lease_awake` is what a timeout reports when
 the server still holds a run lease after its turn ended, for example after a
-restart orphans a reply. Expiry can clear that stale lease; the next command is
-an until-idle tail to check again, not a writer action that clears the lease. The pending projection is
+restart orphans a reply: orphan repair on this checkout leaves the lease row
+and publishes no change to asleep
+([#799](https://github.com/haowjy/meridian-flow/issues/799)). Expiry clears it
+only at read time; the next command is an until-idle tail to check again, not
+a writer action that clears the lease. Don't poll until expiry to hide this. The pending projection is
 mandatory. Before reporting complete, send checks that the admitted user turn id
 is absent from `liveState.pending.items` (writer admission uses that same id for
 the inbox row). If it remains, send returns 6 `unproven` / `owed` with
