@@ -228,6 +228,12 @@ export const threadInboxMessages = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /**
+     * The turn current when the execution acknowledged this message, written with
+     * `delivered_at`. Null when unknown: delivered before run identity, by no
+     * reserved turn, or a non-message row.
+     */
+    deliveredByTurnId: uuid("delivered_by_turn_id").$type<TurnId>(),
   },
   (table) => [
     unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
@@ -254,7 +260,10 @@ export const threadInboxMessages = pgTable(
  * the atomic mutex (crash-safe because the DB session dies); this expiring row
  * is what `holder()`, derived status, and the running-turn read can observe from
  * another process. `turnId` is bound after the run's assistant turn commits, so
- * it may be null while a run is mid-setup.
+ * it may be null while a run is mid-setup. One row is one execution: its
+ * `executionId` is what every turn it reserves records in `turns.execution_id`.
+ * The row is deleted when the execution ends; an expired row is a repair
+ * candidate, never proof of death on its own.
  */
 export const threadRunLeases = pgTable(
   "thread_run_leases",
@@ -263,7 +272,7 @@ export const threadRunLeases = pgTable(
       .$type<ThreadId>()
       .primaryKey()
       .references(() => threads.id, { onDelete: "cascade" }),
-    runId: text("run_id").notNull(),
+    executionId: text("execution_id").notNull(),
     boundTurnIds: uuid("bound_turn_ids").array().notNull().default(sql`'{}'::uuid[]`),
     adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
@@ -303,6 +312,10 @@ export const turns = pgTable(
     origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
+    /** The execution that reserved this turn (write-once); null when none did. */
+    executionId: uuid("execution_id"),
+    /** The messages this turn was reserved for (write-once); a hint, never delivery. */
+    reservedForUserTurnIds: uuid("reserved_for_user_turn_ids").array(),
     finishReason: text("finish_reason"),
     error: text("error"),
     model: text("model"),
@@ -330,6 +343,9 @@ export const turns = pgTable(
     index("turns_unsettled")
       .on(table.threadId, table.position)
       .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
+    index("turns_execution")
+      .on(table.threadId, table.executionId)
+      .where(sql`${table.executionId} IS NOT NULL`),
     index("turns_parent_position")
       .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
@@ -718,7 +734,8 @@ export const userTurnAdmissions = pgTable(
     state: text("state").notNull(),
     rejectionCode: text("rejection_code"),
     userTurnId: uuid("user_turn_id").$type<TurnId>(),
-    assistantTurnId: uuid("assistant_turn_id").$type<TurnId>(),
+    /** The live reply the admitted message was steered into; a Stop hint only. */
+    steersTurnId: uuid("steers_turn_id").$type<TurnId>(),
     resumeAfterSeq: text("resume_after_seq"),
     snapshotFloorNextSeq: text("snapshot_floor_next_seq"),
     claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
