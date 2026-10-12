@@ -41,11 +41,18 @@ export const importEntries = pgTable(
     leaseUntil: timestamp("lease_until", { withTimezone: true }),
     storageUrl: text("storage_url"),
     uri: text("uri"),
+    /** Last object-key reclamation; a recorded late put clears it so the next sweep retries. */
+    objectSweptAt: timestamp("object_swept_at", { withTimezone: true }),
     version: bigint("version", { mode: "bigint" }).notNull().default(sql.raw("0")),
   },
   (table) => [
     index("import_entries_import_order").on(table.importId, table.ordinal),
     index("import_entries_import_version").on(table.importId, table.version),
+    index("import_entries_object_sweep")
+      .on(table.leaseUntil)
+      .where(
+        sql`${table.attemptId} IS NOT NULL AND ${table.state} IN ('deleted','not_imported') AND ${table.spec}->>'kind' = 'binary'`,
+      ),
   ],
 );
 
