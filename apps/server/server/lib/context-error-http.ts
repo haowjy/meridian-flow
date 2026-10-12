@@ -3,7 +3,7 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import type { ContextError } from "../domains/context/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 
 export function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {

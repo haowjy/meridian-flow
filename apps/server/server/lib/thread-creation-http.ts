@@ -2,7 +2,7 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import { AgentSelectionError } from "../domains/packages/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import {
   InvalidWorkAttachmentError,
   ThreadCreationConflictError,

@@ -482,6 +482,8 @@ contract shapes.
   Root create-or-get classifies an existing id before gating the requested live
   project. A fully owned deleted thread or deleted parent project returns
   attested HTTP 404 `thread_deleted`, never resurrecting the tombstone.
+  A deleted parent project adds `details.projectDeleted: true`; a new id in an
+  owned deleted project instead receives attested `project_deleted`.
   Foreign ids retain the creation route's concealed not-found answer.
 - **HTTP availability proof:** `threadAvailabilityCode` checks both the thread
   creator and project owner before deletion. Both owner gates use it: snapshot
@@ -489,7 +491,9 @@ contract shapes.
   ownership/deletion state); runtime admission, lookup and retire join the same
   unfiltered rows. Fully owned soft-deleted rows return `thread_deleted`;
   missing, purged or foreign rows return `thread_not_found`. Both carry the
-  authenticated internal user id. Live-only `findById` remains unchanged.
+  authenticated internal user id. `thread_deleted` adds `projectDeleted: true`
+  only for a deleted parent project, never for a Work cascade in a live project.
+  Live-only `findById` remains unchanged.
   WebSocket subscribe and interrupt replies still conceal both as unattested
   `not_found` frames. Trash commands retain their separate serialized lifecycle
   policy so restore and idempotent Delete can act on tombstones.

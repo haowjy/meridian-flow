@@ -15,8 +15,8 @@ import {
   requireThreadOwner,
   ThreadConversationContextError,
 } from "../domains/threads/index.js";
+import { throwHttpInterruptForStatus } from "../shared/interrupt-boundary.js";
 import type { ThreadRepositories } from "./compose.js";
-import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;
