@@ -12,6 +12,7 @@
  * Pure data, no React.
  */
 import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import { operationKey } from "@/client/query/draft-command-record";
 import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
 import {
   attributionThreadIds,
@@ -27,7 +28,12 @@ import { changeTextForHunks, type OperationChangeText } from "./operation-change
 export type ReviewChangeTone = "ai" | "writer" | "removal" | "merged" | "unattributed";
 
 /** The change the review's focus names: its class and the operations it held when last seen. */
-export type ReviewFocus = { classId: string; operationIds: readonly string[] };
+export type ReviewFocus = {
+  classId: string;
+  operationIds: readonly string[];
+  /** The operations' keys: they, not ids, find the change again after the draft is re-forked. */
+  keys?: readonly string[];
+};
 
 export interface ReviewChange {
   /** Stable identity: the server's closure class id. */
@@ -35,6 +41,8 @@ export interface ReviewChange {
   operations: ReviewOperation[];
   /** Every operation of the class; Apply and Discard send all of them. */
   operationIds: string[];
+  /** The same operations by `operationKey`: identity that outlives a re-fork of the draft. */
+  keys: string[];
   /**
    * The one key to focus the change in the manuscript by: an operation of the
    * class, or the stand-in key of an unclassified hunk that has none.
@@ -154,6 +162,7 @@ export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewC
           classId: `draft:${preview.draftId}`,
           operations: [...preview.operations],
           operationIds: preview.operations.map((op) => op.operationId),
+          keys: preview.operations.map(operationKey),
           markKeys: changes.flatMap((change) => change.markKeys),
           change: changeTextForHunks(preview.hunks, preview.operations),
           attribution,
@@ -182,9 +191,14 @@ export function resolveFocusedChange(
   if (!focus) return null;
   const exact = changes.find((change) => change.classId === focus.classId);
   if (exact) return exact;
-  if (focus.operationIds.length === 0) return null;
   const held = new Set(focus.operationIds);
-  return changes.find((change) => change.operationIds.some((id) => held.has(id))) ?? null;
+  const keys = new Set(focus.keys);
+  return (
+    changes.find(
+      (change) =>
+        change.operationIds.some((id) => held.has(id)) || change.keys.some((key) => keys.has(key)),
+    ) ?? null
+  );
 }
 
 /** A hunk the server could not attribute and that no operation owns. It has no per-change commands. */
@@ -194,6 +208,7 @@ function describeUnattributed(hunk: ReviewHunk): ReviewChange {
     classId: key,
     operations: [],
     operationIds: [],
+    keys: [],
     anchorOperationId: key,
     markKeys: [key],
     tone: "unattributed",
@@ -227,6 +242,7 @@ function describeChange(
     classId,
     operations: classOps,
     operationIds,
+    keys: classOps.map(operationKey),
     anchorOperationId,
     markKeys: operationIds,
     actionable: classOps.every((op) => op.canApplyOrDiscard !== false),

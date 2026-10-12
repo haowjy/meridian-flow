@@ -58,6 +58,25 @@ describe("draft command records", () => {
     });
   });
 
+  it("keeps a newer proposal that an older read returns for a confirmed generation", async () => {
+    await run(async () => {
+      await act(async () =>
+        beginDraftCommand(draft, {
+          target: "all",
+          mode: "apply",
+          draftGeneration: 1,
+          completesDraft: true,
+        }),
+      );
+      const earlier = deferred<(typeof listed)[number][]>();
+      const read = readDraftsAfterCommands(scope, () => earlier.promise);
+      await act(async () => confirmDraftCommand(draft));
+      const successor = { ...listed[0], draftGeneration: 2 };
+      earlier.resolve([successor]);
+      expect(await read).toEqual([successor]);
+    });
+  });
+
   it("keeps nothing of the answer that closed the draft once the claim is released, even with a read in flight", async () => {
     await run(async () => {
       const closing = { classIds: ["c"], operationIds: ["1"], mode: "discard" as const };

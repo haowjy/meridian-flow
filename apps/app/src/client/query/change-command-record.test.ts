@@ -67,9 +67,9 @@ describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
   it("retiring one queued selection leaves another of the same draft hidden", () => {
-    const retireOne = queueChangeSelection(draft, one);
-    queueChangeSelection(draft, two);
-    retireOne();
+    const first = queueChangeSelection(draft, one, "apply");
+    queueChangeSelection(draft, two, "apply");
+    first.retire();
     expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual(["2", "3"]);
   });
 
@@ -133,7 +133,7 @@ describe("change command record", () => {
 
     it("retires the failure held under its old class when the writer acts again", () => {
       failChangeCommand(draft, a, "apply", "stale");
-      expect(beginChangeCommand(draft, b, "discard", 1)).toBe(true);
+      expect(beginChangeCommand(draft, b, "discard", 1)).not.toBeNull();
       expect(changeCommandState(currentChangeCommandRecords(), draft, a)).not.toMatchObject({
         phase: "failed",
       });

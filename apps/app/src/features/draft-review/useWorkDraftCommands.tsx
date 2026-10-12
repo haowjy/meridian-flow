@@ -15,9 +15,11 @@ import {
 } from "@/client/query/draft-command-executor";
 import {
   currentDraftCommandRecords,
+  type DraftClaim,
   draftCommandPendingIn,
   pendingDraftCommand,
   useDraftCommandRecords,
+  wholeDraftCommandPendingIn,
 } from "@/client/query/draft-command-record";
 import { getContextTabs } from "@/client/stores";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
@@ -47,12 +49,15 @@ export function useWorkDraftCommands({
   const records = useDraftCommandRecords();
   const isDisposing = draftCommandPendingIn(records, { projectId, workId });
   const frozen = !work || isWorkArchived(work);
+  // A change's own Apply and Discard queue behind each other; only a command on
+  // the whole draft, or a batch, holds them back.
+  const changesLocked = frozen || wholeDraftCommandPendingIn(records, { projectId, workId });
   const commands = useMemo(() => {
     const scope = { projectId, workId };
     const whole = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
-      reserved = false,
+      reserved: DraftClaim | null = null,
     ): CommandStart => {
       if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
       const target = { ...scope, ...draft };
@@ -117,6 +122,7 @@ export function useWorkDraftCommands({
     ) =>
       runDraftBatch(
         scope,
+        mode,
         items.map(
           (item): DraftBatchItem =>
             "wholeDraft" in item
@@ -131,9 +137,9 @@ export function useWorkDraftCommands({
                 }
               : item,
         ),
-        (item) =>
+        (item, claim) =>
           item.command
-            ? whole(mode, item.draft, true).outcome
+            ? whole(mode, item.draft, claim).outcome
             : selection(mode, item.draft, item.selection),
       );
     return {
@@ -159,6 +165,7 @@ export function useWorkDraftCommands({
         (
           await runDraftBatch(
             scope,
+            mode,
             drafts.map((draft) => ({
               draft,
               command: {
@@ -168,7 +175,7 @@ export function useWorkDraftCommands({
                 completesDraft: true,
               },
             })),
-            ({ draft }) => whole(mode, draft, true).outcome,
+            ({ draft }, claim) => whole(mode, draft, claim).outcome,
           )
         ).map(({ outcome }) => outcome),
     };
@@ -182,7 +189,7 @@ export function useWorkDraftCommands({
     openContextRoute,
     isCurrentContextRoute,
   ]);
-  return { ...commands, isDisposing, dispositionLocked: isDisposing || frozen };
+  return { ...commands, isDisposing, dispositionLocked: isDisposing || frozen, changesLocked };
 }
 
 const WorkDraftCommandsContext = createContext<WorkDraftCommands | null>(null);
