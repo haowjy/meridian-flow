@@ -130,11 +130,19 @@ notice-text parsing. Keep this visibility rule aligned with
 
 The run controller (`client/copilot/ThreadRunController.ts`) follows a chat by
 the pure rule in `client/copilot/run-follow.ts`, from server-decided run identity
-facts (a turn's execution and the messages it was reserved for, a message's
-deliverer, an execution's end), never by stream order, transcript ancestry or
-timers. A writer message in the chat's pending inbox is owed until delivered, so
-every tab keeps Stop while one is undelivered, and a Stop waiting for work lands
-only on an execution that takes on or delivers a message owed at the press.
+facts (a turn's execution, position and the messages it was reserved for, a
+message's deliverer, an execution's end), never by transcript ancestry or
+timers. Those facts are write-once, so what binds, when the chat settles and
+which turn Stop targets (the running execution's highest `Turn.position`) do not
+depend on the order a tab learns them. Two inputs are ordered by seq instead:
+the pending projection (an older one is ignored) and the stream cursor that
+routes un-addressed deltas (a snapshot older than the stream's last start or
+end merges its facts but does not move it). A writer message in the chat's
+pending inbox, or just admitted by this tab, is owed until delivered, so every
+tab keeps Stop while one is undelivered. A Stop waiting for work lands only on
+an execution that takes on or delivers a message owed at the press, and a
+message owed after the press retires it. Retry stand-ins reconcile by their
+request's execution or `metadata.retryReplyId`, read from the same facts.
 `useThreadRunResume` attaches the snapshot's open execution only while settled.
 The composer shows Stop while a reply streams, a placeholder is pending, or the
 controller is unsettled, except while owed messages wait on an account that
