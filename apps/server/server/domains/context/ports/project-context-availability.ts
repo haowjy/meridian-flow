@@ -15,10 +15,18 @@ export interface ProjectContextAvailabilityPort {
 }
 
 export interface ProjectContextAvailabilityMutationPort {
+  /** Advance these authorities' availability generation. Publishes no namespace version:
+   * authority-only changes (a Work's state or pending count) are not namespace changes. */
   advance(input: {
     projectIds: readonly string[];
     userIds: readonly string[];
   }): Promise<AvailabilityGeneration>;
+  /** Allocate a fresh namespace observation version for these authorities in the ambient
+   * transaction. Only a change to a live file, folder or source earns one. */
+  publishNamespace(input: {
+    projectIds: readonly string[];
+    userIds: readonly string[];
+  }): Promise<string>;
   /** Reserve availability ordering without publishing liveness. Supplying affected
    * authorities publishes a fresh namespace observation watermark in this transaction. */
   reserve(input?: {

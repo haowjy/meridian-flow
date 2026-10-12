@@ -311,6 +311,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const reservedHead = await readHead();
       expect(reservedHead?.namespaceGeneration).toBeGreaterThan(0n);
       const newer = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      expect((await readHead())?.namespaceGeneration).toBe(reservedHead?.namespaceGeneration);
+      await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
       const newerHead = await readHead();
       expect(newerHead?.namespaceGeneration).toBeGreaterThan(
         reservedHead?.namespaceGeneration ?? 0n,
@@ -341,6 +343,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       await runInDrizzleTransaction(db, async () => {
         const first = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
         const readHead = async () =>
           (
             await currentDrizzleDb(db)
@@ -351,6 +354,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const firstHead = await readHead();
         const second = await availability.advance({ projectIds: [PROJECT], userIds: [] });
         expect(second).toBe(first);
+        expect((await readHead())?.namespaceGeneration).toBe(firstHead?.namespaceGeneration);
+        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
         expect((await readHead())?.namespaceGeneration).toBeGreaterThan(
           firstHead?.namespaceGeneration ?? 0n,
         );

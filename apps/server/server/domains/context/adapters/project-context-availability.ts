@@ -243,11 +243,22 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
-/** The publisher fence is held by reserve/advance. Each state change needs its
- * own stamp even when availability groups several changes in one transaction. */
-async function publishNamespaceVersion(tx: Database, authorityKeys: readonly string[]) {
+/** One transaction-scoped publisher fence makes sequence allocation order match commit
+ * visibility, even when later calls introduce previously unknown keys. */
+async function holdPublisherFence(tx: Database, state: AdvanceState) {
+  if (state.publisherFenceHeld) return;
+  await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
+  state.publisherFenceHeld = true;
+}
+
+/** The caller holds the publisher fence. Each namespace change needs its own stamp even
+ * when availability groups several changes in one transaction. */
+async function publishNamespaceVersion(
+  tx: Database,
+  authorityKeys: readonly string[],
+): Promise<string | null> {
   const keys = [...new Set(authorityKeys)].sort();
-  if (!keys.length) return;
+  if (!keys.length) return null;
   const [row] = await tx.execute<{ version: string }>(
     sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
   );
@@ -266,6 +277,7 @@ async function publishNamespaceVersion(tx: Database, authorityKeys: readonly str
       target: contextAvailabilityHeads.authorityKey,
       set: { namespaceGeneration: version },
     });
+  return String(version);
 }
 
 export function createDrizzleProjectContextAvailability(
@@ -277,10 +289,7 @@ export function createDrizzleProjectContextAvailability(
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
-        if (!state.publisherFenceHeld) {
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
+        await holdPublisherFence(tx, state);
         if (state.generation === undefined) {
           const result = await tx.execute<{ generation: string }>(
             sql`select nextval(${sql.raw(`'${contextAvailabilityGeneration.seqName}'`)})::text as generation`,
@@ -332,12 +341,7 @@ export function createDrizzleProjectContextAvailability(
         ]);
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
         const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        if (!state.publisherFenceHeld) {
-          // One transaction-scoped publisher fence makes sequence allocation order match
-          // commit visibility even when later advance calls introduce previously unknown keys.
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
+        await holdPublisherFence(tx, state);
         if (missing.length > 0) {
           await tx
             .insert(contextAvailabilityHeads)
@@ -368,8 +372,20 @@ export function createDrizzleProjectContextAvailability(
             .where(inArray(contextAvailabilityHeads.authorityKey, missing));
           for (const key of missing) state.keys.add(key);
         }
-        await publishNamespaceVersion(tx, [...requested]);
         return String(state.generation);
+      });
+    },
+
+    async publishNamespace(input) {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db) as Database;
+        await holdPublisherFence(tx, enlistDrizzleTransactionParticipant(advanceParticipant));
+        const version = await publishNamespaceVersion(tx, [
+          ...input.projectIds.map(projectKey),
+          ...input.userIds.map(userKey),
+        ]);
+        if (version === null) throw new Error("publishNamespace needs at least one authority");
+        return version;
       });
     },
 
