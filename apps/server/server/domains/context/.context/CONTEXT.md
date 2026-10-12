@@ -568,7 +568,8 @@ currently available to the request owner in the requested project.
   original command, and successful identity moves return their committed URI.
   HTTP confirms edit on the resolved destination under its namespace locks.
   URI-addressed moves retain path-based folder creation.
-- Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
+- Successful HTTP deletion acknowledges
+  `{ status: "deleted", deletedDocumentIds, availabilityGeneration }`.
   Every `ContextPort.delete` caller names the expected entry kind and, for a file,
   its initiating `documents.id`; mismatch or CAS replacement is `stale_target`
   and acknowledges nothing. This is the same CAS boundary for HTTP deletion and
