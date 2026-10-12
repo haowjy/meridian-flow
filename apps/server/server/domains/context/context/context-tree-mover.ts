@@ -7,6 +7,7 @@
  */
 
 import {
+  type ContextDestinationParent,
   type DeleteContextEntryResult,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
@@ -94,6 +95,18 @@ function joinPath(...parts: string[]): string {
     .join("/");
 }
 
+type LocationChangePolicy =
+  | { target: "container"; overwrite: boolean }
+  | {
+      target: "exact";
+      overwrite: false;
+      graduateProvisionalName: true;
+      expected?: ContextLocationOptions["expected"];
+      destinationParent?: ContextDestinationParent;
+      resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
+      authorizeDestination?: (uri: string) => Promise<boolean>;
+    };
+
 /** Coordinates ContextFS tree mutations without owning durable state. */
 export class ContextTreeMover {
   private readonly commandExecutor: ResultAwareCommandExecutor<ContextError>;
@@ -126,9 +139,12 @@ export class ContextTreeMover {
   async commitWriterLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    expected?: ContextLocationOptions["expected"],
-    operationId?: string,
+    options: ContextLocationOptions & {
+      resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
+    } = {},
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    const { expected, operationId, destinationParent, resolveDestination, authorizeDestination } =
+      options;
     if (operationId) {
       if (!this.receipts || !expected)
         return Err({ code: "invalid_operation", uri: source.canonical });
@@ -139,8 +155,10 @@ export class ContextTreeMover {
           sourceUri: source.canonical,
           destinationUri: destination.canonical,
           expected,
+          ...(destinationParent ? { destinationParent } : {}),
         },
-        () => this.commitWriterLocation(source, destination, expected),
+        () =>
+          this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
       );
     }
     return this.changeLocation(source, destination, {
@@ -148,25 +166,45 @@ export class ContextTreeMover {
       graduateProvisionalName: true,
       expected,
       overwrite: false,
+      destinationParent,
+      resolveDestination,
+      authorizeDestination,
     });
   }
 
   private async changeLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    policy:
-      | { target: "container"; overwrite: boolean }
-      | {
-          target: "exact";
-          overwrite: false;
-          graduateProvisionalName: true;
-          expected?: ContextLocationOptions["expected"];
-        },
+    policy: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
     await this.moveLinks?.flush(source);
+    let lockedDestination = destination;
+    const destinationResolver = policy.target === "exact" ? policy.resolveDestination : undefined;
+    const scopeOf = (dispatch: ContextTreeDispatch) => ({
+      scheme: dispatch.scheme,
+      workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+    });
     return this.commandExecutor
       .run(
         async () => {
+          if (policy.target === "exact" && policy.resolveDestination) {
+            const current = await policy.resolveDestination();
+            if (!current.ok) return current;
+            // Resolve again after namespace locks. A concurrent cross-namespace move
+            // requires a fresh attempt, never locks acquired in a different order.
+            if (
+              current.value.scheme !== lockedDestination.scheme ||
+              current.value.workScopeId !== lockedDestination.workScopeId
+            )
+              return Err({ code: "stale_target", uri: destination.canonical });
+            destination = current.value;
+          }
+          if (
+            policy.target === "exact" &&
+            policy.authorizeDestination &&
+            !(await policy.authorizeDestination(destination.canonical))
+          )
+            return Err({ code: "destination_missing", uri: destination.canonical });
           if (policy.target === "exact" && policy.expected) {
             const token = await this.inspect(source);
             if (!token.ok) return token;
@@ -202,12 +240,18 @@ export class ContextTreeMover {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
             destinationPath: prepared.value.destinationPath,
+            ...(policy.target === "exact" && policy.destinationParent
+              ? { destinationUri: destination.canonical }
+              : {}),
           });
         },
-        [source, destination].map((dispatch) => ({
-          scheme: dispatch.scheme,
-          workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
-        })),
+        destinationResolver
+          ? async () => {
+              const current = await destinationResolver();
+              if (current.ok) lockedDestination = current.value;
+              return [source, lockedDestination].map(scopeOf);
+            }
+          : [source, destination].map(scopeOf),
       )
       .catch((error) => lifecycleCommandFailure(error, source.canonical));
   }
@@ -302,14 +346,7 @@ export class ContextTreeMover {
   private async prepareMove(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    policy:
-      | { target: "container"; overwrite: boolean }
-      | {
-          target: "exact";
-          overwrite: false;
-          graduateProvisionalName: true;
-          expected?: ContextLocationOptions["expected"];
-        },
+    policy: LocationChangePolicy,
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;
@@ -321,6 +358,19 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
+    let destinationParentToken: Extract<ContextLocationToken, { kind: "directory" }> | undefined;
+    if (policy.target === "exact" && policy.destinationParent) {
+      const parent = await this.inspect({ ...destination, path: dirname(destination.path) });
+      if (!parent.ok) return parent;
+      if (
+        parent.value?.kind !== "directory" ||
+        (policy.destinationParent.kind === "folder" &&
+          parent.value.nodeId !== policy.destinationParent.folderId) ||
+        (policy.destinationParent.kind === "root" && parent.value.path !== "")
+      )
+        return Err({ code: "destination_missing", uri: destination.canonical });
+      destinationParentToken = parent.value;
+    }
     const targetPath = await this.resolveTarget(
       destination,
       sourceBasename,
@@ -357,6 +407,7 @@ export class ContextTreeMover {
     const prepared = {
       source: sourceToken.value,
       destinationSourceId: destinationSourceId.value,
+      ...(destinationParentToken ? { destinationParentToken } : {}),
       destinationPath: targetPath.value,
       expectedTarget,
       overwrite: policy.overwrite,

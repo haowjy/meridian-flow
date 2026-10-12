@@ -1009,6 +1009,8 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
     switch (error.code) {
+      case "destination_missing":
+        return { code: "destination_missing" };
       case "stale_source":
         return { code: "stale_source" };
       case "stale_target":
@@ -1043,6 +1045,7 @@ export class ContextFS implements ContextSchemeAdapter {
         source,
         linkNoteProjectId: prepared.linkNoteProjectId,
         destinationSourceId: prepared.destinationSourceId,
+        destinationParentToken: prepared.destinationParentToken,
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
@@ -1062,6 +1065,7 @@ export class ContextFS implements ContextSchemeAdapter {
       source,
       linkNoteProjectId: prepared.linkNoteProjectId,
       destinationSourceId: prepared.destinationSourceId,
+      destinationParentToken: prepared.destinationParentToken,
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
       overwrite: prepared.overwrite,

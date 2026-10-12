@@ -223,3 +223,17 @@ lib/*
   ▼
 domains/*  ←  MUST NOT import from lib/
 ```
+
+
+## Writer move destination identity
+
+`context-move-route.ts` parses the optional `destinationParent` wire contract.
+It passes that identity into the domain command and receipt, maps typed
+`destination_missing` to non-retryable repair, and uses the committed destination
+for successful location responses. Identity conflicts may name a renamed or
+relocated destination; URI-only conflicts still must match the requested home.
+Edit authority is rechecked on the resolved destination in the move transaction.
+
+The app's existing path-only producers have not yet been migrated to this
+contract. The replica identity-parent restructuring remains separate unfinished
+work; this server capability alone does not fix optimistic placement.

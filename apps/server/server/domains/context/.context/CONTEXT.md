@@ -451,6 +451,16 @@ currently available to the request owner in the requested project.
   invalidating a location plan. `stale_source` and `stale_target` remain typed
   through store, adapter, port, and HTTP route; only proven occupation is a
   `conflict` with an Open-existing locator.
+- Writer moves may carry `destinationParent` (folder ID or qualified area root).
+  Folder identity is resolved in the move transaction before namespace lock
+  selection, then again under those locks. A change of namespace while locking
+  returns `stale_target` rather than acquiring locks in a new order. Parent
+  tokens fence the durable mutation; identity moves never call
+  `ensureFolderPath`. Absent, terminal and denied destinations return
+  `destination_missing`. The receipt records the parent identity alongside the
+  original command, and successful identity moves return their committed URI.
+  HTTP confirms edit on the resolved destination under its namespace locks.
+  URI-addressed moves retain path-based folder creation.
 - Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
   Every `ContextPort.delete` caller names the expected entry kind and, for a file,
   its initiating `documents.id`; mismatch or CAS replacement is `stale_target`

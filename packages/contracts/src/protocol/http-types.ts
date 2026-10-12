@@ -127,7 +127,22 @@ export type DeleteContextEntryRequest = {
   expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
+/** Stable writer-selected parent. URI callers may continue to omit this. */
+export type ContextDestinationParent =
+  | { kind: "folder"; folderId: string }
+  | {
+      kind: "root";
+      scheme: ProjectContextTreeScheme;
+      owner: {
+        workId: string | null;
+        workSlug?: string | null;
+        rootThreadId?: string | null;
+        rootThreadRef?: string | null;
+      };
+    };
+
 export type MoveContextEntryRequest = {
+  destinationParent?: ContextDestinationParent;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };

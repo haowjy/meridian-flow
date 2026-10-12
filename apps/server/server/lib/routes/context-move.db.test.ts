@@ -93,6 +93,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         move: {
           operationId: move.operationId,
           expected: move.expected,
+          destinationParent: move.destinationParent,
           source: await resolveLocator(move.source),
           destination: await resolveLocator(move.destination),
           ...(move.name ? { name: move.name } : {}),
@@ -470,6 +471,245 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ ok: true });
     });
 
+    async function destinationFolder(projectId: string) {
+      const [parent] = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.folders.contextSourceId, schema.contextSources.id),
+        )
+        .where(
+          and(eq(schema.contextSources.projectId, projectId), eq(schema.folders.name, "Act 1")),
+        );
+      if (!parent) throw new Error("Missing fixture parent");
+      return parent.id;
+    }
+
+    it("follows a captured parent into its current scheme and records its identity", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+      const folderId = await destinationFolder(projectId);
+      const operationId = crypto.randomUUID();
+      await expect(
+        port.commitWriterLocation("manuscript://Act 1", "kb://Renamed", {
+          expected: { kind: "folder", nodeId: folderId },
+          operationId: crypto.randomUUID(),
+        }),
+      ).resolves.toMatchObject({ ok: true });
+      const body = {
+        operationId,
+        path: "Untitled 1.md",
+        sourceWorkId: workId,
+        expected: { kind: "file", nodeId: DOCUMENT_ID },
+        destinationScheme: "manuscript",
+        destinationFolderPath: "Act 1",
+        destinationParent: { kind: "folder", folderId },
+      };
+      await expect(
+        moveContextEntry({ port, userId: USER_ID, sourceScheme: "scratch", body }),
+      ).resolves.toMatchObject({ status: "moved", scheme: "kb", path: "Renamed/Untitled 1.md" });
+      await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
+        command: {
+          destinationUri: "manuscript://Act 1/Untitled 1.md",
+          destinationParent: body.destinationParent,
+        },
+        result: { ok: true, value: { destinationUri: "kb://Renamed/Untitled 1.md" } },
+      });
+      await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
+      await expect(port.stat("kb://Renamed/Untitled 1.md")).resolves.toMatchObject({ ok: true });
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://Act 1/Untitled 1.md",
+          {
+            operationId,
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
+            destinationParent: { kind: "folder", folderId: crypto.randomUUID() },
+          },
+        ),
+      ).resolves.toMatchObject({ ok: false, error: { code: "operation_mismatch" } });
+    });
+
+    it("returns a collision at the renamed identity rather than the obsolete path", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+      const folderId = await destinationFolder(projectId);
+      await port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
+        expected: { kind: "folder", nodeId: folderId },
+        operationId: crypto.randomUUID(),
+      });
+      await port.write("manuscript://Renamed/Untitled 1.md", "Occupied");
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Untitled 1.md",
+            sourceWorkId: workId,
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
+            destinationScheme: "manuscript",
+            destinationFolderPath: "Act 1",
+            destinationParent: { kind: "folder", folderId },
+          },
+        }),
+      ).resolves.toMatchObject({
+        status: "conflict",
+        collision: { scheme: "manuscript", path: "Renamed/Untitled 1.md" },
+      });
+      await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
+    });
+
+    it("records a typed refusal when the resolved destination fails its edit check", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const folderId = await destinationFolder(projectId);
+      const operationId = crypto.randomUUID();
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://Act 1/Untitled 1.md",
+          {
+            operationId,
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
+            destinationParent: { kind: "folder", folderId },
+            authorizeDestination: async () => false,
+          },
+        ),
+      ).resolves.toMatchObject({ ok: false, error: { code: "destination_missing" } });
+      await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
+        result: { ok: false, error: { code: "destination_missing" } },
+      });
+      await expect(port.stat("scratch://@current-work/Untitled 1.md")).resolves.toMatchObject({
+        ok: true,
+      });
+    });
+
+    it("refuses a folder identity outside the actor's project authority", async () => {
+      const { port } = await arrangeUntitled();
+      const otherUserId = crypto.randomUUID();
+      const otherProjectId = crypto.randomUUID();
+      const otherSourceId = crypto.randomUUID();
+      const folderId = crypto.randomUUID();
+      await db
+        .insert(schema.users)
+        .values(conformanceUserValues(otherUserId, "inaccessible-folder"));
+      await db.insert(schema.projects).values({
+        id: otherProjectId,
+        userId: otherUserId,
+        name: "Private",
+        slug: "private",
+      });
+      await db.insert(schema.contextSources).values({
+        id: otherSourceId,
+        projectId: otherProjectId,
+        slug: "manuscript",
+        name: "Manuscript",
+        scope: "project",
+      });
+      await db.insert(schema.folders).values({
+        id: folderId,
+        contextSourceId: otherSourceId,
+        name: "Destination",
+      });
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://Act 1/Untitled 1.md",
+          {
+            operationId: crypto.randomUUID(),
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
+            destinationParent: { kind: "folder", folderId },
+          },
+        ),
+      ).resolves.toMatchObject({ ok: false, error: { code: "destination_missing" } });
+      await expect(port.stat("scratch://@current-work/Untitled 1.md")).resolves.toMatchObject({
+        ok: true,
+      });
+    });
+
+    it("records an explicit area-root destination without manufacturing a parent", async () => {
+      const { workId, port } = await arrangeUntitled();
+      const operationId = crypto.randomUUID();
+      const destinationParent = {
+        kind: "root",
+        scheme: "manuscript",
+        owner: { workId: null },
+      } as const;
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            operationId,
+            path: "Untitled 1.md",
+            sourceWorkId: workId,
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
+            destinationScheme: "manuscript",
+            destinationFolderPath: "",
+            destinationParent,
+          },
+        }),
+      ).resolves.toMatchObject({ status: "moved", path: "Untitled 1.md" });
+      await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
+        command: { destinationParent },
+        result: { ok: true },
+      });
+      const [document] = await db
+        .select({ folderId: schema.documents.folderId })
+        .from(schema.documents)
+        .where(eq(schema.documents.id, DOCUMENT_ID));
+      expect(document?.folderId).toBeNull();
+    });
+
+    it("refuses a deleted destination identity without recreating its folder", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const [parent] = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.folders.contextSourceId, schema.contextSources.id),
+        )
+        .where(
+          and(eq(schema.contextSources.projectId, projectId), eq(schema.folders.name, "Act 1")),
+        );
+      if (!parent) throw new Error("Missing fixture parent");
+      const operationId = crypto.randomUUID();
+      await port.delete("manuscript://Act 1", {
+        expected: { kind: "folder", nodeId: parent.id },
+        operationId: crypto.randomUUID(),
+      });
+      const options = {
+        operationId,
+        expected: { kind: "file" as const, nodeId: DOCUMENT_ID },
+        destinationParent: { kind: "folder" as const, folderId: parent.id },
+      };
+      const result = await port.commitWriterLocation(
+        "scratch://@current-work/Untitled 1.md",
+        "manuscript://Act 1/Untitled 1.md",
+        options,
+      );
+      expect(result).toMatchObject({ ok: false, error: { code: "destination_missing" } });
+      expect(await port.lookupOperation(operationId)).toMatchObject({
+        command: { destinationParent: options.destinationParent },
+        result,
+      });
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://Act 1/Untitled 1.md",
+          options,
+        ),
+      ).resolves.toEqual(result);
+      await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
+      const [document] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.id, DOCUMENT_ID));
+      expect(document?.folderId).toBeNull();
+      expect(document?.contextSourceId).not.toBe(parent.id);
+    });
+
     it("delayed delivery follows the captured destination folder identity after its rename", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
       const [parent] = await db
@@ -495,6 +735,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sourceWorkId: workId,
         destinationScheme: "manuscript",
         destinationFolderPath: "Act 1",
+        destinationParent: { kind: "folder", folderId: parent.id },
       };
       await expect(
         port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
