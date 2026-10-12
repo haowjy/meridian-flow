@@ -240,3 +240,102 @@ describe("ImportCoordinator.stop before anything was sent", () => {
     coordinator.dispose();
   });
 });
+
+describe("ImportCoordinator.stop while files are still being read", () => {
+  it("never sends a plan once Stop has answered that nothing was sent", async () => {
+    const server = fakeImportServer();
+    const coordinator = new ImportCoordinator("p", server.api);
+    const chapter = new File(["writer text"], "Chapter.md");
+    const bytes = await chapter.arrayBuffer();
+    let release!: () => void;
+    chapter.arrayBuffer = () =>
+      new Promise((resolve) => {
+        release = () => resolve(bytes);
+      });
+    const importId = coordinator.start(
+      {
+        leftOut: [],
+        roots: [
+          {
+            rootId: 0,
+            kind: "file",
+            name: "Chapter.md",
+            files: [{ path: "", file: chapter }],
+            folders: [],
+            unreadable: [],
+          },
+        ],
+      },
+      destination,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(await coordinator.stop(importId)).toBe("nothing-sent");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(server.calls.plan).toBe(0);
+    const state = coordinator.store(importId).getSnapshot();
+    expect(state.local?.phase.kind).toBe("idle");
+    expect(displayOf(state)).toBe("finished");
+    coordinator.dispose();
+  });
+});
+
+describe("ImportCoordinator.retry", () => {
+  function sixFiles(): Selection {
+    return {
+      leftOut: [],
+      roots: [
+        {
+          rootId: 0,
+          kind: "folder",
+          name: "vault",
+          files: Array.from({ length: 6 }, (_, index) => ({
+            path: `Ch ${index}.md`,
+            file: new File([`# Chapter ${index}`], `Ch ${index}.md`),
+          })),
+          folders: [],
+          unreadable: [],
+        },
+      ],
+    };
+  }
+
+  it("shares one import's request budget, and Stop cancels every send", async () => {
+    const server = fakeImportServer({ failSend: () => true });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = coordinator.start(sixFiles(), destination);
+    await settled(coordinator, importId);
+    const sends: { entryIds: number[]; signal: AbortSignal }[] = [];
+    let open = 0;
+    let most = 0;
+    server.api.send = (_projectId, _importId, parts, given) => {
+      const signal = given ?? new AbortController().signal;
+      sends.push({ entryIds: parts.map((part) => part.entryId), signal });
+      open += 1;
+      most = Math.max(most, open);
+      return new Promise((_resolve, reject) =>
+        signal.addEventListener("abort", () => {
+          open -= 1;
+          reject(new DOMException("Aborted", "AbortError"));
+        }),
+      );
+    };
+
+    for (let entryId = 0; entryId < 6; entryId += 1) coordinator.retry(importId, [entryId]);
+    coordinator.retry(importId, [0]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(most).toBeLessThanOrEqual(3);
+    expect(sends.flatMap((send) => send.entryIds).filter((id) => id === 0)).toHaveLength(1);
+
+    void coordinator.stop(importId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sends.every((send) => send.signal.aborted)).toBe(true);
+    const sent = sends.length;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sends.length).toBe(sent);
+    coordinator.dispose();
+  });
+});

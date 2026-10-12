@@ -16,7 +16,7 @@ import { matchHeld } from "./match-held";
 import { announceMilestones } from "./milestones";
 import type { Selection } from "./selection";
 import { catalogPathOfUri } from "./tree-projection";
-import { type UploadOutcome, uploadFiles } from "./uploader";
+import { type UploadOutcome, UploadQueue } from "./uploader";
 
 /** Imports over this many files redraw the tree no more often than every few seconds. */
 const BIG_IMPORT = 500;
@@ -32,9 +32,16 @@ export type OpenImports = {
   failed: boolean;
 };
 
+/**
+ * What this tab is doing for one import: reading its files, the plan and the
+ * sends. `retire` ends it for good; every step after an await checks `retired`
+ * before it changes anything or calls the server.
+ */
+type Run = { readonly controller: AbortController; readonly queue: UploadQueue };
+
 export class ImportCoordinator {
   private readonly stores = new Map<string, ImportStore>();
-  private readonly uploads = new Map<string, AbortController>();
+  private readonly runs = new Map<string, Run>();
   private readonly plans = new Map<string, Promise<unknown>>();
   private readonly startedAt = new Map<string, number>();
   private startedListeners = new Set<() => void>();
@@ -186,15 +193,14 @@ export class ImportCoordinator {
     selection: Selection,
     destination: ImportDestination,
   ) {
-    const controller = new AbortController();
-    this.uploads.set(store.importId, controller);
+    const run = this.runFor(store);
     let built: BuiltManifest;
     let lastPaint = 0;
     try {
       built = await buildManifest(selection, {
         importId: store.importId,
         destinationUri: destination.uri,
-        signal: controller.signal,
+        signal: run.controller.signal,
         onHashed: (hashedBytes) => {
           // Progress has its own channel: the tree must not re-render for it.
           const now = performance.now();
@@ -206,17 +212,19 @@ export class ImportCoordinator {
     } catch {
       return; // Stopped while preparing; `stop` already ended the run.
     }
+    // The last files read may finish after Stop: their result is not this import's anymore.
+    if (retired(run)) return;
     store.setLocal((local) => ({
       ...local,
       manifest: built.manifest,
       held: built.held,
       total: built.manifest.entries.length,
     }));
-    await this.plan(store, built, controller);
+    await this.plan(store, built, run);
   }
 
   /** Send the plan, then the files. Also the retry for an import that did not start. */
-  private async plan(store: ImportStore, built: BuiltManifest, controller: AbortController) {
+  private async plan(store: ImportStore, built: BuiltManifest, run: Run) {
     store.setLocal((local) => ({
       ...local,
       phase: {
@@ -228,8 +236,12 @@ export class ImportCoordinator {
     const planning = this.api.plan(this.projectId, built.manifest);
     this.plans.set(store.importId, planning);
     try {
-      store.installReport(await planning);
+      const answer = await planning;
+      // Stop waits for this answer and installs its own finished one.
+      if (retired(run)) return;
+      store.installReport(answer);
     } catch (error) {
+      if (retired(run)) return;
       store.setLocal((local) => ({
         ...local,
         phase: {
@@ -242,8 +254,7 @@ export class ImportCoordinator {
     } finally {
       this.plans.delete(store.importId);
     }
-    if (controller.signal.aborted) return;
-    await this.send(store, controller);
+    this.send(store, run);
   }
 
   /**
@@ -254,8 +265,7 @@ export class ImportCoordinator {
     const store = this.store(importId);
     const summary = store.getSnapshot().report?.summary;
     if (!summary) return;
-    const controller = new AbortController();
-    this.uploads.set(importId, controller);
+    const run = this.runFor(store);
     store.update((state) => ({
       ...state,
       stop: "none",
@@ -272,10 +282,10 @@ export class ImportCoordinator {
       },
     }));
     if (summary.state === "planning") {
-      await this.plan(store, built, controller);
+      await this.plan(store, built, run);
       return;
     }
-    await this.send(store, controller);
+    this.send(store, run);
   }
 
   /** Try again after "Import didn't start". Same id, same manifest, same files. */
@@ -283,15 +293,18 @@ export class ImportCoordinator {
     const store = this.store(importId);
     const local = store.getSnapshot().local;
     if (!local?.manifest || !local.held) return;
-    const controller = new AbortController();
-    this.uploads.set(importId, controller);
-    void this.plan(store, { manifest: local.manifest, held: new Map(local.held) }, controller);
+    void this.plan(
+      store,
+      { manifest: local.manifest, held: new Map(local.held) },
+      this.runFor(store),
+    );
   }
 
   // ---- Uploading
 
-  /** Send every file the server still wants and this tab holds. */
-  private async send(store: ImportStore, controller: AbortController, only?: ReadonlySet<number>) {
+  /** Queue every file the server still wants and this tab holds (or just `only`). */
+  private send(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
+    if (retired(run)) return;
     const state = store.getSnapshot();
     const { local, report } = state;
     if (!local?.manifest || !local.held || !report) return;
@@ -307,26 +320,51 @@ export class ImportCoordinator {
       const file = matched.get(entry.entryId);
       if (file) files.push({ ...file, entryId: entry.entryId });
     }
-    store.setLocal((current) => ({ ...current, phase: { kind: "uploading" } }));
-    await uploadFiles({
-      files,
-      signal: controller.signal,
-      send: (parts, signal) =>
-        this.api.send(
-          this.projectId,
-          store.importId,
-          parts.map((part) => ({
-            entryId: part.entryId,
-            file: part.file,
-            name: part.file.name || "file",
-          })),
-          signal,
-        ),
-      onOutcome: (outcomes) => this.record(store, outcomes),
-    });
-    if (controller.signal.aborted) return;
+    run.queue.add(files);
+    if (run.queue.idle) this.sent(store);
+    else store.setLocal((current) => ({ ...current, phase: { kind: "uploading" } }));
+  }
+
+  /** Every queued file has its answer: read what the server made of them. */
+  private sent(store: ImportStore) {
     store.setLocal((current) => ({ ...current, phase: { kind: "idle" }, retrying: new Set() }));
     void store.refresh();
+  }
+
+  /** The import's live run, or a new one once Stop or a refusal retired the last. */
+  private runFor(store: ImportStore): Run {
+    const current = this.runs.get(store.importId);
+    if (current && !retired(current)) return current;
+    const controller = new AbortController();
+    const run: Run = {
+      controller,
+      queue: new UploadQueue({
+        send: (parts, signal) =>
+          this.api.send(
+            this.projectId,
+            store.importId,
+            parts.map((part) => ({
+              entryId: part.entryId,
+              file: part.file,
+              name: part.file.name || "file",
+            })),
+            signal,
+          ),
+        onOutcome: (outcomes) => this.record(store, outcomes),
+        onIdle: () => this.sent(store),
+      }),
+    };
+    this.runs.set(store.importId, run);
+    return run;
+  }
+
+  /** No more reading, planning or sending for this import from this tab. */
+  private retire(importId: string) {
+    const run = this.runs.get(importId);
+    if (!run) return;
+    run.controller.abort();
+    run.queue.cancel();
+    this.runs.delete(importId);
   }
 
   private record(store: ImportStore, outcomes: readonly UploadOutcome[]) {
@@ -367,19 +405,15 @@ export class ImportCoordinator {
       for (const id of wanted) failures.delete(id);
       return { ...current, failures, retrying: new Set([...current.retrying, ...wanted]) };
     });
-    const controller = new AbortController();
-    this.uploads.set(importId, controller);
-    void this.send(store, controller, wanted);
+    this.send(store, this.runFor(store), wanted);
   }
 
   /** Keep importing after "Couldn't stop": this tab sends what is left. */
   resume(importId: string) {
     const store = this.store(importId);
-    const controller = new AbortController();
-    this.uploads.set(importId, controller);
     store.update((state) => ({ ...state, stop: "none" }));
     store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
-    void this.send(store, controller);
+    this.send(store, this.runFor(store));
   }
 
   // ---- Stopping
@@ -387,7 +421,7 @@ export class ImportCoordinator {
   /** Stop here: no more sends from this tab, then finish with what arrived. */
   async stop(importId: string) {
     const store = this.store(importId);
-    this.uploads.get(importId)?.abort();
+    this.retire(importId);
     const planning = this.plans.get(importId);
     const { report } = store.getSnapshot();
     if (!report && !planning) {
@@ -483,7 +517,7 @@ export class ImportCoordinator {
     this.disposed = true;
     if (this.openTimer) clearTimeout(this.openTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
-    for (const controller of this.uploads.values()) controller.abort();
+    for (const importId of [...this.runs.keys()]) this.retire(importId);
     for (const store of this.stores.values()) store.dispose();
   }
 }
@@ -526,6 +560,10 @@ function sameTreeInputs(a: ImportState, b: ImportState): boolean {
     a.local?.destination === b.local?.destination &&
     (a.local?.held != null) === (b.local?.held != null)
   );
+}
+
+function retired(run: Run): boolean {
+  return run.controller.signal.aborted;
 }
 
 function failureReason(cause: unknown): ImportFailureReason {

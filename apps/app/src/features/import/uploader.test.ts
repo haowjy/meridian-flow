@@ -1,27 +1,35 @@
 import type { ImportEntryReport } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import type { HeldFile } from "./manifest";
-import { type UploadOutcome, uploadFiles } from "./uploader";
+import { type UploadOutcome, UploadQueue } from "./uploader";
 
-const held = (entryId: number): HeldFile => ({
+const held = (entryId: number, file = new File(["x"], `f${entryId}.md`)): HeldFile => ({
   entryId,
   rootId: 0,
   path: `f${entryId}.md`,
-  file: new File(["x"], `f${entryId}.md`),
+  file,
 });
 const answer = (entryId: number) => ({ entryId, state: "landed" }) as ImportEntryReport;
 
-describe("uploadFiles", () => {
+/** Resolves when the queue says every queued file has settled. */
+function drained(build: (onIdle: () => void) => UploadQueue): Promise<void> {
+  return new Promise((resolve) => build(resolve));
+}
+
+describe("UploadQueue", () => {
   it("fails only the file that fails when its batch is retried one at a time", async () => {
     const outcomes: UploadOutcome[] = [];
-    await uploadFiles({
-      files: [held(1), held(2), held(3)],
-      signal: new AbortController().signal,
-      send: async (parts) => {
-        if (parts.some((part) => part.entryId === 2)) throw new Error("injected 500");
-        return { entries: parts.map((part) => answer(part.entryId)) };
-      },
-      onOutcome: (batch) => outcomes.push(...batch),
+    await drained((onIdle) => {
+      const queue = new UploadQueue({
+        send: async (parts) => {
+          if (parts.some((part) => part.entryId === 2)) throw new Error("injected 500");
+          return { entries: parts.map((part) => answer(part.entryId)) };
+        },
+        onOutcome: (batch) => outcomes.push(...batch),
+        onIdle,
+      });
+      queue.add([held(1), held(2), held(3)]);
+      return queue;
     });
     expect(
       outcomes
@@ -34,22 +42,21 @@ describe("uploadFiles", () => {
     ).toEqual([2]);
   });
 
-  it("stops sending once aborted", async () => {
-    const control = new AbortController();
+  it("sends nothing more once cancelled", async () => {
     const sent: number[] = [];
-    await uploadFiles({
-      files: Array.from({ length: 5 }, (_, i) => ({
-        ...held(i),
-        file: new File([new Uint8Array(9 * 1024 * 1024)], "big.bin"),
-      })),
-      signal: control.signal,
+    const queue = new UploadQueue({
       send: async (parts) => {
         sent.push(...parts.map((part) => part.entryId));
-        control.abort();
+        queue.cancel();
         return { entries: parts.map((part) => answer(part.entryId)) };
       },
       onOutcome: () => {},
+      onIdle: () => {},
     });
-    expect(sent.length).toBeLessThan(5);
+    const big = () => new File([new Uint8Array(9 * 1024 * 1024)], "big.bin");
+    queue.add(Array.from({ length: 5 }, (_, i) => held(i, big())));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sent.length).toBeLessThanOrEqual(3);
+    expect(queue.add([held(9)])).toBe(0);
   });
 });
