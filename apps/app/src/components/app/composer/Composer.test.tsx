@@ -155,6 +155,64 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
   expect(onDraftChange).not.toHaveBeenCalled();
 });
 
+it("draws a refused recording as the failure card and clears it once a send is recorded", async () => {
+  const onSubmit = vi.fn(async () => false);
+  await act(() =>
+    root.render(<Composer initialDraft={draft("Keep these words")} onSubmit={onSubmit} />),
+  );
+  await pressEnter();
+
+  // The card is the live alert; the words stay in the box and Send is the retry. Its only
+  // control is the X.
+  const alert = host.querySelector<HTMLElement>("[role='alert']");
+  expect(alert?.getAttribute("data-slot")).toBe("alert");
+  expect(alert?.textContent).toBe("Couldn't send.");
+  expect(
+    [...(alert?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label")),
+  ).toEqual(["Dismiss"]);
+  expect(editorElement()?.textContent).toBe("Keep these words");
+  // Inside the composer frame, above the words, and the editor is the same node afterwards.
+  const frame = host.querySelector("[data-composer]");
+  const editorBefore = editorElement();
+  expect(alert && frame?.contains(alert)).toBe(true);
+  expect(alert?.compareDocumentPosition(editorBefore as Node)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
+  onSubmit.mockResolvedValueOnce(true);
+  await pressEnter();
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()).toBe(editorBefore);
+  expect(editorElement()?.textContent).toBe("");
+});
+
+it("dismisses the refused-recording card with the X and returns to the editor", async () => {
+  const onSubmit = vi.fn(async () => false);
+  await act(() =>
+    root.render(<Composer initialDraft={draft("Keep these words")} onSubmit={onSubmit} />),
+  );
+  await pressEnter();
+  const dismiss = host.querySelector<HTMLButtonElement>(
+    "[role='alert'] button[aria-label='Dismiss']",
+  );
+  expect(dismiss).not.toBeNull();
+  (document.activeElement as HTMLElement | null)?.blur();
+
+  await act(async () => {
+    dismiss?.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()?.textContent).toBe("Keep these words");
+  expect(
+    editorElement()?.contains(document.activeElement) || document.activeElement === editorElement(),
+  ).toBe(true);
+
+  // A later refusal draws it again.
+  await pressEnter();
+  expect(host.querySelector("[role='alert']")?.textContent).toBe("Couldn't send.");
+});
+
 it("does not prepend a rejected submission to the live draft edited during admission", async () => {
   const ref = createRef<ComposerHandle>();
   let reject: ((recorded: boolean) => void) | undefined;
