@@ -64,7 +64,7 @@ type PastedWikilink = WikilinkOccurrence | Extract<ObsidianFinding, { kind: "esc
 
 /** App resolution keeps its own filename/display policy; syntax belongs to markup. */
 function pastedWikilinks(text: string): PastedWikilink[] {
-  return scanObsidian(text, { preprocessed: true }).findings.flatMap<PastedWikilink>((finding) => {
+  return scanObsidian(text, { context: "prose" }).findings.flatMap<PastedWikilink>((finding) => {
     if (finding.kind === "escape") return [finding];
     if (finding.kind !== "wikilink" || finding.embed) return [];
     const segments = finding.linkpath.split("/").map((segment) => segment.trim());
@@ -216,62 +216,118 @@ export function linkPastedWikilinks(
   if (!link) return slice;
   // With no catalog yet, nothing links, but escapes are still spelled out.
   const resolve = catalog ? wikilinkResolver(catalog) : () => null;
-  const convert = (fragment: Fragment): Fragment => {
+  // A single projection carries comments across marks, paragraphs and nested blocks.
+  // Code is opaque according to the editor schema, never guessed from its prose.
+  let text = "";
+  const starts = new Map<number, number>();
+  const opaqueRanges: { from: number; to: number }[] = [];
+  const existingLinks: { from: number; to: number }[] = [];
+  const project = (fragment: Fragment, base: number): void => {
+    fragment.forEach((node, offset) => {
+      const pos = base + offset;
+      if (node.type.spec.code) {
+        const from = text.length;
+        text += "\n\nx\n\n";
+        opaqueRanges.push({ from, to: text.length });
+      } else if (node.isText) {
+        starts.set(pos, text.length);
+        if (node.marks.some((mark) => mark.type.name === "link"))
+          existingLinks.push({ from: text.length, to: text.length + (node.text?.length ?? 0) });
+        const code = node.marks.some((mark) => mark.type.spec.code);
+        if (code)
+          opaqueRanges.push({ from: text.length, to: text.length + (node.text?.length ?? 0) });
+        text += code ? "x".repeat(node.text?.length ?? 0) : node.text;
+      } else if (node.isLeaf) {
+        const from = text.length;
+        text += node.type.name === "hardBreak" ? "\n" : "\uFFFC";
+        opaqueRanges.push({ from, to: text.length });
+      } else {
+        if (node.isBlock) text += "\n\n";
+        project(node.content, pos + 1);
+        if (node.isBlock) text += "\n\n";
+      }
+    });
+  };
+  project(slice.content, 0);
+  const occurrences = pastedWikilinks(text).filter(
+    (occurrence) =>
+      !opaqueRanges.some((span) => occurrence.from < span.to && occurrence.to > span.from),
+  );
+  const replacements = occurrences.flatMap<Replacement>((occurrence) => {
+    if ("literal" in occurrence)
+      return [
+        { from: occurrence.from, to: occurrence.to, text: occurrence.literal, assigned: null },
+      ];
+    // Existing links keep their characters. Escapes still spell out inside them.
+    if (existingLinks.some((span) => occurrence.from < span.to && occurrence.to > span.from))
+      return [];
+    const assigned = resolve(occurrence);
+    return assigned
+      ? [{ from: occurrence.from, to: occurrence.to, text: occurrence.label, assigned }]
+      : [];
+  });
+  const convert = (fragment: Fragment, base: number): Fragment => {
     let changed = false;
     const nodes: PMNode[] = [];
-    fragment.forEach((node) => {
+    fragment.forEach((node, offset) => {
+      const pos = base + offset;
       if (node.type.spec.code) {
         nodes.push(node);
         return;
       }
       if (!node.isText) {
-        const content = convert(node.content);
+        const content = convert(node.content, pos + 1);
         if (content !== node.content) changed = true;
         nodes.push(content === node.content ? node : node.copy(content));
         return;
       }
-      const linked = linkText(node, link, resolve);
+      const start = starts.get(pos);
+      const linked = start === undefined ? [node] : replaceText(node, start, replacements, link);
       if (linked.length !== 1 || linked[0] !== node) changed = true;
       nodes.push(...linked);
     });
     return changed ? Fragment.fromArray(nodes) : fragment;
   };
-  const content = convert(slice.content);
+  const content = convert(slice.content, 0);
   return content === slice.content ? slice : new Slice(content, slice.openStart, slice.openEnd);
 }
 
-function linkText(
+type Replacement = {
+  from: number;
+  to: number;
+  text: string;
+  assigned: AssignedLink | null;
+};
+
+function replaceText(
   node: PMNode,
+  start: number,
+  replacements: readonly Replacement[],
   link: MarkType,
-  resolve: (occurrence: WikilinkOccurrence) => AssignedLink | null,
 ): PMNode[] {
   const text = node.text ?? "";
   if (node.marks.some((mark) => mark.type.spec.code)) return [node];
-  // A link's own text never becomes another link, but its escapes are spelled out.
   const linked = node.marks.some((mark) => mark.type.name === "link");
   const pieces: PMNode[] = [];
   let cursor = 0;
-  const { schema } = node.type;
-  for (const occurrence of pastedWikilinks(text)) {
-    let piece: PMNode | null;
-    if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
-    else {
-      const assigned = linked ? null : resolve(occurrence);
-      piece = assigned
-        ? schema.text(
-            occurrence.label,
-            link.create({ ...assigned, title: null }).addToSet(node.marks),
-          )
-        : null;
+  let changed = false;
+  for (const replacement of replacements) {
+    if (replacement.to <= start || replacement.from >= start + text.length) continue;
+    if (linked && replacement.assigned) continue;
+    const from = Math.max(0, replacement.from - start);
+    const to = Math.min(text.length, replacement.to - start);
+    if (from > cursor) pieces.push(node.type.schema.text(text.slice(cursor, from), node.marks));
+    if (replacement.from >= start) {
+      const marks = replacement.assigned
+        ? link.create({ ...replacement.assigned, title: null }).addToSet(node.marks)
+        : node.marks;
+      pieces.push(node.type.schema.text(replacement.text, marks));
     }
-    if (!piece) continue;
-    if (occurrence.from > cursor)
-      pieces.push(schema.text(text.slice(cursor, occurrence.from), node.marks));
-    pieces.push(piece);
-    cursor = occurrence.to;
+    cursor = to;
+    changed = true;
   }
-  if (!pieces.length) return [node];
-  if (cursor < text.length) pieces.push(schema.text(text.slice(cursor), node.marks));
+  if (!changed) return [node];
+  if (cursor < text.length) pieces.push(node.type.schema.text(text.slice(cursor), node.marks));
   return pieces;
 }
 

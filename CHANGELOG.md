@@ -45,6 +45,14 @@
 
 ### Changed
 
+- Pasted wikilinks retain comment context across formatting and paragraphs. HTML prose uses editor code semantics, not Markdown indentation.
+
+- Obsidian scanning reports highlights that surround wikilinks.
+
+- Obsidian scanning preserves literal table continuations inside comments.
+
+- Obsidian comments no longer hide following prose or leak links when their contents include code fences.
+
 - Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
 - Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
 

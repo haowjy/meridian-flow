@@ -457,8 +457,11 @@ writes, and text already stored stay text; so does a drag inside the editor.
   catalog is null and the brackets stay text rather than all turning dashed.
 - **Syntax** (`scanObsidian` from `@meridian/markup/obsidian`): `[[target]]`, `[[target|label]]` (also the
   table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
-  target. The app scans already-parsed text with `{ preprocessed: true }`,
-  so shared Markdown table ingress cannot shift offsets inside a text node.
+  target. The app scans one whole-slice projection with `{ context: "prose" }`
+  and maps its UTF-16 ranges back to text nodes. Comments retain context across
+  marks and paragraphs. The editor schema owns code exclusions; existing links
+  cannot be rewritten. The scanner does not reinterpret indentation or literal
+  backticks as Markdown code, or rerun table ingress.
   Extensionless prose targets stay extensionless. Generated labels
   use the codec's name; writer-typed aliases stay as typed. Queries and sections
   stay on the destination. `![[…]]` (no
