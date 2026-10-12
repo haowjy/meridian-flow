@@ -11,7 +11,6 @@
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import {
   type QueryFunctionContext,
-  replaceEqualDeep,
   useQueries,
   useQuery,
   useQueryClient,
@@ -22,10 +21,10 @@ import { getDraftPreview } from "@/client/api/drafts-api";
 import {
   type ChangeCommandRecords,
   intentKeys,
-  pendingDraftCommand,
   readPreviewAfterChangeCommands,
+  shareDraftObservation,
   useChangeCommandRecords,
-  wholeDraftPending,
+  wholeDraftDisposition,
 } from "./draft-command-record";
 import { type DraftProjection, projectDraft } from "./draft-projection";
 import { projectQueryKeys } from "./project-query-keys";
@@ -70,7 +69,7 @@ function keepNewerGeneration(prior: unknown, next: unknown): unknown {
     after.draftGeneration < before.draftGeneration
   )
     return before;
-  return replaceEqualDeep(prior, next);
+  return shareDraftObservation(prior, next);
 }
 
 /** The one preview query, shared by every reader so each draft's preview is fetched once. */
@@ -126,11 +125,9 @@ function projectionOf(
   records: ChangeCommandRecords,
   draft: DraftRef,
 ): Projected {
-  const claim = pendingDraftCommand(records.drafts, draft);
   const whole =
-    wholeDraftPending(records, draft) &&
     data.status === "active" &&
-    (claim?.target !== "all" || claim.draftGeneration === data.draftGeneration);
+    wholeDraftDisposition(records, draft, data.draftGeneration, data) !== null;
   const intents = intentKeys(records, draft);
   const sorted = (keys: ReadonlySet<string>) => [...keys].sort().join(",");
   const key = whole ? "all" : `${sorted(intents.hidden)}|${sorted(intents.restoring)}`;

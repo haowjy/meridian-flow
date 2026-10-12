@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The command records are bounded: scoped to a Work, retired with the reads they fence, and emptied per account. */
+/** The command records are bounded: scoped to a Work, retained for cached observations, and emptied per account. */
 import { act } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -8,14 +8,18 @@ import {
   beginDraftCommand,
   bindDraftCommandAccount,
   confirmDraftCommand,
+  currentChangeCommandRecords,
   draftCommandFailure,
   failDraftCommand,
   pendingChangeCommand,
   readDraftsAfterCommands,
   releaseDraftCommand,
   resetDraftCommandRecords,
+  shareDraftObservation,
   useDraftCommandRecords,
 } from "./draft-command-record";
+
+import { projectDraftList } from "./draft-projection";
 
 const scope = { projectId: "project-a", workId: "work-a" };
 const draft = { ...scope, documentId: "doc-a", draftId: "draft-a" };
@@ -39,46 +43,45 @@ function deferred<T>() {
 describe("draft command records", () => {
   beforeEach(() => resetDraftCommandRecords());
 
-  it("retires a confirmation once no earlier read is left, so a reused draft id is admitted", async () => {
+  it("retains raw list evidence and generation-addressed Apply intent after overlapping reads", async () => {
     await run(async () => {
-      const earlier = deferred<typeof listed>();
+      const rows = [{ ...listed[0], draftGeneration: 5 }];
+      const earlier = deferred<typeof rows>();
+      const later = deferred<typeof rows>();
       const read = readDraftsAfterCommands(scope, () => earlier.promise);
-      const later = deferred<typeof listed>();
       const secondRead = readDraftsAfterCommands(scope, () => later.promise);
-      await act(async () => confirmDraftCommand(draft));
-      expect(Object.keys(held)).toHaveLength(1);
-      earlier.resolve(listed);
-      expect(await read).toEqual([]);
-      await act(async () => undefined);
-      expect(Object.keys(held)).toHaveLength(1);
-      later.resolve(listed);
-      expect(await secondRead).toEqual([]);
-      await act(async () => undefined);
-      expect(held).toEqual({});
-      // The next generation of proposals reuses the id; a later read sees it.
-      expect(await readDraftsAfterCommands(scope, async () => listed)).toEqual(listed);
-      // With no read in flight, a confirmation leaves nothing behind at all.
-      await act(async () => confirmDraftCommand(draft));
-      expect(held).toEqual({});
-    });
-  });
-
-  it("keeps a newer proposal that an older read returns for a confirmed generation", async () => {
-    await run(async () => {
+      const visible = (observed: typeof rows) =>
+        projectDraftList(observed, scope, currentChangeCommandRecords());
       await act(async () =>
-        beginDraftCommand(draft, {
-          target: "all",
-          mode: "apply",
-          draftGeneration: 1,
-          completesDraft: true,
-        }),
+        beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 5 }),
       );
-      const earlier = deferred<(typeof listed)[number][]>();
-      const read = readDraftsAfterCommands(scope, () => earlier.promise);
+      expect(visible(rows)).toEqual([]);
       await act(async () => confirmDraftCommand(draft));
-      const successor = { ...listed[0], draftGeneration: 2 };
-      earlier.resolve([successor]);
-      expect(await read).toEqual([successor]);
+      earlier.resolve(rows);
+      expect(await read).toBe(rows);
+      expect(visible(rows)).toEqual([]);
+      later.resolve(rows);
+      expect(await secondRead).toBe(rows);
+      expect(visible(rows)).toEqual([]);
+      const fresh = rows.map((row) => ({ ...row }));
+      expect(await readDraftsAfterCommands(scope, async () => fresh)).toBe(fresh);
+      expect(shareDraftObservation(rows, fresh)).toBe(fresh);
+      expect(visible(fresh)).toEqual(fresh);
+      expect(visible(rows)).toEqual([]);
+      const successor = [{ ...rows[0], draftGeneration: 6 }];
+      expect(visible(successor)).toEqual(successor);
+      // A later failure, observation omission or release cannot erase the older intent.
+      await act(async () => {
+        beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 6 });
+        failDraftCommand(draft, { code: "apply-offline" });
+      });
+      await act(async () => {
+        await readDraftsAfterCommands(scope, async () => []);
+      });
+      expect(visible(rows)).toEqual([]);
+      expect(visible(successor)).toEqual(successor);
+      await act(async () => resetDraftCommandRecords());
+      expect(visible(rows)).toEqual(rows);
     });
   });
 

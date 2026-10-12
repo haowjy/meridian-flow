@@ -43,6 +43,20 @@ commit, viewport, run-owned identities, request scope/order, screenshots, clean
 console and fresh manuscript/draft readback. Read-only API success does not prove
 writer interaction.
 
+## Whole Apply observation/projection (mock stack)
+
+Stage an existing-document proposal in an owned named Work. On the Work Files
+page, intercept that Work's whole-Apply request before clicking Apply all
+changes; hold its response. PASS: the file disappears immediately while the
+server response is pending. Release the response, then read live with `./mf`:
+the proposed text is present, with no file resurrection. Stage another proposal
+on the same document and Work; it must reappear without reload, even when Apply
+kept the same room generation.
+Record exact request identity/order and browser errors, and stop only the stack
+started for this run. The command-record regression complements this runtime
+check by returning a generation-5 server row after Apply confirmation: the raw
+list remains identical, the projected list is empty, and generation 6 reappears.
+
 ## Rich-only paragraph changes (CLI and visual)
 
 With this worktree's mock stack running, seed `## Scene` followed by

@@ -1,5 +1,6 @@
 /** Shared draft commands, selection outcomes, distinct list/preview read fences. */
 import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
+import { replaceEqualDeep } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { create } from "zustand";
 import type { DraftCommandOutcome } from "./draft-command-executor";
@@ -86,12 +87,12 @@ export type PendingDraftCommand =
 
 type DraftClaimRecord =
   | { phase: "pending"; command: PendingDraftCommand; token: symbol }
-  | { phase: "failed"; failure: DraftCommandFailure; at: number }
-  /** `draftGeneration` is the generation the command acted on: a newer proposal is not what it confirmed. */
-  | { phase: "confirmed"; at: number; draftGeneration?: number };
+  | { phase: "failed"; failure: DraftCommandFailure; at: number };
 
 type DraftCommandRecord = {
   claim?: DraftClaimRecord;
+  /** Account-scoped Apply intent: retained cached observations still name this generation. */
+  applied?: { draftGeneration: number | undefined; at: number };
   outcomes: Readonly<Record<string, ChangeCommandRecord>>;
 };
 export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
@@ -108,6 +109,20 @@ const useDraftCommandStore = create<{
   drains: {},
   clock: 0,
 }));
+
+/** Read-start clocks stay beside immutable observations, never inside server rows. */
+const observations = new WeakMap<object, { fence: number; epoch: number }>();
+
+/** Structural sharing preserves read identity across payload changes, never across commands. */
+export function shareDraftObservation(prior: unknown, next: unknown): unknown {
+  if (!prior) return next;
+  const before = observations.get(prior as object);
+  const after = observations.get(next as object);
+  if (before?.fence !== after?.fence || before?.epoch !== after?.epoch) return next;
+  const shared = replaceEqualDeep(prior, next);
+  if (after) observations.set(shared as object, after);
+  return shared;
+}
 
 let boundAccountId: string | null = null;
 /** Moves on every account change: work admitted in an earlier one can no longer publish. */
@@ -149,8 +164,6 @@ function mayPublish(by: Publisher): boolean {
 function draftOf(by: Publisher): DraftRef {
   return "token" in by ? by.draft : by;
 }
-/** Whole Apply retains its generation fence until all earlier list reads finish. */
-const readsInFlight = new Set<{ fence: number }>();
 
 function scopePrefix({ projectId, workId }: DraftScope): string {
   return `${projectId}\u0000${workId}\u0000`;
@@ -174,7 +187,10 @@ function updateDraftRecord(
     const { [key]: _prior, ...rest } = state.records;
     return {
       clock,
-      records: next.claim || Object.keys(next.outcomes).length ? { ...rest, [key]: next } : rest,
+      records:
+        next.claim || next.applied || Object.keys(next.outcomes).length
+          ? { ...rest, [key]: next }
+          : rest,
     };
   });
 }
@@ -188,7 +204,8 @@ function setRecord(
     draftCommandKey(draft),
     (prior, clock) => {
       const claim = record(clock);
-      return { ...(claim ? { claim } : {}), outcomes: prior.outcomes };
+      const { claim: _claim, ...retained } = prior;
+      return { ...retained, ...(claim ? { claim } : {}) };
     },
     advance,
   );
@@ -287,85 +304,85 @@ export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
   if (!mayPublish(by)) return;
   const draft = draftOf(by);
   const prior = recordFor(draft);
-  const draftGeneration = prior?.phase === "pending" ? prior.command.draftGeneration : undefined;
-  setRecord(
-    draft,
-    (at) => ({
-      phase: "confirmed",
-      at,
-      ...(draftGeneration === undefined ? {} : { draftGeneration }),
+  if (
+    prior?.phase !== "pending" ||
+    prior.command.target !== "all" ||
+    prior.command.mode !== "apply"
+  )
+    return;
+  const draftGeneration = prior.command.draftGeneration;
+  updateDraftRecord(
+    draftCommandKey(draft),
+    ({ claim: _claim, ...retained }, at) => ({
+      ...retained,
+      applied: {
+        at,
+        draftGeneration:
+          retained.applied?.draftGeneration === undefined
+            ? draftGeneration
+            : Math.max(retained.applied.draftGeneration, draftGeneration ?? 0),
+      },
     }),
     true,
   );
-  retireConfirmations();
-}
-
-/** List confirmations retire after older reads; selection intents outlive retained observations. */
-function retireConfirmations(): void {
-  const listFence = Math.min(...Array.from(readsInFlight, (read) => read.fence));
-  useDraftCommandStore.setState((state) => ({
-    records: Object.fromEntries(
-      Object.entries(state.records).flatMap(([key, record]) => {
-        const claim =
-          record.claim?.phase === "confirmed" && record.claim.at <= listFence
-            ? undefined
-            : record.claim;
-        const outcomes = record.outcomes;
-        if (
-          claim === record.claim &&
-          Object.keys(outcomes).length === Object.keys(record.outcomes).length
-        )
-          return [[key, record]];
-        return claim || Object.keys(outcomes).length
-          ? [[key, { ...(claim ? { claim } : {}), outcomes }]]
-          : [];
-      }),
-    ),
-  }));
 }
 
 /**
- * Run one Work draft-list read. Drafts confirmed after the read started are
- * removed from its result, and failures held for drafts the read no longer
- * lists are dropped.
+ * Read immutable Work list evidence. Only failures predating this read may
+ * retire on omission; settled Apply intents outlive cached/held observations.
  */
 export async function readDraftsAfterCommands<T extends ListedDraft>(
   scope: DraftScope,
   read: () => Promise<T[]>,
 ): Promise<T[]> {
-  const inFlight = { fence: useDraftCommandStore.getState().clock };
-  readsInFlight.add(inFlight);
-  try {
-    const listed = await read();
-    const { records } = useDraftCommandStore.getState();
-    const drafts = listed.filter((draft) => {
-      const record = records[draftCommandKey({ ...scope, ...draft })]?.claim;
-      if (record?.phase !== "confirmed" || record.at <= inFlight.fence) return true;
-      // A newer proposal under the same id is not what the command confirmed.
-      return (
-        record.draftGeneration !== undefined &&
-        draft.draftGeneration !== undefined &&
-        draft.draftGeneration > record.draftGeneration
-      );
-    });
-    const stillListed = new Set(drafts.map((draft) => draftCommandKey({ ...scope, ...draft })));
-    const prefix = scopePrefix(scope);
-    const gone = Object.entries(records).filter(
-      ([key, record]) =>
-        record.claim?.phase === "failed" &&
-        record.claim.at <= inFlight.fence &&
-        key.startsWith(prefix) &&
-        !stillListed.has(key),
-    );
-    for (const [key] of gone) {
-      const [documentId = "", draftId = ""] = key.slice(prefix.length).split("\u0000");
-      setRecord({ ...scope, documentId, draftId }, () => null);
-    }
-    return drafts;
-  } finally {
-    readsInFlight.delete(inFlight);
-    retireConfirmations();
+  const fence = useDraftCommandStore.getState().clock;
+  const epoch = accountEpoch;
+  const listed = await read();
+  observations.set(listed, { fence, epoch });
+  if (!accountEpochIs(epoch)) return listed;
+  const { records } = useDraftCommandStore.getState();
+  const stillListed = new Set(listed.map((draft) => draftCommandKey({ ...scope, ...draft })));
+  const prefix = scopePrefix(scope);
+  const gone = Object.entries(records).filter(
+    ([key, record]) =>
+      record.claim?.phase === "failed" &&
+      record.claim.at <= fence &&
+      key.startsWith(prefix) &&
+      !stillListed.has(key),
+  );
+  for (const [key] of gone) {
+    const [documentId = "", draftId = ""] = key.slice(prefix.length).split("\u0000");
+    setRecord({ ...scope, documentId, draftId }, () => null);
   }
+  return listed;
+}
+
+/** The whole intent addressed to this observation; newer proposals never inherit it. */
+export function wholeDraftDisposition(
+  records: ChangeCommandRecords,
+  draft: DraftRef,
+  generation: number | undefined,
+  observed?: object,
+): ChangeCommandMode | null {
+  const record = records.drafts[draftCommandKey(draft)];
+  const addressed = (basis: number | undefined) =>
+    basis === undefined
+      ? generation === undefined
+      : generation !== undefined && generation <= basis;
+  const read = observed ? observations.get(observed) : undefined;
+  if (
+    record?.applied &&
+    addressed(record.applied.draftGeneration) &&
+    (!read || (read.epoch === accountEpoch && read.fence < record.applied.at))
+  )
+    return "apply";
+  const claim = record?.claim;
+  if (claim?.phase === "pending" && claim.command.target === "all")
+    return addressed(claim.command.draftGeneration) ? claim.command.mode : null;
+  const queued = Object.values(records.queued).find(
+    (entry) => entry.prefix === draftCommandKey(draft) && entry.target === "all",
+  );
+  return queued?.mode ?? null;
 }
 
 /** Every held record; look rows up with `draftCommandKey`. */
@@ -727,7 +744,6 @@ export function confirmChangeCommand(
     operationIds: selection.operationIds,
     ...(selection.keys ? { keys: selection.keys } : {}),
   }));
-  retireConfirmations();
 }
 
 type FailedRecord = Extract<ChangeCommandRecord, { phase: "failed" }>;
@@ -773,7 +789,10 @@ export async function readPreviewAfterChangeCommands(
   read: () => Promise<DraftPreviewResponse>,
 ): Promise<DraftPreviewResponse> {
   const fence = useDraftCommandStore.getState().clock;
+  const epoch = accountEpoch;
   const preview = await read();
+  observations.set(preview, { fence, epoch });
+  if (!accountEpochIs(epoch)) return preview;
   if (preview.status === "active")
     dropFailuresWithoutOperations(draftCommandKey(draft), preview, fence);
   return preview;

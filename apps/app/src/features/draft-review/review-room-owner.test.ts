@@ -1,5 +1,13 @@
 /** The room owner's addressed observation protocol, using the production reducer. */
 import { describe, expect, it } from "vitest";
+import {
+  beginDraftCommand,
+  confirmDraftCommand,
+  currentChangeCommandRecords,
+  readDraftsAfterCommands,
+  readPreviewAfterChangeCommands,
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { draftA, listed, previewOf } from "@/test-support/draft-review-scope";
 import {
   type DraftReviewAction,
@@ -169,4 +177,47 @@ describe("review-room transition table", () => {
         expect(state.surface.focus).toEqual({ classId: "class-1", operationIds: ["1"] });
     }
   });
+});
+
+it("retains an applied row's generation evidence without presenting it as a proposal", async () => {
+  resetDraftCommandRecords();
+  const scope = { projectId: "project-a", workId: "work-a" };
+  const draft = { ...scope, ...draftA };
+  const claim = beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 5 });
+  if (!claim) throw new Error("claim refused");
+  confirmDraftCommand(claim);
+  const observe = (generation: number) =>
+    reviewRoomObservations(
+      [{ ...listed, draftGeneration: generation }],
+      proposal(generation, "1"),
+      draftA,
+      null,
+      false,
+      { scope, records: currentChangeCommandRecords() },
+    );
+  expect(observe(5)).toEqual([
+    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: false },
+    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: false },
+  ]);
+  expect(observe(6)).toEqual([
+    { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
+    { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
+  ]);
+  const freshRows = await readDraftsAfterCommands(scope, async () => [
+    { ...listed, draftGeneration: 5 },
+  ]);
+  const freshPreview = await readPreviewAfterChangeCommands(draft, async () => proposal(5, "2"));
+  expect(
+    reviewRoomObservations(freshRows, freshPreview, draftA, null, false, {
+      scope,
+      records: currentChangeCommandRecords(),
+    }),
+  ).toEqual([
+    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: true },
+    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: true },
+  ]);
+  expect(
+    observe(5).every((action) => action.type === "generationObserved" && !action.proposal),
+  ).toBe(true);
+  resetDraftCommandRecords();
 });

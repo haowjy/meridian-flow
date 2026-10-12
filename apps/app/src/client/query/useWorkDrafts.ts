@@ -11,7 +11,12 @@ import { useCallback, useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
-import { readDraftsAfterCommands } from "./draft-command-record";
+import {
+  readDraftsAfterCommands,
+  shareDraftObservation,
+  useChangeCommandRecords,
+} from "./draft-command-record";
+import { projectDraftList } from "./draft-projection";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -35,6 +40,7 @@ export function workDraftsQueryOptions(projectId: string, workId: string) {
         listWorkDrafts(projectId, workId).then((response) => response.drafts),
       ),
     staleTime: 15_000,
+    structuralSharing: shareDraftObservation,
   };
 }
 
@@ -56,9 +62,21 @@ export function useWorkDrafts(
     enabled: enabled && Boolean(result.data?.length),
     workId: null,
   });
+  const records = useChangeCommandRecords();
+  const visible = useMemo(
+    () =>
+      result.data
+        ? projectDraftList(
+            result.data,
+            { projectId: projectId ?? "", workId: workId ?? "" },
+            records,
+          )
+        : null,
+    [result.data, projectId, workId, records],
+  );
   const files = useMemo(
-    () => (enabled && result.data ? projectWorkDraftFiles(result.data, catalog) : null),
-    [enabled, result.data, catalog],
+    () => (enabled && visible ? projectWorkDraftFiles(visible, catalog) : null),
+    [enabled, visible, catalog],
   );
   const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
   const fileForDocument = useCallback(
@@ -80,6 +98,13 @@ export function useWorkDrafts(
 
   return {
     ...result,
+    data: visible,
+    status:
+      result.status === "ready" || result.status === "empty"
+        ? visible?.length
+          ? "ready"
+          : "empty"
+        : result.status,
     drafts: result.data,
     files,
     fileForDocument,
