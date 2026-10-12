@@ -18,7 +18,10 @@ export function effectiveActionIndex(
   keys: ReadonlySet<string>,
   consumptionEligible: (part: StoredInversePart) => boolean = () => true,
 ) {
-  const effective = history.filter((part) => !isRolledBack(history, part));
+  const rolledBack = new Set(
+    history.filter((part) => part.kind === "rollback").flatMap((part) => part.targets.map(partKey)),
+  );
+  const effective = history.filter((part) => !rolledBack.has(partKey(part)));
   const grouped = new Map<string, StoredInversePart[]>();
   for (const part of effective) {
     if (
@@ -31,20 +34,22 @@ export function effectiveActionIndex(
     parts.push(part);
     grouped.set(part.actionId, parts);
   }
+  const consumption = new Map<string, Set<string>>();
+  for (const part of effective) {
+    if (part.kind !== "redo" || !consumptionEligible(part)) continue;
+    for (const id of part.consumes) {
+      const targets = consumption.get(id) ?? new Set<string>();
+      for (const target of part.targets) targets.add(partKey(target));
+      consumption.set(id, targets);
+    }
+  }
   const actions = [...grouped]
     .map(([id, parts]) => {
-      const consumed = new Set(
-        effective
-          .filter(
-            (part) =>
-              part.kind === "redo" && consumptionEligible(part) && part.consumes.includes(id),
-          )
-          .flatMap((part) => part.targets.map(partKey)),
-      );
+      const consumed = consumption.get(id);
       const targets = new Set(
         parts
           .flatMap((part) => part.targets.map(partKey))
-          .filter((key) => keys.has(key) && !consumed.has(key)),
+          .filter((key) => keys.has(key) && !consumed?.has(key)),
       );
       return { id, parts, targets, newest: Math.max(...parts.map((part) => part.id)) };
     })
@@ -57,5 +62,5 @@ export function effectiveActionIndex(
       accepted.push(action);
       byPart.set(target, accepted);
     }
-  return { actions, byPart };
+  return { actions, byPart, rolledBack };
 }

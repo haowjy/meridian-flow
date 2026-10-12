@@ -142,6 +142,7 @@ export type {
   InverseSelection,
   PartClassification,
   PartState,
+  PreparedEditRoots,
 } from "./undo/forward-inverse.js";
 export {
   admitInverseReceipt,

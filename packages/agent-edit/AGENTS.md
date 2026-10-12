@@ -61,6 +61,11 @@ per target edit, with transaction-delta parts and aliases; the host persists
 those edits under the policy's action IDs. Model Undo uses one action per target
 edit, including multi-edit counts committed atomically; card actions may group
 edits. Normalization is per edit, never per action.
+`prepareEditRoots` exposes batched classification, root inspection and inverse
+computation over one immutable view. Hosts reuse that prepared lineage within
+an invocation; after advancing a scratch plan, rebuild it before inspecting or
+computing again. It is not a persisted cache.
+
 This primitive does not route commands or choose destinations. The server uses
 it for receipt actions, failed-response rollback and the model's per-document
 undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable

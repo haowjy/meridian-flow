@@ -148,6 +148,7 @@ class Lineage {
   readonly backward = new Map<Key, Key>();
   readonly owners = new Map<Key, InversePart>();
   readonly inverseRestorations = new Set<Key>();
+  readonly rollbackTargets = new Set<string>();
   readonly ordered: InversePart[];
   private readonly roots = new Map<Key, Key>();
   private readonly families = new Map<Key, Key[]>();
@@ -180,6 +181,7 @@ class Lineage {
       this.backward = base.backward;
       this.owners = base.owners;
       this.inverseRestorations = base.inverseRestorations;
+      this.rollbackTargets = base.rollbackTargets;
       this.roots = base.roots;
       this.families = base.families;
       this.effectRoots = base.effectRoots;
@@ -191,9 +193,13 @@ class Lineage {
       this.backward = new Map(base.backward);
       this.owners = new Map(base.owners);
       this.inverseRestorations = new Set(base.inverseRestorations);
+      this.rollbackTargets = new Set(base.rollbackTargets);
       this.roots = new Map(base.roots);
     }
     for (const p of added ? [added] : this.ordered) {
+      if (p.kind === "rollback")
+        for (const target of p.targets)
+          this.rollbackTargets.add(`${target.editId}:${target.ordinal}`);
       for (const k of clocks(p.effect.deleted)) if (!this.owners.has(k)) this.owners.set(k, p);
       for (const alias of p.aliases)
         for (let n = 0; n < alias.len; n++) {
@@ -355,13 +361,7 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     if (undone) {
       // Only rollback of this selected part is terminal. Rolling back a later
       // inverse restores this part's previous state, not its authorship lifetime.
-      const terminal = index.ordered.some(
-        (p) =>
-          p.kind === "rollback" &&
-          p.targets.some(
-            (target) => target.editId === part.editId && target.ordinal === part.ordinal,
-          ),
-      );
+      const terminal = index.rollbackTargets.has(`${part.editId}:${part.ordinal}`);
       return { part, state: terminal ? "rolled_back" : "undone", reasons: [] };
     }
     return changed("items changed since");
@@ -575,12 +575,13 @@ function computePreparedInverse(
   }
 }
 
-/** One immutable-view lineage for host holds; discard it before mutating that view. */
+/** One immutable-view lineage for host inspection and inverses; discard before mutation. */
 export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): PreparedEditRoots {
   return preparedRoots(new Lineage(doc, history));
 }
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
+  classify(parts: readonly InversePart[]): PartClassification[];
   compute(
     selection: readonly InverseSelection[],
     action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
@@ -593,6 +594,9 @@ function preparedRoots(index: Lineage): PreparedEditRoots {
   return {
     forView(view) {
       return preparedRoots(new Lineage(view, history, index));
+    },
+    classify(parts) {
+      return parts.map((part) => classify(index, part));
     },
     compute(selection, action) {
       return computePreparedInverse(doc, history, selection, action, index);
