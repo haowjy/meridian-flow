@@ -465,3 +465,13 @@ it("keeps a manuscript review while validating its renamed live identity", async
   ).toBeNull();
   expect(await restoreDockDocument(document, replica)).toBeNull();
 });
+
+it("round trips a changed selection on the same dock review address", () => {
+  const disk = storage();
+  const first = createDockDocumentStore(() => disk, "account");
+  const review = { workId: "work", draftId: "draft", changeId: "class:first" };
+  first.getState().commit(first.getState().claim(), { ...document, review });
+  first.getState().setDocumentReview({ ...review, changeId: "class:second" });
+  const restored = createDockDocumentStore(() => disk, "account");
+  expect(restored.getState().restoring?.review).toEqual({ ...review, changeId: "class:second" });
+});

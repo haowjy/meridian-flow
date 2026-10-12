@@ -79,6 +79,10 @@ export function createEditorDocumentCommand({
         target,
         preparedTab,
         options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
+        options?.changeId ??
+          (sameDocument && (!options?.draftId || options.draftId === current.address.draftId)
+            ? current.address.changeId
+            : undefined),
       );
       const tab = next.tab;
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
@@ -156,6 +160,7 @@ export function prepareEditorDestination(
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
   draftId?: string,
+  changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
   const workspace = getContextTabs(projectId);
@@ -223,6 +228,7 @@ export function prepareEditorDestination(
         : workSelectionFor(destination, target.workId, noWorkId),
       ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
       draftId,
+      changeId: draftId ? changeId : undefined,
     } as ProjectAddress,
     state,
   };

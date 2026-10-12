@@ -4,10 +4,11 @@
  * refused move, a review). The Editor shows it as a band above the page; a
  * document beside the chat shows it in the dock header (`variant="header"`).
  */
+import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
@@ -60,6 +61,8 @@ export function DocumentIdentityBar({
   onOpenExisting,
   onCloseDraftOnly,
 }: DocumentIdentityBarProps) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useIdentityRowFit(rowRef);
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
@@ -142,6 +145,8 @@ export function DocumentIdentityBar({
           never shift when the bar transforms. Crumb text is text-sm to match
           the suggestion-popover rows it sits beside. */}
       <div
+        ref={rowRef}
+        data-document-identity-row
         className={cn(
           "flex items-center gap-1 font-mono text-ink-subtle text-sm",
           variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
@@ -287,4 +292,38 @@ function focusEditorProse(documentId: string) {
       `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
     )
     ?.focus();
+}
+
+/** One content-measured priority list for every presenting pane, independent of viewport. */
+function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const row = ref.current;
+    if (!row) return;
+    const fit = () => {
+      row.setAttribute("data-measuring", "");
+      for (let priority = 0; priority <= 4; priority++) {
+        row.dataset.collapse = String(priority);
+        const children = [...row.children].filter(
+          (child) => child instanceof HTMLElement && getComputedStyle(child).display !== "none",
+        ) as HTMLElement[];
+        const style = getComputedStyle(row);
+        const available =
+          row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const required =
+          children.reduce((width, child) => width + child.getBoundingClientRect().width, 0) +
+          Math.max(0, children.length - 1) * parseFloat(style.columnGap);
+        if (required <= available) break;
+      }
+      row.removeAttribute("data-measuring");
+    };
+    fit();
+    const resize = new ResizeObserver(fit);
+    resize.observe(row);
+    const mutations = new MutationObserver(fit);
+    mutations.observe(row, { childList: true, subtree: true, characterData: true });
+    return () => {
+      resize.disconnect();
+      mutations.disconnect();
+    };
+  }, [ref]);
 }

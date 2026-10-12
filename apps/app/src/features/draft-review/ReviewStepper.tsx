@@ -46,7 +46,7 @@ export function ReviewStepper({
       <span
         className={cn(
           "px-1 text-center text-caption text-muted-foreground tabular-nums",
-          compact ? "whitespace-nowrap" : "min-w-14",
+          compact ? "identity-step-count whitespace-nowrap" : "min-w-14",
           touch && "text-sm",
         )}
         aria-live="polite"
@@ -54,12 +54,12 @@ export function ReviewStepper({
         {focusedIndex >= 0 ? (
           compact ? (
             <>
-              <span className="@max-[36rem]:sr-only">
+              <span className="identity-count-long">
                 <Trans>
                   {position} of {count}
                 </Trans>
               </span>
-              <span aria-hidden className="hidden @max-[36rem]:inline">
+              <span aria-hidden className="identity-count-short hidden">
                 {position}/{count}
               </span>
             </>
@@ -70,10 +70,10 @@ export function ReviewStepper({
           )
         ) : compact ? (
           <>
-            <span className="@max-[36rem]:sr-only">
+            <span className="identity-count-long">
               {count === 1 ? <Trans>1 change</Trans> : <Trans>{count} changes</Trans>}
             </span>
-            <span aria-hidden className="hidden @max-[36rem]:inline">
+            <span aria-hidden className="identity-count-short hidden">
               {count}
             </span>
           </>
