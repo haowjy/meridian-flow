@@ -10,3 +10,25 @@ Delete an entry when it ships.
   Follow-up: pick and drop a vault with `.obsidian/app.json` in each, and check
   the selection's roots, the `appJsonUnread` reason and the report's Obsidian
   settings line; record results in the work item's evidence.
+
+- **A planned folder can draw twice for about half a second while
+  "Preparing".** The catalog can hold the planned folder before the plan's
+  answer is installed, and the provisional client folder hands off only after
+  that answer (a same-named existing folder must not swallow it). Seen at
+  282–782 ms in two D1 re-check runs; predates the per-row handoff. Follow-up:
+  let the provisional folder yield to a catalog row with the plan's path once
+  the plan resolves, without matching a pre-existing folder by name.
+  Evidence: `evidence/d1-fix/README.md` (runs 2 and 4) in the work item.
+
+- **The sending tab can flash "Sending from another window" for one frame.**
+  In every D1 re-check run, the status row in the tab that was sending showed
+  that copy for one 50 ms sample just before "Imported N files". The
+  sender-identity check likely loses the local session for one render as the
+  run finishes. Follow-up: keep the sending tab's identity until the finished
+  report is installed. Evidence: `evidence/d1-fix/run2-timeline.txt`.
+
+- **A document deleted through the API took about 11 s to leave the tree.**
+  `./mf doc rm` on imported `Lore/Sects` cleared from the sidebar ~11 s later
+  (D1 re-check run 4b). This may be pre-existing catalog wake latency rather
+  than import code; reproduce on `main` before fixing. Evidence:
+  `evidence/d1-fix/run4-delete-timeline.txt`.
