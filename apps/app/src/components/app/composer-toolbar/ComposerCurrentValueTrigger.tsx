@@ -69,7 +69,9 @@ export const ComposerCurrentValueStatus = forwardRef<
       title={tooltip}
       value={children}
       chevron={false}
-      className="cursor-default text-muted-foreground opacity-60 shadow-none hover:border-border hover:bg-background hover:text-muted-foreground active:scale-100"
+      // A fact, not a control: grey text without chip chrome, so it never
+      // reads as a disabled picker.
+      className="cursor-default border-transparent bg-transparent px-1 text-muted-foreground shadow-none hover:border-transparent hover:bg-transparent hover:text-muted-foreground active:scale-100 dark:border-transparent dark:bg-transparent dark:hover:bg-transparent"
     />
   );
 });

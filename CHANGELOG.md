@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Message box: in an existing chat, the agent shows as grey text instead of a dimmed chip that looked disabled, and the Work picker uses the same text size as the other pickers.
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.

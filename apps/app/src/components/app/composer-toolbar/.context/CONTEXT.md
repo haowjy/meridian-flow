@@ -76,8 +76,9 @@ The current-value presentation family shares one private visual chrome while
 keeping two truthful public contracts. `ComposerCurrentValueTrigger` renders the
 localized value and chevron for interactive panels and requires the toolbar
 binding intact; it must not infer open, busy, locked, or refusal policy.
-`ComposerCurrentValueStatus` renders the same geometry without a binding,
-chevron, activation, or popup relationship. Existing-chat Agent identity uses
+`ComposerCurrentValueStatus` renders the same height as grey text, without
+chip chrome, a binding, chevron, activation, or popup relationship: a fact
+must not look like a disabled picker. Existing-chat Agent identity uses
 that focusable `aria-disabled` status and preserves its explanatory tooltip.
 Current-value controls and the toolbar-owned overflow control share a 32px fine
 pointer height and a 44px coarse pointer height. The visible ellipsis and its

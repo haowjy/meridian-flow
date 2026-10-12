@@ -163,7 +163,11 @@ function useProspectiveWorkControl({
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity name={work?.name} unavailableLabel={unavailableLabel} />
+        <WorkIdentity
+          name={work?.name}
+          unavailableLabel={unavailableLabel}
+          className="text-[length:inherit]"
+        />
       </ComposerCurrentValueTrigger>
     ),
     panel: {
