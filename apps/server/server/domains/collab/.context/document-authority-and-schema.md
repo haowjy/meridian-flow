@@ -240,7 +240,9 @@ Recovery/publication and the write hook run only after the ambient commit.
 
 `createImportLinkBinder` vends a separate `ImportLinkBinder` capability with
 `targets: ReadonlyMap<occurrenceIndex, DocumentId>`. The ordinary binder has no
-such input and rejects it at runtime. Overrides validate through the prepared
+such input and rejects it at runtime. Import binding is always fresh and needs no
+room/coordinator dependency, so the import composition can construct it directly
+from the codec and link-scope ports. Overrides validate through the prepared
 project/viewer's identity catalog, never the written address. Invalid targets
 are reported and store an empty destination with no ref (no address fallback).
 `BoundWrite.aheadRefs` lists freshly minted refs by original occurrence index.

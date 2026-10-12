@@ -132,7 +132,7 @@ export interface LinkBinderDeps {
 /** Identity overrides are a separate capability, never on the model/editor binder. */
 export interface ImportLinkBinder {
   bindMarkdown(
-    input: BindMarkdownInput & {
+    input: Omit<BindMarkdownInput, "against"> & {
       targets?: ReadonlyMap<number, DocumentId>;
     },
   ): Promise<BoundWrite>;
@@ -142,12 +142,15 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   return binderFor(deps);
 }
 
+/** Fresh identity binding needs no current room or document projection. */
+export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "coordinator" | "model">;
+
 /** Only the import tree writer composes this capability; ordinary CollabDomain does not expose it. */
-export function createImportLinkBinder(deps: LinkBinderDeps): ImportLinkBinder {
+export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBinder {
   return binderFor(deps, true);
 }
 
-function binderFor(deps: LinkBinderDeps, planned = false): LinkBinder {
+function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false): LinkBinder {
   function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
     const classification = classifyFiletype(filetype);
     if (classification.kind === "tracked") return classification.schemaType;
@@ -168,6 +171,7 @@ function binderFor(deps: LinkBinderDeps, planned = false): LinkBinder {
 
   /** The holder's current nodes, projected from a private clone; null if it has no state yet. */
   async function currentBlocks(documentId: DocumentId): Promise<PMNode[] | null> {
+    if (!("coordinator" in deps)) throw new Error("Import binding is fresh only");
     let state: Uint8Array;
     try {
       state = await deps.coordinator.withDocument(documentId, async (doc) =>
@@ -265,6 +269,7 @@ function binderFor(deps: LinkBinderDeps, planned = false): LinkBinder {
   return {
     async bindMarkdown(input) {
       if (deps.inTransaction()) throw new LinkBindingInsideTransactionError();
+      if (planned && input.against) throw new Error("Import binding is fresh only");
       if (!planned && "targets" in input)
         throw new Error("Planned targets require the import binder");
       const key =

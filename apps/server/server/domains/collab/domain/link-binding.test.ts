@@ -50,7 +50,12 @@ function setup() {
     resolveFiletype: async () => "markdown",
     inTransaction: () => false,
   };
-  return { ordinary: createLinkBinder(deps), planned: createImportLinkBinder(deps), registered };
+  const { coordinator: _coordinator, model: _model, ...importDeps } = deps;
+  return {
+    ordinary: createLinkBinder(deps),
+    planned: createImportLinkBinder(importDeps),
+    registered,
+  };
 }
 
 describe("planned link binding", () => {

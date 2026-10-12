@@ -14,6 +14,7 @@ export {
   type BoundWrite,
   createImportLinkBinder,
   type ImportLinkBinder,
+  type ImportLinkBinderDeps,
   type LinkBinder,
   LinkBindingInsideTransactionError,
 } from "./domain/link-binding.js";
