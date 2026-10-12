@@ -274,13 +274,6 @@
       "when": 1791753367294,
       "tag": "0038_mean_gravity",
       "breakpoints": true
-    },
-    {
-      "idx": 39,
-      "version": "7",
-      "when": 1791760267807,
-      "tag": "0039_mean_golden_guardian",
-      "breakpoints": true
     }
   ]
 }

@@ -480,7 +480,6 @@ async function commitPreparedDiscard(
         updateMeta: {
           restorationAliases: restorationMetadataAliases(receipt.aliases),
           kind: "discard",
-          discardedJournalIds: rows.map((row) => row.id),
         },
       })
       .returning({ id: branchWriteJournal.id });
@@ -706,20 +705,6 @@ async function commitPreparedPush(
       throw new BranchPushCommitConflictError(input.branch.branchId);
     }
   }
-
-  const restorationIds = (input.transportRows ?? [])
-    .filter((row) => (row.updateMeta as { kind?: string } | null)?.kind === "discard")
-    .map((row) => row.id);
-  if (restorationIds.length)
-    await db
-      .update(branchWriteJournal)
-      .set({ status: "pushed", pushedAt: now })
-      .where(
-        and(
-          inArray(branchWriteJournal.id, restorationIds),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      );
 
   return lineage;
 }

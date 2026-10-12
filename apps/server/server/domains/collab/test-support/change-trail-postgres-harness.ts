@@ -553,7 +553,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
-      afterDraftResponseSettled: (document) => drafts.settleAfterResponse(document),
       fileAccess: createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
