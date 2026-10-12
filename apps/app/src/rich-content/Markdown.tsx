@@ -1,18 +1,9 @@
-/**
- * Markdown renderer wrapper around Streamdown with Meridian's prose tokens.
- *
- * In `streaming` mode we deliberately keep Streamdown's own block splitting
- * (one block per lexer token) so its per-block `memo` can hold: only the last,
- * unstable block re-parses per token. Merging blocks back into one (as an older
- * helper did) forced a full-document reparse on every token. Streaming and
- * `static` share Streamdown's container spacing, so nothing shifts when the
- * stream settles.
- */
+/** Canonical settled document rendering; Streamdown temporarily owns streaming and source-authoritative tokens. */
 
 import { type ComponentType, useMemo } from "react";
 import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
-
 import { cn } from "@/lib/utils";
+import { DocumentMarkdown } from "./DocumentMarkdown";
 
 import {
   type MarkdownReferenceOccurrence,
@@ -32,8 +23,8 @@ import {
 export type MarkdownProps = {
   children: string;
   /**
-   * Default is reading-scale prose (assistant answers, user turns — one
-   * size with the editor). `compact` is the dense meta voice for tool
+   * Default inherits the surface reading scale (chat stays one tier below
+   * the manuscript). `compact` is the dense meta voice for tool
    * output and helper summaries.
    */
   variant?: "compact";
@@ -79,8 +70,7 @@ const ALLOWED_TAGS = {
 };
 
 /**
- * Thin Streamdown shell. Warm Organic element styling lives in `globals.css`
- * under `.prose-tokens` — not a full `components` override map.
+ * Reference/skill turns retain their existing exact-source presentation during migration.
  */
 export function Markdown({
   children,
@@ -103,6 +93,20 @@ export function Markdown({
     ],
     [breaks, references, skills],
   );
+
+  if (!streaming && !exactSource) {
+    return (
+      <DocumentMarkdown
+        source={children}
+        breaks={breaks}
+        className={cn(
+          "prose-tokens document-prose document-prose--chat",
+          variant === "compact" && "text-tier-compact",
+          className,
+        )}
+      />
+    );
+  }
 
   return (
     <TranscriptReferenceContext.Provider

@@ -41,7 +41,9 @@ async function renderFence(fence: string) {
     host.remove();
     style.remove();
   });
-  await act(async () => root.render(createElement(Markdown, null, fence)));
+  await act(async () =>
+    root.render(createElement(Markdown, { mode: "streaming", children: fence })),
+  );
   const block = host.querySelector<HTMLElement>('[data-streamdown="code-block"]');
   if (!block) throw new Error("no code block rendered");
   return {
