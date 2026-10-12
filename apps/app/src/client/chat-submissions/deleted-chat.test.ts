@@ -393,3 +393,25 @@ it("own DELETE's intent cannot survive an account rebind epoch", async () => {
   expect(f.target.notices).toHaveLength(1);
   own.cancel();
 });
+
+it("incomplete own-delete releases its mark before restored writing is deleted elsewhere", async () => {
+  const { bindChatSubmissions } = await import("./index");
+  bindChatSubmissions("owner", () => true);
+  const own = beginOwnChatDelete("owner", "chat");
+  own.confirmed();
+  const f = fixture();
+  const read = f.ports.records;
+  f.ports.records = () => null;
+  expect(await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports)).toBe(false);
+  f.ports.records = read;
+  for (const entry of f.records()) f.ports.retire(entry.recordId);
+  f.target.handoff();
+  f.source.updateDraft({
+    text: "Fresh restored writing",
+    snapshot: f.snapshot("Fresh restored writing"),
+  });
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Fresh restored writing",
+  );
+});

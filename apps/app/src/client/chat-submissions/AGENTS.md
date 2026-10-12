@@ -65,8 +65,9 @@ turned into a resubmittable composer failure. The driver chooses Edit's cohort u
 its lock. Local write failure exposes Retry but never authorizes Edit or re-mint.
 
 An empty journal is not a dissolve signal. An observer that last saw creation
-confirms the server destination: 200 loads it, 404 permits dissolution, and an
-inconclusive response preserves the destination and last-known rows. Only this
+confirms the server destination: 200 loads it, 404 permits dissolution unless
+server-confirmed `thread_deleted` or `project_deleted` sends it to deleted-chat
+cleanup instead, and an inconclusive response preserves the destination and last-known rows. Only this
 tab's explicit Edit bypasses that check. Pane disposal fences only its recovery
 session; account disposal, not unrelated pane teardown, invalidates admissions.
 
@@ -96,7 +97,8 @@ synchronous under the lock. Refused source storage can duplicate words, never lo
 Send clears it. Then every journal record and this tab's old box are cleared, and
 the surface leaves the deleted chat. Hidden, collapsed, covered and index-warm
 surfaces move nothing. Own Delete intent is published before its request, fenced
-to account and bind epoch, and cancelled on failure. While pending, all cleanup
+to account and bind epoch, and released when its confirmed cleanup returns
+(finished or not), or cancelled on DELETE failure. While pending, all cleanup
 for that chat only clears, like confirmed own Delete and project deletion.
 `thread_not_found` and the never-created-chat (O4) lifecycle are unchanged.
 
