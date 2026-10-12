@@ -29,6 +29,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     command fields). Seed embeds its sends' envelopes and exits with their worst
     exit. `--fields` always preserves terminal `type`, `command`, `outcome` and
     `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason.
+    `terminalResult` is the single constructor: it returns the typed envelope
+    and its mapped exit; proven outcomes require null reason, unproven and timeout
+    require a reason. Cancel also uses it for its acknowledgement (retaining
+    not-found exit 3).
     Run failures are results; CLI errors remain on stderr. `EXIT` in `src/core/cli-error.ts` is the exit-code contract. Set
     `process.exitCode`; never call `process.exit()` (it truncates piped output).
   - **Missing data** means a new server route behind the debug gate
@@ -55,9 +59,13 @@ cookie and Portless CA. The shared client owns connected gating, replay,
 deduplication, gaps and reconnect/resume. A CLI subscription queue bounds waits
 by the command deadline; terminal/auth closes remain exit 4. `stream.ts` only
 maps events, prints them and runs the existing CLI follow predicates. Those
-predicates are not yet the shared follow session, so the existing run-outcome
-limitations still apply. In particular `tail --until-idle` waits for the next
-`turn.finished` or `turn.failed`, not confirmed idle. On a deadline, send and
+predicates are not yet the shared follow session, so send still cannot prove which
+reply answered its message. `tail --until-idle` reads an initial snapshot and
+returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
+confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
+(no awake lease), and no writer-provenance message in `liveState.pending.items`.
+Otherwise it keeps following from the last seq under the same deadline.
+On a deadline, send and
 until-idle tail read a final snapshot and report `stillRunning`, pending writer
 messages (`owed`), and `next`; they never cancel. The pending projection is
 mandatory. Before reporting complete, send checks that the admitted user turn id

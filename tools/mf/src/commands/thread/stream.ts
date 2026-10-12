@@ -31,6 +31,8 @@ export type FollowOptions = {
   present?: (event: CliEvent) => { value: Record<string, unknown>; line: string | null } | null;
   /** Return true to stop following after this event has been emitted. */
   shouldStop?: (event: CliEvent) => boolean;
+  /** Idle lease/pending updates can arrive after the final turn event. */
+  shouldStopState?: (state: ThreadLiveState) => boolean;
   transport?: ThreadTransport;
 };
 
@@ -70,7 +72,8 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       switch (message.type) {
         case "live":
           state = message.state;
-          if (options.catchupOnly) return { lastSeq, truncated, stoppedBy: null, state };
+          if (options.catchupOnly || options.shouldStopState?.(state))
+            return { lastSeq, truncated, stoppedBy: null, state };
           break;
         case "event": {
           const stop = consume(message.event.seq, message.event);

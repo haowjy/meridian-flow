@@ -404,6 +404,97 @@ describe("thread", () => {
     }
   });
 
+  it("tail --until-idle follows both consecutive replies before confirming idle", async () => {
+    const isolated = await startFakeStack();
+    try {
+      await isolated.mf(["thread", "send", THREAD_ID, "steer behind completed run", "--no-wait"]);
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--since",
+        "0",
+        "--until-idle",
+        "--timeout",
+        "1s",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.ok);
+      const records = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(
+        records.filter((record) => record.type === "turn.finished").map((record) => record.turnId),
+      ).toEqual(["reply-first", "reply-second"]);
+      expect(records.at(-1)).toMatchObject({
+        type: "result",
+        command: "thread.tail",
+        outcome: "complete",
+        reason: null,
+        turnId: "reply-second",
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("tail confirms the lease release after a turn finishes, not the turn alone", async () => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.snapshotPolicy.releaseDelayMs = 40;
+      await isolated.mf(["thread", "send", THREAD_ID, "hi", "--no-wait"]);
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--until-idle",
+        "--timeout",
+        "200ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.ok);
+      const records = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(records).toContainEqual(
+        expect.objectContaining({ type: "event", name: "meridian.thread.status" }),
+      );
+      expect(records.at(-1)).toMatchObject({
+        outcome: "complete",
+        reason: null,
+        turnId: "turn-a1",
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("tail --until-idle returns immediately on an already-idle chat", async () => {
+    const isolated = await startFakeStack();
+    try {
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--until-idle",
+        "--timeout",
+        "100ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.ok);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        type: "result",
+        command: "thread.tail",
+        outcome: "complete",
+        reason: null,
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it("tail --until-idle reports a final timeout snapshot without stopping the run", async () => {
     const isolated = await startFakeStack();
     try {
