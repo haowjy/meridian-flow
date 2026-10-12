@@ -64,7 +64,7 @@ type PastedWikilink = WikilinkOccurrence | Extract<ObsidianFinding, { kind: "esc
 
 /** App resolution keeps its own filename/display policy; syntax belongs to markup. */
 function pastedWikilinks(text: string): PastedWikilink[] {
-  return scanObsidian(text).findings.flatMap<PastedWikilink>((finding) => {
+  return scanObsidian(text, { preprocessed: true }).findings.flatMap<PastedWikilink>((finding) => {
     if (finding.kind === "escape") return [finding];
     if (finding.kind !== "wikilink" || finding.embed) return [];
     const segments = finding.linkpath.split("/").map((segment) => segment.trim());

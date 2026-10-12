@@ -42,7 +42,8 @@ returned, table-preprocessed source. It uses the codec's positioned Markdown
 parser, masking frontmatter and comments without changing offsets; code,
 comments and Markdown destinations never yield wikilinks. It reports only,
 without resolution or prose conversion. Paste retains its app-side ranking
-and display policy.
+and display policy. Its parsed text nodes use `{ preprocessed: true }` so
+table ingress cannot shift offsets inside the existing ProseMirror text.
 
 `splitObsidianFrontmatter(text)` also ships alone at
 `@meridian/markup/obsidian/frontmatter`, without parser or codec imports.

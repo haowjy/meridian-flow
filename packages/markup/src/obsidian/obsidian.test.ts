@@ -152,6 +152,15 @@ describe("syntax boundaries", () => {
     expect(source.slice(link?.from, link?.to)).toBe("[[After]]");
   });
 
+  it("keeps already-parsed paste text and its offsets without repeating ingress", () => {
+    const text = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
+    const { source, findings } = scanObsidian(text, { preprocessed: true });
+    expect(source).toBe(text);
+    expect(findings.find((finding) => finding.kind === "wikilink")?.from).toBe(
+      text.indexOf("[[After]]"),
+    );
+  });
+
   it("reports unclosed comments through EOF without leaking their links", () => {
     expect(scanObsidian("%% [[hidden]]").findings).toEqual([
       { kind: "comment", syntax: "obsidian", from: 0, to: 13 },

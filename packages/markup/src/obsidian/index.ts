@@ -35,6 +35,11 @@ export type ObsidianFinding =
   | (ObsidianRange & { kind: "footnoteReference" | "footnoteDefinition"; identifier: string })
   | (ObsidianRange & { kind: "markdownLink"; url: string; image: boolean });
 
+export type ObsidianScanOptions = {
+  /** Skip ingress for already-parsed editor text; findings must index the existing text node. */
+  preprocessed?: boolean;
+};
+
 export type ObsidianScan = {
   /** Offsets are UTF-16 indices into this source, not necessarily the input before preprocessing. */
   source: string;
@@ -85,11 +90,13 @@ function mask(source: string, ranges: readonly ObsidianRange[]): string {
 }
 
 /** Reports syntax only: it never resolves targets, validates YAML, or rewrites prose. */
-export function scanObsidian(sourceText: string): ObsidianScan {
+export function scanObsidian(sourceText: string, options: ObsidianScanOptions = {}): ObsidianScan {
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const rawFrontmatter = splitObsidianFrontmatter(sourceText).frontmatter;
   const prefix = rawFrontmatter ? sourceText.slice(0, rawFrontmatter.to) : "";
-  const source = prefix + normalizeGfmTableHardBreaks(sourceText.slice(prefix.length));
+  const source = options.preprocessed
+    ? sourceText
+    : prefix + normalizeGfmTableHardBreaks(sourceText.slice(prefix.length));
   const frontmatter = splitObsidianFrontmatter(source).frontmatter;
   const findings: ObsidianFinding[] = frontmatter ? [frontmatter] : [];
   const hidden: ObsidianRange[] = frontmatter ? [frontmatter] : [];
