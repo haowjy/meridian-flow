@@ -74,6 +74,11 @@ function MobileEntryActionsMenu({
   );
 }
 
+/** The area's own root arrives as `/` or null; only a real folder path is looked up. */
+function isScopeFolder(folder: string | null): folder is string {
+  return folder !== null && folder !== "/" && folder !== "";
+}
+
 export function MobileContextBrowser({
   projectId,
   editorWorkId,
@@ -160,7 +165,7 @@ function MobileFolderListing({
   // the tree isn't loaded yet (or the folder URL is stale), fall back to an
   // empty list — the server still rejects duplicates, this just gives live
   // client-side feedback matching the desktop tree panel.
-  const currentEntry = folder ? catalog?.findPath(folder) : catalog?.root;
+  const currentEntry = isScopeFolder(folder) ? catalog?.findPath(folder) : catalog?.root;
   const currentDir = currentEntry?.kind === "dir" ? currentEntry : null;
   const siblings = currentDir ? (catalog?.children(currentDir.entryId) ?? []) : [];
 
@@ -251,7 +256,7 @@ function FolderListingBody({
     );
   }
 
-  const found = folder ? catalog.findPath(folder) : catalog.root;
+  const found = isScopeFolder(folder) ? catalog.findPath(folder) : catalog.root;
   const dir = found?.kind === "dir" ? found : null;
   if (!dir) {
     // Stale URL (folder renamed/deleted out from under the route) — honest

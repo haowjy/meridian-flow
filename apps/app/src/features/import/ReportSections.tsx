@@ -101,6 +101,11 @@ export function ItemRow({
   );
 }
 
+function RootFileIcon({ name }: { name: string }) {
+  const Icon = fileKindIcon(name);
+  return <Icon aria-hidden className="size-4" />;
+}
+
 function entryIcon(row: EntryRow) {
   const Icon = fileKindIcon(row.name);
   return <Icon aria-hidden className="size-4" />;
@@ -400,7 +405,7 @@ export function RootsBlock({
               root.kind === "folder" ? (
                 <Folder aria-hidden className="size-4" />
               ) : (
-                <FileText aria-hidden className="size-4" />
+                <RootFileIcon name={root.name} />
               )
             }
             actions={
