@@ -150,6 +150,7 @@ function createFake() {
   const snapshotPolicy = { running: true, releaseDelayMs: 0, delayMs: 0 };
   const replyPolicy = { holdUntilSubscribed: false };
   const heldReplies: (() => void)[] = [];
+  const afterSnapshot: (() => void)[] = [];
   let leaseReleasePending = false;
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
@@ -177,6 +178,15 @@ function createFake() {
           ? { kind: "awake", phase: "generating", cancelRequested: false }
           : { kind: "asleep" },
     };
+  };
+
+  const scheduleReply = (
+    reply: () => void,
+    delayMs: number,
+    hold = replyPolicy.holdUntilSubscribed,
+  ) => {
+    if (hold) heldReplies.push(reply);
+    else setTimeout(reply, delayMs);
   };
 
   const runScenario = (text: string) => {
@@ -305,8 +315,7 @@ function createFake() {
       }
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
     };
-    if (replyPolicy.holdUntilSubscribed || text.includes("reconnect")) heldReplies.push(reply);
-    else setTimeout(reply, 10);
+    scheduleReply(reply, 10, replyPolicy.holdUntilSubscribed || text.includes("reconnect"));
     return runId;
   };
 
@@ -443,18 +452,21 @@ function createFake() {
           summary: body.text,
           enqueuedAt: "2026-01-02T00:00:00.000Z",
         });
-        setTimeout(() => {
+        scheduleReply(() => {
           first.status = "complete";
           first.text = "First answer";
           second.status = "streaming";
           publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: first.id } as AGUIEvent);
           publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: second.id } as AGUIEvent);
-          setTimeout(() => {
+          const finishSecond = () => {
             second.status = "complete";
             second.text = "Second answer";
             pendingItems.splice(0);
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: second.id } as AGUIEvent);
-          }, 100);
+          };
+          // Confirm the owed successor before settling it; no timer may erase that state.
+          if (replyPolicy.holdUntilSubscribed) afterSnapshot.push(finishSecond);
+          else setTimeout(finishSecond, 100);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
@@ -494,7 +506,7 @@ function createFake() {
           summary: body.text,
           enqueuedAt: "2026-01-02T00:00:00.000Z",
         });
-        setTimeout(() => {
+        scheduleReply(() => {
           running.status = "error";
           running.error = "cancelled";
           pendingItems.splice(0, pendingItems.length);
@@ -554,7 +566,7 @@ function createFake() {
       snapshotReads += 1;
       if (snapshotPolicy.delayMs)
         await new Promise((resolve) => setTimeout(resolve, snapshotPolicy.delayMs));
-      return sendEnveloped(200, {
+      sendEnveloped(200, {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
@@ -562,6 +574,8 @@ function createFake() {
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
+      for (const reply of afterSnapshot.splice(0)) reply();
+      return;
     }
     const cancel = url.pathname.match(/^\/api\/threads\/[^/]+\/turns\/([^/]+)\/cancel$/);
     if (req.method === "POST" && cancel) {
