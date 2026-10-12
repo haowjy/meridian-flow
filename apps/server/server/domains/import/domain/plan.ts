@@ -8,10 +8,12 @@ import type {
 import type { Filetype } from "@meridian/contracts/protocol";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import { classify, skipPath } from "./classify.js";
+import { type ImportArea, readExportMarker } from "./export-marker.js";
 import { IMPORT_LIMITS } from "./manifest.js";
 
 export interface PlannedNode {
   id: string;
+  area?: ImportArea;
   parentId: string | null;
   rootId: number;
   entryId: number | null;
@@ -60,6 +62,7 @@ export function planSelection(
   mintId: () => string,
   destinationId: string | null,
 ): PlannedNode[] {
+  const marker = readExportMarker(manifest);
   const nodes: PlannedNode[] = [];
   for (const root of [...manifest.roots].sort(
     (a, b) => codePointOrder(a.name, b.name) || a.rootId - b.rootId,
@@ -67,8 +70,12 @@ export function planSelection(
     const unreadableRoot =
       root.kind === "folder" &&
       (manifest.unreadable ?? []).some((item) => item.rootId === root.rootId && item.path === "");
-    const folders = new Map<string, PlannedNode>();
-    const makeFolder = (path: string): PlannedNode => {
+    const folders = new Map<string, { id: string | null }>();
+    if (marker) {
+      folders.set("", { id: destinationId });
+      for (const area of marker.areas.keys()) folders.set(area, { id: null });
+    }
+    const makeFolder = (path: string): { id: string | null } => {
       const existing = folders.get(path);
       if (existing) return existing;
       const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -76,6 +83,9 @@ export function planSelection(
       const filename = path === "" ? root.name : (path.split("/").at(-1) ?? "");
       const node: PlannedNode = {
         id: mintId(),
+        ...(marker?.areas.get(path.split("/")[0])
+          ? { area: marker.areas.get(path.split("/")[0]) }
+          : {}),
         parentId,
         rootId: root.rootId,
         entryId: null,
@@ -101,7 +111,7 @@ export function planSelection(
       for (const entry of [...manifest.folders, ...manifest.entries].filter(
         (item) => item.rootId === root.rootId,
       )) {
-        if (skipPath(entry.path)) continue;
+        if (skipPath(entry.path) || (marker && entry.path.split("/")[0] === "Works")) continue;
         const isFolder = !("entryId" in entry);
         const folder = isFolder
           ? entry.path
@@ -114,7 +124,11 @@ export function planSelection(
       .sort((a, b) => codePointOrder(a.path, b.path))) {
       const filename = root.kind === "file" ? root.name : (entry.path.split("/").at(-1) ?? "");
       const skip =
-        entry.size > IMPORT_LIMITS.fileBytes ? "too_large" : skipPath(entry.path || filename);
+        entry.size > IMPORT_LIMITS.fileBytes
+          ? "too_large"
+          : marker && entry.path.split("/")[0] === "Works"
+            ? "export_works"
+            : skipPath(entry.path || filename);
       if (skip === "omit") continue;
       const typed = classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
       let parentPath = entry.path.includes("/")
@@ -142,6 +156,9 @@ export function planSelection(
         });
       nodes.push({
         id: mintId(),
+        ...(marker?.areas.get(entry.path.split("/")[0])
+          ? { area: marker.areas.get(entry.path.split("/")[0]) }
+          : {}),
         parentId: root.kind === "folder" ? makeFolder(skip ? "" : parentPath).id : destinationId,
         rootId: root.rootId,
         entryId: entry.entryId,

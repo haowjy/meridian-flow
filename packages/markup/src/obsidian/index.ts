@@ -1,5 +1,6 @@
 /** Pure Obsidian findings over the codec's positioned, preprocessed Markdown source. */
 
+import type { Processor } from "unified";
 import { normalizeGfmTableHardBreaks } from "../markdown/table-ingress.js";
 import { markdownParser } from "../markdown-parse.js";
 import {
@@ -33,7 +34,13 @@ export type ObsidianFinding =
   | (ObsidianRange & { kind: "highlight"; text: string })
   | (ObsidianRange & { kind: "tag"; tag: string })
   | (ObsidianRange & { kind: "footnoteReference" | "footnoteDefinition"; identifier: string })
-  | (ObsidianRange & { kind: "markdownLink"; url: string; image: boolean });
+  | (ObsidianRange & {
+      kind: "markdownLink";
+      url: string;
+      image: boolean;
+      /** The written destination, angle brackets included; absent for `[x]()`. */
+      destination: ObsidianRange | null;
+    });
 
 export type ObsidianScanOptions = {
   /** Prose projections use their host's node/mark semantics, not Markdown block or code syntax. */
@@ -54,9 +61,33 @@ type SyntaxNode = {
   children?: SyntaxNode[];
   identifier?: string;
   url?: string;
+  data?: { destination?: ObsidianRange };
 };
 
-const parser = markdownParser();
+/**
+ * Record each inline link/image destination's source span on its node. No default
+ * handler claims the `resourceDestination` wrapper token, so this adds, never replaces.
+ */
+function destinationSpans(this: Processor): void {
+  const data = this.data();
+  data.fromMarkdownExtensions = [
+    ...(data.fromMarkdownExtensions ?? []),
+    {
+      enter: {
+        resourceDestination(token) {
+          const node = this.stack[this.stack.length - 1] as SyntaxNode | undefined;
+          if (!node || (node.type !== "link" && node.type !== "image")) return;
+          node.data = {
+            ...node.data,
+            destination: { from: token.start.offset, to: token.end.offset },
+          };
+        },
+      },
+    },
+  ];
+}
+
+const parser = markdownParser([destinationSpans]);
 
 function range(node: SyntaxNode): ObsidianRange | null {
   const from = node.position?.start.offset;
@@ -173,6 +204,7 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
           kind: "markdownLink",
           url: node.url ?? "",
           image: node.type === "image",
+          destination: node.data?.destination ?? null,
         });
       if (node.type === "footnoteDefinition") {
         findings.push({ ...span, kind: "footnoteDefinition", identifier: node.identifier ?? "" });
@@ -258,3 +290,13 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
   }
   return { source, findings: findings.sort((a, b) => a.from - b.from || b.to - a.to) };
 }
+
+export {
+  type Located,
+  locate,
+  rankWikilinkMatches,
+  storedName,
+  type WikilinkTarget,
+  wantedPath,
+  wikilinkMatches,
+} from "./project-ranking.js";

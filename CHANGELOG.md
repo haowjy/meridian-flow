@@ -9,6 +9,8 @@
 - Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+- Obsidian notes import as Meridian documents: frontmatter stored verbatim as properties with derived aliases, wikilinks, embeds and internal Markdown links bound to selected or existing documents by id, and kept-literal syntax reported.
+- Importing a Meridian export folder routes its Manuscript, Knowledge Base and Unfiled folders to their area roots and skips Works.
 
 ### Removed
 - The old corpus import service and Knowledge Base batch-import route.
@@ -18,6 +20,7 @@
 - Import reports publish moves and deletes of imported documents as versioned changes, so incremental reports never miss them.
 - Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
 - Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
+- A path-qualified wikilink, pasted or imported, reaches an exact Unfiled path before suffix matches in other areas.
 
 
 ### Added
@@ -25,6 +28,7 @@
 
 
 ### Changed
+- Share project wikilink ranking between editor paste and note imports.
 - Share upload/import classification and filename decoding; preserve case-only upload names and reject multiple upload file parts.
 - Define the verbatim YAML document-properties storage contract.
 

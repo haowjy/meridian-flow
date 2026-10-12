@@ -1,0 +1,4 @@
+---
+aliases: [Little Crane]
+---
+Crane.

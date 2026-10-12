@@ -32,8 +32,41 @@ batches of 500.
 The isolated binder binds prose by existing placeholder id. Link-free code
 can bind to its planned id before its row exists; Context admits that bound
 write only when creation uses exactly that id. Recorded ahead refs and binary
-receipts serialize on the target entry row. Settlement is compare-and-set;
-captured addresses are findings, never reassigned.
+receipts serialize on the target entry row. Settlement is compare-and-set by
+ref id.
+
+## Obsidian conversion
+
+Conversion runs per landing note, outside transactions, over a link index built
+once per note: selected paths, basenames and aliases, then the project's
+existing Manuscript, Knowledge Base and Unfiled documents. Existing names and
+aliases are frozen into the record at plan time (manifest.existingLinks), so
+their ranking locations never move; only the written addresses are respelled
+from current locations. Project fallback uses markup's shared wikilink
+ranking, the same one paste uses. Frontmatter is stored verbatim in
+metadata.properties with derived metadata.aliases.
+
+Conversion edits only Markdown destination spans the scanner reports, and
+writes every converted destination as a unique placeholder. The binder parses
+that template, so each source link is its own occurrence, and receives the
+target id and written href per occurrence. Refs are assigned before real
+addresses could merge adjacent links into one run: two targets sharing a
+current address, a hand-written link to it, or a link after them never swap
+identity or destination. The readable Markdown is never reparsed for binding.
+
+Binaries and code have no row until they land. The binder receives them as
+pending ids: one already live binds to itself, otherwise it mints an ahead ref
+whose registry row persists the awaited id (`awaited_document_id`). No other
+document settles that row, whether it was at the address before registration
+or arrives after; only the target's landing settles it, by id, so a file at
+the address only makes the target count up. Finish (or Stop here) releases
+rows awaiting files that never landed; from then on they are ordinary ahead
+refs and settle at once to a document already at their address.
+
+A single selected folder with a valid meridian-export.json routes Manuscript/,
+Knowledge Base/ and Unfiled/ to their area roots; planning chunks group by
+area as well as parent, and Works/ is skipped as export_works. The sort is
+the manifest's choice; the dialog defaults it off for an export.
 
 Finish clears pending flags on unfinished placeholders, leaves ordinary empty
 documents, and marks unfinished entries not imported. There is no Remove,

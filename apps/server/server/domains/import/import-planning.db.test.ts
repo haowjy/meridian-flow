@@ -1,6 +1,6 @@
 /** Import planning: identity graphs, chunk recovery, ready admission and Stop between chunks. Barriers sit at public port boundaries. */
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { folders, importEntries, imports } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   importDbEnabled,
   loose,
   useImportDb,
+  vault,
 } from "./__test-support__/import-db.js";
 import { createImportService } from "./domain/import-service.js";
 
@@ -21,39 +22,7 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     ({ projectId, userId } = fx.current());
   });
   it("plans and lands the real fixture, preserves case, moves folder notes, keeps DOCX undecorated and replays receipts", async () => {
-    const source = new URL("./__fixtures__/obsidian-vault/", import.meta.url).pathname;
-    const selection = loose({});
-    selection.manifest.roots = [
-      {
-        rootId: 0,
-        kind: "folder",
-        name: "obsidian-vault",
-        appJson: readFileSync(join(source, ".obsidian/app.json"), "utf8"),
-      },
-    ];
-    function walk(path: string) {
-      for (const item of readdirSync(join(source, path), { withFileTypes: true })) {
-        if (item.name === ".obsidian") continue;
-        const relative = [path, item.name].filter(Boolean).join("/");
-        if (item.isDirectory()) {
-          selection.manifest.folders.push({ rootId: 0, path: relative });
-          walk(relative);
-        } else {
-          const bytes = readFileSync(join(source, relative)),
-            entryId = selection.bytes.length;
-          selection.bytes.push(bytes);
-          selection.manifest.entries.push({
-            entryId,
-            rootId: 0,
-            path: relative,
-            size: bytes.length,
-            sha256: createHash("sha256").update(bytes).digest("hex"),
-            sniff: bytes.subarray(0, 512).toString("base64"),
-          });
-        }
-      }
-    }
-    walk("");
+    const { source, selection } = vault("obsidian-vault");
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     expect(plan.state).toBe("ready");
