@@ -17,6 +17,7 @@ type JournalMutationBase = {
   threadId: string;
   turnId: string | null;
   authoringResponseId?: string;
+  editScopeId?: string;
   /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as w<N>. */

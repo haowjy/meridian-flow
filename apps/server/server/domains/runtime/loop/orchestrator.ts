@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Ordered model/tool loop. Preparation commits initial turns and report admission;
  * execution publishes through the journal, never a caller-driven event generator.
@@ -262,12 +263,12 @@ export interface OrchestratorDeps {
   shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
     ): Promise<void>;
   };
@@ -1033,10 +1034,16 @@ async function settleCancelledResponse(input: {
     });
     currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
-      threadId: input.runInput.threadId,
-      turnId: currentTurn.id,
-    });
+    await input.deps.responseWrites.rollbackResponse(
+      {
+        providerResponseId: persistedResponse.responseId,
+        editScopeId: persistedResponse.responseId,
+      },
+      {
+        threadId: input.runInput.threadId,
+        turnId: currentTurn.id,
+      },
+    );
   }
   return currentTurn;
 }
@@ -1395,10 +1402,12 @@ function buildGenerateRequestFromAssembled(input: {
  */
 function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
   const args = call.arguments;
-  if (call.name !== "write" || !args || typeof args !== "object" || !("command" in args)) {
+  if (!args || typeof args !== "object") return false;
+  if (call.name === "read" && "format" in args && args.format === "edits") return true;
+  if (call.name !== "write" || !("command" in args)) {
     return false;
   }
-  return args.command === "undo" || args.command === "redo";
+  return args.command === "undo" || args.command === "redo" || args.command === "revert";
 }
 
 /** Staged edits belong to a response scope, which rotates at a save boundary. */
@@ -1484,7 +1493,7 @@ function createResponseScope(input: {
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
-        id,
+        { providerResponseId: input.responseId, editScopeId: id },
         { threadId, turnId },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
@@ -1572,7 +1581,10 @@ function createResponseScope(input: {
     async rollback() {
       if (!active) return;
       active = false;
-      await deps.responseWrites.rollbackResponse(id, { threadId, turnId });
+      await deps.responseWrites.rollbackResponse(
+        { providerResponseId: input.responseId, editScopeId: id },
+        { threadId, turnId },
+      );
     },
   };
 }

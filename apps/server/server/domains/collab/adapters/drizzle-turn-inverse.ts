@@ -2,6 +2,7 @@
 import type {
   DocumentCoordinator,
   ReversalNoticePort,
+  ReversalStore,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
@@ -24,6 +25,7 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchCoordinator, BranchStore } from "../domain/branch-coordinator.js";
@@ -41,7 +43,7 @@ import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 
 type Dependencies = {
   db: Database;
-  journal: UpdateJournal;
+  journal: UpdateJournal & Pick<ReversalStore, "reserveWriteOrdinal">;
   branches: BranchStore;
   coordinator: DocumentCoordinator;
   branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
@@ -55,15 +57,20 @@ type Dependencies = {
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
+    if (query.model) return [...new Set(query.documentIds ?? [])].sort();
     const rows = await db()
       .selectDistinct({ documentId: documentEdits.documentId })
       .from(documentEdits)
       .where(
         and(
           eq(documentEdits.threadId, query.threadId),
-          eq(documentEdits.turnId, query.turnId),
-          eq(documentEdits.kind, "write"),
-          query.responseId ? eq(documentEdits.responseId, query.responseId) : undefined,
+          query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
+          query.responseIdentity
+            ? inArray(documentEdits.kind, ["write", "revert", "undo", "redo"])
+            : inArray(documentEdits.kind, ["write", "revert"]),
+          query.responseIdentity
+            ? eq(documentEdits.editScopeId, query.responseIdentity.editScopeId)
+            : undefined,
           query.documentIds ? inArray(documentEdits.documentId, query.documentIds) : undefined,
         ),
       )
@@ -87,7 +94,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       threadId: edit.threadId,
       turnId: edit.turnId,
       responseId: edit.responseId,
+      editScopeId: edit.editScopeId,
       consumes: edit.consumes,
+      actor: edit.actor,
+      wId: edit.wId,
     }));
   }
   async function materialize(documentId: DocumentId): Promise<Y.Doc> {
@@ -108,13 +118,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           );
         const parts = await history(ids);
         const branchIds = [
-          ...new Set(
-            parts
+          ...new Set([
+            ...(query.branchId ? [query.branchId] : []),
+            ...parts
               .filter(
                 (part) =>
                   (part.threadId === query.threadId &&
-                    part.turnId === query.turnId &&
-                    (!query.responseId || part.responseId === query.responseId)) ||
+                    (query.model || !query.turnId || part.turnId === query.turnId) &&
+                    (query.model ||
+                      !query.responseIdentity ||
+                      part.editScopeId === query.responseIdentity.editScopeId)) ||
                   (part.kind !== "write" && part.placement.kind === "pending"),
               )
               .flatMap((part) =>
@@ -122,7 +135,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   placement.kind === "pending" ? [placement.branchId] : [],
                 ),
               ),
-          ),
+          ]),
         ].sort();
         return input.criticalSections.withBranches(branchIds, async () => {
           const lockLive = async (index: number): Promise<Awaited<ReturnType<typeof run>>> => {
@@ -130,6 +143,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             if (id) return input.coordinator.withDocument(id, () => lockLive(index + 1));
             const frozen = await lockDraftBranchWorks(input.db, branchIds);
             for (const key of [...ids, ...branchIds].sort()) await lockDocumentMutation(db(), key);
+            if (query.model) await confirmScopedEdits();
             const currentParts = await history(ids);
             const documents: InverseDocument[] = [];
             try {
@@ -211,6 +225,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
     },
     async commit({ plans, kind, userId, query }) {
+      const handles: string[] = [];
       const mutate = async () => {
         for (const plan of plans) {
           const document = plan.document;
@@ -249,10 +264,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                     branchId: draft.branch.branchId,
                     generation: draft.branch.generation,
                     updateData: Buffer.from(part.update),
-                    source: "writer",
+                    source: query.model ? "agent" : "writer",
+                    threadId: query.model ? query.threadId : null,
+                    turnId: query.model ? query.turnId : null,
                     actorUserId: userId ?? null,
                     draftBaseUpdateSeq: sql`coalesce((select max(id) from document_yjs_updates where document_id = ${document.documentId}),0)`,
                     updateMeta: {
+                      ...(query.model && query.responseIdentity
+                        ? {
+                            authoringResponseId: query.responseIdentity.providerResponseId,
+                            editScopeId: query.responseIdentity.editScopeId,
+                          }
+                        : {}),
                       restorationAliases: part.aliases.map((alias) => ({
                         source: { ...alias.source, length: alias.len },
                         target: { ...alias.target, length: alias.len },
@@ -269,7 +292,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 };
               } else {
                 const seq = await input.journal.append(document.documentId, part.update, {
-                  origin: "system",
+                  origin: query.model && query.turnId ? `agent:${query.turnId}` : "system",
+                  ...(query.model && query.turnId ? { actorTurnId: query.turnId } : {}),
+                  ...(query.model && query.responseIdentity
+                    ? {
+                        authoringResponseId: query.responseIdentity.providerResponseId,
+                        editScopeId: query.responseIdentity.editScopeId,
+                      }
+                    : {}),
                   seq: 0,
                   ...(userId ? { reversalActor: { type: "user" as const, userId } } : {}),
                 });
@@ -278,9 +308,26 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               receipts.push({ ...part, origin });
               updates.push(part.update);
             }
+            const wId = query.model
+              ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
+              : undefined;
+            if (wId !== undefined) {
+              handles.push(`w${wId}`);
+              for (const receipt of receipts)
+                if (receipt.origin.kind === "pending")
+                  await db()
+                    .update(branchWriteJournal)
+                    .set({ wId })
+                    .where(eq(branchWriteJournal.id, receipt.origin.rowId));
+            }
             await recordDocumentEdit(db(), {
               documentId: document.documentId,
-              actor: kind === "rollback" ? "system" : "human",
+              actor: query.model ? "agent" : kind === "rollback" ? "system" : "human",
+              wId,
+              threadId: query.model ? query.threadId : undefined,
+              turnId: query.model ? query.turnId : undefined,
+              responseId: query.model ? query.responseIdentity?.providerResponseId : undefined,
+              editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
               actorUserId: userId,
               kind,
               actionId: plan.computed.actionId,
@@ -323,8 +370,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             );
             const unresolved = document.history.filter(
               (part) =>
-                part.kind === "write" &&
-                part.responseId === query.responseId &&
+                (part.kind === "write" ||
+                  part.kind === "revert" ||
+                  part.kind === "undo" ||
+                  part.kind === "redo") &&
+                part.editScopeId === query.responseIdentity?.editScopeId &&
                 part.placement.kind === "pending" &&
                 !accepted.has(`${part.editId}:${part.ordinal}`) &&
                 !document.history.some(
@@ -361,7 +411,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               await input.refreshDocument(document.documentId);
               await input.flushLivePull(document.documentId);
             }
-            if (kind !== "rollback")
+            if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
               await input.notices?.record({
                 docId: document.documentId,
                 threadId: query.threadId,
@@ -379,6 +429,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (branchIds.length && input.workProjection)
         await input.workProjection.mutatePendingBranches(branchIds, mutate);
       else await mutate();
+      return handles;
     },
   };
   return createTurnInverseService(store);

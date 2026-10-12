@@ -37,7 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
+    const { createFixtureBranchStore } = await import("../../test-support/fixture-branch-store.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
       createDrizzleBranchJournalReadStore,
@@ -158,7 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       async recover() {},
     };
     function createBranchStore() {
-      return createDrizzleBranchStore(db, {
+      return createFixtureBranchStore(db, {
         journal: livePersistence.journal,
         lifecycle: livePersistence.lifecycle,
         coordinator: liveCoordinator,
@@ -247,7 +247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         availabilityMutations: availability,
       });
       const projection = createWorkProjectionMutation({ db, availability, catalog });
-      const measuredStore = createDrizzleBranchStore(db, undefined, undefined, projection);
+      const measuredStore = createFixtureBranchStore(db, undefined, undefined, projection);
       const base = docWithText("live");
       const branch = await measuredStore.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
@@ -258,6 +258,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!snapshot) throw new Error("missing batch target");
       const source = new Y.Doc({ gc: false });
       Y.applyUpdate(source, snapshot.state);
+      const { createDrizzleJournal } = await import("../drizzle-journal.js");
+      const wId = await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID);
       const rows = Array.from({ length: 40 }, (_, index) => {
         source.clientID = 10000 + index;
         const before = Y.encodeStateVector(source);
@@ -268,7 +270,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source: "agent" as const,
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          toolCallId: `segment-${index}`,
+          toolCallId: "forty-segment-edit",
+          wId,
           updateData: Y.encodeStateAsUpdate(source, before),
         };
       });

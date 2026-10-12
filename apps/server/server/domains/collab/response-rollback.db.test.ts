@@ -44,7 +44,7 @@ async function fixture() {
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseId,
+    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
   };
   return { harness, view, responseId, context };
@@ -61,9 +61,15 @@ it.each(
   try {
     const immediate = {
       ...context,
-      responseId: undefined,
+      responseIdentity: undefined,
       grant: testFileGrant({ kind: "live" }, ALPHA_ID),
-      actor: { kind: "agent" as const, threadId: THREAD_ID, turnId: TURN_ID, responseId },
+      actor: {
+        kind: "agent" as const,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        editScopeId: responseId,
+      },
     };
     await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, immediate);
     const content = kind === "delete" ? "" : "Gamma";
@@ -98,10 +104,13 @@ it.each(
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID,
       });
-    await view.collab.finalizeResponseRollback(responseId, {
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-    });
+    await view.collab.finalizeResponseRollback(
+      { providerResponseId: responseId, editScopeId: responseId },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      },
+    );
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
       !edited
         ? "Alpha Beta.\n\nBlue.\n"
@@ -117,10 +126,13 @@ it.each(
       .innerJoin(schema.documentEdits, eq(schema.documentEditParts.editId, schema.documentEdits.id))
       .where(eq(schema.documentEdits.kind, "rollback"));
     expect(rollbackParts).toHaveLength(edited ? 1 : 2);
-    await view.collab.finalizeResponseRollback(responseId, {
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-    });
+    await view.collab.finalizeResponseRollback(
+      { providerResponseId: responseId, editScopeId: responseId },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      },
+    );
     expect(
       await db
         .select()
@@ -147,12 +159,18 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
-    const actor = { kind: "agent" as const, threadId: THREAD_ID, turnId: TURN_ID, responseId };
+    const actor = {
+      kind: "agent" as const,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+      editScopeId: responseId,
+    };
     await view.collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         ...context,
-        responseId: undefined,
+        responseIdentity: undefined,
         actor,
         grant: testFileGrant({ kind: "live" }, ALPHA_ID),
       },
@@ -161,7 +179,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
       { file: "beta.md", documentId: BETA_ID },
       {
         ...context,
-        responseId: undefined,
+        responseIdentity: undefined,
         actor,
         grant: testFileGrant(
           { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
@@ -182,7 +200,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
           },
           {
             ...context,
-            responseId: undefined,
+            responseIdentity: undefined,
             actor,
             grant: testFileGrant({ kind: "live" }, ALPHA_ID),
           },
@@ -206,7 +224,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
             },
             {
               ...context,
-              responseId: undefined,
+              responseIdentity: undefined,
               actor,
               grant: testFileGrant(
                 { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
@@ -239,10 +257,13 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
     } finally {
       doc.destroy();
     }
-    await view.collab.finalizeResponseRollback(responseId, {
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-    });
+    await view.collab.finalizeResponseRollback(
+      { providerResponseId: responseId, editScopeId: responseId },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      },
+    );
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     expect(await harness.liveMarkdown(BETA_ID)).toBe("Delta Echo.\n\nGreen.\n");
     expect(await view.draftMarkdown(branch.id)).toBe("Delta Am!ber.\n\nGreen.\n");

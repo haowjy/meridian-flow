@@ -59,5 +59,15 @@ retained-struct lookup, visibility, splitting, redone hydration/capture and
 low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
 per target edit, with transaction-delta parts and aliases; the host persists
 those edits under one action ID. Normalization is per edit, never per action.
-This primitive does not route commands, choose destinations, or choose a destination. The server now uses it for receipt actions and
-failed-response rollback; model undo/redo still runs on the old engine.
+This primitive does not route commands or choose destinations. The server uses
+it for receipt actions, failed-response rollback and the model's per-document
+undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable
+parts through the host `DocumentEdits` port, behind the prepared-lease gate,
+never the branch journal facade or staged-write queue. The old hosted engine
+remains only until its endpoint migration.
+
+Provider authorship and helper lifetime are distinct: `WriteContext.responseIdentity`
+carries immutable `providerResponseId` plus rotated `editScopeId`. Journal
+authorship uses the former; prepared leases and buffers use only the latter.
+The server save/rollback boundary takes this typed pair and selects immutable
+parts by `edit_scope_id`, including durable model inverse actions.

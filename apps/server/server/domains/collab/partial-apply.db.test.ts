@@ -318,7 +318,7 @@ describe("per-change Apply (postgres)", () => {
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         grant: testFileGrant({ kind: "live" }),
       };
       await fixture.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
@@ -335,7 +335,10 @@ describe("per-change Apply (postgres)", () => {
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
       await expect(
-        fixture.collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+        fixture.collab.finalizeResponseCommit(
+          { providerResponseId: responseId, editScopeId: responseId },
+          { threadId: THREAD_ID, turnId: TURN_ID },
+        ),
       ).resolves.toMatchObject({ status: "committed" });
     }
     await fixture.branchPulls.flushLivePull(ALPHA_ID);

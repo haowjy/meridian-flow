@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
@@ -189,8 +190,8 @@ export interface WriteContext {
   turnId?: string;
   /** Host/tool-call idempotency key. Replays return the original outcome. */
   tool_use_id?: string;
-  /** Host model-response id. Mutating writes buffer until commitResponse when set. */
-  responseId?: string;
+  /** Immutable provider authorship and the independently rotated prepared scope. */
+  responseIdentity?: ModelResponseIdentity;
   /**
    * Host-captured interaction identity: baseline, journal floor, branch
    * generation, and optional attempt guard travel as one object.
@@ -228,7 +229,7 @@ export interface WriteContext {
 }
 
 export type MutationActor =
-  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string; editScopeId?: string }
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 

@@ -5,13 +5,7 @@
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
 import { z } from "zod";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
-import {
-  type ReversalSelectorFields,
-  reversalSelectorIssues,
-  type SelectorCommand,
-  type SelectorFields,
-  selectorIssues,
-} from "./selector-rules.js";
+import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
 
 /**
  * `in` publishes as one compact JSON Schema instead of zod's nested projection.
@@ -51,6 +45,11 @@ const FindAroundSchema = z
 const FindAllSchema = z.boolean().describe("Every match of `find`. Needs `find`.");
 
 const READ_FIELDS = {
+  before: z
+    .string()
+    .regex(/^w[1-9]\d*$/)
+    .optional()
+    .describe("With `edits` only: list edits older than this handle."),
   in: BlockSelectorSchema.optional(),
   around: z
     .string()
@@ -58,28 +57,20 @@ const READ_FIELDS = {
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
   format: z
-    .enum(["full", "outline"])
-    .describe("Read a long document's `outline` first, then the sections you need.")
+    .enum(["full", "outline", "edits"])
+    .describe(
+      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands. Not with `in`, `around` or `version`. Handles are for you; never show them to the user.",
+    )
     .optional(),
 };
 
-// One selector at most; none means the latest write. The rule lives in `reversalSelectorIssues`.
-const WRITE_HANDLE_SELECTOR_FIELDS = {
-  to: z
-    .string()
-    .optional()
-    .describe(
-      "Write handle such as w3; with `since`, the end of a range. Handles are for you; never show them to the user.",
-    ),
-  since: z.string().optional().describe("With `to`: the first write handle of the range."),
-  last: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("The last N writes. For redo, the N you undid most recently."),
-  all: z.boolean().optional().describe("Every write in this thread."),
-};
+const WRITE_HANDLE = z.string().regex(/^w[1-9]\d*$/, "Expected an edit handle such as w5");
+const INVERSE_COUNT = z
+  .int()
+  .min(1)
+  .max(20)
+  .optional()
+  .describe("How many stack entries to reverse, all or nothing. Default 1.");
 
 /**
  * Which version of a document to read (D3, D14). It has no default: omitted
@@ -169,12 +160,18 @@ const MUTATION_BRANCHES = {
     fields: { in: BlockSelectorSchema.optional() },
   },
   undo: {
-    description: "Undo this thread's document writes.",
-    fields: WRITE_HANDLE_SELECTOR_FIELDS,
+    description:
+      "Undo your most recent edits to this document, newest first. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
+    fields: { count: INVERSE_COUNT },
+  },
+  revert: {
+    description:
+      'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
+    fields: { edit: WRITE_HANDLE },
   },
   redo: {
-    description: "Redo undone writes.",
-    fields: WRITE_HANDLE_SELECTOR_FIELDS,
+    description: "Redo what your last undo here removed. Not after you edit this document again.",
+    fields: { count: INVERSE_COUNT },
   },
 } as const;
 
@@ -198,9 +195,26 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
   return z
     .object({ ...target, ...READ_FIELDS })
     .strict()
-    .superRefine((value, ctx) =>
-      addSelectorIssues(ctx, "read", value as Parameters<typeof addSelectorIssues>[2], targetKey),
-    );
+    .superRefine((value, ctx) => {
+      addSelectorIssues(ctx, "read", value as Parameters<typeof addSelectorIssues>[2], targetKey);
+      const fields = value as {
+        format?: string;
+        in?: unknown;
+        around?: string;
+        version?: string;
+        before?: string;
+      };
+      if (fields.format === "edits") {
+        for (const field of ["in", "around", "version"] as const)
+          if (fields[field] !== undefined)
+            ctx.addIssue({
+              code: "custom",
+              path: [field],
+              message: "edits is not available with in, around or version",
+            });
+      } else if (fields.before !== undefined)
+        ctx.addIssue({ code: "custom", path: ["before"], message: "before pages edits only" });
+    });
 }
 
 function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
@@ -222,6 +236,7 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       branch("remove"),
       branch("undo"),
       branch("redo"),
+      branch("revert"),
     ])
     .superRefine((value, ctx) => {
       const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
@@ -232,16 +247,6 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       if (command === "insert" || command === "replace" || command === "copy") {
         for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
           ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
-        }
-      }
-      if (command === "undo" || command === "redo") {
-        for (const issue of reversalSelectorIssues(fields as ReversalSelectorFields)) {
-          ctx.addIssue({
-            code: "custom",
-            path: [issue.field],
-            message: issue.message,
-            input: value,
-          });
         }
       }
     });
@@ -301,6 +306,7 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
     case "remove":
     case "undo":
     case "redo":
+    case "revert":
       return command;
     default:
       return undefined;

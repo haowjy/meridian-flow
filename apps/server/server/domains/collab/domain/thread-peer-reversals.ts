@@ -1,46 +1,18 @@
-/**
- * Model undo and redo for the thread-peer pool. A thread's writes to one
- * document can sit in two journals, live and the thread's Work draft (after a
- * D40 "keep" switch, say); each selected write reverses where it landed, under
- * a grant at that destination.
- */
-import {
-  type AgentEditCore,
-  commandSelection,
-  type ReversalSelection,
-  type ReversalStore,
-  type WriteCommand,
-  type WriteContext,
-  type WriteOutcome,
+// Legacy hosted reversal endpoints; model tools use the immutable inverse service.
+import type {
+  AgentEditCore,
+  ReversalSelection,
+  ReversalStore,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import {
-  type FileAccess,
-  type FileAccessDenied,
-  type FileDestination,
-  FileEditRefusedError,
-  type FileGrant,
-  isFileAccessDenied,
-} from "../../file-policy/index.js";
-import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
+import type { LiveAgentEditCore } from "./agent-edit-cores.js";
 import {
   type BranchReversalHistoryReader,
   buildBranchReversalState,
   resolveBranchReversalScope,
 } from "./branch-reversal-history.js";
-import {
-  mergeReversals,
-  type ReversalHistory,
-  type ReversalSide,
-  splitReversal,
-} from "./reversal-routing.js";
-
-export type ReversalCommand = Extract<WriteCommand, { command: "undo" | "redo" }>;
-
-export function isReversalCommand(command: WriteCommand): command is ReversalCommand {
-  return command.command === "undo" || command.command === "redo";
-}
+import { type ReversalHistory, type ReversalSide, splitReversal } from "./reversal-routing.js";
 
 /** Both journals' reversible writes, and the Work whose draft holds the drafted ones. */
 type Histories = { live: ReversalHistory; draft: ReversalHistory | null; draftWorkId: string };
@@ -52,18 +24,6 @@ export function createThreadPeerReversals(input: {
   reversalHistory: BranchReversalHistoryReader;
   /** The live journal's history: its undo and redo reverse live writes live. */
   liveHistory: Pick<ReversalStore, "activeWriteSummary" | "readReversals">;
-  fileAccess: Pick<FileAccess, "authorizeAt">;
-  /**
-   * Runs one journal's part on its core: staged in the reply, or committed
-   * now. `context.linkView` is the view of the journal it reverses.
-   */
-  reverseIn(
-    core: AgentEditCore,
-    command: ReversalCommand,
-    documentId: DocumentId | null,
-    context: WriteContext,
-    grant: FileGrant<"edit">,
-  ): Promise<WriteOutcome>;
 }) {
   /** Both journals' reversible writes; null for a thread with no drafted history here. */
   async function loadHistories(
@@ -121,60 +81,7 @@ export function createThreadPeerReversals(input: {
     return { core: await coreAt(side, threadId), view: viewAt(side, histories) };
   }
 
-  /**
-   * A reversal's grant at the destination its writes landed in. The call's
-   * grant names where new writes go, which a mode switch since may have moved.
-   */
-  async function grantAt(
-    grant: FileGrant<"edit">,
-    side: ReversalSide,
-  ): Promise<FileGrant<"edit"> | FileAccessDenied> {
-    const caller = grant.principal.agent?.chain[0];
-    if (grant.destination.kind === side || !caller) return grant;
-    const destination: FileDestination =
-      side === "draft"
-        ? { kind: "draft", workId: caller.threadWorkId, workSlug: null }
-        : { kind: "live" };
-    return input.fileAccess.authorizeAt(grant.principal, grant.facts.target, destination);
-  }
-
   return {
-    /**
-     * History decides where a reversal goes, not the current destination. A
-     * journal whose grant is refused keeps its writes; the rest still reverse,
-     * and the result names the kept ones.
-     */
-    async reverse(
-      command: ReversalCommand,
-      context: WriteContext,
-      grant: FileGrant<"edit">,
-      documentId: DocumentId | null,
-    ): Promise<RoutedWriteOutcome> {
-      if (!documentId) {
-        return input.reverseIn(input.liveUtilityCore, command, null, context, grant);
-      }
-      const histories = await loadHistories(documentId, context.threadId);
-      const outcomes: WriteOutcome[] = [];
-      const refused: { writeIds: string[]; denial: FileAccessDenied }[] = [];
-      for (const [side, route] of routes(histories, command.command, commandSelection(command))) {
-        const sideGrant = await grantAt(grant, side);
-        try {
-          if (isFileAccessDenied(sideGrant)) throw new FileEditRefusedError([sideGrant]);
-          const sideCommand =
-            route.selection.kind === "last" ? { ...command, last: route.selection.count } : command;
-          const core = await coreAt(side, context.threadId);
-          const sideContext = { ...context, linkView: viewAt(side, histories, context.responseId) };
-          outcomes.push(
-            await input.reverseIn(core, sideCommand, documentId, sideContext, sideGrant),
-          );
-        } catch (cause) {
-          if (!(cause instanceof FileEditRefusedError)) throw cause;
-          refused.push(...cause.refused.map((denial) => ({ writeIds: route.handles, denial })));
-        }
-      }
-      return mergeReversals(command.command, outcomes, refused);
-    },
-
     async getAvailability(docId: string, threadId: string) {
       const histories = await loadHistories(docId as DocumentId, threadId);
       const [{ core: undoCore }, { core: redoCore }] = await Promise.all([

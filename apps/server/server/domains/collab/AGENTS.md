@@ -86,8 +86,11 @@ forward inverse primitive. The card's control is a dry run of that same policy,
 Redo first; one action lands in one view per document. Pending inverses in a
 draft hold root identities against inverses elsewhere. Their writes use ordinary
 journal rows, never status reversal or row replacement. Only inverse policies
-acquire the outer transition lock. Model `write undo/redo` still uses the old
-engine until the next migration step.
+acquire the outer transition lock. Model `write undo/redo/revert` and `read(format: "edits")` use the same immutable
+store through `model-document-edits.ts`. `model-inverse-policy.ts` owns one
+all-or-nothing stack per thread/document, with action-history pops, consumed
+undo actions and current-destination admission. User-actuated entries refuse
+model stack commands; revert is a new edit in the current destination.
 
 `hasEffect` compares prose plus managed manifest membership to the draft's durable
 `liveCut` (the last pulled live state), using `documentEffectsEqual`. Prose review
@@ -95,3 +98,9 @@ and publication use `documentProseEqual`; manifest review operations are separat
 Pending lists and Work notifications read this flag or `blocking`; journal row
 count alone is not visible effect. A skip marks a holding draft blocking so its
 Apply/Discard remains reachable even when its prose equals live.
+
+Save and rollback take `ModelResponseIdentity`, never a string that could mean
+either provider response or helper scope. `document_edits.response_id` retains
+provider authorship; `edit_scope_id` selects the rotated scope. Failed-scope
+rollback includes its durable undo, redo and revert edits and restores stack
+availability from non-rolled-back actions. Provider FKs are unchanged.

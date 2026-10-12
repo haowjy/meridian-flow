@@ -64,6 +64,12 @@ export {
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
+export type {
+  DocumentEditRequest,
+  DocumentEditResult,
+  DocumentEdits,
+  ModelInverseCommand,
+} from "./ports/document-edits.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
@@ -130,7 +136,6 @@ export { isResponseLifecycleError } from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
-export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type {
   CapturedPart,

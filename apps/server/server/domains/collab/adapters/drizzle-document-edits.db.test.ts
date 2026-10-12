@@ -47,7 +47,7 @@ async function stageDraft(
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseId,
+    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
   };
   const identities = [];
@@ -123,7 +123,7 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
       };
       const core = fixture.collab.agentEdit();
@@ -404,7 +404,7 @@ describe("document edit receipts (Postgres)", () => {
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
       };
       const scopedRead = async () => {
@@ -841,7 +841,7 @@ describe("document edit receipts (Postgres)", () => {
                 content: text,
                 tool_use_id: text,
               },
-              { ...context, responseId: id },
+              { ...context, responseIdentity: { providerResponseId: id, editScopeId: id } },
             ),
           ).toMatchObject({ status: "success" });
           await harness.commit(id);
@@ -1111,7 +1111,7 @@ describe("document edit receipts (Postgres)", () => {
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseId,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
       };
       for (const [find, content] of [

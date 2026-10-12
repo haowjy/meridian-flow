@@ -542,7 +542,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     await expect(
       fixture.collab.agentEdit().write(
@@ -569,10 +569,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: context.turnId as never,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: context.turnId as never,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -626,7 +629,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       createdDocument: false,
     };
     await expect(
@@ -654,10 +657,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
