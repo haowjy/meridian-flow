@@ -11,6 +11,7 @@ it("records Work refusals and replays the same final HTTP code even after recove
     let saved: ContextOperationReceipt | null = null;
     const receipts = new ContextOperationReceipts({
       transaction: async (_id, run) => run(),
+      observationVersion: async () => "1",
       savepoint: async (run) => run(),
       lookup: async () => saved,
       insert: async (receipt) => {

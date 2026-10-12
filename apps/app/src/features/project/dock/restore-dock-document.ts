@@ -1,6 +1,6 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
 
-import { resourceVisibleInProject } from "@meridian/resource-replica";
+import { resourcePlacementForSnapshot, resourceVisibleInProject } from "@meridian/resource-replica";
 import { useEffect, useLayoutEffect } from "react";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import type { ContextTab } from "@/client/stores";
@@ -25,7 +25,7 @@ export async function restoreDockDocument(
       snapshot.records.filter((record) =>
         resourceVisibleInProject(projectId, record, snapshot.catalogs),
       ),
-      snapshot.folders,
+      resourcePlacementForSnapshot(projectId, snapshot),
     );
   const projection = project(tab);
   if (projection.kind === "removed" || projection.kind === "terminal") return null;
@@ -41,7 +41,12 @@ export async function restoreDockDocument(
   const scope = contextCatalogScope(projectId, validated.scheme, validated);
   if (scope) await resources.acquireCatalog(projectId, scope);
   const current = await resources.readProjection(projectId);
-  const next = projectResourceTab(projectId, validated, current.records, current.folders);
+  const next = projectResourceTab(
+    projectId,
+    validated,
+    current.records,
+    resourcePlacementForSnapshot(projectId, current),
+  );
   if (next.kind === "removed" || next.kind === "terminal") return null;
   return next.kind === "projected" ? next.tab : validated;
 }

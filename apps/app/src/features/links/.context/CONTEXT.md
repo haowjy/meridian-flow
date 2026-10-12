@@ -201,9 +201,13 @@ Scratch: by owner direction, Scratch notes are made only by the Work's Files tab
 deleted, or unknown Work, gets the dialog without the button. An address that is
 not a legal path gets the dialog without the button too.
 
-It uses the reservation and `setLocation` primitive. Both steps commit locally, so the dialog closes and the document
+It captures the deepest existing parent identity (or area root) and any missing
+folder names as a creation suffix. It uses the reservation and `setLocation`
+primitive without a folder-create or catalog request. Both steps commit locally,
+so the dialog closes and the document
 opens through the host's `onOpen` at once,
-while the server's move (which creates any missing folders) catches up in the
+while the server's atomic move creates the suffix beneath the anchor's current
+home and catches up in the
 background. A local failure stays on the dialog ("The document could not be
 created"); a sync failure lands on the document. Nothing about the link
 changes on creation: the arrival settles the link's ahead ref server-side, and

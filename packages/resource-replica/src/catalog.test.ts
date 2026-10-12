@@ -12,6 +12,7 @@ const source: CatalogEntry = {
   uri: "manuscript://" as never,
 };
 const folder: CatalogEntry = {
+  observationVersion: "1",
   kind: "folder",
   entryId: "folder-1",
   scope,
@@ -23,6 +24,7 @@ const folder: CatalogEntry = {
   hasChildren: true,
 };
 const file: CatalogEntry = {
+  observationVersion: "1",
   kind: "file",
   entryId: "document-1",
   scope,

@@ -7,7 +7,12 @@ import {
   type ProjectContextIdentityResolution,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import { type ResourceRecord, resourceVisibleInProject } from "@meridian/resource-replica";
+import {
+  createResourcePlacement,
+  type ResourceRecord,
+  resourcePlacementForSnapshot,
+  resourceVisibleInProject,
+} from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import {
@@ -117,11 +122,14 @@ export async function validateEditorWorkspaceTabs({
               resourceVisibleInProject(projectId, record, snapshot.catalogs),
             ),
           ),
-          folders: snapshot.folders,
+          placement: resourcePlacementForSnapshot(projectId, snapshot),
         }),
         () => null,
       )
-    : { records: new Map<string, ResourceRecord>(), folders: [] };
+    : {
+        records: new Map<string, ResourceRecord>(),
+        placement: createResourcePlacement(projectId, [], []),
+      };
   const results = await Promise.allSettled(
     restored.map(
       async (tab): Promise<{ tab: ContextTab | null; removedRoute: WorkingSetRoute | null }> => {
@@ -129,7 +137,7 @@ export async function validateEditorWorkspaceTabs({
           if (!projection) throw new Error("Resource projection is unavailable");
           const record = resourceRecordForTab(projection.records, tab);
           return {
-            tab: record ? contextTabFromResource(projectId, record, projection.folders) : null,
+            tab: record ? contextTabFromResource(projectId, record, projection.placement) : null,
             removedRoute: null,
           };
         }
@@ -143,7 +151,7 @@ export async function validateEditorWorkspaceTabs({
         if (!projection) throw new Error("Resource projection is unavailable");
         const record = resourceRecordForTab(projection.records, tab);
         const projected = record
-          ? contextTabFromResource(projectId, record, projection.folders)
+          ? contextTabFromResource(projectId, record, projection.placement)
           : null;
         return {
           tab: projected,

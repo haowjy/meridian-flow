@@ -22,6 +22,7 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => ({
+    findParentAtLocation: async () => ({ kind: "folder", folderId: "Book" }),
     reserveDocument: mocks.reserveDocument,
     setLocation: mocks.setLocation,
   }),
@@ -78,7 +79,7 @@ describe("useCreateEntryForm", () => {
     expect(mocks.setLocation).toHaveBeenCalledWith(
       "project",
       "key",
-      expect.objectContaining({ name, folderPath: "/Book" }),
+      expect.objectContaining({ name, parent: { kind: "folder", folderId: "Book" } }),
     );
     expect(onCreated).toHaveBeenCalledWith(`/Book/${name}`);
     expect(onDone).toHaveBeenCalled();

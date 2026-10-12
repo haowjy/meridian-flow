@@ -56,10 +56,44 @@ export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): bool
     (left.rootThreadId ?? null) === (right.rootThreadId ?? null)
   );
 }
-/** Where `setLocation` places a document: a folder path in place of the full path. */
-export type ResourceDestination = Readonly<
-  { scheme: ProjectContextTreeScheme; folderPath: string; name: string } & ResourceOwner
->;
+/** A picked folder identity or a qualified area's root. Paths are observations, not edges. */
+export type ParentRef =
+  | Readonly<{ kind: "folder"; folderId: string }>
+  | Readonly<{ kind: "root"; scheme: ProjectContextTreeScheme; owner: ResourceOwner }>;
+export type ResourceDestination = Readonly<{
+  parent: ParentRef;
+  createFolders?: string[];
+  name: string;
+}>;
+export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
+
+/** Resolve only canonical observations when preparing immutable transport evidence. */
+export function destinationParentLocation(
+  parent: ParentRef,
+  lookup: DestinationParentLookup,
+): ResourceLocation | null {
+  return parent.kind === "folder"
+    ? lookup(parent.folderId)
+    : { scheme: parent.scheme, ...parent.owner, path: "", name: "" };
+}
+
+export function destinationLocation(
+  destination: ResourceDestination,
+  lookup: DestinationParentLookup,
+): ResourceLocation | null {
+  const parent = destinationParentLocation(destination.parent, lookup);
+  return parent
+    ? {
+        ...parent,
+        path: [
+          parent.path.replace(/\/$/, ""),
+          ...(destination.createFolders ?? []),
+          destination.name,
+        ].join("/"),
+        name: destination.name.split("/").at(-1) ?? destination.name,
+      }
+    : null;
+}
 
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
@@ -76,6 +110,10 @@ export type ResourceDescriptor = ResourceKey & {
   /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
   classification: CatalogFileClassification;
   canonical: ResourceLocation | null;
+  /** Parent identity from the same canonical observation; absent until observed. */
+  canonicalParent?: ParentRef;
+  /** Server namespace watermark of the canonical observation; absent for local identities. */
+  observationVersion?: string;
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
@@ -87,6 +125,7 @@ export type ResourceDescriptor = ResourceKey & {
     canonicalRefresh?: {
       operationId: string;
       identityRevision: number;
+      observationVersion?: string;
     };
     sessionAdoption?: {
       transitionId: string;
@@ -164,6 +203,7 @@ export type NamespaceIntent = ResourceKey & {
     | "received"
     | "settled"
     | "superseded"
+    | "unexecutable-after-terminal"
     | "needs-repair"
     | "cancelled"
     | "settled-locally";
@@ -181,7 +221,13 @@ export type FolderNamespaceRecord = ResourceKey & {
   folderId: string;
   revision: number;
   canonical: ResourceLocation;
-  canonicalRefresh?: { operationId: string };
+  /** Parent identity installed atomically with the canonical location. */
+  canonicalParent?: ParentRef;
+  /** Server namespace watermark of the canonical observation; absent for local identities. */
+  observationVersion?: string;
+  canonicalRefresh?: { operationId: string; observationVersion?: string };
+  /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
+  terminal?: { generation: string };
   intents: readonly NamespaceIntent[];
 };
 
@@ -244,9 +290,18 @@ export type NamespaceOutcome =
   | { kind: "operation"; receipt: ContextOperationReceipt }
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
+export type NamespaceIdentityAvailability =
+  | { kind: "available"; location: ResourceLocation; parent: ParentRef; observationVersion: string }
+  | { kind: "deleted"; generation: string; observationVersion: string }
+  | { kind: "unavailable" };
+
 /** The caller persists the immutable attempt before submit and retains uncertainty on failure. */
 export interface ResourceNamespaceTransport {
   readonly accountId: string;
+  lookupIdentity(
+    projectId: string,
+    identity: { kind: "file" | "folder"; id: string },
+  ): Promise<NamespaceIdentityAvailability>;
   readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
   submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
 }

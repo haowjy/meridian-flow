@@ -205,22 +205,31 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
+  const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog
         ? ({
             projectId,
-            workId: editorWorkId,
+            owner: { workId: editorWorkId },
             scheme,
+            capabilities: [
+              "rename",
+              "move",
+              ...(scheme !== "uploads" ? (["delete"] as const) : []),
+            ],
             activeScheme,
             activePath,
-            creating,
+            creation: schemeAllowsCreation(scheme)
+              ? {
+                  creating,
+                  request: requestCreate,
+                  done: onCreateDone,
+                  createdFile: setPendingOpenPath,
+                }
+              : undefined,
             onSelectFile,
-            onRequestCreate: requestCreate,
             onRequestDelete: deleteConfirm.requestDelete,
-            onCreateDone,
-            onCreatedFilePath: setPendingOpenPath,
             catalog,
             isExpanded,
             toggleEntry,
