@@ -42,7 +42,12 @@ function change(overrides: Partial<ReviewChange> = {}): ReviewChange {
     tone: "ai",
     includesWriterEdits: false,
     merged: false,
-    change: { removed: "his", added: "one withered" },
+    change: {
+      runs: [
+        { kind: "removed", text: "his" },
+        { kind: "added", text: "one withered" },
+      ],
+    },
     attribution: { kind: "ai" },
     threadIds: [],
     ...overrides,

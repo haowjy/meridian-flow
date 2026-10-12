@@ -24,6 +24,7 @@ import {
   changeAttribution,
 } from "./change-attribution";
 import {
+  type ChangeTextRun,
   changeTextForHunks,
   formattingChangeText,
   type OperationChangeText,
@@ -271,18 +272,14 @@ function describeChange(
   };
 }
 
-/** The short text a row and an accessible name carry: what the change put in, else what it took out. */
-export function changeExcerpt(change: ReviewChange): {
-  added: string | null;
-  removed: string | null;
-} {
-  const squash = (text: string | null) => {
-    const flat = text?.replace(/\s+/g, " ").trim();
-    return flat ? flat : null;
-  };
+/** Full excerpt runs; only the presenting row's CSS truncates their display. */
+export function changeExcerpt(change: ReviewChange): ChangeTextRun[] {
   if (change.change.formatting?.length)
-    return { added: change.change.formatting.map(formattingChangeText).join(". "), removed: null };
-  return { added: squash(change.change.added), removed: squash(change.change.removed) };
+    return [{ kind: "added", text: change.change.formatting.map(formattingChangeText).join(". ") }];
+  return change.change.runs.flatMap((run) => {
+    const text = run.text.replace(/\s+/g, " ").trim();
+    return text ? [{ ...run, text }] : [];
+  });
 }
 
 /** The command a displayed change authorizes; synthetic display identities never become requests. */

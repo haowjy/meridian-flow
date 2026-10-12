@@ -43,6 +43,28 @@ function setup(markdown: string, rows?: readonly TextEditRow[]) {
 }
 
 describe("draft review attribution", () => {
+  it("carries full inserted text on every attributed hunk of a multi-pair replacement", () => {
+    const fixture = setup(
+      "Rain threaded the broken archway, and the river carried the last light of evening toward the sea.",
+      [{ id: 20, actorTurnId: "turn-replace", edits: [[0, 18, 32, "weathered gate"]] }],
+    );
+    const result = computeDraftReviewHunks(fixture.input);
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "text",
+        deletedText: "broken",
+        insertedText: "weathered",
+        operationIds: ["20"],
+      }),
+      expect.objectContaining({
+        kind: "text",
+        deletedText: "archway",
+        insertedText: "gate",
+        operationIds: ["20"],
+      }),
+    ]);
+  });
+
   it("attributes deleted live text to the row whose delete set covers it", () => {
     const fixture = setup(
       "Alpha sword remains with enough unchanged surrounding text for inline review density.",
