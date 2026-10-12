@@ -130,6 +130,30 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
     expect((await abandoned).state).toBe("landed");
     expect((await ok(context().read("kb://Lease"))).content.trim()).toBe("Imported once");
   });
+  it("reports a landing as wanted only once its claim has lapsed", async () => {
+    const selection = loose({ "Crash.md": "Imported" }),
+      deps = ports(),
+      gate = barrier();
+    let clock = new Date();
+    const bind = deps.tree.bind;
+    deps.tree.bind = async (...args) => {
+      const bound = await bind(...args);
+      await gate.pause();
+      return bound;
+    };
+    const service = createImportService({ ...deps, now: () => clock }),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    expect(plan.entries[0]).toMatchObject({ state: "planned", wanted: true });
+    const crashed = service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    await gate.arrived;
+    const live = await service.report(plan.importId, projectId);
+    expect(live.entries[0]).toMatchObject({ state: "landing", wanted: false });
+    clock = new Date(clock.getTime() + IMPORT_LIMITS.leaseMs + 1);
+    const lapsed = await service.report(plan.importId, projectId);
+    expect(lapsed.entries[0]).toMatchObject({ state: "landing", wanted: true });
+    gate.release();
+    await crashed;
+  });
   it("an unreceipted binary put is overwritten by retry, never duplicated", async () => {
     const selection = loose({ "map.png": new Uint8Array([137, 80, 78, 71, 0, 1]) }),
       deps = ports(),

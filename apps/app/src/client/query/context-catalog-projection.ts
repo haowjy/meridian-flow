@@ -1,4 +1,5 @@
 /** Flat UI projection types over the replica-owned normalized catalog. */
+import type { ImportEntryReason } from "@meridian/contracts";
 import type {
   DocumentFileType,
   Filetype,
@@ -15,7 +16,7 @@ export type ImportRowInfo = {
   failure?: {
     importId: string;
     entryId: number;
-    reason: string | null;
+    reason: ImportEntryReason | null;
     /** This tab still holds the file, so Retry can send it. */
     canRetry: boolean;
   };

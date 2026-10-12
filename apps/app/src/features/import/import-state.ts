@@ -20,6 +20,12 @@ export type LocalRun = {
   destination: ImportDestination;
   roots: readonly ImportRootMeta[];
   rows: readonly ClientRow[];
+  /**
+   * Keys of rows the tree has handed to the catalog (or that will never come).
+   * Kept, not recomputed: a handed-off row the writer later moves or deletes must
+   * not come back as an arriving row.
+   */
+  handedOff: ReadonlySet<string>;
   /** Entries in the manifest. Known before the server answers. */
   total: number;
   /** Null once this tab no longer holds the files (stopped, finished or gone). */

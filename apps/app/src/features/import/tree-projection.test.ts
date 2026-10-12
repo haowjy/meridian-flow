@@ -104,6 +104,7 @@ function stateWith(report?: { entries: ImportEntryReport[]; rootUri: string }): 
       destination,
       roots: [{ rootId: 0, kind: "folder", name: "vault" }],
       rows,
+      handedOff: new Set(),
       total: 3,
       held: new Map(),
       manifest: null,
@@ -139,13 +140,14 @@ const entry = (
   name: path,
   reason: null,
   exists: true,
+  wanted: false,
   findings: [],
 });
 
 describe("withImportRows", () => {
   it("draws every selected row among the folder's existing children before the plan answers", () => {
     const existing = file("/Sects", "existing");
-    const view = withImportRows(catalogOf([existing]), "kb", [stateWith()]);
+    const view = withImportRows(catalogOf([existing]), "kb", [stateWith()]).view;
     const top = view.children("root");
     expect(top.map((n) => n.name)).toEqual(["vault", "Sects"]);
     expect(top[0].kind === "dir" && top[0].import?.client).toBe(true);
@@ -188,7 +190,7 @@ describe("withImportRows", () => {
       },
       { f: ["vault (2)"], lore: ["vault (2)", "Lore"] },
     );
-    const view = withImportRows(real, "kb", [
+    const { view } = withImportRows(real, "kb", [
       stateWith({
         rootUri: "kb://vault (2)/",
         entries: [
@@ -218,21 +220,115 @@ describe("withImportRows", () => {
       rootUri: "kb://vault/",
       entries: [entry(0, "Ch 1.md", "failed", "kb://Ch 1")],
     });
-    const view = withImportRows(real, "kb", [base]);
+    const { view } = withImportRows(real, "kb", [base]);
     const failed = view.children("root").find((n) => n.name === "Ch 1");
     expect(failed?.import?.failure).toMatchObject({ entryId: 0, canRetry: true });
   });
 
-  it("draws nothing for a finished import", () => {
-    const state = stateWith({ rootUri: "kb://vault/", entries: [] });
-    const finished: ImportState = {
-      ...state,
-      report: state.report && {
-        ...state.report,
-        summary: { ...state.report.summary, state: "finished" },
-      },
+  describe("after the import finishes", () => {
+    const finishedWith = (entries: ImportEntryReport[]): ImportState => {
+      const state = stateWith({ rootUri: "kb://vault/", entries });
+      return {
+        ...state,
+        report: state.report && {
+          ...state.report,
+          summary: { ...state.report.summary, state: "finished" },
+        },
+      };
     };
-    const catalog = catalogOf([]);
-    expect(withImportRows(catalog, "kb", [finished]).children("root")).toEqual([]);
+    const landed = finishedWith([
+      entry(0, "Ch 1.md", "landed", "kb://vault/Ch 1"),
+      entry(1, "Lore/Sects.md", "landed", "kb://vault/Lore/Sects"),
+      { ...entry(2, "map.png", "landed", "kb://vault/map.png"), kind: "binary" },
+    ]);
+    const vault = (children: CatalogNode[], lore?: CatalogNode[]) =>
+      catalogOf(
+        [{ kind: "dir", entryId: "f", parentId: "root", name: "vault", path: "/vault", uri: "" }],
+        {
+          f: [
+            ...(lore
+              ? [
+                  {
+                    kind: "dir" as const,
+                    entryId: "lore",
+                    parentId: "f",
+                    name: "Lore",
+                    path: "/vault/Lore",
+                    uri: "",
+                  },
+                ]
+              : []),
+            ...children,
+          ],
+          lore: lore ?? [],
+        },
+        { f: ["vault"], lore: ["vault", "Lore"] },
+      );
+    const drawn = (view: CatalogContextView, parentId = "root"): string[] =>
+      view
+        .children(parentId)
+        .flatMap((node) => [
+          `${node.import?.client ? "client" : "real"} ${node.path}`,
+          ...(node.kind === "dir" ? drawn(view, node.entryId) : []),
+        ]);
+
+    it("keeps every row while this browser's catalog has none of them", () => {
+      const { view, handedOff } = withImportRows(catalogOf([]), "kb", [landed]);
+      expect(drawn(view)).toEqual([
+        "client /vault",
+        "client /vault/Empty",
+        "client /vault/Lore",
+        "client /vault/Lore/Sects",
+        "client /vault/Ch 1",
+        "client /vault/map.png",
+      ]);
+      expect(handedOff.size).toBe(0);
+    });
+
+    it("hands off only the rows whose folder or document the catalog holds", () => {
+      const { view, handedOff } = withImportRows(vault([file("/vault/Ch 1", "d0")]), "kb", [
+        landed,
+      ]);
+      expect(drawn(view)).toEqual([
+        "real /vault",
+        "client /vault/Empty",
+        "client /vault/Lore",
+        "client /vault/Lore/Sects",
+        "real /vault/Ch 1",
+        "client /vault/map.png",
+      ]);
+      expect(handedOff.get("i")).toEqual(["0:", "0:Ch 1.md"]);
+    });
+
+    it("hands off the rest as their ids arrive", () => {
+      const catalog = vault(
+        [file("/vault/Ch 1", "d0"), file("/vault/map.png", "d2")],
+        [file("/vault/Lore/Sects", "d1")],
+      );
+      const { view, handedOff } = withImportRows(catalog, "kb", [landed]);
+      expect(drawn(view).filter((row) => row.startsWith("client"))).toEqual([
+        "client /vault/Empty",
+      ]);
+      expect(handedOff.get("i")).toHaveLength(5);
+    });
+
+    it("drops skipped, deleted and unmade rows at once, catalog or not", () => {
+      const state = finishedWith([
+        entry(0, "Ch 1.md", "skipped", "kb://vault/Ch 1"),
+        entry(1, "Lore/Sects.md", "deleted", "kb://vault/Lore/Sects"),
+        { ...entry(2, "map.png", "not_imported", "kb://vault/map.png"), exists: false },
+      ]);
+      const { view, handedOff } = withImportRows(catalogOf([]), "kb", [state]);
+      expect(drawn(view)).toEqual(["client /vault", "client /vault/Empty", "client /vault/Lore"]);
+      expect(handedOff.get("i")).toEqual(["0:Ch 1.md", "0:Lore/Sects.md", "0:map.png"]);
+    });
+
+    it("never draws a handed-off row again, though the writer moved or deleted it", () => {
+      const local = landed.local;
+      if (!local) throw new Error("no local run");
+      const state = { ...landed, local: { ...local, handedOff: new Set(["0:Ch 1.md"]) } };
+      const { view } = withImportRows(catalogOf([]), "kb", [state]);
+      expect(drawn(view)).not.toContain("client /vault/Ch 1");
+    });
   });
 });

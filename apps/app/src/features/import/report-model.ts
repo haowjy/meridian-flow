@@ -2,14 +2,9 @@
  * What the report page shows, as data: the sections, their items and the
  * sentences, from one import's merged state. Pure; the page only lays it out.
  */
-import type { ImportEntryReport } from "@meridian/contracts";
+import type { ImportEntryReason, ImportEntryReport } from "@meridian/contracts";
 import { filenameForDisplay } from "./display-name";
-import {
-  type FindingGroup,
-  findingGroup,
-  findingSentence,
-  keptAsTextSentence,
-} from "./finding-copy";
+import { type CountedSkip, type FindingGroup, findingGroup, findingSentence } from "./finding-copy";
 import { effectiveEntry, type ImportState } from "./import-state";
 import { catalogPathOfUri } from "./tree-projection";
 
@@ -36,9 +31,9 @@ export const WORTH_A_LOOK_ORDER: readonly FindingGroup[] = [
 
 export type SkippedLine = {
   key: string;
-  line: string | null;
+  line: CountedSkip | null;
   name: string;
-  reason: string | null;
+  reason: ImportEntryReason | null;
   count: number;
 };
 
@@ -103,10 +98,7 @@ export function buildReportModel(state: ImportState): ReportModel {
         if (seenSettings.has(name)) continue;
         seenSettings.add(name);
       }
-      const sentence =
-        finding.code === "kept_as_text"
-          ? keptAsTextSentence(finding.params as Record<string, unknown>)
-          : findingSentence(finding);
+      const sentence = findingSentence(finding);
       groups.set(group, [...(groups.get(group) ?? []), { ...row, sentence }]);
     }
   }
@@ -130,7 +122,7 @@ export function buildReportModel(state: ImportState): ReportModel {
   }
 
   const skippedEntries = entries.filter((e) => e.state === "skipped");
-  const counted = new Map<string, number>();
+  const counted = new Map<CountedSkip, number>();
   const skipped: SkippedLine[] = [];
   for (const entry of skippedEntries) {
     const reason = entry.reason;

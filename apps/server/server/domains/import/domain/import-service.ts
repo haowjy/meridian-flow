@@ -20,6 +20,15 @@ import { prepareImportedNote } from "./prepare-note.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
 /** Where the writer knows a link target from: its selected path, or an existing document's address. */
+/**
+ * The one claim policy: an entry takes bytes when planned, failed, or landing under a
+ * lapsed lease. A live lease belongs to a running attempt; a lapsed one to a dead process.
+ */
+function wantsBytes(entry: ImportEntry, at: Date): boolean {
+  if (entry.state === "planned" || entry.state === "failed") return true;
+  return entry.state === "landing" && !(entry.leaseUntil && entry.leaseUntil > at);
+}
+
 function targetPath(record: ImportRecord, entries: readonly ImportEntry[], id: string): string {
   const selected = entries.find((entry) => entry.id === id);
   if (selected) {
@@ -141,27 +150,27 @@ export function createImportService(deps: {
     const reportedEntries = entries
       .filter((entry) => entry.entryId !== null)
       .map((entry) => entryReport(entry));
-    if (since !== undefined) return { ...summary(cut), entries: reportedEntries };
-    return {
-      ...summary(cut),
-      roots: record.manifest.roots.map((root) => {
-        const node = entries.find(
-          (entry) =>
-            entry.rootId === root.rootId &&
-            (root.kind === "folder"
-              ? entry.kind === "folder" && entry.path === ""
-              : entry.entryId !== null),
-        );
-        return {
+    // A since-cut holds only changed rows: it reports just the roots whose node changed.
+    const roots = record.manifest.roots.flatMap((root) => {
+      const node = entries.find(
+        (entry) =>
+          entry.rootId === root.rootId &&
+          (root.kind === "folder"
+            ? entry.kind === "folder" && entry.path === ""
+            : entry.entryId !== null),
+      );
+      if (!node && since !== undefined) return [];
+      return [
+        {
           rootId: root.rootId,
           kind: root.kind,
           name: root.name,
           id: node?.id ?? null,
           uri: node?.uri ?? null,
-        };
-      }),
-      entries: reportedEntries,
-    };
+        },
+      ];
+    });
+    return { ...summary(cut), roots, entries: reportedEntries };
   }
   function entryReport(entry: ImportEntry) {
     const exists = entry.created && entry.exists;
@@ -179,6 +188,7 @@ export function createImportService(deps: {
       uri: entry.uri,
       name: liveName?.ok ? liveName.value.name : entry.name,
       exists,
+      wanted: wantsBytes(entry, now()),
       reason: entry.reason,
       ...(entry.reasonParams ? { reasonParams: entry.reasonParams } : {}),
       findings: entry.findings,
@@ -464,7 +474,7 @@ export function createImportService(deps: {
         const entry = await repo.lockEntry(candidate.id);
         if (["landed", "skipped", "deleted", "not_imported"].includes(entry.state)) return null;
         if (record.state !== "ready") throw new ImportError(409, "import_not_ready");
-        if (entry.state === "landing" && entry.leaseUntil && entry.leaseUntil > now()) return null;
+        if (!wantsBytes(entry, now())) return null;
         const attemptId = randomUUID(),
           leaseUntil = new Date(now().getTime() + IMPORT_LIMITS.leaseMs);
         const prepend = entry.prependOnRetry;
@@ -596,8 +606,11 @@ export function createImportService(deps: {
             if (converted)
               await tree.setProperties(entry.id, converted.properties, converted.aliases);
             const findings = [...current.findings, ...(converted?.findings ?? [])];
-            if (settings.unreadable)
-              findings.push({ code: "settings_unreadable", params: { name: root?.name ?? "" } });
+            if (settings.problem)
+              findings.push({
+                code: "settings_unreadable",
+                params: { name: root?.name ?? "", reason: settings.problem },
+              });
             const occurrences = bound.invalidTargets.length
               ? walkLinkOccurrences(bound.blocks)
               : [];

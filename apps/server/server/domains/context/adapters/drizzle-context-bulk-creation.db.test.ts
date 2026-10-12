@@ -87,25 +87,25 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
     await db.close();
   });
 
-  it("creates 2,000 placeholders in ten 200-row chunks with ten real catalog refreshes", async () => {
+  // Operation count, not time: one catalog refresh per chunk, whatever its size.
+  // Scale timings live in apps/server/scripts/probe-import-performance.ts.
+  it("creates each chunk's placeholders with exactly one real catalog refresh", async () => {
     const folderId = randomUUID();
-    const ids = Array.from({ length: 2000 }, () => randomUUID());
-    const start = performance.now();
-    for (let chunk = 0; chunk < 10; chunk++) {
+    const chunks = 3,
+      size = 4;
+    const ids = Array.from({ length: chunks * size }, () => randomUUID());
+    for (let chunk = 0; chunk < chunks; chunk++) {
       await subject.bulk.create({
         contextSourceId: sourceId,
         folders: chunk === 0 ? [{ id: folderId, parentId: null, name: "Notes" }] : [],
         placeholders: ids
-          .slice(chunk * 200, (chunk + 1) * 200)
-          .map((id, index) => placeholder(id, `note-${chunk * 200 + index}`, folderId)),
+          .slice(chunk * size, (chunk + 1) * size)
+          .map((id, index) => placeholder(id, `note-${chunk * size + index}`, folderId)),
       });
     }
-    console.info(
-      `2,000 seeded placeholders in 200-row chunks: ${(performance.now() - start).toFixed(1)} ms; catalog refreshes: ${refreshes}`,
-    );
-    expect(refreshes).toBe(10);
-    expect(await db.select().from(documents)).toHaveLength(2000);
-    expect(await db.select().from(documentYjsCheckpoints)).toHaveLength(2000);
+    expect(refreshes).toBe(chunks);
+    expect(await db.select().from(documents)).toHaveLength(ids.length);
+    expect(await db.select().from(documentYjsCheckpoints)).toHaveLength(ids.length);
     const snapshot = await subject.catalog.snapshot({
       kind: "project",
       projectId: projectId as never,
@@ -113,7 +113,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
     const files = snapshot.entries.filter((entry) => entry.kind === "file");
     expect(files.map(({ entryId }) => entryId).sort()).toEqual([...ids].sort());
     expect(files.every((entry) => entry.importPending)).toBe(true);
-  }, 120_000);
+  });
 
   it("rolls all identities, seeds and catalog rows back with its caller", async () => {
     const folderId = randomUUID();

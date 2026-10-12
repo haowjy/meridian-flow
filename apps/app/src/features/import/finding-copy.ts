@@ -1,7 +1,12 @@
 /** Findings and skip lines as sentences, grouped as the report shows them. Codes in, words out. */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
-import type { ImportFinding } from "@meridian/contracts";
+import type {
+  ImportEntryReason,
+  ImportFinding,
+  ImportFindingParams,
+  ImportSkipReason,
+} from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 
 export type FindingGroup =
@@ -33,8 +38,8 @@ export function readableLocation(value: string): string {
 }
 const num = (value: unknown) => (typeof value === "number" ? value : 0);
 
-/** Which report section a finding belongs to. Unknown codes land in "other" so nothing is lost. */
-export function findingGroup(code: string): FindingGroup {
+/** Which report section a finding belongs to. */
+export function findingGroup(code: ImportFinding["code"]): FindingGroup {
   switch (code) {
     case "hidden_notes":
       return "hidden";
@@ -49,7 +54,6 @@ export function findingGroup(code: string): FindingGroup {
     case "note_embed_to_link":
     case "embed_to_link":
     case "image_size_dropped":
-    case "picture_elsewhere":
       return "pictures";
     case "kept_as_text":
       return "kept";
@@ -60,16 +64,23 @@ export function findingGroup(code: string): FindingGroup {
     case "binary_extension":
     case "zip":
       return "renamed";
-    default:
+    case "properties_unreadable":
       return "other";
+    default:
+      return unhandled(code, "other");
   }
+}
+
+/** A code the contract added without a home here fails to compile. */
+function unhandled<T>(code: never, fallback: T): T {
+  void code;
+  return fallback;
 }
 
 /** One finding as a sentence (what is on the document's row). */
 export function findingSentence(finding: ImportFinding): string {
   const params = finding.params as Params;
-  // Codes from the conversion phase may outrun this app's contract types; unknown ones read as "worth a look".
-  switch (finding.code as string) {
+  switch (finding.code) {
     case "hidden_notes": {
       const count = num(params.count);
       return plural(count, { one: "# note", other: "# notes" });
@@ -133,14 +144,8 @@ export function findingSentence(finding: ImportFinding): string {
       const size = str(params.size);
       return t`${name} lost its size setting (${size}).`;
     }
-    case "picture_elsewhere": {
-      const name = str(params.name);
-      return t`A picture here shows a different ${name}. Check that it's the right one.`;
-    }
-    case "settings_unreadable": {
-      const name = str(params.name);
-      return t`Your browser didn't share ${name}'s hidden Obsidian settings, so links and pictures were matched without them.`;
-    }
+    case "settings_unreadable":
+      return settingsSentence(finding.params);
     case "name_clash": {
       const original = str(params.original);
       return t`${original} was taken.`;
@@ -158,8 +163,26 @@ export function findingSentence(finding: ImportFinding): string {
     }
     case "properties_unreadable":
       return t`Its properties couldn't be read, so they're shown as written.`;
+    case "kept_as_text":
+      return keptAsTextSentence(params);
     default:
-      return t`Worth a look.`;
+      return unhandled(finding, t`Worth a look.`);
+  }
+}
+
+/** Why a folder's Obsidian settings went unused; each reason says only what is known. */
+function settingsSentence({ name, reason }: ImportFindingParams["settings_unreadable"]): string {
+  switch (reason) {
+    case "unavailable":
+      return t`Your browser doesn't share hidden folders, so if ${name} has Obsidian settings, links and pictures were matched without them.`;
+    case "unreadable":
+      return t`${name}'s Obsidian settings couldn't be read, so links and pictures were matched without them.`;
+    case "too_large":
+      return t`${name}'s Obsidian settings are too large to read, so links and pictures were matched without them.`;
+    case "malformed":
+      return t`Meridian couldn't make sense of ${name}'s Obsidian settings, so links and pictures were matched without them.`;
+    default:
+      return unhandled(reason, t`${name}'s Obsidian settings weren't used.`);
   }
 }
 
@@ -213,7 +236,12 @@ export function groupNote(group: FindingGroup): string | null {
   }
 }
 
-export function skipLine(reason: string | null, input: { name: string; count: number }): string {
+export type CountedSkip = Extract<ImportSkipReason, "trash" | "hidden" | "unreadable">;
+
+export function skipLine(
+  reason: CountedSkip | null,
+  input: { name: string; count: number },
+): string {
   switch (reason) {
     case "trash":
       return plural(input.count, {
@@ -227,13 +255,15 @@ export function skipLine(reason: string | null, input: { name: string; count: nu
         one: "# file couldn't be read",
         other: "# files couldn't be read",
       });
-    default:
+    case null:
       return input.name;
+    default:
+      return unhandled(reason, input.name);
   }
 }
 
 /** The second half of a named skip ("Plot.canvas   Obsidian canvases and bases aren't imported."). */
-export function skipNote(reason: string | null): string | null {
+export function skipNote(reason: ImportEntryReason | null): string | null {
   switch (reason) {
     case "obsidian_canvas":
       return t`Obsidian canvases and bases aren't imported.`;
@@ -241,7 +271,21 @@ export function skipNote(reason: string | null): string | null {
       return t`It's over 50 MB.`;
     case "export_works":
       return t`Import a Work's Scratch folder on its own to bring it back.`;
-    default:
+    // Counted on their own line, whose words already say why.
+    case "trash":
+    case "hidden":
+    case "unreadable":
+    // Failure reasons belong to failed files, never to a skipped one.
+    case "conversion_failed":
+    case "upload_failed":
+    case "changed_since_chosen":
+    case "edited_before_arrival":
+    case "deleted_before_arrival":
+    case "folder_deleted":
+    case "server_error":
+    case null:
       return null;
+    default:
+      return unhandled(reason, null);
   }
 }

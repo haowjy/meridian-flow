@@ -1,7 +1,7 @@
 /** The tree's view of imports: rows layered over a scheme's catalog, status rows by folder. */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useImportsSnapshot, useOptionalImports } from "./ImportProvider";
 import type { RevealRequest } from "./import-coordinator";
@@ -14,14 +14,23 @@ export function useImportedCatalog(
 ): { catalog: CatalogContextView | null; statusByParent: ReadonlyMap<string, readonly string[]> } {
   const imports = useOptionalImports();
   const snapshot = useImportsSnapshot(imports?.coordinator ?? null);
-  return useMemo(() => {
+  const projected = useMemo(() => {
     if (!catalog || snapshot.states.length === 0)
-      return { catalog, statusByParent: new Map<string, readonly string[]>() };
+      return { catalog, statusByParent: new Map<string, readonly string[]>(), handedOff: null };
+    const layered = withImportRows(catalog, scheme, snapshot.states);
     return {
-      catalog: withImportRows(catalog, scheme, snapshot.states),
+      catalog: layered.view,
       statusByParent: statusParents(catalog, scheme, snapshot.states),
+      handedOff: layered.handedOff,
     };
   }, [catalog, scheme, snapshot]);
+  const coordinator = imports?.coordinator;
+  // The rows already went from this render; recording it keeps them gone after a move or delete.
+  useEffect(() => {
+    if (!coordinator || !projected.handedOff) return;
+    for (const [importId, keys] of projected.handedOff) coordinator.handOff(importId, keys);
+  }, [coordinator, projected.handedOff]);
+  return { catalog: projected.catalog, statusByParent: projected.statusByParent };
 }
 
 const noReveal = () => () => {};

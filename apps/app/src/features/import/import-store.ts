@@ -159,6 +159,7 @@ export class ImportStore {
       // A poll that found nothing changes nothing, so nothing downstream re-renders.
       if (
         changes.entries.length === 0 &&
+        changes.roots.length === 0 &&
         changes.version === report.cursor &&
         changes.version === report.summary.version &&
         !state.refreshFailed
@@ -166,12 +167,16 @@ export class ImportStore {
         return state;
       const merged = new Map(report.entries);
       for (const entry of changes.entries) merged.set(entry.entryId, entry);
+      const moved = new Map(changes.roots.map((root) => [root.rootId, root]));
       return {
         ...state,
         ...noteActivity(state, changes),
         refreshFailed: false,
         report: {
           ...report,
+          roots: moved.size
+            ? report.roots.map((root) => moved.get(root.rootId) ?? root)
+            : report.roots,
           summary: newerSummary(report.summary, summaryOf(changes)),
           entries: merged,
           cursor: changes.version,
@@ -183,7 +188,7 @@ export class ImportStore {
   private readonly wantsEntries = () =>
     [...this.watchers.values()].some((kind) => kind === "report" || kind === "notice");
 
-  /** One read: the whole report the first time, then only what changed. */
+  /** One read: the whole report the first time or when forced, else only what changed. */
   async refresh(forceFull = false): Promise<void> {
     if (this.polling || this.disposed) return;
     this.polling = true;
@@ -193,7 +198,8 @@ export class ImportStore {
       const phase = this.state.local?.phase.kind;
       if (!report && (phase === "preparing" || phase === "not-started")) return;
       if (!report && this.state.stop === "stopped") return;
-      if (fullyRead(report)) {
+      // A forced read is whole: roots and lapsed claims change without moving the version.
+      if (fullyRead(report) && !forceFull) {
         this.mergeChanges(await this.api.changes(this.projectId, this.importId, report.cursor));
       } else if (forceFull || this.wantsEntries() || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));

@@ -1,6 +1,7 @@
 /** Stored frontmatter parses for display in source order, or is reported unreadable. */
 import { describe, expect, it } from "vitest";
-import { MAX_PROPERTIES_TEXT_LENGTH, parseDocumentProperties } from "./document-properties.js";
+import { parseDocumentProperties } from "./document-properties.js";
+import { MAX_PROPERTIES_TEXT_LENGTH } from "./frontmatter.js";
 
 const parse = (text: string) => parseDocumentProperties({ format: "yaml", text });
 
@@ -150,21 +151,18 @@ describe("hostile frontmatter", () => {
 
   it("does not parse frontmatter over the size cap, and sends only its start with a flag", () => {
     const text = Array.from({ length: 20_000 }, (_, index) => `key${index}: value`).join("\n");
-    const started = performance.now();
     const result = parse(text);
-    expect(performance.now() - started).toBeLessThan(100);
     expect(result).toMatchObject({ entries: [], aliases: [], unreadable: true, truncated: true });
     expect(result.text.length).toBeLessThanOrEqual(MAX_PROPERTIES_TEXT_LENGTH);
     expect(text.startsWith(result.text)).toBe(true);
     expect(result.text.endsWith("\n")).toBe(false);
   });
 
-  it("parses frontmatter right at the cap in well under a second", () => {
+  // Parse cost at the cap is measured by apps/server/scripts/probe-link-resolution.ts.
+  it("parses frontmatter right at the cap", () => {
     const text = Array.from({ length: 2_000 }, (_, index) => `key${index}: value`).join("\n");
     const padded = `${text}\n#${" ".repeat(MAX_PROPERTIES_TEXT_LENGTH - text.length - 2)}`;
     expect(padded.length).toBe(MAX_PROPERTIES_TEXT_LENGTH);
-    const started = performance.now();
     expect(parse(padded)).toMatchObject({ unreadable: false });
-    expect(performance.now() - started).toBeLessThan(1000);
   });
 });

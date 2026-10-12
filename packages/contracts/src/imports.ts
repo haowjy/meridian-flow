@@ -8,6 +8,8 @@ export interface ImportManifest {
     kind: "folder" | "file";
     name: string;
     appJson?: string;
+    /** Why a folder root carries no `appJson` although it may have settings. */
+    appJsonUnread?: ImportSettingsUnread;
     meridianExport?: string;
   }[];
   folders: { rootId: number; path: string }[];
@@ -22,6 +24,13 @@ export interface ImportManifest {
     frontmatter?: string;
   }[];
 }
+/**
+ * Why the browser sent no Obsidian settings: it hides dot-folders (Safari), the
+ * read failed, or the file is over the side-file limit.
+ */
+export type ImportSettingsUnread = "unavailable" | "unreadable" | "too_large";
+/** Why an import used default Obsidian settings: unread, or sent but not valid JSON. */
+export type ImportSettingsProblem = ImportSettingsUnread | "malformed";
 export type ImportState = "planning" | "ready" | "finished";
 export type ImportEntryState =
   | "planned"
@@ -68,7 +77,7 @@ export interface ImportFindingParams {
   embed_to_link: { name: string };
   image_size_dropped: { name: string; size: string };
   kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
-  settings_unreadable: { name: string };
+  settings_unreadable: { name: string; reason: ImportSettingsProblem };
   name_clash: { original: string };
   folder_note: Record<string, never>;
   binary_extension: { original: string; type: string };
@@ -117,21 +126,31 @@ export interface ImportEntryReport {
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
   exists: boolean;
+  /**
+   * The server takes this file's bytes now: planned, failed, or a landing whose
+   * claim lapsed (its process died). Read at report time; senders trust it alone.
+   */
+  wanted: boolean;
   findings: ImportFinding[];
 }
+export interface ImportRootReport {
+  rootId: number;
+  kind: "folder" | "file";
+  name: string;
+  /** Null for a routed export selection: its project wrapper is not created. */
+  id: string | null;
+  uri: string | null;
+}
 export interface ImportReport extends ImportSummary {
-  roots: {
-    rootId: number;
-    kind: "folder" | "file";
-    name: string;
-    /** Null for a routed export selection: its project wrapper is not created. */
-    id: string | null;
-    uri: string | null;
-  }[];
+  roots: ImportRootReport[];
   entries: ImportEntryReport[];
 }
 
-export type ImportReportChanges = ImportSummary & { entries: ImportEntryReport[] };
+/** What changed since a version: changed entries, and the roots whose node changed. */
+export type ImportReportChanges = ImportSummary & {
+  roots: ImportRootReport[];
+  entries: ImportEntryReport[];
+};
 
 /** Stable codes for refused import requests; bounded numeric params ride beside them. */
 export type ImportRefusalCode =

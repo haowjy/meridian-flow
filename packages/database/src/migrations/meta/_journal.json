@@ -309,6 +309,13 @@
       "when": 1791793795631,
       "tag": "0043_link_ahead_awaited",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791805730107,
+      "tag": "0044_imports_project_index",
+      "breakpoints": true
     }
   ]
 }

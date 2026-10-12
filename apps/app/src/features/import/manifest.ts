@@ -110,6 +110,7 @@ export async function buildManifest(
       kind: root.kind,
       name: root.name,
       ...(root.appJson === undefined ? {} : { appJson: root.appJson }),
+      ...(root.appJsonUnread === undefined ? {} : { appJsonUnread: root.appJsonUnread }),
       ...(root.meridianExport === undefined ? {} : { meridianExport: root.meridianExport }),
     });
     for (const folder of root.folders) manifest.folders.push({ rootId: root.rootId, path: folder });

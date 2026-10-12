@@ -4,12 +4,12 @@ import { formatMarkdownLink, mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { scanObsidian, storedName } from "@meridian/markup/obsidian";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { readFrontmatter } from "../../context/index.js";
 import {
-  decodedPath,
+  decodedDestination,
   type ImportLinkCandidate,
   type ImportLinkIndex,
   normalizedPath,
-  readFrontmatter,
 } from "./link-index.js";
 
 const codec = mdxCodec({ schema: buildDocumentSchema() });
@@ -54,11 +54,11 @@ export function convertObsidianNote(
   const properties: StoredDocumentProperties | null = frontmatter
     ? { format: "yaml", text: frontmatter.text }
     : null;
-  const parsed = frontmatter ? readFrontmatter(frontmatter.text) : { readable: true, aliases: [] };
+  const parsed = frontmatter ? readFrontmatter(frontmatter.text) : null;
   const findings: ImportFinding[] = [];
   const comments = scan.findings.filter((finding) => finding.kind === "comment");
   if (comments.length) findings.push({ code: "hidden_notes", params: { count: comments.length } });
-  if (!parsed.readable) findings.push({ code: "properties_unreadable", params: {} });
+  if (parsed && !parsed.readable) findings.push({ code: "properties_unreadable", params: {} });
   const counts = {
     callouts: scan.findings.filter((finding) => finding.kind === "callout").length,
     highlights: scan.findings.filter((finding) => finding.kind === "highlight").length,
@@ -84,7 +84,9 @@ export function convertObsidianNote(
     if (!wiki && /^(?:[a-z][a-z\d+.-]*:|#|\/\/)/i.test(spelled)) continue;
     if (!wiki && !finding.destination) continue;
     const hash = wiki ? -1 : spelled.indexOf("#");
-    const path = hash < 0 ? spelled : spelled.slice(0, hash);
+    const spelledPath = hash < 0 ? spelled : spelled.slice(0, hash);
+    // The literal name it points at: a URL destination decodes once, a wikilink never.
+    const path = wiki ? spelledPath : decodedDestination(spelledPath);
     const match = wiki
       ? path
         ? options.index.resolveLinkpath(
@@ -98,11 +100,14 @@ export function convertObsidianNote(
     const target = wiki ? match?.target : options.index.resolveMarkdown(path, options.source);
     if (!wiki && !target) continue;
     const name = storedName(
-      decodedPath(path).split("/").at(-1) ||
-        storedName(options.source.path.split("/").at(-1) ?? ""),
+      path.split("/").at(-1) || storedName(options.source.path.split("/").at(-1) ?? ""),
     );
     const href = target?.uri ?? `${options.aheadFolder}${normalizedPath(path)}`;
-    const heading = wiki ? finding.heading : hash < 0 ? null : decodedPath(spelled.slice(hash + 1));
+    const heading = wiki
+      ? finding.heading
+      : hash < 0
+        ? null
+        : decodedDestination(spelled.slice(hash + 1));
     const block = wiki ? finding.block : null;
     const fragment = heading ? `#${encodeURIComponent(heading)}` : "";
     if (heading) {
@@ -119,17 +124,23 @@ export function convertObsidianNote(
     if (!target)
       findings.push({
         code: "link_unresolved",
-        params: { text: path, folder: options.aheadFolder },
+        params: { text: spelledPath, folder: options.aheadFolder },
       });
     if (match?.existing)
-      findings.push({ code: "link_to_existing", params: { text: path, path: match.target.uri } });
+      findings.push({
+        code: "link_to_existing",
+        params: { text: spelledPath, path: match.target.uri },
+      });
     if (match?.alias)
-      findings.push({ code: "link_via_alias", params: { text: path, path: match.target.uri } });
+      findings.push({
+        code: "link_via_alias",
+        params: { text: spelledPath, path: match.target.uri },
+      });
     if (match && match.candidates.length > 1)
       findings.push({
         code: "link_ambiguous",
         params: {
-          text: path,
+          text: spelledPath,
           count: match.candidates.length,
           path: match.target.uri,
           candidates: match.candidates.map((candidate) => candidate.uri),
@@ -192,7 +203,7 @@ export function convertObsidianNote(
   const note: ConvertedObsidianNote = {
     markdown: "",
     properties,
-    aliases: parsed.aliases,
+    aliases: parsed?.readable ? parsed.aliases : [],
     findings,
     template,
     targets,

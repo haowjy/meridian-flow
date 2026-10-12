@@ -177,6 +177,7 @@ export class ImportCoordinator {
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
         rows,
+        handedOff: new Set(),
         total: rows.filter((row) => row.kind === "file").length,
         held: null,
         manifest: null,
@@ -246,8 +247,7 @@ export class ImportCoordinator {
         ...local,
         phase: {
           kind: "not-started",
-          code:
-            error instanceof ImportRequestError ? (error.code ?? `status:${error.status}`) : null,
+          code: error instanceof ImportRequestError ? error.code : null,
         },
       }));
       return;
@@ -274,6 +274,7 @@ export class ImportCoordinator {
         destination: state.local?.destination ?? destinationFromSummary(summary),
         roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
+        handedOff: new Set(),
         total: built.manifest.entries.length,
         held: built.held,
         manifest: built.manifest,
@@ -300,6 +301,17 @@ export class ImportCoordinator {
     );
   }
 
+  /** The tree now draws these rows from the catalog: they are not this tab's to draw again. */
+  handOff(importId: string, keys: readonly string[]) {
+    const store = this.stores.get(importId);
+    const local = store?.getSnapshot().local;
+    if (!store || !local || keys.every((key) => local.handedOff.has(key))) return;
+    store.setLocal((current) => ({
+      ...current,
+      handedOff: new Set([...current.handedOff, ...keys]),
+    }));
+  }
+
   // ---- Uploading
 
   /** Queue every file the server still wants and this tab holds (or just `only`). */
@@ -316,7 +328,7 @@ export class ImportCoordinator {
     const files: HeldFile[] = [];
     for (const entry of report.entries.values()) {
       if (only && !only.has(entry.entryId)) continue;
-      if (entry.state !== "planned" && entry.state !== "failed") continue;
+      if (!entry.wanted) continue;
       const file = matched.get(entry.entryId);
       if (file) files.push({ ...file, entryId: entry.entryId });
     }

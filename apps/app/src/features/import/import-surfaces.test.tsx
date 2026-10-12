@@ -41,6 +41,7 @@ beforeAll(() => {
 
 let mounted: { root: Root; element: HTMLElement } | null = null;
 afterEach(async () => {
+  vi.useRealTimers();
   if (mounted) await act(async () => mounted?.root.unmount());
   mounted?.element.remove();
   mounted = null;
@@ -72,6 +73,7 @@ function entry(entryId: number, state: ImportEntryReport["state"]): ImportEntryR
     name: `Note ${entryId}`,
     reason: null,
     exists: true,
+    wanted: false,
     findings: [],
   };
 }
@@ -101,14 +103,6 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
     entries,
     ...overrides,
   };
-}
-
-/** Let timers and renders run until `done` holds, or give up after a second. */
-async function until(done: () => boolean) {
-  for (let tries = 0; tries < 100 && !done(); tries += 1)
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
 }
 
 /** The tree's way of drawing status rows: one per id in the coordinator's snapshot. */
@@ -157,6 +151,7 @@ describe("ImportDocumentNotice", () => {
         ...report({ entries: [entry(0, "landed")], version: "2", state: "finished" }),
       };
     };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const coordinator = new ImportCoordinator("p", server.api);
     context.coordinator = coordinator;
     await coordinator.refreshOpen();
@@ -164,7 +159,8 @@ describe("ImportDocumentNotice", () => {
     const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
     expect(element.textContent).toContain("This file is still importing.");
 
-    await until(() => element.textContent === "");
+    // The notice's next poll is due: run it, and the render it causes.
+    await act(() => vi.runOnlyPendingTimersAsync());
 
     expect(reads).toBeGreaterThan(0);
     expect(element.textContent).toBe("");
@@ -174,7 +170,7 @@ describe("ImportDocumentNotice", () => {
     const server = fakeImportServer();
     const quiet = report({ lastActivityAt: "2000-01-01T00:00:00.000Z" });
     server.api.listOpen = async () => [quiet];
-    server.api.changes = async () => ({ ...quiet, entries: [] });
+    server.api.changes = async () => ({ ...quiet, roots: [], entries: [] });
     const coordinator = new ImportCoordinator("p", server.api);
     context.coordinator = coordinator;
     await coordinator.refreshOpen();

@@ -1,12 +1,9 @@
 /** Prepare pure note conversion with live identity addresses; no binding or write transaction. */
+
+import { frontmatterAliases } from "../../context/index.js";
 import type { ImportEntry, ImportRecord } from "../ports/import-repository.js";
 import type { ImportTreeWriter } from "../ports/import-tree-writer.js";
-import {
-  createLinkIndex,
-  type ImportLinkCandidate,
-  obsidianSettings,
-  readFrontmatter,
-} from "./link-index.js";
+import { createLinkIndex, type ImportLinkCandidate, obsidianSettings } from "./link-index.js";
 import { convertObsidianNote } from "./obsidian-note.js";
 export async function prepareImportedNote(
   tree: ImportTreeWriter,
@@ -33,7 +30,7 @@ export async function prepareImportedNote(
         rankingUri: item.uri ?? "",
         path: root?.kind === "file" ? root.name : item.path,
         rootId: root?.kind === "file" ? null : item.rootId,
-        aliases: input?.frontmatter ? readFrontmatter(input.frontmatter).aliases : [],
+        aliases: input?.frontmatter ? frontmatterAliases(input.frontmatter) : [],
         kind: item.kind as ImportLinkCandidate["kind"],
         filetype: item.filetype,
       };

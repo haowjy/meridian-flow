@@ -23,6 +23,11 @@
 - Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
 - Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
 - A path-qualified wikilink, pasted or imported, reaches an exact Unfiled path before suffix matches in other areas.
+- Continue import re-sends files whose landing was cut off by a crashed server once their claim lapses.
+- Import decodes only Markdown link destinations, so a name containing `%` keeps its links and survives an export round trip; wikilinks stay literal.
+- Import and the Properties row read frontmatter through one bounded policy, so they agree on readable YAML and on aliases (and the links aliases resolve).
+- The import report says why a folder's Obsidian settings went unused (hidden by the browser, unreadable, too large, or not valid settings) instead of always blaming the browser.
+- The tree keeps an import's new rows when it finishes until this browser's catalog holds each one, instead of briefly showing an empty Knowledge Base.
 
 
 ### Added

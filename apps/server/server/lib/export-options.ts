@@ -1,7 +1,8 @@
 /** Shared query validation for stateless ZIP downloads and previews. */
+
+import type { ProjectExportOptions } from "@meridian/contracts";
 import { createError } from "nitro/h3";
-import type { ExportOptions } from "../domains/export/domain/export-layout.js";
-export function exportOptions(query: Record<string, unknown>): ExportOptions {
+export function exportOptions(query: Record<string, unknown>): ProjectExportOptions {
   for (const key of ["scratch", "uploads"]) {
     if (query[key] !== undefined && query[key] !== "0" && query[key] !== "1")
       throw createError({ statusCode: 400, message: "scratch and uploads must be 0 or 1" });

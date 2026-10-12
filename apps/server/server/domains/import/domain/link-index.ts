@@ -1,5 +1,5 @@
 /** Pure selection-first Obsidian resolution and the shared project fallback ranking. */
-import type { ImportManifest } from "@meridian/contracts";
+import type { ImportManifest, ImportSettingsProblem } from "@meridian/contracts";
 import {
   type Located,
   locate,
@@ -8,7 +8,6 @@ import {
   wantedPath,
   wikilinkMatches,
 } from "@meridian/markup/obsidian";
-import { parseDocument } from "yaml";
 import { codePointOrder } from "./plan.js";
 
 export interface ImportLinkCandidate {
@@ -21,37 +20,21 @@ export interface ImportLinkCandidate {
   kind: "note" | "docx" | "code" | "binary";
   filetype: string;
 }
-export function readFrontmatter(text: string) {
-  const yaml = parseDocument(text, { uniqueKeys: true });
-  try {
-    const value: unknown = yaml.toJS({ maxAliasCount: 100 });
-    const readable =
-      !yaml.errors.length &&
-      (value === null || (typeof value === "object" && !Array.isArray(value)));
-    const aliases = readable && value && "aliases" in value ? value.aliases : null;
-    return {
-      readable,
-      aliases:
-        typeof aliases === "string"
-          ? [aliases]
-          : Array.isArray(aliases)
-            ? aliases.filter((alias): alias is string => typeof alias === "string")
-            : [],
-    };
-  } catch {
-    return { readable: false, aliases: [] };
-  }
-}
-export function decodedPath(value: string): string {
+/**
+ * A Markdown link destination is a URL: percent-encoding is its syntax, so it is
+ * decoded once here. Wikilink targets and file paths are literal and never pass through.
+ */
+export function decodedDestination(value: string): string {
   try {
     return decodeURIComponent(value);
   } catch {
     return value;
   }
 }
+/** A literal selection path with `.`/`..` folded and the stored name of its file. */
 export function normalizedPath(value: string): string {
   const parts: string[] = [];
-  for (const segment of decodedPath(value).replace(/^\//, "").split("/")) {
+  for (const segment of value.replace(/^\//, "").split("/")) {
     if (segment === "." || !segment) continue;
     if (segment === "..") parts.pop();
     else parts.push(segment);
@@ -59,32 +42,36 @@ export function normalizedPath(value: string): string {
   if (parts.length) parts[parts.length - 1] = storedName(parts.at(-1) ?? "");
   return parts.join("/");
 }
-export function obsidianSettings(root: ImportManifest["roots"][number] | undefined) {
-  if (!root?.appJson)
-    return {
-      attachmentFolderPath: "",
-      newFileLocation: "root",
-      newFileFolderPath: "",
-      unreadable: false,
-    };
+/**
+ * A folder root's Obsidian settings, or the defaults with why: the browser sent
+ * none it could read (`appJsonUnread`), or what it sent is not a JSON object.
+ */
+export function obsidianSettings(root: ImportManifest["roots"][number] | undefined): {
+  attachmentFolderPath: string;
+  newFileLocation: string;
+  newFileFolderPath: string;
+  problem: ImportSettingsProblem | null;
+} {
+  const defaults = { attachmentFolderPath: "", newFileLocation: "root", newFileFolderPath: "" };
+  if (root?.appJson === undefined) return { ...defaults, problem: root?.appJsonUnread ?? null };
+  let value: unknown;
   try {
-    const value = JSON.parse(root.appJson);
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("settings");
-    return {
-      attachmentFolderPath:
-        typeof value.attachmentFolderPath === "string" ? value.attachmentFolderPath : "",
-      newFileLocation: typeof value.newFileLocation === "string" ? value.newFileLocation : "root",
-      newFileFolderPath: typeof value.newFileFolderPath === "string" ? value.newFileFolderPath : "",
-      unreadable: false,
-    };
+    value = JSON.parse(root.appJson);
   } catch {
-    return {
-      attachmentFolderPath: "",
-      newFileLocation: "root",
-      newFileFolderPath: "",
-      unreadable: true,
-    };
+    return { ...defaults, problem: "malformed" };
   }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return { ...defaults, problem: "malformed" };
+  const read = (key: string, fallback: string) => {
+    const field = (value as Record<string, unknown>)[key];
+    return typeof field === "string" ? field : fallback;
+  };
+  return {
+    attachmentFolderPath: read("attachmentFolderPath", ""),
+    newFileLocation: read("newFileLocation", "root"),
+    newFileFolderPath: read("newFileFolderPath", ""),
+    problem: null,
+  };
 }
 export interface ImportLinkMatch {
   target: ImportLinkCandidate;
@@ -192,7 +179,7 @@ export function createLinkIndex(
         alias: false,
         existing: false,
       };
-    const spelled = decodedPath(linkpath).toLowerCase();
+    const spelled = linkpath.toLowerCase();
     const aliases = (byAlias.get(spelled) ?? [])
       .filter((candidate) => inPool(source, candidate))
       .sort((a, b) => codePointOrder(a.path, b.path));
@@ -233,6 +220,7 @@ export function createLinkIndex(
       ? { target: aliasTarget, candidates: projectAliases, alias: true, existing: true }
       : null;
   }
+  /** `path` is an already decoded Markdown destination. */
   function resolveMarkdown(path: string, source: ImportLinkCandidate) {
     const first = (normalized: string) =>
       (exact.get(normalized) ?? []).find((item) => inPool(source, item.candidate))?.candidate;

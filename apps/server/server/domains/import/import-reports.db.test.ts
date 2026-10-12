@@ -61,7 +61,8 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     expect(changes.entries.map((entry) => entry.entryId)).toEqual([0]);
     expect(BigInt(changes.version)).toBeGreaterThan(BigInt(plan.version));
     expect(changes.counts).toMatchObject({ failed: 1, arriving: 1 });
-    expect(changes).not.toHaveProperty("roots");
+    // A file root's node is its entry: it changed, so the root rides along.
+    expect(changes.roots.map((root) => root.rootId)).toEqual([0]);
     const finished = await service.finish(plan.importId, projectId);
     expect(finished?.counts).toMatchObject({ notImported: 2, skipped: 1 });
     const dismissed = await service.dismiss(plan.importId, projectId);
@@ -138,6 +139,19 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     const deleted = await service.report(plan.importId, projectId, moved.version);
     expect(deleted.entries).toEqual([expect.objectContaining({ entryId: 0, exists: false })]);
     expect((await service.report(plan.importId, projectId, deleted.version)).entries).toEqual([]);
+  });
+  it("incremental reports publish a moved folder root, so its Open follows it", async () => {
+    const service = createImportService(ports());
+    const book = loose({ "Seed.md": "Seed" });
+    book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
+    book.manifest.entries[0].path = "Seed.md";
+    const plan = await service.plan(projectId, userId, book.manifest);
+    expect((await service.report(plan.importId, projectId, plan.version)).roots).toEqual([]);
+    await ok(context().move("kb://Book/", "kb://Renamed/"));
+    const moved = await service.report(plan.importId, projectId, plan.version);
+    expect(moved.roots).toEqual([
+      { rootId: 0, kind: "folder", name: "Book", id: plan.roots[0].id, uri: "kb://Renamed/" },
+    ]);
   });
   it("lease renewal advances activity/version, but an old attempt cannot renew", async () => {
     const selection = loose({ "Lease.md": "Imported" }),

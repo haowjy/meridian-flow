@@ -1,8 +1,11 @@
 /** Failure reasons and refusals as sentences. The server sends codes; the app writes the words. */
 import { t } from "@lingui/core/macro";
+import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
 
-/** `entry.reason` for a failed or deleted file. Anything unrecognized is a server error. */
-export function failureSentence(reason: string | null | undefined): string {
+const serverError = () => t`Something went wrong on our side. Try again.`;
+
+/** `entry.reason` for a failed or deleted file. No reason reads as a server error. */
+export function failureSentence(reason: ImportEntryReason | null | undefined): string {
   switch (reason) {
     case "conversion_failed":
       return t`This Word document couldn't be read.`;
@@ -18,13 +21,23 @@ export function failureSentence(reason: string | null | undefined): string {
       return t`It was deleted before its text arrived.`;
     case "folder_deleted":
       return t`Its folder was deleted before it arrived.`;
+    // Skip reasons never mark a failed file; a server error is the honest reading.
+    case "obsidian_canvas":
+    case "trash":
+    case "hidden":
+    case "unreadable":
+    case "export_works":
+    case "server_error":
+    case null:
+    case undefined:
+      return serverError();
     default:
-      return t`Something went wrong on our side. Try again.`;
+      return unhandled(reason);
   }
 }
 
 /** Why an import did not start, from the server's refusal code. */
-export function refusalSentence(code: string | null): string {
+export function refusalSentence(code: ImportRefusalCode | null): string {
   switch (code) {
     case "too_many_files":
     case "too_many_nodes":
@@ -46,7 +59,35 @@ export function refusalSentence(code: string | null): string {
       return t`This Meridian export can't be read. Import its folders one at a time.`;
     case "import_busy":
       return t`Too many files are being sent at once. Try again in a moment.`;
+    // The app builds every manifest and request itself, so these are our faults, not the
+    // writer's: the selection was fine. Unanswered requests (no code) read the same.
+    case "import_not_found":
+    case "entry_not_found":
+    case "import_not_ready":
+    case "import_not_finished":
+    case "manifest_invalid":
+    case "duplicate_root_id":
+    case "duplicate_entry_id":
+    case "duplicate_selection_path":
+    case "invalid_root_path":
+    case "invalid_file_root":
+    case "unreadable_root_has_entries":
+    case "sniff_required":
+    case "sniff_length":
+    case "invalid_import_file_parts":
+    case "duplicate_import_entry_id":
+    case "too_many_parts":
+    case "invalid_import_version":
+    case "open_filter_required":
+    case null:
+      return serverError();
     default:
-      return t`Something went wrong on our side. Try again.`;
+      return unhandled(code);
   }
+}
+
+/** A code the contract added without copy here fails to compile, not to read. */
+function unhandled(code: never): string {
+  void code;
+  return serverError();
 }

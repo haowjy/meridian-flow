@@ -1,6 +1,6 @@
 /** Portable, case-insensitive ZIP paths with one reservation space for files and folders. */
+import type { ProjectExportOptions } from "@meridian/contracts";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
-export type ExportOptions = { scratch: boolean; uploads: boolean };
 export function portableName(name: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ZIP names must exclude filesystem control bytes.
   const safe = name.replace(/[\x00-\x1f<>:"/\\|?*]/g, "_").replace(/[. ]+$/, "");
@@ -8,7 +8,7 @@ export function portableName(name: string): string {
 }
 export function buildExportLayout(
   documents: readonly ExportDocument[],
-  options: ExportOptions,
+  options: ProjectExportOptions,
   sources: readonly ExportSourceRoot[] = [],
 ): { paths: Map<string, string>; roots: Map<string, string> } {
   const used = new Map<string, Set<string>>();

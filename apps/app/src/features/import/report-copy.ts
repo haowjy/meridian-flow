@@ -1,7 +1,8 @@
 /** The report header's words, by display state. */
+
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
-import type { ImportCounts } from "@meridian/contracts";
+import type { ImportCounts, ImportRefusalCode } from "@meridian/contracts";
 import { type ImportDisplayState, processed } from "./display-state";
 import { refusalSentence } from "./reason-copy";
 
@@ -25,7 +26,7 @@ export function reportHeader(input: {
   exportName: string | null;
   names: readonly string[];
   total: number;
-  code: string | null;
+  code: ImportRefusalCode | null;
   stopped: boolean;
 }): ReportHeaderCopy {
   const { counts } = input;

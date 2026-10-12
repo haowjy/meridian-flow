@@ -111,6 +111,10 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
+  `adapters/context-catalog-authority.ts` builds authoritative entries for a
+  scope under an explicit `CatalogRefreshSelection` (whole scope, or selected
+  documents only). `adapters/context-catalog.ts` is the single publication
+  owner: head locking, cache rows, commit, head version, pruning, and wake.
 
 - **Namespace attempt settlement** — browser move/delete commands carry immutable
   operation IDs. `ContextOperationReceipts` locks the actor/project/operation key
@@ -595,8 +599,15 @@ properties (`metadata.properties`, `{format:"yaml", text}`) with non-blank text.
 themselves never ride in the catalog: `GET /api/projects/:projectId/documents/:documentId/properties`
 (same read grant as the document) parses the stored YAML in source order into `DocumentProperties`
 (`document-properties.ts`); YAML it cannot read, including duplicate keys, comes back `unreadable`
-with its text. A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
-`copy` writes to the new document's metadata.
+with its text. What is readable and which aliases it names is one bounded policy,
+`frontmatter.ts`; import reads aliases and its unreadable finding through it too, so import
+and display never disagree. Do not parse frontmatter YAML anywhere else.
+
+A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
+`copy` writes to the new document's metadata. Those fields are host-only: the model never sees
+document properties in v1 (ruling I6, [#778](https://github.com/haowjy/meridian-flow/issues/778)).
+Copy inheriting them is invisible metadata inheritance, not model visibility; no `stat`, `ls`,
+`read` or verbose tool projection may render them.
 
 Import parent lookup is a Context capability (ContextImportLocations).
 It resolves folder identity, takes the current project-area namespace lock,

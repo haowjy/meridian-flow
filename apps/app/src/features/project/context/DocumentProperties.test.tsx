@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The properties block is fetched only when the catalog says so, and is read-only. */
 import type { DocumentProperties as Dto } from "@meridian/contracts";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
@@ -53,18 +53,35 @@ const chapter: Dto = {
   text: "aliases: [Gate Opening, First Chapter]\n",
 };
 
-/** Lets the query resolve and React render what it returned. */
-const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+// Query results reach components in the dispatch that settles them, not a later tick.
+notifyManager.setScheduler((callback) => callback());
 
-async function show(run: (root: HTMLElement) => Promise<void>) {
+/** Resolves once no query is pending; act then renders what they returned. */
+function settle(client: QueryClient) {
+  const cache = client.getQueryCache();
+  const done = () => cache.getAll().every((query) => query.state.status !== "pending");
+  return act(
+    () =>
+      new Promise<void>((resolve) => {
+        if (done()) return resolve();
+        const stop = cache.subscribe(() => {
+          if (!done()) return;
+          stop();
+          resolve();
+        });
+      }),
+  );
+}
+
+async function show(run: (root: HTMLElement, settled: () => Promise<void>) => Promise<void>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await withReactRoot(
     <QueryClientProvider client={client}>
       <DocumentProperties projectId="project" tab={tab} />
     </QueryClientProvider>,
     async () => {
-      await settle();
-      await run(document.body);
+      await settle(client);
+      await run(document.body, () => settle(client));
     },
   );
 }
@@ -188,12 +205,12 @@ it("shows nothing for frontmatter with no keys", async () => {
 
 it("says it couldn't load and retries from the open block", async () => {
   fetchProperties.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(chapter);
-  await show(async (root) => {
+  await show(async (root, settled) => {
     expect(toggle()?.textContent).toBe("PropertiesCouldn't load");
     await act(async () => toggle()?.click());
     expect(root.querySelector("[role=alert]")?.textContent).toContain("Couldn't load properties.");
     await act(async () => root.querySelector<HTMLButtonElement>("[role=alert] button")?.click());
-    await settle();
+    await settled();
     expect(root.querySelector("dl")).not.toBeNull();
   });
 });

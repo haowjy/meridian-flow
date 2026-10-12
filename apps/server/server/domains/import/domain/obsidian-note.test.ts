@@ -6,7 +6,9 @@ import { walkLinkOccurrences } from "@meridian/markup/links";
 import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { createLinkIndex, type ImportLinkCandidate, readFrontmatter } from "./link-index.js";
+import { parseDocumentProperties } from "../../context/document-properties.js";
+import { MAX_PROPERTIES_TEXT_LENGTH } from "../../context/frontmatter.js";
+import { createLinkIndex, type ImportLinkCandidate, obsidianSettings } from "./link-index.js";
 import { convertObsidianNote } from "./obsidian-note.js";
 
 const root = new URL("../__fixtures__/obsidian-vault/", import.meta.url).pathname;
@@ -147,7 +149,28 @@ describe("Obsidian conversion", () => {
     expect(result.aliases).toEqual([]);
     expect(result.markdown).toBe("Body");
     expect(result.findings.map((finding) => finding.code)).toContain("properties_unreadable");
-    expect(readFrontmatter("aliases: [A, B]\n").aliases).toEqual(["A", "B"]);
+  });
+  it.each([
+    ["a list of names", "aliases: [Gate, 3, Old Wu]\n"],
+    ["a single name", "aliases: Gate\n"],
+    ["a tag the core schema does not know", "aliases: !custom [Tagged]\n"],
+    [
+      "101 references to one anchor",
+      `base: &a A\naliases: [${Array(101).fill("*a").join(", ")}]\n`,
+    ],
+    [
+      "nesting deeper than the display walks",
+      `x: ${"[".repeat(40)}1${"]".repeat(40)}\naliases: [Deep]\n`,
+    ],
+    ["a cycle beside the aliases", "x: &x [*x]\naliases: [A]\n"],
+    ["text over the size cap", `aliases: [Tail]\n#${" ".repeat(MAX_PROPERTIES_TEXT_LENGTH)}\n`],
+  ])("reads %s exactly as the properties display does", (_name, yaml) => {
+    const display = parseDocumentProperties({ format: "yaml", text: yaml });
+    const imported = convert(`---\n${yaml}---\n[[Gate]]`);
+    expect(imported.findings.some((finding) => finding.code === "properties_unreadable")).toBe(
+      display.unreadable,
+    );
+    expect(imported.aliases).toEqual(display.aliases);
   });
   it("honors exact case, source folder, path depth, aliases, attachment folder and prose suffixes", () => {
     const result = convert(
@@ -231,28 +254,25 @@ describe("Obsidian conversion", () => {
     expect(result.targets.get(0)).toBe("Sects.md");
     expect(result.findings.map((finding) => finding.code)).not.toContain("link_ambiguous");
   });
-  it("resolves 2,000 links against 10,000 selected and 10,000 existing candidates promptly", () => {
-    const pool = Array.from({ length: 10_000 }, (_, index) =>
-      candidate(`Folder ${index % 97}/Note ${index}.md`, index % 13 ? [] : [`Alias ${index}`]),
-    );
-    const existing = Array.from({ length: 10_000 }, (_, index) =>
-      candidate(`Old ${index}.md`, [], `kb://Archive ${index % 89}/Old ${index}`),
-    );
-    const source = pool[0];
-    const text = Array.from({ length: 2_000 }, (_, index) =>
-      index % 4 === 0
-        ? `[[Note ${index * 5}]]`
-        : index % 4 === 1
-          ? `[[Alias ${index * 13}]]`
-          : index % 4 === 2
-            ? `[[Old ${index * 5}]]`
-            : `[[Missing ${index}]]`,
-    ).join(" ");
-    const started = performance.now();
-    const result = convert(text, source, pool, existing);
-    expect(performance.now() - started).toBeLessThan(5_000);
-    expect(result.targets.get(0)).toBe(pool[0].id);
-    expect(result.targets.get(2)).toBe("Old 10.md");
-    expect(result.targets.has(3)).toBe(false);
-  }, 60_000);
+});
+
+describe("a folder's Obsidian settings", () => {
+  const root = (fields: object) => ({
+    rootId: 0,
+    kind: "folder" as const,
+    name: "vault",
+    ...fields,
+  });
+
+  it("keeps why the browser sent none apart from settings that are not JSON", () => {
+    expect(obsidianSettings(root({})).problem).toBeNull();
+    expect(obsidianSettings(root({ appJson: '{"newFileLocation":"current"}' }))).toMatchObject({
+      newFileLocation: "current",
+      problem: null,
+    });
+    expect(obsidianSettings(root({ appJson: "{not json" })).problem).toBe("malformed");
+    expect(obsidianSettings(root({ appJson: "[1]" })).problem).toBe("malformed");
+    for (const unread of ["unavailable", "unreadable", "too_large"] as const)
+      expect(obsidianSettings(root({ appJsonUnread: unread })).problem).toBe(unread);
+  });
 });
