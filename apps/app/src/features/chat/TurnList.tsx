@@ -27,10 +27,10 @@ import type { ReplyRetry } from "./useReplyRetry";
 
 export { continuesResponse } from "./transcript-model";
 
-import { UserTurn, type UserTurnRecovery } from "./UserTurn";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
+import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
-import type { FailedSendRetry } from "./useThreadHandoff";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
 export type TurnListProps = {
@@ -45,9 +45,8 @@ export type TurnListProps = {
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  failedSendRetry?: FailedSendRetry | null;
   changeTrails?: Record<string, ChangeTrailShell>;
-  /** Recovered ambiguous submissions, keyed by the restored user turn id. */
+  /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
@@ -99,7 +98,6 @@ export function TurnList({
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
-  failedSendRetry = null,
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
@@ -267,11 +265,10 @@ export function TurnList({
       // history. The queued-controls tail is not a row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
       const endsTranscript = local && idx === visibleTurns.length - 1;
-      const sendRetry =
-        local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined;
+
       const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
       const retry =
-        local && replyRetry && turn.status === "error" && !sendRetry
+        local && replyRetry && turn.status === "error"
           ? {
               // Only the latest turn can be retried: the server answers its
               // messages again below it.
@@ -299,7 +296,6 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           endsTranscript={endsTranscript}
           continuesResponse={continuing[idx] ?? false}
-          failedSendRetry={sendRetry}
           replyRetry={retry}
           standIn={standIn !== null}
           onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
@@ -315,7 +311,6 @@ export function TurnList({
       enterFollow,
       replyRetry,
       controls,
-      failedSendRetry,
       lastAssistantIdx,
       navigateToChange,
       onRespondToInterrupt,

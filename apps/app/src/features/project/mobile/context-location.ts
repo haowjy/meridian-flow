@@ -30,7 +30,7 @@ export function folderAncestry(folder: string | null): FolderCrumb[] {
   }));
 }
 
-/** Leaf display name of a file path: `/notes/file.md` → `file.md`. */
+/** Leaf display name of a file path: `/notes/Chapter 1` → `Chapter 1`. */
 export function pathLeafName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
 }

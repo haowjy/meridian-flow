@@ -4,12 +4,7 @@ import { type CatalogCacheView, emptyCatalogView } from "@meridian/resource-repl
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  Composer,
-  type ComposerHandle,
-  type ComposerSubmitEnvelope,
-  type ComposerSubmitOutcome,
-} from "./Composer";
+import { Composer, type ComposerHandle, type ComposerSubmitEnvelope } from "./Composer";
 import type { ComposerChatCommand } from "./command";
 import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 
@@ -38,13 +33,7 @@ async function render(
     commands?: readonly ComposerChatCommand[];
   } = {},
 ) {
-  const onSubmit = vi.fn(
-    (envelope: ComposerSubmitEnvelope): ComposerSubmitOutcome => ({
-      kind: "accepted",
-      submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
-    }),
-  );
+  const onSubmit = vi.fn(async () => true);
   await act(() => {
     root.render(
       <Composer
@@ -141,11 +130,7 @@ it("clears accepted presentation without publishing an empty draft over another 
         onDraftChange={(change) => {
           persistedWords = change.text;
         }}
-        onSubmit={(envelope) => ({
-          kind: "accepted",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => true}
       />,
     ),
   );
@@ -161,11 +146,7 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
       <Composer
         initialDraft={draft("Keep these words")}
         onDraftChange={onDraftChange}
-        onSubmit={(envelope) => ({
-          kind: "rejected",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => false}
       />,
     ),
   );
@@ -174,9 +155,67 @@ it("leaves rejected words visible without owning the lifecycle transfer", async 
   expect(onDraftChange).not.toHaveBeenCalled();
 });
 
+it("draws a refused recording as the failure card and clears it once a send is recorded", async () => {
+  const onSubmit = vi.fn(async () => false);
+  await act(() =>
+    root.render(<Composer initialDraft={draft("Keep these words")} onSubmit={onSubmit} />),
+  );
+  await pressEnter();
+
+  // The card is the live alert; the words stay in the box and Send is the retry. Its only
+  // control is the X.
+  const alert = host.querySelector<HTMLElement>("[role='alert']");
+  expect(alert?.getAttribute("data-slot")).toBe("alert");
+  expect(alert?.textContent).toBe("Couldn't send.");
+  expect(
+    [...(alert?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label")),
+  ).toEqual(["Dismiss"]);
+  expect(editorElement()?.textContent).toBe("Keep these words");
+  // Inside the composer frame, above the words, and the editor is the same node afterwards.
+  const frame = host.querySelector("[data-composer]");
+  const editorBefore = editorElement();
+  expect(alert && frame?.contains(alert)).toBe(true);
+  expect(alert?.compareDocumentPosition(editorBefore as Node)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
+  onSubmit.mockResolvedValueOnce(true);
+  await pressEnter();
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()).toBe(editorBefore);
+  expect(editorElement()?.textContent).toBe("");
+});
+
+it("dismisses the refused-recording card with the X and returns to the editor", async () => {
+  const onSubmit = vi.fn(async () => false);
+  await act(() =>
+    root.render(<Composer initialDraft={draft("Keep these words")} onSubmit={onSubmit} />),
+  );
+  await pressEnter();
+  const dismiss = host.querySelector<HTMLButtonElement>(
+    "[role='alert'] button[aria-label='Dismiss']",
+  );
+  expect(dismiss).not.toBeNull();
+  (document.activeElement as HTMLElement | null)?.blur();
+
+  await act(async () => {
+    dismiss?.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()?.textContent).toBe("Keep these words");
+  expect(
+    editorElement()?.contains(document.activeElement) || document.activeElement === editorElement(),
+  ).toBe(true);
+
+  // A later refusal draws it again.
+  await pressEnter();
+  expect(host.querySelector("[role='alert']")?.textContent).toBe("Couldn't send.");
+});
+
 it("does not prepend a rejected submission to the live draft edited during admission", async () => {
   const ref = createRef<ComposerHandle>();
-  let reject: ((outcome: ComposerSubmitOutcome) => void) | undefined;
+  let reject: ((recorded: boolean) => void) | undefined;
   let sent: ComposerSubmitEnvelope | undefined;
   await act(() =>
     root.render(
@@ -198,11 +237,7 @@ it("does not prepend a rejected submission to the live draft edited during admis
   });
   await act(async () => {
     if (!sent || !reject) throw new Error("Send was not dispatched");
-    reject({
-      kind: "rejected",
-      submissionId: sent.submissionId,
-      acceptedRevision: sent.acceptedRevision,
-    });
+    reject(false);
   });
   expect(editorElement()?.textContent).toBe("Original continued");
 });
@@ -230,11 +265,7 @@ it("drops a restored missing reference only after successful catalog acquisition
     root.render(
       <Composer
         initialDraft={serializeComposerDraft(doc).draft}
-        onSubmit={(envelope) => ({
-          kind: "accepted",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
+        onSubmit={async () => true}
         onDraftChange={onDraftChange}
         referenceCatalog={{
           label: "References",

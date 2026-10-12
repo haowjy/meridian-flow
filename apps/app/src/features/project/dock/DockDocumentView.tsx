@@ -14,10 +14,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { isWorkArchived } from "@meridian/contracts/works";
 import { useCallback } from "react";
-import { useWorks } from "@/client/query/useWorks";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import {
   DraftReviewBoundary,
@@ -26,16 +23,10 @@ import {
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
-import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
-import { useChatNavigation } from "../routing/chat-navigation";
-import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
+import { useDockArchivedWork } from "./DockDocumentIdentity";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
-import type { AiDraftLaunchTarget } from "./editor-review-handoff";
-import { commitDockDocument } from "./use-dock-placement";
-import { ReviewLaunchContext } from "./useAiDraftLauncher";
-
-const noopCommitted = () => undefined;
+import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
 
 export function DockDocumentView(props: {
   projectId: string;
@@ -43,21 +34,7 @@ export function DockDocumentView(props: {
   visible: boolean;
 }) {
   const review = usePresentedDraftReview();
-  const { revealDock } = useChatNavigation();
-  // Q1: every review control inside this container uses this one launch adapter.
-  const launch = useCallback(
-    (target: AiDraftLaunchTarget) => {
-      const store = useDockDocumentStore.getState();
-      const claim = store.claim();
-      const tab = contextTabFromDraftGroup(target);
-      if (tab)
-        commitDockDocument(props.projectId, props.document.screen, tab, revealDock, claim, {
-          workId: target.workId,
-          draftId: target.draftId,
-        });
-    },
-    [props.projectId, props.document.screen, revealDock],
-  );
+  const launch = useDockReviewLauncher(props.projectId, props.document);
   return (
     <ReviewLaunchContext.Provider value={launch}>
       <DraftReviewBoundary value={review}>
@@ -86,45 +63,22 @@ function DockDocumentBody({
   visible: boolean;
 }) {
   const closeDocument = useDockDocumentStore((state) => state.closeDocument);
-  const openInEditor = useOpenDocumentInEditor();
-  const { works } = useWorks(projectId);
   const resources = useAccountResourceReplica();
   const tab = dockDocument.tab;
   const onUntitledBecameNonEmpty = useCallback(async () => {
     if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
   }, [resources, tab]);
 
-  const ownerWorkId = tab.kind === "new" ? null : tab.workId;
-  const work = ownerWorkId ? works?.find((candidate) => candidate.id === ownerWorkId) : undefined;
-  const archived =
-    work &&
-    tab.kind !== "new" &&
-    isWorkArchived(work) &&
-    isWorkScopedProjectContextScheme(tab.scheme);
+  const archived = useDockArchivedWork(projectId, tab);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <DocumentPaneChrome
         projectId={projectId}
-        editorWorkId={ownerWorkId ?? null}
         tab={tab}
-        archivedWork={archived ? work : null}
-        identityReadOnly={Boolean(archived)}
+        archivedWork={archived}
         onCloseTab={closeDocument}
-        // The projection above follows a rename; the dock keeps no tab to patch.
-        onCommitted={noopCommitted}
-        onOpenExisting={(scheme, path, owner) => {
-          const store = useDockDocumentStore.getState();
-          const claim = store.claim();
-          openInEditor(
-            { scheme, path, ...owner },
-            {
-              afterCommit: () => {
-                if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
-              },
-            },
-          );
-        }}
+        identity={null}
       />
       {tab.kind !== "viewer" ? (
         <div className="relative min-h-0 flex-1">
@@ -144,7 +98,7 @@ function DockDocumentBody({
         <div className="flex min-h-0 flex-1 flex-col">
           <ContextViewerBareHost
             projectId={projectId}
-            editorWorkId={ownerWorkId ?? null}
+            editorWorkId={tab.workId ?? null}
             tab={tab}
           />
         </div>

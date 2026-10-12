@@ -12,6 +12,7 @@
  */
 import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
+  documentPathKey,
   resolveDocumentHref,
   spellDocumentHref,
   splitDocumentHrefSuffix,
@@ -95,12 +96,18 @@ export function resolveStoredLink(
 
   const stored = resolveDocumentHref(link.href, null);
   if (!stored) return { kind: "gone" };
+  const parsed = parseContextUri(stored.uri);
+  const uri = parsed.ok
+    ? stored.uri.slice(0, -parsed.value.path.length) + documentPathKey(parsed.value.path)
+    : stored.uri;
+  // Prepare tracked the stored spelling. Canonicalization changes the shown
+  // ahead address, not the snapshot key that was loaded for this occurrence.
   const occupant = catalog.documentAt(stored.uri);
   if (occupant === undefined) return { kind: "unknown" };
   // A document the reader cannot name or read is answered as nothing there:
   // an unsettled ref must not reveal what sits at its address.
   if (occupant && nameableLive(occupant)) return documentResolution(occupant);
-  return { kind: "ahead", uri: stored.uri, suffix: stored.suffix };
+  return { kind: "ahead", uri, suffix: stored.suffix };
 }
 
 function resolveDocument(

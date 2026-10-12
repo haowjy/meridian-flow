@@ -24,7 +24,7 @@ import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
 import {
-  catalogSiblingNames,
+  catalogSiblings,
   compareTreePlaces,
   type TreePlace,
   workFileSearch,
@@ -84,7 +84,7 @@ export function WorkFilesView({
   files: WorkFiles;
 }) {
   const { scratch, intake } = files;
-  const scratchDelete = useDeleteConfirmation({ projectId, workId: work.id, scheme: "scratch" });
+  const scratchDelete = useDeleteConfirmation({ projectId });
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
     scratch.catalog && scratchRoot
@@ -128,6 +128,11 @@ export function WorkFilesView({
       node:
         node.kind === "dir" ? (
           <FolderRow
+            projectId={projectId}
+            workId={work.id}
+            siblings={catalogSiblings(scratch.catalog, node)}
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
             folder={node}
             open={isExpanded(node.entryId)}
             onToggle={() => toggleEntry(node.entryId)}
@@ -137,22 +142,11 @@ export function WorkFilesView({
             projectId={projectId}
             workId={work.id}
             file={node}
-            siblingNames={catalogSiblingNames(scratch.catalog, node)}
-            edit={
-              files.editable
-                ? {
-                    renaming: files.renaming === node.path,
-                    onRename: files.setRenaming,
-                    onDelete: () =>
-                      scratchDelete.requestDelete({
-                        kind: "file",
-                        name: node.name,
-                        path: node.path,
-                        documentId: node.documentId,
-                      }),
-                  }
-                : undefined
-            }
+            siblings={catalogSiblings(scratch.catalog, node)}
+            capabilities={files.editable ? ["rename", "move", "delete"] : []}
+            onRequestDelete={scratchDelete.requestDelete}
+            requestRename={files.renaming === node.path}
+            onRenameDone={() => files.setRenaming(null)}
           />
         ),
     })),

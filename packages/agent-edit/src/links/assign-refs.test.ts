@@ -37,7 +37,7 @@ const D = uuid(2);
 const E = uuid(3);
 const G = uuid(5);
 const ch = (path: string) => `manuscript://chapters/${path}`;
-const HOLDER = ch("holder.md");
+const HOLDER = ch("holder");
 
 /** One reviewer fixture rendered for the write path: letters become document ids. */
 function render(fixture: Fixture) {
@@ -107,7 +107,7 @@ interface DoorCase {
   run(): Promise<void>;
 }
 
-const target = ch("target.md");
+const target = ch("target");
 const doors: DoorCase[] = [
   {
     name: "insert assigns a new link fresh to the document at its address",
@@ -117,7 +117,7 @@ const doors: DoorCase[] = [
         documents: [catalogDocument(D, target)],
         blocks: [paragraph("Intro.")],
       });
-      await ctx.write({ command: "insert", content: "See [Target](target.md)." });
+      await ctx.write({ command: "insert", content: "See [Target](target)." });
       expect
         .soft(storedLinks(ctx.live()), this.name)
         .toEqual([
@@ -137,7 +137,7 @@ const doors: DoorCase[] = [
       await ctx.write({
         command: "replace",
         in: [1, 1],
-        content: "[Renamed target](target.md) waits.",
+        content: "[Renamed target](target) waits.",
       });
       expect
         .soft(storedLinks(ctx.live()), this.name)
@@ -154,8 +154,8 @@ const doors: DoorCase[] = [
       });
       const outcome = await ctx.write({
         command: "replace",
-        find: "[Target](target.md)",
-        content: '[Target](target.md "Chapter one")',
+        find: "[Target](target)",
+        content: '[Target](target "Chapter one")',
       });
       expect.soft(outcome.status, this.name).toBe("success");
       expect.soft(storedLinks(ctx.live()), this.name).toEqual([
@@ -175,17 +175,12 @@ const doors: DoorCase[] = [
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
         documents: [
-          catalogDocument(D, ch("a.md")),
-          catalogDocument(E, ch("b.md"), { presence: "deleted" }),
-          catalogDocument(G, ch("b.md")),
+          catalogDocument(D, ch("a")),
+          catalogDocument(E, ch("b"), { presence: "deleted" }),
+          catalogDocument(G, ch("b")),
         ],
         blocks: [
-          paragraph(
-            docLink("Alpha", D, ch("a.md")),
-            " and ",
-            docLink("Beta", E, ch("b.md")),
-            " wait.",
-          ),
+          paragraph(docLink("Alpha", D, ch("a")), " and ", docLink("Beta", E, ch("b")), " wait."),
         ],
       });
       const before = storedLinks(ctx.live());
@@ -201,8 +196,8 @@ const doors: DoorCase[] = [
       const fallbacks: LinkSpliceFallbackDetail[] = [];
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
-        documents: [catalogDocument(D, ch("a.md")), catalogDocument(G, ch("b.md"))],
-        blocks: [paragraph(docLink("Alpha", D, ch("a.md")), " costs now.")],
+        documents: [catalogDocument(D, ch("a")), catalogDocument(G, ch("b"))],
+        blocks: [paragraph(docLink("Alpha", D, ch("a")), " costs now.")],
         onLinkSpliceFallback: (event) => fallbacks.push(event),
       });
       const before = storedLinks(ctx.live());
@@ -218,7 +213,7 @@ const doors: DoorCase[] = [
         projectId: PROJECT,
         documents: [catalogDocument(H, HOLDER), catalogDocument(D, target)],
       });
-      const written = codecFactory.parse("| a | b |\n| - | - |\n| [A](target.md) | x |").blocks;
+      const written = codecFactory.parse("| a | b |\n| - | - |\n| [A](target) | x |").blocks;
       await links.prepare({ documentId: H, docs: [], written });
       const table = assignLinkRefs({
         old: [],
@@ -254,13 +249,14 @@ const doors: DoorCase[] = [
         documents: [],
         blocks: [paragraph("Intro.")],
       });
-      await ctx.write({ command: "insert", content: "![Map](maps/world.png) and [Next](ch9)" });
+      await ctx.write({ command: "insert", content: "![Map](maps/world.png) and [Next](ch9.md)" });
       const [image, next] = storedLinks(ctx.live());
       expect.soft(image?.ref, this.name).toMatch(/^ahead:/);
       expect.soft(image?.href, this.name).toBe(storedHref("manuscript://maps/world.png", ""));
       expect.soft(next?.ref, this.name).toMatch(/^ahead:/);
-      expect.soft(next?.href, this.name).toBe(storedHref(ch("ch9.md"), ""));
+      expect.soft(next?.href, this.name).toBe(storedHref(ch("ch9"), ""));
       expect.soft([...ctx.links.minted].sort(), this.name).toEqual([image?.ref, next?.ref].sort());
+      expect.soft(await ctx.markdown(), this.name).toContain("[Next](ch9)");
       // Registration may settle a ref at once; the echo spells both from a loaded scope.
       expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
@@ -296,31 +292,31 @@ const doors: DoorCase[] = [
       const ctx = harness();
       const source = [paragraph(docLink("Target", D, target), " waits.")];
       await ctx.core.write(
-        { command: "copy", file: "copy.md", from: { path: "src.md" } },
+        { command: "copy", file: "copy", from: { path: "src" } },
         { sessionId: "session-a", threadId: "thread-a", copiedNodes: source },
       );
       expect
-        .soft(storedLinks(ctx.coordinator.require("copy.md")), this.name)
+        .soft(storedLinks(ctx.coordinator.require("copy")), this.name)
         .toEqual(storedLinks(docFromBlocks(source, 1)));
     },
   },
   {
     name: "a contextual link stays contextual when its block is rewritten",
     async run() {
-      const contextual = { text: "Draft", ref: null, href: "manuscript://b.md" };
+      const contextual = { text: "Draft", ref: null, href: "manuscript://b" };
       const ctx = linkHarness({
-        holder: { id: H, uri: "user://notes/holder.md" },
-        documents: [catalogDocument(D, "manuscript://b.md")],
+        holder: { id: H, uri: "user://notes/holder" },
+        documents: [catalogDocument(D, "manuscript://b")],
         blocks: [paragraph(contextual, " note.")],
       });
       await ctx.write({
         command: "replace",
         in: [1, 1],
-        content: "[Draft](manuscript://b.md) note, revised.",
+        content: "[Draft](manuscript://b) note, revised.",
       });
       expect
         .soft(storedLinks(ctx.live()), this.name)
-        .toEqual([{ label: "Draft", ref: null, href: "manuscript://b.md", title: null }]);
+        .toEqual([{ label: "Draft", ref: null, href: "manuscript://b", title: null }]);
     },
   },
   {
@@ -345,61 +341,61 @@ const doors: DoorCase[] = [
       }> = [
         {
           name: "replace: a document ref after a move",
-          old: [docLink("Target", D, ch("ch12.md")), " waits."],
-          shown: shownAt(documentRef(D), ch("ch12.md")),
+          old: [docLink("Target", D, ch("ch12")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12")),
           command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
-          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13) waits." },
         },
         {
           name: "create-overwrite: a document ref after a move",
-          old: [docLink("Target", D, ch("ch12.md")), " waits."],
-          shown: shownAt(documentRef(D), ch("ch12.md")),
+          old: [docLink("Target", D, ch("ch12")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12")),
           command: { command: "create", overwrite: true, content: "[Renamed](ch12) waits." },
-          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13) waits." },
         },
         {
           name: "insert: pass 2 assigns the shown document after a move",
           old: ["Intro."],
-          shown: shownAt(documentRef(D), ch("ch12.md")),
+          shown: shownAt(documentRef(D), ch("ch12")),
           command: { command: "insert", content: "[Again](ch12) waits." },
-          expected: { ref: documentRef(D), markdown: "Intro.\n\n[Again](ch13.md) waits." },
+          expected: { ref: documentRef(D), markdown: "Intro.\n\n[Again](ch13) waits." },
         },
         {
           name: "a settled ahead ref after its document moved",
-          old: [{ text: "Target", ref: A, href: storedHref(ch("ch12.md"), "") }, " waits."],
-          shown: shownAt(A, ch("ch12.md")),
+          old: [{ text: "Target", ref: A, href: storedHref(ch("ch12"), "") }, " waits."],
+          shown: shownAt(A, ch("ch12")),
           settlements: new Map([[A.slice("ahead:".length), D]]),
           command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
-          expected: { ref: A, markdown: "[Renamed](ch13.md) waits." },
+          expected: { ref: A, markdown: "[Renamed](ch13) waits." },
         },
         {
           name: "an unsettled ahead ref keeps its own address",
-          old: [{ text: "Later", ref: A, href: storedHref(ch("later.md"), "") }, " waits."],
-          shown: shownAt(A, ch("later.md")),
+          old: [{ text: "Later", ref: A, href: storedHref(ch("later"), "") }, " waits."],
+          shown: shownAt(A, ch("later")),
           command: { command: "replace", in: [1, 1], content: "[Soon](later) waits." },
-          expected: { ref: A, markdown: "[Soon](later.md) waits." },
+          expected: { ref: A, markdown: "[Soon](later) waits." },
         },
         {
           name: "holder move: the relative stale href normalizes against the shown holder",
-          holderUri: "manuscript://two/holder.md",
-          old: [docLink("Target", D, "manuscript://one/ch12.md"), " waits."],
-          shown: shownAt(documentRef(D), "manuscript://one/ch12.md", "manuscript://one/holder.md"),
+          holderUri: "manuscript://two/holder",
+          old: [docLink("Target", D, "manuscript://one/ch12"), " waits."],
+          shown: shownAt(documentRef(D), "manuscript://one/ch12", "manuscript://one/holder"),
           command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
-          expected: { ref: documentRef(D), markdown: "[Renamed](../chapters/ch13.md) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](../chapters/ch13) waits." },
         },
         {
           name: "a written suffix rides along",
-          old: [docLink("Target", D, ch("ch12.md")), " waits."],
-          shown: shownAt(documentRef(D), ch("ch12.md")),
+          old: [docLink("Target", D, ch("ch12")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12")),
           command: { command: "replace", in: [1, 1], content: "[Renamed](ch12#scene) waits." },
-          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md#scene) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13#scene) waits." },
         },
       ];
       for (const row of rows) {
         const label = `${this.name}: ${row.name}`;
         const ctx = linkHarness({
           holder: { id: H, uri: row.holderUri ?? HOLDER },
-          documents: [catalogDocument(D, ch("ch13.md"))],
+          documents: [catalogDocument(D, ch("ch13"))],
           blocks: [paragraph(...row.old)],
           ...(row.settlements ? { settlements: row.settlements } : {}),
         });
@@ -436,7 +432,7 @@ const doors: DoorCase[] = [
         for (const occupied of [false, true]) {
           const label = `${this.name}: ${kind}${occupied ? ", path reoccupied" : ""}`;
           const ctx = linkHarness({
-            holder: { id: H, uri: "manuscript://holder.md" },
+            holder: { id: H, uri: "manuscript://holder" },
             documents: [
               catalogDocument(D, "manuscript://moved.png", { image: true }),
               ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
@@ -446,7 +442,7 @@ const doors: DoorCase[] = [
           });
           const outcome = await ctx.write(
             { command: "replace", in: [1, 1], content: picture.content },
-            [{ ref: A, address: map, holderUri: "manuscript://holder.md", at: 1 }],
+            [{ ref: A, address: map, holderUri: "manuscript://holder", at: 1 }],
           );
           expect.soft(outcome.status, label).toBe("success");
           expect.soft(storedLinks(ctx.live()), label).toEqual([
@@ -467,19 +463,19 @@ const doors: DoorCase[] = [
         ] as const) {
           const label = `${this.name}: uploaded ${kind}${moved ? ", moved" : ""}${occupied ? ", path reoccupied" : ""}`;
           const ctx = linkHarness({
-            holder: { id: H, uri: "manuscript://holder.md" },
+            holder: { id: H, uri: "manuscript://holder" },
             documents: [catalogDocument(D, map, { image: true })],
             blocks: [picture.old({ src: `asset:${D}`, ref: null })],
           });
           const read = await ctx.read();
           ctx.catalog.documents = [
-            catalogDocument(H, "manuscript://holder.md"),
+            catalogDocument(H, "manuscript://holder"),
             catalogDocument(D, moved ? "manuscript://moved.png" : map, { image: true }),
             ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
           ];
           const shown = (read.showing?.links ?? []).map((fact, at) => ({
             ...fact,
-            holderUri: "manuscript://holder.md",
+            holderUri: "manuscript://holder",
             at,
           }));
           const outcome = await ctx.write(
@@ -582,7 +578,7 @@ const doors: DoorCase[] = [
       ];
       for (const row of unspellable) {
         const label = `${this.name}: upload with ${row.kind}`;
-        const holder = { id: H, uri: "manuscript://holder.md" };
+        const holder = { id: H, uri: "manuscript://holder" };
         const ctx = linkHarness({
           holder,
           documents: row.documents,
@@ -666,20 +662,20 @@ const doors: DoorCase[] = [
         ] as const) {
           const label = `${this.name}: ${row.kind}${isMoved ? ", moved and path reoccupied" : ""}`;
           const ctx = linkHarness({
-            holder: { id: H, uri: "manuscript://holder.md" },
+            holder: { id: H, uri: "manuscript://holder" },
             documents: [catalogDocument(D, map, { image: true })],
             blocks: [row.old],
           });
           const read = await ctx.read();
           const at = isMoved ? moved : map;
           ctx.catalog.documents = [
-            catalogDocument(H, "manuscript://holder.md"),
+            catalogDocument(H, "manuscript://holder"),
             catalogDocument(D, at, { image: true }),
             ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
           ];
           const shown = (read.showing?.links ?? []).map((fact, position) => ({
             ...fact,
-            holderUri: "manuscript://holder.md",
+            holderUri: "manuscript://holder",
             at: position,
           }));
           const outcome = await ctx.write({ command: "insert", content: row.content }, shown);
@@ -699,18 +695,18 @@ const doors: DoorCase[] = [
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
         documents: [
-          catalogDocument(D, ch("old.md")),
-          catalogDocument(E, ch("other.txt")),
+          catalogDocument(D, ch("before")),
+          catalogDocument(E, ch("other.json")),
           catalogDocument(M, "manuscript://maps/old.png", { image: true }),
           catalogDocument(N, "manuscript://maps/new.png", { image: true }),
         ],
         blocks: [
-          paragraph(docLink("Target", D, ch("old.md")), " waits."),
+          paragraph(docLink("Target", D, ch("before")), " waits."),
           schema.node("paragraph", null, [schema.node("image", { src: `asset:${M}`, alt: "Map" })]),
         ],
       });
-      // `other` reconstructs `[Target](other)`: only E (other.txt) is there, uniquely.
-      const retarget = await ctx.write({ command: "replace", find: "old.md", content: "other" });
+      // `other` reconstructs `[Target](other)`: only E (other.json) is there, uniquely.
+      const retarget = await ctx.write({ command: "replace", find: "before", content: "other" });
       expect.soft(retarget.status, this.name).toBe("success");
       const image = await ctx.write({ command: "replace", find: "old.png", content: "new.png" });
       expect.soft(image.status, this.name).toBe("success");
@@ -721,7 +717,7 @@ const doors: DoorCase[] = [
       expect.soft(ctx.links.misses, this.name).toEqual([]);
       expect
         .soft(await ctx.markdown(), this.name)
-        .toBe("[Target](other.txt) waits.\n\n![Map](maps/new.png)");
+        .toBe("[Target](other.json) waits.\n\n![Map](maps/new.png)");
     },
   },
   {
@@ -729,17 +725,17 @@ const doors: DoorCase[] = [
     async run() {
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
-        documents: [catalogDocument(D, ch("old.md")), catalogDocument(E, ch("other.md"))],
-        blocks: [paragraph(docLink("Target", D, ch("old.md")))],
+        documents: [catalogDocument(D, ch("old")), catalogDocument(E, ch("other"))],
+        blocks: [paragraph(docLink("Target", D, ch("old")))],
       });
-      const copied = [paragraph(docLink("Other", E, ch("other.md")), " too.")];
+      const copied = [paragraph(docLink("Other", E, ch("other")), " too.")];
       const outcome = await ctx.core.write(
         {
           command: "replace",
-          file: "holder.md",
+          file: "holder",
           documentId: H,
           in: [1, 1],
-          from: { path: "src.md" },
+          from: { path: "src" },
         } as never,
         { sessionId: "session-a", threadId: "thread-a", copiedNodes: copied },
       );
@@ -752,9 +748,9 @@ const doors: DoorCase[] = [
     name: "a failed ahead registration fails the write before anything applies",
     async run() {
       for (const command of [
-        { command: "replace", in: [1, 1], content: "[Ahead](new.md)" },
-        { command: "insert", content: "[Ahead](new.md)" },
-        { command: "create", overwrite: true, content: "[Ahead](new.md)" },
+        { command: "replace", in: [1, 1], content: "[Ahead](new)" },
+        { command: "insert", content: "[Ahead](new)" },
+        { command: "create", overwrite: true, content: "[Ahead](new)" },
       ]) {
         const label = `${this.name}: ${command.command}`;
         const ctx = linkHarness({
@@ -780,7 +776,7 @@ const doors: DoorCase[] = [
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
         documents: [
-          catalogDocument(G, ch("gone.md"), { presence: "deleted" }),
+          catalogDocument(G, ch("gone"), { presence: "deleted" }),
           catalogDocument(D, target),
         ],
         blocks: [
@@ -791,7 +787,7 @@ const doors: DoorCase[] = [
           ),
         ],
       });
-      await ctx.write({ command: "replace", in: [1, 1], content: "[Target](target.md) only." });
+      await ctx.write({ command: "replace", in: [1, 1], content: "[Target](target) only." });
       expect
         .soft(
           storedLinks(ctx.live()).map((link) => link.ref),
@@ -848,7 +844,7 @@ const doors: DoorCase[] = [
         ],
       });
       // A write's own output too: a fresh mint and a resolved ref.
-      await ctx.write({ command: "insert", content: "[Later](later.md) and [Target](target.md)." });
+      await ctx.write({ command: "insert", content: "[Later](later) and [Target](target)." });
       const live = ctx.live();
       const yjs = extractStoredLinks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
         ({ kind, ref, href }) => [kind, ref, href],
@@ -871,12 +867,12 @@ const doors: DoorCase[] = [
       await ctx.write({
         command: "replace",
         in: [1, 1],
-        content: "[Target](target.md) and [Later](later.md).",
+        content: "[Target](target) and [Later](later).",
       });
       const [found, later] = storedLinks(ctx.live());
       expect.soft(found?.ref, this.name).toBe(documentRef(D));
       expect.soft(later?.ref, this.name).toMatch(/^ahead:/);
-      expect.soft(later?.href, this.name).toBe(storedHref(ch("later.md"), ""));
+      expect.soft(later?.href, this.name).toBe(storedHref(ch("later"), ""));
       expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },

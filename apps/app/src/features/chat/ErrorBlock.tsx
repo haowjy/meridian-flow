@@ -1,14 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { CircleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 /**
- * - `send` → the writer's message was never admitted (failed first send).
  * - `generation` → the message was admitted and the reply failed, with or
  *   without partial output.
  * - `retry` → a failed reply's Retry never reached the server; this is its
@@ -16,7 +12,7 @@ import { cn } from "@/lib/utils";
  * - `provider-declined` → the AI provider turned the request down and the
  *   server judged a retry futile.
  */
-export type ErrorBlockKind = "send" | "generation" | "retry" | "provider-declined";
+export type ErrorBlockKind = "generation" | "retry" | "provider-declined";
 
 export type ErrorBlockProps = {
   /**
@@ -38,8 +34,6 @@ export type ErrorBlockProps = {
 /** One quiet sentence per kind; reads on its own in history, no status prefix. */
 function copy(kind: ErrorBlockKind, current: boolean): string {
   switch (kind) {
-    case "send":
-      return t`Couldn't send.`;
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
     case "provider-declined":
@@ -93,25 +87,13 @@ function ActiveError({
   children: ReactNode;
 }) {
   return (
-    <Alert
-      variant="destructive"
-      className={cn(
-        "border-destructive-border bg-destructive-tint shadow-none",
-        "rounded-field px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]",
-      )}
-    >
-      <CircleAlert className="text-destructive" aria-hidden />
-      <AlertDescription className="text-compact text-ink-muted">
-        <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-1">
-          <p>{copy(kind, true)}</p>
-          {onRetry ? (
-            <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
-              <Trans>Retry</Trans>
-            </Button>
-          ) : null}
-        </div>
-        {children}
-      </AlertDescription>
-    </Alert>
+    <ErrorCard note={children}>
+      <p>{copy(kind, true)}</p>
+      {onRetry ? (
+        <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
+          <Trans>Retry</Trans>
+        </Button>
+      ) : null}
+    </ErrorCard>
   );
 }

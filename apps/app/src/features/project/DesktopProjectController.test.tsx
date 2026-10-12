@@ -471,6 +471,7 @@ async function seedProjection(
         cursor: "seed",
         entries: [
           {
+            observationVersion: "1",
             kind: "file",
             entryId: "A",
             scope: { kind: "work", projectId, workId },

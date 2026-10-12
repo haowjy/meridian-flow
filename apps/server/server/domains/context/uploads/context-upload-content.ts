@@ -45,7 +45,7 @@ export function createContextUploadContentPort(
         type: "import" as const,
         userId: input.actorUserId,
         source: "upload",
-        filename: input.reservation.finalPath,
+        filename: input.reservation.filename,
         sourceId: input.reservation.intakeId,
       };
       const classification = classifyFiletype(input.reservation.fileType);
@@ -63,7 +63,11 @@ export function createContextUploadContentPort(
               sizeBytes: input.bytes.byteLength,
               origin,
             });
-      return result.ok ? { ok: true } : { ok: false, definite: true };
+      return result.ok &&
+        result.value.uri === input.reservation.canonicalUri &&
+        result.value.documentId === input.reservation.documentId
+        ? { ok: true }
+        : { ok: false, definite: true };
     },
 
     async remove({ reservation, actorUserId }) {

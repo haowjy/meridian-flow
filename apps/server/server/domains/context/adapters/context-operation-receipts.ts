@@ -1,5 +1,6 @@
 /** PostgreSQL receipt serialization and real savepoints; joins the namespace transaction context. */
 import type { Database } from "@meridian/database";
+import { contextAvailabilityHeads } from "@meridian/database/schema";
 import { contextOperationReceipts } from "@meridian/database/schema/context-operation-receipts";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -35,6 +36,15 @@ export function createDrizzleContextOperationReceipts(
           ),
         );
       return row?.receipt ?? null;
+    },
+    async observationVersion(command) {
+      const uri = command.kind === "move" ? command.destinationUri : command.uri;
+      const key = uri.startsWith("user://") ? `user:${owner.userId}` : `project:${owner.projectId}`;
+      const [head] = await currentDrizzleDb(db)
+        .select({ version: contextAvailabilityHeads.namespaceGeneration })
+        .from(contextAvailabilityHeads)
+        .where(eq(contextAvailabilityHeads.authorityKey, key));
+      return String(head?.version ?? 0n);
     },
     async insert(receipt) {
       await currentDrizzleDb(db)

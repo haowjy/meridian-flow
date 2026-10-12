@@ -5,9 +5,17 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { cancelRefusedLocationChain } from "./namespace-journal-policy";
+import { canonicalRefreshObservation } from "./canonical-observation";
+import {
+  namespaceIntentOutcome,
+  resolveUnavailableNamespace,
+  settleNamespaceIntent,
+} from "./namespace-journal-policy";
+import { committedResourceDeletion } from "./resource-deletion";
 import type {
+  DestinationParentLookup,
   NamespaceAttempt,
+  NamespaceIdentityAvailability,
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
@@ -19,7 +27,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { sameOwner } from "./resource-records";
+import { destinationParentLocation, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
@@ -50,6 +58,7 @@ export function activeNamespaceIntent(record: {
           intent.state !== "cancelled" &&
           intent.state !== "settled" &&
           intent.state !== "superseded" &&
+          intent.state !== "unexecutable-after-terminal" &&
           intent.state !== "settled-locally",
       ) ?? null
   );
@@ -89,6 +98,7 @@ function requestFor(
   record: ResourceRecord,
   intent: NamespaceIntent,
   operationId: string,
+  lookup: DestinationParentLookup,
 ): NamespaceRequest | null {
   const { resource } = record;
   if (resource.obligations.canonicalRefresh) return null;
@@ -128,7 +138,9 @@ function requestFor(
     };
   }
   const destination = intent.desired.destination;
-  const owners = moveOwnerFields(source, destination);
+  const parent = destinationParentLocation(destination.parent, lookup);
+  if (!parent) return null;
+  const owners = moveOwnerFields(source, parent);
   return {
     kind: "move",
     scheme: source.scheme,
@@ -137,10 +149,16 @@ function requestFor(
       operationId,
       path: normalizedPath(source.path),
       expected: { kind: "file", nodeId: resource.identity.documentId },
-      destinationScheme: destination.scheme,
-      destinationFolderPath: normalizedPath(destination.folderPath),
+      destinationParent: {
+        ...destination.parent,
+        ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
+      },
+      destinationScheme: parent.scheme,
+      destinationFolderPath: [normalizedPath(parent.path), ...(destination.createFolders ?? [])]
+        .filter(Boolean)
+        .join("/"),
       ...owners.body,
-      ...(destination.name !== source.name ? { newName: destination.name } : {}),
+      newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
     },
   };
 }
@@ -162,10 +180,18 @@ function replaceIntent(
 export function prepareNamespaceAttempt(
   record: ResourceRecord,
   ids: NamespaceAttemptIds,
+  lookup: DestinationParentLookup = () => null,
 ): ResourceWrite | null {
   const intent = activeNamespaceIntent(record);
   if (intent?.state !== "pending") return null;
-  if (record.resource.lifecycle.kind === "terminal") return null;
+  if (record.resource.lifecycle.kind === "terminal")
+    return {
+      expectedRevision: record.resource.revision,
+      next: {
+        resource: { ...record.resource, revision: record.resource.revision + 1 },
+        intents: resolveUnavailableNamespace(record.intents, true),
+      },
+    };
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
       expectedRevision: record.resource.revision,
@@ -175,7 +201,18 @@ export function prepareNamespaceAttempt(
       })),
     };
   }
-  const request = requestFor(record, intent, intent.operationId ?? ids.operationId);
+  if (
+    (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+    !destinationParentLocation(intent.desired.destination.parent, lookup)
+  )
+    return {
+      expectedRevision: record.resource.revision,
+      next: replaceIntent(record, intent.intentId, (current) => ({
+        ...current,
+        state: "needs-repair",
+      })),
+    };
+  const request = requestFor(record, intent, intent.operationId ?? ids.operationId, lookup);
   if (!request) return null;
   const next = replaceIntent(record, intent.intentId, (current) => ({
     ...current,
@@ -216,7 +253,7 @@ export function namespaceOutcomeMatches(
   )
     return false;
   const receipt = outcome.receipt;
-  if (attempt.request.kind === "delete" && receiptIs(receipt, "delete")) {
+  if (attempt.request.kind === "delete" && namespaceReceiptIs(receipt, "delete")) {
     const source = parseContextUri(receipt.command.uri);
     return (
       source.ok &&
@@ -226,7 +263,7 @@ export function namespaceOutcomeMatches(
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
-  if (attemptIs(attempt, "move") && receiptIs(receipt, "move")) {
+  if (attemptIs(attempt, "move") && namespaceReceiptIs(receipt, "move")) {
     const source = parseContextUri(receipt.command.sourceUri);
     const destination = parseContextUri(receipt.command.destinationUri);
     const currentName = normalizedPath(attempt.request.body.path).split("/").at(-1) ?? "";
@@ -247,18 +284,36 @@ export function namespaceOutcomeMatches(
         rootThreadId: attempt.request.body.sourceRootThreadId,
         rootThreadRef: attempt.request.sourceRootThreadRef,
       }) &&
-      destination.value.scheme === attempt.request.body.destinationScheme &&
-      destination.value.path === destinationPath &&
-      authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
-        workId: attempt.request.body.destinationWorkId ?? null,
-        workSlug: attempt.request.destinationWorkSlug,
-        rootThreadId: attempt.request.body.destinationRootThreadId,
-        rootThreadRef: attempt.request.destinationRootThreadRef,
-      }) &&
+      sameDestinationParent(
+        receipt.command.destinationParent,
+        attempt.request.body.destinationParent,
+      ) &&
+      (attempt.request.body.destinationParent?.kind === "folder"
+        ? destination.value.path.split("/").at(-1) === (attempt.request.body.newName ?? currentName)
+        : destination.value.scheme === attempt.request.body.destinationScheme &&
+          destination.value.path === destinationPath &&
+          authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
+            workId: attempt.request.body.destinationWorkId ?? null,
+            workSlug: attempt.request.destinationWorkSlug,
+            rootThreadId: attempt.request.body.destinationRootThreadId,
+            rootThreadRef: attempt.request.destinationRootThreadRef,
+          })) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
   return false;
+}
+
+function sameDestinationParent(
+  left: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
+  right: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
+): boolean {
+  if (!left || !right) return left === right;
+  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
+    return false;
+  if (left.kind === "folder" || right.kind === "folder")
+    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
+  return left.scheme === right.scheme && sameOwner(left.owner, right.owner);
 }
 
 function authorityMatches(
@@ -283,7 +338,7 @@ function attemptIs<Kind extends NamespaceRequest["kind"]>(
   return attempt.request.kind === kind;
 }
 
-function receiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
+export function namespaceReceiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
   receipt: ContextOperationReceipt,
   kind: Kind,
 ): receipt is ReceiptOf<Kind> {
@@ -301,7 +356,7 @@ export function namespaceAttemptWithOutcome(
   if (
     attemptIs(attempt, "move") &&
     outcome.kind === "operation" &&
-    receiptIs(outcome.receipt, "move")
+    namespaceReceiptIs(outcome.receipt, "move")
   )
     return {
       attemptId: attempt.attemptId,
@@ -311,7 +366,7 @@ export function namespaceAttemptWithOutcome(
   if (
     attemptIs(attempt, "delete") &&
     outcome.kind === "operation" &&
-    receiptIs(outcome.receipt, "delete")
+    namespaceReceiptIs(outcome.receipt, "delete")
   )
     return {
       attemptId: attempt.attemptId,
@@ -405,7 +460,8 @@ export function settleNamespaceOutcome(
     repair = true;
   } else if (attemptIs(attempt, "move")) {
     const receipt = outcome.receipt;
-    if (!receiptIs(receipt, "move") || !receipt.result.ok || !identityStillMatches) repair = true;
+    if (!namespaceReceiptIs(receipt, "move") || !receipt.result.ok || !identityStillMatches)
+      repair = true;
     else {
       // A historical move receipt proves its command outcome, not the current location.
       // Its refresh obligation blocks later dispatch until a post-receipt catalog read.
@@ -416,13 +472,14 @@ export function settleNamespaceOutcome(
           canonicalRefresh: {
             operationId: receipt.operationId,
             identityRevision: intent.identityRevision,
+            observationVersion: receipt.observationVersion,
           },
         },
       };
     }
   } else if (attemptIs(attempt, "delete")) {
     const receipt = outcome.receipt;
-    if (!receiptIs(receipt, "delete")) repair = true;
+    if (!namespaceReceiptIs(receipt, "delete")) repair = true;
     else {
       const result = receipt.result;
       if (
@@ -432,30 +489,28 @@ export function settleNamespaceOutcome(
       )
         repair = true;
       else {
-        const { sessionAdoption: _superseded, ...obligations } = resource.obligations;
-        resource = {
-          ...resource,
-          canonical: null,
-          obligations,
-          lifecycle: {
-            kind: "terminal",
-            generation: result.value.availabilityGeneration,
-            transitionId: receipt.operationId,
-          },
-        };
+        resource = committedResourceDeletion(
+          resource,
+          result.value.availabilityGeneration,
+          receipt.operationId,
+          receipt.observationVersion,
+        );
       }
     }
   } else repair = true;
-  const next = replaceIntent({ resource, intents: record.intents }, intent.intentId, (current) => ({
-    ...current,
-    state: repair ? "needs-repair" : "settled",
-    settledAt,
-  }));
-  if (
-    repair &&
-    (outcome.kind === "refusal" || (outcome.kind === "operation" && !outcome.receipt.result.ok))
-  )
-    next.intents = cancelRefusedLocationChain(next.intents, intent);
+  const disposition = namespaceIntentOutcome(
+    outcome,
+    record.resource.lifecycle.kind === "terminal",
+  );
+  const next: ResourceRecord = {
+    resource: { ...resource, revision: record.resource.revision + 1 },
+    intents: settleNamespaceIntent(
+      record.intents,
+      intent,
+      disposition === "accepted" && repair ? "refused" : disposition,
+      settledAt,
+    ),
+  };
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -464,6 +519,8 @@ export function installCanonicalRefresh(input: {
   record: ResourceRecord;
   operationId: string;
   location: ResourceLocation;
+  parent: import("./resource-records").ParentRef;
+  observationVersion: string;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
   if (!obligation || obligation.operationId !== input.operationId) return null;
@@ -472,6 +529,12 @@ export function installCanonicalRefresh(input: {
     obligation.identityRevision !== input.record.resource.identity.revision
   )
     return null;
+  const { newer, completes } = canonicalRefreshObservation(
+    input.observationVersion,
+    input.record.resource.observationVersion,
+    obligation.observationVersion,
+  );
+  if (!newer && !completes) return null;
   const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
   // A catalog observation names its Work by id with its slug, null for No Work
   // (`@/`), exactly as catalog installation derives it from the entry's URI.
@@ -490,10 +553,45 @@ export function installCanonicalRefresh(input: {
       resource: {
         ...input.record.resource,
         revision: input.record.resource.revision + 1,
-        canonical: input.location,
-        obligations,
+        ...(newer
+          ? {
+              canonical: input.location,
+              canonicalParent: input.parent,
+              observationVersion: input.observationVersion,
+            }
+          : {}),
+        obligations: completes ? obligations : input.record.resource.obligations,
       },
       intents: input.record.intents,
+    },
+  };
+}
+
+/** Exact-ID lookup resolves a refresh even when the identity left the requested catalog scope. */
+export function installNamespaceAvailability(
+  record: ResourceRecord,
+  operationId: string,
+  availability: NamespaceIdentityAvailability,
+): ResourceWrite | null {
+  if (record.resource.obligations.canonicalRefresh?.operationId !== operationId) return null;
+  if (availability.kind === "available")
+    return installCanonicalRefresh({
+      record,
+      operationId,
+      location: availability.location,
+      parent: availability.parent,
+      observationVersion: availability.observationVersion,
+    });
+  const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: { ...record.resource, revision: record.resource.revision + 1, obligations },
+      // Availability is not a document deletion receipt. Preserve it as a repair, not terminal content authority.
+      intents: resolveUnavailableNamespace(
+        record.intents,
+        record.resource.lifecycle.kind === "terminal",
+      ),
     },
   };
 }
@@ -526,10 +624,42 @@ export function reconcileResourceNamespace(input: {
     ...input,
     read: () => input.metadata.readResource(input.key),
     commit: (write: ResourceWrite) => input.metadata.commitResource(write),
-    prepare: prepareNamespaceAttempt,
+    prepare: async (record, ids) => {
+      const intent = activeNamespaceIntent(record);
+      const parent =
+        intent?.desired.kind === "set-location" ? intent.desired.destination.parent : null;
+      const observed =
+        parent?.kind === "folder"
+          ? await input.transport.lookupIdentity(intent!.projectId, {
+              kind: "folder",
+              id: parent.folderId,
+            })
+          : null;
+      return prepareNamespaceAttempt(record, ids, () =>
+        observed?.kind === "available" ? observed.location : null,
+      );
+    },
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
     replayEligible,
+    refresh: async (record) => {
+      const barrier = record.resource.obligations.canonicalRefresh;
+      if (!barrier) return null;
+      const intent = record.intents.find((i) =>
+        i.attempts.some(
+          (a) => a.request.kind !== "create" && a.request.body.operationId === barrier.operationId,
+        ),
+      );
+      if (!intent) return null;
+      return installNamespaceAvailability(
+        record,
+        barrier.operationId,
+        await input.transport.lookupIdentity(intent.projectId, {
+          kind: "file",
+          id: record.resource.identity.documentId,
+        }),
+      );
+    },
   });
 }
 
@@ -545,7 +675,7 @@ export async function reconcileNamespaceJournal<
   newAttemptIds: () => NamespaceAttemptIds;
   read: () => Promise<Record | null>;
   commit: (write: Write) => Promise<"committed" | "stale">;
-  prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null;
+  prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null | Promise<Write | null>;
   recordOutcome: (
     record: Record,
     intentId: string,
@@ -553,6 +683,7 @@ export async function reconcileNamespaceJournal<
     outcome: NamespaceOutcome,
   ) => Write | null;
   settle: (record: Record) => Write | null;
+  refresh: (record: Record) => Promise<Write | null>;
   replayEligible: (record: Record, intent: NamespaceIntent, attempt: NamespaceAttempt) => boolean;
 }): Promise<NamespaceReconcileResult> {
   if (
@@ -564,11 +695,16 @@ export async function reconcileNamespaceJournal<
   for (;;) {
     const record = await input.read();
     if (!record) return "idle";
+    const refreshed = await input.refresh(record);
+    if (refreshed) {
+      if ((await input.commit(refreshed)) === "stale") continue;
+      return "progressed";
+    }
     const intent = activeNamespaceIntent(record);
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
     if (intent.state === "pending") {
-      const write = input.prepare(record, input.newAttemptIds());
+      const write = await input.prepare(record, input.newAttemptIds());
       if (!write) return "blocked";
       if ((await input.commit(write)) === "stale") continue;
       if (

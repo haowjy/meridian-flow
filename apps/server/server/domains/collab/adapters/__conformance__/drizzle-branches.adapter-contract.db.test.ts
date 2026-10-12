@@ -115,7 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: DOC_ID,
           contextSourceId: SOURCE_ID,
           name: "chapter",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         });
         await db.insert(threads).values({
@@ -472,7 +472,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: CREATED_ID as never,
         contextSourceId: SOURCE_ID,
         name: "draft-created",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
@@ -557,14 +557,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: CREATED_A as never,
           contextSourceId: SOURCE_ID,
           name: "created-a",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
         {
           id: CREATED_B as never,
           contextSourceId: SOURCE_ID,
           name: "created-b",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
       ]);

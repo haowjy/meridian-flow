@@ -1,5 +1,5 @@
 {
-  "id": "b7615a07-e9e1-4e1c-a38a-a680ec114faf",
+  "id": "680406af-4023-46e1-b41b-9af8eee32b40",
   "prevId": "cb3a11cb-fbc2-4d9e-a68b-0e0248e576ad",
   "version": "7",
   "dialect": "postgresql",
@@ -4551,7 +4551,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'md'"
+          "default": "''"
         },
         "file_type": {
           "name": "file_type",
@@ -7900,12 +7900,6 @@
         "w_id": {
           "name": "w_id",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_call_id": {
-          "name": "tool_call_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

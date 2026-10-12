@@ -4,16 +4,24 @@ import type { ContextError } from "../ports/context-port.js";
 
 export function adapterFaultToContextError(fault: AdapterFault, uri: string): ContextError {
   switch (fault.code) {
+    case "destination_missing":
+      return { code: "destination_missing", uri };
     case "not_found":
       return { code: "not_found", uri };
     case "permission_denied":
       return { code: "permission_denied", uri };
     case "conflict":
-      return { code: "conflict", uri };
+      return {
+        code: "conflict",
+        uri,
+        ...(fault.occupantKind ? { occupantKind: fault.occupantKind } : {}),
+      };
     case "stale_source":
       return { code: "stale_source", uri };
     case "stale_target":
       return { code: "stale_target", uri };
+    case "invalid_name":
+      return { code: "invalid_name", uri, message: fault.message };
     case "invalid_operation":
       return { code: "invalid_operation", uri, message: fault.message };
     case "context_unavailable":

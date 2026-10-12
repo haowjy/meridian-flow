@@ -110,6 +110,11 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/** Creation uses the same conflict payload for files and folders, including HTTP 409. */
+export type CreateContextEntryResult =
+  | { status: "created"; documentId?: string; uri?: string }
+  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" };
+
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
@@ -124,10 +129,29 @@ export type DeleteContextEntryResult = {
 export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
-  expected: { kind: "file"; documentId: string } | { kind: "folder" };
+  expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
+/** Stable writer-selected parent. URI callers may continue to omit this. */
+export type ContextDestinationParent = {
+  /** Missing address segments created beneath the identity anchor, only for linked creation. */
+  createFolders?: string[];
+} & (
+  | { kind: "folder"; folderId: string }
+  | {
+      kind: "root";
+      scheme: ProjectContextTreeScheme;
+      owner: {
+        workId: string | null;
+        workSlug?: string | null;
+        rootThreadId?: string | null;
+        rootThreadRef?: string | null;
+      };
+    }
+);
+
 export type MoveContextEntryRequest = {
+  destinationParent?: ContextDestinationParent;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };

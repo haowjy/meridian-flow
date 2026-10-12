@@ -1,14 +1,14 @@
 /** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
-  ContextCommandScope,
+  ContextCommandScopes,
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
 
 export interface ResultAwareCommandExecutor<TError> {
   run<T>(
     operation: () => Promise<Result<T, TError>>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
   ): Promise<Result<T, TError>>;
 }
 
@@ -27,7 +27,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   const execute = async <T>(
     operation: () => Promise<Result<T, TError>>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
   ): Promise<Result<T, TError>> => {
     try {
       return await input.transaction.run(async () => {
@@ -46,7 +46,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
   return {
     run<T>(
       operation: () => Promise<Result<T, TError>>,
-      scopes?: readonly ContextCommandScope[],
+      scopes?: ContextCommandScopes,
     ): Promise<Result<T, TError>> {
       if (!input.serializeThroughCallbacks) return execute(operation, scopes);
 

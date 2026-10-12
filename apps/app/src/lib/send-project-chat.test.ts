@@ -23,14 +23,10 @@ function actions(): ThreadStoreActions & { calls: string[] } {
     calls,
     turns: vi.fn(() => []),
     ensureThread: vi.fn(() => calls.push("ensureThread")),
-    markPendingCreation: vi.fn(() => calls.push("markPendingCreation")),
-    markHandoffPending: vi.fn(() => calls.push("markHandoffPending")),
     appendUserTurn: vi.fn(() => {
       calls.push("appendUserTurn");
       return { id: "turn_local_1" };
     }),
-    ensureAssistantTurn: vi.fn(() => calls.push("ensureAssistantTurn")),
-    markPendingStream: vi.fn(() => calls.push("markPendingStream")),
   } as unknown as ThreadStoreActions & { calls: string[] };
 }
 

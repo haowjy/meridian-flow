@@ -1,8 +1,6 @@
 /** Shared types for the per-thread store. */
-import type { AgentSelection } from "@meridian/contracts/agents";
 import type {
   Block,
-  SubmittedReference,
   Thread,
   ThreadListItem,
   Turn,
@@ -15,24 +13,6 @@ import type {
   InterruptResponseIdentity,
   InterruptResponseState,
 } from "@/core/session/interrupt-response";
-
-export type PendingStreamStart = {
-  after?: string;
-  expectedTurnId?: string;
-  creation?: {
-    projectId: string;
-    title: string;
-    text: string;
-    blocks: readonly UserMessageBlock[];
-    references: readonly SubmittedReference[];
-    agentSelection: AgentSelection;
-    workId?: string | null;
-    optimisticUserTurnId?: string;
-    workingTurnId?: string;
-    submissionId?: string;
-    activatedSkillSlugs?: readonly string[];
-  };
-};
 
 export type LiveTurnMeta = {
   eventsApplied: number;
@@ -87,7 +67,6 @@ export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
-  markHandoffPending(threadId: string): void;
   appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;
   acknowledgeUserTurn(
     threadId: string,
@@ -119,8 +98,6 @@ export type ThreadStoreActions = {
       nextSeq: string;
     },
   ): boolean;
-  markPendingStream(threadId: string, start?: PendingStreamStart): void;
-  consumePendingStream(threadId: string): PendingStreamStart | null;
   markPendingCreation(args: { threadId: string }): void;
   clearPendingCreation(args: { threadId: string }): void;
 

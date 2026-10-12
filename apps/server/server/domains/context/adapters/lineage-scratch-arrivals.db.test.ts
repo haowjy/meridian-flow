@@ -82,28 +82,53 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         .insert(folders)
         .values({ id: folder, contextSourceId: source, name: "hidden", deletedAt: new Date() });
       await db.insert(documents).values([
-        { id: note, contextSourceId: source, name: "note", extension: "md" },
+        { id: note, contextSourceId: source, name: "note", extension: "toml" },
         {
           id: deleted,
           contextSourceId: source,
           name: "deleted",
-          extension: "md",
+          extension: "toml",
           deletedAt: new Date(),
         },
-        { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "md" },
+        { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },
       ]);
-      if (door === "chat") await threadRepo.setTrashState(root as never, "deleted");
-      else await workRepo.softDelete(work as never);
+      if (door === "chat") {
+        await db
+          .update(works)
+          .set({ isNoWork: true, name: "No Work", slug: null })
+          .where(eq(works.id, work));
+        await threadRepo.setTrashState(root as never, "deleted");
+      } else await workRepo.softDelete(work as never);
+      const lookup = () =>
+        availability.lookup({ projectId: p as never, documentIds: [note] as never }, { userId: u });
+      // A hidden lineage is restorable authority, never a terminal document fact.
+      await expect(lookup()).resolves.toMatchObject({
+        resolutions: [{ kind: "authority-unavailable", reason: "lineage_hidden" }],
+      });
+      await expect(
+        availability.lookup(
+          { projectId: p as never, documentIds: [deleted] as never },
+          { userId: u },
+        ),
+      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
       const ahead = crypto.randomUUID(),
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
       await registry.register([
-        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.md" },
-        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.md" },
-        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.md" },
+        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.toml" },
+        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.toml" },
+        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.toml" },
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
+      await expect(lookup()).resolves.toMatchObject({
+        resolutions: [{ kind: "available", entry: { entryId: note } }],
+      });
+      await expect(
+        catalog.snapshot({ kind: "lineage", projectId: p, rootThreadId: root } as never),
+      ).resolves.toMatchObject({
+        entries: expect.arrayContaining([expect.objectContaining({ entryId: note })]),
+      });
       const settlements = async () =>
         new Map(
           (await db.select().from(linkAheadRefs)).map((r) => [r.aheadId, r.settledDocumentId]),
@@ -115,7 +140,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const replacement = crypto.randomUUID();
       await db
         .insert(documents)
-        .values({ id: replacement, contextSourceId: source, name: "note", extension: "md" });
+        .values({ id: replacement, contextSourceId: source, name: "note", extension: "toml" });
       await arrivals.settle([replacement as never]);
       expect((await settlements()).get(ahead)).toBe(note);
     });

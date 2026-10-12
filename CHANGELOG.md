@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.
+
 - Remove the old reconstruction-based reversal engine. Card Undo/Redo, model inverses and failed-response rollback use immutable forward edits; retire the unused document-scoped reversal API.
 
 - Queue review actions per chapter so slow chapters do not block others, preserving exact change membership through reforks and one confirmed stale retry.
@@ -136,9 +138,68 @@
 - Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
 - Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
+### Fixed
+
+- Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
+
+- Deletion receipts preserve newer canonical placement independently of availability-generation ordering.
+- Reacquire unversioned catalog checkpoints after a device metadata upgrade without removing document content or queued namespace work.
+- Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
+- Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
+
+- Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.
+- Treat delivery into a retired destination authority as move repair rather than a missing Work.
+- Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
+
+### Fixed
+
+- Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
+
+- Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
+
+- Missing folder parents reuse real recovery identities; synthesized ancestors only navigate.
+
+- Deeply nested pending folder renames no longer stall workspace projection when a destination is missing.
+
+- Folder moves and renames keep descendants visible in the tree and move open Editor and dock paths together, including across Works. Folder repair stays reachable even when its catalog row disappears.
+
+- Folder moves follow destination and ancestor renames regardless of settlement order. Missing destinations keep their last canonical placement instead of breaking the file catalog.
+- Late refusals cannot restart a deleted resource. Queued deletion resolves through exact identity availability when its folder disappears during a move refresh.
+
+- Deletion continues from canonical identity when an earlier pending move is refused. Moving into a pending-deleted folder hides the placed subtree without breaking the file catalog.
+- Chat Recent hides pending-deleted files and folder descendants until deletion is refused.
+
+- Folder deletion hides its rows immediately and uses the same durable retry path as file deletion. Refused deletion restores the folder with a failure mark. Delayed deletion cannot delete a replacement folder at the old path.
+- Chat Recent hides known-deleted documents instead of showing their cached names.
+
+- Restoring a chat or Work brings back its lineage Scratch notes, including notes cached on this device.
+
+- Deleting a folder closes its open descendants in the Editor and dock, like deleting a file.
+- Chat Recent follows document renames and moves from the file catalog.
+
+- Move feedback now appears on a folder’s first move and follows a new document through identity-conflict recovery.
+
 ### Changed
 
-- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel. Rejected messages return to an empty draft or stay in the transcript with Retry and Edit, without replacing newer writing.
+- Consolidate namespace observation migrations into one schema migration and one data backfill.
+
+- Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.
+
+- Move feedback survives slow or offline settlement and names the destination from the move receipt.
+
+- Document paths collapse folders at their actual rendered width and load browsing catalogs only when a crumb opens.
+
+- Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
+- `.txt` files open as prose. Code, data and images keep their extensions.
+- Dotted names stay whole. Renames keep the file type unless a new extension is typed.
+- No prose twins. Files and folders cannot claim the same document name.
+- Imports and uploads keep writer names. Clashes count up with ` (2)`, ` (3)` and onward.
+- Prose downloads end in `.md`. Other downloads keep their filenames.
+- Existing documents and saved addresses use the same names. Name clashes keep every document.
+
+- Unsent chat messages keep their text and references when you reload the same tab, including new chats and the side panel.
+- A chat message that fails to send says "Couldn't send." on the message itself, with Retry, and Edit when the server refused it, the same way in new chats, existing chats, the side panel and on phones. Retry never sends a message twice, and a refused message stays in the chat until you retry or edit it.
+- The message box clears as soon as you press Send.
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Theme, language and Stats for nerds now follow your account across devices. Settings separates these from this device’s text size, and the sync setting now says it resumes your documents.
 - Reloading keeps the document and view you had open in the side panel.
@@ -146,7 +207,11 @@
 
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
-- Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
+- The path above a document is now a way to get around: each part opens the list it sits in, with itself marked: the area among the areas, a folder beside its neighbors, the file name beside the other files, and `…` when folders do not fit. Menus mark where you are, including the folder you just left.
+
+- Renaming and moving happen where documents are listed. Files and Scratch rows have Move… next to Rename, which opens a folder picker, and Scratch notes can be deleted from the chat's Scratch list. The path no longer has a Rename button; only a document still in Unfiled keeps a short File it button, whose tooltip explains where it sits.
+
+- A document open beside the chat shows its path in the panel header instead of a separate title. With nothing open, the panel reads Recent and lists the documents this chat touched.
 
 - Copying Scratch and Uploads links keeps the applicable owner. Scratch links in No Work uploads stay contextual instead of preventing copy.
 
@@ -189,6 +254,7 @@
 - A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.
 
 - Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
+- A new chat whose first message failed no longer shows "Sending" and "Couldn't send" at the same time, or a "Couldn't load" banner after reload. Refused messages are no longer lost after a reload, and a refused new chat is no longer retried on every load.
 - Chat summaries count a section and its whole file as one document, for both reads and edits.
 
 - Passage jumps stay visible when you return to an already-open Editor tab.

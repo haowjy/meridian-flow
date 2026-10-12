@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import { projectResourceLocation, resourceForDocumentIdentity } from "@meridian/resource-replica";
+import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -147,10 +147,10 @@ function ActiveSessionEditorView({
   effectiveEditableRef.current = effectiveEditable;
 
   // Links belong to their holder, never to the route's or a chat's Work.
-  const { records } = useAccountResourceProjection(projectId ?? "");
+  const { records, placement } = useAccountResourceProjection(projectId ?? "");
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = resourceForDocumentIdentity(records, documentId);
-  const location = holder && projectId ? projectResourceLocation(projectId, holder) : null;
+  const location = holder && projectId ? placement.resourceLocation(holder) : null;
   const linkRootThreadId = location?.rootThreadId ?? null;
   const linkWorkId = !location
     ? identity.surface === "review"

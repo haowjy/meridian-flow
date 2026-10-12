@@ -132,7 +132,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (await hasOppositeContextEntry(this.db, this.sourceId, parentId, name, "folder"))
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("file");
       const [row] = await this.db
         .insert(folders)
         .values({ contextSourceId: this.sourceId, parentId, name })
@@ -183,12 +183,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing && existing.fileType !== null) {
         throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       }
-      if (existing) throw new ContextEntryConflictError();
+      if (existing) throw new ContextEntryConflictError("file");
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -227,7 +227,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        return null;
+        throw new ContextEntryConflictError("folder");
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -301,7 +301,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing) {
         const [row] = await this.db
@@ -335,7 +335,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const [row] = await this.db
         .insert(documents)
         .values({

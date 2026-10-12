@@ -31,7 +31,7 @@ import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption"
 import { deleteIndexedDb } from "./test-support/delete-indexed-db";
 
 const accountId = "resource-session-adoption";
-const metadataName = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
+const metadataName = `meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`;
 const databaseName = "resource-session-adoption-content";
 const stores: IndexedDbResourceMetadata[] = [];
 const accesses: ResourceContentAccess[] = [];

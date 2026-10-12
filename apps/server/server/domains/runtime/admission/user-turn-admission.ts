@@ -84,9 +84,7 @@ export interface AdmissionWriterProducer {
     references: readonly AuthorizedReference[];
     /** Hidden turn metadata; never part of the replay fingerprint. */
     userTurnMetadata?: JsonValue | null;
-  }): Promise<
-    AcceptedAdmission | { kind: "pending" | "rejected"; submissionId: string; code?: string }
-  >;
+  }): Promise<UserTurnAdmissionResult>;
 }
 
 export interface UserTurnAdmission {
@@ -307,8 +305,7 @@ export function canonicalAdmissionFingerprint(input: {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-function lookupProjection(record: AdmissionRecord | null, submissionId: string): AdmissionLookup {
-  if (!record) return { kind: "not-seen", submissionId };
+function lookupProjection(record: AdmissionRecord, submissionId: string): UserTurnAdmissionResult {
   if (record.state === "accepted") return { ...record.response, kind: "already-accepted" };
   if (record.state === "pending") return { kind: "pending", submissionId };
   return { kind: record.state, submissionId, code: record.code };
@@ -332,10 +329,10 @@ async function recoverAdmission(
   },
   threadId: string,
   submissionId: string,
-  record: AdmissionRecord | null,
-): Promise<AdmissionRecord | null> {
+  record: AdmissionRecord,
+): Promise<AdmissionRecord> {
   const now = deps.now?.() ?? new Date();
-  if (record?.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
+  if (record.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
     return record;
   // Match runner ordering and keep the claim until the recovery transaction commits.
   const recovered = await deps.runClaim.withExclusiveThread(threadId as never, () =>
@@ -348,7 +345,9 @@ async function recoverAdmission(
       },
     }),
   );
-  return recovered ?? deps.records.lookup(threadId, submissionId);
+  const refreshed = recovered ?? (await deps.records.lookup(threadId, submissionId));
+  if (!refreshed) throw new Error("Admission record disappeared during recovery");
+  return refreshed;
 }
 
 export function createUserTurnAdmission(deps: {
@@ -364,25 +363,20 @@ export function createUserTurnAdmission(deps: {
   const recover = (
     threadId: string,
     submissionId: string,
-    record: AdmissionRecord | null,
-  ): Promise<AdmissionRecord | null> => recoverAdmission(deps, threadId, submissionId, record);
+    record: AdmissionRecord,
+  ): Promise<AdmissionRecord> => recoverAdmission(deps, threadId, submissionId, record);
   return {
     async lookup(request) {
+      const record = await deps.records.lookup(request.threadId, request.submissionId);
+      if (!record) return { kind: "not-seen", submissionId: request.submissionId };
       return lookupProjection(
-        await recover(
-          request.threadId,
-          request.submissionId,
-          await deps.records.lookup(request.threadId, request.submissionId),
-        ),
+        await recover(request.threadId, request.submissionId, record),
         request.submissionId,
       );
     },
     async retire(request) {
-      await recover(
-        request.threadId,
-        request.submissionId,
-        await deps.records.lookup(request.threadId, request.submissionId),
-      );
+      const record = await deps.records.lookup(request.threadId, request.submissionId);
+      if (record) await recover(request.threadId, request.submissionId, record);
       return deps.records.retire(request);
     },
     async admit(input) {
@@ -402,7 +396,7 @@ export function createUserTurnAdmission(deps: {
         return lookupProjection(
           await recover(input.threadId, input.submissionId, existing),
           input.submissionId,
-        ) as UserTurnAdmissionResult;
+        );
       }
 
       if (activatedSkillSlugs.length > 0) {
@@ -428,7 +422,7 @@ export function createUserTurnAdmission(deps: {
         return lookupProjection(
           await recover(input.threadId, input.submissionId, reservation.record),
           input.submissionId,
-        ) as UserTurnAdmissionResult;
+        );
       }
 
       const projectId = await deps.threadProject(input.threadId);
@@ -474,12 +468,12 @@ export function createUserTurnAdmission(deps: {
         return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
       });
       try {
-        return (await deps.producer.enqueue({
+        return await deps.producer.enqueue({
           admission: { ...input, activatedSkillSlugs },
           fingerprint,
           blocks: admittedBlocks,
           references: admittedReferences,
-        })) as UserTurnAdmissionResult;
+        });
       } catch (error) {
         if (!(error instanceof ThreadWorkUnavailableAdmissionError)) throw error;
         const rejected = await deps.records.reject({
@@ -488,7 +482,7 @@ export function createUserTurnAdmission(deps: {
           fingerprint,
           code: error.code,
         });
-        return lookupProjection(rejected, input.submissionId) as UserTurnAdmissionResult;
+        return lookupProjection(rejected, input.submissionId);
       }
     },
   };

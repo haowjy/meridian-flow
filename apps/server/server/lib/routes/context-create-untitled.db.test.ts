@@ -125,8 +125,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "created",
         documentId: DOCUMENT_ID,
         scheme: "scratch",
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
+        path: "Untitled 1",
+        name: "Untitled 1",
       });
 
       await expect(
@@ -136,21 +136,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: expect.any(String),
           kind: "file",
           entryId: DOCUMENT_ID,
-          name: "Untitled 1.md",
+          name: "Untitled 1",
           provisionalName: true,
         },
       });
 
       await expect(
-        port.move(
-          `scratch://@current-work/Untitled 1.md`,
-          `scratch://@current-work/Opening scene.md`,
-          {
-            origin: { type: "human", userId: USER_ID },
-          },
-        ),
+        port.move(`scratch://@current-work/Untitled 1`, `scratch://@current-work/Opening scene`, {
+          origin: { type: "human", userId: USER_ID },
+        }),
       ).resolves.toMatchObject({ ok: true });
       await expect(
         catalog.lookup({
@@ -159,9 +156,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: expect.any(String),
           kind: "file",
           entryId: DOCUMENT_ID,
-          name: "Opening scene.md",
+          name: "Opening scene",
           provisionalName: false,
         },
       });
@@ -217,8 +215,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(create()).resolves.toMatchObject({
         status: "created",
         documentId: REPAIR_DOCUMENT_ID,
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
+        path: "Untitled 1",
+        name: "Untitled 1",
       });
 
       const membership = await collab.resolveManifestMembership({ projectId });

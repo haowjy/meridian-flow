@@ -70,7 +70,7 @@ export function overwriteWithAssigned(input: {
   }
   const resolved = resolveOverwrite(
     { doc: handle, model: input.model, codec: input.codec, links: "preassigned" },
-    { documentId: input.documentId, filePath: "document.md" },
+    { documentId: input.documentId, filePath: "document" },
     { content: input.content, parsedContent: { blocks: [...input.blocks] } },
     input.blocks.length === 0,
   );

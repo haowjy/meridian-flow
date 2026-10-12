@@ -6,9 +6,14 @@
  * adapter capability.
  */
 
+import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
+import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import {
+  type ContextDestinationParent,
   type DeleteContextEntryResult,
+  type Filetype,
   isWorkScopedProjectContextScheme,
+  storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
@@ -94,6 +99,18 @@ function joinPath(...parts: string[]): string {
     .join("/");
 }
 
+type LocationChangePolicy =
+  | { target: "container"; overwrite: boolean }
+  | {
+      target: "exact";
+      overwrite: false;
+      graduateProvisionalName: true;
+      expected?: ContextLocationOptions["expected"];
+      destinationParent?: ContextDestinationParent;
+      resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
+      authorizeDestination?: (uri: string) => Promise<boolean>;
+    };
+
 /** Coordinates ContextFS tree mutations without owning durable state. */
 export class ContextTreeMover {
   private readonly commandExecutor: ResultAwareCommandExecutor<ContextError>;
@@ -126,9 +143,12 @@ export class ContextTreeMover {
   async commitWriterLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    expected?: ContextLocationOptions["expected"],
-    operationId?: string,
+    options: ContextLocationOptions & {
+      resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
+    } = {},
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    const { expected, operationId, destinationParent, resolveDestination, authorizeDestination } =
+      options;
     if (operationId) {
       if (!this.receipts || !expected)
         return Err({ code: "invalid_operation", uri: source.canonical });
@@ -139,8 +159,10 @@ export class ContextTreeMover {
           sourceUri: source.canonical,
           destinationUri: destination.canonical,
           expected,
+          ...(destinationParent ? { destinationParent } : {}),
         },
-        () => this.commitWriterLocation(source, destination, expected),
+        () =>
+          this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
       );
     }
     return this.changeLocation(source, destination, {
@@ -148,25 +170,45 @@ export class ContextTreeMover {
       graduateProvisionalName: true,
       expected,
       overwrite: false,
+      destinationParent,
+      resolveDestination,
+      authorizeDestination,
     });
   }
 
   private async changeLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    policy:
-      | { target: "container"; overwrite: boolean }
-      | {
-          target: "exact";
-          overwrite: false;
-          graduateProvisionalName: true;
-          expected?: ContextLocationOptions["expected"];
-        },
+    policy: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
     await this.moveLinks?.flush(source);
+    let lockedDestination = destination;
+    const destinationResolver = policy.target === "exact" ? policy.resolveDestination : undefined;
+    const scopeOf = (dispatch: ContextTreeDispatch) => ({
+      scheme: dispatch.scheme,
+      workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+    });
     return this.commandExecutor
       .run(
         async () => {
+          if (policy.target === "exact" && policy.resolveDestination) {
+            const current = await policy.resolveDestination();
+            if (!current.ok) return current;
+            // Resolve again after namespace locks. A concurrent cross-namespace move
+            // requires a fresh attempt, never locks acquired in a different order.
+            if (
+              current.value.scheme !== lockedDestination.scheme ||
+              current.value.workScopeId !== lockedDestination.workScopeId
+            )
+              return Err({ code: "stale_target", uri: destination.canonical });
+            destination = current.value;
+          }
+          if (
+            policy.target === "exact" &&
+            policy.authorizeDestination &&
+            !(await policy.authorizeDestination(destination.canonical))
+          )
+            return Err({ code: "destination_missing", uri: destination.canonical });
           if (policy.target === "exact" && policy.expected) {
             const token = await this.inspect(source);
             if (!token.ok) return token;
@@ -189,6 +231,18 @@ export class ContextTreeMover {
 
           const prepared = await this.prepareMove(source, destination, policy);
           if (!prepared.ok) return prepared;
+          if (
+            prepared.value.expectedTarget.state === "occupied" &&
+            prepared.value.expectedTarget.token.nodeId === prepared.value.source.nodeId &&
+            prepared.value.expectedTarget.token.sourceId === prepared.value.source.sourceId
+          ) {
+            return prepared.value.source.kind === "file"
+              ? this.graduateInPlace({ ...source, path: prepared.value.source.path })
+              : Ok({
+                  movedNodeId: prepared.value.source.nodeId,
+                  destinationPath: prepared.value.source.path,
+                });
+          }
           const result = await callAdapter(
             destination.canonical,
             () =>
@@ -198,16 +252,30 @@ export class ContextTreeMover {
               }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
           );
           if (!result.ok) return result;
+          const parsedDestination = parseContextUri(destination.canonical);
+          if (!parsedDestination.ok) throw new Error("Invalid resolved destination URI");
           return Ok({
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
             destinationPath: prepared.value.destinationPath,
+            ...(policy.target === "exact" && policy.destinationParent
+              ? {
+                  destinationUri: formatParsedContextUri(
+                    destination.scheme,
+                    prepared.value.destinationPath,
+                    parsedDestination.value.authority,
+                  ),
+                }
+              : {}),
           });
         },
-        [source, destination].map((dispatch) => ({
-          scheme: dispatch.scheme,
-          workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
-        })),
+        destinationResolver
+          ? async () => {
+              const current = await destinationResolver();
+              if (current.ok) lockedDestination = current.value;
+              return [source, lockedDestination].map(scopeOf);
+            }
+          : [source, destination].map(scopeOf),
       )
       .catch((error) => lifecycleCommandFailure(error, source.canonical));
   }
@@ -273,7 +341,7 @@ export class ContextTreeMover {
     if (token.value === null) return Err({ code: "not_found", uri: target.canonical });
     if (
       options.expected.kind === "folder"
-        ? token.value.kind !== "directory"
+        ? token.value.kind !== "directory" || token.value.nodeId !== options.expected.nodeId
         : token.value.kind !== "file" || token.value.nodeId !== options.expected.documentId
     ) {
       return Err({ code: "stale_target", uri: target.canonical });
@@ -302,14 +370,7 @@ export class ContextTreeMover {
   private async prepareMove(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    policy:
-      | { target: "container"; overwrite: boolean }
-      | {
-          target: "exact";
-          overwrite: false;
-          graduateProvisionalName: true;
-          expected?: ContextLocationOptions["expected"];
-        },
+    policy: LocationChangePolicy,
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;
@@ -321,11 +382,51 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(
+    let destinationParentToken: Extract<ContextLocationToken, { kind: "directory" }> | undefined;
+    const createFolders =
+      policy.target === "exact" ? (policy.destinationParent?.createFolders ?? []) : [];
+    if (!createFolders.every((segment) => validateContextEntryName(segment).ok))
+      return Err({ code: "invalid_operation", uri: destination.canonical });
+    if (policy.target === "exact" && policy.destinationParent) {
+      const parentParts = dirname(destination.path).split("/").filter(Boolean);
+      if (
+        createFolders.some(
+          (segment, index) =>
+            segment !== parentParts[parentParts.length - createFolders.length + index],
+        )
+      )
+        return Err({ code: "invalid_operation", uri: destination.canonical });
+      const anchorPath = parentParts.slice(0, parentParts.length - createFolders.length).join("/");
+      const parent = await this.inspect({ ...destination, path: anchorPath });
+      if (!parent.ok) return parent;
+      if (
+        parent.value?.kind !== "directory" ||
+        (policy.destinationParent.kind === "folder" &&
+          parent.value.nodeId !== policy.destinationParent.folderId) ||
+        (policy.destinationParent.kind === "root" && parent.value.path !== "")
+      )
+        return Err({ code: "destination_missing", uri: destination.canonical });
+      destinationParentToken = parent.value;
+    }
+    let targetPath = await this.resolveTarget(
       destination,
       sourceBasename,
       policy.target === "exact",
     );
+    if (!targetPath.ok) return targetPath;
+    let destinationFiletype: Filetype | null | undefined;
+    if (sourceToken.value.kind === "file") {
+      const targetInput = basename(targetPath.value);
+      const targetParts = storedFilename(targetInput, sourceBasename);
+      if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
+      destinationFiletype =
+        sourceToken.value.filetype === null &&
+        !targetParts.filename.extension &&
+        targetInput.trim() === targetParts.filename.name
+          ? null
+          : targetParts.filename.filetype;
+      targetPath = Ok(joinPath(dirname(targetPath.value), targetParts.name));
+    }
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -357,6 +458,8 @@ export class ContextTreeMover {
     const prepared = {
       source: sourceToken.value,
       destinationSourceId: destinationSourceId.value,
+      ...(destinationParentToken ? { destinationParentToken } : {}),
+      ...(createFolders.length ? { destinationCreateFolders: createFolders } : {}),
       destinationPath: targetPath.value,
       expectedTarget,
       overwrite: policy.overwrite,
@@ -365,6 +468,7 @@ export class ContextTreeMover {
       ? Ok({
           ...prepared,
           source: sourceToken.value,
+          destinationFiletype,
           graduateProvisionalName:
             policy.target === "exact" && policy.graduateProvisionalName === true,
         })
@@ -420,8 +524,10 @@ export class ContextTreeMover {
     destinationUri: string,
     options?: ContextMoveOptions,
   ): Result<void, ContextError> {
+    if (source.nodeId === existingTarget.nodeId && source.sourceId === existingTarget.sourceId)
+      return Ok(undefined);
     if (source.kind !== existingTarget.kind) {
-      return Err({ code: "invalid_operation", uri: destinationUri });
+      return Err({ code: "conflict", uri: destinationUri });
     }
     if (!options?.overwrite || source.kind === "directory") {
       return Err({ code: "conflict", uri: destinationUri });

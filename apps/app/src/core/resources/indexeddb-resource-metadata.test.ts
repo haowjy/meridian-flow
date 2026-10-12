@@ -1,13 +1,27 @@
 /** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
 import "fake-indexeddb/auto";
-import type { ResourceRecord, ResourceWrite } from "@meridian/resource-replica";
+import {
+  type NamespaceOutcome,
+  type NamespaceRequest,
+  planFolderDeletion,
+  planResourceDeletion,
+  planResourceLocation,
+  prepareFolderNamespaceAttempt,
+  prepareNamespaceAttempt,
+  type ResourceRecord,
+  type ResourceWrite,
+  reconcileFolderNamespace,
+  reconcileResourceNamespace,
+  recordFolderNamespaceOutcome,
+  settleFolderNamespaceOutcome,
+} from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 
 const stores: IndexedDbResourceMetadata[] = [];
 const accounts = new Set<string>();
-function open(account = crypto.randomUUID(), versionChanged = vi.fn()) {
+function open(account: string = crypto.randomUUID(), versionChanged = vi.fn()) {
   accounts.add(account);
   const store = new IndexedDbResourceMetadata(account, versionChanged);
   stores.push(store);
@@ -21,7 +35,7 @@ afterEach(async () => {
     await Promise.all([
       Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`),
       Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`),
-      Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`),
+      Dexie.delete(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`),
     ]);
   }
   accounts.clear();
@@ -243,13 +257,13 @@ it("closes the account lifetime when another connection upgrades the database", 
   const store = open(account, versionChanged);
   await store.readProjection("project");
 
-  const upgrader = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`);
+  const upgrader = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`);
   upgrader.version(1).stores({
     resources: "handle",
     intents: "intentId,handle,projectId",
     catalogs: "key,projectId",
   });
-  upgrader.version(2).stores({ probe: "id" });
+  upgrader.version(5).stores({ probe: "id" });
   await upgrader.open();
 
   await vi.waitFor(() => expect(versionChanged).toHaveBeenCalledOnce());
@@ -302,4 +316,228 @@ it("rejects retroactive intention order and settled-work replay", async () => {
   await expect(store.commitResource({ expectedRevision: 2, next: replay })).rejects.toThrow(
     "cannot restart",
   );
+});
+
+it("settles a folder receipt and exact descendant tombstones atomically, fencing newer identities", async () => {
+  const store = open();
+  for (const [handle, generation] of [
+    ["one", "7"],
+    ["two", "7"],
+    ["newer", "10"],
+    ["survivor", "7"],
+  ]) {
+    const record = resource(handle);
+    record.intents = [];
+    record.resource.obligations = {};
+    record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: generation };
+    record.resource.canonical = {
+      scheme: "manuscript",
+      path: `/A/${handle}.md`,
+      name: `${handle}.md`,
+      workId: null,
+    };
+    await store.commitResource({ expectedRevision: null, next: record });
+  }
+  const key = { handle: "folder:parent" };
+  const write = planFolderDeletion({
+    projectId: "project",
+    handle: key.handle,
+    folderId: "parent",
+    source: { scheme: "manuscript", path: "/A", name: "A", workId: null },
+    intentId: "delete-folder",
+    operationId: "delete-folder",
+  });
+  if (!write) throw new Error("Missing deletion plan");
+  await store.commitFolder(write);
+  await reconcileFolderNamespace({
+    key,
+    metadata: store,
+    lock: {
+      accountId: store.accountId,
+      async run(_key, task) {
+        return { kind: "acquired", value: await task() };
+      },
+    },
+    transport: {
+      accountId: store.accountId,
+      lookupIdentity: async () => {
+        throw new Error("Unexpected availability lookup");
+      },
+      readOutcome: async () => null,
+      submit: async () => ({
+        kind: "operation",
+        receipt: {
+          observationVersion: "1",
+          operationId: "delete-folder",
+          command: {
+            kind: "delete",
+            uri: "manuscript://A",
+            expected: { kind: "folder", nodeId: "parent" },
+          },
+          result: {
+            ok: true,
+            value: {
+              status: "deleted",
+              deletedDocumentIds: ["one", "two", "newer", "unknown"],
+              availabilityGeneration: "9",
+            },
+          },
+        },
+      }),
+    },
+    newAttemptIds: () => ({ attemptId: "attempt", operationId: "unused" }),
+  });
+  const snapshot = await store.readProjection("project");
+  expect(snapshot.folders[0]?.intents.at(-1)?.state).toBe("settled");
+  expect(snapshot.records.map(({ resource }) => [resource.handle, resource.lifecycle])).toEqual([
+    ["newer", { kind: "acknowledged", availabilityGeneration: "10" }],
+    ["one", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+    ["survivor", { kind: "acknowledged", availabilityGeneration: "7" }],
+    ["two", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+  ]);
+});
+
+it.each([
+  "move",
+  "delete",
+] as const)("retains a refused %s after atomic recursive terminalization", async (kind) => {
+  const store = open();
+  const key = { handle: "child" };
+  const initial = resource(key.handle);
+  initial.intents = [];
+  initial.resource.obligations = {};
+  initial.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  initial.resource.canonical = {
+    scheme: "manuscript",
+    path: "/A/child.md",
+    name: "child.md",
+    workId: null,
+  };
+  await store.commitResource({ expectedRevision: null, next: initial });
+  const planned =
+    kind === "delete"
+      ? planResourceDeletion(initial, "project", "file-intent")
+      : planResourceLocation({
+          record: initial,
+          projectId: "project",
+          intentId: "file-intent",
+          eligibleAt: 1,
+          destination: { parent: { kind: "folder", folderId: "B" }, name: "child.md" },
+        });
+  if (!planned) throw new Error("Missing file intent");
+  await store.commitResource(planned);
+  const submitted = prepareNamespaceAttempt(
+    planned.next,
+    {
+      attemptId: "file-attempt",
+      operationId: "file-operation",
+    },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
+  if (!submitted) throw new Error("Missing file attempt");
+  await store.commitResource(submitted);
+  const folder = planFolderDeletion({
+    projectId: "project",
+    handle: "folder",
+    folderId: "parent",
+    source: { scheme: "manuscript", path: "/A", name: "A", workId: null },
+    intentId: "parent-delete",
+    operationId: "parent-delete",
+  });
+  if (!folder) throw new Error("Missing folder delete");
+  await store.commitFolder(folder);
+  const parentAttempt = prepareFolderNamespaceAttempt(folder.next, {
+    attemptId: "parent-attempt",
+    operationId: "parent-delete",
+  });
+  if (!parentAttempt) throw new Error("Missing folder attempt");
+  await store.commitFolder(parentAttempt);
+  const received = recordFolderNamespaceOutcome(
+    parentAttempt.next,
+    "parent-delete",
+    "parent-attempt",
+    {
+      kind: "operation",
+      receipt: {
+        observationVersion: "1",
+        operationId: "parent-delete",
+        command: {
+          kind: "delete",
+          uri: "manuscript://A",
+          expected: { kind: "folder", nodeId: "parent" },
+        },
+        result: {
+          ok: true,
+          value: {
+            status: "deleted",
+            deletedDocumentIds: [key.handle],
+            availabilityGeneration: "9",
+          },
+        },
+      },
+    },
+  );
+  if (!received) throw new Error("Missing receipt");
+  await store.commitFolder(received);
+  const settled = settleFolderNamespaceOutcome(received.next, 100);
+  if (!settled) throw new Error("Missing settlement");
+  await store.commitFolder(settled);
+  expect((await store.readResource(key))?.resource.lifecycle.kind).toBe("terminal");
+  const refusal = (request: NamespaceRequest): NamespaceOutcome => {
+    if (request.kind === "create") throw new Error("Unexpected create");
+    return {
+      kind: "refusal",
+      operationId: request.body.operationId,
+      error: { code: "conflict", message: "Refused", source: "system", retryable: false },
+    };
+  };
+  expect(
+    await reconcileResourceNamespace({
+      key,
+      metadata: store,
+      transport: {
+        accountId: store.accountId,
+        lookupIdentity: async () => {
+          throw new Error("Terminal needs no refresh");
+        },
+        readOutcome: async (_project, request) => refusal(request),
+        submit: async () => {
+          throw new Error("Terminal must not dispatch");
+        },
+      },
+      lock: {
+        accountId: store.accountId,
+        run: async (_key, task) => ({ kind: "acquired", value: await task() }),
+      },
+      newAttemptIds: () => ({ attemptId: "unused", operationId: "unused" }),
+      now: () => 100,
+    }),
+  ).toBe("progressed");
+  await store.finishClose();
+  const reopened = await open(store.accountId).readResource(key);
+  expect(reopened?.resource.lifecycle.kind).toBe("terminal");
+  expect(reopened?.intents[0]).toMatchObject({
+    state: "unexecutable-after-terminal",
+    attempts: [{ outcome: { kind: "refusal", operationId: "file-operation" } }],
+  });
+});
+
+it("invalidates unversioned replay checkpoints without losing resource content or namespace work", async () => {
+  const account = crypto.randomUUID();
+  accounts.add(account);
+  const legacy = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(account)}`);
+  legacy.version(1).stores({
+    resources: "handle",
+    intents: "intentId,handle,projectId",
+    catalogs: "key,projectId",
+    folders: "handle,projectId",
+  });
+  const next = resource();
+  await legacy.table("resources").put(next.resource);
+  await legacy.table("intents").bulkPut([...next.intents]);
+  await legacy.table("catalogs").put({ key: "old-checkpoint", projectId: "project", entries: [] });
+  legacy.close();
+  const upgraded = open(account);
+  expect(await upgraded.readResource({ handle: next.resource.handle })).toEqual(next);
+  expect((await upgraded.readProjection("project")).catalogs).toEqual([]);
 });

@@ -1,4 +1,5 @@
 /** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
+
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
@@ -9,7 +10,7 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
+import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
 import { type DraftOnlyContainer, useDraftOnlyLifecycle } from "./draft-only-lifecycle";
@@ -75,14 +76,13 @@ function WorkSettlement({
       .then((view) => {
         if (attempt.signal.aborted) return;
         queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-        const catalog = projectCatalogView(projectId, "manuscript", view);
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
           ) ?? [];
         for (const draft of lifecycle.presentations(projectId)) {
           if (!isOrphan(draft, currentDrafts)) continue;
-          if (catalog.findDocument(draft.documentId)) void lifecycle.promote(draft);
+          if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
           else lifecycle.remove(draft);
         }
       })

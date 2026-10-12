@@ -60,6 +60,7 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
     {
       revision: number;
       canonical: ResourceRecord["resource"]["canonical"];
+      canonicalParent: ResourceRecord["resource"]["canonicalParent"];
       classification: ResourceRecord["resource"]["classification"];
     }
   >();
@@ -67,6 +68,7 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
     resources.set(resource.handle, {
       revision: resource.revision,
       canonical: structuredClone(resource.canonical),
+      canonicalParent: structuredClone(resource.canonicalParent),
       classification: structuredClone(resource.classification),
     });
   }

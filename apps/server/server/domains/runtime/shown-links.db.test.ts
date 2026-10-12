@@ -61,7 +61,7 @@ if (!RUN_DB_TESTS || !url) {
         id: documentId,
         contextSourceId: sourceId,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       return documentId;

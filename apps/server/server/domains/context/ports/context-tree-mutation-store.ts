@@ -42,6 +42,9 @@ interface PreparedContextMoveBase {
   linkNoteProjectId?: string;
   /** Destination context_sources.id selected by URI routing. */
   destinationSourceId: string;
+  destinationParentToken?: Extract<ContextLocationToken, { kind: "directory" }>;
+  /** Validated suffix below destinationParentToken, ensured inside the commit transaction. */
+  destinationCreateFolders?: string[];
   /** Final normalized target path after Unix mv basename/directory resolution. */
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
@@ -51,6 +54,8 @@ interface PreparedContextMoveBase {
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
+  /** Resolved by the destination codec; null keeps an unregistered binary name. */
+  destinationFiletype?: Filetype | null;
   source: Extract<ContextLocationToken, { kind: "file" }>;
   /** The exact writer-location command ends provisional naming on commit. */
   graduateProvisionalName: boolean;
@@ -75,9 +80,10 @@ type PreparedDirectoryMoveCommand = PreparedDirectoryMove & {
 export type ContextTreeMoveCommand = PreparedFileMoveCommand | PreparedDirectoryMoveCommand;
 
 export type ContextTreeMutationError =
+  | { code: "destination_missing" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "conflict" }
+  | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "invalid_operation" }
   | { code: "not_found" };
 

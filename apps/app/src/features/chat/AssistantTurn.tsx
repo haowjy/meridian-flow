@@ -71,12 +71,6 @@ export type AssistantTurnProps = {
    * settled action row of its own.
    */
   continuesResponse?: boolean;
-  /**
-   * Present only on the working turn of a send the server never admitted (the
-   * failed first send during route handoff). Its presence is what makes the
-   * error send copy rather than generation copy; calling it resubmits.
-   */
-  failedSendRetry?: () => void;
   /** Retry on a failed reply; absent where the reply can't be retried from here. */
   replyRetry?: ReplyRetryView;
   /** A Retry's new reply before the server has it: nothing to read or act on yet. */
@@ -104,7 +98,6 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   endsTranscript = false,
   continuesResponse = false,
-  failedSendRetry,
   replyRetry,
   standIn = false,
   onRespondToInterrupt,
@@ -123,7 +116,6 @@ function AssistantTurnComponent({
     turn.status === "error"
       ? replyErrorKind({
           requestLost: replyRetry?.requestLost ?? false,
-          failedSend: failedSendRetry !== undefined,
           metadata: turn.metadata,
         })
       : null;
@@ -190,9 +182,7 @@ function AssistantTurnComponent({
             isLatest={endsTranscript}
             kind={errorKind}
             onRetry={
-              endsTranscript && errorKind !== "provider-declined"
-                ? (failedSendRetry ?? replyRetry?.onRetry)
-                : undefined
+              endsTranscript && errorKind !== "provider-declined" ? replyRetry?.onRetry : undefined
             }
             retryRefused={replyRetry?.refused ?? false}
           />
@@ -215,15 +205,12 @@ function AssistantTurnComponent({
 /** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
 function replyErrorKind({
   requestLost,
-  failedSend,
   metadata,
 }: {
   requestLost: boolean;
-  failedSend: boolean;
   metadata: Turn["metadata"];
 }): ErrorBlockKind {
   if (requestLost) return "retry";
-  if (failedSend) return "send";
   if (isProviderDeclined(metadata)) return "provider-declined";
   return "generation";
 }

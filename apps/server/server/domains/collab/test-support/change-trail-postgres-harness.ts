@@ -207,14 +207,14 @@ export async function seedDatabase(
       id: ALPHA_ID,
       contextSourceId: SOURCE_ID,
       name: "alpha",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     },
     {
       id: BETA_ID,
       contextSourceId: SOURCE_ID,
       name: "beta",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     },
   ]);

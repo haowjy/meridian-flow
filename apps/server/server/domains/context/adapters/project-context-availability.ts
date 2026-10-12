@@ -1,9 +1,14 @@
 /** Drizzle project-final identity lookup and global availability watermarks. */
 import { randomUUID } from "node:crypto";
-import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
+import {
+  type ContextUriScheme,
+  canonicalContextUri,
+  isContextUriScheme,
+} from "@meridian/contracts/context-uri";
 import type {
   CatalogScope,
   ProjectContextAuthority,
+  ProjectContextFolderResolution,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS } from "@meridian/contracts/protocol";
@@ -12,6 +17,7 @@ import type { Database } from "@meridian/database";
 import {
   contextAvailabilityGeneration,
   contextAvailabilityHeads,
+  contextNamespaceObservationVersion,
   contextSources,
   documents,
   folders,
@@ -19,7 +25,7 @@ import {
   threads,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
@@ -32,7 +38,7 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 
 const ADVANCE_STATE = {};
 type AdvanceState = { generation?: bigint; keys: Set<string>; publisherFenceHeld: boolean };
@@ -88,7 +94,30 @@ export function classifyAuthoritativeIdentity(input: {
   checkedGeneration: string;
   foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
 }): IdentityClassification {
-  const { document, source, sourceProject, work } = input.row;
+  const classification = classifySourceIdentity({
+    ...input,
+    row: {
+      ...input.row,
+      node: { parentId: input.row.document.folderId, deletedAt: input.row.document.deletedAt },
+    },
+  });
+  // Privacy precedes structural diagnostics, including the document's kind.
+  return classification.kind === "not-visible" || input.row.document.kind === "content"
+    ? classification
+    : { kind: "inconsistent" };
+}
+
+function classifySourceIdentity(input: {
+  row: Omit<AvailabilityRow, "document"> & {
+    node: { parentId: string | null; deletedAt: Date | null };
+  };
+  requestProjectId: string;
+  actorUserId: string;
+  projectGeneration: string;
+  checkedGeneration: string;
+  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+}): IdentityClassification {
+  const { node, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
   const rawWorkIsRequested = work?.projectId === input.requestProjectId;
   const isActorUserSource =
@@ -98,7 +127,7 @@ export function classifyAuthoritativeIdentity(input: {
   if (!rawProjectIsRequested && !rawWorkIsRequested && !isActorUserSource) {
     return { kind: "not-visible" };
   }
-  if (!source || document.kind !== "content" || !isContextUriScheme(source.slug)) {
+  if (!source || !isContextUriScheme(source.slug)) {
     return { kind: "inconsistent" };
   }
   const scheme = source.slug;
@@ -165,7 +194,7 @@ export function classifyAuthoritativeIdentity(input: {
 
   const parentPath: string[] = [];
   const visited = new Set<string>();
-  let folderId = document.folderId;
+  let folderId = node.parentId;
   while (folderId) {
     if (visited.has(folderId)) return { kind: "inconsistent" };
     visited.add(folderId);
@@ -173,7 +202,7 @@ export function classifyAuthoritativeIdentity(input: {
     if (
       !folder ||
       folder.contextSourceId !== source.id ||
-      (document.deletedAt === null && source.deletedAt === null && folder.deletedAt !== null)
+      (node.deletedAt === null && source.deletedAt === null && folder.deletedAt !== null)
     ) {
       return { kind: "inconsistent" };
     }
@@ -200,12 +229,37 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
+/** The publisher fence is held by reserve/advance. Each state change needs its
+ * own stamp even when availability groups several changes in one transaction. */
+async function publishNamespaceVersion(tx: Database, authorityKeys: readonly string[]) {
+  const keys = [...new Set(authorityKeys)].sort();
+  if (!keys.length) return;
+  const [row] = await tx.execute<{ version: string }>(
+    sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
+  );
+  if (!row) throw new Error("Failed to allocate namespace observation version");
+  const version = BigInt(row.version);
+  await tx
+    .insert(contextAvailabilityHeads)
+    .values(
+      keys.map((authorityKey) => ({
+        authorityKey,
+        generation: 0n,
+        namespaceGeneration: version,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: contextAvailabilityHeads.authorityKey,
+      set: { namespaceGeneration: version },
+    });
+}
+
 export function createDrizzleProjectContextAvailability(
   db: Database,
   eventSink?: EventSink,
 ): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
   return {
-    async reserve() {
+    async reserve(input) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
@@ -221,6 +275,11 @@ export function createDrizzleProjectContextAvailability(
           if (!value) throw new Error("Failed to reserve availability generation");
           state.generation = BigInt(value);
         }
+        if (input)
+          await publishNamespaceVersion(tx, [
+            ...input.projectIds.map(projectKey),
+            ...input.userIds.map(userKey),
+          ]);
         return String(state.generation);
       });
     },
@@ -242,13 +301,11 @@ export function createDrizzleProjectContextAvailability(
         }
         await tx
           .update(contextAvailabilityHeads)
-          .set({ generation: BigInt(input.generation), updatedAt: new Date() })
-          .where(
-            and(
-              inArray(contextAvailabilityHeads.authorityKey, keys),
-              sql`${contextAvailabilityHeads.generation} < ${BigInt(input.generation)}`,
-            ),
-          );
+          .set({
+            generation: sql`greatest(${contextAvailabilityHeads.generation}, ${BigInt(input.generation)})`,
+            updatedAt: new Date(),
+          })
+          .where(inArray(contextAvailabilityHeads.authorityKey, keys));
       });
     },
 
@@ -261,9 +318,6 @@ export function createDrizzleProjectContextAvailability(
         ]);
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
         const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        if (missing.length === 0 && state.generation !== undefined) {
-          return String(state.generation);
-        }
         if (!state.publisherFenceHeld) {
           // One transaction-scoped publisher fence makes sequence allocation order match
           // commit visibility even when later advance calls introduce previously unknown keys.
@@ -293,16 +347,23 @@ export function createDrizzleProjectContextAvailability(
         if (missing.length > 0) {
           await tx
             .update(contextAvailabilityHeads)
-            .set({ generation: state.generation, updatedAt: new Date() })
+            .set({
+              generation: state.generation,
+              updatedAt: new Date(),
+            })
             .where(inArray(contextAvailabilityHeads.authorityKey, missing));
           for (const key of missing) state.keys.add(key);
         }
+        await publishNamespaceVersion(tx, [...requested]);
         return String(state.generation);
       });
     },
 
     async lookup(input, actor) {
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
+      const folderIds = normalizeAvailabilityDocumentIds(input.folderIds ?? []);
+      if (ids.length + folderIds.length > PROJECT_CONTEXT_AVAILABILITY_MAX_IDS)
+        throw new RangeError("Availability lookup exceeds ID limit");
       return runInRootDrizzleTransaction(
         db,
         async () => {
@@ -325,13 +386,22 @@ export function createDrizzleProjectContextAvailability(
               ]),
             );
           const head = new Map(headRows.map((row) => [row.authorityKey, row.generation]));
+          const namespaceHead = new Map(
+            headRows.map((row) => [row.authorityKey, row.namespaceGeneration]),
+          );
+          const namespaceVersion = (scope: CatalogScope) =>
+            String(
+              namespaceHead.get(
+                scope.kind === "user" ? userKey(scope.userId) : projectKey(scope.projectId),
+              ) ?? 0n,
+            );
           const projectGeneration = head.get(projectKey(input.projectId)) ?? 0n;
           const checkedGeneration = String(
             [projectGeneration, head.get(userKey(actor.userId)) ?? 0n].reduce((a, b) =>
               a > b ? a : b,
             ),
           );
-          if (ids.length === 0) {
+          if (ids.length === 0 && folderIds.length === 0) {
             return { projectId: input.projectId, resolutionId: randomUUID(), resolutions: [] };
           }
           const rows = await tx
@@ -348,9 +418,27 @@ export function createDrizzleProjectContextAvailability(
             .leftJoin(works, eq(contextSources.workId, works.id))
             .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
             .where(inArray(documents.id, ids as never));
+          const requestedFolders = folderIds.length
+            ? await tx
+                .select({
+                  folder: folders,
+                  source: contextSources,
+                  sourceProject: projects,
+                  work: works,
+                  rootThreadRef: threads.ref,
+                })
+                .from(folders)
+                .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
+                .leftJoin(projects, eq(contextSources.projectId, projects.id))
+                .leftJoin(works, eq(contextSources.workId, works.id))
+                .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+                .where(inArray(folders.id, folderIds as never))
+            : [];
           const byId = new Map(rows.map((row) => [row.document.id, row]));
           const sourceIds = [
-            ...new Set(rows.flatMap((row) => (row.source ? [row.source.id] : []))),
+            ...new Set(
+              [...rows, ...requestedFolders].flatMap((row) => (row.source ? [row.source.id] : [])),
+            ),
           ];
           const folderRows = sourceIds.length
             ? await tx
@@ -395,6 +483,17 @@ export function createDrizzleProjectContextAvailability(
             const { scope, authority, scheme, generation, parentPath } = classification.identity;
             // The same liveness facts the SQL predicates filter on, but this site
             // has to name the one that failed, so it classifies rather than filters.
+            // Independent document deletion remains deletion even when its authority hides.
+            // Work-cascade tombstones belong to the reversible authority lifecycle.
+            if (document.deletedAt && !document.deletedByWorkId) {
+              return {
+                kind: "deleted",
+                documentId,
+                generation,
+                observationVersion: namespaceVersion(scope),
+                lastAuthority: authority,
+              };
+            }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
               return {
                 kind: "authority-unavailable",
@@ -413,8 +512,25 @@ export function createDrizzleProjectContextAvailability(
                 reason: "work_deleted",
               } as never;
             }
+            // Lineage sources hide when their last chat is trashed and reopen on restore.
+            // That revokes authority; it does not delete the documents they still own.
+            if (source?.scope === "lineage" && source.deletedAt) {
+              return {
+                kind: "authority-unavailable",
+                documentId,
+                generation,
+                authority,
+                reason: "lineage_hidden",
+              };
+            }
             if (document.deletedAt || source?.deletedAt) {
-              return { kind: "deleted", documentId, generation, lastAuthority: authority } as never;
+              return {
+                kind: "deleted",
+                documentId,
+                generation,
+                observationVersion: namespaceVersion(scope),
+                lastAuthority: authority,
+              } as never;
             }
             try {
               return {
@@ -425,6 +541,7 @@ export function createDrizzleProjectContextAvailability(
                 entry: mapAuthoritativeFile({
                   document,
                   scope,
+                  observationVersion: namespaceVersion(scope),
                   scheme,
                   workId: work?.id ?? null,
                   workSlug: work && !work.isNoWork ? work.slug : null,
@@ -436,10 +553,136 @@ export function createDrizzleProjectContextAvailability(
               return indeterminate();
             }
           });
-          return { projectId: input.projectId, resolutionId: randomUUID(), resolutions } as never;
+          const folderById = new Map(requestedFolders.map((row) => [row.folder.id, row]));
+          const folderResolutions: ProjectContextFolderResolution[] = folderIds.map((folderId) => {
+            const row = folderById.get(folderId);
+            if (!row) return { folderId, kind: "not-visible", checkedGeneration };
+            const classification = classifySourceIdentity({
+              row: {
+                ...row,
+                node: { parentId: row.folder.parentId, deletedAt: row.folder.deletedAt },
+              },
+              requestProjectId: input.projectId,
+              actorUserId: actor.userId,
+              projectGeneration: String(projectGeneration),
+              checkedGeneration,
+              foldersById,
+            });
+            if (classification.kind !== "valid")
+              return {
+                folderId,
+                kind: classification.kind === "not-visible" ? "not-visible" : "indeterminate",
+                checkedGeneration,
+              };
+            const { scope, scheme, generation, parentPath } = classification.identity;
+            // Independent tombstones are final; Work/lineage unavailability is not deletion.
+            if (row.folder.deletedAt && !row.folder.deletedByWorkId)
+              return {
+                folderId,
+                kind: "deleted",
+                generation,
+                observationVersion: namespaceVersion(scope),
+              };
+            if (
+              requestProject.deletedAt ||
+              row.sourceProject?.deletedAt ||
+              row.work?.deletedAt ||
+              row.source?.deletedAt
+            )
+              return { folderId, kind: "authority-unavailable", checkedGeneration };
+            const path = [...parentPath, row.folder.name];
+            return {
+              folderId,
+              kind: "available",
+              generation,
+              entry: {
+                kind: "folder",
+                observationVersion: namespaceVersion(scope),
+                entryId: row.folder.id,
+                sourceId: row.folder.contextSourceId,
+                parentId: row.folder.parentId ?? row.folder.contextSourceId,
+                scope,
+                name: row.folder.name,
+                path,
+                uri: canonicalContextUri(
+                  scheme,
+                  path.join("/"),
+                  catalogSourceAuthority(
+                    scheme,
+                    row.work?.id ?? null,
+                    row.work && !row.work.isNoWork ? row.work.slug : null,
+                    row.rootThreadRef,
+                  ),
+                ),
+                hasChildren: true,
+              },
+            };
+          });
+          return {
+            projectId: input.projectId,
+            resolutionId: randomUUID(),
+            resolutions,
+            ...(input.folderIds !== undefined ? { folderResolutions } : {}),
+          };
         },
         { isolationLevel: "repeatable read", accessMode: "read only" },
       );
     },
   };
+}
+
+/** Resolve an active folder inside the caller's namespace transaction, without a new snapshot. */
+export async function resolveActiveFolderUri(
+  db: Database,
+  projectId: string,
+  userId: string,
+  folderId: string,
+): Promise<string | null> {
+  const tx = currentDrizzleDb(db);
+  const [row] = await tx
+    .select({
+      folder: folders,
+      source: contextSources,
+      sourceProject: projects,
+      work: works,
+      rootThreadRef: threads.ref,
+    })
+    .from(folders)
+    .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
+    .leftJoin(projects, eq(contextSources.projectId, projects.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+    .where(eq(folders.id, folderId));
+  if (
+    !row?.source ||
+    row.folder.deletedAt ||
+    row.source.deletedAt ||
+    row.sourceProject?.deletedAt ||
+    row.work?.deletedAt ||
+    row.work?.archivedAt
+  )
+    return null;
+  const ancestors = await tx
+    .select()
+    .from(folders)
+    .where(eq(folders.contextSourceId, row.source.id));
+  const classification = classifySourceIdentity({
+    row: { ...row, node: { parentId: row.folder.parentId, deletedAt: row.folder.deletedAt } },
+    requestProjectId: projectId,
+    actorUserId: userId,
+    projectGeneration: "0",
+    checkedGeneration: "0",
+    foldersById: new Map(ancestors.map((folder) => [folder.id, folder])),
+  });
+  if (classification.kind !== "valid") return null;
+  return canonicalContextUri(
+    classification.identity.scheme,
+    [...classification.identity.parentPath, row.folder.name].join("/"),
+    catalogSourceAuthority(
+      classification.identity.scheme,
+      row.work?.id ?? null,
+      row.work && !row.work.isNoWork ? row.work.slug : null,
+      row.rootThreadRef,
+    ),
+  );
 }

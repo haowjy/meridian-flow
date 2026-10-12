@@ -4,6 +4,7 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
+import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -164,12 +165,7 @@ it("preserves the first create-eligibility witness when filing later", () => {
     projectId: "project",
     intentId: "move",
     eligibleAt: 2,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!placed) throw new Error("Expected placement");
 
@@ -234,12 +230,7 @@ it("rebases queued placement behind the retry when creation remints", () => {
     projectId: "project",
     intentId: "place-a",
     eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!withPlacement) throw new Error("Expected placement");
   const received = recordNamespaceOutcome(withPlacement.next, "create-a", "attempt", {
@@ -336,5 +327,100 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
   expect(adoption.next.resource.obligations.sessionAdoption).toMatchObject({
     transitionId: "reopen-7",
     generation: null,
+  });
+});
+
+it("keeps typed rename provenance through optimistic placement and transport", () => {
+  for (const typed of ["settings.md", "settings.txt", "Notes.md"]) {
+    const record = reserved();
+    record.intents = [];
+    record.resource.canonical = {
+      scheme: "manuscript",
+      path: "/Book/config.toml",
+      name: "config.toml",
+      workId: null,
+    };
+    const planned = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: "rename",
+      eligibleAt: 0,
+      destination: { parent: { kind: "folder", folderId: "Book" }, name: typed },
+    });
+    expect(planned?.next.intents[0]?.desired).toMatchObject({
+      typedName: typed,
+      destination: { name: typed === "Notes.md" ? "Notes" : "settings" },
+    });
+    if (!planned) throw new Error("Missing location plan");
+    expect(
+      projectResourceLocation("project", planned.next, () => ({
+        scheme: "manuscript",
+        path: "/Book",
+        name: "Book",
+        workId: null,
+      }))?.name,
+    ).toBe(typed === "Notes.md" ? "Notes" : "settings");
+    planned.next.intents = planned.next.intents.map((intent) => ({
+      ...intent,
+      state: "needs-repair",
+    }));
+    expect(projectResourceNeedsRepair("project", planned.next)?.name).toBe(typed);
+    planned.next.intents = planned.next.intents.map((intent) => ({ ...intent, state: "pending" }));
+    const attempt = prepareNamespaceAttempt(
+      planned.next,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      () => ({ scheme: "manuscript", path: "/Book", name: "Book", workId: null }),
+    );
+    expect(attempt?.next.intents[0]?.attempts[0]?.request).toMatchObject({
+      kind: "move",
+      scheme: "manuscript",
+      body: {
+        operationId: "operation",
+        path: "Book/config.toml",
+        expected: { kind: "file", nodeId: record.resource.identity.documentId },
+        destinationScheme: "manuscript",
+        destinationFolderPath: "Book",
+        newName: typed,
+      },
+    });
+  }
+});
+
+it("inherits from the locally visible name when a second rename precedes settlement", () => {
+  const record = reserved();
+  record.intents = [];
+  record.resource.canonical = {
+    scheme: "user",
+    path: "/config.toml",
+    name: "config.toml",
+    workId: null,
+  };
+  const prose = planResourceLocation({
+    record,
+    projectId: "project",
+    intentId: "prose",
+    eligibleAt: 0,
+    destination: {
+      parent: { kind: "root", scheme: "user", owner: { workId: null } },
+      name: "settings.md",
+    },
+  });
+  if (!prose) throw new Error("Missing first rename");
+  const next = planResourceLocation({
+    record: prose.next,
+    projectId: "project",
+    intentId: "next",
+    eligibleAt: 0,
+    destination: {
+      parent: { kind: "root", scheme: "user", owner: { workId: null } },
+      name: "Notes",
+    },
+  });
+  expect(next?.next.intents.at(-1)?.desired).toMatchObject({
+    typedName: "Notes",
+    destination: { name: "Notes" },
   });
 });

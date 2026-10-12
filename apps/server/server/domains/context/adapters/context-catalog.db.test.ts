@@ -87,19 +87,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: LIVE_DOCUMENT_ID,
           contextSourceId: SOURCE_ID,
           name: "live",
-          extension: "md",
+          extension: "",
         },
         {
           id: DRAFT_DOCUMENT_ID,
           contextSourceId: SOURCE_ID,
           name: "draft-only",
-          extension: "md",
+          extension: "",
         },
         {
           id: KB_DOCUMENT_ID,
           contextSourceId: KB_SOURCE_ID,
           name: "notes",
-          extension: "md",
+          extension: "",
         },
       ]);
       const members = new Set([LIVE_DOCUMENT_ID]);
@@ -219,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: NEW_DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "new-chapter",
-        extension: "md",
+        extension: "",
       });
       members.add(NEW_DOCUMENT_ID);
 
@@ -270,7 +270,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: DOCUMENT_ID,
             contextSourceId: SOURCE_ID,
             name: "chapter",
-            extension: "md",
+            extension: "",
           });
           await catalog.refreshSources([SOURCE_ID]);
           expect(publish).not.toHaveBeenCalled();
@@ -284,7 +284,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(replay.commits).toHaveLength(1);
       expect(replay.commits[0]?.changes.some((change) => change.operation === "upsert")).toBe(true);
       await expect(catalog.lookup({ scope, entryId: DOCUMENT_ID })).resolves.toMatchObject({
-        entry: { kind: "file", entryId: DOCUMENT_ID, uri: "manuscript://chapter.md" },
+        entry: { kind: "file", entryId: DOCUMENT_ID, uri: "manuscript://chapter" },
       });
     });
 
@@ -298,7 +298,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: SOURCE_ID,
         folderId,
         name: "a",
-        extension: "md",
+        extension: "",
       });
       const catalog = createDrizzleContextCatalog(db);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
@@ -309,18 +309,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID]);
       const moved = await catalog.snapshot(scope);
       await catalog.refreshSources([SOURCE_ID], [folderId]);
+      const republished = await catalog.snapshot(scope);
       const replay = await catalog.changes(scope, moved.cursor);
       expect(replay.kind).toBe("delta");
       if (replay.kind !== "delta") throw new Error("Expected retained move commit");
       expect(replay.commits).toHaveLength(1);
       expect(replay.commits[0]?.changes).toEqual([
         { operation: "invalidate-subtree", ordinal: 0, rootEntryId: folderId },
-        ...moved.entries
+        ...republished.entries
           .filter((entry) => entry.entryId === folderId || entry.entryId === DOCUMENT_ID)
           .map((entry, index) => ({ operation: "upsert", ordinal: index + 1, entry })),
       ]);
       expect(moved.entries.find((entry) => entry.entryId === DOCUMENT_ID)).toMatchObject({
-        uri: "manuscript://Moved/b.md",
+        uri: "manuscript://Moved/b",
       });
       await db
         .update(documents)
@@ -349,7 +350,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
       });
       let failMembership = false;
       let resolveFailed!: () => void;
@@ -395,7 +396,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await failed;
       expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
       await expect(db.select().from(contextCatalogEntries)).resolves.toEqual(beforeEntries);
-      await expect(db.select().from(contextAvailabilityHeads)).resolves.toEqual(beforeHeads);
+      await expect(db.select().from(contextAvailabilityHeads)).resolves.toMatchObject(
+        beforeHeads.map(({ namespaceGeneration: _namespace, ...head }) => head),
+      );
       expect(eventSink.events).toContainEqual(
         expect.objectContaining({
           source: "context-catalog",
@@ -435,7 +438,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: contentDocumentId,
         contextSourceId: SOURCE_ID,
         name: "content-only",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await catalog.refreshSources([SOURCE_ID]);
@@ -525,6 +528,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ]),
       );
+    });
+
+    it("keeps historical replay versions below newer exact-ID and snapshot observations", async () => {
+      const db = database.current;
+      await seedProject(db, "catalog-freshness");
+      await db
+        .insert(documents)
+        .values({ id: DOCUMENT_ID, contextSourceId: SOURCE_ID, name: "Start", extension: "md" });
+      const catalog = createDrizzleContextCatalog(db);
+      const scope = { kind: "project" as const, projectId: PROJECT_ID };
+      await catalog.refreshSources([SOURCE_ID]);
+      const before = await catalog.snapshot(scope);
+      await db.update(documents).set({ name: "Historical" }).where(eq(documents.id, DOCUMENT_ID));
+      await catalog.refreshSources([SOURCE_ID]);
+      const historical = await catalog.snapshot(scope);
+      const historicalEntry = historical.entries.find((entry) => entry.entryId === DOCUMENT_ID);
+      if (historicalEntry?.kind !== "file") throw new Error("Missing historical entry");
+      const historicalVersion = historicalEntry.observationVersion;
+      await db.update(documents).set({ name: "Newest" }).where(eq(documents.id, DOCUMENT_ID));
+      await catalog.refreshSources([SOURCE_ID]);
+      const newest = await catalog.snapshot(scope);
+      const newestEntry = newest.entries.find((entry) => entry.entryId === DOCUMENT_ID);
+      if (newestEntry?.kind !== "file") throw new Error("Missing newest entry");
+      const newestVersion = newestEntry.observationVersion;
+      const available = await createDrizzleProjectContextAvailability(db).lookup(
+        { projectId: PROJECT_ID, documentIds: [DOCUMENT_ID] },
+        { userId: USER_ID },
+      );
+      const resolution = available.resolutions[0];
+      expect(resolution).toMatchObject({
+        kind: "available",
+        entry: { name: "Newest.md", observationVersion: newestVersion },
+      });
+      const snapshot = await catalog.snapshot(scope);
+      expect(snapshot.entries.find((entry) => entry.entryId === DOCUMENT_ID)).toMatchObject({
+        observationVersion: newestVersion,
+      });
+      const page = await catalog.changes(scope, before.cursor, 1);
+      if (page.kind !== "delta") throw new Error("Expected replay");
+      expect(page.hasMore).toBe(true);
+      const change = page.commits[0]?.changes.find(
+        (change) => change.operation === "upsert" && change.entry.entryId === DOCUMENT_ID,
+      );
+      expect(change).toMatchObject({
+        operation: "upsert",
+        entry: { name: "Historical.md", observationVersion: historicalVersion },
+      });
+      expect(BigInt(historicalVersion)).toBeLessThan(BigInt(newestVersion));
     });
 
     it("rolls real ContextFS metadata and its catalog commit back together", async () => {
@@ -717,14 +768,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: DOCUMENT_ID,
           contextSourceId: SOURCE_ID,
           name: "notes",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
           provisionalName: true,
         },
         {
           contextSourceId: KB_SOURCE_ID,
           name: "notes",
-          extension: "md",
+          extension: "",
           fileType: "markdown",
         },
       ]);
@@ -738,7 +789,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           kind: "file",
           nodeId: DOCUMENT_ID,
           sourceId: SOURCE_ID,
-          path: "notes.md",
+          path: "notes",
           filetype: "markdown",
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -756,11 +807,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ],
       });
-      await expect(catalog.lookup({ scope, uri: "manuscript://notes.md" })).resolves.toMatchObject({
+      await expect(catalog.lookup({ scope, uri: "manuscript://notes" })).resolves.toMatchObject({
         entry: { entryId: DOCUMENT_ID },
       });
-      await expect(catalog.lookup({ scope, uri: "kb://notes.md" })).resolves.toMatchObject({
-        entry: { kind: "file", uri: "kb://notes.md" },
+      await expect(catalog.lookup({ scope, uri: "kb://notes" })).resolves.toMatchObject({
+        entry: { kind: "file", uri: "kb://notes" },
       });
     });
 
@@ -774,7 +825,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
         name: "one",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await catalog.refreshSources([SOURCE_ID]);
@@ -831,7 +882,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(documents).values([
-        { id: FILE, contextSourceId: UPLOADS, name: "notes", extension: "md" },
+        { id: FILE, contextSourceId: UPLOADS, name: "notes", extension: "" },
         {
           id: UPLOAD_FILE,
           contextSourceId: UPLOADS,
@@ -839,7 +890,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "png",
           fileType: "image",
         },
-        { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "md" },
+        { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "" },
       ]);
       const catalog = createDrizzleContextCatalog(db);
       const fileUris = async (scope: { kind: "work"; projectId: string; workId: string }) =>
@@ -852,14 +903,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           workId: NO_WORK,
         }),
-      ).toEqual(["uploads://@/notes.md", "uploads://@/shot.png"]);
+      ).toEqual(["uploads://@/notes", "uploads://@/shot.png"]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc.md",
+        "scratch://@draft/arc",
       ]);
 
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc.md",
+        "scratch://@draft/arc",
       ]);
       const namedAddress = () =>
         createDocumentAddressResolver({
@@ -870,14 +921,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           scheme: "scratch",
           workId: NAMED,
-          path: "/arc.md",
+          path: "/arc",
         });
       await expect(namedAddress()).resolves.toMatchObject({
         kind: "current",
         document: {
           documentId: NAMED_FILE,
           authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
-          entry: { uri: "scratch://@draft/arc.md" },
+          entry: { uri: "scratch://@draft/arc" },
         },
       });
 
@@ -891,7 +942,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           scheme: "uploads",
           workId: NO_WORK,
-          path: "/notes.md",
+          path: "/notes",
         }),
       ).resolves.toMatchObject({ kind: "current", documentId: FILE });
     });

@@ -1,7 +1,7 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { resourceVisibleInProject } from "@meridian/resource-replica";
+import { resourcePlacementForSnapshot, resourceVisibleInProject } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect } from "react";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
@@ -55,7 +55,7 @@ async function restoreLiveTab(
       snapshot.records.filter((record) =>
         resourceVisibleInProject(projectId, record, snapshot.catalogs),
       ),
-      snapshot.folders,
+      resourcePlacementForSnapshot(projectId, snapshot),
     );
   const projection = project(tab);
   if (projection.kind === "removed" || projection.kind === "terminal") return null;
@@ -77,7 +77,12 @@ async function restoreLiveTab(
     if (catalog.entries.get(validated.documentId)?.kind !== "file") return null;
   }
   const current = await resources.readProjection(projectId);
-  const next = projectResourceTab(projectId, validated, current.records, current.folders);
+  const next = projectResourceTab(
+    projectId,
+    validated,
+    current.records,
+    resourcePlacementForSnapshot(projectId, current),
+  );
   if (next.kind === "removed" || next.kind === "terminal") return null;
   return next.kind === "projected" ? next.tab : validated;
 }

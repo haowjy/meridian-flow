@@ -1,13 +1,15 @@
 /** The desktop dock header names its document or the screen’s native occupant. */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
-import { DockDocumentTitle, DockTitleMenu } from "./DockDocumentTitle";
+import { DockDocumentIdentity } from "./DockDocumentIdentity";
 import type { DockDocument } from "./dock-document-store";
 
 export type DockHeaderSlotArgs = {
@@ -44,12 +46,17 @@ export function DockHeader({
         {dockDocument ? (
           <>
             <DockDocumentClose />
-            <DockDocumentTitle projectId={projectId} document={dockDocument} />
+            <DockOpenInEditor projectId={projectId} document={dockDocument} />
+            <DockDocumentIdentity projectId={projectId} document={dockDocument} />
           </>
         ) : (
           <>
             {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
-            {screen === "chat" ? <DockTitleMenu projectId={projectId} tab={null} /> : null}
+            {screen === "chat" ? (
+              <PaneTitle>
+                <Trans>Recent</Trans>
+              </PaneTitle>
+            ) : null}
             {screen !== "chat" ? threadSelect : null}
             {screen !== "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
@@ -62,7 +69,6 @@ export function DockHeader({
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
         <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {dockDocument ? <DockOpenInEditor projectId={projectId} document={dockDocument} /> : null}
           {onClose ? (
             <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
           ) : null}
