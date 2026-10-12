@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import {
+  DOCUMENT_ID,
   type FakeStack,
   PROJECT_ID,
   startFakeStack,
@@ -51,6 +52,74 @@ describe("thread", () => {
       finalText: "Hello there",
     });
     expect(result.stderr).toBe("");
+  });
+
+  it("resumes after a socket drop mid-run without duplicating the replay", async () => {
+    const before = stack.resumeCursors.length;
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "please reconnect",
+      "--timeout",
+      "3s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    const records = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(records.filter((record) => record.type === "turn.started")).toHaveLength(1);
+    expect(
+      records
+        .filter((record) => record.type === "message.delta")
+        .map((record) => record.text)
+        .join(""),
+    ).toBe("Hello there");
+    expect(records.at(-1)).toMatchObject({ status: "complete", finalText: "Hello there" });
+    expect(stack.resumeCursors.slice(before)).toEqual([
+      expect.any(String),
+      records.find((record) => record.type === "turn.started").seq,
+    ]);
+  });
+
+  it("admits the composer's skill, prose, Markdown reference and image blocks", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "Compare this",
+      "--skill",
+      "revise",
+      "--ref",
+      "kb://cover.png",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(stack.messageBodies.at(-1)).toEqual({
+      submissionId: expect.any(String),
+      text: "/reviseCompare this\n[Cover](kb://cover.png)",
+      blocks: [
+        {
+          type: "skill",
+          text: "/revise",
+          slug: "revise",
+          name: "Revise",
+          description: "Revise prose",
+        },
+        { type: "text", text: "Compare this\n" },
+        {
+          type: "reference",
+          text: "[Cover](kb://cover.png)",
+          documentId: DOCUMENT_ID,
+          uri: "kb://cover.png",
+        },
+        { type: "image", documentId: DOCUMENT_ID, uri: "kb://cover.png" },
+      ],
+      references: [{ documentId: DOCUMENT_ID, uri: "kb://cover.png", purpose: "reference" }],
+      activatedSkillSlugs: ["revise"],
+    });
   });
 
   it("send exits 1 on a failed run and 8 on a pending interrupt", async () => {

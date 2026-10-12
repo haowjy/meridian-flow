@@ -1,13 +1,12 @@
 /**
- * Follows one thread's sequenced event stream over the thread socket: catch-up,
- * live frames, gap resubscription, and seq de-duplication shared by events/tail/send.
+ * CLI presentation and follow predicates over the shared socket subscription.
  */
-import type { ThreadLiveState, WsServerMessage } from "@meridian/contracts/protocol";
-import { CliError } from "../../core/cli-error";
+import type { ThreadLiveState } from "@meridian/contracts/protocol";
+import type { ThreadTransport } from "@meridian/thread-client";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
-import { openThreadSocket, type ThreadSocket } from "./socket";
+import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
   lastSeq: string;
@@ -31,16 +30,12 @@ export type FollowOptions = {
   present?: (event: CliEvent) => { value: Record<string, unknown>; line: string | null } | null;
   /** Return true to stop following after this event has been emitted. */
   shouldStop?: (event: CliEvent) => boolean;
-  /** Test seam. */
-  openSocket?: (session: Session) => Promise<ThreadSocket>;
+  transport?: ThreadTransport;
 };
 
-function seqAfter(seq: string, lastSeq: string): boolean {
-  return BigInt(seq) > BigInt(lastSeq);
-}
-
 export async function followThread(options: FollowOptions): Promise<FollowResult> {
-  const socket = await (options.openSocket ?? openThreadSocket)(options.session);
+  const transport = options.transport ?? createThreadClient(options.session);
+  const subscription = subscribeThread(transport, options.threadId, options.lastSeq);
   const mapper = new RunEventMapper();
   let lastSeq = options.lastSeq;
   let state: ThreadLiveState | null = null;
@@ -60,7 +55,6 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   };
 
   const consume = (seq: string, message: Parameters<RunEventMapper["map"]>[0]): CliEvent | null => {
-    if (!seqAfter(seq, lastSeq)) return null;
     lastSeq = seq;
     for (const event of mapper.map(message)) {
       if (emit(event)) return event;
@@ -68,56 +62,39 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
     return null;
   };
 
-  const subscribe = () => socket.send({ type: "subscribe", threadId: options.threadId, lastSeq });
-
   try {
-    subscribe();
     for (;;) {
-      const message: WsServerMessage = await socket.next(options.deadlineAt);
-      if ("threadId" in message && message.threadId && message.threadId !== options.threadId) {
-        continue;
-      }
+      const message = await subscription.next(options.deadlineAt);
       switch (message.type) {
-        case "subscribed": {
+        case "live":
           state = message.state;
-          for (const sequenced of message.catchup) {
-            const stop = consume(sequenced.seq, sequenced);
-            if (stop) return { lastSeq, stoppedBy: stop, state };
-          }
           if (options.catchupOnly) return { lastSeq, stoppedBy: null, state };
           break;
-        }
         case "event": {
-          const stop = consume(message.seq, message);
+          const stop = consume(message.event.seq, message.event);
           if (stop) return { lastSeq, stoppedBy: stop, state };
           break;
         }
         case "gap": {
-          // Same rule as the app transport: jump the cursor to what the server can serve.
+          const gap = message.gap;
           options.out.record(
             {
               type: "gap",
               threadId: options.threadId,
-              cause: message.cause,
-              fromSeq: message.fromSeq ?? null,
-              toSeq: message.toSeq ?? null,
+              cause: gap.cause,
+              fromSeq: gap.fromSeq ?? null,
+              toSeq: gap.toSeq ?? null,
             },
-            `gap ${message.cause} ${message.fromSeq ?? "?"}..${message.toSeq ?? "?"} (events skipped; ./mf thread view shows the durable state)`,
+            `gap ${gap.cause} ${gap.fromSeq ?? "?"}..${gap.toSeq ?? "?"} (events skipped; ./mf thread view shows the durable state)`,
             options.textStream,
           );
-          if (message.toSeq && seqAfter(message.toSeq, lastSeq)) lastSeq = message.toSeq;
-          subscribe();
+          if (gap.toSeq && BigInt(gap.toSeq) > BigInt(lastSeq)) lastSeq = gap.toSeq;
           break;
         }
-        case "error":
-          throw new CliError("protocol", `Thread socket error: ${message.error.message}`, {
-            details: message.error,
-          });
-        default:
-          break;
       }
     }
   } finally {
-    socket.close();
+    subscription.unsubscribe();
+    if (!options.transport) transport.disconnect();
   }
 }

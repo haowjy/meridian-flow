@@ -6,12 +6,11 @@ import {
   apiThreadSnapshotPath,
   type SendMessageRequest,
   type SendMessageResponse,
-  type SubmittedReference,
   type ThreadAvailableSkillsResponse,
   type ThreadSnapshotResponse,
-  type UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import { blockPlainText, type Turn } from "@meridian/contracts/threads";
+import { imageCapable, serializeMessageDoc } from "@meridian/thread-client";
 import { CliError, EXIT, type ExitCode, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -25,52 +24,12 @@ import {
 } from "../../core/command";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
-import { resolveDocumentId, resolveUri } from "../doc/uri";
+import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { followThread } from "./stream";
-
-export type ComposedMessage = Pick<
-  SendMessageRequest,
-  "text" | "blocks" | "references" | "activatedSkillSlugs"
->;
-
-/** Mirrors the composer: skill chips first, then prose, then `@uri` reference chips. */
-export function composeMessage(input: {
-  text: string;
-  skills: { slug: string; name: string; description: string }[];
-  references: { documentId: string; uri: string }[];
-}): ComposedMessage {
-  const blocks: UserMessageBlock[] = [];
-  for (const skill of input.skills) {
-    blocks.push({ type: "skill", text: `/${skill.slug}`, ...skill });
-    blocks.push({ type: "text", text: " " });
-  }
-  blocks.push({ type: "text", text: input.text });
-  for (const reference of input.references) {
-    blocks.push({ type: "text", text: " " });
-    blocks.push({
-      type: "reference",
-      text: `@${reference.uri}`,
-      documentId: reference.documentId as never,
-      uri: reference.uri,
-    });
-  }
-  const references: SubmittedReference[] = input.references.map((reference) => ({
-    documentId: reference.documentId as never,
-    uri: reference.uri,
-    purpose: "reference",
-  }));
-  return {
-    text: blocks.map((block) => ("text" in block ? block.text : "")).join(""),
-    blocks,
-    references,
-    ...(input.skills.length
-      ? { activatedSkillSlugs: input.skills.map((skill) => skill.slug) }
-      : {}),
-  };
-}
+import { createThreadClient } from "./transport";
 
 export type SendOutcome = {
   type: "result" | "error";
@@ -127,7 +86,13 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
   return Promise.all(
     refs.map(async (raw) => {
       const target = await resolveUri(session, projectId, raw);
-      return { uri: target.uri, documentId: await resolveDocumentId(session, projectId, target) };
+      const document = await resolveDocument(session, projectId, target);
+      return {
+        uri: target.uri,
+        documentId: document.documentId,
+        label: document.entry.name,
+        imageCapable: imageCapable(document.entry.fileType),
+      };
     }),
   );
 }
@@ -151,10 +116,15 @@ async function resolveSkills(session: Session, threadId: string, slugs: string[]
 
 /** Admits one message through the real send route. */
 export async function admitMessage(session: Session, input: Omit<SendInput, "timeoutMs" | "full">) {
-  const message = composeMessage({
-    text: input.text,
-    skills: await resolveSkills(session, input.threadId, input.skills ?? []),
-    references: await resolveReferences(session, input.threadId, input.refs ?? []),
+  const skills = await resolveSkills(session, input.threadId, input.skills ?? []);
+  const references = await resolveReferences(session, input.threadId, input.refs ?? []);
+  const message = serializeMessageDoc({
+    type: "doc",
+    content: [
+      ...skills.map((skill) => ({ type: "composerSkill", attrs: skill })),
+      { type: "paragraph", content: [{ type: "text", text: input.text }] },
+      ...references.map((reference) => ({ type: "composerReference", attrs: { reference } })),
+    ],
   });
   const mockScriptId =
     input.mock === undefined
@@ -165,7 +135,12 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
     const admitted = await session.request<SendMessageResponse>(
       "POST",
       apiThreadMessagePath(input.threadId),
-      { submissionId, ...message } satisfies SendMessageRequest,
+      {
+        submissionId,
+        ...message,
+        references: [...message.references],
+        activatedSkillSlugs: [...message.activatedSkillSlugs],
+      } satisfies SendMessageRequest,
     );
     return { submissionId, admitted, mockScriptId };
   } catch (error) {
@@ -202,12 +177,14 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
+  const transport = createThreadClient(session);
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
     for (;;) {
       const followed = await followThread({
         session,
+        transport,
         threadId,
         lastSeq,
         deadlineAt,
@@ -258,6 +235,8 @@ async function followToOutcome(
       };
     }
     throw error;
+  } finally {
+    transport.disconnect();
   }
   const snapshot = await session.request<ThreadSnapshotResponse>(
     "GET",

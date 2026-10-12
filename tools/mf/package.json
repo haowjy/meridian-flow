@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@meridian/contracts": "workspace:*",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "@meridian/thread-client": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

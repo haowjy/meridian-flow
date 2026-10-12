@@ -853,6 +853,9 @@ importers:
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@meridian/thread-client':
+        specifier: workspace:*
+        version: link:../../packages/thread-client
       ws:
         specifier: ^8.21.0
         version: 8.21.0
