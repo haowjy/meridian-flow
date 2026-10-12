@@ -36,6 +36,7 @@ function catalog(localContent: boolean): CatalogContextView {
         parentId: "kb-source",
         name: "Cached.md",
         aliases: [],
+        importPending: false,
         path: ["Cached.md"],
         uri: "kb://Cached.md",
         provisionalName: false,

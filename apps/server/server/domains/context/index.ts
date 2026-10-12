@@ -11,6 +11,7 @@ export {
   createDrizzleDocumentLinkScopes,
   type LinkScopeMembership,
 } from "./adapters/document-link-scope.js";
+export { createDrizzleContextBulkCreation } from "./adapters/drizzle-context-bulk-creation.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -56,6 +57,10 @@ export type {
   SchemeCapabilities,
 } from "./ports/context-adapter.js";
 export { schemeCapabilities } from "./ports/context-adapter.js";
+export type {
+  ContextBulkCreation,
+  ContextBulkCreationInput,
+} from "./ports/context-bulk-creation.js";
 export type {
   ContextCatalog,
   ContextCatalogMutationPort,

@@ -558,3 +558,14 @@ and HTTP error data; it is absent when the failure cannot prove an occupant.
 `LinkAheadRegistry.settleRef` joins an ambient transaction and compares-and-sets a
 single registered ahead UUID by identity, without address lookup. A losing settler
 receives the existing document id; a missing registry row returns null.
+
+`ContextBulkCreation.create` creates one planning chunk by source and stable
+folder/document ids. Its Drizzle adapter shares the Context namespace lock,
+checks live same-source parents and acyclic folder input, inserts folder and
+placeholder identities in batches, initializes tracked seeds and membership,
+settles arrivals, then refreshes the catalog once. It joins an ambient transaction;
+a collision rolls back the whole chunk. It neither reallocates nor replays ids:
+the caller owns allocation and planning receipts. The caller resolves a moved
+parent's current source before invoking this source-scoped door.
+Catalog file entries expose strict boolean `importPending`, true only for
+`metadata.importPending === true`.

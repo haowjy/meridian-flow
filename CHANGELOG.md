@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
+
 - Server imports can fill an untouched placeholder by identity, or prepend text without replacing existing edits.
 
 - Server import writes can bind note links to planned identities, reporting invalid targets and minted ahead links.

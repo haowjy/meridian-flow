@@ -54,6 +54,8 @@ type CatalogFileEntryBase = {
   uri: CanonicalContextUri;
   /** Catalog-visible identity state used by cross-device untitled reconciliation. */
   provisionalName: boolean;
+  /** Text has not landed in this tracked import placeholder yet. */
+  importPending: boolean;
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */

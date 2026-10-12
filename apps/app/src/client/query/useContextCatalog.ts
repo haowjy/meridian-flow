@@ -216,6 +216,7 @@ function overlayResourceCatalogView(
       path,
       uri,
       provisionalName: location.provisional,
+      importPending: installed?.kind === "file" ? installed.importPending : false,
       ...record.resource.classification,
     } satisfies CatalogFileEntry);
   }
