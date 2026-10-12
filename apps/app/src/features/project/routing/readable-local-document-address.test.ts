@@ -135,6 +135,7 @@ it("uses local content through lookup failure, then yields to a successful canon
   };
   expect(reconcileDocumentAddress(local, canonical)).toEqual({
     result: canonical,
+    view: "review",
     localFile: undefined,
   });
 });
@@ -153,6 +154,7 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
 
   expect(reconcileDocumentAddress(pending, alias)).toEqual({
     result: local.result,
+    view: "local",
     localFile: pending.file,
   });
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
@@ -261,4 +263,33 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
+});
+
+it.each([
+  "settled",
+  "loading",
+  "failed",
+])("trusts a server live admission despite a %s catalog", (state) => {
+  const result = {
+    kind: "current",
+    document: { documentId: "new-document" },
+  } as DocumentAddressResult;
+  const manifest = {
+    catalog: null,
+    isComplete: state === "settled",
+    isFetching: state === "loading",
+    isError: state === "failed",
+  };
+  const drafts = {
+    status: state === "loading" ? "loading" : state === "failed" ? "error" : "empty",
+    groups: [],
+  };
+  expect(gateLiveView(result, manifest, drafts, () => false, "live")).toEqual({
+    outcome: "ready",
+    result,
+  });
+  expect(gateLiveView(result, manifest, drafts, () => false, "review")).not.toEqual({
+    outcome: "ready",
+    result,
+  });
 });
