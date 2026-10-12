@@ -61,3 +61,9 @@ Two harness races have produced false defects. Rule them out first.
 ## Device reading memory
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
+
+## Messages waiting for usage
+
+[Saved messages waiting for usage](usage-waiting.md) covers durable credit blocks,
+existing and New chat, reload, Settings navigation, CLI outcomes and automatic
+recovery after a ledger grant.

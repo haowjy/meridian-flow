@@ -67,6 +67,7 @@ export interface InboxReader {
 }
 
 export type InboxProjection = {
+  blocked?: import("@meridian/contracts/threads").ThreadPendingInbox["blocked"];
   messages: InboxMessage[];
   run: { turnId: TurnId | null; messageIds: string[] } | null;
 };

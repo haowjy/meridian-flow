@@ -40,6 +40,7 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
+  setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;
   findMessage(id: string): Promise<InboxMessage | null>;
   workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
@@ -709,6 +710,19 @@ export function createDeliveryAdapter(
       );
       await deps.publishFinalizedReports(reports);
     },
+    blockForUsage: (lease) =>
+      threadLock.withThreadLock(lease.threadId, async () => {
+        const receipt = await leaseStore.lockReceipt(lease);
+        const projection = await inbox.readPendingProjection(lease.threadId);
+        if (
+          !receipt ||
+          projection.run?.turnId ||
+          projection.blocked?.reason === "credits_exhausted"
+        )
+          return;
+        await inbox.setBlockedReason(lease.threadId, "credits_exhausted");
+        await appendPending(lease.threadId);
+      }),
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {
@@ -754,6 +768,7 @@ export function createDeliveryAdapter(
             ),
             prepared.turnKind,
           );
+          await inbox.setBlockedReason(lease.threadId, null);
           await appendPending(lease.threadId);
           return { value: prepared.value };
         },

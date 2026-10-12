@@ -17,9 +17,14 @@ import type { ThreadLock } from "../../loop/thread-lock.js";
 import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
 
 export function createInMemoryInbox(): DeliveryStore {
+  const blocked = new Map<ThreadId, "credits_exhausted">();
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
+    async setBlockedReason(threadId, reason) {
+      if (reason) blocked.set(threadId, reason);
+      else blocked.delete(threadId);
+    },
     async workNoticeTargets(_workId) {
       throw new Error("Work notice audience is not configured");
     },
@@ -66,7 +71,9 @@ export function createInMemoryInbox(): DeliveryStore {
     },
 
     async readPendingProjection(threadId) {
+      const reason = blocked.get(threadId);
       return {
+        ...(reason ? { blocked: { reason } } : {}),
         messages: messages
           .filter((message) => message.threadId === threadId && message.deliveredAt === null)
           .sort((left, right) => left.seq - right.seq),
@@ -358,7 +365,7 @@ export function createInMemoryRuntimeDelivery(
       ...deps.inbox,
       async readPendingProjection(threadId) {
         return {
-          messages: await deps.inbox.selectPending(threadId),
+          ...(await deps.inbox.readPendingProjection(threadId)),
           run: deps.runClaim.readDeliveryRun(threadId),
         };
       },

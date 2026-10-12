@@ -74,6 +74,7 @@ export const threads = pgTable(
     conversationalLeafTurnId: uuid("conversational_leaf_turn_id").$type<TurnId>(),
     turnCount: integer("turn_count").notNull().default(0),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    inboxBlockedReason: text("inbox_blocked_reason").$type<"credits_exhausted">(),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

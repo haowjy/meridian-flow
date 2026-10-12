@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
+
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
