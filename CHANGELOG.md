@@ -25,6 +25,7 @@
 - A path-qualified wikilink, pasted or imported, reaches an exact Unfiled path before suffix matches in other areas.
 - Continue import re-sends files whose landing was cut off by a crashed server once their claim lapses.
 - Import decodes only Markdown link destinations, so a name containing `%` keeps its links and survives an export round trip; wikilinks stay literal.
+- Import and the Properties row read frontmatter through one bounded policy, so they agree on readable YAML and on aliases (and the links aliases resolve).
 
 
 ### Added

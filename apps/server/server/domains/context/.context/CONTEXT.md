@@ -599,7 +599,9 @@ properties (`metadata.properties`, `{format:"yaml", text}`) with non-blank text.
 themselves never ride in the catalog: `GET /api/projects/:projectId/documents/:documentId/properties`
 (same read grant as the document) parses the stored YAML in source order into `DocumentProperties`
 (`document-properties.ts`); YAML it cannot read, including duplicate keys, comes back `unreadable`
-with its text. A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
+with its text. What is readable and which aliases it names is one bounded policy,
+`frontmatter.ts`; import reads aliases and its unreadable finding through it too, so import
+and display never disagree. Do not parse frontmatter YAML anywhere else. A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
 `copy` writes to the new document's metadata.
 
 Import parent lookup is a Context capability (ContextImportLocations).

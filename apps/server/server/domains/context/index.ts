@@ -50,6 +50,7 @@ export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { parseDocumentProperties } from "./document-properties.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export { frontmatterAliases, readFrontmatter } from "./frontmatter.js";
 export type {
   AdapterFault,
   AdapterFileEntry,

@@ -6,7 +6,9 @@ import { walkLinkOccurrences } from "@meridian/markup/links";
 import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { createLinkIndex, type ImportLinkCandidate, readFrontmatter } from "./link-index.js";
+import { parseDocumentProperties } from "../../context/document-properties.js";
+import { MAX_PROPERTIES_TEXT_LENGTH } from "../../context/frontmatter.js";
+import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
 import { convertObsidianNote } from "./obsidian-note.js";
 
 const root = new URL("../__fixtures__/obsidian-vault/", import.meta.url).pathname;
@@ -147,7 +149,28 @@ describe("Obsidian conversion", () => {
     expect(result.aliases).toEqual([]);
     expect(result.markdown).toBe("Body");
     expect(result.findings.map((finding) => finding.code)).toContain("properties_unreadable");
-    expect(readFrontmatter("aliases: [A, B]\n").aliases).toEqual(["A", "B"]);
+  });
+  it.each([
+    ["a list of names", "aliases: [Gate, 3, Old Wu]\n"],
+    ["a single name", "aliases: Gate\n"],
+    ["a tag the core schema does not know", "aliases: !custom [Tagged]\n"],
+    [
+      "101 references to one anchor",
+      `base: &a A\naliases: [${Array(101).fill("*a").join(", ")}]\n`,
+    ],
+    [
+      "nesting deeper than the display walks",
+      `x: ${"[".repeat(40)}1${"]".repeat(40)}\naliases: [Deep]\n`,
+    ],
+    ["a cycle beside the aliases", "x: &x [*x]\naliases: [A]\n"],
+    ["text over the size cap", `aliases: [Tail]\n#${" ".repeat(MAX_PROPERTIES_TEXT_LENGTH)}\n`],
+  ])("reads %s exactly as the properties display does", (_name, yaml) => {
+    const display = parseDocumentProperties({ format: "yaml", text: yaml });
+    const imported = convert(`---\n${yaml}---\n[[Gate]]`);
+    expect(imported.findings.some((finding) => finding.code === "properties_unreadable")).toBe(
+      display.unreadable,
+    );
+    expect(imported.aliases).toEqual(display.aliases);
   });
   it("honors exact case, source folder, path depth, aliases, attachment folder and prose suffixes", () => {
     const result = convert(

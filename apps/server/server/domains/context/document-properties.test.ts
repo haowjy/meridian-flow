@@ -1,6 +1,7 @@
 /** Stored frontmatter parses for display in source order, or is reported unreadable. */
 import { describe, expect, it } from "vitest";
-import { MAX_PROPERTIES_TEXT_LENGTH, parseDocumentProperties } from "./document-properties.js";
+import { parseDocumentProperties } from "./document-properties.js";
+import { MAX_PROPERTIES_TEXT_LENGTH } from "./frontmatter.js";
 
 const parse = (text: string) => parseDocumentProperties({ format: "yaml", text });
 

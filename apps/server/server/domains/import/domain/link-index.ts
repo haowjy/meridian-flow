@@ -8,7 +8,6 @@ import {
   wantedPath,
   wikilinkMatches,
 } from "@meridian/markup/obsidian";
-import { parseDocument } from "yaml";
 import { codePointOrder } from "./plan.js";
 
 export interface ImportLinkCandidate {
@@ -20,27 +19,6 @@ export interface ImportLinkCandidate {
   aliases: string[];
   kind: "note" | "docx" | "code" | "binary";
   filetype: string;
-}
-export function readFrontmatter(text: string) {
-  const yaml = parseDocument(text, { uniqueKeys: true });
-  try {
-    const value: unknown = yaml.toJS({ maxAliasCount: 100 });
-    const readable =
-      !yaml.errors.length &&
-      (value === null || (typeof value === "object" && !Array.isArray(value)));
-    const aliases = readable && value && "aliases" in value ? value.aliases : null;
-    return {
-      readable,
-      aliases:
-        typeof aliases === "string"
-          ? [aliases]
-          : Array.isArray(aliases)
-            ? aliases.filter((alias): alias is string => typeof alias === "string")
-            : [],
-    };
-  } catch {
-    return { readable: false, aliases: [] };
-  }
 }
 /**
  * A Markdown link destination is a URL: percent-encoding is its syntax, so it is

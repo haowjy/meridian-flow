@@ -4,12 +4,12 @@ import { formatMarkdownLink, mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { scanObsidian, storedName } from "@meridian/markup/obsidian";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { readFrontmatter } from "../../context/index.js";
 import {
   decodedDestination,
   type ImportLinkCandidate,
   type ImportLinkIndex,
   normalizedPath,
-  readFrontmatter,
 } from "./link-index.js";
 
 const codec = mdxCodec({ schema: buildDocumentSchema() });
@@ -54,11 +54,11 @@ export function convertObsidianNote(
   const properties: StoredDocumentProperties | null = frontmatter
     ? { format: "yaml", text: frontmatter.text }
     : null;
-  const parsed = frontmatter ? readFrontmatter(frontmatter.text) : { readable: true, aliases: [] };
+  const parsed = frontmatter ? readFrontmatter(frontmatter.text) : null;
   const findings: ImportFinding[] = [];
   const comments = scan.findings.filter((finding) => finding.kind === "comment");
   if (comments.length) findings.push({ code: "hidden_notes", params: { count: comments.length } });
-  if (!parsed.readable) findings.push({ code: "properties_unreadable", params: {} });
+  if (parsed && !parsed.readable) findings.push({ code: "properties_unreadable", params: {} });
   const counts = {
     callouts: scan.findings.filter((finding) => finding.kind === "callout").length,
     highlights: scan.findings.filter((finding) => finding.kind === "highlight").length,
@@ -203,7 +203,7 @@ export function convertObsidianNote(
   const note: ConvertedObsidianNote = {
     markdown: "",
     properties,
-    aliases: parsed.aliases,
+    aliases: parsed?.readable ? parsed.aliases : [],
     findings,
     template,
     targets,
