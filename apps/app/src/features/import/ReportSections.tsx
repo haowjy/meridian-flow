@@ -1,4 +1,5 @@
 /** The report's sections: rows with an Open button and sibling actions, never a button in a button. */
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, FileText, Folder } from "lucide-react";
@@ -30,7 +31,7 @@ export function Section({
         <h2 id={id} className="text-sm font-semibold text-foreground">
           {title}
           {count !== undefined ? (
-            <span className="ml-1.5 font-normal text-ink-muted">({count})</span>
+            <span className="ml-1.5 font-normal text-ink-muted">({i18n.number(count)})</span>
           ) : null}
         </h2>
         {action}
@@ -203,7 +204,7 @@ function Group({
             className={cn("size-3.5 text-ink-muted transition-transform", open && "rotate-90")}
           />
           <span>{groupTitle(group)}</span>
-          <span className="font-normal text-ink-muted">({rows.length})</span>
+          <span className="font-normal text-ink-muted">({i18n.number(rows.length)})</span>
         </button>
       </h3>
       {open ? (
@@ -224,7 +225,7 @@ function Group({
           </ul>
           {rows.length > LISTED && !all ? (
             <Button variant="ghost" size="sm" onClick={() => setAll(true)}>
-              {t`Show all ${rows.length}`}
+              {t`Show all ${i18n.number(rows.length)}`}
             </Button>
           ) : null}
         </div>
@@ -325,7 +326,7 @@ function SubGroup({
   return (
     <div className="mt-3">
       <h3 className="text-sm font-medium text-foreground">
-        {title} <span className="font-normal text-ink-muted">({rows.length})</span>
+        {title} <span className="font-normal text-ink-muted">({i18n.number(rows.length)})</span>
       </h3>
       {note ? <p className="text-sm text-ink-muted">{note}</p> : null}
       <ul>

@@ -22,7 +22,12 @@ export function announceMilestones(store: ImportStore) {
         if (stopped) announce(t`Import stopped.`);
         else {
           const looks = buildReportModel(state).worthALookCount;
-          announce(t`Import finished. ${looks} worth a look.`);
+          announce(
+            plural(looks, {
+              one: "Import finished. # worth a look.",
+              other: "Import finished. # worth a look.",
+            }),
+          );
         }
         break;
       }

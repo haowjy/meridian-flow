@@ -3,7 +3,7 @@
  * the open-imports list. Surfaces (tree headers, status rows, the report) reach
  * it through `useImports()`; none of them owns import state.
  */
-import { t } from "@lingui/core/macro";
+import { plural } from "@lingui/core/macro";
 import {
   createContext,
   type ReactNode,
@@ -94,7 +94,13 @@ export function ImportProvider({
       const importId = coordinator.start(selection, destination);
       coordinator.notifyStarted();
       const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
-      announce(t`Importing ${files} files into ${destination.name}.`);
+      const into = destination.name;
+      announce(
+        plural(files, {
+          one: `Importing # file into ${into}.`,
+          other: `Importing # files into ${into}.`,
+        }),
+      );
       // The phone shows the destination folder, its status row first; the desktop
       // opens the report beside the arriving rows.
       if (phone)
