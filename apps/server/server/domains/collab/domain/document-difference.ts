@@ -1,4 +1,5 @@
 /** Computes identity-aware document differences, clock ranges and draft anchors. */
+import { isDeepStrictEqual } from "node:util";
 import {
   type AgentEditModel,
   type BlockRef,
@@ -6,40 +7,33 @@ import {
   unwrapBlock,
   wordHunks,
 } from "@meridian/agent-edit/integration";
+import type { ReviewFormattingChange } from "@meridian/contracts/drafts";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
+import {
+  documentProseEqual,
+  richDifference,
+  textContentShape,
+  visibleContent,
+  visibleItemRanges,
+} from "./document-content.js";
 import type { ClockRange } from "./draft-review-attribution.js";
 import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
-export function blockContentShapesMatch(
-  liveBlocks: readonly BlockInfo[],
-  draftBlocks: readonly BlockInfo[],
-): boolean {
-  return (
-    blockTexts(liveBlocks) === blockTexts(draftBlocks) ||
-    (liveBlocks.length === draftBlocks.length &&
-      liveBlocks.every(
-        (liveBlock, index) =>
-          liveBlock.type === draftBlocks[index]?.type &&
-          liveBlock.text === draftBlocks[index]?.text,
-      ))
-  );
-}
-
-function blockTexts(blocks: readonly BlockInfo[]): string {
-  return blocks.map((block) => block.text).join("\n\n");
-}
-
 type BlockInfo = {
   id: string;
+  identity: string;
   type: string;
   text: string;
+  content: unknown;
+  effectRanges: ClockRange[];
+  richRanges: ClockRange[];
   block: BlockRef;
   textSegments: TextSegment[];
 };
 
-type BlockAlignmentInput = { id: string; text?: string };
+type BlockAlignmentInput = { id: string; identity?: string; content?: unknown };
 
 type TextSegment = {
   text: Y.XmlText;
@@ -53,6 +47,20 @@ type AlignmentEntry<T extends BlockAlignmentInput = BlockInfo> =
   | { kind: "change"; live: T; draft: T }
   | { kind: "delete"; live: T }
   | { kind: "insert"; draft: T };
+
+/** Both immutable identities and all supplying effects survive presentation pairing. */
+type DocumentDifferenceEntry =
+  | Exclude<AlignmentEntry, { kind: "change" }>
+  | {
+      kind: "change";
+      live: BlockInfo;
+      draft: BlockInfo;
+      effects: {
+        insertedRanges: ClockRange[];
+        deletedRanges: ClockRange[];
+        formatting?: ReviewFormattingChange[];
+      };
+    };
 
 type RawHunkBase = {
   anchor: { relStart: string; relEnd: string };
@@ -71,20 +79,26 @@ export type RawBlockDisplay = { type: string; display: string; ranges: ClockRang
 
 export type RawBlockHunk = RawHunkBase & {
   kind: "block";
-  blockSlot?: BlockSlot;
+  beforeBlockKey?: string;
+  formatting?: ReviewFormattingChange[];
   insertedBlock?: RawBlockDisplay;
   deletedBlock?: RawBlockDisplay;
 };
 
 export type RawHunk = RawTextHunk | RawBlockHunk;
 
-export type BlockSlot = { beforeBlockId: string | null; afterBlockId: string | null };
-
 export function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
-  return model.getBlocks(toDocHandle(doc)).map((block) => ({
-    id: model.getBlockId(block),
+  const handle = toDocHandle(doc);
+  const blocks = model.getBlocks(handle);
+  const ids = model.getDocumentBlockIds(handle);
+  return blocks.map((block, index) => ({
+    id: ids[index],
+    identity: JSON.stringify(model.getCanonicalBlockIdentity(block)),
     type: model.getBlockType(block),
     text: model.getText(block),
+    content: visibleContent(unwrapBlock(block)),
+    effectRanges: visibleItemRanges(unwrapBlock(block)),
+    richRanges: visibleItemRanges(unwrapBlock(block), true),
     block,
     textSegments: collectTextSegments(unwrapBlock(block)),
   }));
@@ -106,7 +120,7 @@ export function alignBlocks<T extends BlockAlignmentInput>(
   while (
     liveIndex < liveBlocks.length &&
     draftIndex < draftBlocks.length &&
-    liveBlocks[liveIndex].id === draftBlocks[draftIndex].id
+    alignmentIdentity(liveBlocks[liveIndex]) === alignmentIdentity(draftBlocks[draftIndex])
   ) {
     pair(liveBlocks[liveIndex], draftBlocks[draftIndex]);
     liveIndex++;
@@ -118,15 +132,16 @@ export function alignBlocks<T extends BlockAlignmentInput>(
   // Duplicate IDs make suffix matching ambiguous under the LCS tie rule.
   const uniqueIds = (blocks: readonly T[]) => {
     const counts = new Map<string, number>();
-    for (const block of blocks) counts.set(block.id, (counts.get(block.id) ?? 0) + 1);
+    for (const block of blocks)
+      counts.set(alignmentIdentity(block), (counts.get(alignmentIdentity(block)) ?? 0) + 1);
     return counts;
   };
   const liveCounts = uniqueIds(liveBlocks.slice(offset)),
     draftCounts = uniqueIds(draftBlocks.slice(offset));
   while (liveEnd > offset && draftEnd > offset) {
-    const id = liveBlocks[liveEnd - 1].id;
+    const id = alignmentIdentity(liveBlocks[liveEnd - 1]);
     if (
-      id !== draftBlocks[draftEnd - 1].id ||
+      id !== alignmentIdentity(draftBlocks[draftEnd - 1]) ||
       liveCounts.get(id) !== 1 ||
       draftCounts.get(id) !== 1
     )
@@ -137,12 +152,12 @@ export function alignBlocks<T extends BlockAlignmentInput>(
   const lengths =
     liveIndex < liveEnd && draftIndex < draftEnd
       ? lcsLengths(
-          liveBlocks.slice(offset, liveEnd).map((block) => block.id),
-          draftBlocks.slice(offset, draftEnd).map((block) => block.id),
+          liveBlocks.slice(offset, liveEnd).map(alignmentIdentity),
+          draftBlocks.slice(offset, draftEnd).map(alignmentIdentity),
         )
       : [];
   while (liveIndex < liveEnd && draftIndex < draftEnd) {
-    if (liveBlocks[liveIndex].id === draftBlocks[draftIndex].id) {
+    if (alignmentIdentity(liveBlocks[liveIndex]) === alignmentIdentity(draftBlocks[draftIndex])) {
       const live = liveBlocks[liveIndex];
       const draft = draftBlocks[draftIndex];
       entries.push({
@@ -178,7 +193,7 @@ export function alignBlocks<T extends BlockAlignmentInput>(
 }
 
 function blockContentMatches(live: BlockAlignmentInput, draft: BlockAlignmentInput): boolean {
-  return live.text === undefined || draft.text === undefined || live.text === draft.text;
+  return isDeepStrictEqual(live.content, draft.content);
 }
 
 function lcsLengths(left: readonly string[], right: readonly string[]): number[][] {
@@ -197,16 +212,16 @@ function lcsLengths(left: readonly string[], right: readonly string[]): number[]
 }
 
 export function diffAlignedBlocks(
-  alignment: readonly AlignmentEntry[],
+  alignment: readonly DocumentDifferenceEntry[],
   draftDoc: Y.Doc,
 ): RawHunk[] {
   const hunks: RawHunk[] = [];
-  for (const [blockIndex, entry] of alignment.entries()) {
+  for (const entry of alignment) {
     if (entry.kind === "insert") {
       hunks.push(
         isTextInsertHunk(entry.draft)
           ? textInsertHunk(entry.draft, draftDoc)
-          : blockInsertHunk(entry.draft, draftDoc, draftBlockSlot(alignment, blockIndex)),
+          : blockInsertHunk(entry.draft, draftDoc),
       );
       continue;
     }
@@ -214,15 +229,19 @@ export function diffAlignedBlocks(
       hunks.push(
         isTextDiffBlock(entry.live)
           ? textDeleteHunk(entry.live, alignment, draftDoc)
-          : blockDeleteHunk(entry.live, alignment, draftDoc, blockIndex),
+          : blockDeleteHunk(entry.live, alignment, draftDoc),
       );
       continue;
     }
     if (entry.kind === "change") {
       hunks.push(
-        ...(isTextDiffBlock(entry.live) && isTextDiffBlock(entry.draft)
+        ...(isTextDiffBlock(entry.live) &&
+        isTextDiffBlock(entry.draft) &&
+        entry.live.type === entry.draft.type &&
+        entry.live.text !== entry.draft.text &&
+        isDeepStrictEqual(entry.live.richRanges, entry.draft.richRanges)
           ? diffChangedBlock(entry.live, entry.draft, draftDoc)
-          : [blockChangeHunk(entry.live, entry.draft, draftDoc)]),
+          : [blockChangeHunk(entry, draftDoc)]),
       );
     }
   }
@@ -274,14 +293,13 @@ function textDeleteHunk(
   };
 }
 
-function blockInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockSlot?: BlockSlot): RawHunk {
+function blockInsertHunk(draft: BlockInfo, draftDoc: Y.Doc): RawHunk {
   const insertedBlock = displayBlock(draft);
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    insertedBlock: { ...insertedBlock, ranges: wholeBlockRanges(draft) },
+    insertedBlock: { ...insertedBlock, ranges: draft.effectRanges },
     blockKey: draft.id,
-    ...(blockSlot ? { blockSlot } : {}),
   };
 }
 
@@ -289,26 +307,64 @@ function blockDeleteHunk(
   live: BlockInfo,
   alignment: readonly AlignmentEntry[],
   draftDoc: Y.Doc,
-  blockIndex: number,
 ): RawHunk {
   const deletedBlock = displayBlock(live);
   return {
     kind: "block",
     anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
-    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
+    deletedBlock: { ...deletedBlock, ranges: live.effectRanges },
     blockKey: live.id,
-    blockSlot: liveBlockSlot(alignment, blockIndex),
   };
 }
 
-function blockChangeHunk(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): RawHunk {
-  const insertedBlock = displayBlock(draft);
-  const deletedBlock = displayBlock(live);
+function changedBlocks(live: BlockInfo, draft: BlockInfo): DocumentDifferenceEntry {
+  const rich =
+    live.identity === draft.identity &&
+    isDeepStrictEqual(
+      textContentShape(unwrapBlock(live.block)),
+      textContentShape(unwrapBlock(draft.block)),
+    )
+      ? richDifference(unwrapBlock(live.block), unwrapBlock(draft.block))
+      : null;
+  const beforeLevel =
+    live.type === "heading" ? unwrapBlock(live.block).getAttribute("level") : null;
+  const afterLevel =
+    draft.type === "heading" ? unwrapBlock(draft.block).getAttribute("level") : null;
+  return {
+    kind: "change",
+    live,
+    draft,
+    effects: {
+      insertedRanges: rich?.insertedRanges ?? subtractRanges(draft.effectRanges, live.effectRanges),
+      deletedRanges: rich?.deletedRanges ?? subtractRanges(live.effectRanges, draft.effectRanges),
+      ...(live.text === draft.text
+        ? {
+            formatting:
+              rich?.formatting ??
+              (typeof beforeLevel === "number" &&
+              typeof afterLevel === "number" &&
+              beforeLevel !== afterLevel
+                ? [{ kind: "heading", before: beforeLevel, after: afterLevel } as const]
+                : live.type === draft.type
+                  ? [{ kind: "structure" } as const]
+                  : [{ kind: "block", before: live.type, after: draft.type } as const]),
+          }
+        : {}),
+    },
+  };
+}
+
+function blockChangeHunk(
+  { live, draft, effects }: Extract<DocumentDifferenceEntry, { kind: "change" }>,
+  draftDoc: Y.Doc,
+): RawHunk {
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    insertedBlock: { ...insertedBlock, ranges: wholeBlockRanges(draft) },
-    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
+    ...(effects.formatting ? { formatting: effects.formatting } : {}),
+    ...(live.id !== draft.id ? { beforeBlockKey: live.id } : {}),
+    insertedBlock: { ...displayBlock(draft), ranges: effects.insertedRanges },
+    deletedBlock: { ...displayBlock(live), ranges: effects.deletedRanges },
     blockKey: draft.id,
   };
 }
@@ -343,15 +399,28 @@ export function hunkDisplayText(hunk: RawHunk): { insertedText: string; deletedT
   }
 }
 
-function wholeBlockRanges(block: BlockInfo): ClockRange[] {
-  return [...blockItemRanges(block), ...rangesForTextRange(block, 0, block.text.length)];
-}
-
-function blockItemRanges(block: BlockInfo): ClockRange[] {
-  const item = unwrapBlock(block.block)._item;
-  return item && !item.deleted && item.length > 0
-    ? [{ client: item.id.client, clock: item.id.clock, length: item.length }]
-    : [];
+function subtractRanges(
+  ranges: readonly ClockRange[],
+  retained: readonly ClockRange[],
+): ClockRange[] {
+  return ranges.flatMap((range) => {
+    let parts = [range];
+    for (const other of retained) {
+      if (other.client !== range.client) continue;
+      parts = parts.flatMap((part) => {
+        const start = Math.max(part.clock, other.clock);
+        const end = Math.min(part.clock + part.length, other.clock + other.length);
+        if (end <= start) return [part];
+        return [
+          ...(start > part.clock ? [{ ...part, length: start - part.clock }] : []),
+          ...(end < part.clock + part.length
+            ? [{ ...part, clock: end, length: part.clock + part.length - end }]
+            : []),
+        ];
+      });
+    }
+    return parts;
+  });
 }
 
 function displayBlock(block: BlockInfo): { type: string; display: string } {
@@ -597,45 +666,6 @@ function draftBlockForAlignmentEntry(entry: AlignmentEntry | undefined): BlockIn
     : null;
 }
 
-function liveBlockForAlignmentEntry(entry: AlignmentEntry | undefined): BlockInfo | null {
-  if (!entry) return null;
-  return entry.kind === "equal" || entry.kind === "change" || entry.kind === "delete"
-    ? entry.live
-    : null;
-}
-
-function draftBlockSlot(alignment: readonly AlignmentEntry[], blockIndex: number): BlockSlot {
-  return blockSlot(alignment, blockIndex, draftBlockForAlignmentEntry);
-}
-
-function liveBlockSlot(alignment: readonly AlignmentEntry[], blockIndex: number): BlockSlot {
-  return blockSlot(alignment, blockIndex, liveBlockForAlignmentEntry);
-}
-
-function blockSlot(
-  alignment: readonly AlignmentEntry[],
-  blockIndex: number,
-  blockForEntry: (entry: AlignmentEntry | undefined) => BlockInfo | null,
-): BlockSlot {
-  let beforeBlockId: string | null = null;
-  for (let index = blockIndex - 1; index >= 0; index -= 1) {
-    const block = blockForEntry(alignment[index]);
-    if (!block) continue;
-    beforeBlockId = block.id;
-    break;
-  }
-
-  let afterBlockId: string | null = null;
-  for (let index = blockIndex + 1; index < alignment.length; index += 1) {
-    const block = blockForEntry(alignment[index]);
-    if (!block) continue;
-    afterBlockId = block.id;
-    break;
-  }
-
-  return { beforeBlockId, afterBlockId };
-}
-
 function zeroWidthAnchorAtPosition(position: Y.RelativePosition): {
   relStart: string;
   relEnd: string;
@@ -692,4 +722,65 @@ function wordGapDiff(before: string, after: string): Diff[] {
   }
   if (offset < before.length) diffs.push([DIFF_EQUAL, before.slice(offset)]);
   return diffs;
+}
+
+export function documentDifference(
+  live: Y.Doc,
+  draft: Y.Doc,
+  model: AgentEditModel,
+): DocumentDifferenceEntry[] {
+  if (documentProseEqual(live, draft)) return [];
+  const alignment = alignBlocks(describeBlocks(live, model), describeBlocks(draft, model));
+  const difference: DocumentDifferenceEntry[] = [];
+  for (let index = 0; index < alignment.length; ) {
+    const entry = alignment[index];
+    if (entry.kind === "equal" || entry.kind === "change") {
+      difference.push(entry.kind === "change" ? changedBlocks(entry.live, entry.draft) : entry);
+      index++;
+      continue;
+    }
+    // Identity alignment bounds a replacement gap. Equal ordered content is a
+    // semantic no-op at any length, not evidence of cross-block provenance.
+    const removed: BlockInfo[] = [];
+    const added: BlockInfo[] = [];
+    const gap: AlignmentEntry[] = [];
+    while (index < alignment.length) {
+      const candidate = alignment[index];
+      if (candidate.kind !== "delete" && candidate.kind !== "insert") break;
+      gap.push(candidate);
+      if (candidate.kind === "delete") removed.push(candidate.live);
+      else added.push(candidate.draft);
+      index++;
+    }
+    if (
+      removed.length === added.length &&
+      removed.every((block, offset) => blockContentMatches(block, added[offset]))
+    ) {
+      difference.push(
+        ...removed.map((block, offset) => ({
+          kind: "equal" as const,
+          live: block,
+          draft: added[offset],
+        })),
+      );
+      continue;
+    }
+    for (let offset = 0; offset < gap.length; offset++) {
+      const current = gap[offset],
+        next = gap[offset + 1];
+      if (
+        current.kind === "delete" &&
+        next?.kind === "insert" &&
+        current.live.text === next.draft.text
+      ) {
+        difference.push(changedBlocks(current.live, next.draft));
+        offset++;
+      } else if (current.kind === "delete" || current.kind === "insert") difference.push(current);
+    }
+  }
+  return difference;
+}
+
+function alignmentIdentity(block: BlockAlignmentInput): string {
+  return block.identity ?? block.id;
 }

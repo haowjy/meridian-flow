@@ -43,6 +43,27 @@ commit, viewport, run-owned identities, request scope/order, screenshots, clean
 console and fresh manuscript/draft readback. Read-only API success does not prove
 writer interaction.
 
+## Rich-only paragraph changes (CLI and visual)
+
+With this worktree's mock stack running, seed `## Scene` followed by
+`The red gate opens.`. Create a named Work, set its `aiWriteMode` to `draft`,
+and bind a thread to it. Through `./mf thread send --mock`, read the document,
+then replace its two blocks with `### Scene` and `The **red** gate opens.`.
+Use tool `path` arguments, not the agent-edit core's internal `file` name.
+
+Read the Work's drafts and the document preview through `./mf api`. PASS:
+two selectable classes, one heading-level change and one bold change. Open the
+Editor with that Work ID and draft ID; its change list uses the usual rows,
+with localized `Heading 2 → 3` and `Bold on “red”` descriptions. Both blocks
+are tinted, with no duplicate struck-through copy of their unchanged text.
+
+Apply each class separately using fresh preview revision tokens, reading live
+after each command. Only its exact rich effect reaches live; the other class
+remains selectable. Stage the reverse formatting proposal, then Discard each
+class separately. Live remains exactly unchanged and the other class survives
+until its own Discard. Capture the previews, dispositions and readbacks, plus
+the change-list screenshot and browser errors. Stop only this worktree's stack.
+
 ## Probe A — review from the Work page
 
 Regression guard for #152 (server sent `contextPath: null`, making a draft

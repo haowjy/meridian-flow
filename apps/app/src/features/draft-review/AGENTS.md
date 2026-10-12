@@ -54,7 +54,9 @@ Paths outside this directory are relative to `apps/app/src`.
   tokens. Whole-draft commands settle the current server branch, not a preview.
 - Only new documents are one whole-draft
   change. Its actions use existing whole commands; synthetic class keys never
-  reach the server. No-hunk/no-operation previews remain formatting-only.
+  reach the server. Formatting-only edits are real server-vended classes. Block formatting facts
+  render as one localized line in the usual row, without a fake text replacement.
+  An empty preview is not terminal-settlement evidence.
 - Review chrome, strip and change rows each use one line. Lists close on last
   disposition; only the header shows completion. Success has no toast.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion

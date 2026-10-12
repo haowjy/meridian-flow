@@ -4,7 +4,7 @@ import { documentBranches } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { documentEffectsEqual } from "../domain/document-effect.js";
+import { documentEffectsEqual } from "../domain/document-content.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function refreshDraftEffect(

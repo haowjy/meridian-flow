@@ -2,12 +2,19 @@
 
 ## [Unreleased]
 
+- Keep manifest-only drafts pending while settling semantically unchanged rich prose through one complete-effect comparison.
+
 - Settle chat change trails from transactional dirty signals instead of a no-op work queue. Late Apply, Discard and writer inverses reopen their producing trails after restart without adding a cross-domain owner-lock protocol.
 - Revoke in-flight AI edits when their document is wholly discarded, while independent edits in the same reply still save.
 
 - Keep scoped AI reads current after Discard and preserve buffered edits when a rollback transaction aborts.
 
 - Keep buffered AI reads and independent writes on the current draft across Discard races, without reviving discarded text.
+- Preserve both paragraph identities in replacement history and keep new formatting selectable when prose repeats an earlier edit.
+
+- Keep replaced paragraphs together in review, omit unchanged recreated runs, and preserve writer ownership of uncertified formatting copies.
+
+- Review and publish formatting-only draft edits. Bold, links, heading levels and list changes keep per-change Apply and Discard.
 
 - Keep independent AI edits saving across repeated Discards and preserve every write result on publication retries. Dropped-edit notices distinguish partial handle groups and name the affected text.
 
