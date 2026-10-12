@@ -27,25 +27,36 @@ type Check = {
 type Step = RunFollowInput | { kind: "check"; check: Check };
 
 const owe = (...userTurnIds: string[]): Step => ({ kind: "obligations", userTurnIds });
-const started = (runId: string, executionId: string, reserved: string[] = []): Step => ({
+/** A reply start; `position` is the turn's `Turn.position` (null: written before positions). */
+const started = (
+  runId: string,
+  executionId: string,
+  reserved: string[] = [],
+  position: number | null = null,
+): Step => ({
   kind: "event",
   event: {
     type: EventType.RUN_STARTED,
     threadId: "thread_1",
     runId,
-    rawEvent: { writeMode: "direct", executionId, reservedForUserTurnIds: reserved },
+    rawEvent: { writeMode: "direct", executionId, reservedForUserTurnIds: reserved, position },
   } as never,
 });
 const finished = (runId: string): Step => ({
   kind: "event",
   event: { type: EventType.RUN_FINISHED, threadId: "thread_1", runId } as never,
 });
-const delivered = (byTurnId: string | null, executionId: string, userTurnIds: string[]): Step => ({
+const delivered = (
+  byTurnId: string | null,
+  executionId: string,
+  userTurnIds: string[],
+  byTurnPosition: number | null = null,
+): Step => ({
   kind: "event",
   event: {
     type: EventType.CUSTOM,
     name: "meridian.messages.delivered",
-    value: { byTurnId, executionId, userTurnIds },
+    value: { byTurnId, byTurnPosition, executionId, userTurnIds },
   } as never,
 });
 const ended = (executionId: string): Step => ({
@@ -67,31 +78,43 @@ const refused = (turnId: string): Step => ({
 const check = (expected: Check): Step => ({ kind: "check", check: expected });
 
 type SnapTurn = RunFollowSnapshot["turns"][number];
+/** A snapshot turn before `snap` gives it a position. */
+type SnapRow = Omit<SnapTurn, "position"> & { position?: number };
 /** A reserved turn (assistant or compaction) in a snapshot. */
-const reply = (id: string, executionId: string, reserved: string[] = []): SnapTurn => ({
+const reply = (id: string, executionId: string, reserved: string[] = []): SnapRow => ({
   id,
   executionId,
   reservedForUserTurnIds: reserved,
   delivery: null,
 });
 /** A writer message in a snapshot; `by` names its deliverer once delivered. */
-const message = (id: string, by?: string | null): SnapTurn => ({
+const message = (id: string, by?: string | null): SnapRow => ({
   id,
   executionId: null,
   reservedForUserTurnIds: [],
   delivery: by === undefined ? null : { byTurnId: by },
 });
 /** A turn no execution reserved (a notice, a switch). */
-const notice = (id: string): SnapTurn => ({
+const notice = (id: string): SnapRow => ({
   id,
   executionId: null,
   reservedForUserTurnIds: [],
   delivery: null,
 });
-const snap = (turns: SnapTurn[], openExecutionId: string | null): Step => ({
-  kind: "snapshot",
-  snapshot: { turns, liveState: { openExecutionId } },
-});
+/** At `position`: a snapshot window that does not start at the thread's first turn. */
+const at = (position: number, row: SnapRow): SnapRow => ({ ...row, position });
+/**
+ * A snapshot in transcript order: a row without an explicit position takes the
+ * one after its predecessor, as the server's positions run.
+ */
+const snap = (rows: SnapRow[], openExecutionId: string | null): Step => {
+  let position = 0;
+  const turns = rows.map((row) => {
+    position = row.position ?? position + 1;
+    return { ...row, position };
+  });
+  return { kind: "snapshot", snapshot: { turns, liveState: { openExecutionId } } };
+};
 
 function run(steps: Step[]): { follow: RunFollow; cancels: string[] } {
   let follow = INITIAL_RUN_FOLLOW;
@@ -319,9 +342,9 @@ const rows: Array<[name: string, steps: Step[]]> = [
       owe("m2"),
       stop,
       owe("m2", "m3"),
-      started("b", "e2", ["m3"]),
+      started("b", "e2", ["m3"], 3),
       check({ bound: ["b"], cancels: [] }),
-      started("c", "e3", ["m2"]),
+      started("c", "e3", ["m2"], 4),
       check({ cancels: ["c"] }),
     ],
   ],
@@ -329,15 +352,15 @@ const rows: Array<[name: string, steps: Step[]]> = [
     "a refused target lands the Stop on its successor",
     [
       owe("m1"),
-      started("a", "e1", ["m1"]),
-      delivered("a", "e1", ["m1"]),
+      started("a", "e1", ["m1"], 2),
+      delivered("a", "e1", ["m1"], 2),
       owe("m2"),
       steer("a"),
       stop,
       check({ cancels: ["a"] }),
       refused("a"),
       check({ cancels: ["a"] }),
-      started("b", "e1", ["m2"]),
+      started("b", "e1", ["m2"], 4),
       check({ cancels: ["a", "b"] }),
     ],
   ],
@@ -371,6 +394,57 @@ const rows: Array<[name: string, steps: Step[]]> = [
       check({ settled: false, bound: ["a"], unbound: ["x"], target: "a" }),
       ended("e1"),
       check({ settled: true }),
+    ],
+  ],
+  [
+    "A1: a live B learned before a snapshot of A and B stays the target",
+    [
+      owe("m2"),
+      started("b", "e1", ["m2"], 4),
+      check({ target: "b" }),
+      snap(
+        [message("m1", "a"), reply("a", "e1", ["m1"]), message("m2"), reply("b", "e1", ["m2"])],
+        "e1",
+      ),
+      check({ settled: false, target: "b", bound: ["a", "b"] }),
+      stop,
+      check({ cancels: ["b"] }),
+    ],
+  ],
+  [
+    "A1: a snapshot before a replay of A and B keeps B the target",
+    [
+      owe("m2"),
+      snap(
+        [message("m1", "a"), reply("a", "e1", ["m1"]), message("m2"), reply("b", "e1", ["m2"])],
+        "e1",
+      ),
+      check({ target: "b" }),
+      started("a", "e1", ["m1"], 2),
+      check({ target: "b" }),
+      started("b", "e1", ["m2"], 4),
+      check({ settled: false, target: "b" }),
+    ],
+  ],
+  [
+    "A1: an older compaction learned after B does not take the target",
+    [
+      owe("m1"),
+      started("b", "e1", ["m1"], 5),
+      delivered("c", "e1", [], 4),
+      check({ target: "b" }),
+      snap([at(3, message("m1")), at(4, reply("c", "e1", ["m1"])), reply("b", "e1", ["m1"])], "e1"),
+      check({ settled: false, target: "b", bound: ["b", "c"] }),
+    ],
+  ],
+  [
+    "A1: a turn of unknown position is the target only when nothing running is positioned",
+    [
+      owe("m1"),
+      started("a", "e1", ["m1"]),
+      check({ target: "a" }),
+      started("b", "e1", ["m1"], 4),
+      check({ target: "b" }),
     ],
   ],
 ];

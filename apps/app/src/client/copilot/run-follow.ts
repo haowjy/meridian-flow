@@ -15,8 +15,15 @@
  *             ∪ attached (an open execution attached while settled)
  * running   = followed without an end fact
  * settled   = owed = ∅ ∧ running = ∅          (settling clears tracked, attached, steer, Stop)
- * target    = latest known turn of a running execution ?? (owed ≠ ∅ ? steer : none)
+ * target    = the running executions' turn with the highest server position
+ *             ?? (owed ≠ ∅ ? steer : none)
  * ```
+ *
+ * "Latest" is `Turn.position`, the server's write-once insertion order, from
+ * snapshots, `RUN_STARTED` and `messages.delivered`; never the order this client
+ * happened to learn turns in, so two tabs with the same facts agree. A turn of
+ * unknown position (history written before positions were recorded) is a target
+ * only when no running turn has a position.
  *
  * A Stop press cancels the target. With no target, or when the cancel is
  * refused, it becomes an intent recording the messages owed at the press; the
@@ -39,15 +46,20 @@ import {
   type Turn,
 } from "@meridian/contracts/protocol";
 
-/** What a reserved turn records: its execution and the messages it was reserved for (a hint). */
-export type TurnFact = { executionId: string | null; reservedForUserTurnIds: readonly string[] };
+/** What a reserved turn records: its execution, the messages it was reserved for (a hint), and its position. */
+export type TurnFact = {
+  executionId: string | null;
+  reservedForUserTurnIds: readonly string[];
+  /** `Turn.position`: the thread's insertion order; null when unknown. */
+  position: number | null;
+};
 
 /** A delivered message: the turn that delivered it and that turn's execution, null when unknown. */
 export type DeliveryFact = { byTurnId: string | null; executionId: string | null };
 
 /** Merged, write-once run identity facts for one thread. */
 export type RunFacts = {
-  /** Reserved turns by id, in the order this client learned them (Map insertion order). */
+  /** Reserved turns by id. Iteration order carries no meaning. */
   turns: ReadonlyMap<string, TurnFact>;
   /** Delivered messages (= user turn ids). */
   deliveries: ReadonlyMap<string, DeliveryFact>;
@@ -57,7 +69,10 @@ export type RunFacts = {
 
 /** The snapshot fields the facts read; a `ThreadSnapshotResponse` satisfies it. */
 export type RunFollowSnapshot = {
-  turns: readonly Pick<Turn, "id" | "executionId" | "reservedForUserTurnIds" | "delivery">[];
+  turns: readonly Pick<
+    Turn,
+    "id" | "executionId" | "reservedForUserTurnIds" | "delivery" | "position"
+  >[];
   liveState: Pick<SnapshotLiveState, "openExecutionId">;
 };
 
@@ -138,13 +153,16 @@ function withTurn(turns: Map<string, TurnFact>, turnId: string, fact: TurnFact):
     return true;
   }
   const executionId = known.executionId ?? fact.executionId;
+  const position = known.position ?? fact.position;
   const added = fact.reservedForUserTurnIds.filter(
     (id) => !known.reservedForUserTurnIds.includes(id),
   );
-  if (executionId === known.executionId && added.length === 0) return false;
+  if (executionId === known.executionId && position === known.position && added.length === 0)
+    return false;
   turns.set(turnId, {
     executionId,
     reservedForUserTurnIds: [...known.reservedForUserTurnIds, ...added],
+    position,
   });
   return true;
 }
@@ -168,9 +186,9 @@ function withDelivery(
 /** Merge one stream event; anything but a run identity event returns `facts` unchanged. */
 export function mergeStreamEvent(facts: RunFacts, event: AGUIEvent): RunFacts {
   if (event.type === EventType.RUN_STARTED) {
-    const { executionId, reservedForUserTurnIds } = readRunStartedMeta(event.rawEvent);
+    const { executionId, reservedForUserTurnIds, position } = readRunStartedMeta(event.rawEvent);
     const turns = new Map(facts.turns);
-    return withTurn(turns, event.runId, { executionId, reservedForUserTurnIds })
+    return withTurn(turns, event.runId, { executionId, reservedForUserTurnIds, position })
       ? { ...facts, turns }
       : facts;
   }
@@ -178,13 +196,17 @@ export function mergeStreamEvent(facts: RunFacts, event: AGUIEvent): RunFacts {
   if (event.name === MESSAGES_DELIVERED_EVENT) {
     const value = readMessagesDelivered(event.value);
     if (!value) return facts;
-    const { byTurnId, executionId } = value;
+    const { byTurnId, executionId, byTurnPosition } = value;
     const turns = new Map(facts.turns);
     const deliveries = new Map(facts.deliveries);
     // The deliverer is one of the execution's turns even when no start named it (a placeholder).
     let changed =
       byTurnId !== null && executionId !== null
-        ? withTurn(turns, byTurnId, { executionId, reservedForUserTurnIds: [] })
+        ? withTurn(turns, byTurnId, {
+            executionId,
+            reservedForUserTurnIds: [],
+            position: byTurnPosition,
+          })
         : false;
     for (const userTurnId of value.userTurnIds)
       changed = withDelivery(deliveries, userTurnId, { byTurnId, executionId }) || changed;
@@ -213,6 +235,7 @@ export function mergeSnapshot(facts: RunFacts, snapshot: RunFollowSnapshot): Run
     withTurn(turns, turn.id, {
       executionId: turn.executionId,
       reservedForUserTurnIds: turn.reservedForUserTurnIds ?? [],
+      position: turn.position ?? null,
     });
     if (turn.executionId !== snapshot.liveState.openExecutionId) ended.add(turn.executionId);
   }
@@ -258,17 +281,33 @@ function executionsServing(facts: RunFacts, messages: ReadonlySet<string>): Set<
   return executions;
 }
 
+/**
+ * The running executions' turn with the highest position. Unknown positions
+ * have no order; one is chosen (by id, so every client picks the same) only
+ * when nothing running is positioned. Any turn of a live execution cancels it.
+ */
+function latestRunningTurn(facts: RunFacts, running: ReadonlySet<string>): string | null {
+  let latest: { turnId: string; position: number } | null = null;
+  let unpositioned: string | null = null;
+  if (running.size === 0) return null;
+  for (const [turnId, fact] of facts.turns) {
+    if (!fact.executionId || !running.has(fact.executionId)) continue;
+    if (fact.position === null) {
+      if (unpositioned === null || turnId < unpositioned) unpositioned = turnId;
+    } else if (latest === null || fact.position > latest.position) {
+      latest = { turnId, position: fact.position };
+    }
+  }
+  return latest?.turnId ?? unpositioned;
+}
+
 export function viewRunFollow(follow: RunFollow): RunFollowView {
   const { facts } = follow;
   const owed = owedOf(follow);
   const followed = executionsServing(facts, follow.tracked);
   if (follow.attached) followed.add(follow.attached);
   const running = new Set([...followed].filter((id) => !facts.ended.has(id)));
-  // Map order is the order turns were learned, so the last running turn is the
-  // latest turn of the most recently seen running execution.
-  let target: string | null = null;
-  for (const [turnId, fact] of facts.turns)
-    if (fact.executionId && running.has(fact.executionId)) target = turnId;
+  let target = latestRunningTurn(facts, running);
   if (target === null && owed.size > 0) target = follow.steer;
   return {
     settled: owed.size === 0 && running.size === 0,

@@ -155,12 +155,17 @@ describe("ThreadRunController write outcomes", () => {
 });
 
 /** A reply start as the server projects it: its execution and the messages it was reserved for. */
-function runStarted(runId: string, executionId: string, reservedFor: string[] = []) {
+function runStarted(
+  runId: string,
+  executionId: string,
+  reservedFor: string[] = [],
+  position: number | null = null,
+) {
   return {
     type: EventType.RUN_STARTED,
     threadId: "thread_1",
     runId,
-    rawEvent: { writeMode: "direct", executionId, reservedForUserTurnIds: reservedFor },
+    rawEvent: { writeMode: "direct", executionId, reservedForUserTurnIds: reservedFor, position },
   } as never;
 }
 
@@ -477,7 +482,7 @@ describe("case 9: an ordinary steer, then Stop of the successor", () => {
     });
     await scenario.submit("ORDINARY");
     scenario.emit(inbox("m1"), "75001");
-    scenario.emit(runStarted("a", "x", ["m1"]), "78000");
+    scenario.emit(runStarted("a", "x", ["m1"], 8), "78000");
     scenario.emit(textStart("a:0"), "79000");
     scenario.emit(textDelta("a:0", "Ordinary first"), "79001");
     scenario.emit(delivered("a", "x", ["m1"]), "87000");
@@ -492,7 +497,7 @@ describe("case 9: an ordinary steer, then Stop of the successor", () => {
       "thread_1",
       snapshotResponse({
         turns: [
-          snapshotTurn("m1", "user", { deliveredBy: "a" }),
+          snapshotTurn("m1", "user", { deliveredBy: "a", position: 7 }),
           snapshotTurn("a", "assistant", {
             executionId: "x",
             reservedFor: ["m1"],
@@ -510,7 +515,7 @@ describe("case 9: an ordinary steer, then Stop of the successor", () => {
     scenario.emit(textStart("a:3"), "95000");
     scenario.emit(textDelta("a:3", "ordinary boundary"), "95001");
     scenario.emit(runFinished("a"), "102000");
-    scenario.emit(runStarted("b", "x", ["m2"]), "103000");
+    scenario.emit(runStarted("b", "x", ["m2"], 10), "103000");
     scenario.controller.flushPendingDeltas("thread_1");
     expect(textOf(scenario, "a")).toContain("ordinary boundary");
 
