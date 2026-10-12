@@ -484,12 +484,21 @@ describe("thread", () => {
         "--json",
       ]);
       expect(result.code).toBe(EXIT.ok);
-      expect(JSON.parse(result.stdout)).toMatchObject({
+      expect(JSON.parse(result.stdout)).toEqual({
         type: "result",
         command: "thread.tail",
         outcome: "complete",
         reason: null,
+        threadId: THREAD_ID,
+        turnId: null,
+        turns: [],
+        idle: true,
       });
+      expect(result.stderr).toBe("");
+      const text = await isolated.mf(["thread", "tail", THREAD_ID, "--until-idle"]);
+      expect(text.code).toBe(EXIT.ok);
+      expect(text.stdout).toBe("");
+      expect(text.stderr).toBe("complete: chat idle, no turn ran during the wait\n");
     } finally {
       await isolated.close();
     }
