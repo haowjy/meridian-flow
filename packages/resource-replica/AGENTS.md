@@ -22,9 +22,9 @@ atomically with their location.
 **Canonical freshness:** every server file/folder entry and operation receipt carries
 a decimal `observationVersion`, allocated from a dedicated global namespace sequence under
 the publisher commit fence. Availability generations group an ambient transaction
-and are not canonical-observation versions. Each namespace change advances affected authority
-watermarks, including multiple changes within one transaction and mutations
-whose manifest publication is deferred. Snapshot and exact-ID entries read that
+and are not canonical-observation versions. Only namespace changes stamp: each advances
+affected authority watermarks, including multiple changes within one transaction;
+authority-only availability changes do not. Snapshot and exact-ID entries read that
 watermark with their canonical rows; historical catalog commits retain their
 original stamps. Records replace canonical location, parent and classification
 only for strictly newer versions. Equal/older entries advance replay checkpoints
@@ -81,10 +81,13 @@ delete receipt's `observationVersion`, or a terminal record's deletion version (
 delete receipt's, the editor's exact-ID deletion evidence, or a folder tombstone's). A
 terminal document must carry that version: one without it never revives from a catalog,
 because replayed pre-deletion history looks newer than its stale held version. A
-strictly newer catalog or exact-ID observation of the identity as present (Apply restores deleted documents and
-ancestors) supersedes it: accepted delete intents stop owning deletion
-(`intentOwnsDeletionAt`), a folder's terminal witness clears, and a terminal document
-returns acknowledged at the server's location with unacquired content and a
+strictly newer observation of the identity as present (Apply restores deleted documents
+and ancestors) supersedes it, narrowly per kind. A terminal **document** revives only from
+a strictly newer catalog entry; exact-ID presence never revives it. A terminal
+**folder** revives from a strictly newer canonical observation in a catalog; exact-ID
+presence clears its witness only through a pending canonical refresh after a move. On
+revival accepted delete intents stop owning deletion (`intentOwnsDeletionAt`), a
+folder's terminal witness clears, and a terminal document returns acknowledged at the server's location with unacquired content and a
 `revivedFrom` witness, so its deleted lineage's late purge cannot re-terminalize it.
 Equal or older pages (including history replayed after the terminal), and pages
 requested before the terminal transition, lose. A document whose content purge is outstanding revives on the first catalog after it.

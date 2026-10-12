@@ -39,8 +39,9 @@ the outside; review enforces the inside.
 - **Tree writes don't refresh the catalog.** They return what they placed or
   tombstoned; the caller reconciles in its own transaction (the store, the mover, the
   Apply step's completion transaction, the Discard kernel). Every refresh advances
-  the namespace observation version, so a reveal or Apply move publishes a newer
-  observation; the catalog never names a hidden node, not even as an invalidated root.
+  the availability generation; only a namespace change calls `publishNamespace`, so
+  a reveal or Apply move publishes a newer observation. The catalog never names a
+  hidden node, not even as an invalidated root.
 - **Identity destinations are live.** A writer's `{ parent, name }` move resolves the
   folder id through the live view: a folder only a draft holds is `destination_missing`.
   Its `createFolders` suffix is a live create, so it reveals a hidden folder there.
