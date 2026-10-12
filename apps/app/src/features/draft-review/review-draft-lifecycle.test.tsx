@@ -30,7 +30,7 @@ const draftTab = contextTabFromDraftGroup({
   workId: "work-a",
   documentId: "document-a",
   draftId: "draft-a",
-  contextPath: "/chapter.md",
+  contextLocation: { scheme: "manuscript", path: "/chapter.md" },
   isNewDocument: true,
 });
 if (!draftTab) throw new Error("Draft tab fixture must be editable");

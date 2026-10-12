@@ -1,4 +1,5 @@
 /** Route core for authenticated AI draft preview/Apply/Discard over Work-scoped draft documents. */
+import type { ParsedContextUri } from "@meridian/contracts/context-uri";
 
 import type {
   DraftApplyChangesRequest,
@@ -242,7 +243,7 @@ function serializeThreadDraft(draft: {
   draftId: string;
   documentId: string;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   status: "active";
   draftGeneration: number;
   actorThreads: ThreadDraftListItem["actorThreads"];
@@ -253,7 +254,7 @@ function serializeThreadDraft(draft: {
     draftId: draft.draftId,
     documentId: draft.documentId,
     documentName: draft.documentName,
-    contextPath: draft.contextPath,
+    contextLocation: draft.contextLocation,
     status: draft.status,
     draftGeneration: draft.draftGeneration,
     actorThreads: draft.actorThreads,

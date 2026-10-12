@@ -17,6 +17,7 @@ import {
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ContextUri } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { type PresentedDocument, usePresentedDocument } from "../presented-document";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
@@ -26,7 +27,7 @@ export type AiDraftLaunchTarget = {
   workId: string;
   documentId: string;
   draftId: string;
-  contextPath: string;
+  contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
   isNewDocument?: boolean;
   /**
@@ -112,8 +113,7 @@ export function EditorReviewHandoffProvider({
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const result = await openContextRoute(
             {
-              scheme: "manuscript",
-              path: target.contextPath,
+              ...target.contextLocation,
               workId: target.workId,
               documentId: target.documentId,
             },
@@ -243,11 +243,7 @@ export function admissible(
   intent: EditorReviewIntent,
   host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
 ) {
-  return (
-    intent.workId === host.editorWorkId &&
-    host.activeScheme === "manuscript" &&
-    intent.documentId === host.documentId
-  );
+  return intent.workId === host.editorWorkId && intent.documentId === host.documentId;
 }
 export function useRequestedReview(host: {
   container: PresentedDocument["container"];

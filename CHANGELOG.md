@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Open AI draft reviews in the document’s own section, including new Knowledge Base sheets, and keep independent Work draft tabs distinct.
+
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.

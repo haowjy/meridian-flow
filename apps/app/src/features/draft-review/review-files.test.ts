@@ -9,12 +9,12 @@ const group = (documentId: string, documentName: string | null) =>
   ({
     documentId,
     documentName,
-    contextPath: documentName ? `manuscript://${documentName}.md` : `manuscript://${documentId}.md`,
+    contextLocation: { scheme: "manuscript", path: `/${documentName ?? documentId}.md` },
     draft: {
       draftId: `draft-${documentId}`,
       documentId,
       documentName,
-      contextPath: null,
+      contextLocation: null,
       status: "active",
       actorThreads: [],
     },
@@ -23,9 +23,13 @@ const group = (documentId: string, documentName: string | null) =>
 describe("the file order", () => {
   it("orders a file with no name by its path's name, and ties by id", () => {
     const sorted = sortDraftFiles([
-      { documentId: "b", documentName: null, contextPath: "manuscript://notes/zeta.md" },
-      { documentId: "a", documentName: "Zeta", contextPath: null },
-      { documentId: "c", documentName: "Alpha", contextPath: null },
+      {
+        documentId: "b",
+        documentName: null,
+        contextLocation: { scheme: "manuscript", path: "/notes/zeta.md" },
+      },
+      { documentId: "a", documentName: "Zeta", contextLocation: null },
+      { documentId: "c", documentName: "Alpha", contextLocation: null },
     ]);
     expect(sorted.map((file) => file.documentId)).toEqual(["c", "a", "b"]);
   });

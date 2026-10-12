@@ -399,7 +399,7 @@ it("reloads a draft-only review from its Work list, without catalog membership",
         documentId: "doc",
         draftId: "draft",
         isNewDocument: true,
-        contextPath: "/Current.md",
+        contextLocation: { scheme: "manuscript", path: "/Current.md" },
       },
     ],
   });

@@ -45,7 +45,7 @@ export function WorkChangeFile({
       (view.status === "ready" && view.items.length === 0 && !view.unlisted))
   )
     return null;
-  const name = file.documentName || file.contextPath || t`Untitled manuscript`;
+  const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
   const review = (focusOperationIds?: readonly string[]) =>
     openReviewFile(file, workId, focusOperationIds);
@@ -74,7 +74,7 @@ export function WorkChangeFile({
         <button
           type="button"
           className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-          disabled={!file.contextPath}
+          disabled={!file.contextLocation}
           onClick={() => review()}
         >
           <span className="min-w-0 flex-1 truncate font-medium">{name}</span>

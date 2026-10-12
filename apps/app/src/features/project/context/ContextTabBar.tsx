@@ -99,7 +99,7 @@ export function ContextTabBar({
           const previous = tabs[index - 1];
           return (
             <TabChip
-              key={tab.documentId}
+              key={tab.tabInstanceId ?? tab.documentId}
               tab={tab}
               active={active}
               reviewing={tab.documentId === reviewingTabId}

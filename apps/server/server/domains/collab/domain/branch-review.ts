@@ -1,4 +1,5 @@
 /** Branch-backed review wire types for work-draft cards. */
+import type { ParsedContextUri } from "@meridian/contracts/context-uri";
 
 import type { ReviewHunk, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
@@ -13,7 +14,7 @@ export type ReviewableDraft = {
   actorThreads: ThreadDraftListItem["actorThreads"];
   updatedAt: Date;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   createdDocument?: boolean;
 };
 

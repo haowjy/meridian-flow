@@ -77,7 +77,8 @@ let discard: ReturnType<typeof vi.spyOn>;
 
 vi.mock("@/client/query/useContextCatalog", () => ({
   contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
-  useContextCatalogView: () => ({ catalog: null }),
+  useContextCatalogViews: (_projectId: string, schemes: readonly string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),
 }));
 describe("DraftReviewProvider remote settlement", () => {
   beforeEach(() => {
@@ -105,7 +106,7 @@ describe("DraftReviewProvider remote settlement", () => {
       workId: "work-a",
       documentId: "document-a",
       draftId: "draft-a",
-      contextPath: "/chapter.md",
+      contextLocation: { scheme: "manuscript", path: "/chapter.md" },
       isNewDocument: true,
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");

@@ -34,7 +34,7 @@ for review ownership.
 ## Review launch
 
 Only the presenting container requests the selected review or pending address;
-Editor hosts may also request an admissible launch intent: same Work, manuscript scheme, same document. Admission does not
+Editor hosts may also request an admissible launch intent: same Work and document identity. Admission does not
 wait for the draft list; the review's fresh entry read owns absence. The launch
 and address owners own no paint state. Pane continuity belongs to
 [`PaintHold`](../../../components/app/PaintHold.md); navigation stays outside it.

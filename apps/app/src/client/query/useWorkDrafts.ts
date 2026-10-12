@@ -15,7 +15,7 @@ import { readDraftsAfterCommands } from "./draft-command-record";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
-import { useContextCatalogView } from "./useContextCatalog";
+import { useContextCatalogViews } from "./useContextCatalog";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
@@ -52,13 +52,29 @@ export function useWorkDrafts(
     }),
   );
 
-  const { catalog } = useContextCatalogView(projectId ?? "", "manuscript", {
+  const schemes = useMemo(
+    () => [
+      ...new Set(
+        result.data?.flatMap((row) => (row.contextLocation ? [row.contextLocation.scheme] : [])),
+      ),
+    ],
+    [result.data],
+  );
+  const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
     enabled: enabled && Boolean(result.data?.length),
-    workId: null,
+    workId,
   });
   const files = useMemo(
-    () => (enabled && result.data ? projectWorkDraftFiles(result.data, catalog) : null),
-    [enabled, result.data, catalog],
+    () =>
+      enabled && result.data
+        ? projectWorkDraftFiles(result.data, {
+            findDocument: (id) =>
+              Object.values(catalogs)
+                .flatMap(({ catalog }) => catalog?.findDocument(id) ?? [])
+                .at(0) ?? null,
+          })
+        : null,
+    [enabled, result.data, catalogs],
   );
   const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
   const fileForDocument = useCallback(

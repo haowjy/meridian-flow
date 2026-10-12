@@ -21,7 +21,7 @@ export function nextReviewFile(
   let at = rows.findIndex((row) => row.documentId === documentId);
   let ordered = rows;
   if (at < 0 && closedName !== null) {
-    const closed = { documentId, documentName: closedName, contextPath: null };
+    const closed = { documentId, documentName: closedName, contextLocation: null };
     ordered = sortDraftFiles([...rows, closed]) as readonly ReviewFileTarget[];
     at = ordered.findIndex((row) => row.documentId === documentId);
   }
@@ -36,6 +36,6 @@ export function nextReviewFile(
 export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
   return (
     row.documentName ??
-    (row.isNewDocument ? (documentBasename(row.contextPath) ?? untitled) : row.documentId)
+    (row.isNewDocument ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
   );
 }

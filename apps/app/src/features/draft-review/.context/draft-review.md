@@ -301,9 +301,11 @@ addresses no-op; absent/empty focus normalizes there. The route-level handoff is
 latest-wins and above shell selection. Claiming requires successful route command
 and matching Work/path/document/membership; it owns no paint state.
 
-New-document drafts have server document/Yjs state but no live-manuscript
-membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` in
-the review overlay, never durable workspace identity. Hosts acquire only its
+New-document drafts have server document/Yjs state but no live catalog
+membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
+`reviewDraftId` in the review overlay, never durable workspace identity.
+Overlay identity includes document, Work and draft; navigation consumes the
+row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
 Close review closes only the container used, without discarding the draft; it can be reopened.
 Readable-address admission enriches/absorbs the overlay rather than hiding a

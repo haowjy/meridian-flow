@@ -55,7 +55,7 @@ export function DocumentPaneChrome({
           shares. Keyed by document so edit state never crosses tabs. */}
       {identity ? (
         <DocumentIdentityBar
-          key={tab.documentId}
+          key={tab.tabInstanceId ?? tab.documentId}
           projectId={projectId}
           editorWorkId={identity.editorWorkId}
           tab={tab}
