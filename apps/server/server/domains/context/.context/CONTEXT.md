@@ -601,8 +601,13 @@ themselves never ride in the catalog: `GET /api/projects/:projectId/documents/:d
 (`document-properties.ts`); YAML it cannot read, including duplicate keys, comes back `unreadable`
 with its text. What is readable and which aliases it names is one bounded policy,
 `frontmatter.ts`; import reads aliases and its unreadable finding through it too, so import
-and display never disagree. Do not parse frontmatter YAML anywhere else. A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
-`copy` writes to the new document's metadata.
+and display never disagree. Do not parse frontmatter YAML anywhere else.
+
+A file ref from `stat` carries `properties` and `aliases`, which the model's tracked
+`copy` writes to the new document's metadata. Those fields are host-only: the model never sees
+document properties in v1 (ruling I6, [#778](https://github.com/haowjy/meridian-flow/issues/778)).
+Copy inheriting them is invisible metadata inheritance, not model visibility; no `stat`, `ls`,
+`read` or verbose tool projection may render them.
 
 Import parent lookup is a Context capability (ContextImportLocations).
 It resolves folder identity, takes the current project-area namespace lock,

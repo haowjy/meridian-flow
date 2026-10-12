@@ -155,9 +155,13 @@ interface BaseFileRef {
   updatedAt?: string;
   /** True when the file's scheme is read-only. */
   readonly?: boolean;
-  /** Imported frontmatter stored with the document; `copy` carries it to the copy. */
+  /**
+   * Imported frontmatter stored with the document; `copy` carries it to the copy.
+   * Host-only: the model never sees properties in v1 (ruling I6, #778). Copy
+   * inheriting metadata is not model visibility; no tool output may render this.
+   */
   properties?: StoredDocumentProperties;
-  /** Alternate names stored with the document; `copy` carries them to the copy. */
+  /** Alternate names stored with the document; `copy` carries them. Host-only, like `properties`. */
   aliases?: string[];
 }
 
