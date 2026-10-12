@@ -267,6 +267,20 @@
       "when": 1791753623898,
       "tag": "0037_old_adam_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791774675720,
+      "tag": "0038_namespace_observation_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791774682076,
+      "tag": "0039_backfill_namespace_observation_versions",
+      "breakpoints": true
     }
   ]
 }

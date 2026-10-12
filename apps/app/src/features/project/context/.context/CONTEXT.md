@@ -36,6 +36,12 @@ project descendants and connects its two-phase close to the document-session
 runtime. Account close fences new commands immediately, aborts transport work,
 drains adoption/catalog/namespace operations, releases every retained session,
 and closes metadata last.
+Transient rename/move selection belongs to the account replica lifetime.
+Remembering an operation starts its projection watch independently of any
+mounted row. The latest matching intention supplies authority after rebase;
+cancellation, refusal and deletion retire immediately. Successful settlement
+leaves feedback until settlement plus four seconds, even
+when no note is mounted; the watch ends at expiry or earlier terminal evidence. Account close disposes every selection and timer.
 The authenticated provider boundary also re-scopes the client creation
 registry, clearing transient Project creation records when the account
 changes; Work command records (including creates) clear through the account's
@@ -46,6 +52,9 @@ coordination. Typing and ordinary local content access do not hold those locks.
 A stable resource handle survives document-ID remint; the exact persistence name
 and mounted Y.Doc do not change. The resource descriptor also retains the
 catalog-defined file classification so cached code never reopens as rich text.
+
+Availability becomes durable only through session authority for adopting or adopted
+local-origin documents retaining their lineage; all other durable deletions require receipts.
 
 ## Visible Editor ownership
 
@@ -65,7 +74,8 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
        ├─ useContextCatalogViews (batched projection) ┤
        ├─ useCreateEntryForm ────────────────┤
-       ├─ useRenameEntryForm ────────────────┤
+       ├─ useEntryInteraction ───────────────┤
+       │     └─ rename forms + move picker   │
        ├─ useDeleteConfirmation ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
@@ -80,7 +90,7 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
               │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
+              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips, incl. DraftReviewChip)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)
@@ -125,3 +135,19 @@ open Editor tabs and are not recorded.
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
+
+### Document path browsing
+
+Resting crumbs are passive: project-menu acquisition mounts only when a crumb
+opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
+an area not offered at the root; `own.openAt(path)` remains the full folder trail
+used by placement. The first menu mounts with its final trail and highlight IDs.
+Path fit is selected from intrinsic-width candidates rendered by the same
+`CrumbRow` as the visible path. A link-update note is a direct sibling of the
+path, so an absent note occupies neither a flex item nor a gap.
+
+Link-update feedback derives its destination from the matched move receipt, not
+from a picker-provided label. The remount registry retains only operation
+selection until settlement plus the receipt note TTL; admission age never
+expires a pending/offline move. Same-folder renames without changed links do
+not claim a placement.

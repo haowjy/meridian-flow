@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import { reserveResourceDocument } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { describe, expect, it } from "vitest";
@@ -13,6 +14,7 @@ import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
+import { projectResourceTab } from "./context-tab-from-file";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function TestAccountProvider(props: React.ComponentProps<typeof AccountFeatureTestProvider>) {
@@ -37,6 +39,45 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
+  it("publishes terminal identity after catalog removal so dock and Editor see absence", async () => {
+    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
+    const replica = {
+      observeProjection(
+        _projectId: string,
+        listener: (snapshot: ResourceProjectionSnapshot) => void,
+      ) {
+        publish = listener;
+        return () => undefined;
+      },
+    };
+    const record = reserveResourceDocument({
+      projectId: "project-1",
+      handle: "gone",
+      documentId: "gone",
+      databaseName: "unused",
+      schema: "schema",
+      intentId: "create",
+    }).next;
+    record.intents = [];
+    record.resource.lifecycle = { kind: "terminal", generation: "9", transitionId: "delete" };
+    const projections: ReturnType<typeof projectResourceTab>[] = [];
+    function Child() {
+      const { records, placement } = useObservedResourceProjection(replica, "project-1");
+      projections.push(
+        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, placement),
+      );
+      return null;
+    }
+    await withReactRoot(<Child />, async () => {
+      await act(async () => publish?.({ records: [record], catalogs: [], folders: [] }));
+      expect(projections.at(-1)).toMatchObject({
+        kind: "terminal",
+        documentIds: ["gone"],
+        generation: "9",
+      });
+    });
+  });
+
   it("clears a transient projection error when the projection recovers", async () => {
     let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
     let fail: ((error: unknown) => void) | null = null;

@@ -1,6 +1,7 @@
 /** Validated transport boundary for exact-ID project availability lookup. */
 import {
   assertAvailabilityGeneration,
+  type ProjectContextFolderResolution,
   type ProjectContextIdentityLookupResult,
   type ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
@@ -92,4 +93,33 @@ export async function lookupProjectContextAvailability(
     requested,
     await getProjectContextAvailability(projectId, requested, signal),
   );
+}
+
+/** Folder refreshes share the stable-ID availability endpoint, not catalog membership guesses. */
+export async function lookupProjectFolderAvailability(
+  projectId: string,
+  folderId: string,
+  signal?: AbortSignal,
+): Promise<ProjectContextFolderResolution> {
+  const result = await getProjectContextAvailability(projectId, [], signal, [folderId]);
+  if (result.projectId !== projectId || result.folderResolutions?.length !== 1) return malformed();
+  const resolution = result.folderResolutions[0];
+  if (resolution.folderId !== folderId) return malformed();
+  switch (resolution.kind) {
+    case "available":
+      if (resolution.entry.kind !== "folder" || resolution.entry.entryId !== folderId)
+        return malformed();
+      assertAvailabilityGeneration(resolution.generation);
+      return resolution;
+    case "deleted":
+      assertAvailabilityGeneration(resolution.generation);
+      return resolution;
+    case "not-visible":
+    case "indeterminate":
+    case "authority-unavailable":
+      assertAvailabilityGeneration(resolution.checkedGeneration);
+      return resolution;
+    default:
+      return malformed();
+  }
 }

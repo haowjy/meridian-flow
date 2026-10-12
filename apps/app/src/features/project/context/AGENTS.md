@@ -13,9 +13,23 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 A **browse surface** over the account resource replica. The replica owns durable
 resource descriptors, catalog checkpoints, local content access, and file and folder
-namespace work. React Query delivers acquisition results to consumers; it is not a second
-catalog owner. Renames of files and folders are admitted locally and dispatched in
-the background; folder creation and deletion still use the direct context API.
+namespace work. Terminal document facts remain visible to tab/dock projections even
+when their last catalog entry is gone. React Query delivers acquisition results
+but is not a second catalog owner. File and folder deletion and placement
+enter the account namespace journal; accepted deletion receipts settle
+exact descendant IDs atomically. Pending folder deletion hides its subtree;
+refusal restores rows with a delete failure mark. Folder creation uses the direct
+context API. Availability reconciles workspace visibility and session authority;
+it is not a general replica deletion intake.
+
+All placement consumers require the snapshot's shared `ResourcePlacement`: it
+contains every known project catalog and folder journal, including other Works.
+Never reconstruct a graph from only journal folders. A folder needing repair
+keeps a reachable recovery row even when its catalog membership or whole source
+is absent. Recovery rows retain stable journal identity and last known home;
+they do not prove the identity is currently visible on the server. Real recovery
+identities are installed before missing ancestry; synthetic ancestors are
+navigation-only, with no create, rename, move or delete actions.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
@@ -28,11 +42,21 @@ Shared across both shells:
 - **Inline name forms**: create and rename are thin adapters over
   `useInlineEdit` (`components/ui/use-inline-edit.ts`), the app's one in-place
   edit protocol, and render through `EntryNameField`. Extend the core, don't fork.
-- **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
-  (right-click context menu + hover kebab) rendered from one ordered action
-  specification. Add an action once; both primitive-specific renderers inherit it.
-  Uploads omits generic Delete because only the identity/revision-bound intake
-  contract may delete an upload.
+- **Entry interactions** (`use-entry-interaction.tsx`): the tree, phone and
+  Work Files declare management capabilities and one explicit `ContextOwner`.
+  The boundary owns dispatch, rename/repair state, operation selection and move
+  picker wiring; shells retain geometry, creation and navigation. Creation is
+  optional, and its requester is what enables the create actions. Scratch has
+  none. Each list owns one delete coordinator; requested targets carry their
+  owner, so Scratch's Work and Earlier notes share a dialog. Resolve archived
+  Work capabilities at the list/owner group, not in rows.
+  `ContextEntryActions.tsx` renders the same action specification through
+  context menus and kebabs. Closed move pickers acquire no catalogs.
+  File and folder deletion both admit replica namespace intents and close the
+  confirmation after local persistence, never after network completion. Refused
+  deletion restores rows with passive failure evidence, not a rename field.
+  Refused moves reopen at their retained destination when it still resolves, otherwise
+  at the current parent with the refusal message. Uploads omits generic Delete.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
 
@@ -40,7 +64,7 @@ Shared across both shells:
 
 - Use `IconButton` / `Button` / `PhoneIconButton` for all interactive controls.
 - Use discriminated `EntryActionTarget`; file targets retain `documentId`
-  through confirmation, while folders carry no document identity.
+  through confirmation, while folders retain their catalog `entryId` (never a document identity).
 - Mobile `DrillRow`: `trailing: ReactNode` separates the tap target from action
   buttons. Never a `drillsIn` boolean.
 - Tree disclosure is tab-local sessionStorage, account/project/tree scoped.
@@ -71,7 +95,9 @@ Shared across both shells:
 - **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
   `ContextTreeRows.tsx` (direct-child desktop rows), `MobileContextBrowser.tsx`
   (phone Files destination)
-- **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
+- **Actions**: `use-entry-interaction.tsx` (row interaction boundary),
+  `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`),
+  `EntryMovePicker.tsx` (row-anchored placement)
 - **Inline forms**: `use-create-entry-form.ts`, `use-rename-entry-form.ts`,
   `EntryNameField.tsx`, `context-entry-name.ts` (validation); the core is
   `components/ui/use-inline-edit.ts`
@@ -83,9 +109,10 @@ Shared across both shells:
   `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
   (one document's session and editor, rendered by the Editor's tabs and by the dock's
   document alike), `context-tab-session.tsx` (the session boundary beneath it),
-  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
-  (the universal breadcrumb band — placement, rename, and move share one inline
-  field, committed through `use-identity-commit.ts`). Resource-backed tabs retain
+  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
+  `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
+  `IdentityPlacementField.tsx` (Choose a home for a document in Unfiled, and repair of its refused
+  placement, committed through `use-identity-commit.ts`). Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,
   remint, and catalog refresh.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
@@ -94,3 +121,9 @@ Shared across both shells:
   projection), `core/resources/account-resource-replica.ts` (account owner),
   `context-schemes.ts`, `context-file-icon.ts`, `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)
+
+Chat Recent and Recently opened share `client/query/recent-document-identity.ts`,
+one catalog identity index per immutable replica snapshot. Accepted deletion
+invalidates the server Recently opened query; pending deletion never waits for it. Known
+terminal and pending-deleted documents disappear, matching server Recent filtering; only identities
+not loaded locally may fall back to touch-row names.

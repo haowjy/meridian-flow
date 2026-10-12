@@ -11,7 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, useCallback, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useCallback, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -48,128 +48,171 @@ export type DrillAction = {
   label: string;
   icon: LucideIcon;
   onSelect: () => void;
+  disabled?: boolean;
 };
 
 export type DrillInMenuProps = {
   tree: DrillTree;
-  /** The entry the writer is on; it is highlighted wherever it appears. */
-  currentId: string | null;
+  /**
+   * Where the writer is: the document and the folders that hold it. Any of them
+   * listed at the level shown is highlighted, so each level marks the way back.
+   */
+  hereIds: readonly string[];
   /** The folders, outermost first, the menu opens inside. */
   openAt: readonly DrillNode[];
-  actions: readonly DrillAction[];
+  /** Footer actions for the level on screen; the caller closes the menu when one is done. */
+  actions?: (trail: readonly DrillNode[]) => readonly DrillAction[];
+  caption?: ReactNode;
+  status?: ReactNode;
+  isDisabled?: (node: DrillNode) => boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
   onPick: (node: DrillNode) => void;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
 };
 
-export function DrillInMenu({
+/** Stable Radix trigger boundary; the browsing body and its acquisition mount only while open. */
+export function DrillInMenuRoot({
+  children,
+  body,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  children: ReactElement;
+  body: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [localOpen, setOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
+      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      {open ? body : null}
+    </DropdownMenu>
+  );
+}
+
+export function DrillInMenu({ children, open, onOpenChange, ...body }: DrillInMenuProps) {
+  return (
+    <DrillInMenuRoot open={open} onOpenChange={onOpenChange} body={<DrillInMenuBody {...body} />}>
+      {children}
+    </DrillInMenuRoot>
+  );
+}
+
+/** Mounted with the acquired source, so its first frame already has the correct trail. */
+export function DrillInMenuBody({
   tree,
-  currentId,
+  hereIds,
   openAt,
   actions,
   onPick,
-  children,
-}: DrillInMenuProps) {
-  const [open, setOpen] = useState(false);
+  caption,
+  status,
+  isDisabled,
+  onCloseAutoFocus,
+}: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
+  const [exitedId, setExitedId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  // An action runs after the menu has handed focus back, so what it focuses
-  // (a rename field) is not pulled away by the trigger's restore.
-  const pendingAction = useRef<DrillAction | null>(null);
-
-  const changeOpen = (next: boolean) => {
-    if (next) setTrail(openAt);
-    setOpen(next);
-  };
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() =>
       contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(),
     );
   }, []);
   const drill = (next: readonly DrillNode[]) => {
+    setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
     setTrail(next);
     focusFirstRow();
   };
+  const isHere = (id: string) => id === exitedId || hereIds.includes(id);
 
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
+  const currentActions = actions?.(trail) ?? [];
 
   return (
-    <DropdownMenu open={open} onOpenChange={changeOpen}>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        ref={contentRef}
-        align="start"
-        className="w-64 max-w-[calc(100vw-1rem)]"
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft" && trail.length > 0) {
+    <DropdownMenuContent
+      ref={contentRef}
+      align="start"
+      className="w-64 max-w-[calc(100vw-1rem)]"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" && trail.length > 0) {
+          event.preventDefault();
+          drill(trail.slice(0, -1));
+        }
+      }}
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
+      {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
+      {folder ? (
+        <DropdownMenuItem
+          onSelect={(event) => {
             event.preventDefault();
             drill(trail.slice(0, -1));
-          }
-        }}
-        onCloseAutoFocus={(event) => {
-          const action = pendingAction.current;
-          pendingAction.current = null;
-          if (action) {
+          }}
+          aria-label={t`Back from ${folder.title ?? folder.name}`}
+        >
+          <ChevronLeft aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
+        </DropdownMenuItem>
+      ) : null}
+      {entries.length === 0 ? (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground">
+          {folder ? (
+            <Trans>Nothing here yet.</Trans>
+          ) : (
+            (tree.empty ?? <Trans>Nothing here yet.</Trans>)
+          )}
+        </p>
+      ) : (
+        entries.map((node) => (
+          <DropdownMenuItem
+            key={node.id}
+            disabled={isDisabled?.(node)}
+            aria-current={isHere(node.id) ? "true" : undefined}
+            className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
+            onSelect={(event) => {
+              if (node.folder) {
+                event.preventDefault();
+                drill([...trail, node]);
+              } else onPick(node);
+            }}
+          >
+            <node.icon aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+          </DropdownMenuItem>
+        ))
+      )}
+      {status ? (
+        <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+          {status}
+        </div>
+      ) : null}
+      {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
+      {currentActions.map((action) => (
+        <DropdownMenuItem
+          key={action.key}
+          disabled={action.disabled}
+          onSelect={(event) => {
             event.preventDefault();
             action.onSelect();
-          }
-        }}
-      >
-        {folder ? (
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault();
-              drill(trail.slice(0, -1));
-            }}
-            aria-label={t`Back from ${folder.title ?? folder.name}`}
-          >
-            <ChevronLeft aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {folder.title ?? folder.name}
-            </span>
-          </DropdownMenuItem>
-        ) : null}
-        {entries.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            {folder ? (
-              <Trans>Nothing here yet.</Trans>
-            ) : (
-              (tree.empty ?? <Trans>Nothing here yet.</Trans>)
-            )}
-          </p>
-        ) : (
-          entries.map((node) => (
-            <DropdownMenuItem
-              key={node.id}
-              aria-current={node.id === currentId ? "true" : undefined}
-              className={cn(node.id === currentId && "bg-dropdown-selected font-medium")}
-              onSelect={(event) => {
-                if (node.folder) {
-                  event.preventDefault();
-                  drill([...trail, node]);
-                } else onPick(node);
-              }}
-            >
-              <node.icon aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
-              {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-            </DropdownMenuItem>
-          ))
-        )}
-        {actions.length > 0 ? <DropdownMenuSeparator /> : null}
-        {actions.map((action) => (
-          <DropdownMenuItem
-            key={action.key}
-            onSelect={() => {
-              pendingAction.current = action;
-            }}
-          >
-            <action.icon aria-hidden />
-            {action.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          }}
+        >
+          <action.icon aria-hidden />
+          {action.label}
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenuContent>
   );
 }

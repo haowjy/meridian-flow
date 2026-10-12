@@ -9,6 +9,7 @@
 
 import type { CanonicalContextAuthority } from "@meridian/contracts";
 import {
+  canonicalContextUri,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
@@ -30,7 +31,10 @@ import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/dr
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import { listsThroughLiveManifest } from "./adapters/document-address.js";
-import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
+import {
+  createDrizzleProjectContextAvailability,
+  resolveActiveFolderUri,
+} from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
@@ -273,6 +277,7 @@ function buildUnifiedContextPort(input: {
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
+  resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   operationReceipts?: ContextOperationReceipts;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
@@ -382,6 +387,7 @@ function buildUnifiedContextPort(input: {
     },
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
+    resolveDestinationFolder: input.resolveDestinationFolder,
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
   });
@@ -533,12 +539,62 @@ export function createInMemoryUnifiedContextPortFactory(
     },
   );
 
+  const resolveFolder =
+    (
+      projectId: string,
+      userId: string,
+      authorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+      primary?: ResolvedWorkAuthority,
+    ) =>
+    async (folderId: string): Promise<string | null> => {
+      const sourceUris = new Map<string, string>();
+      for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
+        sourceUris.set(
+          scheme === "user" ? `user:${userId}` : `project:${projectId}:${scheme}`,
+          canonicalContextUri(scheme, ""),
+        );
+      }
+      for (const authority of [...authorities.values(), ...(primary ? [primary] : [])])
+        for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES)
+          sourceUris.set(
+            `work:${authority.workId}:${scheme}`,
+            canonicalContextUri(scheme, "", authority),
+          );
+      sourceUris.set(
+        `work:${inMemoryNoWorkId(projectId)}:uploads`,
+        canonicalContextUri("uploads", "", { kind: "none" }),
+      );
+      const folder = registry.backing.folders.get(folderId);
+      if (!folder || folder.deletedAt) return null;
+      const root = sourceUris.get(folder.contextSourceId);
+      if (!root) return null;
+      const parts: string[] = [];
+      const seen = new Set<string>();
+      let current: typeof folder | undefined = folder;
+      while (current) {
+        if (
+          current.deletedAt ||
+          current.contextSourceId !== folder.contextSourceId ||
+          seen.has(current.id)
+        )
+          return null;
+        seen.add(current.id);
+        parts.unshift(current.name);
+        const parentId = current.parentId;
+        if (!parentId) break;
+        current = registry.backing.folders.get(parentId);
+        if (!current) return null;
+      }
+      return root + parts.join("/");
+    };
+
   return {
     lineages: storeResolvers.lineages,
     forProject(projectId, userId, workAuthorities, lineage) {
       return buildUnifiedContextPort({
         scope: { kind: "project", projectId, userId, workAuthorities, lineage },
         storeResolvers,
+        resolveDestinationFolder: resolveFolder(projectId, userId, workAuthorities),
         documentSync,
         links: { within: (_key, operation) => operation() },
       });
@@ -547,6 +603,7 @@ export function createInMemoryUnifiedContextPortFactory(
       return buildUnifiedContextPort({
         scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
         storeResolvers,
+        resolveDestinationFolder: resolveFolder(projectId, userId, workAuthorities, authority),
         documentSync,
         links: { within: (_key, operation) => operation() },
       });
@@ -605,13 +662,18 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
+        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: {
           run: (operation, scopes = []) =>
             runInDrizzleTransaction(options.db, async () => {
-              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              await lockContextNamespaces(
+                options.db,
+                { projectId, userId },
+                typeof scopes === "function" ? await scopes() : scopes,
+              );
               return operation();
             }),
         },
@@ -625,13 +687,18 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
+        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: {
           run: (operation, scopes = []) =>
             runInDrizzleTransaction(options.db, async () => {
-              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              await lockContextNamespaces(
+                options.db,
+                { projectId, userId },
+                typeof scopes === "function" ? await scopes() : scopes,
+              );
               return operation();
             }),
         },

@@ -22,11 +22,7 @@ import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit"
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import {
-  entryNameStemEnd,
-  parentContextEntryPath,
-  validateContextEntryName,
-} from "./context-entry-name";
+import { entryNameStemEnd, validateContextEntryName } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -35,8 +31,6 @@ export type UseRenameEntryFormOptions = {
   /** Who holds the entry: a Work row, or a chat's lineage with its handle. */
   owner: TabOwner;
   scheme: ProjectContextTreeScheme;
-  /** Current full path of the entry being renamed. */
-  path: string;
   /** Stored name of the entry (pre-populates the input). */
   currentName: string;
   /** Failed durable destination restored after asynchronous namespace repair. */
@@ -57,7 +51,6 @@ export function useRenameEntryForm({
   entryId,
   owner,
   scheme,
-  path,
   currentName,
   repairName,
   siblings,
@@ -86,7 +79,7 @@ export function useRenameEntryForm({
         noWork,
       );
       if (!authority) throw unavailable();
-      const destination = { scheme, folderPath: parentContextEntryPath(path), name, ...authority };
+      const destination = { parent: await resources.parentForEntry(projectId, entryId), name };
       if (kind === "folder") {
         return resources
           .setFolderLocation(projectId, entryId, destination)

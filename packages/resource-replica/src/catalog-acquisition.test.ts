@@ -31,6 +31,7 @@ function snapshot(path = "chapter.md", revision = "1"): CatalogSnapshot {
         uri: "manuscript://",
       },
       {
+        observationVersion: "1",
         kind: "file",
         entryId: "document",
         scope,
