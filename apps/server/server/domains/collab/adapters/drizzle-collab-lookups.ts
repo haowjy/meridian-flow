@@ -10,7 +10,7 @@ export function createDrizzleCollabLookups(db: Database) {
   return {
     async resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
       if (!threadIds.length) return new Map();
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select({ id: threads.id, title: threads.title })
         .from(threads)
         .where(inArray(threads.id, threadIds as ThreadId[]));

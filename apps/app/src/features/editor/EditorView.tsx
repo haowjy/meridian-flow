@@ -378,6 +378,21 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               <Trans>Retry</Trans>
             </Button>
           ) : null}
+          {props.reviewDraftId &&
+          controller.inlineReview?.documentId === props.documentId &&
+          controller.inlineReview.draftId === props.reviewDraftId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={controller.dispositionLocked}
+              onClick={() =>
+                void controller.discard(props.documentId, props.reviewDraftId as string)
+              }
+            >
+              <Trans>Discard draft</Trans>
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="ghost" onClick={closeUnavailable}>
             {props.draftOnly ? <Trans>Close</Trans> : <Trans>Back to live</Trans>}
           </Button>

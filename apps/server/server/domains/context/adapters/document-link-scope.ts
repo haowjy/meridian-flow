@@ -317,7 +317,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
   return {
     async within(key, operation) {
       const enclosing = storage.getStore();
-      const outer = enclosing?.open ? enclosing : undefined;
+      const outer = !key.memberships && enclosing?.open ? enclosing : undefined;
       const member = memberKey(key);
       const members = [member, ...(key.documentIds ?? []).map((id) => `document:${id}`)];
       const threadId = key.viewer?.threadId ?? ("threadId" in key ? key.threadId : null);
@@ -351,7 +351,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
         addresses: new Set(),
         settlements: new Map(),
         readable: new Map(),
-        membership: new Map(),
+        membership: new Map(
+          key.memberships?.map(({ view, members }) => [viewKey(view), new Set(members)]),
+        ),
       };
       try {
         return await storage.run(opened, operation);

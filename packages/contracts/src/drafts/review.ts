@@ -46,12 +46,16 @@ type ActiveDraftPreviewBase = {
   isNewDocument?: boolean;
 };
 
+export type DraftPreviewRefusal =
+  | { status: "gone"; draftId: string }
+  | { status: "corrupt"; draftId: string; draftGeneration: number };
+
 export type DraftPreviewResponse =
   | (ActiveDraftPreviewBase & {
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | { status: "gone"; draftId: string };
+  | DraftPreviewRefusal;
 
 /**
  * The change an operation is across draft generations: its part key, which a

@@ -293,6 +293,7 @@ export function useDraftPreviews(
   return useMemo(() => {
     if (targets.length === 0) return NO_ENTRIES;
     return reads.map(({ data, failed, retry }, index): DraftPreviewEntry => {
+      if (data?.status === "corrupt") return { status: "error", retry };
       if (data) {
         return { status: "ready", preview: projectionOf(data, records, targets[index]).preview };
       }

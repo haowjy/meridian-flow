@@ -64,6 +64,24 @@ class separately. Live remains exactly unchanged and the other class survives
 until its own Discard. Capture the previews, dispositions and readbacks, plus
 the change-list screenshot and browser errors. Stop only this worktree's stack.
 
+## Coherent review reads (CLI)
+
+Stage two independent paragraph edits in a named Work. Save a preview and its
+revision tokens with `./mf api`. Append another draft edit, then try a per-change
+Apply or Discard using the saved tokens: PASS is `stale`, with no disposition of
+the requested rows. Refresh the preview and use its new tokens: the selected
+closed class alone settles. Repeat after another per-change Discard re-forks the
+draft and after a row's status changes through Apply. A concurrent preview may
+show either complete observation, never one generation's hunks with another's
+rows/token. An unknown or closed draft returns `gone` without provisioning a
+replacement. A corrupt preview never repairs or publishes document content.
+
+The DB concurrency contract injects append, re-fork and status commits after
+every awaited snapshot query and at read-port entry/return. Run it with
+`DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/partial-apply.db.test.ts`.
+It covers preview, Apply selection and Discard selection separately; the CLI
+recipe remains a runtime check, not a claim that a DB suite drove the product.
+
 ## Probe A — review from the Work page
 
 Regression guard for #152 (server sent `contextPath: null`, making a draft

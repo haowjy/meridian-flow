@@ -121,7 +121,7 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
       if (input.throughJournalId !== undefined) {
         conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
       }
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(branchWriteJournal)
         .where(and(...conditions))
