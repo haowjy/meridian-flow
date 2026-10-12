@@ -12,7 +12,7 @@ import type {
 export type JournalCommitKind = "durable" | "staged";
 
 type JournalMutationBase = {
-  /** Segment transaction deltas retained even when the live journal uses one row. */
+  /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
   editParts?: readonly Uint8Array[];
   threadId: string;
   turnId: string | null;
@@ -125,7 +125,7 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<{ seq: number; joinedSettlement: boolean }>;
-  /** Append multiple Yjs updates in one all-or-nothing transaction. */
+  /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Durable attributed base used when reporting destructive effects. */

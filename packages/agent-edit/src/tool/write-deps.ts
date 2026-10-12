@@ -42,7 +42,7 @@ export interface CreateWriteToolOptions {
   defaultSessionId?: string;
   defaultThreadId?: string;
   undoClientId?: number;
-  /** Independent edit transactions for review destinations only. */
+  /** Legacy reversal client rotation for review destinations; write parts are always independent. */
   segmentDraftWrites?: boolean;
   createRuntimeDoc?: () => Y.Doc;
   reversalNoticePort?: ReversalNoticePort;
