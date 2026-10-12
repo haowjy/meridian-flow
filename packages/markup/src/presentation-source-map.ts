@@ -78,15 +78,12 @@ export function blockSourceMap(
       if (link) {
         const spans = parts.map((part) => part.link);
         const first = spans[0];
-        const last = spans.at(-1);
+
         const source =
-          originalSource && first && last && spans.every(Boolean)
-            ? { from: first.from, to: last.to }
-            : null;
+          originalSource && first && spans.every((span) => sameRange(span, first)) ? first : null;
         if (linkRun) {
           linkRun.at.count++;
-          linkRun.source =
-            linkRun.source && source ? { from: linkRun.source.from, to: source.to } : null;
+          linkRun.source = sameRange(linkRun.source, source) ? source : null;
         } else {
           linkRun = { kind: "link", at, source };
           runs.push(linkRun);
@@ -104,4 +101,8 @@ function pmNodeMarksEqual(a: PMNode, b: PMNode): boolean {
   return (
     a.marks.length === b.marks.length && a.marks.every((mark, index) => mark.eq(b.marks[index]))
   );
+}
+
+function sameRange(a: SourceRange | null, b: SourceRange | null): boolean {
+  return !!a && !!b && a.from === b.from && a.to === b.to;
 }

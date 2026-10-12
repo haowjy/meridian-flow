@@ -24,6 +24,10 @@ describe("presentation source map", () => {
     expect(map.find((run) => run.kind === "link")?.at.count).toBe(2);
     expect(ranges(source)).toEqual(["chapter", " one"]);
   });
+  it("declines provenance across separate equally marked authored links", () => {
+    expect(ranges("[one](manuscript://a.md)[two](manuscript://a.md)", "link")).toEqual([null]);
+    expect(ranges("[**one**](manuscript://a.md)[two](manuscript://a.md)", "link")).toEqual([null]);
+  });
   it("preserves escape/entity source bytes rather than displayed offsets", () => {
     expect(ranges("\\* &amp; /outline")).toEqual(["\\* &amp; /outline"]);
   });
