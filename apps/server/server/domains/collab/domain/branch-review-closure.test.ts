@@ -331,6 +331,25 @@ it("uses bounded opaque class IDs stable under member ordering", () => {
   expect(forward[0].closureClassId).toBe(reversed[0].closureClassId);
 });
 
+it("keeps a class's id when a re-fork gives its members new row ids but the same edit parts", () => {
+  const part = (id: string, partKey: string) => ({ ...op(id, [Number(id)]), partKey });
+  const first = assignReviewClasses({
+    operations: [part("20", "edit-a:0"), part("21", "edit-a:1")],
+    hunks: [hunk("h", ["20", "21"])],
+  });
+  const refork = assignReviewClasses({
+    operations: [part("31", "edit-a:1"), part("30", "edit-a:0")],
+    hunks: [hunk("h", ["30", "31"])],
+  });
+  expect(refork[0].closureClassId).toBe(first[0].closureClassId);
+  // Another edit with the same text is another change.
+  const other = assignReviewClasses({
+    operations: [part("40", "edit-b:0"), part("41", "edit-a:1")],
+    hunks: [hunk("h", ["40", "41"])],
+  });
+  expect(other[0].closureClassId).not.toBe(first[0].closureClassId);
+});
+
 function expectedClass(...ids: string[]): string {
   return `closure:v1:${createHash("sha256").update(JSON.stringify(ids)).digest("base64url")}`;
 }

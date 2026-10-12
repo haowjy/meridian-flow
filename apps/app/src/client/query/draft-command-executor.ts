@@ -33,16 +33,17 @@ import {
   endIntentDrain,
   failChangeCommand,
   failDraftCommand,
-  firstQueuedIntent,
   intentDrainCurrent,
+  nextQueuedClick,
   type PendingDraftCommand,
   pendingDraftCommand,
-  previewWithoutOperations,
   queueChangeSelection,
+  queuedChangeIsLive,
   releaseDraftCommand,
-  retireQueuedSelection,
+  selectionKeys,
 } from "./draft-command-record";
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
+import { previewWithoutKeys } from "./draft-projection";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { draftPreviewQueryOptions } from "./useDraftPreview";
@@ -297,10 +298,7 @@ async function execute(
       );
       // Keep the claim while reads settle; then prune their result and fence older reads.
       await refreshDraft();
-      const hidden = new Set([
-        ...command.selection.operationIds,
-        ...(command.selection.keys ?? []),
-      ]);
+      const hidden = new Set(selectionKeys(command.selection));
       if (claimIsLive(claim))
         queryClient.setQueryData<DraftPreviewResponse>(
           projectQueryKeys.workDraftPreview(
@@ -309,7 +307,7 @@ async function execute(
             draft.documentId,
             draft.draftId,
           ),
-          (preview) => (preview ? previewWithoutOperations(preview, hidden) : preview),
+          (preview) => (preview ? previewWithoutKeys(preview, hidden) : preview),
         );
       confirmChangeCommand(claim, command.selection, mode);
       return confirmed
@@ -357,14 +355,14 @@ async function execute(
   }
 }
 
-const waitingIntents = new Map<number, (outcome: DraftCommandOutcome) => void>();
-
 /**
  * One click on a change's Apply or Discard. It is accepted at once and shown
  * (the change leaves every surface); clicks on a draft are sent one at a time,
- * each resolved against the draft's operations and revision tokens as they are
- * when its turn comes, so a Discard that re-forked the draft never leaves the
- * next click holding the old generation's tokens.
+ * each resolved against the draft as it is when its turn comes, so a Discard
+ * that re-forked the draft never leaves the next click holding the old
+ * generation's rows or tokens. The queue entry is the click's capability: it
+ * carries the account epoch and the caller's promise, and an account change
+ * answers it `blocked` before anything is sent for it.
  */
 export function runDraftSelection(
   queryClient: QueryClient,
@@ -380,10 +378,10 @@ export function runDraftSelection(
     return Promise.resolve({ kind: "blocked" });
   if (cachedActivePreview(queryClient, target) === null)
     return Promise.resolve({ kind: "change-refused", mode, code: "stale" });
-  const { id } = queueChangeSelection(target, selection, mode, true);
-  const outcome = new Promise<DraftCommandOutcome>((resolve) => waitingIntents.set(id, resolve));
-  void drainIntents(queryClient, target, threadId);
-  return outcome;
+  return new Promise<DraftCommandOutcome>((resolve) => {
+    queueChangeSelection(target, selection, mode, resolve);
+    void drainClicks(queryClient, target, threadId);
+  });
 }
 
 function cachedActivePreview(queryClient: QueryClient, draft: DraftRef) {
@@ -399,7 +397,7 @@ function cachedActivePreview(queryClient: QueryClient, draft: DraftRef) {
 }
 
 /** Sends a draft's accepted clicks in order; the first one's claim begins in the click's own turn. */
-async function drainIntents(
+async function drainClicks(
   queryClient: QueryClient,
   draft: DraftRef,
   threadId: string | null,
@@ -408,18 +406,19 @@ async function drainIntents(
   if (!token) return;
   try {
     for (let sent = 0; ; sent += 1) {
-      const intent = firstQueuedIntent(draft);
-      if (!intent) return;
+      const click = nextQueuedClick(draft);
+      if (!click) return;
       let outcome: DraftCommandOutcome;
       try {
-        outcome = await sendIntent(queryClient, draft, intent, threadId, sent > 0);
+        outcome = await sendClick(queryClient, draft, click, threadId, sent > 0);
       } catch {
-        failChangeCommand(draft, intent.selection, intent.mode, "stale");
-        outcome = { kind: "change-refused", mode: intent.mode, code: "stale" };
+        // A failed read is the click's to report only while the click is still this account's.
+        if (queuedChangeIsLive(click.change))
+          failChangeCommand(draft, click.selection, click.mode, "stale");
+        outcome = { kind: "change-refused", mode: click.mode, code: "stale" };
       }
-      retireQueuedSelection(intent.id);
-      waitingIntents.get(intent.id)?.(outcome);
-      waitingIntents.delete(intent.id);
+      click.change.retire();
+      click.settle(outcome);
       // An account change emptied the queue under this loop: it ends with it.
       if (!intentDrainCurrent(draft, token)) return;
     }
@@ -428,44 +427,37 @@ async function drainIntents(
   }
 }
 
-async function sendIntent(
+async function sendClick(
   queryClient: QueryClient,
   draft: DraftRef,
-  intent: { id: number; selection: ChangeSelection; mode: Mode },
+  click: NonNullable<ReturnType<typeof nextQueuedClick>>,
   threadId: string | null,
   afterAnother: boolean,
 ): Promise<DraftCommandOutcome> {
-  const { mode } = intent;
-  // The first click uses what the writer is looking at; a later one reads the
-  // draft as the earlier commands left it.
+  const { mode } = click;
+  const blocked: DraftCommandOutcome = { kind: "blocked" };
+  // The first click is read against what the writer is looking at; a later one
+  // against the draft as the earlier commands left it.
   let preview = cachedActivePreview(queryClient, draft);
   if (afterAnother && canSendDraftCommand()) {
     const fresh = await queryClient.fetchQuery({
       ...draftPreviewQueryOptions(draft),
       staleTime: 0,
     });
+    // Revoked while the read was out: nothing is sent, nothing is published.
+    if (!queuedChangeIsLive(click.change)) return blocked;
     preview = fresh.status === "active" ? fresh : null;
   }
   if (!preview) return { kind: "change-refused", mode, code: "gone" };
   const changes = reviewChangesOfPreview(preview);
-  // The first click is sent as the writer made it (the server answers for a
-  // change already handled). A later one names a change of the generation the
-  // draft had then; it is found again in the draft as it is now, by class or by
-  // the operations it held, and is gone when nothing there holds them.
-  let selection = intent.selection;
-  if (afterAnother) {
-    const ids = new Set(selection.operationIds);
-    const keys = new Set(selection.keys);
-    const classes = new Set(selection.classIds);
-    const current = changes.filter(
-      (change) =>
-        classes.has(change.classId) ||
-        change.operationIds.some((id) => ids.has(id)) ||
-        change.keys.some((key) => keys.has(key)),
-    );
-    if (current.length === 0) return { kind: "change-refused", mode, code: "gone" };
-    selection = selectionOf(current);
-  }
+  // The change is found again in this draft by what it is (its keys), and sent
+  // as the rows this generation names. The first click may name a change the
+  // viewed preview no longer lists; the server answers for that. A later one
+  // that matches nothing is gone.
+  const wanted = new Set(selectionKeys(click.selection));
+  const current = changes.filter((change) => change.keys.some((key) => wanted.has(key)));
+  if (current.length === 0 && afterAnother) return { kind: "change-refused", mode, code: "gone" };
+  const selection = current.length ? selectionOf(current) : click.selection;
   const start = startDraftCommand(
     queryClient,
     {
@@ -483,7 +475,7 @@ async function sendIntent(
     threadId,
   );
   // Its claim hides the change from here on; the queue entry's hiding ends with it.
-  retireQueuedSelection(intent.id);
+  click.change.retire();
   return start.outcome;
 }
 

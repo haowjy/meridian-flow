@@ -12,8 +12,7 @@
  * Pure data, no React.
  */
 import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
-import { operationKey } from "@/client/query/draft-command-record";
-import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
+import { operationKey, unattributedHunkKey } from "@/core/editor/extensions/inline-review";
 import {
   attributionThreadIds,
   type ChangeAttribution,

@@ -227,9 +227,9 @@ it.each([
     }
     await settleReact(() => expect(review?.roomOwner.session).not.toBeNull());
     const frozen = document.querySelector<HTMLElement>("[data-paint-hold]");
-    expect(frozen?.hasAttribute("inert")).toBe(true);
     expect(frozen?.textContent).toContain("The held review.");
-    expect(frozen?.querySelector("[contenteditable=true]")).toBeTruthy(); // Copied DOM is inert, not another editor.
+    // The copy can be scrolled but not written in: its prose is inert.
+    expect(frozen?.querySelector("[contenteditable=true]")?.closest("[inert]")).toBeTruthy();
     expect(surfaces()).toEqual([]);
     await act(async () => sync.resolve());
     await settleReact(() => expect(surfaces()).toEqual(["review"]));

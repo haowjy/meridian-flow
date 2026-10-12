@@ -56,7 +56,16 @@ export type DraftPreviewResponse =
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
+  /** The journal row carrying this change in the draft's current generation. Admission names rows; it is not continuity. */
   operationId: string;
+  /**
+   * The change's identity across draft generations: `<editId>:<ordinal>` of the
+   * recorded edit part the row carries. A re-fork re-journals surviving rows
+   * under new `operationId`s with the same part key, so this is what a queued
+   * click, a focus or a held failure finds its change by. Absent for a row that
+   * records no edit part (manifest and reversal rows): it only matches itself.
+   */
+  partKey?: string;
   actorTurnId?: string;
   /** Originating chat and its title at preview time. Agent operations only. */
   actorThreadId?: string;

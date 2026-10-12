@@ -47,8 +47,19 @@ export type IndexedOperation = {
   physicalSourceUpdateIds: PhysicalSourceUpdateIds;
   actorTurnId?: string;
   actorUserId?: string;
+  /** `<editId>:<ordinal>`: survives a re-fork, unlike the row id. Absent for rows with no recorded edit part. */
+  partKey?: string;
   kind: "agent" | "writer";
 };
+
+/** The recorded edit part a journal row carries (`updateMeta.documentEdit`), as one stable string. */
+export function partKeyOf(updateMeta: unknown): string | undefined {
+  const edit = (updateMeta as { documentEdit?: { editId?: unknown; ordinal?: unknown } } | null)
+    ?.documentEdit;
+  if (!edit || typeof edit.ordinal !== "number") return undefined;
+  if (typeof edit.editId !== "string" && typeof edit.editId !== "number") return undefined;
+  return `${edit.editId}:${edit.ordinal}`;
+}
 
 type RangeAssignment = { start: number; end: number; operationId: string };
 export type OperationClockRange = ClockRange & { operationId: string };
@@ -77,8 +88,10 @@ export function indexDraftUpdates(input: {
     for (const update of input.updates) {
       const operationId = String(update.id);
       const actorUserId = update.actorTurnId ? null : (update.actorUserId ?? null);
+      const partKey = partKeyOf(update.updateMeta);
       byOperationId.set(operationId, {
         operationId,
+        ...(partKey ? { partKey } : {}),
         sourceUpdateIds: asSourceUpdateIds([update.id]),
         physicalSourceUpdateIds: asPhysicalSourceUpdateIds([update.id]),
         ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),

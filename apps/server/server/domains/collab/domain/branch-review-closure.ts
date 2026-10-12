@@ -47,6 +47,9 @@ export function assignReviewClasses(input: {
     graph.unionAll(hunk.operationIds.map((id): Node => `operation:${id}`));
   unionYjsDependencies(graph, input.updates ?? [], input.baseDeletedRanges ?? []);
 
+  const partKeyByOperationId = new Map(
+    input.operations.map((operation) => [operation.operationId, operation.partKey]),
+  );
   const components = graph.components();
   const classByOperationId = new Map<
     string,
@@ -56,7 +59,10 @@ export function assignReviewClasses(input: {
     if (operationIds.length === 0) continue;
     operationIds.sort(operationSort);
     const membership = {
-      closureClassId: classId(operationIds),
+      // Members are named by their stable part keys, so a re-fork that gives the
+      // same members new row ids leaves the class id alone. A row without a part
+      // key is only itself.
+      closureClassId: classId(operationIds.map((id) => partKeyByOperationId.get(id) ?? id).sort()),
       closureUpdateIds: asPhysicalSourceUpdateIds(journalIds.sort((a, b) => a - b)),
     };
     for (const id of operationIds) classByOperationId.set(id, membership);

@@ -14,6 +14,7 @@ export {
   type InlineReviewOperationKind,
   indexOperations,
   isUnattributedHunkKey,
+  operationKey,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,

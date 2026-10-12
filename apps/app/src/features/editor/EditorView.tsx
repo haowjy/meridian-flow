@@ -3,21 +3,17 @@ import { Trans } from "@lingui/react/macro";
 import type { ReviewOperation } from "@meridian/contracts/drafts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  operationKey,
-  restoringOperationIds,
-  useChangeCommandRecords,
-} from "@/client/query/draft-command-record";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
 import {
   PaintCapture,
   PaintScope,
   useAfterPaintRelease,
-  usePaintCoverPatch,
+  usePaintCoverProjection,
 } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import { restoreRenderedChanges } from "@/core/editor/extensions/inline-review";
+import { operationKey, restoreRenderedChanges } from "@/core/editor/extensions/inline-review";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import {
   dropReviewPlace,
@@ -157,7 +153,7 @@ export function EditorView(props: EditorViewProps) {
   // the review body and never before it, and then stays for the draft: a new
   // generation replacing the body leaves it as it is. A layout effect, so the
   // controller's update lands before paint, in the same frame as the body swap.
-  const chromeShown = reviewVisible || settled || (review?.shown === true && !terminal);
+  const chromeShown = (reviewVisible || settled || review?.shown === true) && !terminal;
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!review) return;
@@ -185,7 +181,13 @@ export function EditorView(props: EditorViewProps) {
   const afterPaintRelease = useAfterPaintRelease();
   useLayoutEffect(() => {
     if (!draftKey || !placedEditor) return;
-    afterPaintRelease(() => restoreReviewPlaceWhenMeasured(draftKey, placedEditor));
+    afterPaintRelease((cover) =>
+      restoreReviewPlaceWhenMeasured(
+        draftKey,
+        placedEditor,
+        cover.scrolledBy.find((by) => by !== 0) ?? 0,
+      ),
+    );
   }, [draftKey, placedEditor, surface, closed, afterPaintRelease]);
   useEffect(
     () => () => {
@@ -194,33 +196,37 @@ export function EditorView(props: EditorViewProps) {
     [draftKey],
   );
 
-  // A Discard accepted while a cover holds the old review cannot reach that
-  // review (its editor is gone): the cover's copy of the change is made to show
-  // its original, as the editor would have, until the successor paints.
+  // A cover standing in for the old review is a capture plus the writer's
+  // intents as they are now (`PaintHold.projectCover`): a Discard accepted under
+  // it shows its original there, and one refused is drawn as it was. What the
+  // old review's operations were is read when the cover is built.
   const shownModels = useRef(new Map<string, readonly ReviewOperation[]>());
   const lastShownKey = useRef<string | null>(null);
   if (reviewOnScreen) lastShownKey.current = reviewKey;
-  const patchCover = usePaintCoverPatch();
   const commandRecords = useChangeCommandRecords();
   const restoring = review
-    ? restoringOperationIds(commandRecords, {
+    ? intentKeys(commandRecords, {
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: review.documentId,
         draftId: review.draftId,
-      })
+      }).restoring
     : null;
+  const restoringRef = useRef(restoring);
+  restoringRef.current = restoring;
   const restoringKey = restoring ? [...restoring].sort().join("|") : "";
-  useLayoutEffect(() => {
-    if (!restoring?.size || !lastShownKey.current) return;
-    const operations = shownModels.current.get(lastShownKey.current) ?? [];
+  const projectCover = usePaintCoverProjection();
+  const projectIntents = useCallback((cover: HTMLElement) => {
+    const keys = restoringRef.current;
+    const operations = shownModels.current.get(lastShownKey.current ?? "") ?? [];
     const ids = new Set(
-      operations
-        .filter((op) => restoring.has(op.operationId) || restoring.has(operationKey(op)))
-        .map((op) => op.operationId),
+      operations.filter((op) => keys?.has(operationKey(op))).map((op) => op.operationId),
     );
-    if (ids.size) patchCover((cover) => restoreRenderedChanges(cover, ids));
-  }, [restoringKey, patchCover]);
+    if (ids.size) restoreRenderedChanges(cover, ids);
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the intents moving is what rebuilds a cover.
+  useLayoutEffect(() => projectCover(projectIntents), [projectCover, projectIntents, restoringKey]);
+  useEffect(() => () => projectCover(null), [projectCover]);
   return (
     <>
       <PaintCapture surface={surface} state={surface === "pending" ? "pending" : "painted"} />

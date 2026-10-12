@@ -12,10 +12,10 @@
  */
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
-import { operationKey } from "@/client/query/draft-command-record";
 import {
   getInlineReviewPluginState,
   isUnattributedHunkKey,
+  operationKey,
 } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
