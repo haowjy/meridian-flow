@@ -6,6 +6,7 @@ import { type CommandSpec, flag, parseDuration, requirePositional } from "../../
 import { putDocument } from "../doc/put";
 import { resolveProjectId } from "../project/resolve";
 import { createThread } from "../thread/create";
+import { finishResult } from "../thread/result";
 import { exitForOutcome, type SendOutcome, sendMessage } from "../thread/send";
 
 export type SeedFixture = {
@@ -126,6 +127,7 @@ export const seedCommand: CommandSpec = {
           full: false,
         });
         messages.push(outcome);
+        finishResult(progress, outcome);
         exitCode = Math.max(exitCode, exitForOutcome(outcome)) as ExitCode;
       }
     }

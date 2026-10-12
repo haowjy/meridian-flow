@@ -99,7 +99,7 @@ export function selectFields<T>(value: T, fields: readonly string[] | undefined)
     if (!item || typeof item !== "object" || Array.isArray(item)) return item;
     const record = item as Record<string, unknown>;
     const missing = fields.filter((field) => !(field in record));
-    if (missing.length === fields.length) {
+    if (missing.length === fields.length && record.type !== "result") {
       throw new CliError("usage", `Unknown field(s): ${missing.join(", ")}`, {
         hint: `Available fields: ${Object.keys(record).join(", ")}`,
       });
