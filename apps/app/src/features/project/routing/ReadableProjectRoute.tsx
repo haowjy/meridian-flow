@@ -56,6 +56,7 @@ import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   type AddressSelection,
   browseDestination,
+  browsedFolder,
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
@@ -608,7 +609,7 @@ function ReadableProjectDestination({
       : documentDestination
         ? `/${documentDestination.path}`
         : undefined,
-    folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
+    folder: browsedFolder(destination) ?? undefined,
     view: address.workView ?? address.worksView,
   };
   const editorDocument = {
