@@ -60,7 +60,11 @@ export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): bool
 export type ParentRef =
   | Readonly<{ kind: "folder"; folderId: string }>
   | Readonly<{ kind: "root"; scheme: ProjectContextTreeScheme; owner: ResourceOwner }>;
-export type ResourceDestination = Readonly<{ parent: ParentRef; name: string }>;
+export type ResourceDestination = Readonly<{
+  parent: ParentRef;
+  createFolders?: string[];
+  name: string;
+}>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
 /** Resolve only canonical observations when preparing immutable transport evidence. */
@@ -81,7 +85,11 @@ export function destinationLocation(
   return parent
     ? {
         ...parent,
-        path: `${parent.path.replace(/\/$/, "")}/${destination.name}`,
+        path: [
+          parent.path.replace(/\/$/, ""),
+          ...(destination.createFolders ?? []),
+          destination.name,
+        ].join("/"),
         name: destination.name.split("/").at(-1) ?? destination.name,
       }
     : null;

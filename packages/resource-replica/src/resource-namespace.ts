@@ -148,9 +148,14 @@ function requestFor(
       operationId,
       path: normalizedPath(source.path),
       expected: { kind: "file", nodeId: resource.identity.documentId },
-      destinationParent: destination.parent,
+      destinationParent: {
+        ...destination.parent,
+        ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
+      },
       destinationScheme: parent.scheme,
-      destinationFolderPath: normalizedPath(parent.path),
+      destinationFolderPath: [normalizedPath(parent.path), ...(destination.createFolders ?? [])]
+        .filter(Boolean)
+        .join("/"),
       ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },
@@ -303,6 +308,8 @@ function sameDestinationParent(
   right: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
 ): boolean {
   if (!left || !right) return left === right;
+  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
+    return false;
   if (left.kind === "folder" || right.kind === "folder")
     return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
   return left.scheme === right.scheme && sameOwner(left.owner, right.owner);

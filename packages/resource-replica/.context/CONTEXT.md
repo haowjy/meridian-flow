@@ -76,7 +76,7 @@ records received evidence separately, and applies it through metadata CAS.
 App move attempts always carry the picked `destinationParent`. Preparation looks
 up the folder's server-canonical location; an absent or terminal destination enters
 move repair without a fabricated transport attempt. Folder receipt matching uses
-that parent identity and leaf name rather than the parent's potentially changed
+that parent identity, creation suffix and leaf name rather than the parent's potentially changed
 path or owner. Root moves still match qualified URI authority. Source identity
 and URI remain immutable evidence.
 Receipt lookup and dispatch share a short account/resource lock with future
@@ -111,8 +111,13 @@ Catalog observations install atomically with their checkpoint; exact-ID availabi
 observations use the same metadata CAS. Both journals share typed settlement policy,
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
-Folder and document destinations store `{ parent: ParentRef, name }`, where a
-parent is a picked folder identity or qualified area root. One canonical qualified
+Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
+parent is a picked folder identity or qualified area root. Linked creation alone
+captures the deepest existing identity and missing folder names beneath it.
+Projection appends that suffix to the anchor's current home and reuses navigation-only
+ancestor completion until real catalog identities arrive. Preparation carries both
+in `destinationParent`; receipts must match both. Picker, rename and File it do
+not manufacture missing paths. One canonical qualified
 home index binds parent edges from the installed checkpoints and retained journal
 identities. A newer exact canonical folder observation supplies that folder's edge
 without disconnecting children whose checkpoint still names its prior home.

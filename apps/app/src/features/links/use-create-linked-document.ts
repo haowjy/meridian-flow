@@ -9,8 +9,8 @@
  * brings, so neither is creatable here.
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
- * and syncs in the background. Explicit folder creation establishes identities
- * for any missing address parents before filing.
+ * and syncs in the background. Missing folders are a suffix beneath the deepest
+ * existing identity anchor, created atomically by the server move.
  * A later sync failure lands on the document itself. Nothing about the link
  * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
@@ -20,7 +20,6 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { useCallback, useRef, useState } from "react";
 
-import { createContextEntry } from "@/client/api/projects-api";
 import {
   type CreatableLinkScheme,
   documentFileName,
@@ -74,29 +73,21 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        const location = {
-          scheme: target.scheme,
-          path: target.folderPath ? `/${target.folderPath}` : "",
-          name: "",
-          workId: null,
-        } as const;
-        let parent = await resources.findParentAtLocation(projectId, location);
-        // A link may explicitly create missing address parents. Existing parents
-        // are captured locally; moves never manufacture folders from paths.
-        if (!parent && target.folderPath) {
-          await createContextEntry(projectId, target.scheme, {
-            type: "folder",
-            path: target.folderPath,
+        const folders = target.folderPath.split("/").filter(Boolean);
+        const createFolders: string[] = [];
+        let parent = null;
+        while (!parent) {
+          parent = await resources.findParentAtLocation(projectId, {
+            scheme: target.scheme,
+            path: folders.length ? `/${folders.join("/")}` : "",
+            name: "",
+            workId: null,
           });
-          await resources.acquireCatalogAfter(
-            projectId,
-            target.scheme === "user"
-              ? { kind: "user", userId: resources.accountId }
-              : { kind: "project", projectId },
-          );
-          parent = await resources.findParentAtLocation(projectId, location);
+          if (parent) break;
+          const segment = folders.pop();
+          if (!segment) throw new Error("Destination area is unavailable");
+          createFolders.unshift(segment);
         }
-        if (!parent) throw new Error("Destination folder is unavailable");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
@@ -105,6 +96,7 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
         try {
           await resources.setLocation(projectId, reservation.key, {
             parent,
+            ...(createFolders.length ? { createFolders } : {}),
             name: target.name,
           });
         } finally {

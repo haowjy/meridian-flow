@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Keep linked-document filing into existing folders device-local by capturing the parent before any creation request.
+- Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.
 - Treat delivery into a retired destination authority as move repair rather than a missing Work.
 - Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
 
