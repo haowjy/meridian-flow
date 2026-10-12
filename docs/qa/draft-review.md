@@ -741,3 +741,27 @@ appears. Read the draft independently with `./mf api` and live with `./mf doc re
 Capture request body/response, typing timestamps, preview class membership,
 screenshot and browser errors. Repeat with typing inside the AI-inserted word:
 PASS: refusal remains attached to the moved class and all writer text survives.
+
+## Model history inspection cost
+
+Run the [counted production-policy probe][model-inspection-probe] against the
+owned checkout, first at the base and then after the change. Bundle its actual
+`model-inverse-policy`, `inverse-actions` and forward-inverse implementation;
+instrument prepared `classify` calls as well as the standalone API so changing
+the seam cannot hide work. Keep artifacts in the work directory, never source.
+No app or database is needed: the probe uses real Yjs and an in-memory host port.
+
+For a 20-entry page with 20 parts per entry and 2,000 retained parts, expect
+one full lineage build, one effective-action index, and 400 part classifications
+in one batch when all entries share a view. Display, revert eligibility and Undo
+eligibility must reuse those classifications. Rollback membership must scan
+history once, not once per part. Compare plain (uninstrumented) timings separately
+and compare every result's status and exact history message with the base.
+Retain undone, redone, rolled-back, older-page and invalid-cursor cases.
+
+The existing model-inverse count matrix checks scratch advancement in Live and
+Draft, including counted Redo, overlapping edits and atomic shortage. Run it
+alongside the inverse action/hold/rollback matrices; performance counts alone
+do not prove the next scratch step sees its own writes.
+
+[model-inspection-probe]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/r2-inspect-evidence/build-probe.cjs
