@@ -2,11 +2,11 @@
  * Where #754's identity moves and namespace observation versions meet hidden nodes: a
  * writer's `{ parent, name }` move never lands in a folder only a draft holds, anchored
  * folder creation is a live create (it reveals the draft's hidden folder of that name),
- * and only live changes publish observations. A draft's create publishes nothing; Apply's
- * reveal publishes a newer version; Discard never names a hidden node in a live commit.
+ * and only live changes publish observations. A draft's creates, tree changes and Discard
+ * allocate no namespace version and restamp no live entry; Apply's reveal publishes a newer
+ * version.
  */
 import type { DocumentId } from "@meridian/contracts";
-import type { CatalogSnapshot } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { contextAvailabilityHeads, contextCatalogCommits, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -126,62 +126,75 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await s.scenario.view("live").locate(chapter)).toBe("manuscript://lore/chapter");
     });
 
-    it("publishes no namespace observation for a draft's create and a newer one for Apply's reveal", async () => {
+    /** Every catalog change since `cursor` that names a file, folder or source. */
+    async function namespaceChanges(s: Awaited<ReturnType<typeof start>>, cursor: string) {
+      const delta = await s.runtime.ports.contextCatalog.changes(s.scope, cursor);
+      if (delta.kind !== "delta") throw new Error("Expected retained commits");
+      return delta.commits
+        .flatMap((commit) => commit.changes)
+        .filter((change) => change.operation !== "upsert" || change.entry.kind !== "authority");
+    }
+
+    it("publishes no namespace observation for a draft's creates or tree change and a newer one for Apply's reveal", async () => {
       const s = await start();
       await s.scenario.writer.createDocument("chapter", "Chapter one.");
+      await s.scenario.writer.createDocument("arc/opening", "The opening.");
       const before = await s.runtime.ports.contextCatalog.snapshot(s.scope);
+      const versionBefore = await s.namespaceVersion();
+
+      // Only the Work's pending count (an authority entry) may publish: a hidden-only
+      // change allocates no namespace version and restamps no live file or folder.
       const harbor = await s.model.create("lore/harbor", "The harbor.");
       const lore = await s.hiddenFolder("lore");
-
-      // Source resolution and the Work's pending count republish live state (as on main);
-      // none of it names, places or counts the draft's hidden nodes.
-      const afterCreate = await s.runtime.ports.contextCatalog.changes(s.scope, before.cursor);
-      if (afterCreate.kind !== "delta") throw new Error("Expected retained commits");
-      const published = JSON.stringify(afterCreate.commits.flatMap((commit) => commit.changes));
-      expect(published).not.toContain(harbor);
-      expect(published).not.toContain(lore);
-      const namespace = (entries: CatalogSnapshot["entries"]) =>
-        entries.flatMap((entry) => {
-          if (entry.kind !== "file" && entry.kind !== "folder") return [];
-          const { observationVersion: _version, ...rest } = entry;
-          return [rest];
-        });
+      expect(await namespaceChanges(s, before.cursor)).toEqual([]);
+      expect(await s.namespaceVersion()).toBe(versionBefore);
+      const copied = await s.model.copy("chapter", "lore/chapter");
+      expect(copied.isError).toBeFalsy();
+      expect(await namespaceChanges(s, before.cursor)).toEqual([]);
+      expect(await s.namespaceVersion()).toBe(versionBefore);
       const afterSnapshot = await s.runtime.ports.contextCatalog.snapshot(s.scope);
-      expect(namespace(afterSnapshot.entries)).toEqual(namespace(before.entries));
-      const versionAfterCreate = await s.namespaceVersion();
+      expect(afterSnapshot.entries).toEqual(
+        before.entries.map((entry) =>
+          entry.kind === "authority" ? expect.objectContaining({ entryId: entry.entryId }) : entry,
+        ),
+      );
 
       await s.scenario.apply(s.ascension, [harbor]);
 
       const versionAfter = await s.namespaceVersion();
-      expect(versionAfter).toBeGreaterThan(versionAfterCreate);
+      expect(versionAfter).toBeGreaterThan(versionBefore);
       const revealed = (await s.runtime.ports.contextCatalog.snapshot(s.scope)).entries.find(
         (entry) => entry.entryId === harbor,
       );
       expect(revealed).toMatchObject({ kind: "file", observationVersion: String(versionAfter) });
-      const changes = await s.runtime.ports.contextCatalog.changes(s.scope, before.cursor);
-      if (changes.kind !== "delta") throw new Error("Expected Apply's catalog commit");
+      const changes = await namespaceChanges(s, before.cursor);
       expect(
-        changes.commits
-          .flatMap((commit) => commit.changes)
-          .some((change) => change.operation === "upsert" && change.entry.entryId === harbor),
+        changes.some((change) => change.operation === "upsert" && change.entry.entryId === harbor),
+      ).toBe(true);
+      expect(
+        changes.some((change) => change.operation === "upsert" && change.entry.entryId === lore),
       ).toBe(true);
     });
 
-    it("names no hidden node in a live catalog commit when a draft discards its creates", async () => {
+    it("publishes nothing live, and names no hidden node, when a draft discards its creates", async () => {
       const s = await start();
       await s.scenario.writer.createDocument("chapter", "Chapter one.");
+      await s.scenario.writer.createDocument("arc/opening", "The opening.");
       const harbor = await s.model.create("lore/harbor", "The harbor.");
       const lore = await s.hiddenFolder("lore");
-      const before = await db.select().from(contextCatalogCommits);
+      const before = await s.runtime.ports.contextCatalog.snapshot(s.scope);
+      const versionBefore = await s.namespaceVersion();
+      const known = new Set((await db.select().from(contextCatalogCommits)).map((c) => c.commitId));
 
       await s.scenario.discard(s.ascension, [harbor as DocumentId]);
 
-      const known = new Set(before.map((commit) => commit.commitId));
       const published = (await db.select().from(contextCatalogCommits))
         .filter((commit) => !known.has(commit.commitId))
         .flatMap((commit) => commit.changes);
       expect(JSON.stringify(published)).not.toContain(harbor);
       expect(JSON.stringify(published)).not.toContain(lore);
+      expect(await namespaceChanges(s, before.cursor)).toEqual([]);
+      expect(await s.namespaceVersion()).toBe(versionBefore);
     });
   });
 }
