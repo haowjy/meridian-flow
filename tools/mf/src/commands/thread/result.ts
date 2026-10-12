@@ -64,8 +64,6 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
       : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   for (const next of result.next ?? []) out.note(next);
-  if (result.pendingUnavailable)
-    out.note("Snapshot does not carry a pending inbox; owed messages are unknown.");
   return terminal.exitCode;
 }
 
@@ -74,25 +72,28 @@ export async function timeoutReport(session: Session, threadId: string) {
     "GET",
     apiThreadSnapshotPath(threadId),
   );
-  const turnId = snapshot.liveState.runningTurnId;
-  const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
-  const stillRunning = turnId ? { turnId, status: turn?.status ?? "unknown" } : null;
-  const pending = snapshot.liveState.pending;
+  const activity = snapshotActivity(snapshot);
+  const { stillRunning } = activity;
   return {
     reason: stillRunning ? ("running" as const) : ("owed" as const),
-    stillRunning,
-    ...(pending
-      ? {
-          owed: pending.items.filter(
-            (item) => item.intent === "message" && item.provenance.kind === "writer",
-          ),
-        }
-      : { pendingUnavailable: true }),
+    ...activity,
     next: [
       ...(stillRunning
         ? [`./mf thread cancel ${threadId} --turn ${stillRunning.turnId}`]
         : [`./mf log --thread ${threadId} --level error`]),
       `./mf thread tail ${threadId} --until-idle`,
     ],
+  };
+}
+
+/** Obligations from the mandatory live-state projection, never durable thread.status. */
+export function snapshotActivity(snapshot: ThreadSnapshotResponse) {
+  const turnId = snapshot.liveState.runningTurnId;
+  const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
+  return {
+    stillRunning: turnId ? { turnId, status: turn?.status ?? "unknown" } : null,
+    owed: snapshot.liveState.pending.items.filter(
+      (item) => item.intent === "message" && item.provenance.kind === "writer",
+    ),
   };
 }
