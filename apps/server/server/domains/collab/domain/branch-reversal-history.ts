@@ -115,10 +115,6 @@ export type BranchReversalState = {
   operationHandles: Array<{ seq: number; handles: string[] }>;
 };
 
-export function groupedOrdinalKey(documentId: string, threadId: string, groupId: string): string {
-  return `${documentId}:${threadId}:${groupId}`;
-}
-
 export function stageBranchReversal(input: {
   pending: { push(entry: JournalBatchAppendEntry): void };
   docId: string;

@@ -26,6 +26,8 @@ export interface ReceiptWrite {
   turnId?: TurnId | null;
   responseId?: string | null;
   actor: "agent" | "human" | "system";
+  /** Reserved once by the logical model edit; never allocated at capture. */
+  wId?: number;
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
@@ -34,20 +36,9 @@ export interface ReceiptWrite {
 }
 /** Caller holds the authoritative document/branch mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
-  const wId =
-    input.actor === "agent" && input.threadId
-      ? (
-          await db
-            .select({ next: sql<number>`coalesce(max(${documentEdits.wId}),0)::integer + 1` })
-            .from(documentEdits)
-            .where(
-              and(
-                eq(documentEdits.documentId, input.documentId),
-                eq(documentEdits.threadId, input.threadId),
-              ),
-            )
-        )[0].next
-      : null;
+  if (input.actor === "agent" && input.threadId && input.wId === undefined)
+    throw new Error("Model edit capture requires its reserved ordinal");
+  const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
     .values({

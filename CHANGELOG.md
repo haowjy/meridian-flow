@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Give each model edit one handle shared by its write result and immutable history, including independent writes in the same draft reply.
+
 - Use one atomic edit path for create, copy and replacement, retaining independent paragraph metadata and bounded copy receipts.
 
 - Keep accepted AI edits and their settlement receipts when reporting fails, without replaying the mutation to produce a report.

@@ -36,6 +36,7 @@ it("Undo survives reload and retry, and Apply credits only the AI turn", async (
       branchId: branch.branchId,
       generation: branch.generation,
       source: "agent",
+      wId: 1,
       updateData: Y.encodeStateAsUpdate(browser, vector),
       threadId: THREAD_ID,
       turnId: TURN_ID,

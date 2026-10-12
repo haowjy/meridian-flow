@@ -50,20 +50,22 @@ async function stageDraft(
     responseId,
     grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
   };
-  for (const [find, content] of writes)
-    expect(
-      await fixture.collab.agentEdit().write(
-        {
-          command: kind,
-          file: "alpha.md",
-          documentId: ALPHA_ID,
-          find,
-          content,
-          tool_use_id: find,
-        },
-        context,
-      ),
-    ).toMatchObject({ status: "success", phase: "staged" });
+  const identities = [];
+  for (const [find, content] of writes) {
+    const outcome = await fixture.collab.agentEdit().write(
+      {
+        command: kind,
+        file: "alpha.md",
+        documentId: ALPHA_ID,
+        find,
+        content,
+        tool_use_id: find,
+      },
+      context,
+    );
+    expect(outcome).toMatchObject({ status: "success", phase: "staged" });
+    identities.push(outcome.writeId);
+  }
   expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
   const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
   const branchId = branch.branchId;
@@ -74,6 +76,19 @@ async function stageDraft(
     .where(eq(schema.branchWriteJournal.branchId, branchId))
     .orderBy(schema.branchWriteJournal.id);
   expect(rows).toHaveLength(writes.length);
+  const edits = await db
+    .select()
+    .from(schema.documentEdits)
+    .where(
+      and(
+        eq(schema.documentEdits.documentId, ALPHA_ID),
+        eq(schema.documentEdits.threadId, THREAD_ID),
+      ),
+    )
+    .orderBy(schema.documentEdits.wId);
+  expect(identities).toEqual(edits.map((edit) => `w${edit.wId}`));
+  expect(new Set(identities).size).toBe(writes.length);
+  expect(rows.map((row) => `w${row.wId}`)).toEqual(identities);
   return { fixture, branchId, rows, baseUpdate };
 }
 
@@ -574,7 +589,7 @@ describe("document edit receipts (Postgres)", () => {
           try {
             const result = await writing;
             expect(result.status).toBe("success");
-            expect(result.result.message?.split("Dropped writes:")).toHaveLength(2);
+            expect(result.result.message?.split("Dropped writes:")).toHaveLength(3);
           } finally {
             fixture.links.prepare = original;
           }
@@ -583,12 +598,14 @@ describe("document edit receipts (Postgres)", () => {
         if (witness === "drop before next tool" || droppedAll) {
           const missing = await write("gold", "missing");
           expect(missing.status).toBe("not_found");
-          {
-            expect(new Set(dropped.map((entry) => entry.writeId)).size).toBe(1);
-            const notice = `alpha.md ${dropped[0]?.writeId}: ${droppedAll ? "all staged writes for this handle" : "part of this handle"} was discarded with the text it edited. Dropped writes: "gold" → "gild"; "gild" → "bronze". Re-read and retry.`;
-            expect(missing.result.message?.endsWith(notice)).toBe(true);
-            expect(missing.result.message?.split("Dropped writes:")).toHaveLength(2);
+          expect(new Set(dropped.map((entry) => entry.writeId)).size).toBe(2);
+          for (const [index, entry] of dropped.entries()) {
+            const description = index === 0 ? '"gold" → "gild"' : '"gild" → "bronze"';
+            expect(missing.result.message).toContain(
+              `alpha.md ${entry.writeId}: all staged writes for this handle was discarded with the text it edited. Dropped writes: ${description}. Re-read and retry.`,
+            );
           }
+          expect(missing.result.message?.split("Dropped writes:")).toHaveLength(3);
           // The resolver sees the re-fork, not the discarded helper contents.
           if (!droppedAll)
             expect(await write("red", "silver")).toMatchObject({
@@ -899,6 +916,7 @@ describe("document edit receipts (Postgres)", () => {
         documentId: ALPHA_ID,
         draftId: branchId,
       };
+      let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {
         const snapshot = await fixture.branchStore.getBranch(branchId);
         if (!snapshot) throw new Error("Missing branch");
@@ -926,7 +944,7 @@ describe("document edit receipts (Postgres)", () => {
                   actorUserId: actor === "writer" ? (USER_ID as never) : null,
                   threadId: actor === "agent" ? THREAD_ID : null,
                   turnId: actor === "agent" ? TURN_ID : null,
-                  wId: null,
+                  wId: actor === "agent" ? ++ordinal : null,
                   updateMeta: null,
                 },
               ],

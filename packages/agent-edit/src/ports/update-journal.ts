@@ -160,9 +160,8 @@ export interface ReversalStore {
   withReversalScope?<T>(docId: string, operation: () => Promise<T>): Promise<T>;
   /**
    * Reserve the next durable per-(document, thread) write ordinal.
-   * Branch adapters may reuse one ordinal for a host-defined durable group.
    */
-  reserveWriteOrdinal(documentId: string, threadId: string, groupId?: string): Promise<number>;
+  reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
   /**
    * Earliest reconstructable base: the newest checkpoint strictly below the
    * earliest retained update row, plus the retained updates after it.

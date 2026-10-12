@@ -697,11 +697,7 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(
-      docId,
-      session.threadId,
-      context.responseId ?? context.turnId,
-    );
+    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??

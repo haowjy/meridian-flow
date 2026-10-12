@@ -30,7 +30,6 @@ import {
   type BranchReversalState,
   branchRowAsPersistedUpdate,
   buildBranchReversalState,
-  groupedOrdinalKey,
   materializeSnapshot,
   resolveBranchReversalScope,
   serializeBranchReversalRecord,
@@ -420,7 +419,6 @@ export function createBranchAgentEditJournal(input: {
   };
 }): UpdateJournal & ReversalStore {
   let syntheticSeq = 0;
-  const groupedOrdinals = new Map<string, Promise<number>>();
   const pinnedReversalScope = new AsyncLocalStorage<{
     docId: string;
     scope: BranchReversalScope;
@@ -467,9 +465,6 @@ export function createBranchAgentEditJournal(input: {
     async appendBatch(entries) {
       for (const entry of entries) {
         input.pendingJournalEntries?.push(entry);
-        const groupId = entry.meta.authoringResponseId ?? entry.mutation?.turnId;
-        if (groupId)
-          groupedOrdinals.delete(groupedOrdinalKey(entry.docId, input.threadId, groupId));
       }
       return Promise.all(
         entries.map(async (entry): Promise<JournalBatchAppendResult> => {
@@ -510,19 +505,8 @@ export function createBranchAgentEditJournal(input: {
       return Promise.resolve({ updatesFolded: 0, reversalsExpired: 0 });
     },
 
-    async reserveWriteOrdinal(documentId, threadId, groupId) {
-      if (!groupId) return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-      const key = groupedOrdinalKey(documentId, threadId, groupId);
-      const existing = groupedOrdinals.get(key);
-      if (existing !== undefined) return existing;
-      const reservation = input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-      groupedOrdinals.set(key, reservation);
-      try {
-        return await reservation;
-      } catch (cause) {
-        if (groupedOrdinals.get(key) === reservation) groupedOrdinals.delete(key);
-        throw cause;
-      }
+    reserveWriteOrdinal(documentId, threadId) {
+      return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
     },
     async readForReconstruction(docId) {
       const scope = await branchScope(docId);
