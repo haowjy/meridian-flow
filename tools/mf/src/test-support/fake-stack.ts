@@ -363,6 +363,7 @@ function createFake() {
           entry: {
             kind: "file",
             entryId: DOCUMENT_ID as never,
+            observationVersion: "1",
             scope: { kind: "project", projectId: PROJECT_ID as never },
             sourceId: "source" as never,
             parentId: "source" as never,

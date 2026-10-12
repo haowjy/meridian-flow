@@ -168,6 +168,7 @@ else
         .from(contextCatalogScopeHeads)
         .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
       const cachedEntry = {
+        observationVersion: "1",
         kind: "file" as const,
         entryId: chapter.id as never,
         scope: { kind: "project" as const, projectId: projectId as never },

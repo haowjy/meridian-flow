@@ -5,7 +5,11 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { projectResourceLocation, type ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourcePlacement,
+  type ResourceRecord,
+  resourcePlacementForSnapshot,
+} from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
@@ -220,6 +224,7 @@ type NavigationAdapterDependencies = {
   captureNavigation?: () => () => boolean;
   resources?: {
     readonly accountId: string;
+    readProjection: import("@/core/resources/account-resource-replica").AccountResourceReplica["readProjection"];
     openKnownDocument(
       projectId: string,
       documentId: string,
@@ -235,6 +240,7 @@ type NavigationAdapterDependencies = {
 function localFileForRecord(
   projectId: string,
   record: ResourceRecord,
+  placement: ResourcePlacement,
 ): {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
@@ -243,14 +249,14 @@ function localFileForRecord(
   entry: CatalogFileEntry;
 } | null {
   if (record.resource.content.kind !== "exact") return null;
-  const location = projectResourceLocation(projectId, record);
+  const location = placement.resourceLocation(record);
   if (!location) return null;
   const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
   if (!scope) return null;
-  const projected = accessibleResourceCatalogView(projectId, scope, record);
-  const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
-    record.resource.identity.documentId,
-  );
+  const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
+  const file = projectCatalogView(projectId, location.scheme, projected, placement, [
+    record,
+  ]).findDocument(record.resource.identity.documentId);
   const entry = projected.entries.get(record.resource.identity.documentId);
   if (!file || entry?.kind !== "file") return null;
   return {
@@ -309,7 +315,11 @@ export class ProjectDocumentNavigationAdapter {
       if (local.kind === "opened") {
         const prepared = local.handle;
         try {
-          const resolved = localFileForRecord(projectId, local.record);
+          const placement = resourcePlacementForSnapshot(
+            projectId,
+            await this.dependencies.resources!.readProjection(projectId),
+          );
+          const resolved = localFileForRecord(projectId, local.record, placement);
           if (!resolved) return { kind: "unavailable", reason: "deleted" };
           if (!isCurrent()) return { kind: "cancelled" };
           const committed = await this.commitFile({
@@ -359,7 +369,10 @@ export class ProjectDocumentNavigationAdapter {
       if (
         local.kind === "unavailable" &&
         (local.record.resource.lifecycle.kind !== "acknowledged" ||
-          !projectResourceLocation(projectId, local.record))
+          !resourcePlacementForSnapshot(
+            projectId,
+            await this.dependencies.resources!.readProjection(projectId),
+          ).resourceLocation(local.record))
       )
         return {
           kind: "unavailable",

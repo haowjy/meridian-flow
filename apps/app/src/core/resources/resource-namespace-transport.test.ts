@@ -24,6 +24,7 @@ const request: NamespaceRequest = {
   },
 };
 const receipt: ContextOperationReceipt = {
+  observationVersion: "1",
   operationId: "operation",
   command: {
     kind: "delete",

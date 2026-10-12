@@ -1,7 +1,11 @@
 /** Writer-facing location of an open tab, shared by the identity bar's surfaces. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { type ResourceOwner, resourceWorkAuthorityFor } from "@meridian/resource-replica";
+import {
+  type ParentRef,
+  type ResourceOwner,
+  resourceWorkAuthorityFor,
+} from "@meridian/resource-replica";
 
 import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
@@ -20,6 +24,7 @@ export type TabLocation = {
 } & TabOwner;
 
 export type IdentityDestination = {
+  parent?: ParentRef;
   scheme: ProjectContextTreeScheme;
   /** Tree-style parent folder path: `/`, `/Act 2`. */
   folderPath: string;
@@ -34,17 +39,27 @@ export type DesiredIdentity = {
 export function identityDestination(
   location: TabLocation,
   editorWorkId: string | null,
-  choice?: Pick<IdentityDestination, "scheme" | "folderPath">,
+  choice?: Pick<IdentityDestination, "scheme" | "folderPath" | "parent">,
 ): IdentityDestination {
   const scheme = choice?.scheme ?? location.scheme;
   const folderPath = choice?.folderPath ?? location.parentPath;
   // A chat's Scratch stays in its lineage; nothing else becomes a lineage's.
   if (scheme === location.scheme && location.rootThreadId !== undefined)
-    return { scheme, folderPath, ...replaceOwner(location) };
+    return {
+      scheme,
+      folderPath,
+      ...(choice?.parent ? { parent: choice.parent } : {}),
+      ...replaceOwner(location),
+    };
   const workId = isWorkScopedProjectContextScheme(scheme)
     ? ((scheme === location.scheme ? location.workId : undefined) ?? editorWorkId ?? undefined)
     : undefined;
-  return { scheme, folderPath, ...replaceOwner({ workId }) };
+  return {
+    scheme,
+    folderPath,
+    ...(choice?.parent ? { parent: choice.parent } : {}),
+    ...replaceOwner({ workId }),
+  };
 }
 
 /**

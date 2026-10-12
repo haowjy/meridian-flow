@@ -23,6 +23,7 @@ vi.mock("@/client/query/useWorks", () => ({
 vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => ({
     keyForDocument: async () => "key",
+    parentForEntry: async () => ({ kind: "folder", folderId: "Book" }),
     setLocation: mocks.setLocation,
     setFolderLocation: mocks.setFolderLocation,
   }),
@@ -52,7 +53,6 @@ async function rename({
       entryId: "entry",
       owner: { workId: NO_WORK },
       scheme: "manuscript",
-      path: `/Book/${currentName}`,
       currentName,
       siblings: [
         { entryId: "entry", name: currentName, kind: kind === "folder" ? "dir" : "file" },
@@ -100,7 +100,6 @@ describe("useRenameEntryForm", () => {
         entryId: "entry",
         owner: { workId: NO_WORK },
         scheme: "manuscript",
-        path: "/Chapter 13",
         currentName: "Chapter 13",
         siblings: [],
         kind: "file",
@@ -127,7 +126,10 @@ describe("useRenameEntryForm", () => {
     expect(mocks.setLocation).toHaveBeenCalledWith(
       "project",
       "key",
-      expect.objectContaining({ name: "Chapter 14.md", folderPath: "/Book" }),
+      expect.objectContaining({
+        name: "Chapter 14.md",
+        parent: { kind: "folder", folderId: "Book" },
+      }),
     );
     expect(onRenamed).toHaveBeenCalledWith("op-1");
   });
