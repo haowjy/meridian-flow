@@ -6,6 +6,21 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView, ParentRef, ResourceDestination } from "@meridian/resource-replica";
 
+/** How an import touches a row: drawn by the importing tab, still arriving, or failed. */
+export type ImportRowInfo = {
+  /** Not a catalog entry yet; the importing tab draws it from its selection. */
+  client?: true;
+  /** Text (or the file) has not landed yet. */
+  arriving?: true;
+  failure?: {
+    importId: string;
+    entryId: number;
+    reason: string | null;
+    /** This tab still holds the file, so Retry can send it. */
+    canRetry: boolean;
+  };
+};
+
 type CatalogFileBase = {
   kind: "file";
   entryId: string;
@@ -18,6 +33,9 @@ type CatalogFileBase = {
   provisionalName: boolean;
   /** The document has imported properties to show; they load by document id. */
   hasProperties: boolean;
+  /** The document is an import placeholder whose text has not landed yet. */
+  importPending?: boolean;
+  import?: ImportRowInfo;
   /** Present only for a locally owned resource not yet represented by server authority. */
   resourceHandle?: string;
   resourceState?: "local" | "acknowledged";
@@ -56,6 +74,7 @@ export type CatalogDirectory = {
   name: string;
   path: string;
   uri: string;
+  import?: ImportRowInfo;
   /** A refused rename or move put this folder back; the writer retries from here. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;

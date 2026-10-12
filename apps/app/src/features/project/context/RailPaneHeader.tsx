@@ -4,6 +4,7 @@ import type React from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import { contextTreeDropTargetClassName } from "./context-row-geometry";
 
 export function RailPaneHeader({
   label,
@@ -13,6 +14,9 @@ export function RailPaneHeader({
   expanded,
   onExpandedChange,
   actions,
+  dropProps,
+  dropState = "idle",
+  dropLabel,
 }: {
   /** Header text, rendered in UPPERCASE at the tree rows' `text-sm` scale. */
   label: string;
@@ -27,10 +31,22 @@ export function RailPaneHeader({
   onExpandedChange: (expanded: boolean) => void;
   /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
   actions?: React.ReactNode;
+  /** Drop handlers when the header is a drop target (the tree's areas). */
+  dropProps?: React.HTMLAttributes<HTMLElement>;
+  /** `over` lights the header as the target of the drag in progress. */
+  dropState?: "idle" | "over";
+  /** What dropping here will do, said at the header's right edge while it is lit. */
+  dropLabel?: React.ReactNode;
 }) {
   return (
     /* This row stays on the rail material at rest and only lifts on hover. */
-    <div className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50">
+    <div
+      {...dropProps}
+      className={cn(
+        "group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50",
+        dropState === "over" && contextTreeDropTargetClassName,
+      )}
+    >
       <button
         type="button"
         aria-expanded={expanded}
@@ -65,7 +81,10 @@ export function RailPaneHeader({
           ellipsize, actions hold the right edge) so it needs no background
           mask over the translucent tint; invisible at rest, revealed on
           header hover / focus-within. */}
-      {expanded && actions ? (
+      {dropState === "over" && dropLabel ? (
+        <span className="mr-2 shrink-0 text-caption text-ink-muted">{dropLabel}</span>
+      ) : null}
+      {expanded && actions && dropState !== "over" ? (
         <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {actions}
         </span>

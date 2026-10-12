@@ -13,14 +13,20 @@ import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
-export type EntryCapabilities = readonly Exclude<EntryAction, "new-file" | "new-folder">[];
+export type EntryCapabilities = readonly Exclude<
+  EntryAction,
+  "new-file" | "new-folder" | "import" | "retry-import"
+>[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
 
 export function entryActions(
   capabilities: EntryCapabilities,
   create?: EntryCreation,
+  importHere?: () => void,
 ): readonly EntryAction[] {
-  return create ? ["new-file", "new-folder", ...capabilities] : capabilities;
+  return create
+    ? ["new-file", "new-folder", ...(importHere ? (["import"] as const) : []), ...capabilities]
+    : capabilities;
 }
 
 export function useEntryInteraction({
@@ -34,6 +40,8 @@ export function useEntryInteraction({
   siblings,
   requestRename,
   onRenameDone,
+  importHere,
+  retryImport,
 }: {
   projectId: string;
   node: CatalogNode;
@@ -46,6 +54,10 @@ export function useEntryInteraction({
   /** Creation may ask an arriving row to open its naming field. */
   requestRename?: boolean;
   onRenameDone?: () => void;
+  /** Opens the import dialog for this folder; only folders offer it. */
+  importHere?: () => void;
+  /** Sends a file whose import failed again; a failed file's menu leads with it. */
+  retryImport?: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -63,13 +75,20 @@ export function useEntryInteraction({
     if (!rootThreadRef) throw new Error("Scratch lineage entry requires its URI authority");
     resolvedOwner = { rootThreadId: owner.rootThreadId, rootThreadRef };
   }
-  const actions =
-    node.kind === "dir" && node.navigationOnly ? [] : entryActions(capabilities, create);
+  const actions: readonly EntryAction[] =
+    node.kind === "dir" && node.navigationOnly
+      ? []
+      : [
+          ...(retryImport ? (["retry-import"] as const) : []),
+          ...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined),
+        ];
   useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
     else if (action === "move") setMoving(true);
+    else if (action === "import") importHere?.();
+    else if (action === "retry-import") retryImport?.();
     else if (action === "new-file" || action === "new-folder")
       create?.(
         action === "new-file" ? "file" : "folder",

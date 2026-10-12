@@ -146,7 +146,7 @@ export class ImportStore {
     [...this.watchers.values()].some((kind) => kind === "report" || kind === "notice");
 
   /** One read: the whole report the first time, then only what changed. */
-  async refresh(): Promise<void> {
+  async refresh(forceFull = false): Promise<void> {
     if (this.polling || this.disposed) return;
     this.polling = true;
     try {
@@ -155,7 +155,7 @@ export class ImportStore {
         this.mergeChanges(
           await this.api.changes(this.projectId, this.importId, report.summary.version),
         );
-      } else if (this.wantsEntries() || this.state.local) {
+      } else if (forceFull || this.wantsEntries() || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));
         this.installReport(await this.api.report(this.projectId, this.importId));
       }

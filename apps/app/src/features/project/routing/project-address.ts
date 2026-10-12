@@ -23,7 +23,9 @@ export type ProjectDestination =
   | { kind: "chat"; chatId: string }
   | { kind: "work"; workId: ParsedRequestId }
   | { kind: "browse"; scheme: ProjectContextTreeScheme | null; path: string }
-  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string };
+  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string }
+  /** The report of one import, shown in the Editor pane. */
+  | { kind: "import"; importId: string };
 
 export type ProjectAddress = {
   projectId: string;
@@ -124,6 +126,10 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   }
   if (screen !== "editor") return null;
   if (rest.length === 0) return { kind: "editor" };
+  if (rest[0] === "imports") {
+    const importId = rest.length === 2 ? uuid(rest[1]) : null;
+    return importId ? { kind: "import", importId } : null;
+  }
   const browse = rest[0] === "browse";
   const [scheme, ...segments] = browse ? rest.slice(1) : rest;
   if (browse && scheme === undefined) return { kind: "browse", scheme: null, path: "" };
@@ -165,7 +171,8 @@ export function parseProjectAddress(
   const editor =
     destination.kind === "document" ||
     destination.kind === "browse" ||
-    destination.kind === "editor";
+    destination.kind === "editor" ||
+    destination.kind === "import";
   const work = editor ? selection(query.get("work")) : ABSENT;
   const chatParam = query.get("chat");
   const lineage = lineageIsIdentity(destination)
@@ -261,6 +268,9 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "works-new":
       push("works", "new");
       break;
+    case "import":
+      push("editor", "imports", d.importId);
+      break;
     case "browse":
     case "document":
       push("editor");
@@ -270,7 +280,8 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
   }
   const query = new URLSearchParams();
-  const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
+  const context =
+    d.kind === "editor" || d.kind === "document" || d.kind === "browse" || d.kind === "import";
   if (context) writeWork(query, address);
   if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
@@ -289,7 +300,10 @@ export function projectAddressState(
   const destination = address.destination.kind;
   // Non-Editor destinations do not read an Editor Work selection back from history.
   const noWork =
-    (destination === "editor" || destination === "document" || destination === "browse") &&
+    (destination === "editor" ||
+      destination === "document" ||
+      destination === "browse" ||
+      destination === "import") &&
     address.work.kind === "none" &&
     !queryStatesNoWork(address);
   return {

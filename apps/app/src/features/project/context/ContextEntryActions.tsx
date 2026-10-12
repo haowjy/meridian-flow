@@ -2,7 +2,16 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
-import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import {
+  FilePlus,
+  FolderInput,
+  FolderOutput,
+  FolderPlus,
+  type LucideIcon,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
@@ -31,7 +40,14 @@ import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "new-file" | "new-folder" | "rename" | "move" | "delete";
+export type EntryAction =
+  | "retry-import"
+  | "new-file"
+  | "new-folder"
+  | "import"
+  | "rename"
+  | "move"
+  | "delete";
 
 type EntryActionSpec = {
   action: EntryAction;
@@ -42,10 +58,12 @@ type EntryActionSpec = {
 };
 
 const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
+  { action: "retry-import", label: <Trans>Retry import</Trans>, icon: RotateCcw, group: "create" },
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
+  { action: "import", label: <Trans>Import…</Trans>, icon: FolderInput, group: "create" },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
-  { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
+  { action: "move", label: <Trans>Move…</Trans>, icon: FolderOutput, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,

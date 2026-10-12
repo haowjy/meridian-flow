@@ -126,7 +126,7 @@ describe("ImportCoordinator.stop", () => {
     const importId = coordinator.start(vault(), destination);
     const store = await settled(coordinator, importId);
     const finish = server.api.finish;
-    server.api.finish = async (...args) => {
+    server.api.finish = async () => {
       throw new ImportRequestError(0, null, undefined, "offline");
     };
     expect(await coordinator.stop(importId)).toBe("failed");
