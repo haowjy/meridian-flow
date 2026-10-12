@@ -24,8 +24,9 @@ import {
 } from "./components.js";
 import { HARD_BREAK_TAG } from "./markdown/blocks/hard-break.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
+import { sourceRange } from "./presentation-source-map.js";
 import { getRuntime } from "./runtime.js";
-import type { ParseContext, SerializeContext } from "./types.js";
+import type { ParseContext, SerializeContext, SourceRange } from "./types.js";
 
 export type {
   JsonValue,
@@ -223,13 +224,22 @@ export function parseInlineChildren(
   children: readonly MdastInline[],
   ctx: ParseContext,
   activeMarks: readonly Mark[] = [],
+  linkSource: SourceRange | null = null,
 ): PMNode[] {
   const out: PMNode[] = [];
   for (const child of children) {
     switch (child.type) {
       case "text": {
         const value = typeof child.value === "string" ? child.value : "";
-        if (value.length > 0) out.push(ctx.schema.text(value, activeMarks));
+        if (value.length > 0) {
+          const node = ctx.schema.text(value, activeMarks);
+          out.push(node);
+          getRuntime(ctx).inlineOrigins?.push({
+            node,
+            source: sourceRange(child),
+            link: linkSource,
+          });
+        }
         break;
       }
       case "break":
@@ -252,9 +262,20 @@ export function parseInlineChildren(
         if (marked) {
           const value = inlineCodeValue(child);
           if (value !== null) {
-            if (value.length > 0) out.push(ctx.schema.text(value, marked));
+            if (value.length > 0) {
+              const node = ctx.schema.text(value, marked);
+              out.push(node);
+              getRuntime(ctx).inlineOrigins?.push({ node, source: null, link: linkSource });
+            }
           } else {
-            out.push(...parseInlineChildren(inlineChildrenOf(child), ctx, marked));
+            out.push(
+              ...parseInlineChildren(
+                inlineChildrenOf(child),
+                ctx,
+                marked,
+                child.type === "link" ? sourceRange(child) : linkSource,
+              ),
+            );
           }
           break;
         }

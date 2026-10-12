@@ -34,8 +34,11 @@ export type {
   OccurrenceSpan,
   ParseContext,
   ParsedContent,
+  ParsedContentWithSourceMap,
   ParsedContentWithSpans,
   PMNode,
+  PresentationSourceRun,
   SerializeContext,
+  SourceRange,
   SpelledHref,
 } from "./types.js";
