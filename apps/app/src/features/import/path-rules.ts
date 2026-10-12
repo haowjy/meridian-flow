@@ -32,3 +32,14 @@ export function isImportableName(name: string): boolean {
 export function isImportablePath(path: string): boolean {
   return path === "" || path.split("/").every(isImportableName);
 }
+
+/**
+ * Whether the server will skip a file under these rules (hidden files and
+ * folders, Obsidian's trash, canvases and bases). The tree draws no row for
+ * one, so the rows match what will arrive; the report still lists them.
+ */
+export function isSkippedPath(path: string): boolean {
+  return (
+    path.split("/").some((segment) => segment.startsWith(".")) || /\.(canvas|base)$/i.test(path)
+  );
+}

@@ -302,10 +302,6 @@ function SchemeSection({
     }),
     [openImport],
   );
-  const rootTarget = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
-  const rootDrop = useTreeDropTarget(rootTarget, {
-    onSpring: () => !expanded && setExpanded(true),
-  });
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
@@ -369,39 +365,19 @@ function SchemeSection({
   };
 
   const header = (
-    <RailPaneHeader
-      label={schemeLabel(scheme)}
-      icon={schemeIcon(scheme)}
+    <AreaHeader
+      scheme={scheme}
       expanded={expanded}
       onExpandedChange={handleExpandedChange}
-      dropProps={rootDrop.dropProps}
-      dropState={rootDrop.dropState}
-      dropLabel={<Trans>Import here</Trans>}
-      actions={
-        schemeAllowsCreation(scheme) ? (
-          <>
-            <PaneHeaderActionButton
-              icon={FilePlus}
-              label={t`New file`}
-              onClick={() => requestCreate("file", "")}
-            />
-            <PaneHeaderActionButton
-              icon={FolderPlus}
-              label={t`New folder`}
-              onClick={() => requestCreate("folder", "")}
-            />
-            {importable ? (
-              <PaneHeaderActionButton
-                icon={FolderInput}
-                label={t`Import…`}
-                onClick={() => {
-                  const destination = importDestination({ scheme, folder: null });
-                  if (destination) openImport?.(destination);
-                }}
-              />
-            ) : null}
-          </>
-        ) : undefined
+      onOpenExpanded={() => setExpanded(true)}
+      onRequestCreate={requestCreate}
+      onImport={
+        importable
+          ? () => {
+              const destination = importDestination({ scheme, folder: null });
+              if (destination) openImport?.(destination);
+            }
+          : undefined
       }
     />
   );
@@ -437,6 +413,58 @@ function SchemeSection({
         />
       </section>
     </TreeDropScope>
+  );
+}
+
+/** An area's header: its actions, and the area root as a drop target (it lives inside the drop scope). */
+function AreaHeader({
+  scheme,
+  expanded,
+  onExpandedChange,
+  onOpenExpanded,
+  onRequestCreate,
+  onImport,
+}: {
+  scheme: ProjectContextTreeScheme;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onOpenExpanded: () => void;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
+  /** Present where the area takes imports. */
+  onImport?: () => void;
+}) {
+  const rootTarget = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
+  // Hovering a collapsed area during a drag opens it.
+  const drop = useTreeDropTarget(rootTarget, { onSpring: () => !expanded && onOpenExpanded() });
+  return (
+    <RailPaneHeader
+      label={schemeLabel(scheme)}
+      icon={schemeIcon(scheme)}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
+      dropProps={drop.dropProps}
+      dropState={drop.dropState}
+      dropLabel={<Trans>Import here</Trans>}
+      actions={
+        schemeAllowsCreation(scheme) ? (
+          <>
+            <PaneHeaderActionButton
+              icon={FilePlus}
+              label={t`New file`}
+              onClick={() => onRequestCreate("file", "")}
+            />
+            <PaneHeaderActionButton
+              icon={FolderPlus}
+              label={t`New folder`}
+              onClick={() => onRequestCreate("folder", "")}
+            />
+            {onImport ? (
+              <PaneHeaderActionButton icon={FolderInput} label={t`Import…`} onClick={onImport} />
+            ) : null}
+          </>
+        ) : undefined
+      }
+    />
   );
 }
 

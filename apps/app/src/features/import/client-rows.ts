@@ -7,6 +7,7 @@
 import { type ImportDestination, type ImportScheme, joinCatalogPath } from "./destination";
 import { filenameForDisplay } from "./display-name";
 import { type ExportMarker, readExportMarker } from "./export-marker";
+import { isSkippedPath } from "./path-rules";
 import type { Selection } from "./selection";
 
 export type ClientRow = {
@@ -42,7 +43,7 @@ export function clientRowsFor(
   for (const root of selection.roots) {
     if (root.kind === "file") {
       const file = root.files[0];
-      if (!file) continue;
+      if (!file || isSkippedPath(file.path || root.name)) continue;
       rows.push({
         key: `${root.rootId}:`,
         kind: "file",
@@ -84,8 +85,9 @@ export function clientRowsFor(
         rootId: root.rootId,
         relPath: "",
       });
-    const folders = new Set(root.folders);
-    for (const file of root.files) {
+    const folders = new Set(root.folders.filter((folder) => !isSkippedPath(folder)));
+    const drawn = root.files.filter((file) => !isSkippedPath(file.path));
+    for (const file of drawn) {
       const parts = file.path.split("/");
       for (let depth = 1; depth < parts.length; depth += 1)
         folders.add(parts.slice(0, depth).join("/"));
@@ -104,7 +106,7 @@ export function clientRowsFor(
         relPath: folder,
       });
     }
-    for (const file of root.files) {
+    for (const file of drawn) {
       const placed = place(file.path);
       if (!placed) continue;
       rows.push({

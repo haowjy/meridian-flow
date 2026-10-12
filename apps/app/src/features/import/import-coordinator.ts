@@ -144,7 +144,7 @@ export class ImportCoordinator {
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
         rows,
-        total: next,
+        total: rows.filter((row) => row.kind === "file").length,
         held: null,
         manifest: null,
         failures: new Map(),

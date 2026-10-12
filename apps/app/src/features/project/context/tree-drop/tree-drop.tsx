@@ -122,6 +122,8 @@ export function useTreeDropTarget(
         if (!accepted(event)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
+        // A drag that began inside this target never fires `dragenter` here.
+        latest.current.scope?.setOver(key);
       },
       onDragLeave(event) {
         if (!accepted(event)) return;
