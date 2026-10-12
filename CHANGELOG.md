@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-- Discard successive draft changes without replay errors, preserve restored-text attribution, and reject overlapping restoration copies.
+- Discard a draft change without resurrecting earlier changes. Independent AI edits still save across the draft handoff; edits to discarded text do not land and tell the model to re-read.
+- Reject overlapping restoration copies in forward inverse admission.
 
 - Recover unrelated typing after a draft generation retires, release unanchorable carries, and report lost typing on its document.
 

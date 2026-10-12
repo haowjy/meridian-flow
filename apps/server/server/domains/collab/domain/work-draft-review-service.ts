@@ -482,7 +482,7 @@ export function createWorkDraftReviewService(input: {
       if (!command.liveRevisionToken || !command.draftRevisionToken)
         return { status: "stale" as const, draftId: command.draftId };
       try {
-        await input.branchReview.discardSelected({
+        const discarded = await input.branchReview.discardSelected({
           branchId: branch.branchId,
           selectRows: reviewSelection({ ...command, operationIds: command.operationIds }, false),
           reviewedByUserId: command.userId,
@@ -490,7 +490,10 @@ export function createWorkDraftReviewService(input: {
         return {
           status: "discarded" as const,
           draftId: command.draftId,
-          ...(await completeDisposition(command)),
+          draftClosed: discarded.status === "discarded" && discarded.draftClosed === true,
+          ...(discarded.status === "discarded" && discarded.draftDisposition
+            ? { draftDisposition: discarded.draftDisposition }
+            : {}),
         };
       } catch (cause) {
         if (cause instanceof DraftChangeRefusal)

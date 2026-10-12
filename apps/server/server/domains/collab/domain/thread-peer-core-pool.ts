@@ -355,9 +355,6 @@ export function createThreadPeerCorePool(input: {
     context: WriteContext,
   ): Promise<WriteContext> {
     if (!documentId || !context.threadId || core === input.liveUtilityCore) return context;
-    if (context.responseId && core.hasResponseDocument(context.responseId, documentId)) {
-      return context;
-    }
     const pulled = await input.pullThreadPeer({
       documentId,
       threadId: context.threadId as ThreadId,
@@ -365,8 +362,9 @@ export function createThreadPeerCorePool(input: {
     if (!pulled) return context;
     // Fresh calls rebuild the runtime from the pulled peer. A previous reply's
     // runtime may contain effects retired by review; Yjs merge cannot erase them.
-    // Calls with an already-staged response document returned above keep their edits.
-    await core.invalidateThread(documentId, context.threadId);
+    // The response committer rebuilds buffered helpers and replays only surviving edits.
+    if (!context.responseId || !core.hasResponseDocument(context.responseId, documentId))
+      await core.invalidateThread(documentId, context.threadId);
     return {
       ...context,
       interactionContext: {

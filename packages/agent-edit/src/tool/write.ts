@@ -197,7 +197,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     let result: InternalWriteResult;
+    let dropped: string[] = [];
     try {
+      if (context.responseId) dropped = await responseCommitter.refreshResponse(context.responseId);
       result = await run(validCommand, session);
     } catch (cause) {
       try {
@@ -216,6 +218,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
       result = writeError(cause);
     }
+    if (dropped.length)
+      result = {
+        ...result,
+        model: {
+          ...result.model,
+          message: [
+            result.model?.message,
+            ...dropped.map(
+              (id) => `${id} was discarded with the text it edited; re-read and retry`,
+            ),
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      };
     const outcome = toOutcome(commandName, result, validCommand.file);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);

@@ -145,7 +145,6 @@ export {
   admitInverseReceipt,
   captureEditFrontier,
   captureEditParts,
-  captureServerRestoration,
   classifyEditParts,
   computeInverse,
 } from "./undo/forward-inverse.js";
@@ -155,6 +154,7 @@ export {
   deleteRanges,
   dependsOnRows,
   hasDependentLaterRows,
+  laterDependencyClosure,
   rangeCovers,
   rangesOverlap,
   structDependencies,

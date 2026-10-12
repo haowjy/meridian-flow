@@ -20,6 +20,24 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  * Mutations through other transports require the host's separate concurrency fence.
  */
 export interface DocumentCoordinator {
+  /** Rebuild/replay staged writes under the host's existing generation lock.
+   * The host admits only whole logical writes and returns dropped settlement IDs.
+   * commit=true journals survivors in the ambient response transaction.
+   */
+  withStagedWrites?<T>(
+    input: {
+      docId: string;
+      sourceDoc: Y.Doc;
+      entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+      commit: boolean;
+    },
+    run: (
+      doc: Y.Doc,
+      keptSettlementIds: ReadonlySet<string>,
+      beforeState: Uint8Array,
+    ) => Promise<T>,
+  ): Promise<T>;
+
   /** Immutable host generation bound to this canonical document, when supported. */
   documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
@@ -47,6 +65,7 @@ export interface DocumentCoordinator {
     afterJournalId?: number;
     liveJournalSeq?: number;
     attemptId?: string;
+    reportingCut?: Uint8Array;
   }): Promise<ConcurrentUpdate[]>;
 
   /**

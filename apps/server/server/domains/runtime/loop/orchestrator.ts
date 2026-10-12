@@ -1107,6 +1107,8 @@ async function persistUncommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   text: string;
+  /** Already-rendered per-write failure from the save boundary. */
+  message?: string;
   status?: "internal_error" | "invalid_write";
   /** A file-policy refusal at the save: `permission_denied` with this reason. */
   reason?: PermissionDeniedReason;
@@ -1114,7 +1116,7 @@ async function persistUncommittedWriteResult(input: {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
   const staged = stagedWriteResult(input.block);
-  const message = ["Write did not land.", input.text].join("\n\n");
+  const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
@@ -1461,6 +1463,15 @@ function createResponseScope(input: {
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
       ) => {
+        if (receipt.result.status !== "success")
+          return persistUncommittedWriteResult({
+            deps,
+            threadId,
+            block: write.block,
+            status: "invalid_write",
+            text: "the user discarded the text it edited. Re-read and retry.",
+            message: receipt.result.message,
+          });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);
         return persistCommittedWriteResult({

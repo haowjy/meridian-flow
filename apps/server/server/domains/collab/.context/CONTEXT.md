@@ -424,11 +424,21 @@ revision fence. Callers destroy the returned document; no encoded snapshot
 round trip is needed. Draft lists bulk-resolve document paths with one document
 query and one shared folder graph, and expose persisted branch update times.
 
-### Selective Discard reconstruction
+### Selective Discard and response replay
 
-Selection reads only active and rollback-pending rows. The reversal peer replays
-all retained rows in the current generation, including discarded suppliers,
-because an active Discard restoration delta can depend on their inserted clocks.
-Reconstruction history never grants selection eligibility. Server-owned Discard
-aliases use the existing journal metadata range contract (length on both source
-and target); the immutable inverse receipt retains its compact len format.
+Per-change Discard re-forks the next generation from live plus surviving rows,
+re-journaled with identical bytes and immutable edit/part metadata. It journals
+no restoration and creates no copy. Selective Apply publishes only its class's
+rows. The re-fork owns the generation change; an empty selective Discard does
+not invoke another empty settlement. Existing generation/handoff and unsent
+writer carry recovery own the editor transition.
+
+Responses replay staged segment rows onto the current generation under the
+existing branch lock, then check integration and the generation residual.
+Only retired-row structs and deletions may remain in the old helper. A write
+that cannot integrate, and its later dependent logical writes, are dropped
+atomically per write; independent writes commit. The helper is replaced with
+the current generation plus surviving stages before subsequent tool resolution.
+Dropped handles are named in the next tool result; their save receipts use the
+existing per-result failure path. Whole Discard still rolls back the response.
+No settlement deferral or second retirement state machine exists.

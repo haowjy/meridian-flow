@@ -63,6 +63,15 @@ through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
 
+Movable-generation hosts implement `withStagedWrites`: checked whole-write replay
+and publication under their existing authority lock, returning accepted settlement
+identities and the before cut. The response helper is replaced from that cut plus
+surviving staged writes before the next command. A discarded write and its later
+dependents receive failed per-write receipts; independent writes still commit.
+Terminal concurrency reporting uses the frozen pre-publication cut, so the
+response's own newly journaled rows are not mistaken for concurrent writer text.
+The ordinary live-document path and durable recovery remain unchanged.
+
 ### UndoNotificationPort (`src/tool/write-reversal.ts`)
 Optional host callback for reversal delivery. Agent-edit passes
 `threadId`, `docId`, a representative `turnId`, write handles, direction, and

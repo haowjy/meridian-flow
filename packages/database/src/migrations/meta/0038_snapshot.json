@@ -1,5 +1,5 @@
 {
-  "id": "cbf57ff1-bb8b-410b-b746-3aa1b6dbb7d8",
+  "id": "2debb80b-5666-48ad-af44-f84fcca3aedd",
   "prevId": "b7615a07-e9e1-4e1c-a38a-a680ec114faf",
   "version": "7",
   "dialect": "postgresql",
@@ -6660,7 +6660,7 @@
         },
         "document_edits_kind_valid": {
           "name": "document_edits_kind_valid",
-          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert','rollback','discard')"
+          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert','rollback')"
         }
       },
       "isRLSEnabled": false

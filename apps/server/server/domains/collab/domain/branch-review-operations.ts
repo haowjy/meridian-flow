@@ -1,8 +1,7 @@
 /** Standalone selective discard and turn-level undo/redo service for work-draft review. */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
-import { type CapturedPart, captureServerRestoration } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
@@ -20,12 +19,13 @@ import {
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
 import { createBranchTurnReversalPlanner } from "./branch-turn-reversal-plan.js";
+import { documentEffectsEqual } from "./document-effect.js";
 
 type Dependencies = {
   branchStore: BranchStore;
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
-  branchCoordinator?: Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
+  branchCoordinator?: Partial<Pick<BranchCoordinator, "broadcastUpdate" | "notifyReset">>;
   deferUntilCommit?(operation: () => void | Promise<void>): boolean;
   journal: UpdateJournal;
   criticalSections?: BranchCriticalSections;
@@ -52,12 +52,6 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     const doc = createCollabYDoc({ gc: false });
     if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
-  }
-
-  function materializeBranch(branch: BranchSnapshot): Y.Doc {
-    const doc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(doc, branch.state);
     return doc;
   }
 
@@ -93,10 +87,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
 
   async function discardSelected(
     discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
-  ): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
-    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  > {
+  ): ReturnType<BranchReviewService["discardSelected"]> {
     return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const selection = await discardInput.selectRows(branch, reviewableRows);
@@ -110,50 +101,54 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           journalIds: [...selected].sort((a, b) => a - b),
         };
       }
-      // Selectable rows exclude discarded effects; reconstruction still needs
-      // their clocks to integrate the active restoration deltas that consumed them.
       const history = await deps.journalReadStore.listJournalRowsForBranch({
         branchId: branch.branchId,
         generation: branch.generation,
       });
-      const liveDoc = await loadLiveDoc(branch.documentId);
-      const restorations: { receipt: CapturedPart; rows: BranchJournalRow[] }[] = [];
-      const peer = buildReversalPeer({
-        liveDoc,
-        rows: history,
-        selectedIds: selected,
-        capture: (receipt, rows) => {
-          restorations.push({ receipt, rows });
-        },
-      });
-      const branchDoc = materializeBranch(branch);
+      const survivors = history.filter(
+        (row) => row.status !== "discarded" && !selected.has(row.id),
+      );
+      const peer = await loadLiveDoc(branch.documentId);
+      const live = new Y.Doc({ gc: false });
+      Y.applyUpdate(live, Y.encodeStateAsUpdate(peer));
       try {
-        syncPeer(peer, branchDoc);
-        const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
-        const state = Y.encodeStateAsUpdate(branchDoc);
-        const stateVector = Y.encodeStateVector(branchDoc);
+        for (const row of survivors) Y.applyUpdate(peer, row.updateData);
+        assertNoPendingIntegration(
+          peer,
+          "selective_discard_refork",
+          survivors.map((row) => row.id),
+        );
+        const draftClosed = documentEffectsEqual(live, peer);
         await deps.commitStore.commitDiscard({
           branch,
           journalRows: rows,
+          survivors,
+          retireSurvivors: draftClosed,
           expectedLiveRevision: selection.expectedLiveRevision,
-          restorations,
-          state,
-          stateVector,
+          state: Y.encodeStateAsUpdate(draftClosed ? live : peer),
+          stateVector: Y.encodeStateVector(draftClosed ? live : peer),
           reviewedByUserId: discardInput.reviewedByUserId,
         });
-        broadcastAfterCommit({
+        deps.branchCoordinator?.notifyReset?.({
           branchId: branch.branchId,
-          update: reversalUpdate,
+          generation: branch.generation + 1,
         });
         return {
           status: "discarded",
           branchId: branch.branchId,
           journalIds: [...selected].sort((a, b) => a - b),
+          draftClosed,
+          ...(draftClosed
+            ? {
+                draftDisposition: history.some((row) => row.status === "pushed")
+                  ? ("applied" as const)
+                  : ("discarded" as const),
+              }
+            : {}),
         };
       } finally {
-        liveDoc.destroy();
+        live.destroy();
         peer.destroy();
-        branchDoc.destroy();
       }
     });
   }
@@ -263,63 +258,4 @@ function assertActiveWorkDraftBranch(
     throw new Error(`Branch ${branchId} is not an active work draft`);
   }
   return branch;
-}
-
-function buildReversalPeer(input: {
-  liveDoc: Y.Doc;
-  rows: BranchJournalRow[];
-  selectedIds: ReadonlySet<number>;
-  capture?: (receipt: CapturedPart, rows: BranchJournalRow[]) => void;
-}): Y.Doc {
-  const peer = createCollabYDoc({ gc: false });
-  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
-  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const targetOrigin = Symbol("discard-target");
-  const otherOrigin = Symbol("discard-survivor");
-  const undoManager = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([targetOrigin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-  });
-  undoManager.stopCapturing();
-  const stackRows = new Map<unknown, BranchJournalRow[]>();
-  let previousTarget: string | undefined;
-  for (const row of input.rows) {
-    if (input.selectedIds.has(row.id)) {
-      const meta = row.updateMeta as { documentEdit?: { editId: string } } | undefined;
-      const target = meta?.documentEdit?.editId ?? `${row.threadId}:${row.wId ?? row.id}`;
-      if (target !== previousTarget) undoManager.stopCapturing();
-      previousTarget = target;
-      Y.applyUpdate(peer, row.updateData, targetOrigin);
-      const stack = undoManager.undoStack.at(-1);
-      if (stack) stackRows.set(stack, [...(stackRows.get(stack) ?? []), row]);
-    } else Y.applyUpdate(peer, row.updateData, otherOrigin);
-  }
-  assertNoPendingIntegration(
-    peer,
-    "selective_discard_peer",
-    input.rows.map((row) => row.id),
-  );
-  undoManager.stopCapturing();
-  while (undoManager.undoStack.length > 0) {
-    const rows = stackRows.get(undoManager.undoStack.at(-1));
-    const fresh = createCollabYDoc({ gc: false });
-    peer.clientID = fresh.clientID;
-    fresh.destroy();
-    const receipt = captureServerRestoration(peer, () => undoManager.undo());
-    undoManager.stopCapturing();
-    if (receipt && rows) input.capture?.(receipt, rows);
-  }
-  undoManager.destroy();
-  assertNoPendingIntegration(
-    peer,
-    "selective_discard_peer_after_undo",
-    input.rows.map((row) => row.id),
-  );
-  return peer;
-}
-
-function syncPeer(from: Y.Doc, to: Y.Doc): Uint8Array {
-  const update = Y.encodeStateAsUpdate(from, Y.encodeStateVector(to));
-  Y.applyUpdate(to, update);
-  return update;
 }

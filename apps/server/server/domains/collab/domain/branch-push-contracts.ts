@@ -171,10 +171,9 @@ export type TrailContributionReplacement = {
 export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
 
 export type PreparedDiscardCommit = {
-  restorations?: {
-    receipt: import("@meridian/agent-edit/integration").CapturedPart;
-    rows: BranchJournalRow[];
-  }[];
+  /** Present only for per-change Discard: identical survivor deltas in the next generation. */
+  survivors?: BranchJournalRow[];
+  retireSurvivors?: boolean;
   expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
@@ -313,7 +312,13 @@ export type BranchReviewService = {
     selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
   }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | {
+        status: "discarded";
+        branchId: string;
+        journalIds: number[];
+        draftClosed?: boolean;
+        draftDisposition?: "applied" | "discarded";
+      }
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
   >;
   /** Reverses one turn on each branch; a branch whose Work is archived is refused. */
@@ -329,7 +334,13 @@ export type BranchReviewService = {
     threadId: ThreadId;
     turnId: TurnId;
   }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | {
+        status: "discarded";
+        branchId: string;
+        journalIds: number[];
+        draftClosed?: boolean;
+        draftDisposition?: "applied" | "discarded";
+      }
     | { status: "rollback_pending"; rowsMarked: number }
   >;
 };

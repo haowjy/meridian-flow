@@ -27,10 +27,7 @@ function fixture() {
   return { service, discard, maintenanceFailed };
 }
 describe("draft command boundary", () => {
-  it.each([
-    "apply",
-    "discard",
-  ])("does not reject committed %s when terminal maintenance fails", async (mode) => {
+  it("does not reject committed Apply when terminal maintenance fails", async () => {
     const { service, maintenanceFailed } = fixture();
     const selection = {
       ...command,
@@ -38,12 +35,9 @@ describe("draft command boundary", () => {
       liveRevisionToken: "live",
       draftRevisionToken: "draft",
     };
-    const result =
-      mode === "apply"
-        ? service.draftReview.applyWorkDraftChanges(selection as never)
-        : service.draftReview.discardWorkDraft(selection as never);
+    const result = service.draftReview.applyWorkDraftChanges(selection as never);
     await expect(result).resolves.toMatchObject({
-      status: mode === "apply" ? "applied" : "discarded",
+      status: "applied",
       draftClosed: false,
     });
     expect(maintenanceFailed).toHaveBeenCalled();
