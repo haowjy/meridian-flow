@@ -818,6 +818,9 @@ importers:
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@meridian/markup':
+        specifier: workspace:*
+        version: link:../markup
     devDependencies:
       typescript:
         specifier: 'catalog:'

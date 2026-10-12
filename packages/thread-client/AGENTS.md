@@ -26,3 +26,11 @@ its build-time debug gate. Observer adapters must not throw or affect transport.
 `SocketLike` and `SocketClose` are platform-neutral contracts; ready states use
 the protocol constants 0 (connecting) and 1 (open). Timers, clocks, and randomness
 remain late-bound globals, preserving existing reconnect timing.
+
+## Message documents
+
+`serializeMessageDoc` reads plain JSON, preserving authored spacing and occurrence order.
+References spell canonical Markdown links through `@meridian/markup/links`; image-capable
+references also emit an image block. Submitted identities deduplicate by document and URI,
+with draft-upload metadata taking precedence. Skills activate once per slug but every
+occurrence remains in the blocks. Draft snapshots and upload lifecycle ownership stay in the app.
