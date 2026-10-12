@@ -8,16 +8,23 @@
  * goes, the turn the writer pressed is noted with a generic "Couldn't retry.",
  * and the snapshot refreshes to show the true state. A lost
  * request keeps the stand-in, failed, and its Retry re-sends under the same
- * id: the lost request may have arrived.
+ * id: the lost request may have arrived. The server answers that replay with
+ * the execution the first request started, or
+ * `retry_pending` (503) while it can't tell yet, which repeats the same id.
  *
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
 import { t } from "@lingui/core/macro";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import {
+  isTerminalTurnStatus,
+  REPLY_RETRY_PENDING_CODE,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus } from "@/client/api/http-client";
+import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { reportRetryRefused } from "./error-telemetry";
@@ -57,11 +64,24 @@ function isRetryRefusal(error: unknown): boolean {
   );
 }
 
+/** The server can't tell yet whether this replay is its own first request: ask again. */
+function isRetryPending(error: unknown): boolean {
+  if (httpErrorStatus(error) !== 503) return false;
+  if (isMeridianApiError(error)) return error.code === REPLY_RETRY_PENDING_CODE;
+  return error instanceof HttpResponseError && error.message === REPLY_RETRY_PENDING_CODE;
+}
+
+/** The server's Retry-After for `retry_pending`. */
+const RETRY_PENDING_DELAY_MS = 1000;
+
 export function useRetryStandIns(input: {
   threadId: string;
   storedTurns: readonly Turn[];
-  /** Ask the server for turn `id`, retrying `from` (the turn first pressed). */
-  post: (id: string, from: string) => Promise<Turn>;
+  /**
+   * Ask the server for turn `id`, retrying `from` (the turn first pressed).
+   * Null: accepted, but the server has no turn to show yet.
+   */
+  post: (id: string, from: string) => Promise<Turn | null>;
   /** On the failed stand-in and announced, when the request never answered. */
   lostCopy: string;
 }): RetryStandIns {
@@ -76,6 +96,13 @@ export function useRetryStandIns(input: {
   const optionsRef = useRef(input);
   optionsRef.current = input;
   const queryClient = useQueryClient();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
   // Once the snapshot has the turn, it is the authority. A failed or stopped
@@ -122,10 +149,17 @@ export function useRetryStandIns(input: {
     (id: string, from: string) => {
       optionsRef.current.post(id, from).then(
         (serverTurn) => {
-          patch(id, (entry) => ({ ...entry, turn: serverTurn, request: "sent" }));
+          patch(id, (entry) => ({ ...entry, turn: serverTurn ?? entry.turn, request: "sent" }));
           refresh();
         },
         (error: unknown) => {
+          if (isRetryPending(error)) {
+            setTimeout(() => {
+              if (mounted.current && localRef.current.some((entry) => entry.turn.id === id))
+                sendRef.current(id, from);
+            }, RETRY_PENDING_DELAY_MS);
+            return;
+          }
           // A refusal (409: the chat moved on first; or the server is shutting
           // down) wrote nothing. The writer sees one generic line; the cause
           // goes to diagnostics.
@@ -150,6 +184,8 @@ export function useRetryStandIns(input: {
     },
     [patch, refresh, threadId],
   );
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {

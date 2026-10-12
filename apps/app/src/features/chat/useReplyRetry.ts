@@ -44,6 +44,9 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
     createdAt,
     completedAt: null,
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
     siblingIds: [],
     responses: [],
   };
@@ -57,7 +60,7 @@ export function useReplyRetry(input: {
   const standIns = useRetryStandIns({
     threadId,
     storedTurns,
-    post: (id, from) => retryReply(threadId, from, { id }),
+    post: async (id, from) => (await retryReply(threadId, from, { id })).turn,
     lostCopy: t`Couldn't start the retry. Try again.`,
   });
   const { retry: retryStandIn } = standIns;
