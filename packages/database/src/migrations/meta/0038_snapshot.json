@@ -1,5 +1,5 @@
 {
-  "id": "61f7efa9-8252-48f1-9203-5cf0e1291497",
+  "id": "cc5ca193-71ee-4b7d-911c-61f2c19df676",
   "prevId": "680406af-4023-46e1-b41b-9af8eee32b40",
   "version": "7",
   "dialect": "postgresql",
@@ -4399,84 +4399,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.document_markdown_projections": {
-      "name": "document_markdown_projections",
-      "schema": "",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "markdown": {
-          "name": "markdown",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_markdown_projections_fts": {
-          "name": "document_markdown_projections_fts",
-          "columns": [
-            {
-              "expression": "to_tsvector('simple', \"markdown\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "document_markdown_projections_trgm": {
-          "name": "document_markdown_projections_trgm",
-          "columns": [
-            {
-              "expression": "\"markdown\" gin_trgm_ops",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_markdown_projections_document_id_documents_id_fk": {
-          "name": "document_markdown_projections_document_id_documents_id_fk",
-          "tableFrom": "document_markdown_projections",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.document_previous_locations": {
       "name": "document_previous_locations",
       "schema": "",
@@ -4599,6 +4521,13 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'content'"
+        },
         "context_source_id": {
           "name": "context_source_id",
           "type": "uuid",
@@ -4662,6 +4591,13 @@
           "notNull": true,
           "default": "0"
         },
+        "markdown_projection": {
+          "name": "markdown_projection",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "provisional_name": {
           "name": "provisional_name",
           "type": "boolean",
@@ -4701,13 +4637,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "hidden": {
-          "name": "hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -4727,8 +4656,8 @@
           "method": "btree",
           "with": {}
         },
-        "documents_context_location": {
-          "name": "documents_context_location",
+        "documents_context_folder_active": {
+          "name": "documents_context_folder_active",
           "columns": [
             {
               "expression": "context_source_id",
@@ -4741,27 +4670,16 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "extension",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "\"documents\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "documents_context_folder_name_live": {
-          "name": "documents_context_folder_name_live",
+        "documents_context_folder_name_active": {
+          "name": "documents_context_folder_name_active",
           "columns": [
             {
               "expression": "context_source_id",
@@ -4789,13 +4707,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"documents\".\"deleted_at\" IS NULL AND NOT \"documents\".\"hidden\"",
+          "where": "\"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'content'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "documents_context_root_name_live": {
-          "name": "documents_context_root_name_live",
+        "documents_context_root_name_active": {
+          "name": "documents_context_root_name_active",
           "columns": [
             {
               "expression": "context_source_id",
@@ -4817,13 +4735,29 @@
             }
           ],
           "isUnique": true,
-          "where": "\"documents\".\"folder_id\" IS NULL AND \"documents\".\"deleted_at\" IS NULL AND NOT \"documents\".\"hidden\"",
+          "where": "\"documents\".\"folder_id\" IS NULL AND \"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'content'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "documents_context_all_images": {
-          "name": "documents_context_all_images",
+        "documents_manifest_context_active": {
+          "name": "documents_manifest_context_active",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'manifest'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "documents_context_images": {
+          "name": "documents_context_images",
           "columns": [
             {
               "expression": "context_source_id",
@@ -4833,9 +4767,39 @@
             }
           ],
           "isUnique": false,
-          "where": "\"documents\".\"file_type\" = 'image'",
+          "where": "\"documents\".\"file_type\" = 'image' AND \"documents\".\"kind\" = 'content'",
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "documents_markdown_projection_fts": {
+          "name": "documents_markdown_projection_fts",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"markdown_projection\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "documents_markdown_projection_trgm": {
+          "name": "documents_markdown_projection_trgm",
+          "columns": [
+            {
+              "expression": "\"markdown_projection\" gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         },
         "documents_name_fts": {
@@ -4921,6 +4885,10 @@
         "documents_file_type_valid": {
           "name": "documents_file_type_valid",
           "value": "\"documents\".\"file_type\" IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')"
+        },
+        "documents_kind_valid": {
+          "name": "documents_kind_valid",
+          "value": "\"documents\".\"kind\" IN ('content', 'manifest')"
         }
       },
       "isRLSEnabled": false
@@ -4992,20 +4960,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "hidden": {
-          "name": "hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "location_version": {
-          "name": "location_version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
         }
       },
       "indexes": {
@@ -5047,8 +5001,8 @@
           "method": "btree",
           "with": {}
         },
-        "folders_context_parent_name_live": {
-          "name": "folders_context_parent_name_live",
+        "folders_context_parent_name_active": {
+          "name": "folders_context_parent_name_active",
           "columns": [
             {
               "expression": "context_source_id",
@@ -5070,13 +5024,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"folders\".\"deleted_at\" IS NULL AND NOT \"folders\".\"hidden\"",
+          "where": "\"folders\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "folders_context_root_name_live": {
-          "name": "folders_context_root_name_live",
+        "folders_context_root_name_active": {
+          "name": "folders_context_root_name_active",
           "columns": [
             {
               "expression": "context_source_id",
@@ -5092,35 +5046,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"folders\".\"parent_id\" IS NULL AND \"folders\".\"deleted_at\" IS NULL AND NOT \"folders\".\"hidden\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "folders_hidden_location": {
-          "name": "folders_hidden_location",
-          "columns": [
-            {
-              "expression": "context_source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "parent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"folders\".\"hidden\" AND \"folders\".\"deleted_at\" IS NULL",
+          "where": "\"folders\".\"parent_id\" IS NULL AND \"folders\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5186,108 +5112,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.link_ahead_holder_bindings": {
-      "name": "link_ahead_holder_bindings",
-      "schema": "",
-      "columns": {
-        "ahead_id": {
-          "name": "ahead_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "holder_document_id": {
-          "name": "holder_document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bound_at": {
-          "name": "bound_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "link_ahead_holder_bindings_document": {
-          "name": "link_ahead_holder_bindings_document",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "link_ahead_holder_bindings_ahead_id_link_ahead_refs_ahead_id_fk": {
-          "name": "link_ahead_holder_bindings_ahead_id_link_ahead_refs_ahead_id_fk",
-          "tableFrom": "link_ahead_holder_bindings",
-          "tableTo": "link_ahead_refs",
-          "columnsFrom": [
-            "ahead_id"
-          ],
-          "columnsTo": [
-            "ahead_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "link_ahead_holder_bindings_holder_document_id_documents_id_fk": {
-          "name": "link_ahead_holder_bindings_holder_document_id_documents_id_fk",
-          "tableFrom": "link_ahead_holder_bindings",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "holder_document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "link_ahead_holder_bindings_document_id_documents_id_fk": {
-          "name": "link_ahead_holder_bindings_document_id_documents_id_fk",
-          "tableFrom": "link_ahead_holder_bindings",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "link_ahead_holder_bindings_ahead_id_holder_document_id_pk": {
-          "name": "link_ahead_holder_bindings_ahead_id_holder_document_id_pk",
-          "columns": [
-            "ahead_id",
-            "holder_document_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6139,6 +5963,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "namespace_generation": {
+          "name": "namespace_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -6491,497 +6322,6 @@
             "user_id",
             "project_id",
             "operation_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.draft_tree_changes": {
-      "name": "draft_tree_changes",
-      "schema": "",
-      "columns": {
-        "draft_id": {
-          "name": "draft_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "node_kind": {
-          "name": "node_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created": {
-          "name": "created",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "context_source_id": {
-          "name": "context_source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_folder_id": {
-          "name": "parent_folder_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "extension": {
-          "name": "extension",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "draft_tree_changes_location": {
-          "name": "draft_tree_changes_location",
-          "columns": [
-            {
-              "expression": "context_source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "parent_folder_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "extension",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_tree_changes\".\"context_source_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_tree_changes_node": {
-          "name": "draft_tree_changes_node",
-          "columns": [
-            {
-              "expression": "node_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_tree_changes_parent": {
-          "name": "draft_tree_changes_parent",
-          "columns": [
-            {
-              "expression": "parent_folder_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_tree_changes\".\"parent_folder_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "draft_tree_changes_draft_id_drafts_id_fk": {
-          "name": "draft_tree_changes_draft_id_drafts_id_fk",
-          "tableFrom": "draft_tree_changes",
-          "tableTo": "drafts",
-          "columnsFrom": [
-            "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_tree_changes_context_source_id_context_sources_id_fk": {
-          "name": "draft_tree_changes_context_source_id_context_sources_id_fk",
-          "tableFrom": "draft_tree_changes",
-          "tableTo": "context_sources",
-          "columnsFrom": [
-            "context_source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_tree_changes_parent_folder_id_folders_id_fk": {
-          "name": "draft_tree_changes_parent_folder_id_folders_id_fk",
-          "tableFrom": "draft_tree_changes",
-          "tableTo": "folders",
-          "columnsFrom": [
-            "parent_folder_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "draft_tree_changes_draft_id_node_kind_node_id_pk": {
-          "name": "draft_tree_changes_draft_id_node_kind_node_id_pk",
-          "columns": [
-            "draft_id",
-            "node_kind",
-            "node_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "draft_tree_changes_node_kind_valid": {
-          "name": "draft_tree_changes_node_kind_valid",
-          "value": "\"draft_tree_changes\".\"node_kind\" IN ('document', 'folder')"
-        },
-        "draft_tree_changes_location_shape": {
-          "name": "draft_tree_changes_location_shape",
-          "value": "(\"draft_tree_changes\".\"context_source_id\" IS NULL AND \"draft_tree_changes\".\"parent_folder_id\" IS NULL AND \"draft_tree_changes\".\"name\" IS NULL\n        AND \"draft_tree_changes\".\"extension\" IS NULL)\n      OR (\"draft_tree_changes\".\"context_source_id\" IS NOT NULL AND \"draft_tree_changes\".\"name\" IS NOT NULL\n        AND (\"draft_tree_changes\".\"node_kind\" = 'document') = (\"draft_tree_changes\".\"extension\" IS NOT NULL))"
-        },
-        "draft_tree_changes_says_something": {
-          "name": "draft_tree_changes_says_something",
-          "value": "\"draft_tree_changes\".\"created\" OR \"draft_tree_changes\".\"context_source_id\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.drafts": {
-      "name": "drafts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "origin_thread_id": {
-          "name": "origin_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "origin_work_id": {
-          "name": "origin_work_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "drafts_active_origin_work": {
-          "name": "drafts_active_origin_work",
-          "columns": [
-            {
-              "expression": "origin_work_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"drafts\".\"status\" = 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "drafts_project": {
-          "name": "drafts_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "drafts_project_id_projects_id_fk": {
-          "name": "drafts_project_id_projects_id_fk",
-          "tableFrom": "drafts",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "drafts_origin_thread_id_threads_id_fk": {
-          "name": "drafts_origin_thread_id_threads_id_fk",
-          "tableFrom": "drafts",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "origin_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "drafts_origin_work_id_works_id_fk": {
-          "name": "drafts_origin_work_id_works_id_fk",
-          "tableFrom": "drafts",
-          "tableTo": "works",
-          "columnsFrom": [
-            "origin_work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "drafts_created_by_users_id_fk": {
-          "name": "drafts_created_by_users_id_fk",
-          "tableFrom": "drafts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "drafts_status_valid": {
-          "name": "drafts_status_valid",
-          "value": "\"drafts\".\"status\" IN ('active', 'closed')"
-        },
-        "drafts_closed_shape": {
-          "name": "drafts_closed_shape",
-          "value": "(\"drafts\".\"status\" = 'closed') = (\"drafts\".\"closed_at\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.link_ahead_draft_settlements": {
-      "name": "link_ahead_draft_settlements",
-      "schema": "",
-      "columns": {
-        "ahead_id": {
-          "name": "ahead_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settled_at": {
-          "name": "settled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "link_ahead_draft_settlements_draft": {
-          "name": "link_ahead_draft_settlements_draft",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "link_ahead_draft_settlements_document": {
-          "name": "link_ahead_draft_settlements_document",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "link_ahead_draft_settlements_ahead_id_link_ahead_refs_ahead_id_fk": {
-          "name": "link_ahead_draft_settlements_ahead_id_link_ahead_refs_ahead_id_fk",
-          "tableFrom": "link_ahead_draft_settlements",
-          "tableTo": "link_ahead_refs",
-          "columnsFrom": [
-            "ahead_id"
-          ],
-          "columnsTo": [
-            "ahead_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "link_ahead_draft_settlements_draft_id_drafts_id_fk": {
-          "name": "link_ahead_draft_settlements_draft_id_drafts_id_fk",
-          "tableFrom": "link_ahead_draft_settlements",
-          "tableTo": "drafts",
-          "columnsFrom": [
-            "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "link_ahead_draft_settlements_document_id_documents_id_fk": {
-          "name": "link_ahead_draft_settlements_document_id_documents_id_fk",
-          "tableFrom": "link_ahead_draft_settlements",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "link_ahead_draft_settlements_ahead_id_draft_id_pk": {
-          "name": "link_ahead_draft_settlements_ahead_id_draft_id_pk",
-          "columns": [
-            "ahead_id",
-            "draft_id"
           ]
         }
       },
@@ -8290,14 +7630,20 @@
       },
       "isRLSEnabled": false
     },
-    "public.branch_push_settlement_batches": {
-      "name": "branch_push_settlement_batches",
+    "public.branch_push_settlement_outbox": {
+      "name": "branch_push_settlement_outbox",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
+        "push_id": {
+          "name": "push_id",
+          "type": "bigint",
           "primaryKey": true,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
           "notNull": true
         },
         "state": {
@@ -8306,6 +7652,50 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
+        },
+        "document_title": {
+          "name": "document_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lock_cut_update": {
+          "name": "lock_cut_update",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "push_update": {
+          "name": "push_update",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trail_seed": {
+          "name": "trail_seed",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "join_version": {
+          "name": "join_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "classified_join_version": {
+          "name": "classified_join_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "settled_join_version": {
+          "name": "settled_join_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "claim_token": {
           "name": "claim_token",
@@ -8376,12 +7766,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "abandoned_at": {
-          "name": "abandoned_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8398,8 +7782,8 @@
         }
       },
       "indexes": {
-        "branch_push_settlement_batches_recovery": {
-          "name": "branch_push_settlement_batches_recovery",
+        "branch_push_settlement_outbox_recovery": {
+          "name": "branch_push_settlement_outbox_recovery",
           "columns": [
             {
               "expression": "available_at",
@@ -8421,211 +7805,13 @@
             }
           ],
           "isUnique": false,
-          "where": "\"branch_push_settlement_batches\".\"state\" = 'pending'",
+          "where": "\"branch_push_settlement_outbox\".\"state\" = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "branch_push_settlement_batches_unresolved": {
-          "name": "branch_push_settlement_batches_unresolved",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"branch_push_settlement_batches\".\"state\" IN ('pending', 'blocked')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "branch_push_settlement_batches_state_valid": {
-          "name": "branch_push_settlement_batches_state_valid",
-          "value": "\"branch_push_settlement_batches\".\"state\" IN ('pending', 'blocked', 'completed', 'abandoned')"
-        },
-        "branch_push_settlement_batches_terminal_shape": {
-          "name": "branch_push_settlement_batches_terminal_shape",
-          "value": "(\n        (\"branch_push_settlement_batches\".\"state\" = 'completed' AND \"branch_push_settlement_batches\".\"completed_at\" IS NOT NULL AND \"branch_push_settlement_batches\".\"blocked_at\" IS NULL AND \"branch_push_settlement_batches\".\"abandoned_at\" IS NULL AND \"branch_push_settlement_batches\".\"claim_token\" IS NULL AND \"branch_push_settlement_batches\".\"claim_kind\" IS NULL AND \"branch_push_settlement_batches\".\"claimed_at\" IS NULL AND \"branch_push_settlement_batches\".\"lease_expires_at\" IS NULL)\n        OR (\"branch_push_settlement_batches\".\"state\" = 'blocked' AND \"branch_push_settlement_batches\".\"blocked_at\" IS NOT NULL AND \"branch_push_settlement_batches\".\"last_error_code\" IS NOT NULL AND \"branch_push_settlement_batches\".\"completed_at\" IS NULL AND \"branch_push_settlement_batches\".\"abandoned_at\" IS NULL AND \"branch_push_settlement_batches\".\"claim_token\" IS NULL AND \"branch_push_settlement_batches\".\"claim_kind\" IS NULL AND \"branch_push_settlement_batches\".\"claimed_at\" IS NULL AND \"branch_push_settlement_batches\".\"lease_expires_at\" IS NULL)\n        OR (\"branch_push_settlement_batches\".\"state\" = 'abandoned' AND \"branch_push_settlement_batches\".\"abandoned_at\" IS NOT NULL AND \"branch_push_settlement_batches\".\"last_error_code\" IS NOT NULL AND \"branch_push_settlement_batches\".\"completed_at\" IS NULL AND \"branch_push_settlement_batches\".\"blocked_at\" IS NULL AND \"branch_push_settlement_batches\".\"claim_token\" IS NULL AND \"branch_push_settlement_batches\".\"claim_kind\" IS NULL AND \"branch_push_settlement_batches\".\"claimed_at\" IS NULL AND \"branch_push_settlement_batches\".\"lease_expires_at\" IS NULL)\n        OR (\"branch_push_settlement_batches\".\"state\" = 'pending' AND \"branch_push_settlement_batches\".\"blocked_at\" IS NULL AND \"branch_push_settlement_batches\".\"completed_at\" IS NULL AND \"branch_push_settlement_batches\".\"abandoned_at\" IS NULL)\n      )"
-        },
-        "branch_push_settlement_batches_claim_shape": {
-          "name": "branch_push_settlement_batches_claim_shape",
-          "value": "\"branch_push_settlement_batches\".\"state\" <> 'pending' OR (\n        (\"branch_push_settlement_batches\".\"claim_token\" IS NOT NULL AND \"branch_push_settlement_batches\".\"claim_kind\" IS NOT NULL AND \"branch_push_settlement_batches\".\"claimed_at\" IS NOT NULL AND \"branch_push_settlement_batches\".\"lease_expires_at\" IS NOT NULL)\n        OR (\"branch_push_settlement_batches\".\"claim_token\" IS NULL AND \"branch_push_settlement_batches\".\"claim_kind\" IS NULL AND \"branch_push_settlement_batches\".\"claimed_at\" IS NULL AND \"branch_push_settlement_batches\".\"lease_expires_at\" IS NULL)\n      )"
-        },
-        "branch_push_settlement_batches_claim_kind_valid": {
-          "name": "branch_push_settlement_batches_claim_kind_valid",
-          "value": "\"branch_push_settlement_batches\".\"claim_kind\" IS NULL OR \"branch_push_settlement_batches\".\"claim_kind\" IN ('warm', 'recovery')"
-        },
-        "branch_push_settlement_batches_counters_valid": {
-          "name": "branch_push_settlement_batches_counters_valid",
-          "value": "\"branch_push_settlement_batches\".\"attempt_count\" >= 0 AND \"branch_push_settlement_batches\".\"claim_epoch\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.branch_push_settlement_holds": {
-      "name": "branch_push_settlement_holds",
-      "schema": "",
-      "columns": {
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_key": {
-          "name": "item_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_in": {
-          "name": "decided_in",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "branch_push_settlement_holds_batch_id_branch_push_settlement_batches_id_fk": {
-          "name": "branch_push_settlement_holds_batch_id_branch_push_settlement_batches_id_fk",
-          "tableFrom": "branch_push_settlement_holds",
-          "tableTo": "branch_push_settlement_batches",
-          "columnsFrom": [
-            "batch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "branch_push_settlement_holds_batch_id_item_key_pk": {
-          "name": "branch_push_settlement_holds_batch_id_item_key_pk",
-          "columns": [
-            "batch_id",
-            "item_key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "branch_push_settlement_holds_decided_in_valid": {
-          "name": "branch_push_settlement_holds_decided_in_valid",
-          "value": "\"branch_push_settlement_holds\".\"decided_in\" IN ('check', 'completion')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.branch_push_settlement_outbox": {
-      "name": "branch_push_settlement_outbox",
-      "schema": "",
-      "columns": {
-        "push_id": {
-          "name": "push_id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_title": {
-          "name": "document_title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lock_cut_update": {
-          "name": "lock_cut_update",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "push_update": {
-          "name": "push_update",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trail_seed": {
-          "name": "trail_seed",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "join_version": {
-          "name": "join_version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "classified_join_version": {
-          "name": "classified_join_version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "branch_push_settlement_outbox_document": {
-          "name": "branch_push_settlement_outbox_document",
+        "branch_push_settlement_outbox_document_unresolved": {
+          "name": "branch_push_settlement_outbox_document_unresolved",
           "columns": [
             {
               "expression": "document_id",
@@ -8635,27 +7821,7 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "branch_push_settlement_outbox_batch_document": {
-          "name": "branch_push_settlement_outbox_batch_document",
-          "columns": [
-            {
-              "expression": "batch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
+          "where": "\"branch_push_settlement_outbox\".\"state\" <> 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8668,19 +7834,6 @@
           "tableTo": "push_lineage",
           "columnsFrom": [
             "push_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "branch_push_settlement_outbox_batch_id_branch_push_settlement_batches_id_fk": {
-          "name": "branch_push_settlement_outbox_batch_id_branch_push_settlement_batches_id_fk",
-          "tableFrom": "branch_push_settlement_outbox",
-          "tableTo": "branch_push_settlement_batches",
-          "columnsFrom": [
-            "batch_id"
           ],
           "columnsTo": [
             "id"
@@ -8706,64 +7859,27 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "branch_push_settlement_outbox_state_valid": {
+          "name": "branch_push_settlement_outbox_state_valid",
+          "value": "\"branch_push_settlement_outbox\".\"state\" IN ('pending', 'blocked', 'completed')"
+        },
+        "branch_push_settlement_outbox_terminal_shape": {
+          "name": "branch_push_settlement_outbox_terminal_shape",
+          "value": "(\n        (\"branch_push_settlement_outbox\".\"state\" = 'completed' AND \"branch_push_settlement_outbox\".\"completed_at\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"blocked_at\" IS NULL AND \"branch_push_settlement_outbox\".\"claim_token\" IS NULL AND \"branch_push_settlement_outbox\".\"claim_kind\" IS NULL AND \"branch_push_settlement_outbox\".\"claimed_at\" IS NULL AND \"branch_push_settlement_outbox\".\"lease_expires_at\" IS NULL)\n        OR (\"branch_push_settlement_outbox\".\"state\" = 'blocked' AND \"branch_push_settlement_outbox\".\"blocked_at\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"last_error_code\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"completed_at\" IS NULL AND \"branch_push_settlement_outbox\".\"claim_token\" IS NULL AND \"branch_push_settlement_outbox\".\"claim_kind\" IS NULL AND \"branch_push_settlement_outbox\".\"claimed_at\" IS NULL AND \"branch_push_settlement_outbox\".\"lease_expires_at\" IS NULL)\n        OR (\"branch_push_settlement_outbox\".\"state\" = 'pending' AND \"branch_push_settlement_outbox\".\"blocked_at\" IS NULL AND \"branch_push_settlement_outbox\".\"completed_at\" IS NULL)\n      )"
+        },
+        "branch_push_settlement_outbox_claim_shape": {
+          "name": "branch_push_settlement_outbox_claim_shape",
+          "value": "\"branch_push_settlement_outbox\".\"state\" <> 'pending' OR (\n        (\"branch_push_settlement_outbox\".\"claim_token\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"claim_kind\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"claimed_at\" IS NOT NULL AND \"branch_push_settlement_outbox\".\"lease_expires_at\" IS NOT NULL)\n        OR (\"branch_push_settlement_outbox\".\"claim_token\" IS NULL AND \"branch_push_settlement_outbox\".\"claim_kind\" IS NULL AND \"branch_push_settlement_outbox\".\"claimed_at\" IS NULL AND \"branch_push_settlement_outbox\".\"lease_expires_at\" IS NULL)\n      )"
+        },
+        "branch_push_settlement_outbox_claim_kind_valid": {
+          "name": "branch_push_settlement_outbox_claim_kind_valid",
+          "value": "\"branch_push_settlement_outbox\".\"claim_kind\" IS NULL OR \"branch_push_settlement_outbox\".\"claim_kind\" IN ('warm', 'recovery')"
+        },
         "branch_push_settlement_outbox_counters_valid": {
           "name": "branch_push_settlement_outbox_counters_valid",
-          "value": "\"branch_push_settlement_outbox\".\"join_version\" >= 0 AND \"branch_push_settlement_outbox\".\"classified_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\""
+          "value": "\"branch_push_settlement_outbox\".\"attempt_count\" >= 0 AND \"branch_push_settlement_outbox\".\"join_version\" >= 0 AND \"branch_push_settlement_outbox\".\"claim_epoch\" >= 0 AND \"branch_push_settlement_outbox\".\"classified_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\" AND (\"branch_push_settlement_outbox\".\"settled_join_version\" IS NULL OR \"branch_push_settlement_outbox\".\"settled_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\")"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.branch_push_settlement_payloads": {
-      "name": "branch_push_settlement_payloads",
-      "schema": "",
-      "columns": {
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step_kind": {
-          "name": "step_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "branch_push_settlement_payloads_batch_id_branch_push_settlement_batches_id_fk": {
-          "name": "branch_push_settlement_payloads_batch_id_branch_push_settlement_batches_id_fk",
-          "tableFrom": "branch_push_settlement_payloads",
-          "tableTo": "branch_push_settlement_batches",
-          "columnsFrom": [
-            "batch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "branch_push_settlement_payloads_batch_id_step_kind_pk": {
-          "name": "branch_push_settlement_payloads_batch_id_step_kind_pk",
-          "columns": [
-            "batch_id",
-            "step_kind"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.branch_write_journal": {
@@ -9557,11 +8673,17 @@
           "primaryKey": false,
           "notNull": false
         },
-        "draft_id": {
-          "name": "draft_id",
+        "work_id": {
+          "name": "work_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "thread_id": {
           "name": "thread_id",
@@ -9624,8 +8746,8 @@
         }
       },
       "indexes": {
-        "document_branches_active_draft_document": {
-          "name": "document_branches_active_draft_document",
+        "document_branches_active_work_draft": {
+          "name": "document_branches_active_work_draft",
           "columns": [
             {
               "expression": "document_id",
@@ -9634,7 +8756,7 @@
               "nulls": "last"
             },
             {
-              "expression": "draft_id",
+              "expression": "work_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9646,11 +8768,11 @@
           "method": "btree",
           "with": {}
         },
-        "document_branches_active_work_draft_by_draft": {
-          "name": "document_branches_active_work_draft_by_draft",
+        "document_branches_active_work_draft_by_work": {
+          "name": "document_branches_active_work_draft_by_work",
           "columns": [
             {
-              "expression": "draft_id",
+              "expression": "work_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9670,6 +8792,22 @@
           ],
           "isUnique": false,
           "where": "\"document_branches\".\"kind\" = 'work_draft' AND \"document_branches\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "document_branches_deleted_by_work_idx": {
+          "name": "document_branches_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_branches\".\"deleted_by_work_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9724,17 +8862,30 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "document_branches_draft_id_drafts_id_fk": {
-          "name": "document_branches_draft_id_drafts_id_fk",
+        "document_branches_work_id_works_id_fk": {
+          "name": "document_branches_work_id_works_id_fk",
           "tableFrom": "document_branches",
-          "tableTo": "drafts",
+          "tableTo": "works",
           "columnsFrom": [
-            "draft_id"
+            "work_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "document_branches_deleted_by_work_id_works_id_fk": {
+          "name": "document_branches_deleted_by_work_id_works_id_fk",
+          "tableFrom": "document_branches",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "document_branches_thread_id_threads_id_fk": {
@@ -9765,7 +8916,7 @@
         },
         "document_branches_owner_shape": {
           "name": "document_branches_owner_shape",
-          "value": "(\"document_branches\".\"kind\" = 'work_draft' AND \"document_branches\".\"thread_id\" IS NULL) OR (\"document_branches\".\"kind\" = 'thread_peer' AND \"document_branches\".\"thread_id\" IS NOT NULL)"
+          "value": "(\"document_branches\".\"kind\" = 'work_draft' AND \"document_branches\".\"work_id\" IS NOT NULL AND \"document_branches\".\"thread_id\" IS NULL) OR (\"document_branches\".\"kind\" = 'thread_peer' AND \"document_branches\".\"thread_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -11141,6 +10292,16 @@
   "sequences": {
     "public.context_availability_generation_seq": {
       "name": "context_availability_generation_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    },
+    "public.context_namespace_observation_version_seq": {
+      "name": "context_namespace_observation_version_seq",
       "schema": "public",
       "increment": "1",
       "startWith": "1",

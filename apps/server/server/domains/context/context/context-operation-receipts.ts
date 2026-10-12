@@ -52,7 +52,12 @@ export class ContextOperationReceipts {
         result = error.result;
       }
       if (!result.ok && result.error.code === "io_error") return result;
-      await this.store.insert({ operationId, command, result } as ContextOperationReceipt);
+      await this.store.insert({
+        operationId,
+        command,
+        result,
+        observationVersion: await this.store.observationVersion(command),
+      } as ContextOperationReceipt);
       return result;
     });
   }

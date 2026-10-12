@@ -3,7 +3,13 @@ import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, projects, userRecentDocuments, works } from "@meridian/database/schema";
+import {
+  contextAvailabilityHeads,
+  contextSources,
+  projects,
+  userRecentDocuments,
+  works,
+} from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, lt, not, or, type SQL, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -176,6 +182,20 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         : [];
       const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
+      const namespaceKeys = [
+        ...new Set([
+          `user:${userId}`,
+          ...rows.flatMap((row) => (row.sourceProject ? [`project:${row.sourceProject.id}`] : [])),
+        ]),
+      ];
+      const namespaceHeads = new Map(
+        (
+          await tx
+            .select()
+            .from(contextAvailabilityHeads)
+            .where(inArray(contextAvailabilityHeads.authorityKey, namespaceKeys))
+        ).map((head) => [head.authorityKey, head.namespaceGeneration]),
+      );
       const documentsOut: RecentDocumentItem[] = [];
       for (const row of rows) {
         const { document, source, sourceProject, work, openedAt } = row;
@@ -194,7 +214,15 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           throw new Error(`Recent document ${document.id} has inconsistent identity`);
         }
         const workSlug = work && !work.isNoWork ? work.slug : null;
+        const identityScope = classification.identity.scope;
         const entry = mapAuthoritativeFile({
+          observationVersion: String(
+            namespaceHeads.get(
+              identityScope.kind === "user"
+                ? `user:${identityScope.userId}`
+                : `project:${identityScope.projectId}`,
+            ) ?? 0n,
+          ),
           document,
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,

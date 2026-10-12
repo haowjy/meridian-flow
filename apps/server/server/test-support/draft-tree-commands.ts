@@ -26,6 +26,7 @@ import {
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
+import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import {
@@ -389,11 +390,24 @@ export function draftTreeCommands(
       const port = await livePort();
       // stat answers files only; anything else at the path is the folder being deleted.
       const stat = await port.stat(uri(path));
+      if (stat.ok) {
+        return port.delete(uri(path), {
+          origin: human(),
+          expected: { kind: "file", documentId: stat.value.documentId ?? "" },
+        });
+      }
+      const { scheme, rel } = sourceOf(path);
+      const folder = await createTreeReader(world.db).resolvePath(LIVE_TREE, {
+        contextSourceId: world.project.sources[scheme],
+        path: rel,
+      });
       return port.delete(uri(path), {
         origin: human(),
-        expected: stat.ok
-          ? { kind: "file", documentId: stat.value.documentId ?? "" }
-          : { kind: "folder" },
+        expected: {
+          kind: "folder",
+          nodeId:
+            folder.kind === "found" && folder.node.kind === "folder" ? folder.node.folder.id : "",
+        },
       });
     },
     async write(path, markdown) {

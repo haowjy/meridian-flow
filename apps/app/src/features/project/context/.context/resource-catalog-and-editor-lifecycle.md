@@ -23,15 +23,15 @@ periodic refresh, and wake hints schedule background acquisition through the sam
 serialized owner.
 
 Editable-file create, rename, move, and delete commands write ordered durable
-resource intentions before transport. Folder commands retain the direct context
-mutation adapter. Rejected deletion restores the row with repair state; transport
+resource intentions before transport. Folder placement and recursive deletion
+share that journal; folder creation retains the direct context mutation adapter. Rejected deletion restores the row with repair state; transport
 uncertainty leaves the submitted attempt recoverable. Rejected placement
 reopens the identity field. Cache absence never supplies
 removal evidence.
 
 The project availability coordinator watches server-backed tabs, bound route
-selection, retained sessions, and capped recent routes by stable file ID. Exact
-delete receipts enter it directly; explicit authorization-loss observers and
+selection, retained sessions, and capped recent routes by stable file ID.
+Namespace receipt projections and explicit authorization-loss observers, plus
 focus, online, and bounded polling recheck watched identities. A catalog wake
 for a cold Work triggers the same exact-ID availability path without warming a
 second tree. Cache omission is presentation state and never removal evidence.
