@@ -22,18 +22,40 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
-The bounded sweep calls delivery's `settleStaleExecution` while holding the
-exclusive session claim. That one recovery boundary finalizes turns, retires
-receipts, deletes the stale lease through `RunClaim.release` only after its
-receipt is empty, and journals the resulting inbox projection in the same thread-lock transaction. Delivery owns
-that release decision: a successful repair callback alone is not proof that it
-settled the captured receipt's execution. Stale child-report or placeholder
-candidates must preserve a newer orphan's selector and adopted-message IDs for
-its later repair. Only after commit does it publish `thread.status`, so subscribers see asleep immediately
-and a new message can start without waiting for lease expiry. Rollback preserves
-both the unfinished turn and its lease and publishes nothing. Run-start repair
-instead retains the replacement run's already-acquired lease; it only retires
-the inherited dead receipt before selecting new work.
+Run-start repair (`repairOrphanedTurns`) keeps the replacement run's
+already-acquired lease; it only retires the inherited dead receipt before
+selecting new work.
+
+## Settling a stale lease
+
+The bounded sweep lanes in `spawn/orphan-report-repair.ts` hold the exclusive
+session claim and pass their repair to delivery's `settleStaleExecution`. One
+thread-lock transaction runs the repair, decides whether to delete the stale
+lease row, and journals the resulting inbox projection. After commit it
+publishes `thread.status`, so subscribers read asleep at once and a new message
+starts without waiting for the dead lease to expire. A rollback keeps both the
+unfinished turn and its lease and publishes nothing.
+
+- **Release only an empty receipt, never unconditionally.** Delivery captures
+  the receipt's run and holder before the repair and re-reads it afterward. It
+  calls `RunClaim.release` only when the same run and holder still own the row
+  and both the turn selector and adopted-message IDs are empty. A sweep
+  candidate can be stale: between selection and claim, its execution may have
+  completed and a newer run may have adopted a message and died. A successful
+  repair callback proves nothing about that newer receipt, and deleting it
+  would leave the adopted message queued to be answered again. The newer
+  orphan keeps its receipt for its own repair.
+- **Terminal paths release in their terminal transaction.** Because the sweep
+  keeps any non-empty receipt, and discovery finds only unsettled turns, a
+  lease whose selector points at an already-terminal turn is never retired: the
+  chat stays awake with an empty inbox. Every path that writes a run's last
+  terminal turn therefore releases its lease in the same transaction: a
+  terminal placeholder, both `close` branches, and a failed compaction
+  successor (`failCompactionSuccessor`). A new terminal path must do the same
+  instead of leaving release to session cleanup.
+- **Prove it against the DB.** The in-memory run claim is not a recovery
+  parity authority (see `TODO`); recovery regressions belong in the
+  production-adapter DB suites.
 
 Every finalized orphan clears the dead turn selector and bound-turn set before
 later work can start. Non-reply repair, including a crashed compaction, clears
